@@ -1538,6 +1538,28 @@ impl ProgramSpec {
             .map(StructOpsFamily::from_value_type_name)
     }
 
+    pub(crate) fn cgroup_path(&self) -> Option<&str> {
+        match self {
+            ProgramSpec::CgroupDevice { target } => Some(&target.cgroup_path),
+            ProgramSpec::SockOps { target } => Some(&target.cgroup_path),
+            ProgramSpec::CgroupSkb { target } => Some(&target.cgroup_path),
+            ProgramSpec::CgroupSock { target } => Some(&target.cgroup_path),
+            ProgramSpec::CgroupSysctl { target } => Some(&target.cgroup_path),
+            ProgramSpec::CgroupSockopt { target } => Some(&target.cgroup_path),
+            ProgramSpec::CgroupSockAddr { target } => Some(&target.cgroup_path),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn pinned_map_path(&self) -> Option<&str> {
+        match self {
+            ProgramSpec::SkMsg { target } => Some(&target.map_path),
+            ProgramSpec::SkSkb { target } => Some(&target.map_path),
+            ProgramSpec::SkSkbParser { target } => Some(&target.map_path),
+            _ => None,
+        }
+    }
+
     pub fn section_name(&self) -> String {
         match self {
             ProgramSpec::CgroupSkb { target } => target.section_name(),
@@ -1738,6 +1760,10 @@ mod tests {
             .expect("tracepoint spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
+        let cgroup_sock = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
+            .expect("cgroup_sock spec should parse");
+        let sk_msg = ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap")
+            .expect("sk_msg spec should parse");
         let callback = ProgramSpec::StructOpsCallback {
             value_type_name: "sched_ext_ops".to_string(),
             callback_name: "select_cpu".to_string(),
@@ -1763,6 +1789,10 @@ mod tests {
             callback.struct_ops_family(),
             Some(StructOpsFamily::SchedExt)
         );
+        assert_eq!(tracepoint.cgroup_path(), None);
+        assert_eq!(cgroup_sock.cgroup_path(), Some("/sys/fs/cgroup"));
+        assert_eq!(tracepoint.pinned_map_path(), None);
+        assert_eq!(sk_msg.pinned_map_path(), Some("/sys/fs/bpf/demo_sockmap"));
         assert_eq!(callback.target_string(), "select_cpu");
         assert!(struct_ops_callback_is_sleepable("sched_ext_ops", "init"));
         assert!(!struct_ops_callback_is_sleepable(

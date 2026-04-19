@@ -159,9 +159,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tp_btf: {e}")))?;
             }
             ProgramAttachKind::Tracepoint => {
-                let ProgramSpec::Tracepoint { category, name } = &spec else {
-                    unreachable!("tracepoint attach kind must use tracepoint program spec");
-                };
+                let (category, name) = spec.tracepoint_parts().unwrap_or_else(|| {
+                    unreachable!("tracepoint attach kind must use tracepoint program spec")
+                });
 
                 let tracepoint: &mut TracePoint = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to TracePoint: {e}"))
@@ -468,25 +468,19 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_lookup: {e}")))?;
             }
             ProgramAttachKind::SkMsg => {
-                let ProgramSpec::SkMsg { target } = &spec else {
-                    unreachable!("sk_msg attach kind must use sk_msg program spec");
-                };
-                let map = MapData::from_pin(&target.map_path).map_err(|e| {
-                    LoadError::Attach(format!(
-                        "Failed to open pinned sockmap {}: {e}",
-                        target.map_path
-                    ))
+                let map_path = spec.pinned_map_path().unwrap_or_else(|| {
+                    unreachable!("sk_msg attach kind must use sk_msg program spec")
+                });
+                let map = MapData::from_pin(map_path).map_err(|e| {
+                    LoadError::Attach(format!("Failed to open pinned sockmap {}: {e}", map_path))
                 })?;
                 let map_type = map.info().and_then(|info| info.map_type()).map_err(|e| {
-                    LoadError::Attach(format!(
-                        "Failed to inspect pinned map {}: {e}",
-                        target.map_path
-                    ))
+                    LoadError::Attach(format!("Failed to inspect pinned map {}: {e}", map_path))
                 })?;
                 if !matches!(map_type, MapType::SockMap | MapType::SockHash) {
                     return Err(LoadError::Attach(format!(
                         "sk_msg target must be a pinned sockmap or sockhash, got {:?}: {}",
-                        map_type, target.map_path
+                        map_type, map_path
                     )));
                 }
 
@@ -503,25 +497,19 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_msg: {e}")))?;
             }
             ProgramAttachKind::SkSkb => {
-                let ProgramSpec::SkSkb { target } = &spec else {
-                    unreachable!("sk_skb attach kind must use sk_skb program spec");
-                };
-                let map = MapData::from_pin(&target.map_path).map_err(|e| {
-                    LoadError::Attach(format!(
-                        "Failed to open pinned sockmap {}: {e}",
-                        target.map_path
-                    ))
+                let map_path = spec.pinned_map_path().unwrap_or_else(|| {
+                    unreachable!("sk_skb attach kind must use sk_skb program spec")
+                });
+                let map = MapData::from_pin(map_path).map_err(|e| {
+                    LoadError::Attach(format!("Failed to open pinned sockmap {}: {e}", map_path))
                 })?;
                 let map_type = map.info().and_then(|info| info.map_type()).map_err(|e| {
-                    LoadError::Attach(format!(
-                        "Failed to inspect pinned map {}: {e}",
-                        target.map_path
-                    ))
+                    LoadError::Attach(format!("Failed to inspect pinned map {}: {e}", map_path))
                 })?;
                 if !matches!(map_type, MapType::SockMap | MapType::SockHash) {
                     return Err(LoadError::Attach(format!(
                         "sk_skb target must be a pinned sockmap or sockhash, got {:?}: {}",
-                        map_type, target.map_path
+                        map_type, map_path
                     )));
                 }
 
@@ -538,25 +526,19 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sk_skb: {e}")))?;
             }
             ProgramAttachKind::SkSkbParser => {
-                let ProgramSpec::SkSkbParser { target } = &spec else {
-                    unreachable!("sk_skb_parser attach kind must use sk_skb_parser program spec");
-                };
-                let map = MapData::from_pin(&target.map_path).map_err(|e| {
-                    LoadError::Attach(format!(
-                        "Failed to open pinned sockmap {}: {e}",
-                        target.map_path
-                    ))
+                let map_path = spec.pinned_map_path().unwrap_or_else(|| {
+                    unreachable!("sk_skb_parser attach kind must use sk_skb_parser program spec")
+                });
+                let map = MapData::from_pin(map_path).map_err(|e| {
+                    LoadError::Attach(format!("Failed to open pinned sockmap {}: {e}", map_path))
                 })?;
                 let map_type = map.info().and_then(|info| info.map_type()).map_err(|e| {
-                    LoadError::Attach(format!(
-                        "Failed to inspect pinned map {}: {e}",
-                        target.map_path
-                    ))
+                    LoadError::Attach(format!("Failed to inspect pinned map {}: {e}", map_path))
                 })?;
                 if !matches!(map_type, MapType::SockMap | MapType::SockHash) {
                     return Err(LoadError::Attach(format!(
                         "sk_skb_parser target must be a pinned sockmap or sockhash, got {:?}: {}",
-                        map_type, target.map_path
+                        map_type, map_path
                     )));
                 }
 
@@ -573,16 +555,16 @@ impl EbpfState {
                 })?;
             }
             ProgramAttachKind::CgroupDevice => {
-                let ProgramSpec::CgroupDevice { target } = &spec else {
-                    unreachable!("cgroup_device attach kind must use cgroup_device program spec");
-                };
-                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
+                    unreachable!("cgroup_device attach kind must use cgroup_device program spec")
+                });
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            target.cgroup_path
+                            cgroup_path
                         ))
                     }
                 })?;
@@ -599,16 +581,16 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::SockOps => {
-                let ProgramSpec::SockOps { target } = &spec else {
-                    unreachable!("sock_ops attach kind must use sock_ops program spec");
-                };
-                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
+                    unreachable!("sock_ops attach kind must use sock_ops program spec")
+                });
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            target.cgroup_path
+                            cgroup_path
                         ))
                     }
                 })?;
@@ -671,16 +653,16 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_skb: {e}")))?;
             }
             ProgramAttachKind::CgroupSock => {
-                let ProgramSpec::CgroupSock { target } = &spec else {
-                    unreachable!("cgroup_sock attach kind must use cgroup_sock program spec");
-                };
-                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
+                    unreachable!("cgroup_sock attach kind must use cgroup_sock program spec")
+                });
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            target.cgroup_path
+                            cgroup_path
                         ))
                     }
                 })?;
@@ -695,16 +677,16 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach cgroup_sock: {e}")))?;
             }
             ProgramAttachKind::CgroupSysctl => {
-                let ProgramSpec::CgroupSysctl { target } = &spec else {
-                    unreachable!("cgroup_sysctl attach kind must use cgroup_sysctl program spec");
-                };
-                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
+                    unreachable!("cgroup_sysctl attach kind must use cgroup_sysctl program spec")
+                });
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            target.cgroup_path
+                            cgroup_path
                         ))
                     }
                 })?;
@@ -721,16 +703,16 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::CgroupSockopt => {
-                let ProgramSpec::CgroupSockopt { target } = &spec else {
-                    unreachable!("cgroup_sockopt attach kind must use cgroup_sockopt program spec");
-                };
-                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
+                    unreachable!("cgroup_sockopt attach kind must use cgroup_sockopt program spec")
+                });
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            target.cgroup_path
+                            cgroup_path
                         ))
                     }
                 })?;
@@ -747,18 +729,18 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::CgroupSockAddr => {
-                let ProgramSpec::CgroupSockAddr { target } = &spec else {
+                let cgroup_path = spec.cgroup_path().unwrap_or_else(|| {
                     unreachable!(
                         "cgroup_sock_addr attach kind must use cgroup_sock_addr program spec"
-                    );
-                };
-                let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
+                    )
+                });
+                let cgroup = std::fs::File::open(cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
                     } else {
                         LoadError::Attach(format!(
                             "Failed to open cgroup path {}: {e}",
-                            target.cgroup_path
+                            cgroup_path
                         ))
                     }
                 })?;
