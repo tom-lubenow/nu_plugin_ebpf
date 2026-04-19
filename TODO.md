@@ -78,6 +78,7 @@ Last updated: 2026-04-19.
   - Typed kfunc coverage now includes `bpf_rcu_read_lock` / `bpf_rcu_read_unlock`, with verifier_types and VCC parity checks for balanced lock/unlock usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_preempt_disable` / `bpf_preempt_enable`, with verifier_types and VCC parity checks for balanced usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_local_irq_save` / `bpf_local_irq_restore`, with verifier_types and VCC compile-time parity checks for balanced usage across CFG joins and at function exit.
+  - Shared helper program-surface policy now also rejects invalid `bpf_perf_event_output`, `bpf_get_stackid`, and legacy `bpf_probe_read` usage before kernel load, with matching ELF/type-infer/verifier_types/VCC regression coverage.
   - Verifier/VCC now require stack-slot-backed pointers for `bpf_local_irq_save` / `bpf_local_irq_restore` arguments, rejecting context-derived pseudo-stack pointers before kernel load.
   - Typed kfunc coverage now includes `bpf_map_sum_elem_count` with kernel-pointer map-argument checks across type inference, verifier_types, and VCC.
   - Typed kfunc coverage now includes container traversal primitives (`bpf_list_front` / `bpf_list_back` / `bpf_rbtree_root` / `bpf_rbtree_left` / `bpf_rbtree_right`) with shared kernel-pointer argument checks.
@@ -156,10 +157,13 @@ Last updated: 2026-04-19.
 
 - [~] Keep the user-facing surface small and Nushell-first.
   - Prefer ordinary Nushell syntax, typed context projection, and leading typed `mut` bindings over bespoke helper commands when the underlying operation has an honest language form.
+  - Treat the long-term first-class surface as small by design: ordinary Nushell plus the few commands that represent genuine eBPF operations without an honest preexisting Nushell form (`emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`).
+  - Treat `map-*` and `global-*` as convenience surface around concrete eBPF facilities, not as a second parallel language. They should stay only where they name a real kernel/compiler resource more honestly than raw Nushell syntax.
   - Treat `helper-call` and `kfunc-call` as explicit escape hatches for kernel ABI surface we do not yet model directly.
   - Keep compiler-internal helper/kfunc modeling even if those escape hatches shrink over time: the compiler still needs signatures, legal program families, pointer/ref semantics, and verifier-facing rules.
   - Recent progress: packet/socket helper escape hatches keep shrinking: `adjust-packet` now covers XDP relayout plus skb relayout on `tc` / `sk_skb` / `sk_skb_parser`, `adjust-message` now covers the common `sk_msg` `bpf_msg_*` byte-window helpers, packet redirection has first-class `redirect` / `redirect-map`, and socket redirection has first-class `redirect-socket`, all lowering through the same typed helper models instead of stringly `helper-call`.
   - Recent progress: ordinary aggregate Nushell flows keep losing artificial “bind to a local first” requirements: metadata-built record values now seed globals and typed maps directly, and aggregate cell-path updates like `$state.inner = { ... }` now materialize metadata-built record rhs values on demand instead of rejecting them for lacking a preexisting pointer.
+  - Recent progress: modeled helper-surface legality now also constrains `bpf_perf_event_output`, `bpf_get_stackid`, and legacy `bpf_probe_read` through the shared program model, so more invalid helper/program combinations fail in compiler stages instead of only at kernel load time.
 
 Near-term priority order:
 1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).

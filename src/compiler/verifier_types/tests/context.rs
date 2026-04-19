@@ -199,6 +199,40 @@ fn test_verify_mir_for_probe_context_rejects_out_of_range_pt_regs_arg_load() {
 }
 
 #[test]
+#[cfg(target_arch = "x86_64")]
+fn test_verify_mir_for_probe_context_allows_perf_event_specific_field_loads() {
+    let (mut func, entry) = new_mir_function();
+    let sample_period = func.alloc_vreg();
+    let addr = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sample_period,
+            field: CtxField::PerfSamplePeriod,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: addr,
+            field: CtxField::PerfAddr,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(sample_period, MirType::U64);
+    types.insert(addr, MirType::U64);
+
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected perf_event-specific ctx fields to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_missing_tracepoint_field_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
