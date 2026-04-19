@@ -2895,6 +2895,22 @@ fn test_program_type_resolves_xdp_ifindex_alias() {
 }
 
 #[test]
+fn test_program_type_resolves_skb_ifindex_alias() {
+    assert_eq!(
+        EbpfProgramType::SocketFilter
+            .resolve_ctx_field_name("ifindex")
+            .expect("socket_filter ifindex alias should resolve"),
+        CtxField::Ifindex
+    );
+    assert_eq!(
+        EbpfProgramType::Tc
+            .resolve_ctx_field_name("ifindex")
+            .expect("tc ifindex alias should resolve"),
+        CtxField::Ifindex
+    );
+}
+
+#[test]
 fn test_program_type_resolves_tracepoint_specific_field_names() {
     assert_eq!(
         EbpfProgramType::Tracepoint
