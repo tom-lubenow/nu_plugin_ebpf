@@ -40,31 +40,12 @@ enum ContextWriteAvailability {
     CgroupSkbEgressOnly,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProgramCtxWriteSurfaceFamilyRequirement {
-    SocketFilter,
-    Tc,
-    SkSkb,
-    CgroupSkb,
-    CgroupSock,
-    CgroupSysctl,
-    SockOps,
-    CgroupSockopt,
-    CgroupSockAddr,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ContextWriteSurfaceSpec {
     field_name: &'static str,
     field: Option<CtxField>,
     target: ContextWriteTargetSpec,
     availability: Option<ContextWriteAvailability>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ProgramCtxWriteSurfaceFamilySpec {
-    requirement: ProgramCtxWriteSurfaceFamilyRequirement,
-    surfaces: &'static [ContextWriteSurfaceSpec],
 }
 
 impl ContextStoreTargetSpec {
@@ -314,34 +295,6 @@ impl ContextWriteSurfaceSpec {
     }
 }
 
-impl ProgramCtxWriteSurfaceFamilyRequirement {
-    fn matches_spec(&self, spec: &ProgramSpec) -> bool {
-        match self {
-            Self::SocketFilter => spec.program_type().supports_socket_filter_ctx_surface(),
-            Self::Tc => spec.program_type().supports_tc_ctx_surface(),
-            Self::SkSkb => spec.program_type().supports_sk_skb_ctx_surface(),
-            Self::CgroupSkb => spec.program_type().supports_cgroup_skb_ctx_surface(),
-            Self::CgroupSock => {
-                matches!(spec.attach_shape(), ProgramAttachShape::CgroupSock { .. })
-            }
-            Self::CgroupSysctl => spec.program_type().supports_cgroup_sysctl_ctx_fields(),
-            Self::SockOps => spec.program_type().supports_sock_ops_ctx_fields(),
-            Self::CgroupSockopt => {
-                matches!(
-                    spec.attach_shape(),
-                    ProgramAttachShape::CgroupSockopt { .. }
-                )
-            }
-            Self::CgroupSockAddr => {
-                matches!(
-                    spec.attach_shape(),
-                    ProgramAttachShape::CgroupSockAddr { .. }
-                )
-            }
-        }
-    }
-}
-
 const SOCKET_FILTER_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     &[ContextWriteSurfaceSpec::store_field(
         "cb",
@@ -533,45 +486,6 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
 ];
 
-const PROGRAM_CTX_WRITE_SURFACE_FAMILIES: &[ProgramCtxWriteSurfaceFamilySpec] = &[
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SocketFilter,
-        surfaces: SOCKET_FILTER_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::Tc,
-        surfaces: TC_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SkSkb,
-        surfaces: SK_SKB_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSkb,
-        surfaces: CGROUP_SKB_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSock,
-        surfaces: CGROUP_SOCK_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSysctl,
-        surfaces: CGROUP_SYSCTL_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::SockOps,
-        surfaces: SOCK_OPS_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSockopt,
-        surfaces: CGROUP_SOCKOPT_CTX_WRITE_SURFACES,
-    },
-    ProgramCtxWriteSurfaceFamilySpec {
-        requirement: ProgramCtxWriteSurfaceFamilyRequirement::CgroupSockAddr,
-        surfaces: CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES,
-    },
-];
-
 fn find_ctx_write_surface(
     field_name: &str,
     surfaces: &[ContextWriteSurfaceSpec],
@@ -647,21 +561,42 @@ impl EbpfProgramType {
 }
 
 impl ProgramSpec {
+    fn ctx_write_surfaces(&self) -> Option<&'static [ContextWriteSurfaceSpec]> {
+        match self.attach_shape() {
+            ProgramAttachShape::CgroupSock { .. } => Some(CGROUP_SOCK_CTX_WRITE_SURFACES),
+            ProgramAttachShape::CgroupSockopt { .. } => Some(CGROUP_SOCKOPT_CTX_WRITE_SURFACES),
+            ProgramAttachShape::CgroupSockAddr { .. } => Some(CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES),
+            _ if self.program_type().supports_socket_filter_ctx_surface() => {
+                Some(SOCKET_FILTER_CTX_WRITE_SURFACES)
+            }
+            _ if self.program_type().supports_tc_ctx_surface() => Some(TC_CTX_WRITE_SURFACES),
+            _ if self.program_type().supports_sk_skb_ctx_surface() => {
+                Some(SK_SKB_CTX_WRITE_SURFACES)
+            }
+            _ if self.program_type().supports_cgroup_skb_ctx_surface() => {
+                Some(CGROUP_SKB_CTX_WRITE_SURFACES)
+            }
+            _ if self.program_type().supports_cgroup_sysctl_ctx_fields() => {
+                Some(CGROUP_SYSCTL_CTX_WRITE_SURFACES)
+            }
+            _ if self.program_type().supports_sock_ops_ctx_fields() => {
+                Some(SOCK_OPS_CTX_WRITE_SURFACES)
+            }
+            _ => None,
+        }
+    }
+
     fn ctx_write_surface_for_name(&self, field_name: &str) -> Option<ContextWriteSurfaceSpec> {
-        PROGRAM_CTX_WRITE_SURFACE_FAMILIES
-            .iter()
-            .filter(|family| family.requirement.matches_spec(self))
-            .find_map(|family| find_ctx_write_surface(field_name, family.surfaces))
+        self.ctx_write_surfaces()
+            .and_then(|surfaces| find_ctx_write_surface(field_name, surfaces))
     }
 
     fn ctx_write_surface_for_store_target(
         &self,
         target: &CtxStoreTarget,
     ) -> Option<ContextWriteSurfaceSpec> {
-        PROGRAM_CTX_WRITE_SURFACE_FAMILIES
-            .iter()
-            .filter(|family| family.requirement.matches_spec(self))
-            .find_map(|family| find_ctx_store_surface(target, family.surfaces))
+        self.ctx_write_surfaces()
+            .and_then(|surfaces| find_ctx_store_surface(target, surfaces))
     }
 
     pub(crate) fn resolve_ctx_store_target(
