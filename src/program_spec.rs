@@ -1516,6 +1516,48 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn uprobe_target(&self) -> Option<&UprobeTarget> {
+        match self {
+            ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn xdp_target(&self) -> Option<&XdpTarget> {
+        match self {
+            ProgramSpec::Xdp { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn perf_event_target(&self) -> Option<&PerfEventTarget> {
+        match self {
+            ProgramSpec::PerfEvent { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn socket_filter_target(&self) -> Option<&SocketFilterTarget> {
+        match self {
+            ProgramSpec::SocketFilter { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn sk_lookup_target(&self) -> Option<&SkLookupTarget> {
+        match self {
+            ProgramSpec::SkLookup { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn lirc_mode2_target(&self) -> Option<&LircMode2Target> {
+        match self {
+            ProgramSpec::LircMode2 { target } => Some(target),
+            _ => None,
+        }
+    }
+
     pub(crate) fn struct_ops_value_type_name(&self) -> Option<&str> {
         match self {
             ProgramSpec::StructOps { value_type_name }
@@ -1760,6 +1802,17 @@ mod tests {
             .expect("tracepoint spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
+        let uprobe =
+            ProgramSpec::parse("uprobe:/bin/bash:main+0x4@123").expect("uprobe spec should parse");
+        let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+        let perf_event = ProgramSpec::parse("perf_event:software:cpu-clock:cpu=1")
+            .expect("perf_event spec should parse");
+        let socket_filter = ProgramSpec::parse("socket_filter:tcp4:127.0.0.1:8080")
+            .expect("socket_filter spec should parse");
+        let sk_lookup =
+            ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("sk_lookup spec should parse");
+        let lirc =
+            ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let cgroup_sock = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
             .expect("cgroup_sock spec should parse");
         let sk_msg = ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap")
@@ -1775,6 +1828,37 @@ mod tests {
         );
         assert_eq!(tracepoint.struct_ops_value_type_name(), None);
         assert_eq!(struct_ops.tracepoint_parts(), None);
+        assert_eq!(
+            uprobe
+                .uprobe_target()
+                .map(|target| target.binary_path.as_str()),
+            Some("/bin/bash")
+        );
+        assert_eq!(
+            xdp.xdp_target().map(|target| target.interface.as_str()),
+            Some("lo")
+        );
+        assert_eq!(
+            perf_event.perf_event_target().map(|target| target.cpu),
+            Some(Some(1))
+        );
+        assert_eq!(
+            socket_filter
+                .socket_filter_target()
+                .map(|target| target.bind_port),
+            Some(8080)
+        );
+        assert_eq!(
+            sk_lookup
+                .sk_lookup_target()
+                .map(|target| target.netns_path.as_str()),
+            Some("/proc/self/ns/net")
+        );
+        assert_eq!(
+            lirc.lirc_mode2_target()
+                .map(|target| target.device_path.as_str()),
+            Some("/dev/lirc0")
+        );
         assert_eq!(
             struct_ops.struct_ops_value_type_name(),
             Some("sched_ext_ops")

@@ -186,10 +186,9 @@ impl EbpfState {
                 })?;
             }
             ProgramAttachKind::Uprobe | ProgramAttachKind::Uretprobe => {
-                let (ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target }) = &spec
-                else {
-                    unreachable!("uprobe attach kind must use uprobe program spec");
-                };
+                let target = spec.uprobe_target().unwrap_or_else(|| {
+                    unreachable!("uprobe attach kind must use uprobe program spec")
+                });
                 let uprobe: &mut UProbe = prog.try_into().map_err(|e| {
                     LoadError::Load(format!(
                         "Failed to convert to {}: {e}",
@@ -229,9 +228,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach lsm: {e}")))?;
             }
             ProgramAttachKind::Xdp => {
-                let ProgramSpec::Xdp { target } = &spec else {
-                    unreachable!("xdp attach kind must use xdp program spec");
-                };
+                let target = spec
+                    .xdp_target()
+                    .unwrap_or_else(|| unreachable!("xdp attach kind must use xdp program spec"));
                 let xdp: &mut Xdp = prog
                     .try_into()
                     .map_err(|e| LoadError::Load(format!("Failed to convert to Xdp: {e}")))?;
@@ -241,9 +240,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
             }
             ProgramAttachKind::PerfEvent => {
-                let ProgramSpec::PerfEvent { target } = &spec else {
-                    unreachable!("perf_event attach kind must use perf_event program spec");
-                };
+                let target = spec.perf_event_target().unwrap_or_else(|| {
+                    unreachable!("perf_event attach kind must use perf_event program spec")
+                });
                 let perf_event: &mut PerfEvent = prog
                     .try_into()
                     .map_err(|e| LoadError::Load(format!("Failed to convert to PerfEvent: {e}")))?;
@@ -389,9 +388,9 @@ impl EbpfState {
                 }
             }
             ProgramAttachKind::SocketFilter => {
-                let ProgramSpec::SocketFilter { target } = &spec else {
-                    unreachable!("socket_filter attach kind must use socket_filter program spec");
-                };
+                let target = spec.socket_filter_target().unwrap_or_else(|| {
+                    unreachable!("socket_filter attach kind must use socket_filter program spec")
+                });
                 let socket_filter: &mut SocketFilter = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to SocketFilter: {e}"))
                 })?;
@@ -444,9 +443,9 @@ impl EbpfState {
                 }
             }
             ProgramAttachKind::SkLookup => {
-                let ProgramSpec::SkLookup { target } = &spec else {
-                    unreachable!("sk_lookup attach kind must use sk_lookup program spec");
-                };
+                let target = spec.sk_lookup_target().unwrap_or_else(|| {
+                    unreachable!("sk_lookup attach kind must use sk_lookup program spec")
+                });
                 let netns = std::fs::File::open(&target.netns_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
@@ -757,9 +756,9 @@ impl EbpfState {
                     })?;
             }
             ProgramAttachKind::LircMode2 => {
-                let ProgramSpec::LircMode2 { target } = &spec else {
-                    unreachable!("lirc_mode2 attach kind must use lirc_mode2 program spec");
-                };
+                let target = spec.lirc_mode2_target().unwrap_or_else(|| {
+                    unreachable!("lirc_mode2 attach kind must use lirc_mode2 program spec")
+                });
                 let device = std::fs::File::open(&target.device_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied
