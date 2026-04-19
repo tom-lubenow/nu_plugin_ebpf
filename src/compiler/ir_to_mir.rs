@@ -226,6 +226,18 @@ struct SubfunctionReturnSeed {
     annotated_semantics: Option<AnnotatedValueSemantics>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SubfunctionAggregateReturnAbi {
+    Record { ty: MirType },
+    List { max_len: usize },
+}
+
+#[derive(Debug, Clone)]
+enum ActiveSubfunctionAggregateReturn {
+    Record { ptr_vreg: VReg, ty: MirType },
+    List { ptr_vreg: VReg, max_len: usize },
+}
+
 #[derive(Debug, Clone, Default)]
 enum CurrentReturnSeedState {
     #[default]
@@ -372,6 +384,8 @@ pub struct HirToMirLowering<'a> {
     call_counts: HashMap<DeclId, usize>,
     /// Return seed summary for the function currently being lowered.
     current_return_seed_state: CurrentReturnSeedState,
+    /// Hidden aggregate-return out parameter for the subfunction currently being lowered.
+    current_subfunction_aggregate_return: Option<ActiveSubfunctionAggregateReturn>,
 }
 
 impl<'a> HirToMirLowering<'a> {
@@ -458,6 +472,7 @@ impl<'a> HirToMirLowering<'a> {
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),
             current_return_seed_state: CurrentReturnSeedState::Unset,
+            current_subfunction_aggregate_return: None,
         }
     }
 

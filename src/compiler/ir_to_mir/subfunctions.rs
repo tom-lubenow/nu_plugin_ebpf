@@ -87,11 +87,13 @@ impl<'a> HirToMirLowering<'a> {
             .get(&decl_id)
             .cloned()
             .unwrap_or_else(|| format!("decl_{}", decl_id.get()));
+        let aggregate_return_abi = self.subfunction_aggregate_return_abi(decl_id, hir);
 
         let mut subfn = MirFunction::with_name(name);
         let sig_param_count = sig.map(Self::sig_param_count);
         let param_count = sig_param_count.unwrap_or(param_vars.len());
-        subfn.param_count = param_count + usize::from(needs_input);
+        subfn.param_count =
+            param_count + usize::from(needs_input) + usize::from(aggregate_return_abi.is_some());
 
         let old_func = std::mem::replace(&mut self.func, subfn);
         let old_reg_map = std::mem::take(&mut self.reg_map);
@@ -118,6 +120,7 @@ impl<'a> HirToMirLowering<'a> {
         let old_subfunction_global_aliases = std::mem::take(&mut self.subfunction_global_aliases);
         let old_ctx_param = self.ctx_param;
         let old_return_seed_state = std::mem::take(&mut self.current_return_seed_state);
+        let old_aggregate_return = std::mem::take(&mut self.current_subfunction_aggregate_return);
 
         self.ctx_param = None;
         let mut next_arg_seed = 0usize;
@@ -164,6 +167,41 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
+        if let Some(abi) = aggregate_return_abi {
+            let vreg = self.func.alloc_vreg();
+            let seed_idx = next_arg_seed + param_count;
+            let seed = arg_seeds.get(seed_idx);
+            self.seed_subfunction_param(vreg, seed_idx, seed, None, None);
+            self.current_subfunction_aggregate_return = Some(match abi {
+                SubfunctionAggregateReturnAbi::Record { ty } => {
+                    self.vreg_type_hints.insert(
+                        vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(ty.clone()),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    ActiveSubfunctionAggregateReturn::Record { ptr_vreg: vreg, ty }
+                }
+                SubfunctionAggregateReturnAbi::List { max_len } => {
+                    self.vreg_type_hints.insert(
+                        vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::I64),
+                                len: max_len.saturating_add(1),
+                            }),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    ActiveSubfunctionAggregateReturn::List {
+                        ptr_vreg: vreg,
+                        max_len,
+                    }
+                }
+            });
+        }
+
         let result = self.lower_block(hir);
 
         let subfn = std::mem::replace(&mut self.func, old_func);
@@ -191,6 +229,7 @@ impl<'a> HirToMirLowering<'a> {
         self.current_type_hints = old_type_hints;
         self.subfunction_global_aliases = old_subfunction_global_aliases;
         self.ctx_param = old_ctx_param;
+        self.current_subfunction_aggregate_return = old_aggregate_return;
 
         self.subfunction_in_progress.remove(&decl_id);
 

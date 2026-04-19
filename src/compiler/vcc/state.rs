@@ -1329,6 +1329,16 @@ impl VccState {
             if rhs.space == VccAddrSpace::Unknown && rhs.nullability == VccNullability::Null {
                 return Some(self.merge_null_wildcard_ptr(lhs, rhs));
             }
+            if Self::is_generic_stack_null_wildcard(lhs)
+                && matches!(rhs.space, VccAddrSpace::Stack(_))
+            {
+                return Some(self.merge_null_wildcard_ptr(rhs, lhs));
+            }
+            if Self::is_generic_stack_null_wildcard(rhs)
+                && matches!(lhs.space, VccAddrSpace::Stack(_))
+            {
+                return Some(self.merge_null_wildcard_ptr(lhs, rhs));
+            }
             return None;
         }
 
@@ -1425,6 +1435,13 @@ impl VccState {
             ringbuf_ref,
             kfunc_ref,
         }
+    }
+
+    fn is_generic_stack_null_wildcard(ptr: VccPointerInfo) -> bool {
+        matches!(
+            ptr.space,
+            VccAddrSpace::Stack(StackSlotId(slot)) if slot == u32::MAX
+        ) && ptr.nullability == VccNullability::Null
     }
 }
 

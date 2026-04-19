@@ -10,7 +10,176 @@ pub(super) struct UserFunctionCallArg {
     pub(super) source_reg: Option<RegId>,
 }
 
+#[derive(Debug, Clone)]
+enum AggregateReturnCallSetup {
+    Record { slot: StackSlotId, ty: MirType },
+    List { slot: StackSlotId, max_len: usize },
+}
+
 impl<'a> HirToMirLowering<'a> {
+    fn inferred_literal_type(lit: &HirLiteral) -> Option<MirType> {
+        match lit {
+            HirLiteral::Bool(_) => Some(MirType::Bool),
+            HirLiteral::Int(_) | HirLiteral::Duration(_) | HirLiteral::Filesize(_) => {
+                Some(MirType::I64)
+            }
+            HirLiteral::Float(_) => Some(MirType::I64),
+            HirLiteral::String(bytes)
+            | HirLiteral::RawString(bytes)
+            | HirLiteral::Binary(bytes) => Some(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: align_to_eight(bytes.len().saturating_add(1))
+                    .min(MAX_STRING_SIZE)
+                    .max(16),
+            }),
+            HirLiteral::Filepath { val, .. }
+            | HirLiteral::Directory { val, .. }
+            | HirLiteral::GlobPattern { val, .. } => Some(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: align_to_eight(val.len().saturating_add(1))
+                    .min(MAX_STRING_SIZE)
+                    .max(16),
+            }),
+            HirLiteral::List { capacity } => Some(MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: capacity.saturating_add(1),
+            }),
+            _ => None,
+        }
+    }
+
+    fn infer_block_aggregate_return_abi(
+        &self,
+        decl_id: DeclId,
+        block: &crate::compiler::hir::HirBlock,
+        return_src: RegId,
+    ) -> Option<SubfunctionAggregateReturnAbi> {
+        let hint_map = self.decl_type_hints.get(&decl_id);
+        let mut literal_strings: HashMap<RegId, String> = HashMap::new();
+        let mut reg_types: HashMap<RegId, MirType> = HashMap::new();
+        let mut list_caps: HashMap<RegId, usize> = HashMap::new();
+        let mut record_fields: HashMap<RegId, Vec<(String, MirType)>> = HashMap::new();
+
+        for stmt in &block.stmts {
+            match stmt {
+                HirStmt::LoadLiteral { dst, lit } => {
+                    if let Some(ty) = hint_map
+                        .and_then(|hints| hints.get(&dst.get()).cloned())
+                        .or_else(|| Self::inferred_literal_type(&lit))
+                    {
+                        reg_types.insert(*dst, ty);
+                    }
+                    match lit {
+                        HirLiteral::String(bytes) | HirLiteral::RawString(bytes) => {
+                            if let Ok(string) = std::str::from_utf8(&bytes) {
+                                literal_strings.insert(*dst, string.to_string());
+                            }
+                        }
+                        HirLiteral::Filepath { val, .. }
+                        | HirLiteral::Directory { val, .. }
+                        | HirLiteral::GlobPattern { val, .. } => {
+                            if let Ok(string) = std::str::from_utf8(&val) {
+                                literal_strings.insert(*dst, string.to_string());
+                            }
+                        }
+                        HirLiteral::Record { .. } => {
+                            record_fields.insert(*dst, Vec::new());
+                        }
+                        HirLiteral::List { capacity } => {
+                            list_caps.insert(*dst, *capacity);
+                        }
+                        _ => {}
+                    }
+                }
+                HirStmt::LoadValue { dst, val } => match &**val {
+                    Value::String { val, .. } | Value::Glob { val, .. } => {
+                        literal_strings.insert(*dst, val.clone());
+                        reg_types.insert(
+                            *dst,
+                            MirType::Array {
+                                elem: Box::new(MirType::U8),
+                                len: align_to_eight(val.len().saturating_add(1))
+                                    .min(MAX_STRING_SIZE)
+                                    .max(16),
+                            },
+                        );
+                    }
+                    Value::Int { .. } => {
+                        reg_types.insert(*dst, MirType::I64);
+                    }
+                    Value::Bool { .. } => {
+                        reg_types.insert(*dst, MirType::Bool);
+                    }
+                    _ => {}
+                },
+                HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
+                    if let Some(string) = literal_strings.get(&src).cloned() {
+                        literal_strings.insert(*dst, string);
+                    }
+                    if let Some(ty) = hint_map
+                        .and_then(|hints| hints.get(&dst.get()).cloned())
+                        .or_else(|| reg_types.get(&src).cloned())
+                    {
+                        reg_types.insert(*dst, ty);
+                    }
+                    if let Some(capacity) = list_caps.get(&src).copied() {
+                        list_caps.insert(*dst, capacity);
+                    }
+                    if let Some(fields) = record_fields.get(&src).cloned() {
+                        record_fields.insert(*dst, fields);
+                    }
+                }
+                HirStmt::RecordInsert { src_dst, key, val } => {
+                    let key_name = literal_strings.get(&key)?.clone();
+                    let value_ty = hint_map
+                        .and_then(|hints| hints.get(&val.get()).cloned())
+                        .or_else(|| reg_types.get(&val).cloned())
+                        .or_else(|| {
+                            record_fields
+                                .get(&val)
+                                .map(|fields| Self::record_type_from_fields(fields))
+                        })
+                        .or_else(|| {
+                            list_caps.get(&val).map(|capacity| MirType::Array {
+                                elem: Box::new(MirType::I64),
+                                len: capacity.saturating_add(1),
+                            })
+                        })?;
+                    let fields = record_fields.entry(*src_dst).or_default();
+                    if let Some(existing) = fields.iter_mut().find(|(name, _)| *name == key_name) {
+                        existing.1 = value_ty;
+                    } else {
+                        fields.push((key_name, value_ty));
+                    }
+                }
+                HirStmt::ListPush { src_dst, .. } => {
+                    if let Some(capacity) = list_caps.get(&src_dst).copied() {
+                        reg_types.insert(
+                            *src_dst,
+                            MirType::Array {
+                                elem: Box::new(MirType::I64),
+                                len: capacity.saturating_add(1),
+                            },
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        record_fields
+            .get(&return_src)
+            .map(|fields| SubfunctionAggregateReturnAbi::Record {
+                ty: Self::record_type_from_fields(fields),
+            })
+            .or_else(|| {
+                list_caps
+                    .get(&return_src)
+                    .copied()
+                    .map(|max_len| SubfunctionAggregateReturnAbi::List { max_len })
+            })
+    }
+
     fn constant_record_key_value(
         reg_constants: &HashMap<RegId, Value>,
         key: RegId,
@@ -448,8 +617,8 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn should_inline_user_function_for_abi(hir: &HirFunction) -> bool {
-        let has_aggregate_builder = hir.blocks.iter().any(|block| {
+    fn has_aggregate_builder(hir: &HirFunction) -> bool {
+        hir.blocks.iter().any(|block| {
             block.stmts.iter().any(|stmt| {
                 matches!(
                     stmt,
@@ -463,8 +632,152 @@ impl<'a> HirToMirLowering<'a> {
                         }
                 )
             })
+        })
+    }
+
+    pub(super) fn subfunction_aggregate_return_abi(
+        &self,
+        decl_id: DeclId,
+        hir: &HirFunction,
+    ) -> Option<SubfunctionAggregateReturnAbi> {
+        if hir.blocks.len() != 1 {
+            return None;
+        }
+        let block = hir.blocks.first()?;
+        let simple_list_builder = block.stmts.iter().all(|stmt| {
+            matches!(
+                stmt,
+                HirStmt::LoadLiteral { .. }
+                    | HirStmt::LoadValue { .. }
+                    | HirStmt::LoadVariable { .. }
+                    | HirStmt::Move { .. }
+                    | HirStmt::Clone { .. }
+                    | HirStmt::ListPush { .. }
+                    | HirStmt::Drain { .. }
+                    | HirStmt::Drop { .. }
+                    | HirStmt::DrainIfEnd { .. }
+            )
         });
-        has_aggregate_builder
+        if !simple_list_builder {
+            return None;
+        }
+
+        if let Some(hints) = self.decl_type_hints.get(&decl_id) {
+            let return_tys: Vec<MirType> = hir
+                .blocks
+                .iter()
+                .filter_map(|block| match &block.terminator {
+                    HirTerminator::Return { src } => hints.get(&src.get()).cloned(),
+                    _ => None,
+                })
+                .collect();
+            if let Some(first_return_ty) = return_tys.first().cloned() {
+                if return_tys.iter().all(|ty| ty == &first_return_ty) {
+                    let has_list_builder = hir.blocks.iter().any(|block| {
+                        block.stmts.iter().any(|stmt| {
+                            matches!(
+                                stmt,
+                                HirStmt::ListPush { .. }
+                                    | HirStmt::LoadLiteral {
+                                        lit: HirLiteral::List { .. },
+                                        ..
+                                    }
+                            )
+                        })
+                    });
+                    if has_list_builder
+                        && let MirType::Array { elem, len } = first_return_ty
+                        && len > 0
+                        && matches!(elem.as_ref(), MirType::I64)
+                    {
+                        return Some(SubfunctionAggregateReturnAbi::List { max_len: len - 1 });
+                    }
+                }
+            }
+        }
+
+        let inferred_abis: Vec<SubfunctionAggregateReturnAbi> = hir
+            .blocks
+            .iter()
+            .filter_map(|block| match &block.terminator {
+                HirTerminator::Return { src } => {
+                    self.infer_block_aggregate_return_abi(decl_id, block, *src)
+                }
+                _ => None,
+            })
+            .collect();
+        let first_abi = inferred_abis.first()?.clone();
+        inferred_abis
+            .iter()
+            .all(|abi| abi == &first_abi)
+            .then_some(first_abi)
+            .and_then(|abi| match abi {
+                SubfunctionAggregateReturnAbi::List { .. } => Some(abi),
+                SubfunctionAggregateReturnAbi::Record { .. } => None,
+            })
+    }
+
+    fn prepare_aggregate_return_call_setup(
+        &mut self,
+        arg_seeds: &mut Vec<SubfunctionArgSeed>,
+        args: &mut Vec<VReg>,
+        abi: &SubfunctionAggregateReturnAbi,
+    ) -> AggregateReturnCallSetup {
+        match abi {
+            SubfunctionAggregateReturnAbi::Record { ty } => {
+                let slot =
+                    self.func
+                        .alloc_stack_slot(align_to_eight(ty.size()), 8, StackSlotKind::Local);
+                self.record_stack_slot_type(slot, ty.clone());
+                let ptr_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: ptr_vreg,
+                    src: MirValue::StackSlot(slot),
+                });
+                let ptr_ty = MirType::Ptr {
+                    pointee: Box::new(ty.clone()),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                };
+                self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
+                arg_seeds.push(SubfunctionArgSeed {
+                    type_hint: Some(ptr_ty),
+                    metadata: None,
+                });
+                args.push(ptr_vreg);
+                AggregateReturnCallSetup::Record {
+                    slot,
+                    ty: ty.clone(),
+                }
+            }
+            SubfunctionAggregateReturnAbi::List { max_len } => {
+                let slot =
+                    self.func
+                        .alloc_stack_slot(8 + (max_len * 8), 8, StackSlotKind::ListBuffer);
+                self.record_list_buffer_slot_type(slot, *max_len);
+                let ptr_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: ptr_vreg,
+                    src: MirValue::StackSlot(slot),
+                });
+                let ptr_ty = MirType::Ptr {
+                    pointee: Box::new(MirType::Array {
+                        elem: Box::new(MirType::I64),
+                        len: max_len.saturating_add(1),
+                    }),
+                    address_space: crate::compiler::mir::AddressSpace::Stack,
+                };
+                self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
+                arg_seeds.push(SubfunctionArgSeed {
+                    type_hint: Some(ptr_ty),
+                    metadata: None,
+                });
+                args.push(ptr_vreg);
+                AggregateReturnCallSetup::List {
+                    slot,
+                    max_len: *max_len,
+                }
+            }
+        }
     }
 
     pub(super) fn subfunction_params(&mut self, decl_id: DeclId, func: &HirFunction) -> Vec<VarId> {
@@ -555,10 +868,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        // BPF subfunctions cannot safely return pointers to callee-local stack
-        // aggregates. Inline simple aggregate-building bodies until we grow an
-        // explicit aggregate return ABI.
-        if Self::should_inline_user_function_for_abi(hir) {
+        let aggregate_return_abi = self.subfunction_aggregate_return_abi(decl_id, hir);
+        if Self::has_aggregate_builder(hir)
+            && (aggregate_return_abi.is_none() || call_args.len().saturating_add(1) > 5)
+        {
             self.inline_user_function(decl_id, src_dst, dst_vreg, &call_args)?;
             return Ok(());
         }
@@ -569,7 +882,7 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let arg_seeds: Vec<SubfunctionArgSeed> = call_args
+        let mut arg_seeds: Vec<SubfunctionArgSeed> = call_args
             .iter()
             .map(|arg| {
                 let metadata = arg
@@ -588,7 +901,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
             })
             .collect();
-        let args: Vec<VReg> = call_args.iter().map(|arg| arg.vreg).collect();
+        let mut args: Vec<VReg> = call_args.iter().map(|arg| arg.vreg).collect();
+        let aggregate_return_setup = aggregate_return_abi
+            .as_ref()
+            .map(|abi| self.prepare_aggregate_return_call_setup(&mut arg_seeds, &mut args, abi));
 
         let subfn = self.get_or_create_subfunction(decl_id, &arg_seeds)?;
         let return_seed = self
@@ -596,27 +912,88 @@ impl<'a> HirToMirLowering<'a> {
             .get(subfn.0 as usize)
             .cloned()
             .flatten();
-        let returned_arg_seed = if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
-            infer_subfunction_return_summaries(&self.subfunctions)
-                .get(&subfn)
-                .copied()
-        {
-            arg_seeds.get(idx).cloned().inspect(|seed| {
-                if let Some(arg_ty) = seed.type_hint.clone() {
-                    self.vreg_type_hints.insert(dst_vreg, arg_ty);
-                }
-            })
+        let returned_arg_seed = if aggregate_return_setup.is_none() {
+            if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
+                infer_subfunction_return_summaries(&self.subfunctions)
+                    .get(&subfn)
+                    .copied()
+            {
+                arg_seeds.get(idx).cloned().inspect(|seed| {
+                    if let Some(arg_ty) = seed.type_hint.clone() {
+                        self.vreg_type_hints.insert(dst_vreg, arg_ty);
+                    }
+                })
+            } else {
+                None
+            }
         } else {
             None
         };
+        let call_dst = if aggregate_return_setup.is_some() {
+            self.func.alloc_vreg()
+        } else {
+            dst_vreg
+        };
         self.emit(MirInst::CallSubfn {
-            dst: dst_vreg,
+            dst: call_dst,
             subfn,
             args,
         });
 
         self.reg_metadata.remove(&src_dst.get());
-        if let Some(seed) = returned_arg_seed {
+        if let Some(setup) = aggregate_return_setup {
+            match setup {
+                AggregateReturnCallSetup::Record { slot, ty } => {
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::StackSlot(slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        dst_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(ty.clone()),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    let meta = self.get_or_create_metadata(src_dst);
+                    meta.field_type = return_seed
+                        .as_ref()
+                        .and_then(|seed| seed.field_type.clone())
+                        .or(Some(ty));
+                    meta.annotated_semantics =
+                        return_seed.and_then(|seed| seed.annotated_semantics);
+                    meta.source_var = None;
+                }
+                AggregateReturnCallSetup::List { slot, max_len } => {
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::StackSlot(slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        dst_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::I64),
+                                len: max_len.saturating_add(1),
+                            }),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    let meta = self.get_or_create_metadata(src_dst);
+                    meta.list_buffer = Some((slot, max_len));
+                    meta.field_type = return_seed
+                        .as_ref()
+                        .and_then(|seed| seed.field_type.clone())
+                        .or(Some(MirType::Array {
+                            elem: Box::new(MirType::I64),
+                            len: max_len.saturating_add(1),
+                        }));
+                    meta.annotated_semantics =
+                        return_seed.and_then(|seed| seed.annotated_semantics);
+                    meta.source_var = None;
+                }
+            }
+        } else if let Some(seed) = returned_arg_seed {
             if let Some(meta) = seed.metadata {
                 self.reg_metadata.insert(src_dst.get(), meta);
             } else if let Some(arg_ty) = seed.type_hint {

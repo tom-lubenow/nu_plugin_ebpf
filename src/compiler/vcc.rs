@@ -745,7 +745,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
             address_space,
             pointee,
         } => {
-            let bounds = if matches!(address_space, AddressSpace::Map)
+            let bounds = if matches!(address_space, AddressSpace::Map | AddressSpace::Stack)
                 && !matches!(pointee.as_ref(), MirType::Unknown)
             {
                 let size = pointee.size();
@@ -763,7 +763,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
             };
             VccValueType::Ptr(VccPointerInfo {
                 space: match address_space {
-                    AddressSpace::Stack => VccAddrSpace::Unknown,
+                    AddressSpace::Stack => VccAddrSpace::Stack(StackSlotId(u32::MAX)),
                     AddressSpace::Kernel => VccAddrSpace::Kernel,
                     AddressSpace::User => VccAddrSpace::User,
                     AddressSpace::Packet => VccAddrSpace::Packet,

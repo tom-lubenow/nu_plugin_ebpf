@@ -28,6 +28,24 @@ impl VccVerifier {
                             .ok()
                             .and_then(typed_null_copy_type)
                             .unwrap_or(ty),
+                        VccValue::Reg(src_reg)
+                            if matches!(
+                                state.value_range(*src, ty),
+                                Some(VccRange { min: 0, max: 0 })
+                            ) =>
+                        {
+                            state
+                                .reg_type(*dst)
+                                .ok()
+                                .and_then(typed_null_copy_type)
+                                .unwrap_or_else(|| {
+                                    state
+                                        .reg_type(*src_reg)
+                                        .ok()
+                                        .and_then(typed_null_copy_type)
+                                        .unwrap_or(ty)
+                                })
+                        }
                         _ => ty,
                     };
                     let (copied_refinement, src_not_equal) = match src {

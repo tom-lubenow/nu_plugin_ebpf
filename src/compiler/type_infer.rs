@@ -350,8 +350,11 @@ impl<'a> TypeInference<'a> {
     }
 
     fn can_restore_layout_hint(hint: &MirType, inferred: &MirType) -> bool {
-        if matches!(hint, MirType::Unknown) || matches!(inferred, MirType::Unknown) {
+        if matches!(hint, MirType::Unknown) {
             return false;
+        }
+        if matches!(inferred, MirType::Unknown) {
+            return true;
         }
         HMType::from_mir_type(hint) == HMType::from_mir_type(inferred)
     }

@@ -80,6 +80,104 @@ fn test_verify_mir_helper_map_lookup_null_check_then_load_ok() {
 }
 
 #[test]
+fn test_verify_mir_zero_scalar_copy_into_typed_pointer_preserves_nullability_across_join() {
+    let (mut func, entry) = new_mir_function();
+    let true_block = func.alloc_block();
+    let false_block = func.alloc_block();
+    let join_block = func.alloc_block();
+    let load_block = func.alloc_block();
+    let done = func.alloc_block();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let flag = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let zero = func.alloc_vreg();
+    let joined = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.param_count = 1;
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::StoreSlot {
+        slot,
+        offset: 0,
+        val: MirValue::Const(1),
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: flag,
+        if_true: true_block,
+        if_false: false_block,
+    };
+
+    func.block_mut(true_block).instructions.push(MirInst::Copy {
+        dst: joined,
+        src: MirValue::VReg(ptr),
+    });
+    func.block_mut(true_block).terminator = MirInst::Jump { target: join_block };
+
+    func.block_mut(false_block)
+        .instructions
+        .push(MirInst::Copy {
+            dst: zero,
+            src: MirValue::Const(0),
+        });
+    func.block_mut(false_block)
+        .instructions
+        .push(MirInst::Copy {
+            dst: joined,
+            src: MirValue::VReg(zero),
+        });
+    func.block_mut(false_block).terminator = MirInst::Jump { target: join_block };
+
+    func.block_mut(join_block)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(joined),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(join_block).terminator = MirInst::Branch {
+        cond,
+        if_true: load_block,
+        if_false: done,
+    };
+
+    func.block_mut(load_block).instructions.push(MirInst::Load {
+        dst,
+        ptr: joined,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(load_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(flag, MirType::Bool);
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        joined,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("expected zero-copy maybe-null pointer join to preserve pointer typing");
+}
+
+#[test]
 fn test_verify_mir_typed_map_pointer_param_requires_null_check_before_load() {
     let (mut func, entry) = new_mir_function();
     let map_ptr = func.alloc_vreg();

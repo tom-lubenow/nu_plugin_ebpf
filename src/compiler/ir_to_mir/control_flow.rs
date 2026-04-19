@@ -67,6 +67,149 @@ impl<'a> HirToMirLowering<'a> {
         };
     }
 
+    fn return_seed_for_reg(
+        &self,
+        reg: RegId,
+        type_hint: Option<MirType>,
+    ) -> Option<SubfunctionReturnSeed> {
+        self.get_metadata(reg)
+            .map(|meta| SubfunctionReturnSeed {
+                type_hint: type_hint.clone(),
+                field_type: meta
+                    .field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(meta))
+                    .or_else(|| {
+                        type_hint
+                            .as_ref()
+                            .map(|ty| self.stored_generic_map_value_type(ty))
+                    }),
+                annotated_semantics: meta
+                    .annotated_semantics
+                    .clone()
+                    .or_else(|| Self::metadata_record_semantics(meta)),
+            })
+            .or_else(|| {
+                type_hint.clone().map(|ty| SubfunctionReturnSeed {
+                    type_hint: Some(ty.clone()),
+                    field_type: Some(self.stored_generic_map_value_type(&ty)),
+                    annotated_semantics: None,
+                })
+            })
+    }
+
+    fn lower_active_subfunction_aggregate_return(
+        &mut self,
+        reg: RegId,
+        src_vreg: VReg,
+        src_runtime_ty: Option<MirType>,
+        active_return: &ActiveSubfunctionAggregateReturn,
+    ) -> Result<(), CompileError> {
+        match active_return {
+            ActiveSubfunctionAggregateReturn::Record { ptr_vreg, ty } => {
+                let mut source_ptr = src_vreg;
+                let mut source_runtime_ty = src_runtime_ty;
+                if !matches!(
+                    source_runtime_ty,
+                    Some(MirType::Ptr {
+                        address_space: crate::compiler::mir::AddressSpace::Stack
+                            | crate::compiler::mir::AddressSpace::Map,
+                        ..
+                    })
+                ) {
+                    source_ptr = self.materialized_metadata_aggregate_vreg(reg, src_vreg)?;
+                    source_runtime_ty = self
+                        .vreg_type_hints
+                        .get(&source_ptr)
+                        .cloned()
+                        .or_else(|| self.typed_value_runtime_type(reg, source_ptr));
+                }
+
+                let Some(MirType::Ptr {
+                    pointee,
+                    address_space:
+                        crate::compiler::mir::AddressSpace::Stack
+                        | crate::compiler::mir::AddressSpace::Map,
+                }) = source_runtime_ty
+                else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "record-returning subfunction requires a materialized aggregate pointer return value".into(),
+                    ));
+                };
+                if pointee.as_ref() != ty {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record-returning subfunction cannot write {:?} into aggregate return slot {:?}",
+                        pointee, ty
+                    )));
+                }
+
+                self.emit_ptr_copy(*ptr_vreg, source_ptr, ty.size())?;
+            }
+            ActiveSubfunctionAggregateReturn::List { ptr_vreg, max_len } => {
+                let (source_ptr, source_max_len) = if let Some((slot, source_max_len)) =
+                    self.get_metadata(reg).and_then(|meta| meta.list_buffer)
+                {
+                    let source_ptr = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: source_ptr,
+                        src: MirValue::StackSlot(slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        source_ptr,
+                        MirType::Ptr {
+                            pointee: Box::new(MirType::Array {
+                                elem: Box::new(MirType::I64),
+                                len: source_max_len.saturating_add(1),
+                            }),
+                            address_space: crate::compiler::mir::AddressSpace::Stack,
+                        },
+                    );
+                    (source_ptr, source_max_len)
+                } else {
+                    let Some(MirType::Ptr {
+                        pointee,
+                        address_space:
+                            crate::compiler::mir::AddressSpace::Stack
+                            | crate::compiler::mir::AddressSpace::Map,
+                    }) = src_runtime_ty
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "list-returning subfunction requires a materialized list buffer return value".into(),
+                        ));
+                    };
+                    let MirType::Array { elem, len } = pointee.as_ref() else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "list-returning subfunction requires an array-backed list return value"
+                                .into(),
+                        ));
+                    };
+                    if !matches!(elem.as_ref(), MirType::I64) || *len == 0 {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "list-returning subfunction requires a numeric list return buffer"
+                                .into(),
+                        ));
+                    }
+                    (src_vreg, len - 1)
+                };
+
+                if source_max_len > *max_len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "list-returning subfunction cannot write list capacity {} into aggregate return slot {}",
+                        source_max_len, max_len
+                    )));
+                }
+
+                let source_size = 8 + (source_max_len * 8);
+                self.emit_ptr_copy_with_offsets(*ptr_vreg, 0, source_ptr, 0, source_size)?;
+                if source_max_len < *max_len {
+                    self.emit_ptr_zero(*ptr_vreg, source_size, (*max_len - source_max_len) * 8)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn returned_value_for_reg(
         &mut self,
         reg: RegId,
@@ -96,6 +239,17 @@ impl<'a> HirToMirLowering<'a> {
             .get(&src_vreg)
             .cloned()
             .or_else(|| self.typed_value_runtime_type(reg, src_vreg));
+        let seed = self.return_seed_for_reg(reg, src_runtime_ty.clone());
+
+        if let Some(active_return) = self.current_subfunction_aggregate_return.clone() {
+            self.lower_active_subfunction_aggregate_return(
+                reg,
+                src_vreg,
+                src_runtime_ty,
+                &active_return,
+            )?;
+            return Ok((MirValue::Const(0), seed));
+        }
 
         if self.func.name.is_some()
             && !matches!(src_runtime_ty, Some(MirType::Ptr { .. }))
@@ -113,32 +267,6 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let type_hint = src_runtime_ty;
-        let seed = self
-            .get_metadata(reg)
-            .map(|meta| SubfunctionReturnSeed {
-                type_hint: type_hint.clone(),
-                field_type: meta
-                    .field_type
-                    .clone()
-                    .or_else(|| Self::metadata_record_layout(meta))
-                    .or_else(|| {
-                        type_hint
-                            .as_ref()
-                            .map(|ty| self.stored_generic_map_value_type(ty))
-                    }),
-                annotated_semantics: meta
-                    .annotated_semantics
-                    .clone()
-                    .or_else(|| Self::metadata_record_semantics(meta)),
-            })
-            .or_else(|| {
-                type_hint.clone().map(|ty| SubfunctionReturnSeed {
-                    type_hint: Some(ty.clone()),
-                    field_type: Some(self.stored_generic_map_value_type(&ty)),
-                    annotated_semantics: None,
-                })
-            });
         Ok((MirValue::VReg(src_vreg), seed))
     }
 
