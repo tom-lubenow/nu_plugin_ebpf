@@ -604,9 +604,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach sock_ops: {e}")))?;
             }
             ProgramAttachKind::Tc => {
-                let ProgramSpec::Tc { target } = &spec else {
-                    unreachable!("tc attach kind must use tc program spec");
-                };
+                let target = spec
+                    .tc_target()
+                    .unwrap_or_else(|| unreachable!("tc attach kind must use tc program spec"));
                 let classifier: &mut SchedClassifier = prog.try_into().map_err(|e| {
                     LoadError::Load(format!("Failed to convert to SchedClassifier: {e}"))
                 })?;
@@ -628,9 +628,9 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
             }
             ProgramAttachKind::CgroupSkb => {
-                let ProgramSpec::CgroupSkb { target } = &spec else {
-                    unreachable!("cgroup_skb attach kind must use cgroup_skb program spec");
-                };
+                let target = spec.cgroup_skb_target().unwrap_or_else(|| {
+                    unreachable!("cgroup_skb attach kind must use cgroup_skb program spec")
+                });
                 let cgroup = std::fs::File::open(&target.cgroup_path).map_err(|e| {
                     if e.kind() == ErrorKind::PermissionDenied {
                         LoadError::PermissionDenied

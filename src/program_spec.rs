@@ -1558,6 +1558,20 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn tc_target(&self) -> Option<&TcTarget> {
+        match self {
+            ProgramSpec::Tc { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn cgroup_skb_target(&self) -> Option<&CgroupSkbTarget> {
+        match self {
+            ProgramSpec::CgroupSkb { target } => Some(target),
+            _ => None,
+        }
+    }
+
     pub(crate) fn struct_ops_value_type_name(&self) -> Option<&str> {
         match self {
             ProgramSpec::StructOps { value_type_name }
@@ -1813,6 +1827,9 @@ mod tests {
             ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("sk_lookup spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
+        let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
+        let cgroup_skb = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:egress")
+            .expect("cgroup_skb spec should parse");
         let cgroup_sock = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
             .expect("cgroup_sock spec should parse");
         let sk_msg = ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap")
@@ -1858,6 +1875,16 @@ mod tests {
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),
             Some("/dev/lirc0")
+        );
+        assert_eq!(
+            tc.tc_target().map(|target| target.interface.as_str()),
+            Some("lo")
+        );
+        assert_eq!(
+            cgroup_skb
+                .cgroup_skb_target()
+                .map(|target| target.cgroup_path.as_str()),
+            Some("/sys/fs/cgroup")
         );
         assert_eq!(
             struct_ops.struct_ops_value_type_name(),
