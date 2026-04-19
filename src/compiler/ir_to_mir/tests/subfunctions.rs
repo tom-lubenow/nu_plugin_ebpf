@@ -1682,8 +1682,12 @@ fn test_multiblock_user_function_returned_metadata_only_record_preserves_string_
     .expect("multiblock metadata-only record return should lower");
 
     assert!(
-        result.program.subfunctions.is_empty(),
-        "record-returning multiblock user function should inline until aggregate return shape inference works across merged control flow"
+        result.program.subfunctions.len() == 1,
+        "record-returning multiblock user function should lower as a BPF subfunction when all return paths agree on a simple record ABI"
+    );
+    assert_eq!(
+        result.program.subfunctions[0].param_count, 2,
+        "multiblock record-returning subfunction should receive the user argument plus the hidden aggregate out parameter"
     );
     assert!(
         result
@@ -1702,8 +1706,8 @@ fn test_multiblock_user_function_returned_metadata_only_record_preserves_string_
             .blocks
             .iter()
             .flat_map(|block| block.instructions.iter())
-            .all(|inst| !matches!(inst, MirInst::CallSubfn { .. })),
-        "record-returning multiblock user function should not emit a BPF subfunction call yet"
+            .any(|inst| matches!(inst, MirInst::CallSubfn { .. })),
+        "record-returning multiblock user function should emit a BPF subfunction call"
     );
 
     optimize_with_ssa_hints(

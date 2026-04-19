@@ -764,22 +764,22 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })
         });
-        let simple_record_builder = hir.blocks.len() == 1
-            && hir.blocks.iter().all(|block| {
-                block.stmts.iter().all(|stmt| {
-                    matches!(
-                        stmt,
-                        HirStmt::LoadLiteral { .. }
-                            | HirStmt::LoadValue { .. }
-                            | HirStmt::LoadVariable { .. }
-                            | HirStmt::Move { .. }
-                            | HirStmt::Clone { .. }
-                            | HirStmt::RecordInsert { .. }
-                            | HirStmt::Drain { .. }
-                            | HirStmt::Drop { .. }
-                    )
-                })
-            });
+        let simple_record_builder = hir.blocks.iter().all(|block| {
+            block.stmts.iter().all(|stmt| {
+                matches!(
+                    stmt,
+                    HirStmt::LoadLiteral { .. }
+                        | HirStmt::LoadValue { .. }
+                        | HirStmt::LoadVariable { .. }
+                        | HirStmt::Move { .. }
+                        | HirStmt::Clone { .. }
+                        | HirStmt::RecordInsert { .. }
+                        | HirStmt::Drain { .. }
+                        | HirStmt::Drop { .. }
+                        | HirStmt::DrainIfEnd { .. }
+                )
+            })
+        });
 
         if simple_list_builder && let Some(hints) = self.decl_type_hints.get(&decl_id) {
             let return_tys: Vec<MirType> = hir
