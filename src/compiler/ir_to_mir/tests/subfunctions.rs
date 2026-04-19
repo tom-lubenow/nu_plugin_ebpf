@@ -1977,8 +1977,8 @@ fn test_multiblock_user_function_list_return_preserves_list_semantics() {
     .expect("multiblock list return should lower");
 
     assert!(
-        result.program.subfunctions.is_empty(),
-        "multiblock list-returning user function should inline until aggregate return shape inference works across merged control flow"
+        result.program.subfunctions.len() == 1,
+        "multiblock list-returning user function should lower as a BPF subfunction when all return paths agree on a simple list ABI"
     );
     assert!(
         result
@@ -1987,8 +1987,8 @@ fn test_multiblock_user_function_list_return_preserves_list_semantics() {
             .blocks
             .iter()
             .flat_map(|block| block.instructions.iter())
-            .all(|inst| !matches!(inst, MirInst::CallSubfn { .. })),
-        "multiblock list-returning user function should not emit a BPF subfunction call yet"
+            .any(|inst| matches!(inst, MirInst::CallSubfn { .. })),
+        "multiblock list-returning user function should emit a BPF subfunction call"
     );
 
     optimize_with_ssa_hints(
@@ -1998,6 +1998,21 @@ fn test_multiblock_user_function_list_return_preserves_list_semantics() {
         &result.type_hints.main_stack_slots,
         &result.type_hints.generic_map_value_types,
     );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
 
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("multiblock list return should compile after caller projection");

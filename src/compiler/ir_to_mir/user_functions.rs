@@ -640,23 +640,21 @@ impl<'a> HirToMirLowering<'a> {
         decl_id: DeclId,
         hir: &HirFunction,
     ) -> Option<SubfunctionAggregateReturnAbi> {
-        if hir.blocks.len() != 1 {
-            return None;
-        }
-        let block = hir.blocks.first()?;
-        let simple_list_builder = block.stmts.iter().all(|stmt| {
-            matches!(
-                stmt,
-                HirStmt::LoadLiteral { .. }
-                    | HirStmt::LoadValue { .. }
-                    | HirStmt::LoadVariable { .. }
-                    | HirStmt::Move { .. }
-                    | HirStmt::Clone { .. }
-                    | HirStmt::ListPush { .. }
-                    | HirStmt::Drain { .. }
-                    | HirStmt::Drop { .. }
-                    | HirStmt::DrainIfEnd { .. }
-            )
+        let simple_list_builder = hir.blocks.iter().all(|block| {
+            block.stmts.iter().all(|stmt| {
+                matches!(
+                    stmt,
+                    HirStmt::LoadLiteral { .. }
+                        | HirStmt::LoadValue { .. }
+                        | HirStmt::LoadVariable { .. }
+                        | HirStmt::Move { .. }
+                        | HirStmt::Clone { .. }
+                        | HirStmt::ListPush { .. }
+                        | HirStmt::Drain { .. }
+                        | HirStmt::Drop { .. }
+                        | HirStmt::DrainIfEnd { .. }
+                )
+            })
         });
         if !simple_list_builder {
             return None;
