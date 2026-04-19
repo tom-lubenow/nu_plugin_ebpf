@@ -618,6 +618,117 @@ fn test_dynptr_copy_rejects_initialized_destination() {
 }
 
 #[test]
+fn test_dynptr_initialized_slots_join_requires_all_paths() {
+    let slot = StackSlotId(7);
+    let mut initialized = VccState::with_seed(HashMap::new());
+    initialized.initialize_dynptr_slot(slot);
+    let uninitialized = VccState::with_seed(HashMap::new());
+
+    let merged = initialized.merge_with(&uninitialized);
+    assert!(
+        !merged.is_dynptr_slot_initialized(slot),
+        "dynptr slot initialization should require all incoming paths"
+    );
+
+    let merged_initialized = initialized.merge_with(&initialized);
+    assert!(
+        merged_initialized.is_dynptr_slot_initialized(slot),
+        "dynptr slot initialization should be preserved when all paths initialize"
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_slots_join_requires_all_paths() {
+    let slot = StackSlotId(11);
+    let mut initialized = VccState::with_seed(HashMap::new());
+    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq", None);
+    let uninitialized = VccState::with_seed(HashMap::new());
+
+    let merged = initialized.merge_with(&uninitialized);
+    assert!(
+        !merged.has_unknown_stack_object_slot(slot, "bpf_wq", None),
+        "unknown stack-object slot initialization should require all incoming paths"
+    );
+
+    let merged_initialized = initialized.merge_with(&initialized);
+    assert!(
+        merged_initialized.has_unknown_stack_object_slot(slot, "bpf_wq", None),
+        "unknown stack-object slot initialization should be preserved when all paths initialize"
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_slots_join_tracks_maybe_live_for_exit_checks() {
+    let slot = StackSlotId(13);
+    let mut initialized = VccState::with_seed(HashMap::new());
+    initialized.initialize_unknown_stack_object_slot(slot, "bpf_wq", None);
+    let uninitialized = VccState::with_seed(HashMap::new());
+
+    let merged = initialized.merge_with(&uninitialized);
+    assert!(
+        !merged.has_unknown_stack_object_slot(slot, "bpf_wq", None),
+        "unknown stack-object use/release should still require all incoming paths"
+    );
+    assert!(
+        merged.first_live_unknown_stack_object().is_some(),
+        "mixed-path unknown stack-object state should still be considered live for exit checks"
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_slot_live_presence() {
+    let slot = StackSlotId(17);
+    let mut state = VccState::with_seed(HashMap::new());
+    assert!(
+        !state.has_live_unknown_stack_object_slot(slot),
+        "slot should start with no live unknown stack object state"
+    );
+
+    state.initialize_unknown_stack_object_slot(slot, "bpf_wq", None);
+    assert!(
+        state.has_live_unknown_stack_object_slot(slot),
+        "initialized slot should be considered live"
+    );
+
+    assert!(
+        state.release_unknown_stack_object_slot(slot, "bpf_wq", None),
+        "release should succeed for initialized slot"
+    );
+    assert!(
+        !state.has_live_unknown_stack_object_slot(slot),
+        "released slot should no longer be considered live"
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_slots_distinguish_type_ids() {
+    let slot = StackSlotId(19);
+    let mut state = VccState::with_seed(HashMap::new());
+    state.initialize_unknown_stack_object_slot(slot, "bpf_wq", Some(11));
+
+    assert!(
+        state.has_unknown_stack_object_slot(slot, "bpf_wq", Some(11)),
+        "matching type id should resolve initialized state"
+    );
+    assert!(
+        !state.has_unknown_stack_object_slot(slot, "bpf_wq", Some(12)),
+        "different type id should not alias initialized state"
+    );
+    assert!(
+        !state.has_unknown_stack_object_slot(slot, "bpf_wq", None),
+        "missing type id should not alias typed initialized state"
+    );
+    assert!(
+        !state.release_unknown_stack_object_slot(slot, "bpf_wq", Some(12)),
+        "release should reject mismatched type id"
+    );
+    assert!(
+        state.release_unknown_stack_object_slot(slot, "bpf_wq", Some(11)),
+        "release should succeed for matching type id"
+    );
+}
+
+#[test]
 fn test_unknown_stack_object_destroy_requires_initialized() {
     let mut func = VccFunction::new();
     let entry = func.entry;
