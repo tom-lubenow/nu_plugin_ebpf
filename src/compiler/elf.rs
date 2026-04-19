@@ -962,8 +962,6 @@ pub struct ProbeContext {
     target: String,
     /// Parsed program model for attach-kind-sensitive policies.
     program_spec: Option<ProgramSpec>,
-    /// Optional kernel BTF container type for `struct_ops` callbacks.
-    struct_ops_value_type_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

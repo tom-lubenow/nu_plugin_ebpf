@@ -73,7 +73,8 @@ impl ProbeContext {
 
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn struct_ops_value_type_name(&self) -> Option<&str> {
-        self.struct_ops_value_type_name.as_deref()
+        self.parsed_program_spec()
+            .and_then(ProgramSpec::struct_ops_value_type_name)
     }
 
     pub(crate) fn parsed_program_spec(&self) -> Option<&ProgramSpec> {
@@ -195,7 +196,7 @@ impl ProbeContext {
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {
-        self.struct_ops_value_type_name.as_deref().ok_or_else(|| {
+        self.struct_ops_value_type_name().ok_or_else(|| {
             format!(
                 "missing struct_ops value type for callback '{}'",
                 self.target
@@ -205,13 +206,10 @@ impl ProbeContext {
 
     fn from_program_spec_parts(program_spec: ProgramSpec, target: String) -> Self {
         let probe_type = program_spec.program_type();
-        let struct_ops_value_type_name =
-            program_spec.struct_ops_value_type_name().map(str::to_owned);
         Self {
             probe_type,
             target,
             program_spec: Some(program_spec),
-            struct_ops_value_type_name,
         }
     }
 
@@ -230,7 +228,6 @@ impl ProbeContext {
             probe_type,
             program_spec: None,
             target,
-            struct_ops_value_type_name: None,
         }
     }
 
@@ -262,7 +259,6 @@ impl ProbeContext {
             target: target.clone(),
             program_spec: ProgramSpec::from_program_type_target(EbpfProgramType::Kprobe, &target)
                 .ok(),
-            struct_ops_value_type_name: None,
         }
     }
 
@@ -314,9 +310,7 @@ impl ProbeContext {
         match self.program_type().btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => format!(
                 "struct_ops {}.{}",
-                self.struct_ops_value_type_name
-                    .as_deref()
-                    .unwrap_or("<unknown>"),
+                self.struct_ops_value_type_name().unwrap_or("<unknown>"),
                 self.target
             ),
             Some(ProgramBtfCallableSurface::TpBtf) => format!("tp_btf:{}", self.target),
