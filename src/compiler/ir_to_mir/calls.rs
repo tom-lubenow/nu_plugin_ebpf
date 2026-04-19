@@ -100,6 +100,7 @@ impl<'a> HirToMirLowering<'a> {
                     dst: dst_vreg,
                     src: MirValue::Const(0),
                 });
+                self.reset_call_result_metadata(src_dst);
             }
 
             "count" => {
@@ -183,6 +184,7 @@ impl<'a> HirToMirLowering<'a> {
                     dst: dst_vreg,
                     src: MirValue::Const(0),
                 });
+                self.reset_call_result_metadata(src_dst);
             }
 
             "start-timer" => {
@@ -193,6 +195,7 @@ impl<'a> HirToMirLowering<'a> {
                     dst: dst_vreg,
                     src: MirValue::Const(0),
                 });
+                self.reset_call_result_metadata(src_dst);
             }
 
             "stop-timer" => {
