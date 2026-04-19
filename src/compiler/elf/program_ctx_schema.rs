@@ -9,136 +9,6 @@ use crate::compiler::ctx_field_schema::{
 };
 use crate::program_spec::ProgramSpec;
 
-type ProgramTypeLayoutSurfaceSpec<T> = (&'static [EbpfProgramType], T);
-
-const XDP_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
-const SOCKET_FILTER_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SocketFilter];
-const TC_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
-const CGROUP_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSkb];
-const SK_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser];
-const SK_BUFF_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const SK_BUFF_SOCKET_COMMON_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const CGROUP_SOCK_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSock];
-const CGROUP_SOCK_ADDR_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSockAddr];
-const CGROUP_SOCKOPT_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSockopt];
-const SK_LOOKUP_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkLookup];
-const SK_MSG_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkMsg];
-const SOCK_OPS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SockOps];
-const SOCKET_COOKIE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSock,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-    EbpfProgramType::SockOps,
-];
-const SOCKET_UID_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
-];
-const NETNS_COOKIE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::SocketFilter,
-    EbpfProgramType::Tc,
-    EbpfProgramType::CgroupSkb,
-    EbpfProgramType::CgroupSock,
-    EbpfProgramType::CgroupSockopt,
-    EbpfProgramType::CgroupSockAddr,
-    EbpfProgramType::SkMsg,
-    EbpfProgramType::SockOps,
-];
-const LOOKUP_COOKIE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkLookup];
-
-const DATA_META_CONTEXT_KIND_SURFACES: &[ProgramTypeLayoutSurfaceSpec<PacketContextKind>] = &[
-    (XDP_PROGRAMS, PacketContextKind::XdpMd),
-    (TC_PROGRAMS, PacketContextKind::SkBuff),
-];
-const SOCKET_FAMILY_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<
-    SocketContextLayout,
->] = &[
-    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-    (CGROUP_SOCK_ADDR_PROGRAMS, SocketContextLayout::SockAddr),
-    (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
-    (SK_MSG_PROGRAMS, SocketContextLayout::SkMsg),
-    (SK_BUFF_SOCKET_COMMON_PROGRAMS, SocketContextLayout::SkBuff),
-    (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
-];
-const SOCKET_TUPLE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] =
-    &[
-        (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-        (CGROUP_SOCK_ADDR_PROGRAMS, SocketContextLayout::SockAddr),
-        (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
-        (SK_MSG_PROGRAMS, SocketContextLayout::SkMsg),
-        (SK_BUFF_SOCKET_COMMON_PROGRAMS, SocketContextLayout::SkBuff),
-        (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
-    ];
-const SOCK_TYPE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] = &[
-    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-    (CGROUP_SOCK_ADDR_PROGRAMS, SocketContextLayout::SockAddr),
-];
-const PROTOCOL_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] = &[
-    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-    (CGROUP_SOCK_ADDR_PROGRAMS, SocketContextLayout::SockAddr),
-    (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
-];
-const SOCKET_REF_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] = &[
-    (SK_BUFF_PROGRAMS, SocketContextLayout::SkBuff),
-    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-    (CGROUP_SOCK_ADDR_PROGRAMS, SocketContextLayout::SockAddr),
-    (CGROUP_SOCKOPT_PROGRAMS, SocketContextLayout::CgroupSockopt),
-    (SK_LOOKUP_PROGRAMS, SocketContextLayout::SkLookup),
-    (SK_MSG_PROGRAMS, SocketContextLayout::SkMsg),
-    (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
-];
-const INGRESS_IFINDEX_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<
-    IngressIfindexContextLayout,
->] = &[
-    (XDP_PROGRAMS, IngressIfindexContextLayout::XdpMd),
-    (SK_BUFF_PROGRAMS, IngressIfindexContextLayout::SkBuff),
-    (SK_LOOKUP_PROGRAMS, IngressIfindexContextLayout::SkLookup),
-];
-const SOCK_MARK_PRIORITY_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<
-    SocketContextLayout,
->] = &[
-    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-    (SK_BUFF_PROGRAMS, SocketContextLayout::SkBuff),
-];
-const SOCK_STATE_CONTEXT_LAYOUT_SURFACES: &[ProgramTypeLayoutSurfaceSpec<SocketContextLayout>] = &[
-    (CGROUP_SOCK_PROGRAMS, SocketContextLayout::CgroupSock),
-    (SOCK_OPS_PROGRAMS, SocketContextLayout::SockOps),
-];
-
-fn find_program_type_layout_surface<T: Clone>(
-    program_type: EbpfProgramType,
-    surfaces: &[ProgramTypeLayoutSurfaceSpec<T>],
-) -> Option<T> {
-    surfaces
-        .iter()
-        .find(|(allowed_programs, _)| allowed_programs.contains(&program_type))
-        .map(|(_, layout)| layout.clone())
-}
-
-fn supports_program_type_surface(
-    program_type: EbpfProgramType,
-    allowed_programs: &[EbpfProgramType],
-) -> bool {
-    allowed_programs.contains(&program_type)
-}
-
 fn context_family_ctx_field_load_guard(
     context_family: ProgramContextFamily,
     field: &CtxField,
@@ -192,7 +62,11 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {
-        find_program_type_layout_surface(*self, DATA_META_CONTEXT_KIND_SURFACES)
+        match self {
+            EbpfProgramType::Xdp => Some(PacketContextKind::XdpMd),
+            EbpfProgramType::Tc => Some(PacketContextKind::SkBuff),
+            _ => None,
+        }
     }
 
     pub fn supports_packet_len_ctx_field(&self) -> bool {
@@ -212,35 +86,76 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, SOCKET_FAMILY_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            EbpfProgramType::CgroupSkb | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser => {
+                Some(SocketContextLayout::SkBuff)
+            }
+            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
+            _ => None,
+        }
     }
 
     pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, SOCKET_TUPLE_CONTEXT_LAYOUT_SURFACES)
+        self.socket_family_context_layout()
     }
 
     pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, SOCK_TYPE_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            _ => None,
+        }
     }
 
     pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, PROTOCOL_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            _ => None,
+        }
     }
 
     pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, SOCKET_REF_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            _ if self.supports_skb_ctx_fields() => Some(SocketContextLayout::SkBuff),
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
+            EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),
+            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
+            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
+            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
+            _ => None,
+        }
     }
 
     pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
-        find_program_type_layout_surface(*self, INGRESS_IFINDEX_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            EbpfProgramType::Xdp => Some(IngressIfindexContextLayout::XdpMd),
+            EbpfProgramType::SkLookup => Some(IngressIfindexContextLayout::SkLookup),
+            _ if self.supports_skb_ctx_fields() => Some(IngressIfindexContextLayout::SkBuff),
+            _ => None,
+        }
     }
 
     pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, SOCK_MARK_PRIORITY_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            _ if self.supports_skb_ctx_fields() => Some(SocketContextLayout::SkBuff),
+            _ => None,
+        }
     }
 
     pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
-        find_program_type_layout_surface(*self, SOCK_STATE_CONTEXT_LAYOUT_SURFACES)
+        match self {
+            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
+            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
+            _ => None,
+        }
     }
 
     pub fn supports_ingress_ifindex_ctx_field(&self) -> bool {
@@ -260,19 +175,19 @@ impl EbpfProgramType {
     }
 
     pub fn supports_socket_filter_ctx_surface(&self) -> bool {
-        supports_program_type_surface(*self, SOCKET_FILTER_PROGRAMS)
+        matches!(self, EbpfProgramType::SocketFilter)
     }
 
     pub fn supports_tc_ctx_surface(&self) -> bool {
-        supports_program_type_surface(*self, TC_PROGRAMS)
+        matches!(self, EbpfProgramType::Tc)
     }
 
     pub fn supports_cgroup_skb_ctx_surface(&self) -> bool {
-        supports_program_type_surface(*self, CGROUP_SKB_PROGRAMS)
+        matches!(self, EbpfProgramType::CgroupSkb)
     }
 
     pub fn supports_sk_skb_ctx_surface(&self) -> bool {
-        supports_program_type_surface(*self, SK_SKB_PROGRAMS)
+        matches!(self, EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser)
     }
 
     pub fn supports_socket_ref_ctx_field(&self) -> bool {
@@ -312,19 +227,39 @@ impl EbpfProgramType {
     }
 
     pub fn supports_socket_cookie_ctx_field(&self) -> bool {
-        supports_program_type_surface(*self, SOCKET_COOKIE_PROGRAMS)
+        matches!(
+            self,
+            EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SkSkb
+                | EbpfProgramType::SkSkbParser
+                | EbpfProgramType::SockOps
+        )
     }
 
     pub fn supports_socket_uid_ctx_field(&self) -> bool {
-        supports_program_type_surface(*self, SOCKET_UID_PROGRAMS)
+        self.supports_skb_ctx_fields()
     }
 
     pub fn supports_netns_cookie_ctx_field(&self) -> bool {
-        supports_program_type_surface(*self, NETNS_COOKIE_PROGRAMS)
+        matches!(
+            self,
+            EbpfProgramType::SocketFilter
+                | EbpfProgramType::Tc
+                | EbpfProgramType::CgroupSkb
+                | EbpfProgramType::CgroupSock
+                | EbpfProgramType::CgroupSockopt
+                | EbpfProgramType::CgroupSockAddr
+                | EbpfProgramType::SkMsg
+                | EbpfProgramType::SockOps
+        )
     }
 
     pub fn supports_lookup_cookie_ctx_field(&self) -> bool {
-        supports_program_type_surface(*self, LOOKUP_COOKIE_PROGRAMS)
+        matches!(self, EbpfProgramType::SkLookup)
     }
 
     pub fn supports_cgroup_sock_ctx_fields(&self) -> bool {

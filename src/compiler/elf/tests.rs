@@ -509,6 +509,19 @@ fn test_program_type_sock_mark_priority_layouts_follow_program_model() {
 }
 
 #[test]
+fn test_program_type_sock_state_layouts_follow_program_model() {
+    assert_eq!(
+        EbpfProgramType::CgroupSock.sock_state_context_layout(),
+        Some(SocketContextLayout::CgroupSock)
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.sock_state_context_layout(),
+        Some(SocketContextLayout::SockOps)
+    );
+    assert_eq!(EbpfProgramType::SkMsg.sock_state_context_layout(), None);
+}
+
+#[test]
 fn test_program_type_metadata_for_cgroup_device() {
     let info = EbpfProgramType::CgroupDevice.info();
     assert_eq!(info.canonical_prefix, "cgroup_device");
@@ -893,6 +906,24 @@ fn test_program_type_skb_surface_selectors_follow_program_model() {
     assert!(EbpfProgramType::SkSkb.supports_sk_skb_ctx_surface());
     assert!(EbpfProgramType::SkSkbParser.supports_sk_skb_ctx_surface());
     assert!(!EbpfProgramType::SocketFilter.supports_sk_skb_ctx_surface());
+}
+
+#[test]
+fn test_program_type_helper_backed_cookie_field_surfaces_follow_program_model() {
+    assert!(EbpfProgramType::SocketFilter.supports_socket_cookie_ctx_field());
+    assert!(EbpfProgramType::CgroupSock.supports_socket_cookie_ctx_field());
+    assert!(!EbpfProgramType::SkLookup.supports_socket_cookie_ctx_field());
+
+    assert!(EbpfProgramType::SocketFilter.supports_socket_uid_ctx_field());
+    assert!(EbpfProgramType::SkSkbParser.supports_socket_uid_ctx_field());
+    assert!(!EbpfProgramType::SockOps.supports_socket_uid_ctx_field());
+
+    assert!(EbpfProgramType::SkMsg.supports_netns_cookie_ctx_field());
+    assert!(EbpfProgramType::CgroupSockopt.supports_netns_cookie_ctx_field());
+    assert!(!EbpfProgramType::SkLookup.supports_netns_cookie_ctx_field());
+
+    assert!(EbpfProgramType::SkLookup.supports_lookup_cookie_ctx_field());
+    assert!(!EbpfProgramType::Tc.supports_lookup_cookie_ctx_field());
 }
 
 #[test]
