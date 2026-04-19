@@ -880,6 +880,22 @@ fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
 }
 
 #[test]
+fn test_program_type_skb_surface_selectors_follow_program_model() {
+    assert!(EbpfProgramType::SocketFilter.supports_socket_filter_ctx_surface());
+    assert!(!EbpfProgramType::Tc.supports_socket_filter_ctx_surface());
+
+    assert!(EbpfProgramType::Tc.supports_tc_ctx_surface());
+    assert!(!EbpfProgramType::CgroupSkb.supports_tc_ctx_surface());
+
+    assert!(EbpfProgramType::CgroupSkb.supports_cgroup_skb_ctx_surface());
+    assert!(!EbpfProgramType::SocketFilter.supports_cgroup_skb_ctx_surface());
+
+    assert!(EbpfProgramType::SkSkb.supports_sk_skb_ctx_surface());
+    assert!(EbpfProgramType::SkSkbParser.supports_sk_skb_ctx_surface());
+    assert!(!EbpfProgramType::SocketFilter.supports_sk_skb_ctx_surface());
+}
+
+#[test]
 fn test_program_type_raw_context_pointer_aliases_follow_context_family() {
     assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Context));
     assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Socket));

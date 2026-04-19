@@ -12,7 +12,10 @@ use crate::program_spec::ProgramSpec;
 type ProgramTypeLayoutSurfaceSpec<T> = (&'static [EbpfProgramType], T);
 
 const XDP_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
+const SOCKET_FILTER_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SocketFilter];
 const TC_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
+const CGROUP_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSkb];
+const SK_SKB_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser];
 const SK_BUFF_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::Tc,
@@ -254,6 +257,22 @@ impl EbpfProgramType {
 
     pub fn supports_skb_ctx_fields(&self) -> bool {
         matches!(self.context_family(), ProgramContextFamily::SkBuffPacket)
+    }
+
+    pub fn supports_socket_filter_ctx_surface(&self) -> bool {
+        supports_program_type_surface(*self, SOCKET_FILTER_PROGRAMS)
+    }
+
+    pub fn supports_tc_ctx_surface(&self) -> bool {
+        supports_program_type_surface(*self, TC_PROGRAMS)
+    }
+
+    pub fn supports_cgroup_skb_ctx_surface(&self) -> bool {
+        supports_program_type_surface(*self, CGROUP_SKB_PROGRAMS)
+    }
+
+    pub fn supports_sk_skb_ctx_surface(&self) -> bool {
+        supports_program_type_surface(*self, SK_SKB_PROGRAMS)
     }
 
     pub fn supports_socket_ref_ctx_field(&self) -> bool {

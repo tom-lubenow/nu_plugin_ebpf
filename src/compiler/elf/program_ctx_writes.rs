@@ -317,15 +317,10 @@ impl ContextWriteSurfaceSpec {
 impl ProgramCtxWriteSurfaceFamilyRequirement {
     fn matches_spec(&self, spec: &ProgramSpec) -> bool {
         match self {
-            Self::SocketFilter => matches!(spec.program_type(), EbpfProgramType::SocketFilter),
-            Self::Tc => matches!(spec.program_type(), EbpfProgramType::Tc),
-            Self::SkSkb => matches!(
-                spec.program_type(),
-                EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
-            ),
-            Self::CgroupSkb => {
-                matches!(spec.attach_shape(), ProgramAttachShape::CgroupSkb { .. })
-            }
+            Self::SocketFilter => spec.program_type().supports_socket_filter_ctx_surface(),
+            Self::Tc => spec.program_type().supports_tc_ctx_surface(),
+            Self::SkSkb => spec.program_type().supports_sk_skb_ctx_surface(),
+            Self::CgroupSkb => spec.program_type().supports_cgroup_skb_ctx_surface(),
             Self::CgroupSock => {
                 matches!(spec.attach_shape(), ProgramAttachShape::CgroupSock { .. })
             }
