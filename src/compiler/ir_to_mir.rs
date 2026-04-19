@@ -219,6 +219,21 @@ struct SubfunctionArgSeed {
     metadata: Option<RegMetadata>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SubfunctionReturnSeed {
+    type_hint: Option<MirType>,
+    field_type: Option<MirType>,
+    annotated_semantics: Option<AnnotatedValueSemantics>,
+}
+
+#[derive(Debug, Clone, Default)]
+enum CurrentReturnSeedState {
+    #[default]
+    Unset,
+    Known(Option<SubfunctionReturnSeed>),
+    Conflict,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SubfunctionSpecializationKey {
     decl_id: DeclId,
@@ -315,6 +330,8 @@ pub struct HirToMirLowering<'a> {
     subfunction_hints: Vec<HashMap<VReg, MirType>>,
     /// Subfunction stack-slot pointee type hints (aligned with subfunctions vec)
     subfunction_stack_slot_hints: Vec<HashMap<StackSlotId, MirType>>,
+    /// Reduced return summaries for subfunction specializations (aligned with subfunctions vec)
+    subfunction_return_seeds: Vec<Option<SubfunctionReturnSeed>>,
     /// Subfunctions currently being lowered (recursion guard)
     subfunction_in_progress: HashSet<DeclId>,
     /// Generated subfunctions
@@ -353,6 +370,8 @@ pub struct HirToMirLowering<'a> {
     /// Reserved for future BPF-to-BPF subfunction support
     #[allow(dead_code)]
     call_counts: HashMap<DeclId, usize>,
+    /// Return seed summary for the function currently being lowered.
+    current_return_seed_state: CurrentReturnSeedState,
 }
 
 impl<'a> HirToMirLowering<'a> {
@@ -421,6 +440,7 @@ impl<'a> HirToMirLowering<'a> {
             subfunction_params: HashMap::new(),
             subfunction_hints: Vec::new(),
             subfunction_stack_slot_hints: Vec::new(),
+            subfunction_return_seeds: Vec::new(),
             subfunction_in_progress: HashSet::new(),
             subfunctions: Vec::new(),
             readonly_globals: Vec::new(),
@@ -437,6 +457,7 @@ impl<'a> HirToMirLowering<'a> {
             readonly_global_counter: 0,
             subfunction_registry: HashMap::new(),
             call_counts: HashMap::new(),
+            current_return_seed_state: CurrentReturnSeedState::Unset,
         }
     }
 

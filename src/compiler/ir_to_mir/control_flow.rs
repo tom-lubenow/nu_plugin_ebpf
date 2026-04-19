@@ -55,9 +55,24 @@ impl<'a> HirToMirLowering<'a> {
         program_type.return_action_alias(&alias)
     }
 
-    fn return_value_for_reg(&mut self, reg: RegId) -> MirValue {
+    fn note_return_seed(&mut self, seed: Option<SubfunctionReturnSeed>) {
+        self.current_return_seed_state = match &self.current_return_seed_state {
+            CurrentReturnSeedState::Unset => CurrentReturnSeedState::Known(seed),
+            CurrentReturnSeedState::Known(existing) if *existing == seed => {
+                CurrentReturnSeedState::Known(seed)
+            }
+            CurrentReturnSeedState::Known(_) | CurrentReturnSeedState::Conflict => {
+                CurrentReturnSeedState::Conflict
+            }
+        };
+    }
+
+    fn returned_value_for_reg(
+        &mut self,
+        reg: RegId,
+    ) -> Result<(MirValue, Option<SubfunctionReturnSeed>), CompileError> {
         if let Some(alias) = self.action_alias_return_value(reg) {
-            return match alias {
+            let value = match alias {
                 ProgramReturnAlias::Const(value) => MirValue::Const(value),
                 ProgramReturnAlias::PacketLen => {
                     let dst = self.func.alloc_vreg();
@@ -69,28 +84,81 @@ impl<'a> HirToMirLowering<'a> {
                     MirValue::VReg(dst)
                 }
             };
+            return Ok((value, None));
         }
-        self.reg_map
-            .get(&reg.get())
-            .copied()
-            .map(MirValue::VReg)
-            .unwrap_or(MirValue::Const(0))
+
+        let Some(src_vreg) = self.reg_map.get(&reg.get()).copied() else {
+            return Ok((MirValue::Const(0), None));
+        };
+
+        let src_runtime_ty = self
+            .vreg_type_hints
+            .get(&src_vreg)
+            .cloned()
+            .or_else(|| self.typed_value_runtime_type(reg, src_vreg));
+
+        if self.func.name.is_some()
+            && !matches!(src_runtime_ty, Some(MirType::Ptr { .. }))
+            && let Some(src_meta) = self.get_metadata(reg).cloned()
+            && let Some((materialized_vreg, materialized_meta)) =
+                self.materialize_metadata_record_value(&src_meta)?
+        {
+            return Ok((
+                MirValue::VReg(materialized_vreg),
+                Some(SubfunctionReturnSeed {
+                    type_hint: self.vreg_type_hints.get(&materialized_vreg).cloned(),
+                    field_type: materialized_meta.field_type,
+                    annotated_semantics: materialized_meta.annotated_semantics,
+                }),
+            ));
+        }
+
+        let type_hint = src_runtime_ty;
+        let seed = self
+            .get_metadata(reg)
+            .map(|meta| SubfunctionReturnSeed {
+                type_hint: type_hint.clone(),
+                field_type: meta
+                    .field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(meta))
+                    .or_else(|| {
+                        type_hint
+                            .as_ref()
+                            .map(|ty| self.stored_generic_map_value_type(ty))
+                    }),
+                annotated_semantics: meta
+                    .annotated_semantics
+                    .clone()
+                    .or_else(|| Self::metadata_record_semantics(meta)),
+            })
+            .or_else(|| {
+                type_hint.clone().map(|ty| SubfunctionReturnSeed {
+                    type_hint: Some(ty.clone()),
+                    field_type: Some(self.stored_generic_map_value_type(&ty)),
+                    annotated_semantics: None,
+                })
+            });
+        Ok((MirValue::VReg(src_vreg), seed))
     }
 
-    fn lower_cleanup_return_edge(&mut self, src: RegId) -> BlockId {
+    fn lower_cleanup_return_edge(&mut self, src: RegId) -> Result<BlockId, CompileError> {
         let return_block = self.func.alloc_block();
         let old_block = self.current_block;
         self.current_block = return_block;
-        let val = Some(self.return_value_for_reg(src));
+        let (value, seed) = self.returned_value_for_reg(src)?;
+        self.note_return_seed(seed);
+        let val = Some(value);
         self.terminate(MirInst::Return { val });
         self.current_block = old_block;
-        return_block
+        Ok(return_block)
     }
 
     fn lower_constant_return_edge(&mut self, value: MirValue) -> BlockId {
         let return_block = self.func.alloc_block();
         let old_block = self.current_block;
         self.current_block = return_block;
+        self.note_return_seed(None);
         self.terminate(MirInst::Return { val: Some(value) });
         self.current_block = old_block;
         return_block
@@ -125,7 +193,9 @@ impl<'a> HirToMirLowering<'a> {
                 &block.terminator
                 && let Some(src) = Self::cleanup_return_src(hir, *target)
             {
-                let val = Some(self.return_value_for_reg(src));
+                let (value, seed) = self.returned_value_for_reg(src)?;
+                self.note_return_seed(seed);
+                let val = Some(value);
                 self.terminate(MirInst::Return { val });
                 continue;
             }
@@ -136,14 +206,14 @@ impl<'a> HirToMirLowering<'a> {
             } = &block.terminator
             {
                 let if_true = if let Some(src) = Self::cleanup_return_src(hir, *if_true) {
-                    self.lower_cleanup_return_edge(src)
+                    self.lower_cleanup_return_edge(src)?
                 } else {
                     *self.hir_block_map.get(if_true).ok_or_else(|| {
                         CompileError::UnsupportedInstruction("Invalid branch target".into())
                     })?
                 };
                 let if_false = if let Some(src) = Self::cleanup_return_src(hir, *if_false) {
-                    self.lower_cleanup_return_edge(src)
+                    self.lower_cleanup_return_edge(src)?
                 } else {
                     *self.hir_block_map.get(if_false).ok_or_else(|| {
                         CompileError::UnsupportedInstruction("Invalid branch target".into())
@@ -764,7 +834,9 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
             HirTerminator::Return { src } => {
-                let val = Some(self.return_value_for_reg(*src));
+                let (value, seed) = self.returned_value_for_reg(*src)?;
+                self.note_return_seed(seed);
+                let val = Some(value);
                 self.terminate(MirInst::Return { val });
             }
             HirTerminator::ReturnEarly { .. } => {

@@ -117,6 +117,7 @@ impl<'a> HirToMirLowering<'a> {
         let old_stack_slot_hints = std::mem::take(&mut self.stack_slot_type_hints);
         let old_subfunction_global_aliases = std::mem::take(&mut self.subfunction_global_aliases);
         let old_ctx_param = self.ctx_param;
+        let old_return_seed_state = std::mem::take(&mut self.current_return_seed_state);
 
         self.ctx_param = None;
         let mut next_arg_seed = 0usize;
@@ -169,6 +170,11 @@ impl<'a> HirToMirLowering<'a> {
         let subfn_hints = std::mem::replace(&mut self.vreg_type_hints, old_vreg_hints);
         let subfn_stack_slot_hints =
             std::mem::replace(&mut self.stack_slot_type_hints, old_stack_slot_hints);
+        let subfn_return_seed =
+            match std::mem::replace(&mut self.current_return_seed_state, old_return_seed_state) {
+                CurrentReturnSeedState::Known(seed) => seed,
+                CurrentReturnSeedState::Unset | CurrentReturnSeedState::Conflict => None,
+            };
 
         self.reg_map = old_reg_map;
         self.reg_metadata = old_reg_metadata;
@@ -197,6 +203,7 @@ impl<'a> HirToMirLowering<'a> {
         self.subfunction_hints.push(subfn_hints);
         self.subfunction_stack_slot_hints
             .push(subfn_stack_slot_hints);
+        self.subfunction_return_seeds.push(subfn_return_seed);
         self.subfunction_registry.insert(key, subfn_id);
 
         Ok(subfn_id)

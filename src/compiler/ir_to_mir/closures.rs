@@ -1,3 +1,4 @@
+use super::user_functions::UserFunctionCallArg;
 use super::*;
 impl<'a> HirToMirLowering<'a> {
     fn captured_value(&self, var_id: nu_protocol::VarId) -> Option<&Value> {
@@ -9,13 +10,161 @@ impl<'a> HirToMirLowering<'a> {
     #[allow(dead_code)]
     pub(super) fn inline_user_function(
         &mut self,
-        _decl_id: DeclId,
-        _dst_vreg: VReg,
-        _positional_args: &[(VReg, RegId)],
+        decl_id: DeclId,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        call_args: &[UserFunctionCallArg],
     ) -> Result<(), CompileError> {
-        Err(CompileError::UnsupportedInstruction(
-            "User-defined function inlining is not supported in plugin context".into(),
-        ))
+        let hir = self.user_functions.get(&decl_id).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "User-defined function {} not found",
+                decl_id.get()
+            ))
+        })?;
+        if hir.blocks.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "inlined user functions currently require a single basic block".into(),
+            ));
+        }
+        let block = &hir.blocks[0];
+        let HirTerminator::Return { src } = block.terminator else {
+            return Err(CompileError::UnsupportedInstruction(
+                "inlined user functions currently require a direct return".into(),
+            ));
+        };
+
+        let sig = self.decl_signatures.get(&decl_id);
+        let param_vars = self.subfunction_params(decl_id, hir);
+        let input_reg = Self::infer_pipeline_input_reg(hir);
+        let uses_in = Self::uses_in_variable(hir);
+        let needs_input = input_reg.is_some() || uses_in;
+        let param_count = sig.map(Self::sig_param_count).unwrap_or(param_vars.len());
+        let expected_args = param_count + usize::from(needs_input);
+        if call_args.len() != expected_args {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "inlined user function expected {} args, got {}",
+                expected_args,
+                call_args.len()
+            )));
+        }
+
+        let old_reg_map = std::mem::take(&mut self.reg_map);
+        let old_reg_metadata = std::mem::take(&mut self.reg_metadata);
+        let old_var_mappings = std::mem::take(&mut self.var_mappings);
+        let old_var_metadata = std::mem::take(&mut self.var_metadata);
+        let old_type_hints = std::mem::replace(
+            &mut self.current_type_hints,
+            self.decl_type_hints
+                .get(&decl_id)
+                .cloned()
+                .unwrap_or_default(),
+        );
+
+        let mut next_arg = 0usize;
+        if needs_input {
+            let input_arg = call_args.get(next_arg).copied().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "inlined user function missing pipeline input".into(),
+                )
+            })?;
+            if let Some(reg) = input_reg {
+                self.reg_map.insert(reg.get(), input_arg.vreg);
+                if let Some(meta) = input_arg
+                    .source_reg
+                    .and_then(|reg| old_reg_metadata.get(&reg.get()).cloned())
+                {
+                    self.reg_metadata.insert(reg.get(), meta.clone());
+                    if uses_in {
+                        self.var_metadata.insert(nu_protocol::IN_VARIABLE_ID, meta);
+                    }
+                }
+            }
+            if uses_in {
+                self.var_mappings
+                    .insert(nu_protocol::IN_VARIABLE_ID, input_arg.vreg);
+            }
+            next_arg += 1;
+        }
+
+        let param_base = Self::infer_param_base_var_id(hir)
+            .or_else(|| sig.and_then(|_| Self::infer_referenced_var_base_var_id(hir)));
+        if let Some(base) = param_base {
+            let base = base.get();
+            for i in 0..param_count {
+                let Some(arg) = call_args.get(next_arg + i).copied() else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "inlined user function missing positional arguments".into(),
+                    ));
+                };
+                let var_id = VarId::new(base + i);
+                self.var_mappings.insert(var_id, arg.vreg);
+                if let Some(meta) = arg
+                    .source_reg
+                    .and_then(|reg| old_reg_metadata.get(&reg.get()).cloned())
+                {
+                    self.var_metadata.insert(var_id, meta);
+                }
+            }
+        } else {
+            for (idx, var_id) in param_vars.iter().enumerate() {
+                let Some(arg) = call_args.get(next_arg + idx).copied() else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "inlined user function missing positional arguments".into(),
+                    ));
+                };
+                self.var_mappings.insert(*var_id, arg.vreg);
+                if let Some(meta) = arg
+                    .source_reg
+                    .and_then(|reg| old_reg_metadata.get(&reg.get()).cloned())
+                {
+                    self.var_metadata.insert(*var_id, meta);
+                }
+            }
+        }
+
+        for stmt in &block.stmts {
+            self.lower_stmt(stmt)?;
+        }
+
+        let result_vreg = self.reg_map.get(&src.get()).copied();
+        let mut result_meta = self.get_metadata(src).cloned();
+        if let Some(meta) = result_meta.as_mut()
+            && let Some(source_var) = meta.source_var
+            && !self.annotated_mut_globals.contains_key(&source_var)
+            && !self.mutable_capture_globals.contains_key(&source_var)
+        {
+            meta.source_var = None;
+        }
+        let result_type_hint = result_vreg
+            .and_then(|vreg| self.vreg_type_hints.get(&vreg).cloned())
+            .or_else(|| {
+                result_meta
+                    .as_ref()
+                    .and_then(|meta| meta.field_type.clone())
+            });
+
+        if let Some(result_vreg) = result_vreg {
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::VReg(result_vreg),
+            });
+        }
+
+        self.reg_map = old_reg_map;
+        self.reg_metadata = old_reg_metadata;
+        self.var_mappings = old_var_mappings;
+        self.var_metadata = old_var_metadata;
+        self.current_type_hints = old_type_hints;
+
+        self.reg_map.insert(src_dst.get(), dst_vreg);
+        self.reg_metadata.remove(&src_dst.get());
+        if let Some(meta) = result_meta {
+            self.reg_metadata.insert(src_dst.get(), meta);
+        }
+        if let Some(ty) = result_type_hint {
+            self.vreg_type_hints.insert(dst_vreg, ty);
+        }
+        Ok(())
     }
 
     /// Lower RecordInsert instruction

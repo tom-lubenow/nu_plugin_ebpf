@@ -1231,6 +1231,25 @@ impl<'a> VccLowerer<'a> {
                 out.push(VccInst::AssertScalar {
                     value: VccValue::Reg(len_reg),
                 });
+                let dst_slot_size = self.slot_sizes.get(dst_buffer).copied().unwrap_or(0);
+                let required_append_bytes = match val_type {
+                    StringAppendType::Literal { bytes } => bytes.len(),
+                    StringAppendType::StringSlot { max_len, .. } => {
+                        (*max_len).min(STRING_APPEND_COPY_CAP)
+                    }
+                    StringAppendType::Integer => MAX_INT_STRING_LEN,
+                };
+                let max_before_append = dst_slot_size.saturating_sub(required_append_bytes) as i64;
+                out.push(VccInst::Assume {
+                    dst: len_reg,
+                    ty: VccValueType::Scalar {
+                        range: Some(VccRange {
+                            min: 0,
+                            max: max_before_append,
+                        }),
+                    },
+                    ctx_field_source: None,
+                });
 
                 let dst_base = self.stack_addr_temp(*dst_buffer, out);
                 let dst_ptr = self.temp_reg();

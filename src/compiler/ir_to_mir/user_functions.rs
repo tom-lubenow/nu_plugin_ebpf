@@ -5,9 +5,9 @@ use crate::compiler::subfn_summaries::{
 use nu_protocol::Record;
 
 #[derive(Debug, Clone, Copy)]
-struct UserFunctionCallArg {
-    vreg: VReg,
-    source_reg: Option<RegId>,
+pub(super) struct UserFunctionCallArg {
+    pub(super) vreg: VReg,
+    pub(super) source_reg: Option<RegId>,
 }
 
 impl<'a> HirToMirLowering<'a> {
@@ -448,6 +448,30 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn should_inline_user_function_for_abi(hir: &HirFunction) -> bool {
+        if hir.blocks.len() != 1 {
+            return false;
+        }
+
+        let HirTerminator::Return { .. } = hir.blocks[0].terminator else {
+            return false;
+        };
+
+        hir.blocks[0].stmts.iter().any(|stmt| {
+            matches!(
+                stmt,
+                HirStmt::StringAppend { .. }
+                    | HirStmt::ListPush { .. }
+                    | HirStmt::RecordInsert { .. }
+                    | HirStmt::UpsertCellPath { .. }
+                    | HirStmt::LoadLiteral {
+                        lit: HirLiteral::Record { .. } | HirLiteral::List { .. },
+                        ..
+                    }
+            )
+        })
+    }
+
     pub(super) fn subfunction_params(&mut self, decl_id: DeclId, func: &HirFunction) -> Vec<VarId> {
         if let Some(params) = self.subfunction_params.get(&decl_id) {
             return params.clone();
@@ -536,6 +560,14 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        // BPF subfunctions cannot safely return pointers to callee-local stack
+        // aggregates. Inline simple aggregate-building bodies until we grow an
+        // explicit aggregate return ABI.
+        if Self::should_inline_user_function_for_abi(hir) {
+            self.inline_user_function(decl_id, src_dst, dst_vreg, &call_args)?;
+            return Ok(());
+        }
+
         if call_args.len() > 5 {
             return Err(CompileError::UnsupportedInstruction(
                 "BPF subfunctions support at most 5 arguments".into(),
@@ -564,6 +596,11 @@ impl<'a> HirToMirLowering<'a> {
         let args: Vec<VReg> = call_args.iter().map(|arg| arg.vreg).collect();
 
         let subfn = self.get_or_create_subfunction(decl_id, &arg_seeds)?;
+        let return_seed = self
+            .subfunction_return_seeds
+            .get(subfn.0 as usize)
+            .cloned()
+            .flatten();
         let returned_arg_seed = if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
             infer_subfunction_return_summaries(&self.subfunctions)
                 .get(&subfn)
@@ -590,6 +627,14 @@ impl<'a> HirToMirLowering<'a> {
             } else if let Some(arg_ty) = seed.type_hint {
                 self.get_or_create_metadata(src_dst).field_type = Some(arg_ty);
             }
+        } else if let Some(seed) = return_seed {
+            if let Some(type_hint) = seed.type_hint.clone() {
+                self.vreg_type_hints.insert(dst_vreg, type_hint);
+            }
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.field_type = seed.field_type;
+            meta.annotated_semantics = seed.annotated_semantics;
+            meta.source_var = None;
         }
         Ok(())
     }
