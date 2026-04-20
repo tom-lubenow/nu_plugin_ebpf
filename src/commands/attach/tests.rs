@@ -4535,6 +4535,102 @@ fn test_compile_sk_lookup_ctx_local_port_counter_program() {
 }
 
 #[test]
+fn test_compile_xdp_ctx_rx_queue_index_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("rx_queue_index")],
+        },
+        "xdp ctx.rx_queue_index count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_skb_ctx_mark_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        "cgroup_skb ctx.mark count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_device_ctx_major_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupDevice,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("major")],
+        },
+        "cgroup_device ctx.major count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sysctl_ctx_write_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("write")],
+        },
+        "cgroup_sysctl ctx.write count",
+    );
+}
+
+#[test]
+fn test_compile_sock_ops_ctx_op_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("op")],
+        },
+        "sock_ops ctx.op count",
+    );
+}
+
+#[test]
+fn test_compile_sk_msg_ctx_packet_len_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("packet_len")],
+        },
+        "sk_msg ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_ctx_packet_len_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("packet_len")],
+        },
+        "sk_skb ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_parser_ctx_packet_len_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("packet_len")],
+        },
+        "sk_skb_parser ctx.packet_len count",
+    );
+}
+
+#[test]
 fn test_recover_optimized_type_hints_for_pointer_hop_trampoline_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

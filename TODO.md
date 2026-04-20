@@ -375,6 +375,7 @@ Near-term priority order:
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.
   - Keep fixtures small and verifier-focused to catch regressions quickly.
+  - Recent progress: the attach compile harness now covers representative compile-only non-tracing families (`xdp`, `cgroup_skb`, `cgroup_device`, `cgroup_sysctl`, `sock_ops`, `sk_msg`, `sk_skb`, `sk_skb_parser`) using safe context-field fixtures that widen program-model regression coverage without adding risky live attach tests.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.
