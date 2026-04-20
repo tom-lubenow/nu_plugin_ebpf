@@ -449,6 +449,60 @@ impl<'a> HirToMirLowering<'a> {
         upsert(value, &path.members, &new_value)
     }
 
+    fn constant_apply_binary_operator(
+        lhs: &Value,
+        op: nu_protocol::ast::Operator,
+        rhs: &Value,
+    ) -> Option<Value> {
+        use nu_protocol::ast::{Bits, Boolean, Comparison, Math, Operator};
+
+        let op_span = Span::unknown();
+        let span = Span::unknown();
+
+        match op {
+            Operator::Math(math) => match math {
+                Math::Add => lhs.add(op_span, rhs, span).ok(),
+                Math::Subtract => lhs.sub(op_span, rhs, span).ok(),
+                Math::Multiply => lhs.mul(op_span, rhs, span).ok(),
+                Math::Divide => lhs.div(op_span, rhs, span).ok(),
+                Math::FloorDivide => lhs.floor_div(op_span, rhs, span).ok(),
+                Math::Modulo => lhs.modulo(op_span, rhs, span).ok(),
+                Math::Pow => lhs.pow(op_span, rhs, span).ok(),
+                Math::Concatenate => lhs.concat(op_span, rhs, span).ok(),
+            },
+            Operator::Comparison(comparison) => match comparison {
+                Comparison::LessThan => lhs.lt(op_span, rhs, span).ok(),
+                Comparison::LessThanOrEqual => lhs.lte(op_span, rhs, span).ok(),
+                Comparison::GreaterThan => lhs.gt(op_span, rhs, span).ok(),
+                Comparison::GreaterThanOrEqual => lhs.gte(op_span, rhs, span).ok(),
+                Comparison::Equal => lhs.eq(op_span, rhs, span).ok(),
+                Comparison::NotEqual => lhs.ne(op_span, rhs, span).ok(),
+                Comparison::In => lhs.r#in(op_span, rhs, span).ok(),
+                Comparison::NotIn => lhs.not_in(op_span, rhs, span).ok(),
+                Comparison::Has => lhs.has(op_span, rhs, span).ok(),
+                Comparison::NotHas => lhs.not_has(op_span, rhs, span).ok(),
+                Comparison::StartsWith => lhs.starts_with(op_span, rhs, span).ok(),
+                Comparison::NotStartsWith => lhs.not_starts_with(op_span, rhs, span).ok(),
+                Comparison::EndsWith => lhs.ends_with(op_span, rhs, span).ok(),
+                Comparison::NotEndsWith => lhs.not_ends_with(op_span, rhs, span).ok(),
+                Comparison::RegexMatch | Comparison::NotRegexMatch => None,
+            },
+            Operator::Bits(bits) => match bits {
+                Bits::BitAnd => lhs.bit_and(op_span, rhs, span).ok(),
+                Bits::BitOr => lhs.bit_or(op_span, rhs, span).ok(),
+                Bits::BitXor => lhs.bit_xor(op_span, rhs, span).ok(),
+                Bits::ShiftLeft => lhs.bit_shl(op_span, rhs, span).ok(),
+                Bits::ShiftRight => lhs.bit_shr(op_span, rhs, span).ok(),
+            },
+            Operator::Boolean(boolean) => match boolean {
+                Boolean::And => lhs.and(op_span, rhs, span).ok(),
+                Boolean::Or => lhs.or(op_span, rhs, span).ok(),
+                Boolean::Xor => lhs.xor(op_span, rhs, span).ok(),
+            },
+            Operator::Assignment(_) => None,
+        }
+    }
+
     fn eval_constant_user_function_return(hir: &HirFunction) -> Option<Value> {
         if hir.blocks.len() != 1 {
             return None;
@@ -492,6 +546,18 @@ impl<'a> HirToMirLowering<'a> {
                 HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
                     let value = reg_constants.get(src)?.clone();
                     reg_constants.insert(*dst, value);
+                }
+                HirStmt::Not { src_dst } => {
+                    let Value::Bool { val, .. } = reg_constants.get(src_dst)? else {
+                        return None;
+                    };
+                    reg_constants.insert(*src_dst, Value::bool(!val, Span::unknown()));
+                }
+                HirStmt::BinaryOp { lhs_dst, op, rhs } => {
+                    let lhs = reg_constants.get(lhs_dst)?;
+                    let rhs = reg_constants.get(rhs)?;
+                    let value = Self::constant_apply_binary_operator(lhs, *op, rhs)?;
+                    reg_constants.insert(*lhs_dst, value);
                 }
                 HirStmt::LoadVariable { dst, var_id } => {
                     let value = var_constants.get(var_id)?.clone();
@@ -560,6 +626,15 @@ impl<'a> HirToMirLowering<'a> {
                         record.insert(key, value.clone());
                     }
                     reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
+                }
+                HirStmt::CloneCellPath { dst, src, path } => {
+                    let value = reg_constants.get(src)?.clone();
+                    let path_value = reg_constants.get(path)?;
+                    let Value::CellPath { val: cell_path, .. } = path_value else {
+                        return None;
+                    };
+                    let projected = Self::constant_follow_cell_path(&value, cell_path)?;
+                    reg_constants.insert(*dst, projected);
                 }
                 HirStmt::FollowCellPath { src_dst, path } => {
                     let value = reg_constants.get(src_dst)?.clone();

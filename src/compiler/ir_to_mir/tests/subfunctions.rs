@@ -4354,3 +4354,329 @@ fn test_view_ir_style_user_function_constant_list_upsert_return_can_flow_through
     )
     .expect("view-ir style constant list-upsert return through local should compile");
 }
+
+#[test]
+fn test_view_ir_style_user_function_constant_pow_return_can_flow_through_local() {
+    use nu_protocol::ast::{Math, Operator};
+    use nu_protocol::ir::{Instruction, IrBlock, Literal, RedirectMode};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let user_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Int(6),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(2),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(0),
+                op: Operator::Math(Math::Pow),
+                rhs: RegId::new(1),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 4],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(1),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Value,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+            },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Caller,
+            },
+            Instruction::RedirectErr {
+                mode: RedirectMode::Caller,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(2),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 8],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), HirFunction::from_ir_block(user_ir).unwrap());
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![
+                UserParam {
+                    name: None,
+                    kind: UserParamKind::Input,
+                    optional: false,
+                },
+                UserParam {
+                    name: Some("seed".into()),
+                    kind: UserParamKind::Positional,
+                    optional: false,
+                },
+            ],
+        },
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(1), "bump".to_string());
+    decl_names.insert(DeclId::new(2), "count".to_string());
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types_with_decls(
+        &hir_program,
+        &decl_names,
+        &user_functions,
+    )
+    .expect("view-ir style constant pow program should infer HIR types");
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &user_functions,
+        &signatures,
+    )
+    .expect("view-ir style constant pow return through local should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+
+    compile_mir_to_ebpf_with_hints_and_globals(
+        &result.program,
+        Some(&probe_ctx),
+        Some(&result.type_hints),
+        result.readonly_globals,
+        result.data_globals,
+        result.bss_globals,
+    )
+    .expect("view-ir style constant pow return through local should compile");
+}
+
+#[test]
+fn test_view_ir_style_user_function_constant_pow_record_upsert_return_can_flow_through_local() {
+    use nu_protocol::ast::{CellPath, Math, Operator, PathMember};
+    use nu_protocol::casing::Casing;
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal, RedirectMode};
+    use nu_protocol::{DeclId, RegId};
+    use std::sync::Arc;
+
+    let user_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(0),
+                lit: Literal::Record { capacity: 1 },
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice { start: 0, len: 3 }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(6),
+            },
+            Instruction::RecordInsert {
+                src_dst: RegId::new(0),
+                key: RegId::new(1),
+                val: RegId::new(2),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(3),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![PathMember::test_string(
+                        "pid".to_string(),
+                        false,
+                        Casing::Sensitive,
+                    )],
+                })),
+            },
+            Instruction::CloneCellPath {
+                dst: RegId::new(4),
+                src: RegId::new(0),
+                path: RegId::new(3),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(5),
+                lit: Literal::Int(2),
+            },
+            Instruction::BinaryOp {
+                lhs_dst: RegId::new(4),
+                op: Operator::Math(Math::Pow),
+                rhs: RegId::new(5),
+            },
+            Instruction::UpsertCellPath {
+                src_dst: RegId::new(0),
+                path: RegId::new(3),
+                new_value: RegId::new(4),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from(b"pid".as_slice()),
+        ast: vec![],
+        comments: vec!["".into(); 10],
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::Int(1),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Value,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: nu_protocol::VarId::new(40),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: nu_protocol::VarId::new(40),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::CellPath(Box::new(CellPath {
+                    members: vec![PathMember::test_string(
+                        "pid".to_string(),
+                        false,
+                        Casing::Sensitive,
+                    )],
+                })),
+            },
+            Instruction::FollowCellPath {
+                src_dst: RegId::new(0),
+                path: RegId::new(2),
+            },
+            Instruction::RedirectOut {
+                mode: RedirectMode::Caller,
+            },
+            Instruction::RedirectErr {
+                mode: RedirectMode::Caller,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(2),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec!["".into(); 12],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), HirFunction::from_ir_block(user_ir).unwrap());
+
+    let mut signatures = HashMap::new();
+    signatures.insert(
+        DeclId::new(1),
+        UserFunctionSig {
+            params: vec![
+                UserParam {
+                    name: None,
+                    kind: UserParamKind::Input,
+                    optional: false,
+                },
+                UserParam {
+                    name: Some("seed".into()),
+                    kind: UserParamKind::Positional,
+                    optional: false,
+                },
+            ],
+        },
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(1), "bump".to_string());
+    decl_names.insert(DeclId::new(2), "count".to_string());
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types_with_decls(
+        &hir_program,
+        &decl_names,
+        &user_functions,
+    )
+    .expect("view-ir style constant pow record-upsert program should infer HIR types");
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &user_functions,
+        &signatures,
+    )
+    .expect("view-ir style constant pow record-upsert return through local should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+
+    compile_mir_to_ebpf_with_hints_and_globals(
+        &result.program,
+        Some(&probe_ctx),
+        Some(&result.type_hints),
+        result.readonly_globals,
+        result.data_globals,
+        result.bss_globals,
+    )
+    .expect("view-ir style constant pow record-upsert return through local should compile");
+}
