@@ -3958,6 +3958,19 @@ fn test_compile_perf_event_ctx_sample_period_counter_program() {
 }
 
 #[test]
+#[cfg(target_arch = "x86_64")]
+fn test_compile_perf_event_ctx_addr_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+        CellPath {
+            members: vec![string_member("addr")],
+        },
+        "perf_event ctx.addr count",
+    );
+}
+
+#[test]
 fn test_compile_socket_filter_ctx_packet_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SocketFilter,

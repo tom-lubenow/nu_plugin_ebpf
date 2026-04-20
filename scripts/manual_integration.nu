@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 73
+const TOTAL_STEPS = 74
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1159,7 +1159,14 @@ step 72 "tc loopback socket_uid counter" {
     } { trigger-ping-loopback } "tc socket_uid counter"
 }
 
-step 73 "verify no leaked probes" {
+step 73 "perf_event software cpu-clock sample_period counter" {
+    count-at-least-one "perf_event:software:cpu-clock:period=100000" {|ctx|
+        $ctx.sample_period | count
+        0
+    } { trigger-cpu-work } "perf_event sample_period counter"
+}
+
+step 74 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

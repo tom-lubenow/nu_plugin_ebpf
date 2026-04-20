@@ -40,6 +40,9 @@ let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.a
 # Count software cpu-clock samples by sampled period (x86_64)
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.sample_period | count; 0 }
 
+# Count software cpu-clock samples by sampled address when present (x86_64)
+let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.addr | count; 0 }
+
 # Count syscalls by current cgroup ID
 let id = ebpf attach 'kprobe:ksys_read' {|ctx| $ctx.cgroup_id | count }
 ```
