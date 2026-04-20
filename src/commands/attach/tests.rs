@@ -21,6 +21,9 @@ use nu_protocol::engine::Closure;
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{BlockId, Record, RegId, Span, Type, Value, VarId};
 
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+
 #[test]
 fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
     let decl_names = super::extract_decl_names_from_formatted_instructions(&[
@@ -2404,6 +2407,14 @@ fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
 
+fn int_member(index: usize) -> PathMember {
+    PathMember::Int {
+        val: index,
+        span: Span::test_data(),
+        optional: false,
+    }
+}
+
 fn find_function_trampoline_named_projection_candidate() -> Option<(String, String, String)> {
     for (function_name, arg_name, field_name) in [("security_file_open", "file", "f_flags")] {
         let path = [TrampolineFieldSelector::Field(field_name.to_string())];
@@ -4340,6 +4351,176 @@ fn make_branch_refined_bound_ctx_get_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_eq_guarded_ctx_path_count_program(
+    guard_path: CellPath,
+    guard_value: HirLiteral,
+    counted_path: CellPath,
+    count_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let blocks = vec![
+        HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(guard_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: guard_value,
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::Equal),
+                    rhs: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::BranchIf {
+                cond: RegId::new(0),
+                if_true: HirBlockId(1),
+                if_false: HirBlockId(2),
+            },
+        },
+        HirBlock {
+            id: HirBlockId(1),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(counted_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        },
+        HirBlock {
+            id: HirBlockId(2),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        },
+    ];
+    let func = HirFunction {
+        blocks,
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 10],
+        ast: vec![None; 10],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_gt_zero_guarded_ctx_path_store_program(
+    guard_path: CellPath,
+    stored_path: CellPath,
+    new_value: HirLiteral,
+    return_value: HirLiteral,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let blocks = vec![
+        HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(guard_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::GreaterThan),
+                    rhs: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::BranchIf {
+                cond: RegId::new(0),
+                if_true: HirBlockId(1),
+                if_false: HirBlockId(2),
+            },
+        },
+        HirBlock {
+            id: HirBlockId(1),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(stored_path)),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: new_value,
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: return_value.clone(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        },
+        HirBlock {
+            id: HirBlockId(2),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: return_value,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        },
+    ];
+    let func = HirFunction {
+        blocks,
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 11],
+        ast: vec![None; 11],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 #[test]
 fn test_compile_tp_btf_ctx_arg_program() {
     fn find_tp_btf_scalar_arg_candidate() -> Option<(&'static str, usize)> {
@@ -4868,6 +5049,90 @@ fn test_compile_sock_ops_ctx_op_counter_program() {
 }
 
 #[test]
+fn test_compile_sock_ops_guarded_ctx_packet_len_counter_program() {
+    let hir = make_eq_guarded_ctx_path_count_program(
+        CellPath {
+            members: vec![string_member("op")],
+        },
+        HirLiteral::Int(BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB),
+        CellPath {
+            members: vec![string_member("packet_len")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("guarded sock_ops ctx.packet_len count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized guarded sock_ops ctx.packet_len count should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_sock_ops_guarded_ctx_data_byte_counter_program() {
+    let hir = make_eq_guarded_ctx_path_count_program(
+        CellPath {
+            members: vec![string_member("op")],
+        },
+        HirLiteral::Int(BPF_SOCK_OPS_PARSE_HDR_OPT_CB),
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("guarded sock_ops ctx.data[0] count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized guarded sock_ops ctx.data[0] count should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_sk_msg_ctx_packet_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkMsg,
@@ -4983,6 +5248,47 @@ fn test_compile_cgroup_sockopt_set_ctx_level_store_program() {
         HirLiteral::Int(1),
         "cgroup_sockopt:set ctx.level store",
     );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_get_guarded_ctx_optval_byte_store_program() {
+    let hir = make_gt_zero_guarded_ctx_path_store_program(
+        CellPath {
+            members: vec![string_member("optlen")],
+        },
+        CellPath {
+            members: vec![string_member("optval"), int_member(0)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("guarded cgroup_sockopt:get ctx.optval[0] store should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized guarded cgroup_sockopt:get ctx.optval[0] store should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
