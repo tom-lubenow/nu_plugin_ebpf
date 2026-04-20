@@ -263,6 +263,10 @@ fn eval_supported_constant_value_with_input(
     expr: &nu_protocol::ast::Expression,
     input: Option<Value>,
 ) -> Result<Value, LabeledError> {
+    if let Expr::GlobPattern(token, _) = &expr.expr {
+        return Ok(eval_supported_constant_bare_token(token, expr.span));
+    }
+
     let pipeline_input = input.clone().map_or_else(PipelineData::empty, |value| {
         PipelineData::value(value, None)
     });
@@ -374,6 +378,18 @@ fn eval_supported_constant_value_with_input(
     }
 }
 
+fn eval_supported_constant_bare_token(token: &str, span: Span) -> Value {
+    if let Ok(int) = token.parse::<i64>() {
+        return Value::int(int, span);
+    }
+    match token {
+        "true" => Value::bool(true, span),
+        "false" => Value::bool(false, span),
+        "null" | "nothing" => Value::nothing(span),
+        _ => Value::glob(token, false, span),
+    }
+}
+
 fn eval_supported_constant_block(
     working_set: &StateWorkingSet,
     block: &nu_protocol::ast::Block,
@@ -467,6 +483,13 @@ fn eval_supported_constant_call(
     let cmd_name = working_set.get_decl(call.decl_id).name();
 
     match cmd_name {
+        "append" | "prepend" => eval_supported_constant_list_mutation_call(
+            working_set,
+            cmd_name,
+            input,
+            call.positional_nth(0),
+            span,
+        ),
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
             working_set,
             cmd_name,
@@ -511,6 +534,30 @@ fn eval_supported_constant_external_call(
     };
 
     match cmd_name {
+        "append" | "prepend" => {
+            let [item_arg] = args else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(format!("`{cmd_name}` requires exactly one argument"), span));
+            };
+
+            let ExternalArgument::Regular(item_expr) = item_arg else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` item cannot use spread syntax in compile-time global initializers"
+                        ),
+                        item_arg.expr().span,
+                    ));
+            };
+
+            eval_supported_constant_list_mutation_call(
+                working_set,
+                cmd_name,
+                input,
+                Some(item_expr),
+                span,
+            )
+        }
         "insert" | "update" | "upsert" => {
             let [path_arg, new_value_arg] = args else {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -556,6 +603,51 @@ fn eval_supported_constant_external_call(
                 "Use a compile-time constant expression, record/list literal, spread, or supported pipeline primitive like `upsert`",
             )),
     }
+}
+
+fn eval_supported_constant_list_mutation_call(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    input: Option<Value>,
+    item_expr: Option<&nu_protocol::ast::Expression>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{cmd_name}` in a compile-time global initializer must receive pipeline input"),
+            span,
+        )
+    })?;
+    let item_expr = item_expr.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(format!("`{cmd_name}` requires an item argument"), span)
+    })?;
+    let item = eval_supported_constant_value(working_set, item_expr)?;
+
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
+                span,
+            ));
+    };
+
+    let updated = match cmd_name {
+        "append" => vals.into_iter().chain(std::iter::once(item)).collect(),
+        "prepend" => std::iter::once(item).chain(vals).collect(),
+        _ => {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "compile-time global initializer list mutation `{cmd_name}` is not supported"
+                    ),
+                    span,
+                ));
+        }
+    };
+
+    Ok(Value::list(updated, value_span))
 }
 
 fn eval_supported_constant_path_mutation_call(
