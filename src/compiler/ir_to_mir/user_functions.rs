@@ -404,6 +404,51 @@ impl<'a> HirToMirLowering<'a> {
         Some(current)
     }
 
+    fn constant_upsert_cell_path(
+        value: &Value,
+        path: &CellPath,
+        new_value: Value,
+    ) -> Option<Value> {
+        fn upsert(current: &Value, members: &[PathMember], new_value: &Value) -> Option<Value> {
+            let Some((member, rest)) = members.split_first() else {
+                return Some(new_value.clone());
+            };
+
+            match member {
+                PathMember::String { val, .. } => {
+                    let Value::Record { val: record, .. } = current else {
+                        return None;
+                    };
+                    let mut record = record.clone().into_owned();
+                    let updated = if rest.is_empty() {
+                        new_value.clone()
+                    } else {
+                        let current_child = record.get(val)?;
+                        upsert(current_child, rest, new_value)?
+                    };
+                    record.insert(val.clone(), updated);
+                    Some(Value::record(record, Span::unknown()))
+                }
+                PathMember::Int { val, .. } => {
+                    let Value::List { vals, .. } = current else {
+                        return None;
+                    };
+                    let idx = *val as usize;
+                    let current_child = vals.get(idx)?;
+                    let mut vals = vals.clone();
+                    vals[idx] = if rest.is_empty() {
+                        new_value.clone()
+                    } else {
+                        upsert(current_child, rest, new_value)?
+                    };
+                    Some(Value::list(vals, Span::unknown()))
+                }
+            }
+        }
+
+        upsert(value, &path.members, &new_value)
+    }
+
     fn eval_constant_user_function_return(hir: &HirFunction) -> Option<Value> {
         if hir.blocks.len() != 1 {
             return None;
@@ -423,6 +468,12 @@ impl<'a> HirToMirLowering<'a> {
                         reg_constants.insert(*dst, value);
                     } else {
                         match lit {
+                            HirLiteral::CellPath(path) => {
+                                reg_constants.insert(
+                                    *dst,
+                                    Value::cell_path((**path).clone(), Span::unknown()),
+                                );
+                            }
                             HirLiteral::List { .. } => {
                                 reg_constants
                                     .insert(*dst, Value::list(Vec::new(), Span::unknown()));
@@ -518,6 +569,23 @@ impl<'a> HirToMirLowering<'a> {
                     };
                     let projected = Self::constant_follow_cell_path(&value, cell_path)?;
                     reg_constants.insert(*src_dst, projected);
+                }
+                HirStmt::UpsertCellPath {
+                    src_dst,
+                    path,
+                    new_value,
+                } => {
+                    let value = reg_constants.get(src_dst)?.clone();
+                    let path_value = reg_constants.get(path)?;
+                    let Value::CellPath { val: cell_path, .. } = path_value else {
+                        return None;
+                    };
+                    let updated = Self::constant_upsert_cell_path(
+                        &value,
+                        cell_path,
+                        reg_constants.get(new_value)?.clone(),
+                    )?;
+                    reg_constants.insert(*src_dst, updated);
                 }
                 HirStmt::Collect { .. }
                 | HirStmt::Span { .. }
