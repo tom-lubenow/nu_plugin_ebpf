@@ -589,7 +589,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 match &block.terminator {
-                    HirTerminator::Return { src } => {
+                    HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => {
                         let (inline_meta, inline_type_hint) = self
                             .lower_inlined_user_function_return(
                                 *src,
@@ -606,11 +606,6 @@ impl<'a> HirToMirLowering<'a> {
                             result_meta = inline_meta;
                             result_type_hint = inline_type_hint;
                         }
-                    }
-                    HirTerminator::ReturnEarly { .. } => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "Return early is not supported in eBPF".into(),
-                        ));
                     }
                     HirTerminator::Unreachable => {
                         return Err(CompileError::UnsupportedInstruction(
@@ -884,7 +879,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             match &block.terminator {
-                HirTerminator::Return { src } => {
+                HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => {
                     let src_vreg = self.get_vreg(*src);
                     self.emit(MirInst::Copy {
                         dst: result_vreg,
@@ -893,11 +888,6 @@ impl<'a> HirToMirLowering<'a> {
                     self.terminate(MirInst::Jump {
                         target: continuation_block,
                     });
-                }
-                HirTerminator::ReturnEarly { .. } => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "Return early is not supported in eBPF".into(),
-                    ));
                 }
                 HirTerminator::Unreachable => {
                     return Err(CompileError::UnsupportedInstruction(

@@ -145,3 +145,34 @@ fn test_hir_to_mir_for_loop_cleanup_return_stays_initialized() {
     verify_mir(&mir.main, &HashMap::new())
         .expect("for-loop cleanup return lowered through an exit epilogue should stay initialized");
 }
+
+#[test]
+fn test_hir_to_mir_return_early_lowers_like_return() {
+    let ir = make_ir_block(vec![
+        Instruction::LoadLiteral {
+            dst: RegId::new(1),
+            lit: Literal::Bool(true),
+        },
+        Instruction::BranchIf {
+            cond: RegId::new(1),
+            index: 4,
+        },
+        Instruction::LoadLiteral {
+            dst: RegId::new(0),
+            lit: Literal::Int(0),
+        },
+        Instruction::Return { src: RegId::new(0) },
+        Instruction::LoadLiteral {
+            dst: RegId::new(0),
+            lit: Literal::Int(1),
+        },
+        Instruction::ReturnEarly { src: RegId::new(0) },
+    ]);
+
+    let hir = lower_ir_to_hir(ir, HashMap::new(), Vec::new(), None).unwrap();
+    let mir = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("return early should lower through the ordinary return path");
+
+    verify_mir(&mir.main, &HashMap::new())
+        .expect("return early should verify after MIR lowering");
+}

@@ -1001,16 +1001,11 @@ impl<'a> HirToMirLowering<'a> {
                     step: range.step,
                 });
             }
-            HirTerminator::Return { src } => {
+            HirTerminator::Return { src } | HirTerminator::ReturnEarly { src } => {
                 let (value, seed) = self.returned_value_for_reg(*src)?;
                 self.note_return_seed(seed);
                 let val = Some(value);
                 self.terminate(MirInst::Return { val });
-            }
-            HirTerminator::ReturnEarly { .. } => {
-                return Err(CompileError::UnsupportedInstruction(
-                    "Return early is not supported in eBPF".into(),
-                ));
             }
             HirTerminator::Unreachable => {
                 return Err(CompileError::UnsupportedInstruction(
