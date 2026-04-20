@@ -48,8 +48,8 @@ impl<'a> HirToMirLowering<'a> {
             Operator::Boolean(Boolean::Xor) => BinOpKind::Xor,
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "Operator {:?} not supported in eBPF",
-                    op
+                    "Operator {op} is not supported in eBPF runtime lowering. \
+                     It may still be used when the expression is compile-time constant."
                 )));
             }
         };

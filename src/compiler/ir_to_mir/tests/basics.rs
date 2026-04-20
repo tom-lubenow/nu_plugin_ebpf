@@ -124,6 +124,64 @@ fn test_mir_function_creation() {
 }
 
 #[test]
+fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_escape_hatch() {
+    use nu_protocol::ast::{Math, Operator};
+
+    let hir_program = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::Pow),
+                        rhs: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("runtime-only pow lowering should be rejected");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("Operator ** is not supported in eBPF runtime lowering"),
+        "unexpected error message: {message}"
+    );
+    assert!(
+        message.contains("compile-time constant"),
+        "unexpected error message: {message}"
+    );
+}
+
+#[test]
 fn test_basic_block_creation() {
     let mut func = MirFunction::new();
     let b0 = func.alloc_block();
