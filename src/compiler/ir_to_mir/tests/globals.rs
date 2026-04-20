@@ -1899,6 +1899,67 @@ fn test_lower_global_define_type_i64_with_constant_binary_initializer_uses_named
 }
 
 #[test]
+fn test_lower_global_define_type_bool_with_constant_not_initializer_uses_named_data_global() {
+    let define_decl = DeclId::new(1081);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Bool(false),
+                },
+                HirStmt::Not {
+                    src_dst: RegId::new(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("enabled".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("bool".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type bool with constant not input should lower");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_enabled");
+    assert_eq!(result.data_globals[0].data, vec![1u8]);
+}
+
+#[test]
 fn test_lower_global_define_type_record_with_constant_upsert_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1073);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
