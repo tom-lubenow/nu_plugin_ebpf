@@ -278,6 +278,10 @@ impl<'a> HirToMirLowering<'a> {
         let dst_vreg = self.get_vreg(src_dst);
 
         if !self.is_context_reg(src_dst) {
+            let constant_value = self
+                .get_metadata(src_dst)
+                .and_then(|meta| meta.constant_value.as_ref())
+                .and_then(|value| Self::constant_follow_cell_path(value, &path));
             let path_desc = Self::typed_value_path_desc(&path.members);
             let mut source_vreg = dst_vreg;
             let mut base_runtime_ty = self
@@ -335,6 +339,7 @@ impl<'a> HirToMirLowering<'a> {
             meta.root_ctx_field = None;
             meta.annotated_semantics = projected_semantics;
             meta.source_var = None;
+            self.set_reg_constant_value(src_dst, constant_value);
             return Ok(());
         }
 
@@ -706,6 +711,16 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let path_desc = Self::typed_value_path_desc(&path.members);
+        let constant_value = self
+            .get_metadata(src_dst)
+            .and_then(|meta| meta.constant_value.as_ref())
+            .zip(
+                self.get_metadata(new_value)
+                    .and_then(|meta| meta.constant_value.as_ref()),
+            )
+            .and_then(|(value, new_value)| {
+                Self::constant_upsert_cell_path(value, &path, new_value.clone())
+            });
 
         let mut base_vreg = self.get_vreg(src_dst);
         let mut base_runtime_ty = self
@@ -840,6 +855,8 @@ impl<'a> HirToMirLowering<'a> {
                             slot_len - src_slot_size,
                         )?;
                     }
+                    self.clear_source_var(src_dst);
+                    self.set_reg_constant_value(src_dst, constant_value.clone());
                     return Ok(());
                 }
 
@@ -912,6 +929,8 @@ impl<'a> HirToMirLowering<'a> {
 
         let meta = self.get_or_create_metadata(src_dst);
         meta.field_type = Some(pointee.as_ref().clone());
+        meta.source_var = None;
+        self.set_reg_constant_value(src_dst, constant_value);
         Ok(())
     }
 }

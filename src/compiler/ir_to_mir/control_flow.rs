@@ -534,6 +534,12 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirStmt::Not { src_dst } => {
+                let constant_value = self.get_metadata(*src_dst).and_then(|meta| {
+                    let Value::Bool { val, .. } = meta.constant_value.as_ref()? else {
+                        return None;
+                    };
+                    Some(Value::bool(!val, Span::unknown()))
+                });
                 let vreg = self.get_vreg(*src_dst);
                 self.emit(MirInst::UnaryOp {
                     dst: vreg,
@@ -541,6 +547,7 @@ impl<'a> HirToMirLowering<'a> {
                     src: MirValue::VReg(vreg),
                 });
                 self.clear_source_var(*src_dst);
+                self.set_reg_constant_value(*src_dst, constant_value);
             }
 
             // === Field Access ===
@@ -597,6 +604,18 @@ impl<'a> HirToMirLowering<'a> {
 
             // === Lists ===
             HirStmt::ListPush { src_dst, item } => {
+                let constant_value = match (
+                    self.get_metadata(*src_dst)
+                        .and_then(|meta| meta.constant_value.clone()),
+                    self.get_metadata(*item)
+                        .and_then(|meta| meta.constant_value.clone()),
+                ) {
+                    (Some(Value::List { mut vals, .. }), Some(item_value)) => {
+                        vals.push(item_value);
+                        Some(Value::list(vals, Span::unknown()))
+                    }
+                    _ => None,
+                };
                 let list_vreg = self.get_vreg(*src_dst);
                 let item_vreg = self.get_vreg(*item);
 
@@ -605,14 +624,28 @@ impl<'a> HirToMirLowering<'a> {
                     list: list_vreg,
                     item: item_vreg,
                 });
-
-                // Copy metadata from source list
-                if let Some(meta) = self.get_metadata(*src_dst).cloned() {
-                    self.reg_metadata.insert(src_dst.get(), meta);
-                }
+                self.clear_source_var(*src_dst);
+                self.set_reg_constant_value(*src_dst, constant_value);
             }
 
             HirStmt::ListSpread { src_dst, items } => {
+                let constant_value = match (
+                    self.get_metadata(*src_dst)
+                        .and_then(|meta| meta.constant_value.clone()),
+                    self.get_metadata(*items)
+                        .and_then(|meta| meta.constant_value.clone()),
+                ) {
+                    (
+                        Some(Value::List { mut vals, .. }),
+                        Some(Value::List {
+                            vals: spread_vals, ..
+                        }),
+                    ) => {
+                        vals.extend(spread_vals);
+                        Some(Value::list(vals, Span::unknown()))
+                    }
+                    _ => None,
+                };
                 // ListSpread adds all items from one list to another
                 let dst_list = self.get_vreg(*src_dst);
                 let src_list = self.get_vreg(*items);
@@ -674,10 +707,25 @@ impl<'a> HirToMirLowering<'a> {
 
                     self.current_block = next_block;
                 }
+
+                self.clear_source_var(*src_dst);
+                self.set_reg_constant_value(*src_dst, constant_value);
             }
 
             // === String Interpolation ===
             HirStmt::StringAppend { src_dst, val } => {
+                let constant_value = self.get_metadata(*src_dst).and_then(|meta| {
+                    let Value::String { val: mut dst, .. } = meta.constant_value.clone()? else {
+                        return None;
+                    };
+                    let appended = self
+                        .get_metadata(*val)
+                        .and_then(|meta| meta.constant_value.clone())?
+                        .coerce_into_string()
+                        .ok()?;
+                    dst.push_str(&appended);
+                    Some(Value::string(dst, Span::unknown()))
+                });
                 let dst_slot = self.get_metadata(*src_dst).and_then(|m| m.string_slot);
                 let val_meta = self.get_metadata(*val).cloned();
 
@@ -773,6 +821,8 @@ impl<'a> HirToMirLowering<'a> {
                         val: MirValue::VReg(val_vreg),
                         val_type,
                     });
+                    self.clear_source_var(*src_dst);
+                    self.set_reg_constant_value(*src_dst, constant_value);
                 }
             }
 

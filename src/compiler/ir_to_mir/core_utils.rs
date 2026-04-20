@@ -189,6 +189,30 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn constant_literal_int(value: &Value) -> Option<i64> {
+        match value {
+            Value::Int { val, .. } => Some(*val),
+            Value::Filesize { val, .. } => Some(val.get()),
+            Value::Duration { val, .. } => Some(*val),
+            _ => None,
+        }
+    }
+
+    fn constant_literal_string(value: &Value) -> Option<String> {
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => Some(val.clone()),
+            Value::Binary { val, .. } => String::from_utf8(val.clone()).ok(),
+            _ => None,
+        }
+    }
+
+    pub(super) fn set_reg_constant_value(&mut self, reg: RegId, value: Option<Value>) {
+        let meta = self.get_or_create_metadata(reg);
+        meta.literal_int = value.as_ref().and_then(Self::constant_literal_int);
+        meta.literal_string = value.as_ref().and_then(Self::constant_literal_string);
+        meta.constant_value = value;
+    }
+
     pub(super) fn bind_variable_to_src_value(
         &mut self,
         var_id: VarId,

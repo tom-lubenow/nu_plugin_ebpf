@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::hir::AnnotatedMutGlobal;
 use crate::compiler::mir::{AddressSpace, StructField};
-use nu_protocol::Type;
+use nu_protocol::{Record, Type};
 
 #[derive(Debug, Clone)]
 enum NullAnnotatedGlobalUnsupportedKind {
@@ -842,8 +842,16 @@ impl<'a> HirToMirLowering<'a> {
                 return Err(CompileError::UnsupportedLiteral);
             }
         }
-        if let Some(value) = lit.to_constant_value() {
-            self.get_or_create_metadata(dst).constant_value = Some(value);
+        let constant_value = lit.to_constant_value().or_else(|| match lit {
+            HirLiteral::CellPath(cell_path) => {
+                Some(Value::cell_path((**cell_path).clone(), Span::unknown()))
+            }
+            HirLiteral::List { .. } => Some(Value::list(Vec::new(), Span::unknown())),
+            HirLiteral::Record { .. } => Some(Value::record(Record::new(), Span::unknown())),
+            _ => None,
+        });
+        if let Some(value) = constant_value {
+            self.set_reg_constant_value(dst, Some(value));
         }
         Ok(())
     }

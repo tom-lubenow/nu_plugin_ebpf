@@ -673,6 +673,19 @@ impl<'a> HirToMirLowering<'a> {
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction("Record key must be a literal string".into())
             })?;
+        let constant_value = match (
+            self.get_metadata(src_dst)
+                .and_then(|meta| meta.constant_value.clone()),
+            self.get_metadata(val)
+                .and_then(|meta| meta.constant_value.clone()),
+        ) {
+            (Some(Value::Record { val: record, .. }), Some(field_value)) => {
+                let mut record = record.into_owned();
+                record.insert(field_name.clone(), field_value);
+                Some(Value::record(record, Span::unknown()))
+            }
+            _ => None,
+        };
 
         let val_vreg = self.get_vreg(val);
         let val_meta = self.get_metadata(val).cloned();
@@ -776,13 +789,15 @@ impl<'a> HirToMirLowering<'a> {
             semantics: field_semantics,
         };
 
-        let meta = self.get_or_create_metadata(src_dst);
-        meta.is_context = false;
-        meta.constant_value = None;
-        meta.record_fields.push(field);
-        meta.field_type = Self::metadata_record_layout(meta);
-        meta.annotated_semantics = Self::metadata_record_semantics(meta);
-        meta.source_var = None;
+        {
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.is_context = false;
+            meta.record_fields.push(field);
+            meta.field_type = Self::metadata_record_layout(meta);
+            meta.annotated_semantics = Self::metadata_record_semantics(meta);
+            meta.source_var = None;
+        }
+        self.set_reg_constant_value(src_dst, constant_value);
 
         Ok(())
     }
@@ -812,25 +827,47 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let meta = self.get_or_create_metadata(src_dst);
-        meta.is_context = false;
-        meta.constant_value = None;
-
-        for field in source_meta.record_fields {
-            if let Some(existing) = meta
-                .record_fields
-                .iter_mut()
-                .find(|existing| existing.name == field.name)
-            {
-                *existing = field;
-            } else {
-                meta.record_fields.push(field);
+        let constant_value = match (
+            self.get_metadata(src_dst)
+                .and_then(|meta| meta.constant_value.clone()),
+            source_meta.constant_value.clone(),
+        ) {
+            (
+                Some(Value::Record { val: record, .. }),
+                Some(Value::Record {
+                    val: spread_record, ..
+                }),
+            ) => {
+                let mut record = record.into_owned();
+                for (key, value) in spread_record.iter() {
+                    record.insert(key, value.clone());
+                }
+                Some(Value::record(record, Span::unknown()))
             }
-        }
+            _ => None,
+        };
 
-        meta.field_type = Self::metadata_record_layout(meta);
-        meta.annotated_semantics = Self::metadata_record_semantics(meta);
-        meta.source_var = None;
+        {
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.is_context = false;
+
+            for field in source_meta.record_fields {
+                if let Some(existing) = meta
+                    .record_fields
+                    .iter_mut()
+                    .find(|existing| existing.name == field.name)
+                {
+                    *existing = field;
+                } else {
+                    meta.record_fields.push(field);
+                }
+            }
+
+            meta.field_type = Self::metadata_record_layout(meta);
+            meta.annotated_semantics = Self::metadata_record_semantics(meta);
+            meta.source_var = None;
+        }
+        self.set_reg_constant_value(src_dst, constant_value);
 
         Ok(())
     }

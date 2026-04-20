@@ -22,6 +22,15 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         use nu_protocol::ast::{Boolean, Comparison, Math, Operator};
 
+        let constant_value = self
+            .get_metadata(lhs_dst)
+            .and_then(|meta| meta.constant_value.as_ref())
+            .zip(
+                self.get_metadata(rhs)
+                    .and_then(|meta| meta.constant_value.as_ref()),
+            )
+            .and_then(|(lhs, rhs)| Self::constant_apply_binary_operator(lhs, op, rhs));
+
         let lhs_vreg = self.get_vreg(lhs_dst);
         let rhs_vreg = self.get_vreg(rhs);
 
@@ -61,6 +70,7 @@ impl<'a> HirToMirLowering<'a> {
             rhs: MirValue::VReg(rhs_vreg),
         });
         self.clear_source_var(lhs_dst);
+        self.set_reg_constant_value(lhs_dst, constant_value);
 
         Ok(())
     }
