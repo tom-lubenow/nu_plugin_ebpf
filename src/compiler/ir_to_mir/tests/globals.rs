@@ -2189,6 +2189,78 @@ fn test_lower_global_define_type_string_with_constant_string_append_initializer_
 }
 
 #[test]
+fn test_lower_global_define_type_string_with_constant_binary_concat_initializer_uses_named_data_global(
+) {
+    let define_decl = DeclId::new(1080);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("hel".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("lo".into()),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: nu_protocol::ast::Operator::Math(nu_protocol::ast::Math::Add),
+                    rhs: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("greeting".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("string:8".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"type".to_vec(), RegId::new(3))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type string:N with constant binary concat input should lower");
+
+    let mut expected = vec![0u8; 24];
+    expected[..8].copy_from_slice(&(5u64).to_le_bytes());
+    expected[8..13].copy_from_slice(b"hello");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_greeting");
+    assert_eq!(result.data_globals[0].data, expected);
+}
+
+#[test]
 fn test_lower_global_define_type_list_from_metadata_builder_uses_named_data_global() {
     let define_decl = DeclId::new(1075);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
