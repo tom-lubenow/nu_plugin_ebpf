@@ -3361,6 +3361,92 @@ fn test_lower_record_spread_preserves_spread_field_string_semantics() {
 }
 
 #[test]
+fn test_lower_list_spread_uses_runtime_length_guards() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 8 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::List { capacity: 4 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(10),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(1),
+                    item: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(20),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(1),
+                    item: RegId::new(3),
+                },
+                HirStmt::ListSpread {
+                    src_dst: RegId::new(0),
+                    items: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("list spread should lower");
+
+    let blocks = &result.program.main.blocks;
+    let len_vreg = blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::ListLen { dst, .. } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected list spread to load source runtime length");
+
+    let guarded_indices: Vec<i64> = blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                lhs: MirValue::Const(idx),
+                rhs: MirValue::VReg(rhs),
+                ..
+            } if *rhs == len_vreg => Some(*idx),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        guarded_indices,
+        vec![0, 1, 2, 3],
+        "expected list spread to guard each source slot against the runtime list length"
+    );
+}
+
+#[test]
 fn test_lower_upsert_cell_path_on_metadata_only_record_builder_materializes_base() {
     let func = HirFunction {
         blocks: vec![HirBlock {

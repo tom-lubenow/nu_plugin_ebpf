@@ -614,36 +614,65 @@ impl<'a> HirToMirLowering<'a> {
 
             HirStmt::ListSpread { src_dst, items } => {
                 // ListSpread adds all items from one list to another
-                // For now, we'll emit a bounded loop that copies elements
                 let dst_list = self.get_vreg(*src_dst);
                 let src_list = self.get_vreg(*items);
 
-                // Get source list metadata for bounds
-                let src_meta = self.get_metadata(*items).cloned();
-                if let Some(meta) = src_meta {
-                    if let Some((_slot, max_len)) = meta.list_buffer {
-                        // Emit length load and bounded copy loop
-                        let len_vreg = self.func.alloc_vreg();
-                        self.emit(MirInst::ListLen {
-                            dst: len_vreg,
-                            list: src_list,
-                        });
+                let (_slot, max_len) = self
+                    .get_metadata(*items)
+                    .and_then(|meta| meta.list_buffer)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "List spread requires a source list with compile-time known maximum length in eBPF"
+                                .into(),
+                        )
+                    })?;
 
-                        // For each item in source list, push to destination
-                        // This is done at compile time for known small lists
-                        for i in 0..max_len {
-                            let item_vreg = self.func.alloc_vreg();
-                            self.emit(MirInst::ListGet {
-                                dst: item_vreg,
-                                list: src_list,
-                                idx: MirValue::Const(i as i64),
-                            });
-                            self.emit(MirInst::ListPush {
-                                list: dst_list,
-                                item: item_vreg,
-                            });
-                        }
-                    }
+                if max_len == 0 {
+                    return Ok(());
+                }
+
+                let len_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListLen {
+                    dst: len_vreg,
+                    list: src_list,
+                });
+
+                let continuation_block = self.func.alloc_block();
+                for i in 0..max_len {
+                    let copy_block = self.func.alloc_block();
+                    let next_block = if i + 1 == max_len {
+                        continuation_block
+                    } else {
+                        self.func.alloc_block()
+                    };
+
+                    let cmp_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: cmp_vreg,
+                        op: BinOpKind::Lt,
+                        lhs: MirValue::Const(i as i64),
+                        rhs: MirValue::VReg(len_vreg),
+                    });
+                    self.terminate(MirInst::Branch {
+                        cond: cmp_vreg,
+                        if_true: copy_block,
+                        if_false: next_block,
+                    });
+
+                    self.current_block = copy_block;
+                    let item_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::ListGet {
+                        dst: item_vreg,
+                        list: src_list,
+                        idx: MirValue::Const(i as i64),
+                    });
+                    self.emit(MirInst::ListPush {
+                        list: dst_list,
+                        item: item_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = next_block;
                 }
             }
 

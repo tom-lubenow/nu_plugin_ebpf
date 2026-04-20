@@ -335,6 +335,7 @@ Near-term priority order:
   - Recent progress: HIR `return early` now lowers through the ordinary MIR return path instead of being rejected outright.
   - Recent progress: HIR `branch-if-empty` now lowers through the compiler's `nothing` sentinel compare instead of being rejected outright.
   - Recent progress: metadata-backed `record spread` now merges compiler-known source fields instead of being rejected outright, preserving downstream field semantics for spread string/record flows.
+  - Recent progress: `list spread` now guards each copied slot against the source runtime length instead of unconditionally copying the full compile-time capacity.
   - Ensure CFG lowering remains verifier-friendly with predictable complexity limits.
 
 - [~] Support global/static data sections.
