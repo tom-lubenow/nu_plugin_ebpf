@@ -3158,6 +3158,87 @@ fn make_seeded_map_take_count_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_seeded_map_take_count_return_program(
+    source_path: CellPath,
+    map_push_decl: DeclId,
+    map_take_decl: DeclId,
+    count_decl: DeclId,
+    kind: &str,
+    map_name: &str,
+    return_value: HirLiteral,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(source_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(map_name.as_bytes().to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(3)),
+                            (b"flags".to_vec(), RegId::new(4)),
+                        ],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: map_take_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: return_value,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 11],
+        ast: vec![None; 11],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_map_take_whole_value_program(
     map_take_decl: DeclId,
     terminal_decl: DeclId,
@@ -5231,6 +5312,144 @@ fn test_compile_optimized_stack_map_pop_count_program() {
         .maps
         .iter()
         .find(|map| map.name == "recent_pids")
+        .expect("expected stack runtime map artifact");
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_optimized_cgroup_sysctl_queue_map_peek_count_program() {
+    let hir = make_ctx_seeded_map_take_count_return_program(
+        CellPath {
+            members: vec![string_member("write")],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+        "queue",
+        "recent_values",
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-push".to_string()),
+        (DeclId::new(43), "map-peek".to_string()),
+        (DeclId::new(44), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sysctl queue map-peek count should lower through attach flow");
+
+    assert!(
+        lowering
+            .type_hints
+            .generic_map_value_types
+            .contains_key(&MapRef {
+                name: "recent_values".to_string(),
+                kind: MapKind::Queue,
+            })
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized cgroup_sysctl queue map-peek count should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "recent_values")
+        .expect("expected queue runtime map artifact");
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_optimized_sock_ops_stack_map_pop_count_program() {
+    let hir = make_ctx_seeded_map_take_count_return_program(
+        CellPath {
+            members: vec![string_member("op")],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+        DeclId::new(44),
+        "stack",
+        "recent_values",
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-push".to_string()),
+        (DeclId::new(43), "map-pop".to_string()),
+        (DeclId::new(44), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops stack map-pop count should lower through attach flow");
+
+    assert!(
+        lowering
+            .type_hints
+            .generic_map_value_types
+            .contains_key(&MapRef {
+                name: "recent_values".to_string(),
+                kind: MapKind::Stack,
+            })
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized sock_ops stack map-pop count should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "recent_values")
         .expect("expected stack runtime map artifact");
     assert!(
         result
