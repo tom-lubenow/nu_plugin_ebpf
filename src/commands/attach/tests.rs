@@ -563,6 +563,66 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_prepend_initial
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_get_initializer() {
+    let source = "{|| mut pid: int = ({pid: 8, ok: false} | get pid); $pid }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record get initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(8));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_get_initializer() {
+    let source = "{|| mut second: int = ([1, 2, 3] | get 1); $second }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list get initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(2));
+}
+
+#[test]
 fn test_strip_leading_annotated_mut_initializer_stmts_removes_leading_initializer_code() {
     let mut hir = HirProgram::new(
         HirFunction {
