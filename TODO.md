@@ -333,6 +333,7 @@ Near-term priority order:
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.
   - Recent progress: static descending integer ranges now lower through the same bounded-loop machinery in MIR/LIR/codegen, with matching type inference, verifier-types, and VCC range handling.
   - Recent progress: HIR `return early` now lowers through the ordinary MIR return path instead of being rejected outright.
+  - Recent progress: HIR `branch-if-empty` now lowers through the compiler's `nothing` sentinel compare instead of being rejected outright.
   - Ensure CFG lowering remains verifier-friendly with predictable complexity limits.
 
 - [~] Support global/static data sections.

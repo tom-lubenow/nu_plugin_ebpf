@@ -927,10 +927,30 @@ impl<'a> HirToMirLowering<'a> {
                     if_false,
                 });
             }
-            HirTerminator::BranchIfEmpty { .. } => {
-                return Err(CompileError::UnsupportedInstruction(
-                    "BranchIfEmpty is not supported in eBPF".into(),
-                ));
+            HirTerminator::BranchIfEmpty {
+                src,
+                if_true,
+                if_false,
+            } => {
+                let if_true = *self.hir_block_map.get(if_true).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction("Invalid branch target".into())
+                })?;
+                let if_false = *self.hir_block_map.get(if_false).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction("Invalid branch target".into())
+                })?;
+                let src_vreg = self.get_vreg(*src);
+                let cmp_result = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: cmp_result,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(src_vreg),
+                    rhs: MirValue::Const(0),
+                });
+                self.terminate(MirInst::Branch {
+                    cond: cmp_result,
+                    if_true,
+                    if_false,
+                });
             }
             HirTerminator::Match {
                 pattern,
