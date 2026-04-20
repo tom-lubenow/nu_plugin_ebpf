@@ -3,14 +3,14 @@ use std::collections::{HashMap, HashSet};
 use nu_cmd_lang::create_default_context;
 use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall};
-use nu_protocol::ast::{Expr, ListItem, RecordItem};
+use nu_protocol::ast::{CellPath, Expr, ExternalArgument, ListItem, RecordItem};
 use nu_protocol::casing::Casing;
 use nu_protocol::engine::{Closure, StateWorkingSet};
-use nu_protocol::eval_const::eval_constant;
+use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
-    BlockId, DeclId, IntoSpanned, LabeledError, PipelineData, Record, Signature, Span, Spanned,
-    Type, Value,
+    BlockId, DeclId, FromValue, IntoSpanned, LabeledError, PipelineData, Record, Signature, Span,
+    Spanned, Type, Value,
 };
 
 use super::struct_ops::{
@@ -255,24 +255,40 @@ fn eval_supported_constant_value(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
 ) -> Result<Value, LabeledError> {
-    if let Ok(value) = eval_constant(working_set, expr) {
-        return Ok(value);
+    eval_supported_constant_value_with_input(working_set, expr, None)
+}
+
+fn eval_supported_constant_value_with_input(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    input: Option<Value>,
+) -> Result<Value, LabeledError> {
+    let pipeline_input = input.clone().map_or_else(PipelineData::empty, |value| {
+        PipelineData::value(value, None)
+    });
+    if let Ok(data) = eval_constant_with_input(working_set, expr, pipeline_input) {
+        return data.into_value(expr.span).map_err(|e| {
+            LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(e.to_string(), expr.span)
+        });
     }
 
     match &expr.expr {
-        Expr::Keyword(kw) => eval_supported_constant_value(working_set, &kw.expr),
+        Expr::Keyword(kw) => eval_supported_constant_value_with_input(working_set, &kw.expr, input),
         Expr::Subexpression(block_id) | Expr::Block(block_id) => {
             let block = working_set.get_block(*block_id);
-            let expr = block
-                .pipelines
-                .first()
-                .and_then(|pipeline| pipeline.elements.first())
-                .map(|element| &element.expr)
-                .ok_or_else(|| {
+            eval_supported_constant_block(working_set, block, input, expr.span)
+        }
+        Expr::FullCellPath(full_cell_path) => {
+            let value =
+                eval_supported_constant_value_with_input(working_set, &full_cell_path.head, input)?;
+            value
+                .follow_cell_path(&full_cell_path.tail)
+                .map(|projected| projected.into_owned())
+                .map_err(|e| {
                     LabeledError::new("Unsupported annotated mutable global initializer")
-                        .with_label("constant subexpression is empty", expr.span)
-                })?;
-            eval_supported_constant_value(working_set, expr)
+                        .with_label(e.to_string(), expr.span)
+                })
         }
         Expr::Record(items) => {
             let mut record = Record::new();
@@ -280,11 +296,13 @@ fn eval_supported_constant_value(
                 match item {
                     RecordItem::Pair(key_expr, value_expr) => {
                         let key = constant_record_key(working_set, key_expr)?;
-                        let value = eval_supported_constant_value(working_set, value_expr)?;
+                        let value =
+                            eval_supported_constant_value_with_input(working_set, value_expr, None)?;
                         record.push(key, value);
                     }
                     RecordItem::Spread(_, spread_expr) => {
-                        let value = eval_supported_constant_value(working_set, spread_expr)?;
+                        let value =
+                            eval_supported_constant_value_with_input(working_set, spread_expr, None)?;
                         let Value::Record {
                             val: spread_record, ..
                         } = value
@@ -312,10 +330,18 @@ fn eval_supported_constant_value(
             for item in items {
                 match item {
                     ListItem::Item(item_expr) => {
-                        values.push(eval_supported_constant_value(working_set, item_expr)?);
+                        values.push(eval_supported_constant_value_with_input(
+                            working_set,
+                            item_expr,
+                            None,
+                        )?);
                     }
                     ListItem::Spread(_, spread_expr) => {
-                        let value = eval_supported_constant_value(working_set, spread_expr)?;
+                        let value = eval_supported_constant_value_with_input(
+                            working_set,
+                            spread_expr,
+                            None,
+                        )?;
                         let Value::List {
                             vals: spread_values, ..
                         } = value
@@ -336,10 +362,222 @@ fn eval_supported_constant_value(
             }
             Ok(Value::list(values, expr.span))
         }
+        Expr::Call(call) => eval_supported_constant_call(working_set, call, input, expr.span),
+        Expr::ExternalCall(head, args) => {
+            eval_supported_constant_external_call(working_set, head, args, input, expr.span)
+        }
         _ => Err(LabeledError::new("Unsupported annotated mutable global initializer")
             .with_label("Not a constant.", expr.span)
             .with_help(
                 "Leading annotated `mut` declarations in eBPF closures require a compile-time constant initializer",
+            )),
+    }
+}
+
+fn eval_supported_constant_block(
+    working_set: &StateWorkingSet,
+    block: &nu_protocol::ast::Block,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut current = input;
+
+    for pipeline in &block.pipelines {
+        for element in &pipeline.elements {
+            if element.redirection.is_some() {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "compile-time global initializer pipelines cannot redirect output",
+                            element.expr.span,
+                        ),
+                );
+            }
+
+            current = Some(eval_supported_constant_value_with_input(
+                working_set,
+                &element.expr,
+                current,
+            )?);
+        }
+    }
+
+    current.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label("constant subexpression is empty", span)
+    })
+}
+
+fn eval_supported_constant_cell_path(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+) -> Result<CellPath, LabeledError> {
+    match &expr.expr {
+        Expr::String(path)
+        | Expr::RawString(path)
+        | Expr::Filepath(path, _)
+        | Expr::Directory(path, _) => {
+            return CellPath::from_value(Value::string(path, expr.span)).map_err(|e| {
+                LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(e.to_string(), expr.span)
+            });
+        }
+        Expr::GlobPattern(path, _) => {
+            let value = path
+                .parse::<i64>()
+                .ok()
+                .filter(|index| *index >= 0)
+                .map(|index| Value::int(index, expr.span))
+                .unwrap_or_else(|| Value::string(path, expr.span));
+            return CellPath::from_value(value).map_err(|e| {
+                LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(e.to_string(), expr.span)
+            });
+        }
+        Expr::Var(_) => {
+            let path =
+                String::from_utf8_lossy(working_set.get_span_contents(expr.span)).into_owned();
+            let value = path
+                .parse::<i64>()
+                .ok()
+                .filter(|index| *index >= 0)
+                .map(|index| Value::int(index, expr.span))
+                .unwrap_or_else(|| Value::string(path, expr.span));
+            return CellPath::from_value(value).map_err(|e| {
+                LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(e.to_string(), expr.span)
+            });
+        }
+        _ => {}
+    }
+
+    let value = eval_supported_constant_value(working_set, expr)?;
+    CellPath::from_value(value).map_err(|e| {
+        LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(e.to_string(), expr.span)
+    })
+}
+
+fn eval_supported_constant_call(
+    working_set: &StateWorkingSet,
+    call: &nu_protocol::ast::Call,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let cmd_name = working_set.get_decl(call.decl_id).name();
+
+    match cmd_name {
+        "upsert" => {
+            let mut value = input.ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`upsert` in a compile-time global initializer must receive pipeline input",
+                    span,
+                )
+            })?;
+
+            let path_expr = call.positional_nth(0).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label("`upsert` requires a cell path argument", span)
+            })?;
+            let new_value_expr = call.positional_nth(1).ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label("`upsert` requires a replacement value", span)
+            })?;
+            let path = eval_supported_constant_cell_path(working_set, path_expr)?;
+            let new_value = eval_supported_constant_value(working_set, new_value_expr)?;
+
+            value
+                .upsert_data_at_cell_path(&path.members, new_value)
+                .map_err(|e| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(e.to_string(), span)
+                })?;
+            Ok(value)
+        }
+        _ => Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                format!(
+                    "command `{cmd_name}` is not supported in compile-time global initializers"
+                ),
+                span,
+            )
+            .with_help(
+                "Use a compile-time constant expression, record/list literal, spread, or supported pipeline primitive like `upsert`",
+            )),
+    }
+}
+
+fn eval_supported_constant_external_call(
+    working_set: &StateWorkingSet,
+    head: &nu_protocol::ast::Expression,
+    args: &[ExternalArgument],
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let cmd_name = match &head.expr {
+        Expr::String(name)
+        | Expr::RawString(name)
+        | Expr::GlobPattern(name, _)
+        | Expr::Filepath(name, _)
+        | Expr::Directory(name, _) => name.as_str(),
+        _ => {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "compile-time global initializer external command name must be a constant string",
+                    head.span,
+                ));
+        }
+    };
+
+    match cmd_name {
+        "upsert" => {
+            let mut value = input.ok_or_else(|| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`upsert` in a compile-time global initializer must receive pipeline input",
+                    span,
+                )
+            })?;
+
+            let [path_arg, new_value_arg] = args else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label("`upsert` requires exactly two arguments", span));
+            };
+
+            let ExternalArgument::Regular(path_expr) = path_arg else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`upsert` cell path cannot use spread syntax in compile-time global initializers",
+                        path_arg.expr().span,
+                    ));
+            };
+            let ExternalArgument::Regular(new_value_expr) = new_value_arg else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`upsert` replacement value cannot use spread syntax in compile-time global initializers",
+                        new_value_arg.expr().span,
+                    ));
+            };
+
+            let path = eval_supported_constant_cell_path(working_set, path_expr)?;
+            let new_value = eval_supported_constant_value(working_set, new_value_expr)?;
+
+            value
+                .upsert_data_at_cell_path(&path.members, new_value)
+                .map_err(|e| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(e.to_string(), span)
+                })?;
+            Ok(value)
+        }
+        _ => Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                format!(
+                    "external command `{cmd_name}` is not supported in compile-time global initializers"
+                ),
+                span,
+            )
+            .with_help(
+                "Use a compile-time constant expression, record/list literal, spread, or supported pipeline primitive like `upsert`",
             )),
     }
 }
