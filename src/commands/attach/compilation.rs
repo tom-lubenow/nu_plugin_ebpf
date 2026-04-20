@@ -283,14 +283,25 @@ fn eval_supported_constant_value(
                         let value = eval_supported_constant_value(working_set, value_expr)?;
                         record.push(key, value);
                     }
-                    RecordItem::Spread(_, _) => {
-                        return Err(
-                            LabeledError::new("Unsupported annotated mutable global initializer")
+                    RecordItem::Spread(_, spread_expr) => {
+                        let value = eval_supported_constant_value(working_set, spread_expr)?;
+                        let Value::Record {
+                            val: spread_record, ..
+                        } = value
+                        else {
+                            return Err(
+                                LabeledError::new(
+                                    "Unsupported annotated mutable global initializer",
+                                )
                                 .with_label(
-                                    "record spreads are not supported in compile-time global initializers",
-                                    expr.span,
+                                    "record spreads in compile-time global initializers must evaluate to records",
+                                    spread_expr.span,
                                 ),
-                        )
+                            );
+                        };
+                        for (key, value) in spread_record.iter() {
+                            record.insert(key, value.clone());
+                        }
                     }
                 }
             }
@@ -303,14 +314,23 @@ fn eval_supported_constant_value(
                     ListItem::Item(item_expr) => {
                         values.push(eval_supported_constant_value(working_set, item_expr)?);
                     }
-                    ListItem::Spread(_, _) => {
-                        return Err(
-                            LabeledError::new("Unsupported annotated mutable global initializer")
+                    ListItem::Spread(_, spread_expr) => {
+                        let value = eval_supported_constant_value(working_set, spread_expr)?;
+                        let Value::List {
+                            vals: spread_values, ..
+                        } = value
+                        else {
+                            return Err(
+                                LabeledError::new(
+                                    "Unsupported annotated mutable global initializer",
+                                )
                                 .with_label(
-                                    "list spreads are not supported in compile-time global initializers",
-                                    expr.span,
+                                    "list spreads in compile-time global initializers must evaluate to lists",
+                                    spread_expr.span,
                                 ),
-                        )
+                            );
+                        };
+                        values.extend(spread_values);
                     }
                 }
             }
