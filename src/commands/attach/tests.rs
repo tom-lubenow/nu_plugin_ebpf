@@ -4547,6 +4547,18 @@ fn test_compile_xdp_ctx_rx_queue_index_counter_program() {
 }
 
 #[test]
+fn test_compile_tc_ctx_wire_len_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("wire_len")],
+        },
+        "tc ctx.wire_len count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_skb_ctx_mark_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSkb,
@@ -4555,6 +4567,18 @@ fn test_compile_cgroup_skb_ctx_mark_counter_program() {
             members: vec![string_member("mark")],
         },
         "cgroup_skb ctx.mark count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_post_bind4_ctx_local_port_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:post_bind4",
+        CellPath {
+            members: vec![string_member("local_port")],
+        },
+        "cgroup_sock:post_bind4 ctx.local_port count",
     );
 }
 
@@ -4579,6 +4603,30 @@ fn test_compile_cgroup_sysctl_ctx_write_counter_program() {
             members: vec![string_member("write")],
         },
         "cgroup_sysctl ctx.write count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_set_ctx_level_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:set",
+        CellPath {
+            members: vec![string_member("level")],
+        },
+        "cgroup_sockopt:set ctx.level count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_sendmsg4_ctx_msg_src_ip4_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:sendmsg4",
+        CellPath {
+            members: vec![string_member("msg_src_ip4")],
+        },
+        "cgroup_sock_addr:sendmsg4 ctx.msg_src_ip4 count",
     );
 }
 
@@ -4627,6 +4675,18 @@ fn test_compile_sk_skb_parser_ctx_packet_len_counter_program() {
             members: vec![string_member("packet_len")],
         },
         "sk_skb_parser ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_lirc_mode2_ctx_value_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::LircMode2,
+        "/dev/null",
+        CellPath {
+            members: vec![string_member("value")],
+        },
+        "lirc_mode2 ctx.value count",
     );
 }
 

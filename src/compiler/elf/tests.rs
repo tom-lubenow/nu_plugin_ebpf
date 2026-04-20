@@ -668,6 +668,25 @@ fn test_probe_context_tc_attach_kind_uses_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_new_accepts_full_tc_spec_string() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "tc:lo:ingress");
+
+    assert_eq!(ctx.target(), "lo:ingress");
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::Tc { target }) if target.is_ingress()
+    ));
+}
+
+#[test]
+fn test_probe_context_new_ignores_mismatched_full_spec_string() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "xdp:lo");
+
+    assert_eq!(ctx.target(), "xdp:lo");
+    assert!(ctx.parsed_program_spec().is_none());
+}
+
+#[test]
 fn test_probe_context_cgroup_sock_attach_kind_uses_typed_program_spec() {
     let post_bind = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
     let sock_create = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");

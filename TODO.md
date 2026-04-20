@@ -175,6 +175,7 @@ Near-term priority order:
   - Add program-type-aware compile targets (section naming, context type, helper set, attach/load path).
   - Keep tracing as one target among many instead of the default architecture.
   - Recent progress: `ProgramSpec` now owns typed target parsing plus section-name/attach input derivation shared by loader, compiler, and attach paths; `ProbeContext` now caches that typed `ProgramSpec` instead of reparsing `probe_type + target` on demand, which also keeps `struct_ops` callback probe contexts tied to the correct value type; and helper-call legality now mostly resolves through modeled `ProgramSpec` / `EbpfProgramType` policy instead of ad hoc validator matches.
+  - Recent progress: `ProbeContext::new` now also accepts full canonical probe spec strings as a fallback (not just raw targets), canonicalizing matching inputs back to structured `ProgramSpec` metadata instead of silently dropping attach-kind information.
 
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.
@@ -375,7 +376,7 @@ Near-term priority order:
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.
   - Keep fixtures small and verifier-focused to catch regressions quickly.
-  - Recent progress: the attach compile harness now covers representative compile-only non-tracing families (`xdp`, `cgroup_skb`, `cgroup_device`, `cgroup_sysctl`, `sock_ops`, `sk_msg`, `sk_skb`, `sk_skb_parser`) using safe context-field fixtures that widen program-model regression coverage without adding risky live attach tests.
+  - Recent progress: the attach compile harness now covers representative compile-only non-tracing families (`xdp`, `tc`, `cgroup_skb`, `cgroup_device`, `cgroup_sysctl`, `sock_ops`, `sk_msg`, `sk_skb`, `sk_skb_parser`, `lirc_mode2`) plus attach-sensitive target variants (`cgroup_sock:post_bind4`, `cgroup_sockopt:set`, `cgroup_sock_addr:sendmsg4`) using safe context-field fixtures that widen program-model regression coverage without adding risky live attach tests.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

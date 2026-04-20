@@ -224,6 +224,11 @@ impl ProbeContext {
         if let Ok(program_spec) = ProgramSpec::from_program_type_target(probe_type, &target) {
             return Self::from_program_spec_parts(program_spec, target);
         }
+        if let Ok(program_spec) = ProgramSpec::parse(&target) {
+            if program_spec.program_type() == probe_type {
+                return Self::from_program_spec(program_spec);
+            }
+        }
         Self {
             probe_type,
             program_spec: None,
