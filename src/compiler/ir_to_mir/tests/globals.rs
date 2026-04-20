@@ -1975,6 +1975,78 @@ fn test_lower_global_define_type_record_with_constant_upsert_initializer_uses_na
 }
 
 #[test]
+fn test_lower_global_define_type_i64_with_constant_follow_cell_path_initializer_uses_named_data_global(
+) {
+    let define_decl = DeclId::new(1078);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let mut seed = Record::with_capacity(1);
+    seed.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(seed, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("seen_pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("i64".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"type".to_vec(), RegId::new(3))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type i64 with constant follow-cell-path input should lower");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_pid");
+    assert_eq!(result.data_globals[0].data, 7i64.to_le_bytes().to_vec());
+}
+
+#[test]
 fn test_lower_global_define_type_record_from_metadata_builder_uses_named_data_global() {
     let define_decl = DeclId::new(1074);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
@@ -2043,6 +2115,77 @@ fn test_lower_global_define_type_record_from_metadata_builder_uses_named_data_gl
     assert_eq!(result.bss_globals.len(), 0);
     assert_eq!(result.data_globals[0].name, "__nu_global_state");
     assert_eq!(result.data_globals[0].data, 7i64.to_le_bytes().to_vec());
+}
+
+#[test]
+fn test_lower_global_define_type_string_with_constant_string_append_initializer_uses_named_data_global(
+) {
+    let define_decl = DeclId::new(1079);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("hel".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("lo".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(0),
+                    val: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("greeting".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("string:8".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"type".to_vec(), RegId::new(3))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type string:N with constant string append input should lower");
+
+    let mut expected = vec![0u8; 24];
+    expected[..8].copy_from_slice(&(5u64).to_le_bytes());
+    expected[8..13].copy_from_slice(b"hello");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_greeting");
+    assert_eq!(result.data_globals[0].data, expected);
 }
 
 #[test]
