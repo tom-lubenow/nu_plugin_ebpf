@@ -176,6 +176,7 @@ fn test_stack_pointer_add_with_bounded_loop_counter() {
     func.block_mut(header).terminator = MirInst::LoopHeader {
         counter,
         start: 0,
+        step: 1,
         limit: 2,
         body,
         exit,
@@ -216,6 +217,75 @@ fn test_stack_pointer_add_with_bounded_loop_counter() {
 }
 
 #[test]
+fn test_stack_pointer_add_with_descending_loop_counter() {
+    let mut func = make_test_function();
+    let list = func.alloc_vreg();
+    let counter = func.alloc_vreg();
+    let scaled = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let loaded = func.alloc_vreg();
+
+    let header = func.alloc_block();
+    let body = func.alloc_block();
+    let exit = func.alloc_block();
+    let slot = func.alloc_stack_slot(24, 8, StackSlotKind::ListBuffer);
+
+    let entry = func.block_mut(BlockId(0));
+    entry.instructions.push(MirInst::ListNew {
+        dst: list,
+        buffer: slot,
+        max_len: 2,
+    });
+    entry.instructions.push(MirInst::Copy {
+        dst: counter,
+        src: MirValue::Const(1),
+    });
+    entry.terminator = MirInst::Jump { target: header };
+
+    func.block_mut(header).terminator = MirInst::LoopHeader {
+        counter,
+        start: 1,
+        step: -1,
+        limit: -1,
+        body,
+        exit,
+    };
+
+    let body_block = func.block_mut(body);
+    body_block.instructions.push(MirInst::BinOp {
+        dst: scaled,
+        op: BinOpKind::Mul,
+        lhs: MirValue::VReg(counter),
+        rhs: MirValue::Const(8),
+    });
+    body_block.instructions.push(MirInst::BinOp {
+        dst: ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(list),
+        rhs: MirValue::VReg(scaled),
+    });
+    body_block.instructions.push(MirInst::Load {
+        dst: loaded,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    body_block.terminator = MirInst::LoopBack {
+        counter,
+        step: -1,
+        header,
+    };
+
+    func.block_mut(exit).terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    assert!(
+        ti.infer(&func).is_ok(),
+        "descending loop counters should preserve stack-pointer offset ranges"
+    );
+}
+
+#[test]
 fn test_stack_pointer_add_with_loop_counter_mod_index() {
     let mut func = make_test_function();
     let list = func.alloc_vreg();
@@ -245,6 +315,7 @@ fn test_stack_pointer_add_with_loop_counter_mod_index() {
     func.block_mut(header).terminator = MirInst::LoopHeader {
         counter,
         start: 0,
+        step: 1,
         limit: 2,
         body,
         exit,
@@ -340,6 +411,7 @@ fn test_stack_pointer_add_with_loop_counter_bitand_index() {
     func.block_mut(header).terminator = MirInst::LoopHeader {
         counter,
         start: 0,
+        step: 1,
         limit: 2,
         body,
         exit,

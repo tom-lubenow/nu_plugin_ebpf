@@ -1404,6 +1404,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.terminate(MirInst::LoopHeader {
                     counter,
                     start: 0,
+                    step: 1,
                     limit: skip_count,
                     body: loop_body,
                     exit: loop_exit,

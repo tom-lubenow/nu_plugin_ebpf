@@ -630,8 +630,9 @@ Context parameter syntax (recommended):
     stack-backed fixed arrays such as `let idx = ($ctx.pid mod 2);
     ($ctx.arg0.comm | get $idx)`. Pointer-valued examples include
     `let idx = 0; let fd = ($ctx.arg0.fdt.fd | get $idx); $fd.f_inode.i_ino`.
-    Bounded ascending `for` loops over static integer ranges now lower to
-    verifier-safe loops, so `for i in 0..0 { ... get $i ... }` works.
+    Bounded `for` loops over static integer ranges now lower to
+    verifier-safe loops, so `for i in 0..0 { ... get $i ... }` works,
+    and explicit negative-step descending ranges lower too.
     Bounded arithmetic on those indices, such as
     `let j = (($i + 1) mod 2)`, is preserved too. The same range tracking
     now works for typed unsigned runtime fields such as

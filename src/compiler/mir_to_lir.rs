@@ -506,6 +506,7 @@ fn lower_inst(
         MirInst::LoopHeader {
             counter,
             start,
+            step,
             limit,
             body,
             exit,
@@ -513,6 +514,7 @@ fn lower_inst(
             out.push(LirInst::LoopHeader {
                 counter: *counter,
                 start: *start,
+                step: *step,
                 limit: *limit,
                 body: *body,
                 exit: *exit,

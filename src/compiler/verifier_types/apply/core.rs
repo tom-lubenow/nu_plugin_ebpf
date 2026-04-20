@@ -153,6 +153,7 @@ pub(super) fn apply_typed_dst_inst(
 pub(super) fn apply_loop_header_inst(
     dst: VReg,
     start: i64,
+    step: i64,
     limit: i64,
     types: &HashMap<VReg, MirType>,
     state: &mut VerifierState,
@@ -161,12 +162,22 @@ pub(super) fn apply_loop_header_inst(
         .get(&dst)
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
-    let max = if start < limit {
-        limit.saturating_sub(1)
+    let (min, max) = if step >= 0 {
+        let max = if start < limit {
+            limit.saturating_sub(1)
+        } else {
+            start
+        };
+        (start, max)
     } else {
-        start
+        let min = if start > limit {
+            limit.saturating_add(1)
+        } else {
+            start
+        };
+        (min, start)
     };
-    state.set_with_range(dst, ty, ValueRange::Known { min: start, max });
+    state.set_with_range(dst, ty, ValueRange::Known { min, max });
 }
 
 pub(super) fn apply_phi_inst(

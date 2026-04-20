@@ -420,12 +420,6 @@ impl<'a> HirToMirLowering<'a> {
                             "Iterate requires a compile-time known range (e.g., 1..10)".into(),
                         )
                     })?;
-                if range.step < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "descending ranges are not supported in eBPF loops yet".into(),
-                    ));
-                }
-
                 let dst_vreg = self.get_vreg(*dst);
                 let counter_vreg = self.get_vreg(*stream);
 
@@ -450,6 +444,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.terminate(MirInst::LoopHeader {
                     counter: counter_vreg,
                     start: range.start,
+                    step: range.step,
                     limit,
                     body: body_block,
                     exit: exit_block,
@@ -965,12 +960,6 @@ impl<'a> HirToMirLowering<'a> {
                             "Iterate requires a compile-time known range (e.g., 1..10)".into(),
                         )
                     })?;
-                if range.step < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "descending ranges are not supported in eBPF loops yet".into(),
-                    ));
-                }
-
                 let dst_vreg = self.get_vreg(*dst);
                 let counter_vreg = self.get_vreg(*stream);
 
@@ -990,6 +979,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.terminate(MirInst::LoopHeader {
                     counter: counter_vreg,
                     start: range.start,
+                    step: range.step,
                     limit,
                     body: body_block,
                     exit: exit_block,

@@ -353,6 +353,7 @@ pub enum LirInst {
     LoopHeader {
         counter: VReg,
         start: i64,
+        step: i64,
         limit: i64,
         body: BlockId,
         exit: BlockId,

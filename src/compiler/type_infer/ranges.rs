@@ -284,17 +284,28 @@ impl<'a> TypeInference<'a> {
                 MirInst::LoopHeader {
                     counter,
                     start,
+                    step,
                     limit,
                     body,
                     exit,
                 } => {
                     let mut body_state = state.clone();
-                    let max = if *start < *limit {
-                        limit.saturating_sub(1)
+                    let (min, max) = if *step >= 0 {
+                        let max = if *start < *limit {
+                            limit.saturating_sub(1)
+                        } else {
+                            *start
+                        };
+                        (*start, max)
                     } else {
-                        *start
+                        let min = if *start > *limit {
+                            limit.saturating_add(1)
+                        } else {
+                            *start
+                        };
+                        (min, *start)
                     };
-                    let counter_range = ValueRange::known(*start, max);
+                    let counter_range = ValueRange::known(min, max);
                     self.set_state_range(&mut body_state, *counter, counter_range);
                     self.observe_range(&mut observed, *counter, counter_range);
                     self.propagate_range_state(
@@ -502,17 +513,28 @@ impl<'a> TypeInference<'a> {
                 MirInst::LoopHeader {
                     counter,
                     start,
+                    step,
                     limit,
                     body,
                     exit,
                 } => {
                     let mut body_state = state.clone();
-                    let max = if *start < *limit {
-                        limit.saturating_sub(1)
+                    let (min, max) = if *step >= 0 {
+                        let max = if *start < *limit {
+                            limit.saturating_sub(1)
+                        } else {
+                            *start
+                        };
+                        (*start, max)
                     } else {
-                        *start
+                        let min = if *start > *limit {
+                            limit.saturating_add(1)
+                        } else {
+                            *start
+                        };
+                        (min, *start)
                     };
-                    self.set_state_range(&mut body_state, *counter, ValueRange::known(*start, max));
+                    self.set_state_range(&mut body_state, *counter, ValueRange::known(min, max));
                     self.propagate_range_state(
                         *body,
                         &body_state,
@@ -720,17 +742,28 @@ impl<'a> TypeInference<'a> {
                 MirInst::LoopHeader {
                     counter,
                     start,
+                    step,
                     limit,
                     body,
                     exit,
                 } => {
                     let mut body_state = state.clone();
-                    let max = if *start < *limit {
-                        limit.saturating_sub(1)
+                    let (min, max) = if *step >= 0 {
+                        let max = if *start < *limit {
+                            limit.saturating_sub(1)
+                        } else {
+                            *start
+                        };
+                        (*start, max)
                     } else {
-                        *start
+                        let min = if *start > *limit {
+                            limit.saturating_add(1)
+                        } else {
+                            *start
+                        };
+                        (min, *start)
                     };
-                    self.set_state_range(&mut body_state, *counter, ValueRange::known(*start, max));
+                    self.set_state_range(&mut body_state, *counter, ValueRange::known(min, max));
                     self.propagate_range_state(
                         *body,
                         &body_state,

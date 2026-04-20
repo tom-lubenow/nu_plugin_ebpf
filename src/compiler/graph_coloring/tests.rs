@@ -557,6 +557,7 @@ fn test_lir_loop_depths() {
     func.block_mut(header).terminator = LirInst::LoopHeader {
         counter,
         start: 0,
+        step: 1,
         limit: 10,
         body,
         exit,

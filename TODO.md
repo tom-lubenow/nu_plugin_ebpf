@@ -331,6 +331,7 @@ Near-term priority order:
 
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.
+  - Recent progress: static descending integer ranges now lower through the same bounded-loop machinery in MIR/LIR/codegen, with matching type inference, verifier-types, and VCC range handling.
   - Ensure CFG lowering remains verifier-friendly with predictable complexity limits.
 
 - [~] Support global/static data sections.

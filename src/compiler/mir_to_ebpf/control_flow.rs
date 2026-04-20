@@ -64,19 +64,25 @@ impl<'a> MirToEbpfCompiler<'a> {
     pub(super) fn compile_loop_header(
         &mut self,
         counter: VReg,
+        step: i64,
         limit: i64,
         body: BlockId,
         exit: BlockId,
     ) -> Result<(), CompileError> {
         // Bounded loop header for eBPF verifier compliance
-        // counter < limit ? jump to body : jump to exit
+        // counter < limit ? jump to body : jump to exit for ascending loops
+        // counter > limit ? jump to body : jump to exit for descending loops
         let counter_reg = self.ensure_reg(counter)?;
+        let opcode = if step >= 0 {
+            opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_K
+        } else {
+            opcode::BPF_JMP | opcode::BPF_JSGT | opcode::BPF_K
+        };
 
-        // Compare counter against limit
-        // JSLT: jump if counter < limit (signed)
+        // Compare counter against limit with a signed ordering chosen by step direction.
         let jlt_idx = self.instructions.len();
         self.instructions.push(EbpfInsn::new(
-            opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_K,
+            opcode,
             counter_reg.as_u8(),
             0,
             0, // Placeholder - will be fixed up

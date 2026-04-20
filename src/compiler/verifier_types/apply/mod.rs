@@ -96,10 +96,11 @@ pub(super) fn apply_inst(
         MirInst::LoopHeader {
             counter: dst,
             start,
+            step,
             limit,
             ..
         } => {
-            apply_loop_header_inst(*dst, *start, *limit, types, state);
+            apply_loop_header_inst(*dst, *start, *step, *limit, types, state);
         }
         MirInst::Phi { dst, args } => {
             apply_phi_inst(*dst, args, types, state);

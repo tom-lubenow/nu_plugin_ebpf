@@ -325,21 +325,23 @@ fn test_lower_default_step_range_iterate_emits_loop_header_start() {
         .find_map(|block| match &block.terminator {
             MirInst::LoopHeader {
                 start,
+                step,
                 limit,
                 body,
                 exit,
                 ..
-            } => Some((*start, *limit, *body, *exit)),
+            } => Some((*start, *step, *limit, *body, *exit)),
             _ => None,
         })
         .expect("expected loop header");
     assert_eq!(loop_header.0, 0);
-    assert_eq!(loop_header.1, 2);
+    assert_eq!(loop_header.1, 1);
+    assert_eq!(loop_header.2, 2);
     assert_eq!(
-        result.program.main.block(loop_header.2).instructions.len(),
+        result.program.main.block(loop_header.3).instructions.len(),
         1
     );
-    let exit_block = result.program.main.block(loop_header.3);
+    let exit_block = result.program.main.block(loop_header.4);
     let exit_initializes_result = exit_block.instructions.iter().any(|inst| {
         matches!(
             inst,
@@ -361,25 +363,61 @@ fn test_lower_default_step_range_iterate_emits_loop_header_start() {
 }
 
 #[test]
-fn test_lower_descending_range_iterate_is_rejected() {
+fn test_lower_descending_range_iterate_emits_signed_loop_header() {
     let hir = make_range_iterate_program(3, HirLiteral::Int(-1), 0);
 
-    let err = match lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &HashMap::new(),
         None,
         &HashMap::new(),
         &HashMap::new(),
-    ) {
-        Ok(_) => panic!("descending iterate should be rejected"),
-        Err(err) => err,
-    };
+    )
+    .expect("descending iterate should lower");
 
+    let loop_header = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::LoopHeader {
+                start,
+                step,
+                limit,
+                body,
+                exit,
+                ..
+            } => Some((*start, *step, *limit, *body, *exit)),
+            _ => None,
+        })
+        .expect("expected descending loop header");
+    assert_eq!(loop_header.0, 3);
+    assert_eq!(loop_header.1, -1);
+    assert_eq!(loop_header.2, -1);
+    assert_eq!(
+        result.program.main.block(loop_header.3).instructions.len(),
+        1
+    );
+    let exit_block = result.program.main.block(loop_header.4);
+    let exit_initializes_result = exit_block.instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )
+    }) || matches!(
+        exit_block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(0))
+        }
+    );
     assert!(
-        err.to_string()
-            .contains("descending ranges are not supported"),
-        "unexpected error: {err}"
+        exit_initializes_result,
+        "expected exit edge to initialize the descending loop result register"
     );
 }
 

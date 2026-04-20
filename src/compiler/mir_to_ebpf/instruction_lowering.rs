@@ -141,11 +141,12 @@ impl<'a> MirToEbpfCompiler<'a> {
             LirInst::LoopHeader {
                 counter,
                 start: _,
+                step,
                 limit,
                 body,
                 exit,
             } => {
-                self.compile_loop_header(*counter, *limit, *body, *exit)?;
+                self.compile_loop_header(*counter, *step, *limit, *body, *exit)?;
             }
 
             LirInst::LoopBack {

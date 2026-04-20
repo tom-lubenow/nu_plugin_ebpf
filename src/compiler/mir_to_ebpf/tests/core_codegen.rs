@@ -5378,6 +5378,7 @@ fn test_mir_loop() {
     header.terminator = MirInst::LoopHeader {
         counter: VReg(0),
         start: 0,
+        step: 1,
         limit: 10,
         body: BlockId(2),
         exit: BlockId(3),
@@ -5412,6 +5413,73 @@ fn test_mir_loop() {
     assert!(
         !result.bytecode.is_empty(),
         "Loop compile produced empty bytecode"
+    );
+}
+
+#[test]
+fn test_compile_descending_loop_uses_signed_greater_than_header() {
+    use crate::compiler::mir::{BasicBlock, MirFunction};
+
+    let mut func = MirFunction::new();
+    let entry = BlockId(0);
+    let header = BlockId(1);
+    let body = BlockId(2);
+    let exit = BlockId(3);
+    func.entry = entry;
+
+    let mut entry_block = BasicBlock::new(entry);
+    entry_block.instructions.push(MirInst::Copy {
+        dst: VReg(0),
+        src: MirValue::Const(3),
+    });
+    entry_block.terminator = MirInst::Jump { target: header };
+
+    let mut header_block = BasicBlock::new(header);
+    header_block.terminator = MirInst::LoopHeader {
+        counter: VReg(0),
+        start: 3,
+        step: -1,
+        limit: -1,
+        body,
+        exit,
+    };
+
+    let mut body_block = BasicBlock::new(body);
+    body_block.terminator = MirInst::LoopBack {
+        counter: VReg(0),
+        step: -1,
+        header,
+    };
+
+    let mut exit_block = BasicBlock::new(exit);
+    exit_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(VReg(0))),
+    };
+
+    func.blocks.push(entry_block);
+    func.blocks.push(header_block);
+    func.blocks.push(body_block);
+    func.blocks.push(exit_block);
+    func.vreg_count = 1;
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let result = compile_mir_to_ebpf(&program, None).unwrap();
+    let decode = |chunk: &[u8]| EbpfInsn {
+        opcode: chunk[0],
+        dst_reg: chunk[1] & 0x0f,
+        src_reg: (chunk[1] >> 4) & 0x0f,
+        offset: i16::from_le_bytes([chunk[2], chunk[3]]),
+        imm: i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]),
+    };
+    let insns: Vec<EbpfInsn> = result.bytecode.chunks(8).map(decode).collect();
+    let jsgt_opcode = opcode::BPF_JMP | opcode::BPF_JSGT | opcode::BPF_K;
+    assert!(
+        insns.iter().any(|insn| insn.opcode == jsgt_opcode),
+        "expected descending loop header to use signed-greater-than compare"
     );
 }
 

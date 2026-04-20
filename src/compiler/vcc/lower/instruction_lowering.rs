@@ -1466,6 +1466,7 @@ impl<'a> VccLowerer<'a> {
             MirInst::LoopHeader {
                 counter,
                 start: _,
+                step,
                 limit,
                 body,
                 exit,
@@ -1473,7 +1474,11 @@ impl<'a> VccLowerer<'a> {
                 let tmp = self.temp_reg();
                 out.push(VccInst::BinOp {
                     dst: tmp,
-                    op: VccBinOp::Lt,
+                    op: if *step >= 0 {
+                        VccBinOp::Lt
+                    } else {
+                        VccBinOp::Gt
+                    },
                     lhs: VccValue::Reg(VccReg(counter.0)),
                     rhs: VccValue::Imm(*limit),
                 });
