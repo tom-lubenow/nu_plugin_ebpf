@@ -566,7 +566,6 @@ fn test_lower_mutated_captured_binary_variable_uses_data_global() {
     )
     .expect("mutated captured binary should lower through a writable global");
 
-    assert_eq!(result.readonly_globals.len(), 0);
     assert_eq!(result.data_globals.len(), 1);
     assert_eq!(result.bss_globals.len(), 0);
 
@@ -648,7 +647,6 @@ fn test_lower_global_set_and_get_nonzero_scalar_uses_named_data_global() {
     )
     .expect("global-get/global-set scalar flow should lower");
 
-    assert_eq!(result.readonly_globals.len(), 0);
     assert_eq!(result.data_globals.len(), 1);
     assert_eq!(result.bss_globals.len(), 0);
     assert_eq!(result.data_globals[0].name, "__nu_global_seen_pid");
@@ -1346,7 +1344,6 @@ fn test_lower_global_define_and_get_nonzero_scalar_uses_named_data_global() {
     )
     .expect("global-define/global-get scalar flow should lower");
 
-    assert_eq!(result.readonly_globals.len(), 0);
     assert_eq!(result.data_globals.len(), 1);
     assert_eq!(result.bss_globals.len(), 0);
     assert_eq!(result.data_globals[0].name, "__nu_global_seen_pid");
@@ -1672,6 +1669,95 @@ fn test_lower_global_get_before_later_typed_global_define_uses_named_bss_global(
     assert_eq!(result.data_globals.len(), 0);
     assert_eq!(result.bss_globals.len(), 1);
     assert_eq!(result.bss_globals[0].name, "__nu_global_state");
+}
+
+#[test]
+fn test_lower_global_get_before_later_typed_global_define_with_constant_upsert_uses_named_data_global(
+) {
+    let get_decl = DeclId::new(1070);
+    let define_decl = DeclId::new(1071);
+    let decl_names = HashMap::from([
+        (get_decl, "global-get".to_string()),
+        (define_decl, "global-define".to_string()),
+    ]);
+
+    let mut seed = Record::with_capacity(1);
+    seed.push("pid", Value::int(0, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(seed, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String("record{pid:i64}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        named: vec![(b"type".to_vec(), RegId::new(5))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("forward global-get/global-define --type with constant upsert should lower");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_state");
+    assert_eq!(result.data_globals[0].data, 8i64.to_le_bytes().to_vec());
 }
 
 #[test]

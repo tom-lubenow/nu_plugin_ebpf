@@ -372,7 +372,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn constant_record_key_value(
+    pub(super) fn constant_record_key_value(
         reg_constants: &HashMap<RegId, Value>,
         key: RegId,
     ) -> Option<String> {
@@ -383,7 +383,7 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn constant_follow_cell_path(value: &Value, path: &CellPath) -> Option<Value> {
+    pub(super) fn constant_follow_cell_path(value: &Value, path: &CellPath) -> Option<Value> {
         let mut current = value.clone();
         for member in &path.members {
             match member {
@@ -404,7 +404,7 @@ impl<'a> HirToMirLowering<'a> {
         Some(current)
     }
 
-    fn constant_upsert_cell_path(
+    pub(super) fn constant_upsert_cell_path(
         value: &Value,
         path: &CellPath,
         new_value: Value,
@@ -449,7 +449,7 @@ impl<'a> HirToMirLowering<'a> {
         upsert(value, &path.members, &new_value)
     }
 
-    fn constant_apply_binary_operator(
+    pub(super) fn constant_apply_binary_operator(
         lhs: &Value,
         op: nu_protocol::ast::Operator,
         rhs: &Value,
@@ -503,6 +503,174 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn apply_constant_hir_stmt(
+        stmt: &HirStmt,
+        reg_constants: &mut HashMap<RegId, Value>,
+        var_constants: &mut HashMap<VarId, Value>,
+    ) -> Option<()> {
+        match stmt {
+            HirStmt::LoadLiteral { dst, lit } => {
+                if let Some(value) = lit.to_constant_value() {
+                    reg_constants.insert(*dst, value);
+                } else {
+                    match lit {
+                        HirLiteral::CellPath(path) => {
+                            reg_constants
+                                .insert(*dst, Value::cell_path((**path).clone(), Span::unknown()));
+                        }
+                        HirLiteral::List { .. } => {
+                            reg_constants.insert(*dst, Value::list(Vec::new(), Span::unknown()));
+                        }
+                        HirLiteral::Record { .. } => {
+                            reg_constants.insert(*dst, Value::record(Record::new(), Span::unknown()));
+                        }
+                        _ => return None,
+                    }
+                }
+            }
+            HirStmt::LoadValue { dst, val } => {
+                reg_constants.insert(*dst, (**val).clone());
+            }
+            HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
+                let value = reg_constants.get(src)?.clone();
+                reg_constants.insert(*dst, value);
+            }
+            HirStmt::Not { src_dst } => {
+                let Value::Bool { val, .. } = reg_constants.get(src_dst)? else {
+                    return None;
+                };
+                reg_constants.insert(*src_dst, Value::bool(!val, Span::unknown()));
+            }
+            HirStmt::BinaryOp { lhs_dst, op, rhs } => {
+                let lhs = reg_constants.get(lhs_dst)?;
+                let rhs = reg_constants.get(rhs)?;
+                let value = Self::constant_apply_binary_operator(lhs, *op, rhs)?;
+                reg_constants.insert(*lhs_dst, value);
+            }
+            HirStmt::LoadVariable { dst, var_id } => {
+                let value = var_constants.get(var_id)?.clone();
+                reg_constants.insert(*dst, value);
+            }
+            HirStmt::StoreVariable { var_id, src } => {
+                let value = reg_constants.get(src)?.clone();
+                var_constants.insert(*var_id, value);
+            }
+            HirStmt::DropVariable { var_id } => {
+                var_constants.remove(var_id);
+            }
+            HirStmt::StringAppend { src_dst, val } => {
+                let Value::String { val: mut dst, .. } = reg_constants.get(src_dst)?.clone() else {
+                    return None;
+                };
+                let appended = reg_constants.get(val)?.clone().coerce_into_string().ok()?;
+                dst.push_str(&appended);
+                reg_constants.insert(*src_dst, Value::string(dst, Span::unknown()));
+            }
+            HirStmt::GlobFrom { src_dst, no_expand } => {
+                let source = reg_constants.get(src_dst)?.clone().coerce_into_string().ok()?;
+                reg_constants.insert(
+                    *src_dst,
+                    Value::glob(source, *no_expand, Span::unknown()),
+                );
+            }
+            HirStmt::ListPush { src_dst, item } => {
+                let Value::List { mut vals, .. } = reg_constants.get(src_dst)?.clone() else {
+                    return None;
+                };
+                vals.push(reg_constants.get(item)?.clone());
+                reg_constants.insert(*src_dst, Value::list(vals, Span::unknown()));
+            }
+            HirStmt::ListSpread { src_dst, items } => {
+                let Value::List { mut vals, .. } = reg_constants.get(src_dst)?.clone() else {
+                    return None;
+                };
+                let Value::List {
+                    vals: spread_vals, ..
+                } = reg_constants.get(items)?.clone()
+                else {
+                    return None;
+                };
+                vals.extend(spread_vals);
+                reg_constants.insert(*src_dst, Value::list(vals, Span::unknown()));
+            }
+            HirStmt::RecordInsert { src_dst, key, val } => {
+                let Value::Record { val: record, .. } = reg_constants.get(src_dst)?.clone() else {
+                    return None;
+                };
+                let mut record = record.into_owned();
+                let key = Self::constant_record_key_value(reg_constants, *key)?;
+                let value = reg_constants.get(val)?.clone();
+                record.insert(key, value);
+                reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
+            }
+            HirStmt::RecordSpread { src_dst, items } => {
+                let Value::Record { val: record, .. } = reg_constants.get(src_dst)?.clone() else {
+                    return None;
+                };
+                let Value::Record {
+                    val: spread_record, ..
+                } = reg_constants.get(items)?.clone()
+                else {
+                    return None;
+                };
+                let mut record = record.into_owned();
+                for (key, value) in spread_record.iter() {
+                    record.insert(key, value.clone());
+                }
+                reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
+            }
+            HirStmt::CloneCellPath { dst, src, path } => {
+                let value = reg_constants.get(src)?.clone();
+                let path_value = reg_constants.get(path)?;
+                let Value::CellPath { val: cell_path, .. } = path_value else {
+                    return None;
+                };
+                let projected = Self::constant_follow_cell_path(&value, cell_path)?;
+                reg_constants.insert(*dst, projected);
+            }
+            HirStmt::FollowCellPath { src_dst, path } => {
+                let value = reg_constants.get(src_dst)?.clone();
+                let path_value = reg_constants.get(path)?;
+                let Value::CellPath { val: cell_path, .. } = path_value else {
+                    return None;
+                };
+                let projected = Self::constant_follow_cell_path(&value, cell_path)?;
+                reg_constants.insert(*src_dst, projected);
+            }
+            HirStmt::UpsertCellPath {
+                src_dst,
+                path,
+                new_value,
+            } => {
+                let value = reg_constants.get(src_dst)?.clone();
+                let path_value = reg_constants.get(path)?;
+                let Value::CellPath { val: cell_path, .. } = path_value else {
+                    return None;
+                };
+                let updated = Self::constant_upsert_cell_path(
+                    &value,
+                    cell_path,
+                    reg_constants.get(new_value)?.clone(),
+                )?;
+                reg_constants.insert(*src_dst, updated);
+            }
+            HirStmt::Collect { .. }
+            | HirStmt::Span { .. }
+            | HirStmt::Drain { .. }
+            | HirStmt::DrainIfEnd { .. }
+            | HirStmt::Drop { .. }
+            | HirStmt::RedirectOut { .. }
+            | HirStmt::RedirectErr { .. }
+            | HirStmt::CheckErrRedirected { .. }
+            | HirStmt::OnError { .. }
+            | HirStmt::OnErrorInto { .. }
+            | HirStmt::PopErrorHandler => {}
+            _ => return None,
+        }
+
+        Some(())
+    }
+
     fn eval_constant_user_function_return(hir: &HirFunction) -> Option<Value> {
         if hir.blocks.len() != 1 {
             return None;
@@ -516,165 +684,7 @@ impl<'a> HirToMirLowering<'a> {
         let mut var_constants = HashMap::<VarId, Value>::new();
 
         for stmt in &block.stmts {
-            match stmt {
-                HirStmt::LoadLiteral { dst, lit } => {
-                    if let Some(value) = lit.to_constant_value() {
-                        reg_constants.insert(*dst, value);
-                    } else {
-                        match lit {
-                            HirLiteral::CellPath(path) => {
-                                reg_constants.insert(
-                                    *dst,
-                                    Value::cell_path((**path).clone(), Span::unknown()),
-                                );
-                            }
-                            HirLiteral::List { .. } => {
-                                reg_constants
-                                    .insert(*dst, Value::list(Vec::new(), Span::unknown()));
-                            }
-                            HirLiteral::Record { .. } => {
-                                reg_constants
-                                    .insert(*dst, Value::record(Record::new(), Span::unknown()));
-                            }
-                            _ => return None,
-                        }
-                    }
-                }
-                HirStmt::LoadValue { dst, val } => {
-                    reg_constants.insert(*dst, (**val).clone());
-                }
-                HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
-                    let value = reg_constants.get(src)?.clone();
-                    reg_constants.insert(*dst, value);
-                }
-                HirStmt::Not { src_dst } => {
-                    let Value::Bool { val, .. } = reg_constants.get(src_dst)? else {
-                        return None;
-                    };
-                    reg_constants.insert(*src_dst, Value::bool(!val, Span::unknown()));
-                }
-                HirStmt::BinaryOp { lhs_dst, op, rhs } => {
-                    let lhs = reg_constants.get(lhs_dst)?;
-                    let rhs = reg_constants.get(rhs)?;
-                    let value = Self::constant_apply_binary_operator(lhs, *op, rhs)?;
-                    reg_constants.insert(*lhs_dst, value);
-                }
-                HirStmt::LoadVariable { dst, var_id } => {
-                    let value = var_constants.get(var_id)?.clone();
-                    reg_constants.insert(*dst, value);
-                }
-                HirStmt::StoreVariable { var_id, src } => {
-                    let value = reg_constants.get(src)?.clone();
-                    var_constants.insert(*var_id, value);
-                }
-                HirStmt::DropVariable { var_id } => {
-                    var_constants.remove(var_id);
-                }
-                HirStmt::StringAppend { src_dst, val } => {
-                    let Value::String { val: mut dst, .. } = reg_constants.get(src_dst)?.clone()
-                    else {
-                        return None;
-                    };
-                    let appended = reg_constants.get(val)?.clone().coerce_into_string().ok()?;
-                    dst.push_str(&appended);
-                    reg_constants.insert(*src_dst, Value::string(dst, Span::unknown()));
-                }
-                HirStmt::ListPush { src_dst, item } => {
-                    let Value::List { mut vals, .. } = reg_constants.get(src_dst)?.clone() else {
-                        return None;
-                    };
-                    vals.push(reg_constants.get(item)?.clone());
-                    reg_constants.insert(*src_dst, Value::list(vals, Span::unknown()));
-                }
-                HirStmt::ListSpread { src_dst, items } => {
-                    let Value::List { mut vals, .. } = reg_constants.get(src_dst)?.clone() else {
-                        return None;
-                    };
-                    let Value::List {
-                        vals: spread_vals, ..
-                    } = reg_constants.get(items)?.clone()
-                    else {
-                        return None;
-                    };
-                    vals.extend(spread_vals);
-                    reg_constants.insert(*src_dst, Value::list(vals, Span::unknown()));
-                }
-                HirStmt::RecordInsert { src_dst, key, val } => {
-                    let Value::Record { val: record, .. } = reg_constants.get(src_dst)?.clone()
-                    else {
-                        return None;
-                    };
-                    let mut record = record.into_owned();
-                    let key = Self::constant_record_key_value(&reg_constants, *key)?;
-                    let value = reg_constants.get(val)?.clone();
-                    record.insert(key, value);
-                    reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
-                }
-                HirStmt::RecordSpread { src_dst, items } => {
-                    let Value::Record { val: record, .. } = reg_constants.get(src_dst)?.clone()
-                    else {
-                        return None;
-                    };
-                    let Value::Record {
-                        val: spread_record, ..
-                    } = reg_constants.get(items)?.clone()
-                    else {
-                        return None;
-                    };
-                    let mut record = record.into_owned();
-                    for (key, value) in spread_record.iter() {
-                        record.insert(key, value.clone());
-                    }
-                    reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
-                }
-                HirStmt::CloneCellPath { dst, src, path } => {
-                    let value = reg_constants.get(src)?.clone();
-                    let path_value = reg_constants.get(path)?;
-                    let Value::CellPath { val: cell_path, .. } = path_value else {
-                        return None;
-                    };
-                    let projected = Self::constant_follow_cell_path(&value, cell_path)?;
-                    reg_constants.insert(*dst, projected);
-                }
-                HirStmt::FollowCellPath { src_dst, path } => {
-                    let value = reg_constants.get(src_dst)?.clone();
-                    let path_value = reg_constants.get(path)?;
-                    let Value::CellPath { val: cell_path, .. } = path_value else {
-                        return None;
-                    };
-                    let projected = Self::constant_follow_cell_path(&value, cell_path)?;
-                    reg_constants.insert(*src_dst, projected);
-                }
-                HirStmt::UpsertCellPath {
-                    src_dst,
-                    path,
-                    new_value,
-                } => {
-                    let value = reg_constants.get(src_dst)?.clone();
-                    let path_value = reg_constants.get(path)?;
-                    let Value::CellPath { val: cell_path, .. } = path_value else {
-                        return None;
-                    };
-                    let updated = Self::constant_upsert_cell_path(
-                        &value,
-                        cell_path,
-                        reg_constants.get(new_value)?.clone(),
-                    )?;
-                    reg_constants.insert(*src_dst, updated);
-                }
-                HirStmt::Collect { .. }
-                | HirStmt::Span { .. }
-                | HirStmt::Drain { .. }
-                | HirStmt::DrainIfEnd { .. }
-                | HirStmt::Drop { .. }
-                | HirStmt::RedirectOut { .. }
-                | HirStmt::RedirectErr { .. }
-                | HirStmt::CheckErrRedirected { .. }
-                | HirStmt::OnError { .. }
-                | HirStmt::OnErrorInto { .. }
-                | HirStmt::PopErrorHandler => {}
-                _ => return None,
-            }
+            Self::apply_constant_hir_stmt(stmt, &mut reg_constants, &mut var_constants)?;
         }
 
         reg_constants.get(&src).cloned()

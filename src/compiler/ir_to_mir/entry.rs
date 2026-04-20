@@ -53,18 +53,6 @@ fn constant_string_value(value: &Value) -> Option<String> {
     }
 }
 
-fn record_reg_constant(
-    reg_constants: &mut HashMap<RegId, Value>,
-    reg: RegId,
-    value: Option<Value>,
-) {
-    if let Some(value) = value {
-        reg_constants.insert(reg, value);
-    } else {
-        reg_constants.remove(&reg);
-    }
-}
-
 #[derive(Debug, Clone)]
 struct NamedGlobalPredeclaration {
     kind: NamedGlobalPredeclarationKind,
@@ -105,29 +93,35 @@ fn collect_named_global_predeclarations_for_function(
     for block in &func.blocks {
         for stmt in &block.stmts {
             match stmt {
-                HirStmt::LoadLiteral { dst, lit } => {
-                    record_reg_constant(&mut reg_constants, *dst, lit.to_constant_value());
-                }
-                HirStmt::LoadValue { dst, val } => {
-                    record_reg_constant(&mut reg_constants, *dst, Some((**val).clone()));
-                }
-                HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
-                    let value = reg_constants.get(src).cloned();
-                    record_reg_constant(&mut reg_constants, *dst, value);
-                }
-                HirStmt::LoadVariable { dst, var_id } => {
-                    let value = var_constants.get(var_id).cloned();
-                    record_reg_constant(&mut reg_constants, *dst, value);
-                }
-                HirStmt::StoreVariable { var_id, src } => {
-                    if let Some(value) = reg_constants.get(src).cloned() {
-                        var_constants.insert(*var_id, value);
-                    } else {
-                        var_constants.remove(var_id);
+                stmt @ (HirStmt::LoadLiteral { .. }
+                | HirStmt::LoadValue { .. }
+                | HirStmt::Move { .. }
+                | HirStmt::Clone { .. }
+                | HirStmt::LoadVariable { .. }
+                | HirStmt::StoreVariable { .. }
+                | HirStmt::DropVariable { .. }) => {
+                    if HirToMirLowering::apply_constant_hir_stmt(
+                        stmt,
+                        &mut reg_constants,
+                        &mut var_constants,
+                    )
+                    .is_none()
+                    {
+                        match stmt {
+                            HirStmt::LoadLiteral { dst, .. }
+                            | HirStmt::LoadValue { dst, .. }
+                            | HirStmt::Move { dst, .. }
+                            | HirStmt::Clone { dst, .. }
+                            | HirStmt::LoadVariable { dst, .. } => {
+                                reg_constants.remove(dst);
+                            }
+                            HirStmt::StoreVariable { var_id, .. }
+                            | HirStmt::DropVariable { var_id } => {
+                                var_constants.remove(var_id);
+                            }
+                            _ => unreachable!(),
+                        }
                     }
-                }
-                HirStmt::DropVariable { var_id } => {
-                    var_constants.remove(var_id);
                 }
                 HirStmt::Call {
                     decl_id,
@@ -217,34 +211,57 @@ fn collect_named_global_predeclarations_for_function(
                     }
                     reg_constants.remove(src_dst);
                 }
-                HirStmt::BinaryOp { lhs_dst, .. }
-                | HirStmt::Not { src_dst: lhs_dst }
-                | HirStmt::FollowCellPath {
-                    src_dst: lhs_dst, ..
+                stmt @ (HirStmt::BinaryOp { .. }
+                | HirStmt::Not { .. }
+                | HirStmt::FollowCellPath { .. }
+                | HirStmt::UpsertCellPath { .. }
+                | HirStmt::RecordInsert { .. }
+                | HirStmt::RecordSpread { .. }
+                | HirStmt::StringAppend { .. }
+                | HirStmt::GlobFrom { .. }
+                | HirStmt::ListPush { .. }
+                | HirStmt::ListSpread { .. }) => {
+                    if HirToMirLowering::apply_constant_hir_stmt(
+                        stmt,
+                        &mut reg_constants,
+                        &mut var_constants,
+                    )
+                    .is_none()
+                    {
+                        match stmt {
+                            HirStmt::BinaryOp { lhs_dst, .. }
+                            | HirStmt::Not { src_dst: lhs_dst }
+                            | HirStmt::FollowCellPath {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::UpsertCellPath {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::RecordInsert {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::RecordSpread {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::StringAppend {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::GlobFrom {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::ListPush {
+                                src_dst: lhs_dst, ..
+                            }
+                            | HirStmt::ListSpread {
+                                src_dst: lhs_dst, ..
+                            } => {
+                                reg_constants.remove(lhs_dst);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
                 }
-                | HirStmt::UpsertCellPath {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::RecordInsert {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::RecordSpread {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::StringAppend {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::GlobFrom {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::ListPush {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::ListSpread {
-                    src_dst: lhs_dst, ..
-                }
-                | HirStmt::Collect { src_dst: lhs_dst }
-                | HirStmt::Span { src_dst: lhs_dst } => {
+                HirStmt::Collect { src_dst: lhs_dst } | HirStmt::Span { src_dst: lhs_dst } => {
                     reg_constants.remove(lhs_dst);
                 }
                 HirStmt::CloneCellPath { dst, .. }
