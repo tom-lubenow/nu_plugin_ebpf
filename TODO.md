@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-19.
+Last updated: 2026-04-20.
 
 ## Current compiler gaps
 
@@ -347,6 +347,7 @@ Near-term priority order:
   - Recent progress: leading typed `mut` globals now accept `null` as a zero-init sentinel when the Nushell annotation itself fixes a truthful fixed layout (scalars and nested scalar-records), reducing the need to fall back to explicit `global-define --type` for simple structured state.
   - Recent progress: leading typed `mut` record initializers may now also omit scalar or nested scalar-record fields that should start zeroed, while still rejecting omitted fields whose real capacity cannot be known from a plain Nushell annotation alone.
   - Recent progress: compile-time leading typed `mut` initializers now accept constant record/list spreads, so fixed-layout global state can be assembled with ordinary Nushell aggregate syntax instead of helper-only patterns.
+  - Recent progress: the same compile-time leading typed `mut` initializer path now also accepts ordinary constant aggregate pipeline primitives like `insert`, `update`, `upsert`, `append`, `prepend`, and `get`, including bare numeric/boolean tokens recovered through the source parser's external-call fallback.
   - Recent progress: named `global-get` / `global-set` now expose compiler-managed `.data` / `.bss` globals in the closure language, with layout inferred from same-program `global-set` use and constant first writes seeding initialized data.
   - Recent progress: `global-define --type ...` now also accepts compile-time constant initializers, so explicit capacities (`string:N`, `list:i64:N`, nested `record{...}`) can be combined with explicit initial contents without falling back to layout inference.
   - Recent progress: typed `global-define --type record{...}` initializers may now omit declared fields that should start zeroed, which makes explicit shared globals less verbose without weakening their fixed layout.
