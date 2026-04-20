@@ -1,6 +1,6 @@
 use super::*;
 impl<'a> HirToMirLowering<'a> {
-    fn mutable_numeric_list_global_repr(
+    pub(super) fn mutable_numeric_list_global_repr(
         values: &[Value],
     ) -> Result<Option<(MirType, Vec<u8>, usize)>, CompileError> {
         if values

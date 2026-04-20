@@ -316,26 +316,6 @@ impl<'a> HirToMirLowering<'a> {
         Some((MirType::I64, encoded.to_le_bytes().to_vec()))
     }
 
-    fn string_constant_rodata_repr(value: &Value) -> Option<(MirType, Vec<u8>)> {
-        let bytes = match value {
-            Value::String { val, .. } => Some(val.as_bytes()),
-            Value::Glob { val, .. } => Some(val.as_bytes()),
-            _ => None,
-        }?;
-
-        let content_len = bytes.len().min(MAX_STRING_SIZE.saturating_sub(1));
-        let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
-        let mut data = vec![0u8; aligned_len];
-        data[..content_len].copy_from_slice(&bytes[..content_len]);
-        Some((
-            MirType::Array {
-                elem: Box::new(MirType::U8),
-                len: aligned_len,
-            },
-            data,
-        ))
-    }
-
     fn constant_numeric_list_rodata_repr(
         values: &[Value],
     ) -> Result<(MirType, Vec<u8>), CompileError> {
@@ -358,39 +338,44 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    fn constant_value_rodata_repr(value: &Value) -> Result<(MirType, Vec<u8>), CompileError> {
-        if let Some(repr) = Self::scalar_constant_rodata_repr(value) {
-            return Ok(repr);
-        }
-        if let Some(repr) = Self::string_constant_rodata_repr(value) {
-            return Ok(repr);
-        }
-        if let Value::Binary { val, .. } = value {
-            return Self::binary_constant_rodata_repr(val);
-        }
-        if crate::compiler::hir::supports_numeric_constant_list(value)
-            && let Value::List { vals, .. } = value
-        {
-            return Self::constant_numeric_list_rodata_repr(vals);
-        }
-
-        match value {
-            Value::Record { val, .. } => Self::constant_record_rodata_repr(val.as_ref()),
-            _ => Err(CompileError::UnsupportedInstruction(format!(
-                "LoadValue of type {} is not supported in eBPF lowering",
-                value.get_type()
-            ))),
-        }
-    }
-
     pub(super) fn constant_record_rodata_repr(
         record: &nu_protocol::Record,
     ) -> Result<(MirType, Vec<u8>), CompileError> {
+        fn constant_record_field_rodata_repr(
+            value: &Value,
+        ) -> Result<(MirType, Vec<u8>), CompileError> {
+            if let Some(repr) = HirToMirLowering::scalar_constant_rodata_repr(value) {
+                return Ok(repr);
+            }
+            if let Some((ty, data, _slot_len)) = HirToMirLowering::mutable_string_global_repr(value)
+            {
+                return Ok((ty, data));
+            }
+            if let Value::Binary { val, .. } = value {
+                return HirToMirLowering::binary_constant_rodata_repr(val);
+            }
+            if crate::compiler::hir::supports_numeric_constant_list(value)
+                && let Value::List { vals, .. } = value
+                && let Some((ty, data, _max_len)) =
+                    HirToMirLowering::mutable_numeric_list_global_repr(vals)?
+            {
+                return Ok((ty, data));
+            }
+
+            match value {
+                Value::Record { val, .. } => HirToMirLowering::constant_record_rodata_repr(val),
+                _ => Err(CompileError::UnsupportedInstruction(format!(
+                    "LoadValue of type {} is not supported in eBPF lowering",
+                    value.get_type()
+                ))),
+            }
+        }
+
         let mut field_layouts = Vec::with_capacity(record.len());
         let mut data = Vec::new();
 
         for (field_name, field_value) in record.iter() {
-            let (field_ty, field_data) = Self::constant_value_rodata_repr(field_value)?;
+            let (field_ty, field_data) = constant_record_field_rodata_repr(field_value)?;
             field_layouts.push((field_name.clone(), field_ty));
             data.extend_from_slice(&field_data);
         }

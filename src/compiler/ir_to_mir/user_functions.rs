@@ -469,6 +469,19 @@ impl<'a> HirToMirLowering<'a> {
                     vals.push(reg_constants.get(item)?.clone());
                     reg_constants.insert(*src_dst, Value::list(vals, Span::unknown()));
                 }
+                HirStmt::ListSpread { src_dst, items } => {
+                    let Value::List { mut vals, .. } = reg_constants.get(src_dst)?.clone() else {
+                        return None;
+                    };
+                    let Value::List {
+                        vals: spread_vals, ..
+                    } = reg_constants.get(items)?.clone()
+                    else {
+                        return None;
+                    };
+                    vals.extend(spread_vals);
+                    reg_constants.insert(*src_dst, Value::list(vals, Span::unknown()));
+                }
                 HirStmt::RecordInsert { src_dst, key, val } => {
                     let Value::Record { val: record, .. } = reg_constants.get(src_dst)?.clone()
                     else {
@@ -478,6 +491,23 @@ impl<'a> HirToMirLowering<'a> {
                     let key = Self::constant_record_key_value(&reg_constants, *key)?;
                     let value = reg_constants.get(val)?.clone();
                     record.insert(key, value);
+                    reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
+                }
+                HirStmt::RecordSpread { src_dst, items } => {
+                    let Value::Record { val: record, .. } = reg_constants.get(src_dst)?.clone()
+                    else {
+                        return None;
+                    };
+                    let Value::Record {
+                        val: spread_record, ..
+                    } = reg_constants.get(items)?.clone()
+                    else {
+                        return None;
+                    };
+                    let mut record = record.into_owned();
+                    for (key, value) in spread_record.iter() {
+                        record.insert(key, value.clone());
+                    }
                     reg_constants.insert(*src_dst, Value::record(record, Span::unknown()));
                 }
                 HirStmt::FollowCellPath { src_dst, path } => {
