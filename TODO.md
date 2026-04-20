@@ -376,7 +376,7 @@ Near-term priority order:
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.
   - Keep fixtures small and verifier-focused to catch regressions quickly.
-  - Recent progress: the attach compile harness now covers representative compile-only non-tracing families (`xdp`, `tc`, `cgroup_skb`, `cgroup_device`, `cgroup_sysctl`, `sock_ops`, `sk_msg`, `sk_skb`, `sk_skb_parser`, `lirc_mode2`) plus attach-sensitive target variants (`cgroup_sock:post_bind4`, `cgroup_sockopt:set`, `cgroup_sock_addr:sendmsg4`) using safe context-field fixtures that widen program-model regression coverage without adding risky live attach tests.
+  - Recent progress: the attach compile harness now covers representative compile-only non-tracing families (`xdp`, `tc`, `cgroup_skb`, `cgroup_device`, `cgroup_sysctl`, `sock_ops`, `sk_msg`, `sk_skb`, `sk_skb_parser`, `lirc_mode2`) plus attach-sensitive target variants (`cgroup_sock:post_bind4`, `cgroup_sockopt:set`, `cgroup_sock_addr:sendmsg4`) using safe context-field fixtures; it now also exercises writable `ctx.*` surfaces (`tc.mark`, `cgroup_skb:egress.tstamp`, `cgroup_sock:sock_create.mark`, `cgroup_sysctl.file_pos`, `cgroup_sockopt:set.level`, `sk_skb_parser.priority`) through compile-only lowering/codegen coverage without adding risky live attach tests.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

@@ -2583,6 +2583,50 @@ fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgra
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_path_store_program(
+    cell_path: CellPath,
+    new_value: HirLiteral,
+    return_value: HirLiteral,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(cell_path)),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: new_value,
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: return_value,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn assert_ctx_path_count_program_compiles(
     program_type: EbpfProgramType,
     target: &str,
@@ -2598,6 +2642,40 @@ fn assert_ctx_path_count_program_compiles(
         &hir,
         Some(&probe_ctx),
         &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+}
+
+fn assert_ctx_path_store_program_compiles(
+    program_type: EbpfProgramType,
+    target: &str,
+    cell_path: CellPath,
+    new_value: HirLiteral,
+    return_value: HirLiteral,
+    context: &str,
+) {
+    let hir = make_ctx_path_store_program(cell_path, new_value, return_value);
+    let probe_ctx = ProbeContext::new(program_type, target);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
         None,
         &HashMap::new(),
         &HashMap::new(),
@@ -4687,6 +4765,90 @@ fn test_compile_lirc_mode2_ctx_value_counter_program() {
             members: vec![string_member("value")],
         },
         "lirc_mode2 ctx.value count",
+    );
+}
+
+#[test]
+fn test_compile_tc_ctx_mark_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc ctx.mark store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_skb_egress_ctx_tstamp_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:egress",
+        CellPath {
+            members: vec![string_member("tstamp")],
+        },
+        HirLiteral::Int(123),
+        HirLiteral::Int(1),
+        "cgroup_skb:egress ctx.tstamp store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_sock_create_ctx_mark_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_create",
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(1),
+        "cgroup_sock:sock_create ctx.mark store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sysctl_ctx_file_pos_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("file_pos")],
+        },
+        HirLiteral::Int(4),
+        HirLiteral::Int(1),
+        "cgroup_sysctl ctx.file_pos store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_set_ctx_level_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:set",
+        CellPath {
+            members: vec![string_member("level")],
+        },
+        HirLiteral::Int(1),
+        HirLiteral::Int(1),
+        "cgroup_sockopt:set ctx.level store",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_parser_ctx_priority_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(3),
+        HirLiteral::Int(0),
+        "sk_skb_parser ctx.priority store",
     );
 }
 
