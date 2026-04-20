@@ -278,6 +278,18 @@ impl<'a> HirToMirLowering<'a> {
                         fields.push((key_name, value_ty));
                     }
                 }
+                HirStmt::RecordSpread { src_dst, items } => {
+                    let spread_fields = record_fields.get(items)?.clone();
+                    let fields = record_fields.entry(*src_dst).or_default();
+                    for (name, ty) in spread_fields {
+                        if let Some(existing) = fields.iter_mut().find(|(field, _)| *field == name)
+                        {
+                            existing.1 = ty;
+                        } else {
+                            fields.push((name, ty));
+                        }
+                    }
+                }
                 HirStmt::ListPush { src_dst, .. } => {
                     if let Some(capacity) = list_caps.get(&src_dst).copied() {
                         reg_types.insert(

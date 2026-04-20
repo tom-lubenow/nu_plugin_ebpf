@@ -778,7 +778,56 @@ impl<'a> HirToMirLowering<'a> {
 
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
+        meta.constant_value = None;
         meta.record_fields.push(field);
+        meta.field_type = Self::metadata_record_layout(meta);
+        meta.annotated_semantics = Self::metadata_record_semantics(meta);
+        meta.source_var = None;
+
+        Ok(())
+    }
+
+    pub(super) fn lower_record_spread(
+        &mut self,
+        src_dst: RegId,
+        items: RegId,
+    ) -> Result<(), CompileError> {
+        let source_meta = self.get_metadata(items).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "Record spread requires a source record with compiler-known fields in eBPF"
+                    .into(),
+            )
+        })?;
+
+        if source_meta.record_fields.is_empty() {
+            let source_is_known_empty = matches!(
+                source_meta.constant_value.as_ref(),
+                Some(Value::Record { val, .. }) if val.is_empty()
+            );
+            if !source_is_known_empty {
+                return Err(CompileError::UnsupportedInstruction(
+                    "Record spread requires a source record with compiler-known fields in eBPF"
+                        .into(),
+                ));
+            }
+        }
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = false;
+        meta.constant_value = None;
+
+        for field in source_meta.record_fields {
+            if let Some(existing) = meta
+                .record_fields
+                .iter_mut()
+                .find(|existing| existing.name == field.name)
+            {
+                *existing = field;
+            } else {
+                meta.record_fields.push(field);
+            }
+        }
+
         meta.field_type = Self::metadata_record_layout(meta);
         meta.annotated_semantics = Self::metadata_record_semantics(meta);
         meta.source_var = None;

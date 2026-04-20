@@ -324,6 +324,12 @@ impl<'a> HirTypeInference<'a> {
                 self.constrain(record_ty, stack_record_ptr_type(), "record_insert_dst")?;
                 self.constrain(key_ty, stack_string_ptr_type(), "record_insert_key")?;
             }
+            HirStmt::RecordSpread { src_dst, items } => {
+                let dst_ty = self.reg_type(*src_dst);
+                let src_ty = self.reg_type(*items);
+                self.constrain(dst_ty, stack_record_ptr_type(), "record_spread_dst")?;
+                self.constrain(src_ty, stack_record_ptr_type(), "record_spread_src")?;
+            }
             HirStmt::FollowCellPath { src_dst, path } => {
                 let src_ty = self.reg_type(*src_dst);
                 let src_ty = self.substitution.apply(&src_ty);

@@ -222,6 +222,40 @@ fn test_ctx_param_is_seeded_as_pointer_for_helper_call() {
 }
 
 #[test]
+fn test_record_spread_requires_record_source() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordSpread {
+                    src_dst: RegId::new(0),
+                    items: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::new();
+    assert!(infer_hir(&program, &decl_names).is_err());
+}
+
+#[test]
 fn test_pointer_null_comparison_is_permissive() {
     let mut func = HirFunction {
         blocks: Vec::new(),

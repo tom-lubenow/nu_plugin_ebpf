@@ -591,10 +591,8 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_record_insert(*src_dst, *key, *val)?;
             }
 
-            HirStmt::RecordSpread { .. } => {
-                return Err(CompileError::UnsupportedInstruction(
-                    "Record spread is not supported in eBPF".into(),
-                ));
+            HirStmt::RecordSpread { src_dst, items } => {
+                self.lower_record_spread(*src_dst, *items)?;
             }
 
             // === Lists ===
