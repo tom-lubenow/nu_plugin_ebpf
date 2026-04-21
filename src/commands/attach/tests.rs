@@ -2953,6 +2953,118 @@ fn make_typed_global_define_list_get_count_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_annotated_mut_int_count_program(count_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let global_var = VarId::new(10);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 2],
+        ast: vec![None; 2],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Int,
+        initial_value: Value::int(7, Span::test_data()),
+    }];
+    hir
+}
+
+fn make_annotated_mut_record_list_get_count_program(
+    get_decl_id: DeclId,
+    count_decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let global_var = VarId::new(10);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("vals")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut record = Record::new();
+    record.push(
+        "vals",
+        Value::list(
+            vec![
+                Value::int(11, Span::test_data()),
+                Value::int(22, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    record.push("pid", Value::int(0, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            ("vals".to_string(), Type::List(Box::new(Type::Int))),
+            ("pid".to_string(), Type::Int),
+        ])),
+        initial_value: Value::record(record, Span::test_data()),
+    }];
+    hir
+}
+
 fn make_cgroup_sock_addr_nullable_socket_branch_program(count_decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -3103,6 +3215,46 @@ fn assert_ctx_path_count_program_compiles(
         &HashMap::new(),
     )
     .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+}
+
+fn assert_attach_program_compiles(
+    hir: &HirProgram,
+    program_type: EbpfProgramType,
+    target: &str,
+    decl_names: &HashMap<DeclId, String>,
+    context: &str,
+) {
+    let probe_ctx = ProbeContext::new(program_type, target);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        hir,
+        Some(&probe_ctx),
+        decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
 
     let result = compile_mir_to_ebpf_with_hints(
         &lowering.program,
@@ -6834,6 +6986,37 @@ fn test_compile_xdp_typed_global_define_type_list_int_program() {
     assert!(
         !result.bytecode.is_empty(),
         "typed global-define list:int alias should produce bytecode"
+    );
+}
+
+#[test]
+fn test_compile_xdp_annotated_mut_int_count_program() {
+    let hir = make_annotated_mut_int_count_program(DeclId::new(42));
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "annotated mut int should compile through attach flow",
+    );
+}
+
+#[test]
+fn test_compile_xdp_annotated_mut_record_list_get_count_program() {
+    let hir = make_annotated_mut_record_list_get_count_program(DeclId::new(41), DeclId::new(42));
+    let decl_names = HashMap::from([
+        (DeclId::new(41), "get".to_string()),
+        (DeclId::new(42), "count".to_string()),
+    ]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "annotated mut record list field get/count should compile through attach flow",
     );
 }
 
