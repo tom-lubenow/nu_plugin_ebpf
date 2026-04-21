@@ -5085,6 +5085,30 @@ fn test_compile_xdp_ctx_rx_queue_index_counter_program() {
 }
 
 #[test]
+fn test_compile_xdp_ctx_data_byte_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        "xdp ctx.data[0] count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_data_meta_byte_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("data_meta"), int_member(0)],
+        },
+        "xdp ctx.data_meta[0] count",
+    );
+}
+
+#[test]
 fn test_compile_tc_ctx_wire_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Tc,
@@ -5177,6 +5201,18 @@ fn test_compile_sock_ops_ctx_op_counter_program() {
             members: vec![string_member("op")],
         },
         "sock_ops ctx.op count",
+    );
+}
+
+#[test]
+fn test_compile_sk_msg_ctx_data_byte_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        "sk_msg ctx.data[0] count",
     );
 }
 
