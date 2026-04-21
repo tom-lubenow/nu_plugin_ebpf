@@ -5211,3 +5211,175 @@ fn test_lower_global_set_from_nested_metadata_record_builder_preserves_nested_st
         "expected nested metadata-inferred record string field to materialize a stack string slot"
     );
 }
+
+#[test]
+fn test_lower_global_set_from_nested_metadata_record_builder_preserves_nested_list_semantics() {
+    let global_get_decl = DeclId::new(220);
+    let global_set_decl = DeclId::new(221);
+    let get_decl = DeclId::new(222);
+    let count_decl = DeclId::new(223);
+    let decl_names = HashMap::from([
+        (global_get_decl, "global-get".to_string()),
+        (global_set_decl, "global-set".to_string()),
+        (get_decl, "get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("vals".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::List { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(11),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(3),
+                    item: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(22),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(3),
+                    item: RegId::new(5),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(2),
+                    val: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(6),
+                    val: RegId::new(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(9),
+                    lit: HirLiteral::String("inner".into()),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(8),
+                    key: RegId::new(9),
+                    val: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(11),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(8),
+                    key: RegId::new(10),
+                    val: RegId::new(11),
+                },
+                HirStmt::Call {
+                    decl_id: global_set_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(12),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(13),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("inner"), string_member("vals")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(12),
+                    path: RegId::new(13),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(14),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(12),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(14)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(12),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(12),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 15,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("nested metadata-only record builders should preserve nested list semantics");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected nested metadata-inferred record list field to lower through ListGet"
+    );
+}
