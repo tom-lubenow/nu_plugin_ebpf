@@ -174,6 +174,12 @@ pub enum BpfHelper {
     SkRedirectHash = 72,
     /// u64 bpf_ktime_get_boot_ns(void)
     KtimeGetBootNs = 125,
+    /// u64 bpf_ktime_get_coarse_ns(void)
+    KtimeGetCoarseNs = 160,
+    /// u64 bpf_ktime_get_tai_ns(void)
+    KtimeGetTaiNs = 208,
+    /// u64 bpf_jiffies64(void)
+    Jiffies64 = 118,
     /// long bpf_load_hdr_opt(skops, searchby_res, len, flags)
     LoadHdrOpt = 142,
     /// long bpf_store_hdr_opt(skops, from, len, flags)
@@ -365,6 +371,9 @@ impl BpfHelper {
             BpfHelper::MsgRedirectHash => "bpf_msg_redirect_hash",
             BpfHelper::SkRedirectHash => "bpf_sk_redirect_hash",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
+            BpfHelper::KtimeGetCoarseNs => "bpf_ktime_get_coarse_ns",
+            BpfHelper::KtimeGetTaiNs => "bpf_ktime_get_tai_ns",
+            BpfHelper::Jiffies64 => "bpf_jiffies64",
             BpfHelper::LoadHdrOpt => "bpf_load_hdr_opt",
             BpfHelper::StoreHdrOpt => "bpf_store_hdr_opt",
             BpfHelper::ReserveHdrOpt => "bpf_reserve_hdr_opt",
@@ -499,6 +508,9 @@ impl BpfHelper {
             "msg_redirect_hash" => Some(Self::MsgRedirectHash),
             "sk_redirect_hash" => Some(Self::SkRedirectHash),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
+            "ktime_get_coarse_ns" => Some(Self::KtimeGetCoarseNs),
+            "ktime_get_tai_ns" => Some(Self::KtimeGetTaiNs),
+            "jiffies64" => Some(Self::Jiffies64),
             "load_hdr_opt" => Some(Self::LoadHdrOpt),
             "store_hdr_opt" => Some(Self::StoreHdrOpt),
             "reserve_hdr_opt" => Some(Self::ReserveHdrOpt),

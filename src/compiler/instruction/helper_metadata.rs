@@ -69,7 +69,9 @@ impl BpfHelper {
             70 => Some(Self::SockHashUpdate),
             71 => Some(Self::MsgRedirectHash),
             72 => Some(Self::SkRedirectHash),
+            118 => Some(Self::Jiffies64),
             125 => Some(Self::KtimeGetBootNs),
+            160 => Some(Self::KtimeGetCoarseNs),
             142 => Some(Self::LoadHdrOpt),
             143 => Some(Self::StoreHdrOpt),
             144 => Some(Self::ReserveHdrOpt),
@@ -120,6 +122,7 @@ impl BpfHelper {
             162 => Some(Self::SockFromFile),
             175 => Some(Self::TaskPtRegs),
             178 => Some(Self::SkcToUnixSock),
+            208 => Some(Self::KtimeGetTaiNs),
             210 => Some(Self::CgrpStorageGet),
             211 => Some(Self::CgrpStorageDelete),
             114 => Some(Self::ProbeReadUserStr),
@@ -288,6 +291,9 @@ impl BpfHelper {
             }
             BpfHelper::KtimeGetNs
             | BpfHelper::KtimeGetBootNs
+            | BpfHelper::KtimeGetCoarseNs
+            | BpfHelper::KtimeGetTaiNs
+            | BpfHelper::Jiffies64
             | BpfHelper::GetPrandomU32
             | BpfHelper::GetSmpProcessorId
             | BpfHelper::GetNumaNodeId

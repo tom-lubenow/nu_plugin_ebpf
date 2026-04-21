@@ -279,6 +279,18 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::KtimeGetBootNs)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_ktime_get_coarse_ns"),
+        Some(BpfHelper::KtimeGetCoarseNs)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("ktime_get_tai_ns"),
+        Some(BpfHelper::KtimeGetTaiNs)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_jiffies64"),
+        Some(BpfHelper::Jiffies64)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -667,23 +679,20 @@ fn test_helper_signature_get_current_task_btf() {
 
 #[test]
 fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
-    let sig = HelperSignature::for_id(BpfHelper::GetPrandomU32 as u32)
-        .expect("expected bpf_get_prandom_u32 helper signature");
-    assert_eq!(sig.min_args, 0);
-    assert_eq!(sig.max_args, 0);
-    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
-
-    let sig = HelperSignature::for_id(BpfHelper::GetNumaNodeId as u32)
-        .expect("expected bpf_get_numa_node_id helper signature");
-    assert_eq!(sig.min_args, 0);
-    assert_eq!(sig.max_args, 0);
-    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
-
-    let sig = HelperSignature::for_id(BpfHelper::KtimeGetBootNs as u32)
-        .expect("expected bpf_ktime_get_boot_ns helper signature");
-    assert_eq!(sig.min_args, 0);
-    assert_eq!(sig.max_args, 0);
-    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    for (helper, name) in [
+        (BpfHelper::GetPrandomU32, "bpf_get_prandom_u32"),
+        (BpfHelper::GetNumaNodeId, "bpf_get_numa_node_id"),
+        (BpfHelper::KtimeGetBootNs, "bpf_ktime_get_boot_ns"),
+        (BpfHelper::KtimeGetCoarseNs, "bpf_ktime_get_coarse_ns"),
+        (BpfHelper::KtimeGetTaiNs, "bpf_ktime_get_tai_ns"),
+        (BpfHelper::Jiffies64, "bpf_jiffies64"),
+    ] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {name} helper signature"));
+        assert_eq!(sig.min_args, 0);
+        assert_eq!(sig.max_args, 0);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
 
     let sig = HelperSignature::for_id(BpfHelper::RcRepeat as u32)
         .expect("expected bpf_rc_repeat helper signature");

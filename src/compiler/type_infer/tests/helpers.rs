@@ -2046,22 +2046,29 @@ fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
 }
 
 #[test]
-fn test_infer_get_numa_node_id_helper_returns_i64() {
-    let mut func = make_test_function();
-    let dst = func.alloc_vreg();
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::GetNumaNodeId as u32,
-        args: vec![],
-    });
-    block.terminator = MirInst::Return { val: None };
+fn test_infer_no_arg_scalar_helpers_return_i64() {
+    for (helper, name) in [
+        (BpfHelper::GetNumaNodeId, "bpf_get_numa_node_id"),
+        (BpfHelper::KtimeGetCoarseNs, "bpf_ktime_get_coarse_ns"),
+        (BpfHelper::KtimeGetTaiNs, "bpf_ktime_get_tai_ns"),
+        (BpfHelper::Jiffies64, "bpf_jiffies64"),
+    ] {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![],
+        });
+        block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
-    let types = ti
-        .infer(&func)
-        .expect("expected bpf_get_numa_node_id to infer");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .unwrap_or_else(|_| panic!("expected {name} to infer"));
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
 }
 
 #[test]

@@ -308,6 +308,11 @@ field. If an ancestor ID is needed, use the modeled raw helper escape
 hatch `helper-call "bpf_get_current_ancestor_cgroup_id" LEVEL`; it
 returns the same scalar ID shape as `bpf_get_current_cgroup_id`.
 
+`ctx.ktime` remains the preferred ordinary timestamp surface. When a
+specific kernel clock/counter is needed, the modeled helper escape hatch
+also accepts the no-arg scalar helpers `bpf_ktime_get_boot_ns`,
+`bpf_ktime_get_coarse_ns`, `bpf_ktime_get_tai_ns`, and `bpf_jiffies64`.
+
 `redirect-map` is the first-class XDP surface for `bpf_redirect_map`. It takes a literal map name plus a key, requires `--kind devmap`, `--kind devmap-hash`, `--kind cpumap`, or `--kind xskmap`, and returns the helper result directly so it can be the closure's final XDP action. `--flags` stays available for the helper's fallback return-code bits when the map lookup misses.
 
 `adjust-packet` is the first-class packet-relayout surface. On XDP it takes a delta from pipeline input or a positional argument, requires exactly one of `--head`, `--meta`, or `--tail`, and lowers to the corresponding `bpf_xdp_adjust_*` helper while materializing the ambient context pointer automatically. On `tc`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` do the same for the skb relayout helpers.

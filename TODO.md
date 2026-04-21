@@ -117,6 +117,7 @@ Last updated: 2026-04-21.
   - Typed helper skb hash coverage now includes `bpf_set_hash`, completing the modeled `bpf_get_hash_recalc` / `bpf_set_hash` / `bpf_set_hash_invalid` helper surface.
   - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the tc/sk_skb/sk_skb_parser helper surface.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.
+  - Typed helper time coverage now includes the remaining base no-arg scalar clocks/counters: `bpf_jiffies64`, `bpf_ktime_get_coarse_ns`, and `bpf_ktime_get_tai_ns`.
   - Typed helper scalar coverage now includes `bpf_get_numa_node_id` as a broad no-arg scalar-return helper.
   - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` / `bpf_skc_to_tcp_sock` / `bpf_skc_to_tcp6_sock` / `bpf_skc_to_tcp_timewait_sock` / `bpf_skc_to_tcp_request_sock` / `bpf_skc_to_udp6_sock` / `bpf_skc_to_unix_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
   - Typed helper packet-copy coverage now also includes `bpf_skb_load_bytes`, `bpf_skb_load_bytes_relative`, `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and `bpf_xdp_store_bytes`, with program-surface, pointer-space, positive-size, and buffer-bounds parity across type inference, verifier_types, and VCC.
