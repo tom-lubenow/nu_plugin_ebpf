@@ -99,8 +99,13 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.gid }     - Get group ID
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.task }    - Get current task_struct pointer
+    {|ctx| $ctx.numa_node } - Get current NUMA node ID
     {|ctx| $ctx.numa_node_id } - Get current NUMA node ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.ktime_boot } - Get boot-time kernel timestamp in nanoseconds
+    {|ctx| $ctx.ktime_coarse } - Get coarse kernel timestamp in nanoseconds
+    {|ctx| $ctx.ktime_tai } - Get TAI kernel timestamp in nanoseconds
+    {|ctx| $ctx.jiffies } - Get kernel jiffies counter
     {|ctx| $ctx.func_ip } - Get traced function/probe target address
     {|ctx| $ctx.function_ip } - Alias for ctx.func_ip
     {|ctx| $ctx.attach_cookie } - Get per-attachment BPF cookie

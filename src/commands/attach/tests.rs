@@ -6378,6 +6378,18 @@ fn test_compile_kprobe_ctx_ancestor_cgroup_id_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_numa_node_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("numa_node")],
+        },
+        "kprobe ctx.numa_node count",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_ctx_numa_node_id_alias_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,
@@ -6387,6 +6399,26 @@ fn test_compile_kprobe_ctx_numa_node_id_alias_counter_program() {
         },
         "kprobe ctx.numa_node_id count",
     );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_clock_counter_programs() {
+    for field in [
+        "ktime",
+        "ktime_boot",
+        "ktime_coarse",
+        "ktime_tai",
+        "jiffies",
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            &format!("kprobe ctx.{field} count"),
+        );
+    }
 }
 
 #[test]
