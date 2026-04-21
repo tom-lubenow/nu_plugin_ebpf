@@ -322,9 +322,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.sysctl_new_value } - Get the proposed new sysctl value as a 256-byte buffer
     {|ctx| $ctx.new_value } - Alias for ctx.sysctl_new_value
     {|ctx| mut ctx = $ctx; $ctx.file_pos = 0; 'allow' } - Override the sysctl file position through ordinary assignment
+    {|ctx| mut ctx = $ctx; $ctx.new_value = "1"; 'allow' } - Override the proposed new sysctl value through ordinary assignment
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `ctx.file_pos` is writable after shadowing the
-    immutable closure parameter as mutable, while `ctx.write` remains read-only.
+    immutable closure parameter as mutable, and assigning `ctx.new_value` /
+    `ctx.sysctl_new_value` lowers to `bpf_sysctl_set_new_value`; `ctx.write`
+    remains read-only.
     `ctx.sysctl_name` / `ctx.sysctl_base_name` lower through
     `bpf_sysctl_get_name`, while `ctx.sysctl_current_value` and
     `ctx.sysctl_new_value` lower through the corresponding value helpers;

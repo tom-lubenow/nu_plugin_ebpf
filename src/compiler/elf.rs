@@ -1120,6 +1120,7 @@ pub(crate) enum ProgramReturnAlias {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CtxWriteTarget {
     StoreField(CtxStoreTarget),
+    SysctlNewValue,
     SockoptOptvalByte(usize),
 }
 

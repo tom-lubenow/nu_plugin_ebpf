@@ -7683,6 +7683,20 @@ fn test_compile_cgroup_sysctl_ctx_file_pos_store_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sysctl_ctx_new_value_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("new_value")],
+        },
+        HirLiteral::String(b"1".to_vec()),
+        HirLiteral::String(b"allow".to_vec()),
+        "cgroup_sysctl ctx.new_value store",
+    );
+}
+
+#[test]
 fn test_compile_sock_ops_ctx_reply_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::SockOps,

@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::elf::CtxWriteTarget;
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
@@ -464,6 +465,10 @@ impl<'a> HirToMirLowering<'a> {
                     ty: target_ty,
                 });
             }
+            CtxWriteTarget::SysctlNewValue => {
+                self.lower_cgroup_sysctl_new_value_update(src_dst, new_value, &path_desc)?;
+                return Ok(());
+            }
             CtxWriteTarget::SockoptOptvalByte(index) => {
                 self.lower_cgroup_sockopt_optval_byte_update(
                     src_dst, index, new_value, &path_desc,
@@ -471,6 +476,152 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(());
             }
         }
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
+    }
+
+    fn sysctl_new_value_len_arg(
+        &self,
+        value_reg: RegId,
+        buf_ty: &MirType,
+        path_desc: &str,
+    ) -> Result<MirValue, CompileError> {
+        if let Some(meta) = self.get_metadata(value_reg) {
+            if meta.literal_string.is_some()
+                && let Some(bound) = meta.string_len_bound
+            {
+                return Ok(MirValue::Const(i64::try_from(bound).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' string length is too large",
+                        path_desc
+                    ))
+                })?));
+            }
+            if let Some(len_vreg) = meta.string_len_vreg {
+                return Ok(MirValue::VReg(len_vreg));
+            }
+            if let Some(bound) = meta.string_len_bound {
+                return Ok(MirValue::Const(i64::try_from(bound).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "context cell path update '.{} = ...' string length is too large",
+                        path_desc
+                    ))
+                })?));
+            }
+        }
+
+        let Some(len) = buf_ty.byte_array_len() else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a string or byte-buffer value",
+                path_desc
+            )));
+        };
+
+        Ok(MirValue::Const(i64::try_from(len).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' byte-buffer length is too large",
+                path_desc
+            ))
+        })?))
+    }
+
+    fn materialize_sysctl_new_value_buffer(
+        &mut self,
+        new_value: RegId,
+        new_value_vreg: VReg,
+        path_desc: &str,
+    ) -> Result<(VReg, MirValue), CompileError> {
+        let value_ty = self
+            .typed_value_runtime_type(new_value, new_value_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' requires type information for the new sysctl value",
+                    path_desc
+                ))
+            })?;
+
+        let (buf_vreg, buf_ty, ptr_hint) = match value_ty.clone() {
+            MirType::Ptr {
+                pointee,
+                address_space: address_space @ (AddressSpace::Stack | AddressSpace::Map),
+            } => (
+                new_value_vreg,
+                pointee.as_ref().clone(),
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space,
+                }),
+            ),
+            MirType::Ptr { address_space, .. } => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' requires a stack/map-backed string or byte-buffer value, got {address_space:?} pointer",
+                    path_desc
+                )));
+            }
+            value_ty @ MirType::Array { .. } => {
+                let ptr_vreg =
+                    self.materialized_metadata_aggregate_vreg(new_value, new_value_vreg)?;
+                (
+                    ptr_vreg,
+                    value_ty.clone(),
+                    Some(MirType::Ptr {
+                        pointee: Box::new(value_ty),
+                        address_space: AddressSpace::Stack,
+                    }),
+                )
+            }
+            other => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' requires a string or binary byte-buffer value, got {:?}",
+                    path_desc, other
+                )));
+            }
+        };
+
+        if buf_ty.byte_array_len().is_none() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a string or binary byte-buffer value, got {:?}",
+                path_desc, buf_ty
+            )));
+        }
+
+        if let Some(ptr_hint) = ptr_hint {
+            self.vreg_type_hints.entry(buf_vreg).or_insert(ptr_hint);
+        }
+
+        let len_arg = self.sysctl_new_value_len_arg(new_value, &buf_ty, path_desc)?;
+        Ok((buf_vreg, len_arg))
+    }
+
+    fn lower_cgroup_sysctl_new_value_update(
+        &mut self,
+        src_dst: RegId,
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
+        };
+        if let Some(message) = ctx.helper_call_error(BpfHelper::SysctlSetNewValue) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        let new_value_vreg = self.get_vreg(new_value);
+        let (buf_vreg, len_arg) =
+            self.materialize_sysctl_new_value_buffer(new_value, new_value_vreg, path_desc)?;
+        let ctx_vreg = self.materialize_context_pointer_arg();
+        let ret_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallHelper {
+            dst: ret_vreg,
+            helper: BpfHelper::SysctlSetNewValue as u32,
+            args: vec![MirValue::VReg(ctx_vreg), MirValue::VReg(buf_vreg), len_arg],
+        });
+        self.vreg_type_hints.insert(ret_vreg, MirType::I64);
+
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = true;
         Ok(())

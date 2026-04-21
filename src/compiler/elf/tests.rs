@@ -3776,6 +3776,26 @@ fn test_probe_context_resolves_cgroup_sysctl_file_pos_store_target() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sysctl_new_value_write_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+    assert_eq!(
+        ctx.resolve_ctx_write_target("sysctl_new_value", None)
+            .expect("cgroup_sysctl sysctl_new_value write target should resolve"),
+        CtxWriteTarget::SysctlNewValue
+    );
+    assert_eq!(
+        ctx.resolve_ctx_write_target("new_value", None)
+            .expect("cgroup_sysctl new_value write target should resolve"),
+        CtxWriteTarget::SysctlNewValue
+    );
+
+    let err = ctx
+        .resolve_ctx_write_target("new_value", Some(0))
+        .expect_err("new_value indexed assignment should be rejected");
+    assert!(err.contains("does not support indexed assignment"));
+}
+
+#[test]
 fn test_probe_context_resolves_skb_tstamp_store_target_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert_eq!(

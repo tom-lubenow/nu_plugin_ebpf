@@ -30,6 +30,7 @@ enum ContextStoreTargetSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ContextWriteTargetSpec {
     Store(ContextStoreTargetSpec),
+    SysctlNewValue,
     SockoptOptvalByte,
 }
 
@@ -163,6 +164,12 @@ impl ContextWriteTargetSpec {
             Self::Store(target) => target
                 .resolve(spec, field_name, index)
                 .map(CtxWriteTarget::StoreField),
+            Self::SysctlNewValue => match index {
+                Some(_) => Err(format!(
+                    "ctx.{field_name} does not support indexed assignment"
+                )),
+                None => Ok(CtxWriteTarget::SysctlNewValue),
+            },
             Self::SockoptOptvalByte => match index {
                 Some(index) => Ok(CtxWriteTarget::SockoptOptvalByte(index)),
                 None => Err(format!(
@@ -175,6 +182,7 @@ impl ContextWriteTargetSpec {
     fn matches_store_target(&self, target: &CtxStoreTarget) -> bool {
         match self {
             Self::Store(spec) => spec.matches_target(target),
+            Self::SysctlNewValue => false,
             Self::SockoptOptvalByte => false,
         }
     }
@@ -283,9 +291,11 @@ impl ContextWriteSurfaceSpec {
             ContextWriteTargetSpec::Store(_) => Some(self.resolve_write_target(spec, index).map(
                 |target| match target {
                     CtxWriteTarget::StoreField(target) => target,
+                    CtxWriteTarget::SysctlNewValue => unreachable!(),
                     CtxWriteTarget::SockoptOptvalByte(_) => unreachable!(),
                 },
             )),
+            ContextWriteTargetSpec::SysctlNewValue => None,
             ContextWriteTargetSpec::SockoptOptvalByte => None,
         }
     }
@@ -388,12 +398,18 @@ const CGROUP_SOCK_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     .with_availability(ContextWriteAvailability::CgroupSockCreateReleaseOnly),
 ];
 
-const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
-    &[ContextWriteSurfaceSpec::store_field(
+const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
         "file_pos",
         CtxField::SysctlFilePos,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SysctlFilePos),
-    )];
+    ),
+    ContextWriteSurfaceSpec::special_write(
+        "sysctl_new_value",
+        ContextWriteTargetSpec::SysctlNewValue,
+    ),
+    ContextWriteSurfaceSpec::special_write("new_value", ContextWriteTargetSpec::SysctlNewValue),
+];
 
 const SOCK_OPS_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ContextWriteSurfaceSpec::named_store(
