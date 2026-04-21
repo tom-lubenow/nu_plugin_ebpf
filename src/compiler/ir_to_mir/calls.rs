@@ -2592,14 +2592,11 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
 
-        let helper = if self
+        let helper = self
             .probe_ctx
-            .is_some_and(|ctx| matches!(ctx.program_type(), EbpfProgramType::Tc))
-        {
-            BpfHelper::SkbUnderCgroup
-        } else {
-            BpfHelper::CurrentTaskUnderCgroup
-        };
+            .map_or(BpfHelper::CurrentTaskUnderCgroup, |ctx| {
+                ctx.program_type().cgroup_array_membership_helper()
+            });
         if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
             return Err(CompileError::UnsupportedInstruction(message));
         }

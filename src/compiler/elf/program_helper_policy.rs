@@ -695,6 +695,14 @@ impl EbpfProgramType {
         }
     }
 
+    pub(crate) fn cgroup_array_membership_helper(&self) -> BpfHelper {
+        if HelperProgramSurfaceFamily::Tc.allows(*self) {
+            BpfHelper::SkbUnderCgroup
+        } else {
+            BpfHelper::CurrentTaskUnderCgroup
+        }
+    }
+
     pub(crate) fn packet_adjust_helper(&self, mode: PacketAdjustMode) -> Option<BpfHelper> {
         match mode {
             PacketAdjustMode::Head => {

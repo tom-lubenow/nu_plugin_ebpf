@@ -1778,6 +1778,35 @@ fn test_current_task_under_cgroup_is_base_helper_surface() {
 }
 
 #[test]
+fn test_cgroup_array_membership_helper_follows_program_model() {
+    assert!(matches!(
+        EbpfProgramType::Tc.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
+        EbpfProgramType::Xdp.cgroup_array_membership_helper(),
+        BpfHelper::CurrentTaskUnderCgroup
+    ));
+    assert!(matches!(
+        EbpfProgramType::Kprobe.cgroup_array_membership_helper(),
+        BpfHelper::CurrentTaskUnderCgroup
+    ));
+
+    for program_type in [
+        EbpfProgramType::Tc,
+        EbpfProgramType::Xdp,
+        EbpfProgramType::Kprobe,
+    ] {
+        let helper = program_type.cgroup_array_membership_helper();
+        assert_eq!(
+            program_type.helper_call_error(helper),
+            None,
+            "{program_type:?} selected invalid cgroup-array membership helper {helper:?}"
+        );
+    }
+}
+
+#[test]
 fn test_program_type_packet_redirect_helpers_follow_program_model() {
     assert!(matches!(
         EbpfProgramType::Xdp.packet_redirect_helper(),
