@@ -5403,6 +5403,90 @@ fn test_compile_socket_filter_ctx_packet_len_counter_program() {
 }
 
 #[test]
+fn test_compile_socket_filter_ctx_socket_uid_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("socket_uid")],
+        },
+        "socket_filter ctx.socket_uid count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_pkt_type_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("pkt_type")],
+        },
+        "socket_filter ctx.pkt_type count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_vlan_tci_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("vlan_tci")],
+        },
+        "socket_filter ctx.vlan_tci count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_vlan_proto_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("vlan_proto")],
+        },
+        "socket_filter ctx.vlan_proto count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_napi_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("napi_id")],
+        },
+        "socket_filter ctx.napi_id count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_gso_segs_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("gso_segs")],
+        },
+        "socket_filter ctx.gso_segs count",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_gso_size_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("gso_size")],
+        },
+        "socket_filter ctx.gso_size count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_ctx_family_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSock,
@@ -5411,6 +5495,18 @@ fn test_compile_cgroup_sock_ctx_family_counter_program() {
             members: vec![string_member("family")],
         },
         "cgroup_sock ctx.family count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_ctx_rx_queue_mapping_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("rx_queue_mapping")],
+        },
+        "cgroup_sock ctx.rx_queue_mapping count",
     );
 }
 
@@ -5459,6 +5555,18 @@ fn test_compile_cgroup_sockopt_get_ctx_sockopt_retval_counter_program() {
             members: vec![string_member("sockopt_retval")],
         },
         "cgroup_sockopt:get ctx.sockopt_retval count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_get_ctx_netns_cookie_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("netns_cookie")],
+        },
+        "cgroup_sockopt:get ctx.netns_cookie count",
     );
 }
 
@@ -5757,6 +5865,18 @@ fn test_compile_sk_msg_ctx_packet_len_counter_program() {
 }
 
 #[test]
+fn test_compile_sk_msg_ctx_netns_cookie_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("netns_cookie")],
+        },
+        "sk_msg ctx.netns_cookie count",
+    );
+}
+
+#[test]
 fn test_compile_sk_skb_ctx_packet_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkSkb,
@@ -5777,6 +5897,18 @@ fn test_compile_sk_skb_parser_ctx_packet_len_counter_program() {
             members: vec![string_member("packet_len")],
         },
         "sk_skb_parser ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_parser_ctx_socket_uid_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("socket_uid")],
+        },
+        "sk_skb_parser ctx.socket_uid count",
     );
 }
 
