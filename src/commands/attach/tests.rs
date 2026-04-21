@@ -23,6 +23,7 @@ use nu_protocol::{BlockId, Record, RegId, Span, Type, Value, VarId};
 
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 
 #[test]
 fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
@@ -4521,6 +4522,137 @@ fn make_gt_zero_guarded_ctx_path_store_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_branch_refined_bound_ctx_get_then_call_program(
+    scalar_binding: CellPath,
+    pointer_binding: CellPath,
+    get_decl: DeclId,
+    terminal_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let scalar_var = VarId::new(1);
+    let idx_var = VarId::new(2);
+    let value_var = VarId::new(3);
+    let blocks = vec![
+        HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(scalar_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: scalar_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: scalar_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::GreaterThan),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::BranchIf {
+                cond: RegId::new(0),
+                if_true: HirBlockId(1),
+                if_false: HirBlockId(2),
+            },
+        },
+        HirBlock {
+            id: HirBlockId(1),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: scalar_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Math(Math::Subtract),
+                    rhs: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: idx_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(pointer_binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: idx_var,
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: value_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: value_var,
+                },
+                HirStmt::Call {
+                    decl_id: terminal_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        },
+        HirBlock {
+            id: HirBlockId(2),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        },
+    ];
+    let func = HirFunction {
+        blocks,
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 16],
+        ast: vec![None; 16],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 #[test]
 fn test_compile_tp_btf_ctx_arg_program() {
     fn find_tp_btf_scalar_arg_candidate() -> Option<(&'static str, usize)> {
@@ -5133,6 +5265,48 @@ fn test_compile_sock_ops_guarded_ctx_data_byte_counter_program() {
 }
 
 #[test]
+fn test_compile_sock_ops_guarded_ctx_skb_tcp_flags_counter_program() {
+    let hir = make_eq_guarded_ctx_path_count_program(
+        CellPath {
+            members: vec![string_member("op")],
+        },
+        HirLiteral::Int(BPF_SOCK_OPS_HDR_OPT_LEN_CB),
+        CellPath {
+            members: vec![string_member("skb_tcp_flags")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("guarded sock_ops ctx.skb_tcp_flags count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized guarded sock_ops ctx.skb_tcp_flags count should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_sk_msg_ctx_packet_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkMsg,
@@ -5288,6 +5462,53 @@ fn test_compile_cgroup_sockopt_get_guarded_ctx_optval_byte_store_program() {
         Some(&lowering.type_hints),
     )
     .expect("optimized guarded cgroup_sockopt:get ctx.optval[0] store should compile");
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_get_branch_refined_ctx_optval_get_count_program() {
+    let hir = make_branch_refined_bound_ctx_get_then_call_program(
+        CellPath {
+            members: vec![string_member("optlen")],
+        },
+        CellPath {
+            members: vec![string_member("optval")],
+        },
+        DeclId::new(42),
+        DeclId::new(43),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "get".to_string()),
+        (DeclId::new(43), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect(
+        "branch-refined cgroup_sockopt:get ctx.optval get/count should lower through attach flow",
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized branch-refined cgroup_sockopt:get ctx.optval get/count should compile");
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
