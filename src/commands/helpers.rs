@@ -414,6 +414,7 @@ Examples:
   $ctx.pid | global-define --zero seen_pid
   global-define --type int seen_pid
   "bash" | global-define --type string:16 seen_comm
+  [80 443] | global-define --type 'array{u16:4}' seen_ports
   global-define --type 'record{pid:int,comm:bytes:16}' seen_state
   let state = (global-get seen_pid)"#
     }
@@ -424,7 +425,7 @@ Examples:
             .named(
                 "type",
                 SyntaxShape::String,
-                "Declare a global from a type spec (zero-initialized with no input, or explicitly initialized from a compile-time constant input) using i8/i16/i32/int(i64)/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:int:N(list:i64:N)/record{field:type,...}",
+                "Declare a global from a type spec (zero-initialized with no input, or explicitly initialized from a compile-time constant input) using i8/i16/i32/int(i64)/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:int:N(list:i64:N)/array{scalar:N}/record{field:type,...}",
                 None,
             )
             .switch(
@@ -461,6 +462,11 @@ Examples:
             Example {
                 example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type string:32 seen_name; global-get seen_name | count }",
                 description: "Declare a zero-initialized string global with a 32-byte content cap",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| [80 443] | global-define --type 'array{u16:4}' seen_ports; global-get seen_ports | get 0 | count }",
+                description: "Declare a fixed scalar array global with an explicit compile-time initializer",
                 result: None,
             },
             Example {

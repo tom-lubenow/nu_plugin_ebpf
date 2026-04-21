@@ -25,9 +25,20 @@ enum NamedGlobalTypeShape {
     U32,
     U64,
     Bool,
-    Bytes { len: usize },
-    String { content_cap: usize, slot_len: usize },
-    NumericList { max_len: usize },
+    Bytes {
+        len: usize,
+    },
+    String {
+        content_cap: usize,
+        slot_len: usize,
+    },
+    NumericList {
+        max_len: usize,
+    },
+    FixedArray {
+        elem: Box<ParsedNamedGlobalType>,
+        len: usize,
+    },
     Record(Vec<(String, ParsedNamedGlobalType)>),
 }
 
@@ -96,6 +107,38 @@ fn split_top_level_field<'a>(field: &'a str) -> Result<(&'a str, &'a str), Compi
     )))
 }
 
+fn split_top_level_type_len<'a>(
+    body: &'a str,
+    spec: &str,
+) -> Result<(&'a str, &'a str), CompileError> {
+    let mut depth = 0usize;
+
+    for (idx, ch) in body.char_indices() {
+        match ch {
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                if depth == 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "array global type spec '{}' has an unmatched '}}'",
+                        spec
+                    )));
+                }
+                depth -= 1;
+            }
+            ':' if depth == 0 => {
+                let (elem, rest) = body.split_at(idx);
+                return Ok((elem.trim(), rest[1..].trim()));
+            }
+            _ => {}
+        }
+    }
+
+    Err(CompileError::UnsupportedInstruction(format!(
+        "array global type spec '{}' must use array{{type:N}} syntax",
+        spec
+    )))
+}
+
 fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
     match value {
         Value::Bool { val, .. } => Some(if *val { 1 } else { 0 }),
@@ -108,6 +151,23 @@ fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
 }
 
 impl ParsedNamedGlobalType {
+    fn is_fixed_array_element_type(&self) -> bool {
+        matches!(
+            &self.shape,
+            NamedGlobalTypeShape::I8
+                | NamedGlobalTypeShape::I16
+                | NamedGlobalTypeShape::I32
+                | NamedGlobalTypeShape::I64
+                | NamedGlobalTypeShape::Duration
+                | NamedGlobalTypeShape::Filesize
+                | NamedGlobalTypeShape::U8
+                | NamedGlobalTypeShape::U16
+                | NamedGlobalTypeShape::U32
+                | NamedGlobalTypeShape::U64
+                | NamedGlobalTypeShape::Bool
+        )
+    }
+
     fn parse(spec: &str) -> Result<Self, CompileError> {
         let scalar_shape = match spec {
             "i8" => Some((MirType::I8, NamedGlobalTypeShape::I8)),
@@ -204,6 +264,54 @@ impl ParsedNamedGlobalType {
                 semantics: (!field_semantics.is_empty())
                     .then_some(AnnotatedValueSemantics::Record(field_semantics)),
                 shape: NamedGlobalTypeShape::Record(field_specs),
+            });
+        }
+
+        if let Some(body) = spec
+            .strip_prefix("array{")
+            .and_then(|rest| rest.strip_suffix('}'))
+        {
+            let (elem_spec, len_spec) = split_top_level_type_len(body, spec)?;
+            if elem_spec.is_empty() || len_spec.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "array global type spec '{}' must use array{{type:N}} syntax",
+                    spec
+                )));
+            }
+
+            let len = len_spec.parse::<usize>().map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "global type spec '{}' has an invalid array length",
+                    spec
+                ))
+            })?;
+            if len == 0 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "global fixed-array declarations require a positive length".into(),
+                ));
+            }
+
+            let parsed_elem = Self::parse(elem_spec)?;
+            if !parsed_elem.is_fixed_array_element_type() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "global fixed-array declarations currently support scalar element types only, got '{}'",
+                    elem_spec
+                )));
+            }
+            let elem_ty = parsed_elem.ty.clone();
+            return Ok(Self {
+                ty: MirType::Array {
+                    elem: Box::new(elem_ty),
+                    len,
+                },
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::FixedArray {
+                    elem: Box::new(parsed_elem),
+                    len,
+                },
             });
         }
 
@@ -315,7 +423,7 @@ impl ParsedNamedGlobalType {
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, or nested record{{field:type,...}}",
+            "unsupported global type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{scalar:N}}, or nested record{{field:type,...}}",
             spec
         )))
     }
@@ -520,6 +628,36 @@ impl ParsedNamedGlobalType {
                     };
                     let start = (idx + 1) * std::mem::size_of::<i64>();
                     data[start..start + std::mem::size_of::<i64>()].copy_from_slice(&item_data);
+                }
+                Ok(data)
+            }
+            NamedGlobalTypeShape::FixedArray { elem, len } => {
+                let Value::List { vals, .. } = value else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "global type spec '{}' initializer{} requires a constant list",
+                        spec, path_suffix
+                    )));
+                };
+                if vals.len() > *len {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "global type spec '{}' initializer{} has {} items but length is {}",
+                        spec,
+                        path_suffix,
+                        vals.len(),
+                        len
+                    )));
+                }
+
+                let elem_size = elem.ty.size();
+                let mut data = vec![0u8; elem_size.saturating_mul(*len)];
+                for (idx, item) in vals.iter().enumerate() {
+                    let nested_path = path
+                        .map(|prefix| format!("{prefix}[{idx}]"))
+                        .unwrap_or_else(|| format!("[{idx}]"));
+                    let item_data =
+                        elem.initializer_bytes_with_path(item, spec, Some(&nested_path))?;
+                    let start = idx.saturating_mul(elem_size);
+                    data[start..start + elem_size].copy_from_slice(&item_data);
                 }
                 Ok(data)
             }

@@ -6990,6 +6990,29 @@ fn test_compile_xdp_typed_global_define_type_list_int_program() {
 }
 
 #[test]
+fn test_compile_xdp_typed_global_define_type_fixed_array_program() {
+    let hir = make_typed_global_define_list_get_count_program(
+        DeclId::new(40),
+        DeclId::new(41),
+        DeclId::new(42),
+        "array{u32:4}",
+    );
+    let decl_names = HashMap::from([
+        (DeclId::new(40), "global-define".to_string()),
+        (DeclId::new(41), "global-get".to_string()),
+        (DeclId::new(42), "count".to_string()),
+    ]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "typed global-define fixed array should compile through attach flow",
+    );
+}
+
+#[test]
 fn test_compile_xdp_annotated_mut_int_count_program() {
     let hir = make_annotated_mut_int_count_program(DeclId::new(42));
     let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
