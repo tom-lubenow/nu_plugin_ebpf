@@ -885,7 +885,7 @@ impl<'a> HirToMirLowering<'a> {
                         "map-get does not accept flags".into(),
                     ));
                 }
-                self.require_only_named_args("map-get", &["kind"])?;
+                self.require_only_named_args("map-get", &["kind", "init", "flags"])?;
 
                 let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
@@ -895,55 +895,76 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-get")?;
                 self.validate_generic_map_name(&map_name, "map-get")?;
-                let map_kind = self.generic_map_kind_arg("map-get")?;
-                self.validate_generic_map_lookup_kind(map_kind, &map_name)?;
+                let map_kind = self.map_get_kind_arg("map-get")?;
                 let map_ref = MapRef {
                     name: map_name.clone(),
                     kind: map_kind,
                 };
-                let key_vreg = self
-                    .positional_args
-                    .get(1)
-                    .map(|(vreg, _)| *vreg)
-                    .or(self.pipeline_input)
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "map-get requires a key from pipeline input or a second positional argument"
-                                .into(),
-                        )
-                    })?;
-                let lookup_vreg = self.func.alloc_vreg();
+                if Self::is_local_storage_map_kind(map_kind) {
+                    self.lower_local_storage_map_get(
+                        src_dst,
+                        dst_vreg,
+                        result_vreg,
+                        src_dst_had_value,
+                        map_ref,
+                    )?;
+                } else {
+                    if self.named_args.contains_key("init") {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "map-get --init is only supported for local-storage map kinds".into(),
+                        ));
+                    }
+                    if self.named_args.contains_key("flags") {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "map-get --flags is only supported for local-storage map kinds".into(),
+                        ));
+                    }
+                    self.validate_generic_map_lookup_kind(map_kind, &map_name)?;
+                    let key_vreg = self
+                        .positional_args
+                        .get(1)
+                        .map(|(vreg, _)| *vreg)
+                        .or(self.pipeline_input)
+                        .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-get requires a key from pipeline input or a second positional argument"
+                                    .into(),
+                            )
+                        })?;
+                    let lookup_vreg = self.func.alloc_vreg();
 
-                self.emit(MirInst::MapLookup {
-                    dst: lookup_vreg,
-                    map: map_ref.clone(),
-                    key: key_vreg,
-                });
-                self.emit(MirInst::Copy {
-                    dst: result_vreg,
-                    src: MirValue::VReg(lookup_vreg),
-                });
-
-                let stored_ty = self.named_map_value_type(&map_ref).cloned();
-                let runtime_ty = MirType::Ptr {
-                    pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
-                    address_space: AddressSpace::Map,
-                };
-                self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
-                self.vreg_type_hints.insert(result_vreg, runtime_ty);
-
-                self.reset_call_result_metadata(src_dst);
-                if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) = stored_ty
-                {
-                    let semantics = self.named_map_value_semantics(&map_ref).cloned();
-                    let meta = self.get_or_create_metadata(src_dst);
-                    meta.field_type = Some(MirType::Ptr {
-                        pointee: Box::new(value_ty),
-                        address_space: AddressSpace::Map,
+                    self.emit(MirInst::MapLookup {
+                        dst: lookup_vreg,
+                        map: map_ref.clone(),
+                        key: key_vreg,
                     });
-                    if let Some(semantics) = semantics {
-                        meta.annotated_semantics = Some(semantics);
+                    self.emit(MirInst::Copy {
+                        dst: result_vreg,
+                        src: MirValue::VReg(lookup_vreg),
+                    });
+
+                    let stored_ty = self.named_map_value_type(&map_ref).cloned();
+                    let runtime_ty = MirType::Ptr {
+                        pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
+                        address_space: AddressSpace::Map,
+                    };
+                    self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
+                    self.vreg_type_hints.insert(result_vreg, runtime_ty);
+
+                    self.reset_call_result_metadata(src_dst);
+                    if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
+                        stored_ty
+                    {
+                        let semantics = self.named_map_value_semantics(&map_ref).cloned();
+                        let meta = self.get_or_create_metadata(src_dst);
+                        meta.field_type = Some(MirType::Ptr {
+                            pointee: Box::new(value_ty),
+                            address_space: AddressSpace::Map,
+                        });
+                        if let Some(semantics) = semantics {
+                            meta.annotated_semantics = Some(semantics);
+                        }
                     }
                 }
             }
@@ -1130,34 +1151,43 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-delete")?;
                 self.validate_generic_map_name(&map_name, "map-delete")?;
-                let map_kind = self.generic_map_kind_arg("map-delete")?;
-                self.validate_generic_map_delete_kind(map_kind, &map_name)?;
+                let map_kind = self.map_delete_kind_arg("map-delete")?;
                 let map_ref = MapRef {
                     name: map_name,
                     kind: map_kind,
                 };
-                let key_vreg = self
-                    .positional_args
-                    .get(1)
-                    .map(|(vreg, _)| *vreg)
-                    .or(self.pipeline_input)
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "map-delete requires a key from pipeline input or a second positional argument"
-                                .into(),
-                        )
-                    })?;
+                if Self::is_local_storage_map_kind(map_kind) {
+                    self.lower_local_storage_map_delete(
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        map_ref,
+                    )?;
+                } else {
+                    self.validate_generic_map_delete_kind(map_kind, &map_ref.name)?;
+                    let key_vreg = self
+                        .positional_args
+                        .get(1)
+                        .map(|(vreg, _)| *vreg)
+                        .or(self.pipeline_input)
+                        .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-delete requires a key from pipeline input or a second positional argument"
+                                    .into(),
+                            )
+                        })?;
 
-                self.emit(MirInst::MapDelete {
-                    map: map_ref,
-                    key: key_vreg,
-                });
-                self.emit(MirInst::Copy {
-                    dst: dst_vreg,
-                    src: MirValue::Const(0),
-                });
-                self.reset_call_result_metadata(src_dst);
+                    self.emit(MirInst::MapDelete {
+                        map: map_ref,
+                        key: key_vreg,
+                    });
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::Const(0),
+                    });
+                    self.reset_call_result_metadata(src_dst);
+                }
             }
 
             "global-define" => {
@@ -1774,6 +1804,180 @@ impl<'a> HirToMirLowering<'a> {
             }
             self.register_named_map_value_semantics(map_ref, &value_semantics);
         }
+        Ok(())
+    }
+
+    fn local_storage_get_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
+        match map_kind {
+            MapKind::SkStorage => Some(BpfHelper::SkStorageGet),
+            MapKind::InodeStorage => Some(BpfHelper::InodeStorageGet),
+            MapKind::TaskStorage => Some(BpfHelper::TaskStorageGet),
+            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageGet),
+            _ => None,
+        }
+    }
+
+    fn local_storage_delete_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
+        match map_kind {
+            MapKind::SkStorage => Some(BpfHelper::SkStorageDelete),
+            MapKind::InodeStorage => Some(BpfHelper::InodeStorageDelete),
+            MapKind::TaskStorage => Some(BpfHelper::TaskStorageDelete),
+            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageDelete),
+            _ => None,
+        }
+    }
+
+    fn local_storage_object_vreg(&mut self, object_vreg: VReg, object_reg: Option<RegId>) -> VReg {
+        if object_reg.is_some_and(|reg| self.is_context_reg(reg)) {
+            self.materialize_context_pointer_arg()
+        } else {
+            object_vreg
+        }
+    }
+
+    fn local_storage_map_value_hint(&self, map_ref: &MapRef) -> MirType {
+        self.named_map_value_type(map_ref)
+            .cloned()
+            .unwrap_or(MirType::Unknown)
+    }
+
+    fn lower_local_storage_map_get(
+        &mut self,
+        src_dst: RegId,
+        src_dst_value_vreg: VReg,
+        result_vreg: VReg,
+        src_dst_had_value: bool,
+        map_ref: MapRef,
+    ) -> Result<(), CompileError> {
+        let helper = Self::local_storage_get_helper_for_kind(map_ref.kind).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "map-get does not support local-storage map kind {:?}",
+                map_ref.kind
+            ))
+        })?;
+        let object_vreg = self
+            .positional_args
+            .get(1)
+            .map(|(vreg, _)| *vreg)
+            .or(self.pipeline_input)
+            .or_else(|| src_dst_had_value.then_some(src_dst_value_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-get local-storage requires an object pointer from pipeline input or a second positional argument"
+                        .into(),
+                )
+            })?;
+        let object_reg = self
+            .positional_args
+            .get(1)
+            .map(|(_, reg)| *reg)
+            .or(self.pipeline_input_reg)
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let object_vreg = self.local_storage_object_vreg(object_vreg, object_reg);
+
+        let init_arg = if let Some((init_vreg, init_reg)) = self.named_args.get("init").copied() {
+            let init_vreg = self.materialized_metadata_aggregate_vreg(init_reg, init_vreg)?;
+            let (init_ptr_vreg, _) =
+                self.materialize_map_value_probe_pointer(Some(init_reg), init_vreg, "map-get")?;
+            self.record_named_map_value_schema_from_reg(&map_ref, Some(init_reg), "map-get")?;
+            MirValue::VReg(init_ptr_vreg)
+        } else {
+            MirValue::Const(0)
+        };
+        let default_flags = if self.named_args.contains_key("init") {
+            1
+        } else {
+            0
+        };
+        let flags = self
+            .optional_nonnegative_named_u64_arg("map-get", "flags")?
+            .unwrap_or(default_flags);
+
+        let map_vreg = self.emit_typed_map_fd_load(map_ref.name.clone(), map_ref.kind);
+        let value_ty = self.local_storage_map_value_hint(&map_ref);
+        self.vreg_type_hints.insert(
+            map_vreg,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty.clone()),
+            },
+        );
+
+        self.emit(MirInst::CallHelper {
+            dst: result_vreg,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(map_vreg),
+                MirValue::VReg(object_vreg),
+                init_arg,
+                MirValue::Const(flags as i64),
+            ],
+        });
+
+        let result_pointee = if matches!(value_ty, MirType::Unknown) {
+            MirType::U8
+        } else {
+            value_ty
+        };
+        let result_ty = MirType::Ptr {
+            pointee: Box::new(result_pointee.clone()),
+            address_space: AddressSpace::Map,
+        };
+        self.vreg_type_hints.insert(result_vreg, result_ty.clone());
+
+        self.reset_call_result_metadata(src_dst);
+        if !matches!(result_pointee, MirType::U8) {
+            let semantics = self.named_map_value_semantics(&map_ref).cloned();
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.field_type = Some(result_ty);
+            if let Some(semantics) = semantics {
+                meta.annotated_semantics = Some(semantics);
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_local_storage_map_delete(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        map_ref: MapRef,
+    ) -> Result<(), CompileError> {
+        let helper = Self::local_storage_delete_helper_for_kind(map_ref.kind).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "map-delete does not support local-storage map kind {:?}",
+                map_ref.kind
+            ))
+        })?;
+        let object_vreg = self
+            .positional_args
+            .get(1)
+            .map(|(vreg, _)| *vreg)
+            .or(self.pipeline_input)
+            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-delete local-storage requires an object pointer from pipeline input or a second positional argument"
+                        .into(),
+                )
+            })?;
+        let object_reg = self
+            .positional_args
+            .get(1)
+            .map(|(_, reg)| *reg)
+            .or(self.pipeline_input_reg)
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let object_vreg = self.local_storage_object_vreg(object_vreg, object_reg);
+
+        let map_vreg = self.emit_typed_map_fd_load(map_ref.name, map_ref.kind);
+        self.emit(MirInst::CallHelper {
+            dst: dst_vreg,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(map_vreg), MirValue::VReg(object_vreg)],
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+        self.reset_call_result_metadata(src_dst);
         Ok(())
     }
 

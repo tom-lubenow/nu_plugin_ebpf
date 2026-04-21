@@ -261,6 +261,7 @@ Near-term priority order:
   - Add missing map definitions and loader plumbing for commonly used map families.
   - Recent progress: added `BPF_MAP_TYPE_BLOOM_FILTER` support through the existing typed `map-push` path and raw helper map-FD materialization, while rejecting unsupported first-class lookup/update/delete/peek/pop operations to match kernel bloom-filter semantics.
   - Recent progress: added first-class `map-contains --kind bloom-filter` membership probes, keeping bloom-filter reads off the raw `bpf_map_peek_elem` helper surface.
+  - Recent progress: local-storage maps now have resource-oriented `map-get` / `map-delete` forms for `sk-storage`, `task-storage`, `inode-storage`, and `cgrp-storage`, lowering through the modeled storage helpers while preserving typed init-value schemas.
   - Recent progress: added `BPF_MAP_TYPE_CGROUP_ARRAY` map definitions plus fixed map-FD materialization for `bpf_skb_under_cgroup` and `bpf_current_task_under_cgroup`, keeping cgroup arrays on the raw helper surface rather than generic map commands. `bpf_skb_under_cgroup` is now constrained to tc programs in our supported program set; `bpf_current_task_under_cgroup` remains generic because upstream exposes it through the base helper table when cgroups are enabled.
   - Validate map capability compatibility per program type and kernel version.
 

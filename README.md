@@ -99,14 +99,14 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 - Typed record `mut` initializers may omit scalar or nested scalar-record fields that should start zeroed, as long as the annotation alone still fixes their honest layout. Typed list `mut` initializers may also seed fixed arrays from homogeneous scalar/binary/record constants when the initializer provides the concrete length, including when that list is nested inside a typed record global.
 - Use `global-define`, `global-get`, and `global-set` when you need an explicit shared name or a source-order-independent declaration.
   `global-define --type ...` now also accepts a compile-time constant initializer, typed record initializers may omit fields that should start zeroed, and a first `global-set` can now infer record layout and field semantics from metadata-built record values, including nested record builders, when their fields already have honest fixed layouts.
-- Prefer the first-class packet/socket/message/map surface (`adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, `tail-call`, and `map-contains`) over raw `helper-call` forms when the operation matches.
+- Prefer the first-class packet/socket/message/map surface (`adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, `tail-call`, `map-contains`, and local-storage `map-get` / `map-delete`) over raw `helper-call` forms when the operation matches.
 - Treat `helper-call` and `kfunc-call` as escape hatches. Prefer typed context fields, ordinary Nushell control flow, and the smaller first-class command surface when it covers the operation.
 - Use `--pin` when multiple probes need to share maps or timers.
 - Use `--dry-run` first when exploring new kernels or high-risk attach families.
 
 ### Surface Policy
 
-- The long-term first-class command surface is intentionally small: `emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`.
+- The long-term first-class command surface is intentionally small: `emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, `tail-call`, and `map-contains`, plus the resource-oriented `map-*` / `global-*` surfaces.
 - Ordinary Nushell primitives should stay ordinary when possible. For example, `random int` is supported directly rather than through a bespoke helper wrapper.
 - `map-*` and `global-*` are convenience surfaces around real eBPF resources, not a second parallel language. Prefer ordinary Nushell variables and expressions until you truly need an explicit shared map/global resource.
 - `helper-call` and `kfunc-call` are ABI escape hatches. They remain available, but the preferred direction is to keep lifting common operations into typed context projection and smaller first-class commands.

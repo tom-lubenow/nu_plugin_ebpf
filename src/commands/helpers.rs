@@ -396,6 +396,12 @@ maybe-null pointer, so guard it before dereferencing.
 For `--kind lpm-trie`, the key bytes must already use the kernel LPM layout:
 leading `u32` prefix length followed by the trie payload bytes.
 
+For local-storage maps, use `--kind sk-storage`, `--kind task-storage`,
+`--kind inode-storage`, or `--kind cgrp-storage`. The pipeline input or second
+positional argument is the owning kernel object pointer. `--init VALUE` passes a
+typed initial value and defaults `--flags` to `1`
+(`BPF_LOCAL_STORAGE_GET_F_CREATE`); omit `--init` for lookup-only behavior.
+
 Example:
   let entry = ($ctx.pid | map-get seen_paths --kind hash)
   if $entry != 0 { $entry | emit }"#
@@ -413,18 +419,37 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack use map-peek or map-pop instead)",
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sk-storage, task-storage, inode-storage, or cgrp-storage (default hash)",
+                None,
+            )
+            .named(
+                "init",
+                SyntaxShape::Any,
+                "Local-storage initial value; implies create flags unless --flags is provided",
+                None,
+            )
+            .named(
+                "flags",
+                SyntaxShape::Int,
+                "Raw local-storage get flags (default 0, or 1 with --init)",
                 None,
             )
             .category(Category::Experimental)
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![Example {
-            example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.pid | map-get seen_paths --kind hash }",
-            description: "Look up the current PID in a named hash map",
-            result: None,
-        }]
+        vec![
+            Example {
+                example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.pid | map-get seen_paths --kind hash }",
+                description: "Look up the current PID in a named hash map",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.task | map-get task_state --kind task-storage --init 0 }",
+                description: "Get or create task-local storage for the current task",
+                result: None,
+            },
+        ]
     }
 
     fn run(
@@ -739,12 +764,16 @@ impl PluginCommand for MapDelete {
     }
 
     fn description(&self) -> &str {
-        "Delete a key from a named generic BPF map."
+        "Delete a key or local-storage entry from a named BPF map."
     }
 
     fn extra_description(&self) -> &str {
         r#"Deletes a key from a named generic map. Use pipeline input as the key,
 or pass an explicit key as the second positional argument.
+
+For local-storage maps, use `--kind sk-storage`, `--kind task-storage`,
+`--kind inode-storage`, or `--kind cgrp-storage`. The pipeline input or second
+positional argument is the owning kernel object pointer.
 
 For `--kind lpm-trie`, the key bytes must already use the kernel LPM layout:
 leading `u32` prefix length followed by the trie payload bytes.
@@ -765,7 +794,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack are not valid for map-delete)",
+                "Map kind: hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, sk-storage, task-storage, inode-storage, or cgrp-storage (default hash)",
                 None,
             )
             .category(Category::Experimental)

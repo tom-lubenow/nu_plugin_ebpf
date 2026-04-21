@@ -224,6 +224,16 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    pub(super) fn is_local_storage_map_kind(kind: MapKind) -> bool {
+        matches!(
+            kind,
+            MapKind::SkStorage
+                | MapKind::InodeStorage
+                | MapKind::TaskStorage
+                | MapKind::CgrpStorage
+        )
+    }
+
     pub(super) fn generic_map_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
             return Ok(MapKind::Hash);
@@ -245,10 +255,60 @@ impl<'a> HirToMirLowering<'a> {
                 | MapKind::TaskStorage
                 | MapKind::CgrpStorage,
             ) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is reserved for BPF local-storage helpers; pass a literal map name as arg0 to the matching storage helper-call instead"
+                "{context} --kind {kind} is reserved for BPF local-storage maps; use map-get/map-delete with --kind {kind} instead of generic map update operations"
             ))),
             Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
+            ))),
+        }
+    }
+
+    pub(super) fn map_get_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Ok(MapKind::Hash);
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
+            Some(kind) if Self::is_local_storage_map_kind(kind) => Ok(kind),
+            Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
+            ))),
+            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
+                )))
+            }
+            Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is not a lookup map; use map-contains --kind bloom-filter"
+            ))),
+            Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must name a recognized map family; map-get supports hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds"
+            ))),
+        }
+    }
+
+    pub(super) fn map_delete_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Ok(MapKind::Hash);
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
+            Some(kind) if Self::is_local_storage_map_kind(kind) => Ok(kind),
+            Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls"
+            ))),
+            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
+                )))
+            }
+            Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is not deletable"
+            ))),
+            Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must name a recognized map family; map-delete supports hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds"
             ))),
         }
     }
