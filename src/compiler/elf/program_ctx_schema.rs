@@ -215,40 +215,12 @@ impl EbpfProgramType {
         self.info().supports_tracepoint_fields
     }
 
-    pub fn supports_task_ctx_fields(&self) -> bool {
-        self.info().supports_task_ctx_fields
-    }
-
-    pub fn supports_cpu_ctx_field(&self) -> bool {
-        self.info().supports_cpu_ctx_field
-    }
-
-    pub fn supports_timestamp_ctx_field(&self) -> bool {
-        self.info().supports_timestamp_ctx_field
-    }
-
-    pub fn supports_stack_ctx_fields(&self) -> bool {
-        self.info().supports_stack_ctx_fields
-    }
-
-    pub fn supports_xdp_md_ctx_fields(&self) -> bool {
-        self.info().supports_xdp_md_ctx_fields
-    }
-
     pub fn packet_context_kind(&self) -> Option<PacketContextKind> {
         self.info().packet_context_kind
     }
 
     pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {
         program_context_layout_spec(*self).and_then(|spec| spec.data_meta)
-    }
-
-    pub fn supports_packet_len_ctx_field(&self) -> bool {
-        self.info().supports_packet_len_ctx_field
-    }
-
-    pub fn supports_packet_data_ctx_fields(&self) -> bool {
-        self.info().supports_packet_data_ctx_fields
     }
 
     pub fn supports_data_meta_ctx_field(&self) -> bool {
@@ -289,18 +261,6 @@ impl EbpfProgramType {
 
     pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
         program_context_layout_spec(*self).and_then(|spec| spec.sock_state)
-    }
-
-    pub fn supports_ingress_ifindex_ctx_field(&self) -> bool {
-        self.info().supports_ingress_ifindex_ctx_field
-    }
-
-    pub fn supports_rx_queue_index_ctx_field(&self) -> bool {
-        self.info().supports_rx_queue_index_ctx_field
-    }
-
-    pub fn supports_egress_ifindex_ctx_field(&self) -> bool {
-        self.info().supports_egress_ifindex_ctx_field
     }
 
     pub fn supports_socket_ref_ctx_field(&self) -> bool {

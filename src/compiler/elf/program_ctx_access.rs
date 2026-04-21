@@ -906,6 +906,95 @@ const BTF_ARG_COUNT_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const PERF_EVENT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::PerfEvent];
 
+const TASK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Kprobe,
+    EbpfProgramType::Kretprobe,
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::TpBtf,
+    EbpfProgramType::Tracepoint,
+    EbpfProgramType::RawTracepoint,
+    EbpfProgramType::Uprobe,
+    EbpfProgramType::Uretprobe,
+    EbpfProgramType::Lsm,
+    EbpfProgramType::PerfEvent,
+];
+
+const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Kprobe,
+    EbpfProgramType::Kretprobe,
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::TpBtf,
+    EbpfProgramType::Tracepoint,
+    EbpfProgramType::RawTracepoint,
+    EbpfProgramType::Uprobe,
+    EbpfProgramType::Uretprobe,
+    EbpfProgramType::Lsm,
+    EbpfProgramType::Xdp,
+    EbpfProgramType::PerfEvent,
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::CgroupDevice,
+    EbpfProgramType::SkLookup,
+    EbpfProgramType::SkMsg,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SockOps,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::CgroupSock,
+    EbpfProgramType::CgroupSysctl,
+    EbpfProgramType::CgroupSockopt,
+    EbpfProgramType::CgroupSockAddr,
+    EbpfProgramType::LircMode2,
+];
+
+const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Xdp,
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::SkMsg,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SockOps,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+];
+
+const PACKET_DATA_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Xdp,
+    EbpfProgramType::SkMsg,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SockOps,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+];
+
+const INGRESS_IFINDEX_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Xdp,
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::SkLookup,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+];
+
+const XDP_MD_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
+
+const STACK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Kprobe,
+    EbpfProgramType::Kretprobe,
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::TpBtf,
+    EbpfProgramType::Tracepoint,
+    EbpfProgramType::RawTracepoint,
+    EbpfProgramType::Uprobe,
+    EbpfProgramType::Uretprobe,
+    EbpfProgramType::PerfEvent,
+];
+
 const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::Tc,
@@ -943,8 +1032,24 @@ const TRACING_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgramSurfaceSpec] = &[
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::TaskFields,
+        program_types: TASK_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::CpuField,
+        program_types: BASE_RUNTIME_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::TimestampField,
+        program_types: BASE_RUNTIME_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::XdpHelperFields,
-        program_types: &[EbpfProgramType::Xdp],
+        program_types: XDP_MD_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::PacketLenField,
+        program_types: PACKET_LEN_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::SkbChecksumHelperFields,
@@ -973,6 +1078,22 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::SkbFields,
         program_types: SKB_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::PacketDataFields,
+        program_types: PACKET_DATA_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::IngressIfindexField,
+        program_types: INGRESS_IFINDEX_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::RxQueueIndexField,
+        program_types: XDP_MD_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::EgressIfindexField,
+        program_types: XDP_MD_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::DeviceFields,
@@ -1010,6 +1131,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         requirement: BaseContextFieldAccessRequirement::TracingHelperFields,
         program_types: TRACING_HELPER_FIELD_PROGRAMS,
     },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::StackFields,
+        program_types: STACK_FIELD_PROGRAMS,
+    },
 ];
 
 fn base_context_field_access_program_surface(
@@ -1029,23 +1154,23 @@ impl BaseContextFieldAccessRequirement {
 
     fn is_allowed(self, program_type: EbpfProgramType) -> bool {
         match self {
-            Self::TaskFields => program_type.supports_task_ctx_fields(),
-            Self::CpuField => program_type.supports_cpu_ctx_field(),
-            Self::TimestampField => program_type.supports_timestamp_ctx_field(),
+            Self::TaskFields => self.allowed_by_program_surface(program_type),
+            Self::CpuField => self.allowed_by_program_surface(program_type),
+            Self::TimestampField => self.allowed_by_program_surface(program_type),
             Self::PerfEventField => {
                 self.allowed_by_program_surface(program_type) && cfg!(target_arch = "x86_64")
             }
             Self::PerfEventHelperFields => self.allowed_by_program_surface(program_type),
             Self::XdpHelperFields => self.allowed_by_program_surface(program_type),
-            Self::PacketLenField => program_type.supports_packet_len_ctx_field(),
+            Self::PacketLenField => self.allowed_by_program_surface(program_type),
             Self::SkbChecksumHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbHashHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbFields => self.allowed_by_program_surface(program_type),
-            Self::PacketDataFields => program_type.supports_packet_data_ctx_fields(),
+            Self::PacketDataFields => self.allowed_by_program_surface(program_type),
             Self::DataMetaField => program_type.supports_data_meta_ctx_field(),
-            Self::IngressIfindexField => program_type.supports_ingress_ifindex_ctx_field(),
-            Self::RxQueueIndexField => program_type.supports_rx_queue_index_ctx_field(),
-            Self::EgressIfindexField => program_type.supports_egress_ifindex_ctx_field(),
+            Self::IngressIfindexField => self.allowed_by_program_surface(program_type),
+            Self::RxQueueIndexField => self.allowed_by_program_surface(program_type),
+            Self::EgressIfindexField => self.allowed_by_program_surface(program_type),
             Self::SocketTupleFields => program_type.supports_socket_tuple_ctx_fields(),
             Self::SocketRefField => program_type.supports_socket_ref_ctx_field(),
             Self::LookupCookieField => program_type.supports_lookup_cookie_ctx_field(),
@@ -1070,7 +1195,7 @@ impl BaseContextFieldAccessRequirement {
             Self::ArgFields => program_type.supports_ctx_args(),
             Self::ArgCountField => self.allowed_by_program_surface(program_type),
             Self::RetvalField => program_type.supports_ctx_retval(),
-            Self::StackFields => program_type.supports_stack_ctx_fields(),
+            Self::StackFields => self.allowed_by_program_surface(program_type),
             Self::TracingHelperFields => self.allowed_by_program_surface(program_type),
             Self::TracepointFields => program_type.supports_tracepoint_fields(),
         }
