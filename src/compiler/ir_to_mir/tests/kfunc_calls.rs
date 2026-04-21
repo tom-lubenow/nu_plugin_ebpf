@@ -4631,8 +4631,179 @@ fn test_map_contains_bloom_filter_lowers_and_compiles() {
     assert_eq!(map.def.value_size, 8);
 }
 
+fn make_cgroup_array_map_contains_hir() -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"tracked_cgroups".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"cgroup-array".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(3)],
+                        named: vec![(b"kind".to_vec(), RegId::new(2))],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
-fn test_map_contains_requires_bloom_filter_kind() {
+fn test_map_contains_cgroup_array_uses_skb_helper_on_tc() {
+    let hir_program = make_cgroup_array_map_contains_hir();
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup-array map-contains should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef { name, kind: MapKind::CgroupArray },
+            ..
+        } if name == "tracked_cgroups"
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbUnderCgroup as u32 && args.len() == 3
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Eq,
+            rhs: MirValue::Const(1),
+            ..
+        }
+    )));
+    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("tc cgroup-array map-contains should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "tracked_cgroups")
+        .expect("expected cgroup-array runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::CgroupArray as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 4);
+}
+
+#[test]
+fn test_map_contains_cgroup_array_uses_current_task_helper_off_tc() {
+    let hir_program = make_cgroup_array_map_contains_hir();
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup-array map-contains should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::CurrentTaskUnderCgroup as u32 && args.len() == 2
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Eq,
+            rhs: MirValue::Const(1),
+            ..
+        }
+    )));
+    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("current-task cgroup-array map-contains should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "tracked_cgroups")
+        .expect("expected cgroup-array runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::CgroupArray as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 4);
+}
+
+#[test]
+fn test_map_contains_requires_membership_map_kind() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -4683,11 +4854,14 @@ fn test_map_contains_requires_bloom_filter_kind() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("map-contains should reject non-bloom map kinds");
+    .expect_err("map-contains should reject unsupported map kinds");
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
-            assert!(msg.contains("requires --kind bloom-filter"), "{msg}");
+            assert!(
+                msg.contains("requires --kind bloom-filter or --kind cgroup-array"),
+                "{msg}"
+            );
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

@@ -1222,7 +1222,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "map-contains" => {
-                self.lower_bloom_filter_map_contains(src_dst, dst_vreg, src_dst_had_value)?;
+                self.lower_map_contains(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "map-delete" => {
@@ -2309,6 +2309,35 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_map_contains(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const CONTEXT: &str = "map-contains";
+
+        if !self.named_flags.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "map-contains does not accept flags".into(),
+            ));
+        }
+        self.require_only_named_args(CONTEXT, &["kind"])?;
+
+        match self.required_map_contains_map_kind_arg(CONTEXT)? {
+            MapKind::BloomFilter => {
+                self.lower_bloom_filter_map_contains(src_dst, dst_vreg, src_dst_had_value)
+            }
+            MapKind::CgroupArray => {
+                self.lower_cgroup_array_map_contains(src_dst, dst_vreg, src_dst_had_value)
+            }
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "{CONTEXT} does not support map kind {:?}",
+                other
+            ))),
+        }
+    }
+
     fn lower_bloom_filter_map_contains(
         &mut self,
         src_dst: RegId,
@@ -2390,6 +2419,107 @@ impl<'a> HirToMirLowering<'a> {
             op: BinOpKind::Eq,
             lhs: MirValue::VReg(status_vreg),
             rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.reset_call_result_metadata(src_dst);
+        Ok(())
+    }
+
+    fn lower_cgroup_array_map_contains(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const CONTEXT: &str = "map-contains";
+
+        let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "map-contains requires a literal map name as the first positional argument".into(),
+            )
+        })?;
+        if self.positional_args.len() > 2 {
+            return Err(CompileError::UnsupportedInstruction(
+                "map-contains --kind cgroup-array accepts at most a map name and cgroup index"
+                    .into(),
+            ));
+        }
+
+        let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
+        self.validate_generic_map_name(&map_name, CONTEXT)?;
+        let map_kind = self.required_map_contains_map_kind_arg(CONTEXT)?;
+        if map_kind != MapKind::CgroupArray {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{CONTEXT} requires --kind cgroup-array for cgroup membership probes"
+            )));
+        }
+
+        if self
+            .positional_args
+            .get(1)
+            .is_some_and(|(_, reg)| self.is_context_reg(*reg))
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "map-contains --kind cgroup-array requires a scalar cgroup index, got context"
+                    .into(),
+            ));
+        }
+        let pipeline_index = match (self.pipeline_input, self.pipeline_input_reg) {
+            (Some(vreg), Some(reg)) if !self.is_context_reg(reg) => Some(vreg),
+            (Some(vreg), None) => Some(vreg),
+            _ => None,
+        };
+        let src_dst_index = if src_dst_had_value && !self.is_context_reg(src_dst) {
+            Some(dst_vreg)
+        } else {
+            None
+        };
+        let index_vreg = self
+            .positional_args
+            .get(1)
+            .map(|(vreg, _)| *vreg)
+            .or(pipeline_index)
+            .or(src_dst_index)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-contains --kind cgroup-array requires a cgroup index from pipeline input or a second positional argument"
+                        .into(),
+                )
+            })?;
+
+        let helper = if self
+            .probe_ctx
+            .is_some_and(|ctx| matches!(ctx.program_type(), EbpfProgramType::Tc))
+        {
+            BpfHelper::SkbUnderCgroup
+        } else {
+            BpfHelper::CurrentTaskUnderCgroup
+        };
+        if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        let map_vreg = self.emit_typed_map_fd_load(map_name, MapKind::CgroupArray);
+        let mut args = Vec::new();
+        if matches!(helper, BpfHelper::SkbUnderCgroup) {
+            let ctx_vreg = self.materialize_context_pointer_arg();
+            args.push(MirValue::VReg(ctx_vreg));
+        }
+        args.push(MirValue::VReg(map_vreg));
+        args.push(MirValue::VReg(index_vreg));
+
+        let status_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallHelper {
+            dst: status_vreg,
+            helper: helper as u32,
+            args,
+        });
+        self.vreg_type_hints.insert(status_vreg, MirType::I64);
+        self.emit(MirInst::BinOp {
+            dst: dst_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(status_vreg),
+            rhs: MirValue::Const(1),
         });
         self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
         self.reset_call_result_metadata(src_dst);

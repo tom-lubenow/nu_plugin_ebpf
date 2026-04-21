@@ -841,7 +841,7 @@ impl PluginCommand for MapContains {
     }
 
     fn description(&self) -> &str {
-        "Test membership in a named bloom-filter BPF map."
+        "Test membership in a named bloom-filter or cgroup-array BPF map."
     }
 
     fn extra_description(&self) -> &str {
@@ -850,8 +850,13 @@ in a bloom-filter map. This wraps the kernel `bpf_map_peek_elem` membership
 probe and returns a boolean. Bloom filters can have false positives but not
 false negatives.
 
+With `--kind cgroup-array`, the value is a cgroup-array index. On tc programs
+this wraps `bpf_skb_under_cgroup` for the current packet; on other programs it
+wraps `bpf_current_task_under_cgroup` for the current task.
+
 Example:
-  let seen = ($ctx.pid | map-contains recent_pids --kind bloom-filter)"#
+  let seen = ($ctx.pid | map-contains recent_pids --kind bloom-filter)
+  let in_group = (map-contains tracked_cgroups 0 --kind cgroup-array)"#
     }
 
     fn signature(&self) -> Signature {
@@ -866,18 +871,25 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: bloom-filter (required)",
+                "Map kind: bloom-filter or cgroup-array (required)",
                 None,
             )
             .category(Category::Experimental)
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![Example {
-            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-contains recent_pids --kind bloom-filter }",
-            description: "Check bloom-filter membership for the current PID",
-            result: None,
-        }]
+        vec![
+            Example {
+                example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-contains recent_pids --kind bloom-filter }",
+                description: "Check bloom-filter membership for the current PID",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'tc:lo:ingress' {|ctx| map-contains tracked_cgroups 0 --kind cgroup-array }",
+                description: "Check whether the current packet belongs to cgroup-array slot 0",
+                result: None,
+            },
+        ]
     }
 
     fn run(
