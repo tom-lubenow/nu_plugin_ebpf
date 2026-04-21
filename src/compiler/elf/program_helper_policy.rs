@@ -414,6 +414,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::GetHashRecalc
         | BpfHelper::SkbPullData
         | BpfHelper::CsumUpdate
+        | BpfHelper::CsumLevel
         | BpfHelper::SetHashInvalid
         | BpfHelper::SetHash
         | BpfHelper::SkbChangeHead

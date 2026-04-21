@@ -1142,6 +1142,7 @@ impl BpfHelper {
             | BpfHelper::L4CsumReplace
             | BpfHelper::GetHashRecalc
             | BpfHelper::CsumUpdate
+            | BpfHelper::CsumLevel
             | BpfHelper::SetHashInvalid
             | BpfHelper::SetHash => HelperSemantics {
                 ptr_arg_rules: SKB_MUTATE_RULES,

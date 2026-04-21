@@ -286,6 +286,8 @@ pub enum BpfHelper {
     RingbufDiscard = 133,
     /// u64 bpf_ringbuf_query(map, flags)
     RingbufQuery = 134,
+    /// long bpf_csum_level(skb, level)
+    CsumLevel = 135,
     /// void *bpf_kptr_xchg(dst, ptr)
     KptrXchg = 194,
     /// long bpf_probe_read_user_str(dst, size, unsafe_ptr)
@@ -415,6 +417,7 @@ impl BpfHelper {
             BpfHelper::RingbufSubmit => "bpf_ringbuf_submit",
             BpfHelper::RingbufDiscard => "bpf_ringbuf_discard",
             BpfHelper::RingbufQuery => "bpf_ringbuf_query",
+            BpfHelper::CsumLevel => "bpf_csum_level",
             BpfHelper::KptrXchg => "bpf_kptr_xchg",
             BpfHelper::ProbeReadUserStr => "bpf_probe_read_user_str",
             BpfHelper::ProbeReadKernelStr => "bpf_probe_read_kernel_str",
@@ -546,6 +549,7 @@ impl BpfHelper {
             "ringbuf_submit" => Some(Self::RingbufSubmit),
             "ringbuf_discard" => Some(Self::RingbufDiscard),
             "ringbuf_query" => Some(Self::RingbufQuery),
+            "csum_level" => Some(Self::CsumLevel),
             "kptr_xchg" => Some(Self::KptrXchg),
             "probe_read_user_str" => Some(Self::ProbeReadUserStr),
             "probe_read_kernel_str" => Some(Self::ProbeReadKernelStr),

@@ -1925,6 +1925,7 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
         BpfHelper::SkbChangeTail,
         BpfHelper::SkbPullData,
         BpfHelper::CsumUpdate,
+        BpfHelper::CsumLevel,
         BpfHelper::SetHashInvalid,
         BpfHelper::SetHash,
         BpfHelper::SkbChangeHead,
@@ -1957,7 +1958,9 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
             }
             BpfHelper::SkbVlanPush => vec![MirValue::Const(0x8100), MirValue::Const(1)],
             BpfHelper::SkbVlanPop => vec![],
-            BpfHelper::SkbPullData | BpfHelper::CsumUpdate => vec![MirValue::Const(64)],
+            BpfHelper::SkbPullData | BpfHelper::CsumUpdate | BpfHelper::CsumLevel => {
+                vec![MirValue::Const(64)]
+            }
             BpfHelper::SkbAdjustRoom => {
                 vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)]
             }

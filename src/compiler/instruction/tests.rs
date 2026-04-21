@@ -175,6 +175,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SetHash)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_csum_level"),
+        Some(BpfHelper::CsumLevel)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_adjust_room"),
         Some(BpfHelper::SkbAdjustRoom)
     ));
@@ -828,13 +832,19 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
-    let sig = HelperSignature::for_id(BpfHelper::SetHash as u32)
-        .expect("expected bpf_set_hash helper signature");
-    assert_eq!(sig.min_args, 2);
-    assert_eq!(sig.max_args, 2);
-    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
-    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
-    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    for helper in [
+        BpfHelper::SetHash,
+        BpfHelper::CsumUpdate,
+        BpfHelper::CsumLevel,
+    ] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected two-arg skb helper signature");
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
 
     let sig = HelperSignature::for_id(BpfHelper::SkbAdjustRoom as u32)
         .expect("expected bpf_skb_adjust_room helper signature");
@@ -979,6 +989,7 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::MsgPushData,
         BpfHelper::MsgPopData,
         BpfHelper::SetHash,
+        BpfHelper::CsumLevel,
     ] {
         assert!(
             !helper.invalidates_packet_pointers(),

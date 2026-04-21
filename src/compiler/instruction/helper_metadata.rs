@@ -104,6 +104,7 @@ impl BpfHelper {
             124 => Some(Self::SkAssign),
             128 => Some(Self::SkCgroupId),
             129 => Some(Self::SkAncestorCgroupId),
+            135 => Some(Self::CsumLevel),
             136 => Some(Self::SkcToTcp6Sock),
             137 => Some(Self::SkcToTcpSock),
             138 => Some(Self::SkcToTcpTimewaitSock),
@@ -243,7 +244,7 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::CsumUpdate => HelperSignature {
+            BpfHelper::CsumUpdate | BpfHelper::CsumLevel => HelperSignature {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
