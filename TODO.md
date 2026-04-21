@@ -276,7 +276,7 @@ Near-term priority order:
   - Recent progress: bound context pointers now preserve their root context metadata across follow-up typed projections, so forms like `let sk = $ctx.sk; $sk.tcp.snd_cwnd` keep the same helper policy/null-safe lowering as the direct `$ctx.sk.tcp.snd_cwnd` form.
   - Recent progress: the public `ctx.sk.tcp` surface now documents and tests the complete synthetic `bpf_tcp_sock` metric set, including the newer delivery/retransmission tail fields (`dsack_dups`, `delivered`, `delivered_ce`, and `icsk_retransmits`).
   - Recent progress: zero-flag socket assignment now uses ordinary context assignment (`ctx.sk = $sk` / `ctx.sk = 0`) on `tc:...:ingress` and `sk_lookup`, lowering internally to `bpf_sk_assign`; the explicit `assign-socket` intrinsic remains for flagged/status-returning uses.
-  - Recent progress: XDP targets now accept `xdp:IFACE:frags`, preserving `IFACE` for attach while emitting the `xdp.frags` ELF section so Aya/libbpf load the program with `BPF_F_XDP_HAS_FRAGS` for multi-buffer packet support.
+  - Recent progress: XDP targets now accept explicit safe/default generic, driver, and hardware attach modes (`xdp:IFACE[:skb|drv|hw][:frags]`), preserving `IFACE` for attach while emitting the `xdp.frags` ELF section when multi-buffer support is requested.
   - Recent progress: task pt_regs register reads now have an ordinary projection surface (`ctx.task.pt_regs.arg0` through `.arg5` and `.retval`) backed by `bpf_task_pt_regs` plus the shared pt_regs offset resolver, so current-task register snapshots no longer require raw helper spelling.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.

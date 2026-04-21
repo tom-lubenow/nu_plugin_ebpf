@@ -5,7 +5,9 @@ use crate::compiler::{
     ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
-use crate::program_spec::{CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, XdpTarget};
+use crate::program_spec::{
+    CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, XdpAttachMode, XdpTarget,
+};
 use std::collections::HashMap;
 
 #[test]
@@ -191,6 +193,13 @@ fn test_parse_probe_spec_xdp_frags() {
 }
 
 #[test]
+fn test_parse_probe_spec_xdp_attach_mode() {
+    let (prog_type, target) = parse_probe_spec("xdp:lo:drv:frags").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Xdp);
+    assert_eq!(target, "lo:drv:frags");
+}
+
+#[test]
 fn test_parse_program_spec_xdp_is_structured() {
     let spec = parse_program_spec("xdp:lo").unwrap();
     assert_eq!(
@@ -198,6 +207,7 @@ fn test_parse_program_spec_xdp_is_structured() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                attach_mode: XdpAttachMode::Skb,
                 frags: false,
             },
         }
@@ -213,11 +223,42 @@ fn test_parse_program_spec_xdp_frags_is_structured() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                attach_mode: XdpAttachMode::Skb,
                 frags: true,
             },
         }
     );
     assert_eq!(spec.to_string(), "xdp:lo:frags");
+    assert_eq!(spec.section_name(), "xdp.frags");
+}
+
+#[test]
+fn test_parse_program_spec_xdp_attach_modes() {
+    let spec = parse_program_spec("xdp:lo:drv").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Xdp {
+            target: XdpTarget {
+                interface: "lo".to_string(),
+                attach_mode: XdpAttachMode::Driver,
+                frags: false,
+            },
+        }
+    );
+    assert_eq!(spec.to_string(), "xdp:lo:drv");
+
+    let spec = parse_program_spec("xdp:lo:hw:frags").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Xdp {
+            target: XdpTarget {
+                interface: "lo".to_string(),
+                attach_mode: XdpAttachMode::Hardware,
+                frags: true,
+            },
+        }
+    );
+    assert_eq!(spec.to_string(), "xdp:lo:hw:frags");
     assert_eq!(spec.section_name(), "xdp.frags");
 }
 

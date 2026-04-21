@@ -236,7 +236,12 @@ impl EbpfState {
                     .map_err(|e| LoadError::Load(format!("Failed to convert to Xdp: {e}")))?;
                 xdp.load()
                     .map_err(|e| LoadError::Load(format!("Failed to load xdp: {e}")))?;
-                xdp.attach(&target.interface, XdpFlags::SKB_MODE)
+                let flags = match target.attach_mode {
+                    crate::program_spec::XdpAttachMode::Skb => XdpFlags::SKB_MODE,
+                    crate::program_spec::XdpAttachMode::Driver => XdpFlags::DRV_MODE,
+                    crate::program_spec::XdpAttachMode::Hardware => XdpFlags::HW_MODE,
+                };
+                xdp.attach(&target.interface, flags)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach xdp: {e}")))?;
             }
             ProgramAttachKind::PerfEvent => {

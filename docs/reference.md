@@ -228,14 +228,16 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `sk_skb`, and `sk_skb_parser`; `bpf_skb_load_bytes_relative` works on
 `socket_filter`, `tc`, and `cgroup_skb`; and
 `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
-`bpf_xdp_store_bytes` are XDP-only. XDP and TC also model
-`bpf_csum_diff`; its `from_size` and `to_size` arguments must be
+`bpf_xdp_store_bytes` are XDP-only. XDP targets default to SKB/generic
+attach mode for safer development attaches; use `xdp:IFACE:drv` or
+`xdp:IFACE:hw` when driver or hardware mode is intentional. Append
+`:frags`, for example `xdp:IFACE:drv:frags`, when the program needs the
+kernel `xdp.frags` section for multi-buffer packets. XDP and TC also
+model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
 multiples of four, and a null `from` or `to` buffer is accepted only
 when the paired size is zero. `ctx.xdp_buff_len` exposes
 `bpf_xdp_get_buff_len` directly for XDP programs that need total
-multi-buffer packet size rather than the linear `ctx.packet_len`; attach
-as `xdp:IFACE:frags` when the program needs the kernel `xdp.frags`
-multi-buffer load flag.
+multi-buffer packet size rather than the linear `ctx.packet_len`.
 TC egress exposes skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields. `ctx.skb_ancestor_cgroup_id.N` exposes the

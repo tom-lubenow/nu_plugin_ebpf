@@ -164,41 +164,99 @@ pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_n
 pub struct XdpTarget {
     /// Network interface name.
     pub interface: String,
+    /// XDP attach mode. Defaults to SKB/generic mode for safer development attaches.
+    pub attach_mode: XdpAttachMode,
     /// Whether the program is multi-buffer capable (`xdp.frags` section).
     pub frags: bool,
 }
 
-impl XdpTarget {
-    /// Parse an xdp target string of the form `interface` or `interface:frags`.
-    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
-        let (interface, frags) = match target.rsplit_once(':') {
-            Some((interface, "frags")) => (interface, true),
-            Some((_, mode)) => {
-                return Err(ProgramSpecParseError::new(format!(
-                    "Invalid xdp target mode: {mode}. Expected format: interface or interface:frags"
-                )));
-            }
-            None => (target, false),
-        };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XdpAttachMode {
+    Skb,
+    Driver,
+    Hardware,
+}
 
+impl XdpAttachMode {
+    fn target_option_name(self) -> &'static str {
+        match self {
+            Self::Skb => "skb",
+            Self::Driver => "drv",
+            Self::Hardware => "hw",
+        }
+    }
+}
+
+impl XdpTarget {
+    /// Parse an xdp target string of the form `interface[:skb|drv|hw][:frags]`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        let mut parts = target.split(':');
+        let interface = parts.next().unwrap_or_default();
         if interface.is_empty() {
             return Err(ProgramSpecParseError::new(
                 "xdp interface target cannot be empty",
             ));
         }
 
+        let mut attach_mode = XdpAttachMode::Skb;
+        let mut explicit_mode = false;
+        let mut frags = false;
+
+        for option in parts {
+            match option {
+                "frags" if !frags => frags = true,
+                "frags" => {
+                    return Err(ProgramSpecParseError::new(
+                        "xdp target contains duplicate frags option",
+                    ));
+                }
+                "skb" | "generic" if !explicit_mode => {
+                    attach_mode = XdpAttachMode::Skb;
+                    explicit_mode = true;
+                }
+                "drv" | "driver" | "native" if !explicit_mode => {
+                    attach_mode = XdpAttachMode::Driver;
+                    explicit_mode = true;
+                }
+                "hw" | "hardware" | "offload" if !explicit_mode => {
+                    attach_mode = XdpAttachMode::Hardware;
+                    explicit_mode = true;
+                }
+                "skb" | "generic" | "drv" | "driver" | "native" | "hw" | "hardware" | "offload" => {
+                    return Err(ProgramSpecParseError::new(
+                        "xdp target accepts at most one attach mode",
+                    ));
+                }
+                "" => {
+                    return Err(ProgramSpecParseError::new(
+                        "xdp target option cannot be empty",
+                    ));
+                }
+                option => {
+                    return Err(ProgramSpecParseError::new(format!(
+                        "Invalid xdp target option: {option}. Expected format: interface[:skb|drv|hw][:frags]"
+                    )));
+                }
+            }
+        }
+
         Ok(Self {
             interface: interface.to_string(),
+            attach_mode,
             frags,
         })
     }
 
     pub fn target_string(&self) -> String {
-        if self.frags {
-            format!("{}:frags", self.interface)
-        } else {
-            self.interface.clone()
+        let mut target = self.interface.clone();
+        if self.attach_mode != XdpAttachMode::Skb {
+            target.push(':');
+            target.push_str(self.attach_mode.target_option_name());
         }
+        if self.frags {
+            target.push_str(":frags");
+        }
+        target
     }
 
     pub fn section_name(&self) -> &'static str {
@@ -1915,6 +1973,10 @@ mod tests {
             xdp.xdp_target().map(|target| target.interface.as_str()),
             Some("lo")
         );
+        assert_eq!(
+            xdp.xdp_target().map(|target| target.attach_mode),
+            Some(XdpAttachMode::Skb)
+        );
         assert_eq!(xdp.xdp_target().map(|target| target.frags), Some(false));
         assert_eq!(
             perf_event.perf_event_target().map(|target| target.cpu),
@@ -1996,22 +2058,46 @@ mod tests {
     fn test_xdp_target_requires_non_empty_interface() {
         let target = XdpTarget::parse("lo").expect("xdp target should parse");
         assert_eq!(target.target_string(), "lo");
+        assert_eq!(target.attach_mode, XdpAttachMode::Skb);
         assert!(!target.frags);
         assert_eq!(target.section_name(), "xdp");
 
         let frags = XdpTarget::parse("lo:frags").expect("xdp frags target should parse");
         assert_eq!(frags.interface, "lo");
+        assert_eq!(frags.attach_mode, XdpAttachMode::Skb);
         assert!(frags.frags);
         assert_eq!(frags.target_string(), "lo:frags");
         assert_eq!(frags.section_name(), "xdp.frags");
 
+        let driver = XdpTarget::parse("lo:native").expect("xdp native target should parse");
+        assert_eq!(driver.interface, "lo");
+        assert_eq!(driver.attach_mode, XdpAttachMode::Driver);
+        assert!(!driver.frags);
+        assert_eq!(driver.target_string(), "lo:drv");
+        assert_eq!(driver.section_name(), "xdp");
+
+        let hardware_frags =
+            XdpTarget::parse("lo:frags:offload").expect("xdp hw frags target should parse");
+        assert_eq!(hardware_frags.interface, "lo");
+        assert_eq!(hardware_frags.attach_mode, XdpAttachMode::Hardware);
+        assert!(hardware_frags.frags);
+        assert_eq!(hardware_frags.target_string(), "lo:hw:frags");
+        assert_eq!(hardware_frags.section_name(), "xdp.frags");
+
         let err = XdpTarget::parse("").expect_err("empty xdp interface should be rejected");
         assert_eq!(err.to_string(), "xdp interface target cannot be empty");
 
-        let err = XdpTarget::parse("lo:native").expect_err("unknown xdp mode should be rejected");
+        let err =
+            XdpTarget::parse("lo:native:hw").expect_err("duplicate xdp mode should be rejected");
         assert_eq!(
             err.to_string(),
-            "Invalid xdp target mode: native. Expected format: interface or interface:frags"
+            "xdp target accepts at most one attach mode"
+        );
+
+        let err = XdpTarget::parse("lo:wat").expect_err("unknown xdp option should be rejected");
+        assert_eq!(
+            err.to_string(),
+            "Invalid xdp target option: wat. Expected format: interface[:skb|drv|hw][:frags]"
         );
     }
 
@@ -2026,6 +2112,7 @@ mod tests {
             ProgramSpec::Xdp {
                 target: XdpTarget {
                     ref interface,
+                    attach_mode: XdpAttachMode::Skb,
                     frags: true
                 }
             } if interface == "lo"
