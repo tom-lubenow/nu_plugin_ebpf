@@ -86,6 +86,124 @@ fn test_user_function_call_lowers_to_subfn() {
 }
 
 #[test]
+fn test_inlined_user_function_bounded_list_iterate_lowers() {
+    let user_func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::List { capacity: 2 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(33),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(44),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(2),
+                    stream: RegId::new(0),
+                    body: HirBlockId(2),
+                    end: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let main_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+                args: HirCallArgs::default(),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(main_func, HashMap::new(), vec![], None);
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), user_func);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("inlined bounded-list iterate user function should lower");
+
+    let saw_loop = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .any(|block| matches!(block.terminator, MirInst::LoopHeader { .. }));
+    assert!(
+        saw_loop,
+        "expected inlined bounded-list iterate to lower a loop header"
+    );
+
+    let saw_subfn_call = result.program.main.blocks.iter().any(|block| {
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::CallSubfn { .. }))
+    });
+    assert!(
+        !saw_subfn_call,
+        "aggregate-builder scalar user function should be inlined, not lowered as a BPF subfunction"
+    );
+}
+
+#[test]
 fn test_user_function_allows_unused_params_with_signature() {
     use nu_protocol::ir::{Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId, VarId};
