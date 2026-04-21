@@ -56,293 +56,366 @@ enum HelperProgramSurfaceFamily {
     CgroupSysctl,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct HelperProgramSurfaceFamilySpec {
+    family: HelperProgramSurfaceFamily,
+    program_types: &'static [EbpfProgramType],
+    label: &'static str,
+}
+
+const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &[
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::LircMode2,
+        program_types: &[EbpfProgramType::LircMode2],
+        label: "lirc_mode2",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Xdp,
+        program_types: &[EbpfProgramType::Xdp],
+        label: "xdp",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcSkSkb,
+        program_types: &[
+            EbpfProgramType::Tc,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "tc, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::XdpTc,
+        program_types: &[EbpfProgramType::Xdp, EbpfProgramType::Tc],
+        label: "xdp and tc",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Tc,
+        program_types: &[EbpfProgramType::Tc],
+        label: "tc",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkbLoadBytes,
+        program_types: &[
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,
+        program_types: &[
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+        ],
+        label: "socket_filter, tc, and cgroup_skb",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::PerfEventOutput,
+        program_types: &[
+            EbpfProgramType::CgroupDevice,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::CgroupSysctl,
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::Kretprobe,
+            EbpfProgramType::Uprobe,
+            EbpfProgramType::Uretprobe,
+            EbpfProgramType::PerfEvent,
+            EbpfProgramType::RawTracepoint,
+            EbpfProgramType::Tracepoint,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::SkLookup,
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+            EbpfProgramType::SockOps,
+            EbpfProgramType::Xdp,
+        ],
+        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::PerfEvent,
+        program_types: &[EbpfProgramType::PerfEvent],
+        label: "perf_event",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::GetStackId,
+        program_types: &[
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::Kretprobe,
+            EbpfProgramType::Uprobe,
+            EbpfProgramType::Uretprobe,
+            EbpfProgramType::PerfEvent,
+            EbpfProgramType::RawTracepoint,
+            EbpfProgramType::Tracepoint,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+        ],
+        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::LegacyProbeRead,
+        program_types: &[
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::Kretprobe,
+            EbpfProgramType::Uprobe,
+            EbpfProgramType::Uretprobe,
+            EbpfProgramType::Lsm,
+            EbpfProgramType::PerfEvent,
+            EbpfProgramType::RawTracepoint,
+            EbpfProgramType::Tracepoint,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+        ],
+        label: "kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SocketCookie,
+        program_types: &[
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::SockOps,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SocketUid,
+        program_types: &[
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::NetnsCookie,
+        program_types: &[
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::SockOps,
+            EbpfProgramType::SkMsg,
+        ],
+        label: "socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::CgroupSkb,
+        program_types: &[EbpfProgramType::CgroupSkb],
+        label: "cgroup_skb",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkMsg,
+        program_types: &[EbpfProgramType::SkMsg],
+        label: "sk_msg",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkSkb,
+        program_types: &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser],
+        label: "sk_skb and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SocketLookup,
+        program_types: &[
+            EbpfProgramType::Xdp,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::SkSkb,
+        ],
+        label: "xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SocketRelease,
+        program_types: &[
+            EbpfProgramType::Xdp,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::SkLookup,
+            EbpfProgramType::SkSkb,
+        ],
+        label: "xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcSkLookup,
+        program_types: &[EbpfProgramType::Tc, EbpfProgramType::SkLookup],
+        label: "tc and sk_lookup",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcCgroupSkb,
+        program_types: &[EbpfProgramType::Tc, EbpfProgramType::CgroupSkb],
+        label: "tc and cgroup_skb",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcpSock,
+        program_types: &[
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::SockOps,
+        ],
+        label: "tc, cgroup_skb, cgroup_sockopt, and sock_ops",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SocketCast,
+        program_types: &[
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::SkLookup,
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+            EbpfProgramType::SockOps,
+        ],
+        label: "fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TaskStorage,
+        program_types: &[
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::Kretprobe,
+            EbpfProgramType::Uprobe,
+            EbpfProgramType::Uretprobe,
+            EbpfProgramType::PerfEvent,
+            EbpfProgramType::RawTracepoint,
+            EbpfProgramType::Tracepoint,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::Lsm,
+        ],
+        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Lsm,
+        program_types: &[EbpfProgramType::Lsm],
+        label: "lsm",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TrampolineArgs,
+        program_types: &[
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::Lsm,
+        ],
+        label: "fentry, fexit, tp_btf, and lsm",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Fexit,
+        program_types: &[EbpfProgramType::Fexit],
+        label: "fexit",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkStorageGet,
+        program_types: &[
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::SockOps,
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::StructOps,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::Lsm,
+        ],
+        label: "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkStorageDelete,
+        program_types: &[
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::SockOps,
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::StructOps,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::Lsm,
+        ],
+        label: "tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TracingSocket,
+        program_types: &[
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::TpBtf,
+        ],
+        label: "fentry, fexit, and tp_btf",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Sockopt,
+        program_types: &[
+            EbpfProgramType::SockOps,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::CgroupSockopt,
+        ],
+        label: "sock_ops, cgroup_sock_addr, and cgroup_sockopt",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::CgroupSockAddr,
+        program_types: &[EbpfProgramType::CgroupSockAddr],
+        label: "cgroup_sock_addr",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SockOps,
+        program_types: &[EbpfProgramType::SockOps],
+        label: "sock_ops",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::CgroupSysctl,
+        program_types: &[EbpfProgramType::CgroupSysctl],
+        label: "cgroup_sysctl",
+    },
+];
+
 impl HelperProgramSurfaceFamily {
+    fn spec(self) -> &'static HelperProgramSurfaceFamilySpec {
+        HELPER_PROGRAM_SURFACE_FAMILY_SPECS
+            .iter()
+            .find(|spec| spec.family == self)
+            .expect("helper program surface family must have a spec")
+    }
+
     fn allows(self, program_type: EbpfProgramType) -> bool {
-        match self {
-            Self::LircMode2 => matches!(program_type, EbpfProgramType::LircMode2),
-            Self::Xdp => matches!(program_type, EbpfProgramType::Xdp),
-            Self::TcSkSkb => matches!(
-                program_type,
-                EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
-            ),
-            Self::XdpTc => matches!(program_type, EbpfProgramType::Xdp | EbpfProgramType::Tc),
-            Self::Tc => matches!(program_type, EbpfProgramType::Tc),
-            Self::SkbLoadBytes => matches!(
-                program_type,
-                EbpfProgramType::SocketFilter
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::SkSkb
-                    | EbpfProgramType::SkSkbParser
-            ),
-            Self::SkbLoadBytesRelative => matches!(
-                program_type,
-                EbpfProgramType::SocketFilter | EbpfProgramType::Tc | EbpfProgramType::CgroupSkb
-            ),
-            Self::PerfEventOutput => matches!(
-                program_type,
-                EbpfProgramType::CgroupDevice
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSock
-                    | EbpfProgramType::CgroupSockopt
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::CgroupSysctl
-                    | EbpfProgramType::Kprobe
-                    | EbpfProgramType::Kretprobe
-                    | EbpfProgramType::Uprobe
-                    | EbpfProgramType::Uretprobe
-                    | EbpfProgramType::PerfEvent
-                    | EbpfProgramType::RawTracepoint
-                    | EbpfProgramType::Tracepoint
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::SocketFilter
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::SkLookup
-                    | EbpfProgramType::SkMsg
-                    | EbpfProgramType::SkSkb
-                    | EbpfProgramType::SkSkbParser
-                    | EbpfProgramType::SockOps
-                    | EbpfProgramType::Xdp
-            ),
-            Self::PerfEvent => matches!(program_type, EbpfProgramType::PerfEvent),
-            Self::GetStackId => matches!(
-                program_type,
-                EbpfProgramType::Kprobe
-                    | EbpfProgramType::Kretprobe
-                    | EbpfProgramType::Uprobe
-                    | EbpfProgramType::Uretprobe
-                    | EbpfProgramType::PerfEvent
-                    | EbpfProgramType::RawTracepoint
-                    | EbpfProgramType::Tracepoint
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-            ),
-            Self::LegacyProbeRead => matches!(
-                program_type,
-                EbpfProgramType::Kprobe
-                    | EbpfProgramType::Kretprobe
-                    | EbpfProgramType::Uprobe
-                    | EbpfProgramType::Uretprobe
-                    | EbpfProgramType::Lsm
-                    | EbpfProgramType::PerfEvent
-                    | EbpfProgramType::RawTracepoint
-                    | EbpfProgramType::Tracepoint
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-            ),
-            Self::SocketCookie => matches!(
-                program_type,
-                EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::SocketFilter
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSock
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::SockOps
-                    | EbpfProgramType::SkSkb
-                    | EbpfProgramType::SkSkbParser
-            ),
-            Self::SocketUid => matches!(
-                program_type,
-                EbpfProgramType::SocketFilter
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::SkSkb
-                    | EbpfProgramType::SkSkbParser
-            ),
-            Self::NetnsCookie => matches!(
-                program_type,
-                EbpfProgramType::SocketFilter
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSock
-                    | EbpfProgramType::CgroupSockopt
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::SockOps
-                    | EbpfProgramType::SkMsg
-            ),
-            Self::CgroupSkb => matches!(program_type, EbpfProgramType::CgroupSkb),
-            Self::SkMsg => matches!(program_type, EbpfProgramType::SkMsg),
-            Self::SkSkb => {
-                matches!(
-                    program_type,
-                    EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
-                )
-            }
-            Self::SocketLookup => matches!(
-                program_type,
-                EbpfProgramType::Xdp
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::SkSkb
-            ),
-            Self::SocketRelease => matches!(
-                program_type,
-                EbpfProgramType::Xdp
-                    | EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::SkLookup
-                    | EbpfProgramType::SkSkb
-            ),
-            Self::TcSkLookup => matches!(
-                program_type,
-                EbpfProgramType::Tc | EbpfProgramType::SkLookup
-            ),
-            Self::TcCgroupSkb => {
-                matches!(
-                    program_type,
-                    EbpfProgramType::Tc | EbpfProgramType::CgroupSkb
-                )
-            }
-            Self::TcpSock => matches!(
-                program_type,
-                EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSockopt
-                    | EbpfProgramType::SockOps
-            ),
-            Self::SocketCast => matches!(
-                program_type,
-                EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::SkLookup
-                    | EbpfProgramType::SkMsg
-                    | EbpfProgramType::SkSkb
-                    | EbpfProgramType::SkSkbParser
-                    | EbpfProgramType::SockOps
-            ),
-            Self::TaskStorage => matches!(
-                program_type,
-                EbpfProgramType::Kprobe
-                    | EbpfProgramType::Kretprobe
-                    | EbpfProgramType::Uprobe
-                    | EbpfProgramType::Uretprobe
-                    | EbpfProgramType::PerfEvent
-                    | EbpfProgramType::RawTracepoint
-                    | EbpfProgramType::Tracepoint
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::Lsm
-            ),
-            Self::Lsm => matches!(program_type, EbpfProgramType::Lsm),
-            Self::TrampolineArgs => matches!(
-                program_type,
-                EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::Lsm
-            ),
-            Self::Fexit => matches!(program_type, EbpfProgramType::Fexit),
-            Self::SkStorageGet => matches!(
-                program_type,
-                EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSock
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::CgroupSockopt
-                    | EbpfProgramType::SockOps
-                    | EbpfProgramType::SkMsg
-                    | EbpfProgramType::StructOps
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::Lsm
-            ),
-            Self::SkStorageDelete => matches!(
-                program_type,
-                EbpfProgramType::Tc
-                    | EbpfProgramType::CgroupSkb
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::CgroupSockopt
-                    | EbpfProgramType::SockOps
-                    | EbpfProgramType::SkMsg
-                    | EbpfProgramType::StructOps
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::Lsm
-            ),
-            Self::TracingSocket => matches!(
-                program_type,
-                EbpfProgramType::Fentry | EbpfProgramType::Fexit | EbpfProgramType::TpBtf
-            ),
-            Self::Sockopt => matches!(
-                program_type,
-                EbpfProgramType::SockOps
-                    | EbpfProgramType::CgroupSockAddr
-                    | EbpfProgramType::CgroupSockopt
-            ),
-            Self::CgroupSockAddr => matches!(program_type, EbpfProgramType::CgroupSockAddr),
-            Self::SockOps => matches!(program_type, EbpfProgramType::SockOps),
-            Self::CgroupSysctl => matches!(program_type, EbpfProgramType::CgroupSysctl),
-        }
+        self.spec().program_types.contains(&program_type)
     }
 
     fn label(self) -> &'static str {
-        match self {
-            Self::LircMode2 => "lirc_mode2",
-            Self::Xdp => "xdp",
-            Self::TcSkSkb => "tc, sk_skb, and sk_skb_parser",
-            Self::XdpTc => "xdp and tc",
-            Self::Tc => "tc",
-            Self::SkbLoadBytes => "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
-            Self::SkbLoadBytesRelative => "socket_filter, tc, and cgroup_skb",
-            Self::PerfEventOutput => {
-                "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp"
-            }
-            Self::PerfEvent => "perf_event",
-            Self::GetStackId => {
-                "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf"
-            }
-            Self::LegacyProbeRead => {
-                "kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf"
-            }
-            Self::SocketCookie => {
-                "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser"
-            }
-            Self::SocketUid => "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
-            Self::NetnsCookie => {
-                "socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg"
-            }
-            Self::CgroupSkb => "cgroup_skb",
-            Self::SkMsg => "sk_msg",
-            Self::SkSkb => "sk_skb and sk_skb_parser",
-            Self::SocketLookup => "xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb",
-            Self::SocketRelease => "xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb",
-            Self::TcSkLookup => "tc and sk_lookup",
-            Self::TcCgroupSkb => "tc and cgroup_skb",
-            Self::TcpSock => "tc, cgroup_skb, cgroup_sockopt, and sock_ops",
-            Self::SocketCast => {
-                "fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops"
-            }
-            Self::TaskStorage => {
-                "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm"
-            }
-            Self::Lsm => "lsm",
-            Self::TrampolineArgs => "fentry, fexit, tp_btf, and lsm",
-            Self::Fexit => "fexit",
-            Self::SkStorageGet => {
-                "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm"
-            }
-            Self::SkStorageDelete => {
-                "tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm"
-            }
-            Self::TracingSocket => "fentry, fexit, and tp_btf",
-            Self::Sockopt => "sock_ops, cgroup_sock_addr, and cgroup_sockopt",
-            Self::CgroupSockAddr => "cgroup_sock_addr",
-            Self::SockOps => "sock_ops",
-            Self::CgroupSysctl => "cgroup_sysctl",
-        }
+        self.spec().label
     }
 }
 
