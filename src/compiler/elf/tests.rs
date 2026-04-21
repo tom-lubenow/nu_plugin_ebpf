@@ -42,6 +42,38 @@ fn test_fentry_section_name() {
 }
 
 #[test]
+fn test_sleepable_btf_program_section_name_uses_program_spec() {
+    let spec = ProgramSpec::parse("fentry.s:ksys_read").expect("sleepable fentry spec");
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Fentry, "ksys_read", "test", vec![])
+        .with_program_spec(spec.clone());
+    assert_eq!(prog.parsed_program_spec(), Some(&spec));
+    assert_eq!(
+        prog.section_name()
+            .expect("sleepable fentry section name should build"),
+        "fentry.s/ksys_read"
+    );
+    assert_eq!(
+        prog.into_program_section()
+            .section_name()
+            .expect("sleepable fentry program-section name should build"),
+        "fentry.s/ksys_read"
+    );
+
+    let from_full_spec = EbpfProgram::from_bytecode(
+        EbpfProgramType::Fentry,
+        "fentry.s:ksys_read",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        from_full_spec
+            .section_name()
+            .expect("sleepable full-spec section name should build"),
+        "fentry.s/ksys_read"
+    );
+}
+
+#[test]
 fn test_tp_btf_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::TpBtf, "sys_enter", "test", vec![]);
     assert_eq!(

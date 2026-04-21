@@ -12,6 +12,11 @@ fn parsed_program_spec_for_program(
     prog_type: EbpfProgramType,
     target: &str,
 ) -> Option<ProgramSpec> {
+    if let Ok(program_spec) = ProgramSpec::parse(target)
+        && program_spec.program_type() == prog_type
+    {
+        return Some(program_spec);
+    }
     ProgramSpec::from_program_type_target(prog_type, target).ok()
 }
 
@@ -19,6 +24,11 @@ fn require_program_spec_for_program(
     prog_type: EbpfProgramType,
     target: &str,
 ) -> Result<ProgramSpec, CompileError> {
+    if let Ok(program_spec) = ProgramSpec::parse(target)
+        && program_spec.program_type() == prog_type
+    {
+        return Ok(program_spec);
+    }
     ProgramSpec::from_program_type_target(prog_type, target)
         .map_err(|err| CompileError::InvalidProgram(err.to_string()))
 }
@@ -159,6 +169,14 @@ impl EbpfProgram {
         self
     }
 
+    /// Attach the parsed program spec so target-sensitive metadata survives
+    /// from command parsing through ELF section emission and loader attach.
+    pub fn with_program_spec(mut self, program_spec: ProgramSpec) -> Self {
+        self.target = program_spec.target_string();
+        self.program_spec = Some(program_spec);
+        self
+    }
+
     /// Convert this program into an object with a single program section.
     pub fn into_object(self) -> EbpfObject {
         let EbpfProgram {
@@ -266,6 +284,9 @@ impl EbpfProgram {
 
     /// Get the ELF section name for this program
     pub fn section_name(&self) -> Result<String, CompileError> {
+        if let Some(program_spec) = &self.program_spec {
+            return Ok(program_spec.section_name());
+        }
         section_name_for_program(self.prog_type, &self.target)
     }
 

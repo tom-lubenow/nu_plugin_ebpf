@@ -1104,7 +1104,7 @@ fn run_attach(
         compile_struct_ops_object(engine, value_type_name, &record, call.head)?
     } else {
         let closure = value_to_spanned_closure(body, call.head)?;
-        let probe_context = ProbeContext::from_program_spec(program_spec);
+        let probe_context = ProbeContext::from_program_spec(program_spec.clone());
         let prog_type = probe_context.program_type();
         let target = probe_context.target().to_string();
         let compiled = compile_closure_with_context(
@@ -1114,13 +1114,16 @@ fn run_attach(
             pin_group.as_deref(),
             call.head,
         )?;
-        let mut program = compiled.compile_result.into_program(
-            prog_type,
-            &target,
-            "nushell_ebpf",
-            compiled.generic_map_value_types,
-            compiled.generic_map_value_semantics,
-        );
+        let mut program = compiled
+            .compile_result
+            .into_program(
+                prog_type,
+                &target,
+                "nushell_ebpf",
+                compiled.generic_map_value_types,
+                compiled.generic_map_value_semantics,
+            )
+            .with_program_spec(program_spec);
         if pin_group.is_some() {
             program = program.with_pinning();
         }

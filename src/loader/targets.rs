@@ -171,8 +171,8 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
     match spec {
         ProgramSpec::Kprobe { function }
         | ProgramSpec::Kretprobe { function }
-        | ProgramSpec::Fentry { function }
-        | ProgramSpec::Fexit { function } => {
+        | ProgramSpec::Fentry { function, .. }
+        | ProgramSpec::Fexit { function, .. } => {
             let prog_type = spec.program_type();
             let validation = prog_type.kernel_target_validation().ok_or_else(|| {
                 LoadError::Load(format!(
@@ -186,7 +186,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             }
             Ok(())
         }
-        ProgramSpec::Lsm { hook } => {
+        ProgramSpec::Lsm { hook, .. } => {
             if hook.is_empty() {
                 return Err(LoadError::Load(
                     "LSM hook target cannot be empty".to_string(),
@@ -326,21 +326,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uprobe:/path/to/binary:0x1234` (offset-based)
 /// - `uprobe:/path/to/binary:function@PID` (PID-filtered)
 pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
-    let Some((prefix, target)) = spec.split_once(':') else {
-        return Err(LoadError::Load(format!(
-            "Invalid probe spec: {spec}. Expected format: type:target (e.g., kprobe:sys_clone)"
-        )));
-    };
-
-    let Some(prog_type) = EbpfProgramType::from_spec_prefix(prefix) else {
-        return Err(LoadError::Load(format!(
-            "Unknown probe type: {prefix}. Supported: {}",
-            EbpfProgramType::supported_spec_prefixes().join(", ")
-        )));
-    };
-
-    let program_spec =
-        ProgramSpec::from_program_type_target(prog_type, target).map_err(parse_error)?;
+    let program_spec = ProgramSpec::parse(spec).map_err(parse_error)?;
     validate_program_spec(&program_spec)?;
     Ok(program_spec)
 }

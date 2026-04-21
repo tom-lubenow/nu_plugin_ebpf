@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: write tracing and packet logic in familiar Nushell syntax
-- **Attach families**: kprobe/kretprobe/uprobe/uretprobe, fentry/fexit/tp_btf/raw_tracepoint/tracepoint/lsm, perf_event, XDP/TC/socket_filter/cgroup and `sk_*` packet paths, `lirc_mode2`, and `struct_ops`
+- **Attach families**: kprobe/kretprobe/uprobe/uretprobe, fentry/fexit/tp_btf/raw_tracepoint/tracepoint/lsm (including sleepable `.s` BTF sections), perf_event, XDP/TC/socket_filter/cgroup and `sk_*` packet paths, `lirc_mode2`, and `struct_ops`
 - **Typed kernel-BTF contexts**: named `ctx.arg.<name>` aliases, typed field projection, typed map round-tripping, and typed `struct_ops` callbacks
 - **Small-state and aggregation tools**: leading typed `mut` bindings, named globals, generic maps, counters, histograms, timers, stacks, and event streaming
 

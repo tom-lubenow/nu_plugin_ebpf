@@ -136,6 +136,12 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 
 ## Program-Family Notes
 
+Kernel-BTF-backed attach specs accept both the normal and sleepable
+section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,
+`fexit:func` / `fexit.s:func`, and `lsm:hook` / `lsm.s:hook`. The
+sleepable forms preserve the `.s` section prefix in dry-run ELF output
+and loader attach.
+
 `xdp`, `tc`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
 packet pointers `ctx.data` / `ctx.data_end`. `sk_msg`, `sk_skb`, and

@@ -1204,15 +1204,18 @@ pub enum ProgramSpec {
     },
     Fentry {
         function: String,
+        sleepable: bool,
     },
     Fexit {
         function: String,
+        sleepable: bool,
     },
     TpBtf {
         name: String,
     },
     Lsm {
         hook: String,
+        sleepable: bool,
     },
     Tracepoint {
         category: String,
@@ -1341,12 +1344,24 @@ impl ProgramSpec {
             )));
         };
 
-        Self::from_program_type_target(prog_type, target)
+        Self::from_program_type_target_with_sleepable(
+            prog_type,
+            target,
+            matches!(prefix, "fentry.s" | "fexit.s" | "lsm.s"),
+        )
     }
 
     pub fn from_program_type_target(
         prog_type: EbpfProgramType,
         target: &str,
+    ) -> Result<Self, ProgramSpecParseError> {
+        Self::from_program_type_target_with_sleepable(prog_type, target, false)
+    }
+
+    fn from_program_type_target_with_sleepable(
+        prog_type: EbpfProgramType,
+        target: &str,
+        sleepable: bool,
     ) -> Result<Self, ProgramSpecParseError> {
         match prog_type {
             EbpfProgramType::Kprobe => Ok(ProgramSpec::Kprobe {
@@ -1357,15 +1372,18 @@ impl ProgramSpec {
             }),
             EbpfProgramType::Fentry => Ok(ProgramSpec::Fentry {
                 function: target.to_string(),
+                sleepable,
             }),
             EbpfProgramType::Fexit => Ok(ProgramSpec::Fexit {
                 function: target.to_string(),
+                sleepable,
             }),
             EbpfProgramType::TpBtf => Ok(ProgramSpec::TpBtf {
                 name: target.to_string(),
             }),
             EbpfProgramType::Lsm => Ok(ProgramSpec::Lsm {
                 hook: target.to_string(),
+                sleepable,
             }),
             EbpfProgramType::Tracepoint => {
                 let (category, name) = target.split_once('/').ok_or_else(|| {
@@ -1479,10 +1497,10 @@ impl ProgramSpec {
         match self {
             ProgramSpec::Kprobe { function }
             | ProgramSpec::Kretprobe { function }
-            | ProgramSpec::Fentry { function }
-            | ProgramSpec::Fexit { function } => function.clone(),
+            | ProgramSpec::Fentry { function, .. }
+            | ProgramSpec::Fexit { function, .. } => function.clone(),
             ProgramSpec::TpBtf { name } => name.clone(),
-            ProgramSpec::Lsm { hook } => hook.clone(),
+            ProgramSpec::Lsm { hook, .. } => hook.clone(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
             ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => {
@@ -1619,6 +1637,18 @@ impl ProgramSpec {
 
     pub fn section_name(&self) -> String {
         match self {
+            ProgramSpec::Fentry {
+                function,
+                sleepable: true,
+            } => format!("fentry.s/{function}"),
+            ProgramSpec::Fexit {
+                function,
+                sleepable: true,
+            } => format!("fexit.s/{function}"),
+            ProgramSpec::Lsm {
+                hook,
+                sleepable: true,
+            } => format!("lsm.s/{hook}"),
             ProgramSpec::CgroupSkb { target } => target.section_name(),
             ProgramSpec::CgroupSock { target } => target.section_name(),
             ProgramSpec::CgroupSysctl { target } => target.section_name().to_string(),
@@ -1686,12 +1716,19 @@ impl ProgramSpec {
 
 impl fmt::Display for ProgramSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}",
-            self.program_type().canonical_prefix(),
-            self.target_string()
-        )
+        let prefix = match self {
+            ProgramSpec::Fentry {
+                sleepable: true, ..
+            } => "fentry.s",
+            ProgramSpec::Fexit {
+                sleepable: true, ..
+            } => "fexit.s",
+            ProgramSpec::Lsm {
+                sleepable: true, ..
+            } => "lsm.s",
+            _ => self.program_type().canonical_prefix(),
+        };
+        write!(f, "{}:{}", prefix, self.target_string())
     }
 }
 

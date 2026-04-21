@@ -505,9 +505,32 @@ fn test_parse_program_spec_lsm_is_structured() {
         spec,
         ProgramSpec::Lsm {
             hook: "file_open".to_string(),
+            sleepable: false,
         }
     );
     assert_eq!(spec.to_string(), "lsm:file_open");
+}
+
+#[test]
+fn test_parse_program_spec_sleepable_btf_sections_are_structured() {
+    let fentry = ProgramSpec::parse("fentry.s:do_sys_openat2").unwrap();
+    assert_eq!(fentry.section_name(), "fentry.s/do_sys_openat2");
+    assert_eq!(fentry.to_string(), "fentry.s:do_sys_openat2");
+
+    let fexit = ProgramSpec::parse("fexit.s:do_sys_openat2").unwrap();
+    assert_eq!(fexit.section_name(), "fexit.s/do_sys_openat2");
+    assert_eq!(fexit.to_string(), "fexit.s:do_sys_openat2");
+
+    let lsm = ProgramSpec::parse("lsm.s:file_open").unwrap();
+    assert_eq!(
+        lsm,
+        ProgramSpec::Lsm {
+            hook: "file_open".to_string(),
+            sleepable: true,
+        }
+    );
+    assert_eq!(lsm.section_name(), "lsm.s/file_open");
+    assert_eq!(lsm.to_string(), "lsm.s:file_open");
 }
 
 #[test]

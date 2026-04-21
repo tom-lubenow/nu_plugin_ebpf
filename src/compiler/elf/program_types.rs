@@ -50,14 +50,14 @@ pub struct ProgramTypeInfo {
 
 pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
 pub(super) const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
-pub(super) const FENTRY_SPEC_ALIASES: &[&str] = &["fentry"];
-pub(super) const FEXIT_SPEC_ALIASES: &[&str] = &["fexit"];
+pub(super) const FENTRY_SPEC_ALIASES: &[&str] = &["fentry", "fentry.s"];
+pub(super) const FEXIT_SPEC_ALIASES: &[&str] = &["fexit", "fexit.s"];
 pub(super) const TP_BTF_SPEC_ALIASES: &[&str] = &["tp_btf"];
 pub(super) const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 pub(super) const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
-pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm"];
+pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
 pub(super) const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 pub(super) const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 pub(super) const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
@@ -895,9 +895,12 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kprobe",
     "kretprobe",
     "fentry",
+    "fentry.s",
     "fexit",
+    "fexit.s",
     "tp_btf",
     "lsm",
+    "lsm.s",
     "tracepoint",
     "raw_tracepoint",
     "raw_tp",
