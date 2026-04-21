@@ -600,7 +600,8 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::TaskStorageGet
         | BpfHelper::TaskStorageDelete
         | BpfHelper::GetCurrentTask
-        | BpfHelper::GetCurrentTaskBtf => HelperProgramSurfaceSpec {
+        | BpfHelper::GetCurrentTaskBtf
+        | BpfHelper::TaskPtRegs => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TaskStorage,
         },
         BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete => HelperProgramSurfaceSpec {

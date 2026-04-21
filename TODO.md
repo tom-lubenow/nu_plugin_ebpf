@@ -266,6 +266,7 @@ Near-term priority order:
   - Recent progress: struct_ops callback compile contexts now use an explicit modeled `ProgramSpec` callback variant instead of smuggling callback identity through `ProbeContext.target`, and callback-scoped `sched_ext` kfunc legality now resolves through that same program model rather than a probe-context-local special case.
   - Recent progress: the modeled attach shape now also distinguishes struct_ops callbacks, including callback sleepability, so callback-scoped sched_ext policy no longer depends on ad hoc callback-name checks outside the shared program model.
   - Recent progress: socket-context helper-backed fields can now be read as ordinary null-safe projections (`ctx.sk.tcp.<field>`, `ctx.sk.full.<field>`, and `ctx.sk.listener.<field>`) on program surfaces where the corresponding socket helper is valid, keeping those reads off raw `helper-call` spelling while still routing through shared helper policy.
+  - Recent progress: task pt_regs register reads now have an ordinary projection surface (`ctx.task.pt_regs.arg0` through `.arg5` and `.retval`) backed by `bpf_task_pt_regs` plus the shared pt_regs offset resolver, so current-task register snapshots no longer require raw helper spelling.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.

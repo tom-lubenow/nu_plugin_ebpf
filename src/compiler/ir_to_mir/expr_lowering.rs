@@ -1003,6 +1003,91 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(projected_ty);
         }
 
+        let task_pt_regs_projection = if root_ctx_field == Some(&CtxField::Task) {
+            match path_members {
+                [
+                    PathMember::String { val, .. },
+                    PathMember::String { val: reg, .. },
+                ] if val == "pt_regs" => Some(reg.as_str()),
+                [PathMember::String { val, .. }, ..] if val == "pt_regs" => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' requires a pt_regs register after ctx.task.pt_regs, e.g. ctx.task.pt_regs.arg0 or ctx.task.pt_regs.retval",
+                        path_desc
+                    )));
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        if let Some(register_name) = task_pt_regs_projection {
+            if let Some(message) = self
+                .probe_ctx
+                .and_then(|ctx| ctx.helper_call_error(BpfHelper::TaskPtRegs))
+            {
+                return Err(CompileError::UnsupportedInstruction(message));
+            }
+
+            let offsets = KernelBtf::get().pt_regs_offsets().map_err(|err| {
+                CompileError::UnsupportedInstruction(format!(
+                    "pt_regs register access unavailable: {err}"
+                ))
+            })?;
+            let register_offset = match register_name {
+                "arg0" => offsets.arg_offsets[0],
+                "arg1" => offsets.arg_offsets[1],
+                "arg2" => offsets.arg_offsets[2],
+                "arg3" => offsets.arg_offsets[3],
+                "arg4" => offsets.arg_offsets[4],
+                "arg5" => offsets.arg_offsets[5],
+                "retval" => offsets.retval_offset,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' has unsupported pt_regs register '{}'; expected arg0..arg5 or retval",
+                        path_desc, register_name
+                    )));
+                }
+            };
+            let register_offset = usize::try_from(i32::from(register_offset)).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "pt_regs register '{}' offset is negative",
+                    register_name
+                ))
+            })?;
+
+            let regs_ty = MirType::named_kernel_struct_ptr("pt_regs");
+            let regs_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(regs_vreg, regs_ty);
+            self.emit(MirInst::CallHelper {
+                dst: regs_vreg,
+                helper: BpfHelper::TaskPtRegs as u32,
+                args: vec![MirValue::VReg(base_vreg)],
+            });
+
+            let slot_ty = MirType::U64;
+            let register_slot =
+                self.func
+                    .alloc_stack_slot(align_to_eight(slot_ty.size()), 8, StackSlotKind::Local);
+            self.record_stack_slot_type(register_slot, slot_ty.clone());
+            self.emit_trampoline_probe_read_to_slot(
+                regs_vreg,
+                AddressSpace::Kernel,
+                register_offset,
+                register_slot,
+                &slot_ty,
+                path_desc,
+            )?;
+            self.vreg_type_hints.insert(dst_vreg, slot_ty.clone());
+            self.emit(MirInst::LoadSlot {
+                dst: dst_vreg,
+                slot: register_slot,
+                offset: 0,
+                ty: slot_ty.clone(),
+            });
+            return Ok(slot_ty);
+        }
+
         for (segment_idx, member) in path_members.iter().enumerate() {
             let is_last = segment_idx + 1 == path_members.len();
             if let ValueCursor::PacketScalar {

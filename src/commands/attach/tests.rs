@@ -6272,6 +6272,26 @@ fn test_compile_kprobe_ctx_task_pid_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_task_pt_regs_arg_counter_program() {
+    if KernelBtf::get().pt_regs_offsets().is_err() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![
+                string_member("task"),
+                string_member("pt_regs"),
+                string_member("arg0"),
+            ],
+        },
+        "kprobe ctx.task.pt_regs.arg0 count",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_bound_ctx_task_pid_counter_program() {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     if !matches!(

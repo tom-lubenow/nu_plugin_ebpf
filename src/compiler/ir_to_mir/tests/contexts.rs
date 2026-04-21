@@ -459,6 +459,88 @@ fn test_lower_cgroup_skb_ctx_sk_listener_projection_calls_helper() {
 }
 
 #[test]
+fn test_lower_kprobe_ctx_task_pt_regs_arg_projection_calls_helper() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("task"),
+            string_member("pt_regs"),
+            string_member("arg0"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kprobe ctx.task.pt_regs.arg0 should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Task,
+                    ..
+                }
+            ))),
+        "projection should load ctx.task"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::TaskPtRegs as u32 && args.len() == 1
+            ))),
+        "projection should call bpf_task_pt_regs"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32 && args.len() == 3
+            ))),
+        "projection should read the selected register through probe_read_kernel"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U64,
+                    ..
+                }
+            ))),
+        "projection should load a u64 register value"
+    );
+}
+
+#[test]
 fn test_lower_ctx_sk_tcp_projection_rejects_missing_metric() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("tcp")],
