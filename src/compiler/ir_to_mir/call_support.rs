@@ -203,8 +203,39 @@ impl<'a> HirToMirLowering<'a> {
             "task-storage" | "task_storage" | "taskstorage" => Some(MapKind::TaskStorage),
             "cgrp-storage" | "cgrp_storage" | "cgrpstorage" | "cgroup-storage"
             | "cgroup_storage" | "cgroupstorage" => Some(MapKind::CgrpStorage),
+            "perf-event-array" | "perf_event_array" | "perfeventarray" | "perf-event"
+            | "perf_event" => Some(MapKind::PerfEventArray),
+            "ringbuf" | "ring-buf" | "ring_buf" | "ring-buffer" | "ring_buffer" => {
+                Some(MapKind::RingBuf)
+            }
+            "stack-trace" | "stack_trace" | "stacktrace" => Some(MapKind::StackTrace),
+            "prog-array" | "prog_array" | "progarray" | "program-array" | "program_array"
+            | "programarray" => Some(MapKind::ProgArray),
             _ => None,
         }
+    }
+
+    fn reserved_special_map_kind_error(
+        context: &str,
+        kind_arg: &str,
+        kind: MapKind,
+    ) -> Option<CompileError> {
+        let message = match kind {
+            MapKind::PerfEventArray => format!(
+                "{context} --kind {kind_arg} is reserved for perf-event output maps; use emit/perf-event output surfaces instead of generic map commands"
+            ),
+            MapKind::RingBuf => format!(
+                "{context} --kind {kind_arg} is reserved for ring-buffer event maps; use emit or modeled ringbuf helpers instead of generic map commands"
+            ),
+            MapKind::StackTrace => format!(
+                "{context} --kind {kind_arg} is reserved for stack-trace maps; use ctx.kstack/ctx.ustack or modeled stack helpers instead of generic map commands"
+            ),
+            MapKind::ProgArray => format!(
+                "{context} --kind {kind_arg} is reserved for program-array maps; use tail-call instead of generic map commands"
+            ),
+            _ => return None,
+        };
+        Some(CompileError::UnsupportedInstruction(message))
     }
 
     fn is_generic_data_map_kind(kind: MapKind) -> bool {
@@ -257,7 +288,14 @@ impl<'a> HirToMirLowering<'a> {
             ) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for BPF local-storage maps; use map-get/map-delete with --kind {kind} instead of generic map update operations"
             ))),
-            Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
+            Some(map_kind) => Err(
+                Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
+                    ))
+                }),
+            ),
+            None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
             ))),
         }
@@ -282,7 +320,14 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not a lookup map; use map-contains --kind bloom-filter"
             ))),
-            Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
+            Some(map_kind) => Err(
+                Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} --kind must name a recognized map family; map-get supports hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds"
+                    ))
+                }),
+            ),
+            None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must name a recognized map family; map-get supports hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds"
             ))),
         }
@@ -307,7 +352,14 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not deletable"
             ))),
-            Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(
+            Some(map_kind) => Err(
+                Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} --kind must name a recognized map family; map-delete supports hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds"
+                    ))
+                }),
+            ),
+            None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must name a recognized map family; map-delete supports hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds"
             ))),
         }
@@ -407,10 +459,14 @@ impl<'a> HirToMirLowering<'a> {
                     "{context} --kind {kind} is a socket redirection map; use socket-map specific operations instead"
                 )))
             }
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} does not support map kind {:?}",
-                other
-            ))),
+            Some(other) => Err(
+                Self::reserved_special_map_kind_error(context, &kind, other).unwrap_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} does not support map kind {:?}",
+                        other
+                    ))
+                }),
+            ),
             None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must be one of: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sk-storage, task-storage, inode-storage, cgrp-storage, bloom-filter, cgroup-array"
             ))),

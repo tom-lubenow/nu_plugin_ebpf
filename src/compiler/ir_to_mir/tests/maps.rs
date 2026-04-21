@@ -2143,6 +2143,34 @@ fn test_lower_map_put_rejects_redirect_only_devmap_kind() {
 }
 
 #[test]
+fn test_lower_map_put_rejects_prog_array_kind_with_tail_call_guidance() {
+    let hir = make_map_put_program(DeclId::new(42), 0, "prog-array");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("prog-array map-put should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-put --kind prog-array is reserved for program-array maps"),
+                "{msg}"
+            );
+            assert!(msg.contains("use tail-call"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_get_rejects_sockmap_kind() {
     let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -2225,6 +2253,48 @@ fn test_lower_map_get_rejects_redirect_only_cpumap_kind() {
 }
 
 #[test]
+fn test_lower_map_get_rejects_ringbuf_kind_with_emit_guidance() {
+    let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "count".to_string()),
+    ]);
+
+    for stmt in &mut hir.main.blocks[0].stmts {
+        if let HirStmt::LoadLiteral {
+            dst,
+            lit: HirLiteral::String(kind),
+        } = stmt
+            && *dst == RegId::new(3)
+        {
+            *kind = b"ringbuf".to_vec();
+        }
+    }
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("ringbuf map-get should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-get --kind ringbuf is reserved for ring-buffer event maps"),
+                "{msg}"
+            );
+            assert!(msg.contains("use emit"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_put_rejects_sockhash_kind() {
     let hir = make_map_put_program(DeclId::new(42), 0, "sockhash");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -2268,6 +2338,34 @@ fn test_lower_map_delete_rejects_queue_kind() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map delete is not supported for map kind"));
             assert!(msg.contains("Queue"));
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_map_delete_rejects_stack_trace_kind_with_stack_guidance() {
+    let hir = make_map_delete_program(DeclId::new(42), "stack-trace");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("stack-trace map-delete should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-delete --kind stack-trace is reserved for stack-trace maps"),
+                "{msg}"
+            );
+            assert!(msg.contains("ctx.kstack/ctx.ustack"), "{msg}");
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
