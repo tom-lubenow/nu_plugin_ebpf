@@ -527,8 +527,147 @@ fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
     assert!(
         err.to_string()
             .contains(
-                "mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, and representable constant records"
+                "mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/binary/record constants, and representable constant records"
             )
+    );
+}
+
+#[test]
+fn test_lower_mutated_captured_fixed_record_array_store_and_project_field() {
+    let capture_var = VarId::new(26);
+    let get_decl = DeclId::new(904);
+    let count_decl = DeclId::new(905);
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let mut initial_first = Record::new();
+    initial_first.push("pid", Value::int(7, Span::test_data()));
+    initial_first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut initial_second = Record::new();
+    initial_second.push("pid", Value::int(9, Span::test_data()));
+    initial_second.push("cpu", Value::int(3, Span::test_data()));
+
+    let mut new_first = Record::new();
+    new_first.push("pid", Value::int(11, Span::test_data()));
+    new_first.push("cpu", Value::int(4, Span::test_data()));
+
+    let mut new_second = Record::new();
+    new_second.push("pid", Value::int(13, Span::test_data()));
+    new_second.push("cpu", Value::int(5, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::record(new_first, Span::test_data()),
+                            Value::record(new_second, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: capture_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("cpu")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(3),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::list(
+                vec![
+                    Value::record(initial_first, Span::test_data()),
+                    Value::record(initial_second, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        )],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated captured fixed record arrays should lower through writable globals");
+
+    let mut expected_initial = Vec::new();
+    expected_initial.extend_from_slice(&7i64.to_le_bytes());
+    expected_initial.extend_from_slice(&2i64.to_le_bytes());
+    expected_initial.extend_from_slice(&9i64.to_le_bytes());
+    expected_initial.extend_from_slice(&3i64.to_le_bytes());
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.data_globals[0].name, "__nu_capture_global_26");
+    assert_eq!(result.data_globals[0].data, expected_initial);
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected projected fixed-array record field to be usable as a scalar key"
     );
 }
 

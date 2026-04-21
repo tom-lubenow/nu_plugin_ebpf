@@ -101,6 +101,12 @@ impl<'a> HirToMirLowering<'a> {
                 Self::mutable_numeric_list_global_repr(vals)?
                     .map(|(ty, data, max_len)| (ty, data, Some(max_len), None))
             }
+            Value::List { vals, .. }
+                if crate::compiler::hir::supports_fixed_array_constant_list(value) =>
+            {
+                let (ty, data) = Self::constant_fixed_array_rodata_repr(vals)?;
+                Some((ty, data, None, None))
+            }
             _ => None,
         };
         Ok(repr)
@@ -119,7 +125,7 @@ impl<'a> HirToMirLowering<'a> {
                 Self::mutable_capture_global_repr(value)?
             else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, and representable constant records",
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/binary/record constants, and representable constant records",
                     var_id.get(),
                     value.get_type()
                 )));

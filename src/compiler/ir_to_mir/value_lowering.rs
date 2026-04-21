@@ -362,7 +362,7 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
-    fn constant_fixed_array_rodata_repr(
+    pub(super) fn constant_fixed_array_rodata_repr(
         values: &[Value],
     ) -> Result<(MirType, Vec<u8>), CompileError> {
         let Some((first, rest)) = values.split_first() else {

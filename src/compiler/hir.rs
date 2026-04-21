@@ -422,7 +422,7 @@ pub fn supports_constant_value(value: &Value) -> bool {
         }
     }
 
-    supports_nested_constant_value(value) || supports_numeric_constant_list(value)
+    supports_nested_constant_value(value)
 }
 
 /// Infer the context parameter VarId from IR instructions.
