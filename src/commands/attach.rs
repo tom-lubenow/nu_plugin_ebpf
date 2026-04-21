@@ -108,6 +108,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
     {|ctx| $ctx.ancestor_cgroup_id.0 } - Get current ancestor cgroup ID at constant level 0
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs
     {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order on skb-backed packet programs
@@ -425,6 +426,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get total message size in bytes
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.data }    - Get the packet/message data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet/message access
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
@@ -459,6 +461,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
     {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order
@@ -504,6 +507,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get total packet length in bytes
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
     {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order

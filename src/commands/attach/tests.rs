@@ -6282,6 +6282,18 @@ fn test_compile_socket_filter_ctx_packet_len_counter_program() {
 }
 
 #[test]
+fn test_compile_socket_filter_ctx_len_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("len")],
+        },
+        "socket_filter ctx.len count",
+    );
+}
+
+#[test]
 fn test_compile_socket_filter_ctx_socket_uid_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SocketFilter,
@@ -6482,6 +6494,18 @@ fn test_compile_xdp_ctx_rx_queue_index_counter_program() {
             members: vec![string_member("rx_queue_index")],
         },
         "xdp ctx.rx_queue_index count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_len_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("len")],
+        },
+        "xdp ctx.len count",
     );
 }
 
@@ -6875,6 +6899,18 @@ fn test_compile_sk_msg_ctx_packet_len_counter_program() {
 }
 
 #[test]
+fn test_compile_sk_msg_ctx_len_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("len")],
+        },
+        "sk_msg ctx.len count",
+    );
+}
+
+#[test]
 fn test_compile_sk_msg_ctx_netns_cookie_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkMsg,
@@ -6895,6 +6931,18 @@ fn test_compile_sk_skb_ctx_packet_len_counter_program() {
             members: vec![string_member("packet_len")],
         },
         "sk_skb ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_ctx_len_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("len")],
+        },
+        "sk_skb ctx.len count",
     );
 }
 
