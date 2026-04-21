@@ -1003,7 +1003,9 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(projected_ty);
         }
 
-        let task_pt_regs_projection = if root_ctx_field == Some(&CtxField::Task) {
+        let task_pt_regs_projection = if root_ctx_field == Some(&CtxField::Task)
+            || base_runtime_ty.is_task_struct_ptr()
+        {
             match path_members {
                 [
                     PathMember::String { val, .. },

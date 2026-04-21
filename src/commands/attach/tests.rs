@@ -6322,6 +6322,32 @@ fn test_compile_kprobe_bound_ctx_task_pid_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_bound_ctx_task_pt_regs_arg_counter_program() {
+    if KernelBtf::get().pt_regs_offsets().is_err() {
+        return;
+    }
+
+    let hir = make_bound_ctx_path_projection_call_program(
+        CellPath {
+            members: vec![string_member("task")],
+        },
+        CellPath {
+            members: vec![string_member("pt_regs"), string_member("arg0")],
+        },
+        DeclId::new(42),
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        &decl_names,
+        "bound kprobe ctx.task.pt_regs.arg0 count",
+    );
+}
+
+#[test]
 fn test_compile_perf_event_ctx_cpu_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::PerfEvent,
