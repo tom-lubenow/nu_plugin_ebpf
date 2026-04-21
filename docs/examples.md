@@ -110,6 +110,9 @@ let id = ebpf attach 'cgroup_skb:/sys/fs/cgroup:egress' {|ctx| $ctx.packet_len |
 # Count device major numbers requested inside a cgroup
 let id = ebpf attach 'cgroup_device:/sys/fs/cgroup' {|ctx| $ctx.major | count; 'allow' }
 
+# Count raw lirc mode2 event kinds from an IR receiver
+let id = ebpf attach 'lirc_mode2:/dev/lirc0' {|ctx| $ctx.mode | count; 0 }
+
 # Count sysctl reads versus writes inside a cgroup
 let id = ebpf attach 'cgroup_sysctl:/sys/fs/cgroup' {|ctx| $ctx.write | count; 'allow' }
 

@@ -7813,6 +7813,34 @@ fn test_compile_lirc_mode2_ctx_value_counter_program() {
 }
 
 #[test]
+fn test_compile_lirc_mode2_ctx_sample_and_mode_counter_programs() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::LircMode2,
+        "/dev/null",
+        CellPath {
+            members: vec![string_member("sample")],
+        },
+        "lirc_mode2 ctx.sample count",
+    );
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::LircMode2,
+        "/dev/null",
+        CellPath {
+            members: vec![string_member("raw")],
+        },
+        "lirc_mode2 ctx.raw count",
+    );
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::LircMode2,
+        "/dev/null",
+        CellPath {
+            members: vec![string_member("mode")],
+        },
+        "lirc_mode2 ctx.mode count",
+    );
+}
+
+#[test]
 fn test_compile_tc_ctx_mark_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::Tc,
