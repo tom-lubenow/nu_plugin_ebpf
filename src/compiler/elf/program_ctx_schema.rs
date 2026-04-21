@@ -12,6 +12,7 @@ use crate::program_spec::ProgramSpec;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProgramContextLayoutSpec {
     program_type: EbpfProgramType,
+    packet_context: Option<PacketContextKind>,
     data_meta: Option<PacketContextKind>,
     socket_family: Option<SocketContextLayout>,
     sock_type: Option<SocketContextLayout>,
@@ -37,6 +38,7 @@ impl ProgramContextLayoutSpec {
     ) -> Self {
         Self {
             program_type,
+            packet_context: Some(PacketContextKind::SkBuff),
             data_meta,
             socket_family,
             sock_type: None,
@@ -58,6 +60,7 @@ impl ProgramContextLayoutSpec {
 const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::Xdp,
+        packet_context: Some(PacketContextKind::XdpMd),
         data_meta: Some(PacketContextKind::XdpMd),
         socket_family: None,
         sock_type: None,
@@ -100,6 +103,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     ),
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSock,
+        packet_context: None,
         data_meta: None,
         socket_family: Some(SocketContextLayout::CgroupSock),
         sock_type: Some(SocketContextLayout::CgroupSock),
@@ -117,6 +121,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockAddr,
+        packet_context: None,
         data_meta: None,
         socket_family: Some(SocketContextLayout::SockAddr),
         sock_type: Some(SocketContextLayout::SockAddr),
@@ -134,6 +139,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockopt,
+        packet_context: None,
         data_meta: None,
         socket_family: None,
         sock_type: None,
@@ -151,6 +157,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkLookup,
+        packet_context: None,
         data_meta: None,
         socket_family: Some(SocketContextLayout::SkLookup),
         sock_type: None,
@@ -168,6 +175,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkMsg,
+        packet_context: Some(PacketContextKind::SkMsg),
         data_meta: None,
         socket_family: Some(SocketContextLayout::SkMsg),
         sock_type: None,
@@ -185,6 +193,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SockOps,
+        packet_context: Some(PacketContextKind::SockOps),
         data_meta: None,
         socket_family: Some(SocketContextLayout::SockOps),
         sock_type: None,
@@ -219,7 +228,7 @@ fn program_context_layout_spec(
 
 impl EbpfProgramType {
     pub fn packet_context_kind(&self) -> Option<PacketContextKind> {
-        self.info().packet_context_kind
+        program_context_layout_spec(*self).and_then(|spec| spec.packet_context)
     }
 
     pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {

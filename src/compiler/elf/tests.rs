@@ -3527,6 +3527,15 @@ fn test_cgroup_sock_addr_tuple_aliases_use_attach_shape() {
 #[test]
 fn test_program_type_context_layouts_use_program_model_table() {
     assert_eq!(
+        EbpfProgramType::SocketFilter.packet_context_kind(),
+        Some(PacketContextKind::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.packet_context_kind(),
+        Some(PacketContextKind::SockOps)
+    );
+    assert_eq!(EbpfProgramType::SkLookup.packet_context_kind(), None);
+    assert_eq!(
         EbpfProgramType::Xdp.data_meta_context_kind(),
         Some(PacketContextKind::XdpMd)
     );
