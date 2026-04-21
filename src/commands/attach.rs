@@ -490,10 +490,9 @@ Context parameter syntax (recommended):
     `adjust-message --pop START LEN [--flags FLAGS]`. The raw
     `helper-call "bpf_msg_*"` forms remain available as escape hatches.
     After `adjust-message --pull`, reload `ctx.data` and `ctx.data_end`
-    before reading packet bytes again. Socket-pointer helpers whose program
-    surface includes `sk_msg` are also available on `ctx.sk` after a null
-    check, for example
-    `if $ctx.sk != 0 { helper-call "bpf_sk_fullsock" $ctx.sk }`.
+    before reading packet bytes again. Socket helper-backed projections are
+    available through ordinary `ctx.sk.full.<field>`, `ctx.sk.listener.<field>`,
+    and `ctx.sk.tcp.<field>` paths when the corresponding helper is valid.
 
   sk_skb fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
