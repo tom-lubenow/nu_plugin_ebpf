@@ -4408,6 +4408,56 @@ fn make_hash_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("task")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"task_state".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"task-storage".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: map_contains_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_cgroup_array_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -8367,6 +8417,52 @@ fn test_compile_optimized_queue_map_push_program() {
         .iter()
         .find(|map| map.name == "recent_pids")
         .expect("expected queue runtime map artifact");
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_task_storage_map_contains_program() {
+    let hir = make_task_storage_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("task-storage map-contains should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized task-storage map-contains should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "task_state")
+        .expect("expected task-storage runtime map artifact");
+    assert_eq!(map.def.map_type, BpfMapDef::task_storage(8).map_type);
     assert!(
         result
             .relocations
