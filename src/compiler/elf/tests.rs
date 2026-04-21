@@ -4989,6 +4989,11 @@ fn test_probe_context_allows_cgroup_device_fields() {
         ctx.ctx_field_access_error(&CtxField::DeviceAccessType)
             .is_none()
     );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::DeviceAccess)
+            .is_none()
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::DeviceType).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DeviceMajor).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DeviceMinor).is_none());
 }

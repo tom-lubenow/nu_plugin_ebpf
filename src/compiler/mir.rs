@@ -663,6 +663,10 @@ pub enum CtxField {
     NetnsCookie,
     /// bpf_cgroup_dev_ctx::access_type
     DeviceAccessType,
+    /// cgroup device access flags (`access_type >> 16`)
+    DeviceAccess,
+    /// cgroup device kind (`access_type & 0xffff`)
+    DeviceType,
     /// bpf_cgroup_dev_ctx::major
     DeviceMajor,
     /// bpf_cgroup_dev_ctx::minor
@@ -852,6 +856,8 @@ impl CtxField {
             CtxField::SocketUid => "socket_uid".to_string(),
             CtxField::NetnsCookie => "netns_cookie".to_string(),
             CtxField::DeviceAccessType => "access_type".to_string(),
+            CtxField::DeviceAccess => "device_access".to_string(),
+            CtxField::DeviceType => "device_type".to_string(),
             CtxField::DeviceMajor => "major".to_string(),
             CtxField::DeviceMinor => "minor".to_string(),
             CtxField::SockOp => "op".to_string(),

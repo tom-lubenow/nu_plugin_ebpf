@@ -3842,6 +3842,65 @@ fn test_compile_cgroup_device_access_type_load_uses_first_word_offset() {
 }
 
 #[test]
+fn test_compile_cgroup_device_derived_access_fields_mask_access_type() {
+    for (field, op, imm) in [
+        (
+            CtxField::DeviceAccess,
+            opcode::BPF_ALU64 | opcode::BPF_RSH | opcode::BPF_K,
+            16,
+        ),
+        (
+            CtxField::DeviceType,
+            opcode::BPF_ALU64 | opcode::BPF_AND | opcode::BPF_K,
+            0xffff,
+        ),
+    ] {
+        let ctx = ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup");
+
+        let mut func = LirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(LirInst::LoadCtxField {
+                dst,
+                field,
+                slot: None,
+            });
+        func.block_mut(entry).terminator = LirInst::Return {
+            val: Some(MirValue::VReg(dst)),
+        };
+
+        let program = LirProgram::new(func);
+        let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+        compiler
+            .prepare_function_state(
+                &program.main,
+                compiler.available_regs.clone(),
+                program.main.precolored.clone(),
+            )
+            .unwrap();
+        compiler.compile_function(&program.main).unwrap();
+        compiler.fixup_jumps().unwrap();
+
+        assert!(compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
+                && insn.src_reg == EbpfReg::R9.as_u8()
+                && insn.offset == 0
+        }));
+        assert!(
+            compiler
+                .instructions
+                .iter()
+                .any(|insn| insn.opcode == op && insn.imm == imm)
+        );
+    }
+}
+
+#[test]
 fn test_compile_sock_ops_reply_store_uses_union_offset() {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
 

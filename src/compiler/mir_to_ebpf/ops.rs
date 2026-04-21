@@ -1369,6 +1369,18 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
+            CtxField::DeviceAccess => {
+                let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                self.instructions.push(EbpfInsn::rsh64_imm(dst, 16));
+            }
+            CtxField::DeviceType => {
+                let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                self.instructions.push(EbpfInsn::and64_imm(dst, 0xffff));
+            }
             CtxField::DeviceMajor => {
                 let offset = Self::bpf_cgroup_dev_ctx_offsets().1;
                 self.instructions

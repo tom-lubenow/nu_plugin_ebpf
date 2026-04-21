@@ -4065,29 +4065,33 @@ fn test_lower_socket_filter_ctx_mark_field() {
 
 #[test]
 fn test_lower_cgroup_device_ctx_access_type_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("access_type")],
-    });
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup");
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("cgroup_device ctx.access_type should lower");
+    for (field_name, expected_field) in [
+        ("access_type", CtxField::DeviceAccessType),
+        ("device_access", CtxField::DeviceAccess),
+        ("device_type", CtxField::DeviceType),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
 
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::DeviceAccessType,
-            ..
-        }
-    )));
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("cgroup_device ctx.{field_name} should lower: {err}"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField { field, .. } if field == &expected_field
+        )));
+    }
 }
 
 #[test]

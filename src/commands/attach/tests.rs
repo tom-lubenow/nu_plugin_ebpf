@@ -7011,6 +7011,30 @@ fn test_compile_cgroup_device_ctx_access_type_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_device_ctx_device_access_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupDevice,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("device_access")],
+        },
+        "cgroup_device ctx.device_access count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_device_ctx_device_type_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupDevice,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("device_type")],
+        },
+        "cgroup_device ctx.device_type count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_device_ctx_minor_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupDevice,

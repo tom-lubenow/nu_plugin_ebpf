@@ -150,6 +150,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
 const NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("ifindex", CtxField::Ifindex),
     ("access_type", CtxField::DeviceAccessType),
+    ("device_access", CtxField::DeviceAccess),
+    ("device_type", CtxField::DeviceType),
     ("major", CtxField::DeviceMajor),
     ("minor", CtxField::DeviceMinor),
     ("op", CtxField::SockOp),

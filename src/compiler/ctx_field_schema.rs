@@ -452,6 +452,8 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::LircValue
         | CtxField::LircMode
         | CtxField::DeviceAccessType
+        | CtxField::DeviceAccess
+        | CtxField::DeviceType
         | CtxField::DeviceMajor
         | CtxField::DeviceMinor
         | CtxField::SockOp

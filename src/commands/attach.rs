@@ -373,11 +373,14 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.access_type } - Get the encoded device access type
+    {|ctx| $ctx.device_access } - Get the access flags from access_type >> 16
+    {|ctx| $ctx.device_type } - Get the block/char device kind from access_type & 0xffff
     {|ctx| $ctx.major }   - Get the requested device major number
     {|ctx| $ctx.minor }   - Get the requested device minor number
     Note: cgroup_device closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `ctx.access_type` is the raw kernel encoding
-    `(BPF_DEVCG_ACC_* << 16) | BPF_DEVCG_DEV_*`.
+    `(BPF_DEVCG_ACC_* << 16) | BPF_DEVCG_DEV_*`; `ctx.device_access` and
+    `ctx.device_type` expose the two halves directly.
 
   sock_ops fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

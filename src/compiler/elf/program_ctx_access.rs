@@ -565,6 +565,8 @@ const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
 ];
 const DEVICE_CTX_FIELDS: &[CtxField] = &[
     CtxField::DeviceAccessType,
+    CtxField::DeviceAccess,
+    CtxField::DeviceType,
     CtxField::DeviceMajor,
     CtxField::DeviceMinor,
 ];
