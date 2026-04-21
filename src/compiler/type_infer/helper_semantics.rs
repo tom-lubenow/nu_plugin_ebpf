@@ -356,6 +356,21 @@ impl<'a> TypeInference<'a> {
                                 )
                             })
                         })
+                        .or_else(|| {
+                            helper
+                                .scalar_arg_nonnegative_requirement(size_arg)
+                                .and_then(|_| {
+                                    args.get(size_arg).and_then(|value| {
+                                        self.helper_nonnegative_size_upper_bound(
+                                            helper_id,
+                                            size_arg,
+                                            value,
+                                            value_ranges,
+                                            errors,
+                                        )
+                                    })
+                                })
+                        })
                 }),
                 (None, None) => None,
             };

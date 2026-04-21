@@ -315,6 +315,77 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertPtrAccessOrZero { ptr, size, op } => {
+                let ptr_ty = match state.reg_type(*ptr) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                let ptr_info = match ptr_ty {
+                    VccValueType::Ptr(info) => {
+                        if let Err(err) = self.require_non_null_ptr(info, op) {
+                            self.errors.push(err);
+                            return;
+                        }
+                        info
+                    }
+                    other => {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::InvalidLoadStore,
+                            format!("{op} requires pointer operand (got {:?})", other.class()),
+                        ));
+                        return;
+                    }
+                };
+                let size_ty = match state.value_type(*size) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if size_ty.class() != VccTypeClass::Scalar && size_ty.class() != VccTypeClass::Bool
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: size_ty.class(),
+                        },
+                        format!("{op} size must be scalar"),
+                    ));
+                    return;
+                }
+                if let Some(size_range) = state.value_range(*size, size_ty) {
+                    if size_range.min < 0 || size_range.max < 0 {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            format!("{op} size must be >= 0"),
+                        ));
+                        return;
+                    }
+                    if size_range.max == 0 {
+                        return;
+                    }
+                    if let (VccAddrSpace::Stack(_) | VccAddrSpace::MapValue, Some(bounds)) =
+                        (ptr_info.space, ptr_info.bounds)
+                    {
+                        if bounds.shifted_with_size(0, size_range.max).is_none() {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                format!("{op} out of bounds"),
+                            ));
+                        }
+                    }
+                } else if matches!(ptr_info.space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!("{op} size must have bounded upper range"),
+                    ));
+                }
+            }
             VccInst::AssertStackSlotBase { ptr, op } => {
                 let _ = self.stack_slot_from_reg(state, *ptr, op);
             }

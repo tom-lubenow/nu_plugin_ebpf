@@ -319,6 +319,17 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                             )
                         })
                     })
+                    .or_else(|| {
+                        helper
+                            .scalar_arg_nonnegative_requirement(size_arg)
+                            .and_then(|_| {
+                                args.get(size_arg).and_then(|value| {
+                                    helper_nonnegative_size_upper_bound(
+                                        helper_id, size_arg, value, state, errors,
+                                    )
+                                })
+                            })
+                    })
             }),
             (None, None) => None,
         };

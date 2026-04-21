@@ -1145,6 +1145,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStack),
+        Some(
+            "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::ProbeRead),
         Some(
             "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
@@ -1425,6 +1432,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::GetStackId),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::GetStack),
         None
     );
     assert_eq!(

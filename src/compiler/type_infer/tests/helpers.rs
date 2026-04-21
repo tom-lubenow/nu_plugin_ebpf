@@ -1776,6 +1776,146 @@ fn test_type_error_get_stackid_helper_rejects_xdp_program() {
 }
 
 #[test]
+fn test_infer_get_stack_helper_allows_zero_size_buffer_in_kprobe() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_stack zero-size buffer to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_stack_helper_rejects_small_stack_buffer() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(64),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stack stack buffer bounds error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper get_stack buf requires 64 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_stack_helper_rejects_negative_size() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(-1),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stack negative-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 67 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_stack_helper_rejects_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(32),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stack to be rejected on xdp");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+    )));
+}
+
+#[test]
 fn test_type_error_probe_read_helper_rejects_xdp_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

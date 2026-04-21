@@ -379,6 +379,8 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `map-peek` | Peek a maybe-null value pointer from a named queue or stack map |
 | `map-pop` | Pop a maybe-null value pointer from a named queue or stack map |
 
+Modeled tracing/perf stack helpers are available through the helper escape hatch. `bpf_get_stackid` is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` is constrained to the same program families and accepts a stack/map buffer with a nonnegative size, including `0`.
+
 ## Discovering Tracepoints
 
 ```bash

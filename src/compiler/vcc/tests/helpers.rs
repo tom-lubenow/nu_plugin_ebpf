@@ -1877,6 +1877,264 @@ fn test_verify_mir_for_program_get_stackid_helper_rejects_xdp() {
 }
 
 #[test]
+fn test_verify_mir_for_program_get_stack_helper_rejects_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    func.param_count = 1;
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(32),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected get_stack helper program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_get_stack_allows_zero_size_buffer() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect("expected get_stack zero-size buffer to pass");
+}
+
+#[test]
+fn test_verify_mir_get_stack_rejects_small_stack_buffer() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(64),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected get_stack stack buffer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("pointer access out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_get_stack_rejects_negative_size() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(-1),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected get_stack negative-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 67 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_get_stack_accepts_variable_zero_to_slot_size_range() {
+    let (mut func, entry) = new_mir_function();
+    let check_upper = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+
+    let size = func.alloc_vreg();
+    func.param_count = 1;
+    let ctx = func.alloc_vreg();
+    let ge_zero = func.alloc_vreg();
+    let le_slot = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: ge_zero,
+        op: BinOpKind::Ge,
+        lhs: MirValue::VReg(size),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: ge_zero,
+        if_true: check_upper,
+        if_false: done,
+    };
+
+    func.block_mut(check_upper)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: le_slot,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(size),
+            rhs: MirValue::Const(32),
+        });
+    func.block_mut(check_upper).terminator = MirInst::Branch {
+        cond: le_slot,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::VReg(size),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect("expected bounded zero-inclusive get_stack size range to pass");
+}
+
+#[test]
 fn test_verify_mir_for_program_probe_read_helper_rejects_xdp() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
@@ -5620,6 +5878,67 @@ fn test_verify_mir_helper_get_stackid_rejects_user_ctx_pointer() {
         err.iter().any(|e| e
             .message
             .contains("helper get_stackid ctx expects pointer in [Kernel]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_get_stack_rejects_user_ctx_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    let ctx = func.alloc_vreg();
+    func.param_count = 1;
+    let cond = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected helper ctx pointer-space error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper get_stack ctx expects pointer in [Kernel]")),
         "unexpected error messages: {:?}",
         err
     );

@@ -653,6 +653,7 @@ impl<'a> VccLowerer<'a> {
         allow_user: bool,
         access_size: Option<usize>,
         dynamic_size: Option<&MirValue>,
+        dynamic_size_allows_zero: bool,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         if self.helper_pointer_arg_allows_const_zero(helper_id, arg_idx) {
@@ -734,19 +735,35 @@ impl<'a> VccLowerer<'a> {
             let size_value = self.lower_value(size_arg, out);
             match arg {
                 MirValue::VReg(vreg) => {
-                    out.push(VccInst::AssertPtrAccess {
-                        ptr: VccReg(vreg.0),
-                        size: size_value,
-                        op,
-                    });
+                    if dynamic_size_allows_zero {
+                        out.push(VccInst::AssertPtrAccessOrZero {
+                            ptr: VccReg(vreg.0),
+                            size: size_value,
+                            op,
+                        });
+                    } else {
+                        out.push(VccInst::AssertPtrAccess {
+                            ptr: VccReg(vreg.0),
+                            size: size_value,
+                            op,
+                        });
+                    }
                 }
                 MirValue::StackSlot(slot) => {
                     let ptr = self.stack_addr_temp(*slot, out);
-                    out.push(VccInst::AssertPtrAccess {
-                        ptr,
-                        size: size_value,
-                        op,
-                    });
+                    if dynamic_size_allows_zero {
+                        out.push(VccInst::AssertPtrAccessOrZero {
+                            ptr,
+                            size: size_value,
+                            op,
+                        });
+                    } else {
+                        out.push(VccInst::AssertPtrAccess {
+                            ptr,
+                            size: size_value,
+                            op,
+                        });
+                    }
                 }
                 MirValue::Const(_) => {
                     return Err(VccError::new(
@@ -966,6 +983,18 @@ impl<'a> VccLowerer<'a> {
                             })
                             .transpose()?
                             .flatten()
+                    } else if helper
+                        .scalar_arg_nonnegative_requirement(size_arg)
+                        .is_some()
+                    {
+                        args.get(size_arg)
+                            .map(|value| {
+                                self.helper_nonnegative_size_upper_bound(
+                                    helper_id, size_arg, value,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
                     } else {
                         None
                     }
@@ -1014,6 +1043,10 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             let dynamic_size = rule.size_from_arg.and_then(|size_arg| args.get(size_arg));
+            let dynamic_size_allows_zero =
+                access_size.is_none() && rule.size_from_arg.is_some_and(|size_arg| {
+                    helper.scalar_arg_nonnegative_requirement(size_arg).is_some()
+                });
             self.check_helper_ptr_arg_value(
                 helper_id,
                 rule.arg_idx,
@@ -1025,6 +1058,7 @@ impl<'a> VccLowerer<'a> {
                 rule.allowed.allow_user,
                 access_size,
                 dynamic_size,
+                dynamic_size_allows_zero,
                 out,
             )?;
         }

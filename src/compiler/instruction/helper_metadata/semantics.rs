@@ -640,6 +640,22 @@ impl BpfHelper {
                 size_from_arg: None,
             },
         ];
+        const GET_STACK_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper get_stack ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper get_stack buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
 
         const SKB_UNDER_CGROUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1451,6 +1467,11 @@ impl BpfHelper {
             },
             BpfHelper::GetStackId => HelperSemantics {
                 ptr_arg_rules: GET_STACKID_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetStack => HelperSemantics {
+                ptr_arg_rules: GET_STACK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

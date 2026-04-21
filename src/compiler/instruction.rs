@@ -192,6 +192,8 @@ pub enum BpfHelper {
     SkbLoadBytes = 26,
     /// long bpf_get_stackid(ctx, map, flags)
     GetStackId = 27,
+    /// long bpf_get_stack(ctx, buf, size, flags)
+    GetStack = 67,
     /// s64 bpf_csum_diff(from, from_size, to, to_size, seed)
     CsumDiff = 28,
     /// long bpf_skb_load_bytes_relative(skb, offset, to, len, start_header)
@@ -380,6 +382,7 @@ impl BpfHelper {
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
             BpfHelper::SkbLoadBytes => "bpf_skb_load_bytes",
             BpfHelper::GetStackId => "bpf_get_stackid",
+            BpfHelper::GetStack => "bpf_get_stack",
             BpfHelper::CsumDiff => "bpf_csum_diff",
             BpfHelper::SkbLoadBytesRelative => "bpf_skb_load_bytes_relative",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
@@ -517,6 +520,7 @@ impl BpfHelper {
             "perf_event_output" => Some(Self::PerfEventOutput),
             "skb_load_bytes" => Some(Self::SkbLoadBytes),
             "get_stackid" => Some(Self::GetStackId),
+            "get_stack" => Some(Self::GetStack),
             "csum_diff" => Some(Self::CsumDiff),
             "skb_load_bytes_relative" => Some(Self::SkbLoadBytesRelative),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
@@ -598,6 +602,13 @@ impl BpfHelper {
                 4,
                 "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4",
             )),
+            _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_nonnegative_requirement(self, arg_idx: usize) -> Option<&'static str> {
+        match (self, arg_idx) {
+            (Self::GetStack, 2) => Some("helper 'bpf_get_stack' requires arg2 to be >= 0"),
             _ => None,
         }
     }
