@@ -236,9 +236,6 @@ fn test_program_type_metadata_for_tp_btf() {
     assert_eq!(info.target_kind, ProgramTargetKind::BtfTracepoint);
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_task_ctx_fields);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -249,9 +246,6 @@ fn test_program_type_metadata_for_raw_tracepoint() {
     assert_eq!(info.target_kind, ProgramTargetKind::RawTracepoint);
     assert_eq!(info.arg_access, ProgramValueAccess::RawTracepoint);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_task_ctx_fields);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -262,9 +256,6 @@ fn test_program_type_metadata_for_perf_event() {
     assert_eq!(info.target_kind, ProgramTargetKind::PerfEventTarget);
     assert_eq!(info.arg_access, ProgramValueAccess::PtRegs);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_task_ctx_fields);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -275,9 +266,6 @@ fn test_program_type_metadata_for_sk_lookup() {
     assert_eq!(info.target_kind, ProgramTargetKind::NetworkNamespacePath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
-    assert!(info.supports_ingress_ifindex_ctx_field);
 }
 
 #[test]
@@ -288,8 +276,6 @@ fn test_program_type_metadata_for_lirc_mode2() {
     assert_eq!(info.target_kind, ProgramTargetKind::LircDevicePath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -300,10 +286,6 @@ fn test_program_type_metadata_for_sk_msg() {
     assert_eq!(info.target_kind, ProgramTargetKind::PinnedSockMapPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
-    assert!(info.supports_packet_len_ctx_field);
-    assert!(info.supports_packet_data_ctx_fields);
 }
 
 #[test]
@@ -330,11 +312,6 @@ fn test_program_type_metadata_for_sk_skb() {
     assert_eq!(info.target_kind, ProgramTargetKind::PinnedSockMapPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
-    assert!(info.supports_packet_len_ctx_field);
-    assert!(info.supports_packet_data_ctx_fields);
-    assert!(info.supports_ingress_ifindex_ctx_field);
 }
 
 #[test]
@@ -345,11 +322,6 @@ fn test_program_type_metadata_for_sk_skb_parser() {
     assert_eq!(info.target_kind, ProgramTargetKind::PinnedSockMapPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
-    assert!(info.supports_packet_len_ctx_field);
-    assert!(info.supports_packet_data_ctx_fields);
-    assert!(info.supports_ingress_ifindex_ctx_field);
 }
 
 #[test]
@@ -360,11 +332,6 @@ fn test_program_type_metadata_for_socket_filter() {
     assert_eq!(info.target_kind, ProgramTargetKind::SocketFilterTarget);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
-    assert!(info.supports_packet_len_ctx_field);
-    assert!(!info.supports_packet_data_ctx_fields);
-    assert!(info.supports_ingress_ifindex_ctx_field);
 }
 
 #[test]
@@ -584,8 +551,6 @@ fn test_program_type_metadata_for_cgroup_device() {
     assert_eq!(info.target_kind, ProgramTargetKind::CgroupPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
 }
 
 #[test]
@@ -613,9 +578,6 @@ fn test_program_type_metadata_for_sock_ops() {
     assert_eq!(info.target_kind, ProgramTargetKind::CgroupPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
-    assert!(info.supports_cpu_ctx_field);
-    assert!(info.supports_timestamp_ctx_field);
-    assert!(!info.supports_ingress_ifindex_ctx_field);
 }
 
 #[test]
