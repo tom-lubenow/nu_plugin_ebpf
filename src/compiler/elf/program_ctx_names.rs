@@ -3,11 +3,31 @@ use crate::program_spec::ProgramSpec;
 
 type CtxFieldNameEntry = (&'static str, CtxField);
 
+struct CtxFieldAliasSurface {
+    program_types: &'static [EbpfProgramType],
+    entries: &'static [CtxFieldNameEntry],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CtxFieldNameResolutionMode {
     Default,
     TracepointPreserveBuiltins,
 }
+
+const XDP_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
+const SKB_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+];
+const SK_MSG_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkMsg];
+const CGROUP_SYSCTL_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSysctl];
+const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::CgroupSockopt];
+const TRACEPOINT_PRESERVE_BUILTIN_CTX_FIELD_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Tracepoint];
 
 const XDP_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::IngressIfindex)];
 const SKB_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::Ifindex)];
@@ -20,6 +40,28 @@ const CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
 ];
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
     &[("retval", CtxField::SockoptRetval)];
+const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
+    CtxFieldAliasSurface {
+        program_types: XDP_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: XDP_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    CtxFieldAliasSurface {
+        program_types: SKB_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: SKB_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    CtxFieldAliasSurface {
+        program_types: SK_MSG_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: SK_MSG_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    CtxFieldAliasSurface {
+        program_types: CGROUP_SYSCTL_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    CtxFieldAliasSurface {
+        program_types: CGROUP_SOCKOPT_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES,
+    },
+];
 const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("pid", CtxField::Pid),
     ("tid", CtxField::Pid),
@@ -266,22 +308,14 @@ fn tracepoint_preserves_builtin_ctx_field_name(field_name: &str) -> bool {
 
 impl EbpfProgramType {
     fn ctx_field_alias_entries(&self) -> Option<&'static [CtxFieldNameEntry]> {
-        match self {
-            EbpfProgramType::Xdp => Some(XDP_CTX_FIELD_ALIAS_ENTRIES),
-            EbpfProgramType::SocketFilter
-            | EbpfProgramType::Tc
-            | EbpfProgramType::CgroupSkb
-            | EbpfProgramType::SkSkb
-            | EbpfProgramType::SkSkbParser => Some(SKB_CTX_FIELD_ALIAS_ENTRIES),
-            EbpfProgramType::SkMsg => Some(SK_MSG_CTX_FIELD_ALIAS_ENTRIES),
-            EbpfProgramType::CgroupSysctl => Some(CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES),
-            EbpfProgramType::CgroupSockopt => Some(CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES),
-            _ => None,
-        }
+        CTX_FIELD_ALIAS_SURFACES
+            .iter()
+            .find(|surface| surface.program_types.contains(self))
+            .map(|surface| surface.entries)
     }
 
     fn preserves_tracepoint_builtin_ctx_field_names(&self) -> bool {
-        matches!(self, EbpfProgramType::Tracepoint)
+        TRACEPOINT_PRESERVE_BUILTIN_CTX_FIELD_PROGRAMS.contains(self)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
