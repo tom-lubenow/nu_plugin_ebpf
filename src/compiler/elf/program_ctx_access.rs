@@ -1030,6 +1030,8 @@ const TRACING_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TpBtf,
 ];
 
+const TRACEPOINT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tracepoint];
+
 const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgramSurfaceSpec] = &[
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::TaskFields,
@@ -1135,6 +1137,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         requirement: BaseContextFieldAccessRequirement::StackFields,
         program_types: STACK_FIELD_PROGRAMS,
     },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::TracepointFields,
+        program_types: TRACEPOINT_FIELD_PROGRAMS,
+    },
 ];
 
 fn base_context_field_access_program_surface(
@@ -1197,7 +1203,7 @@ impl BaseContextFieldAccessRequirement {
             Self::RetvalField => program_type.supports_ctx_retval(),
             Self::StackFields => self.allowed_by_program_surface(program_type),
             Self::TracingHelperFields => self.allowed_by_program_surface(program_type),
-            Self::TracepointFields => program_type.supports_tracepoint_fields(),
+            Self::TracepointFields => self.allowed_by_program_surface(program_type),
         }
     }
 

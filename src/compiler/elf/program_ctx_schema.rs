@@ -218,10 +218,6 @@ fn program_context_layout_spec(
 }
 
 impl EbpfProgramType {
-    pub fn supports_tracepoint_fields(&self) -> bool {
-        self.info().supports_tracepoint_fields
-    }
-
     pub fn packet_context_kind(&self) -> Option<PacketContextKind> {
         self.info().packet_context_kind
     }

@@ -33,7 +33,6 @@ pub struct ProgramTypeInfo {
     pub arg_access: ProgramValueAccess,
     pub retval_access: ProgramValueAccess,
     pub packet_context_kind: Option<PacketContextKind>,
-    pub supports_tracepoint_fields: bool,
     pub is_userspace: bool,
 }
 
@@ -103,7 +102,6 @@ pub(super) const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -121,7 +119,6 @@ pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -139,7 +136,6 @@ pub(super) const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -157,7 +153,6 @@ pub(super) const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -175,7 +170,6 @@ pub(super) const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -193,7 +187,6 @@ pub(super) const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: true,
     is_userspace: false,
 };
 
@@ -211,7 +204,6 @@ pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::RawTracepoint,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -229,7 +221,6 @@ pub(super) const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: true,
 };
 
@@ -247,7 +238,6 @@ pub(super) const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: true,
 };
 
@@ -265,7 +255,6 @@ pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -283,7 +272,6 @@ pub(super) const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::XdpMd),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -301,7 +289,6 @@ pub(super) const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -319,7 +306,6 @@ pub(super) const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SkBuff),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -337,7 +323,6 @@ pub(super) const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -355,7 +340,6 @@ pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -373,7 +357,6 @@ pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SkMsg),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -391,7 +374,6 @@ pub(super) const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SkBuff),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -409,7 +391,6 @@ pub(super) const SK_SKB_PARSER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SkBuff),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -427,7 +408,6 @@ pub(super) const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SockOps),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -445,7 +425,6 @@ pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SkBuff),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -463,7 +442,6 @@ pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: Some(PacketContextKind::SkBuff),
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -481,7 +459,6 @@ pub(super) const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -499,7 +476,6 @@ pub(super) const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -517,7 +493,6 @@ pub(super) const CGROUP_SOCKOPT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -535,7 +510,6 @@ pub(super) const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -553,7 +527,6 @@ pub(super) const LIRC_MODE2_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
@@ -579,7 +552,6 @@ pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
     packet_context_kind: None,
-    supports_tracepoint_fields: false,
     is_userspace: false,
 };
 
