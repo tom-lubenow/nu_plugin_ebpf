@@ -179,6 +179,7 @@ impl<'a> HirToMirLowering<'a> {
         match kind {
             "hash" => Some(MapKind::Hash),
             "array" => Some(MapKind::Array),
+            "cgroup-array" | "cgroup_array" | "cgrouparray" => Some(MapKind::CgroupArray),
             "queue" => Some(MapKind::Queue),
             "stack" => Some(MapKind::Stack),
             "bloom-filter" | "bloom_filter" | "bloomfilter" => Some(MapKind::BloomFilter),
@@ -230,6 +231,9 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
+            Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
+            ))),
             Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"

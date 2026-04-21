@@ -76,8 +76,12 @@ pub enum BpfHelper {
     L3CsumReplace = 10,
     /// long bpf_l4_csum_replace(skb, offset, from, to, flags)
     L4CsumReplace = 11,
+    /// long bpf_skb_under_cgroup(skb, cgroup_array_map, index)
+    SkbUnderCgroup = 33,
     /// long bpf_skb_change_tail(skb, len, flags)
     SkbChangeTail = 38,
+    /// long bpf_current_task_under_cgroup(cgroup_array_map, index)
+    CurrentTaskUnderCgroup = 37,
     /// long bpf_skb_pull_data(skb, len)
     SkbPullData = 39,
     /// u32 bpf_get_hash_recalc(skb)
@@ -276,7 +280,9 @@ impl BpfHelper {
             BpfHelper::SkbStoreBytes => "bpf_skb_store_bytes",
             BpfHelper::L3CsumReplace => "bpf_l3_csum_replace",
             BpfHelper::L4CsumReplace => "bpf_l4_csum_replace",
+            BpfHelper::SkbUnderCgroup => "bpf_skb_under_cgroup",
             BpfHelper::SkbChangeTail => "bpf_skb_change_tail",
+            BpfHelper::CurrentTaskUnderCgroup => "bpf_current_task_under_cgroup",
             BpfHelper::SkbPullData => "bpf_skb_pull_data",
             BpfHelper::GetHashRecalc => "bpf_get_hash_recalc",
             BpfHelper::CsumUpdate => "bpf_csum_update",
@@ -390,7 +396,9 @@ impl BpfHelper {
             "skb_store_bytes" => Some(Self::SkbStoreBytes),
             "l3_csum_replace" => Some(Self::L3CsumReplace),
             "l4_csum_replace" => Some(Self::L4CsumReplace),
+            "skb_under_cgroup" => Some(Self::SkbUnderCgroup),
             "skb_change_tail" => Some(Self::SkbChangeTail),
+            "current_task_under_cgroup" => Some(Self::CurrentTaskUnderCgroup),
             "skb_pull_data" => Some(Self::SkbPullData),
             "get_hash_recalc" => Some(Self::GetHashRecalc),
             "csum_update" => Some(Self::CsumUpdate),
@@ -490,6 +498,9 @@ impl BpfHelper {
             (Self::TailCall, 1) => Some(MapKind::ProgArray),
             (Self::PerfEventOutput, 1) => Some(MapKind::PerfEventArray),
             (Self::GetStackId, 1) => Some(MapKind::StackTrace),
+            (Self::SkbUnderCgroup, 1) | (Self::CurrentTaskUnderCgroup, 0) => {
+                Some(MapKind::CgroupArray)
+            }
             (Self::RingbufOutput | Self::RingbufReserve | Self::RingbufQuery, 0) => {
                 Some(MapKind::RingBuf)
             }
@@ -509,7 +520,10 @@ impl BpfHelper {
 
     pub const fn local_helper_map_arg_index(self) -> Option<usize> {
         match self {
-            Self::TailCall | Self::PerfEventOutput | Self::GetStackId => Some(1),
+            Self::TailCall | Self::PerfEventOutput | Self::GetStackId | Self::SkbUnderCgroup => {
+                Some(1)
+            }
+            Self::CurrentTaskUnderCgroup => Some(0),
             Self::RingbufOutput
             | Self::RingbufReserve
             | Self::RingbufQuery

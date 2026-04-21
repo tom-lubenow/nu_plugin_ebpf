@@ -278,6 +278,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::PerCpuHash
                 | MapKind::PerCpuArray
                 | MapKind::LruPerCpuHash
+                | MapKind::CgroupArray
                 | MapKind::PerfEventArray
                 | MapKind::Queue
                 | MapKind::Stack
@@ -422,7 +423,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::XskMap => self.register_generic_map_spec(map, 4, Some(4))?,
             MapKind::RingBuf => self.register_generic_map_spec(map, 0, Some(0))?,
             MapKind::StackTrace => self.register_generic_map_spec(map, 4, Some(127 * 8))?,
-            MapKind::PerfEventArray | MapKind::ProgArray => {
+            MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray => {
                 self.register_generic_map_spec(map, 4, Some(4))?;
             }
             MapKind::SkStorage
@@ -597,6 +598,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         let map_def = match spec.kind {
             MapKind::Hash => BpfMapDef::hash(spec.key_size, spec.value_size, max_entries),
             MapKind::Array => BpfMapDef::array(spec.value_size, max_entries),
+            MapKind::CgroupArray => BpfMapDef::cgroup_array(max_entries),
             MapKind::LpmTrie => BpfMapDef::lpm_trie(spec.key_size, spec.value_size, max_entries),
             MapKind::LruHash => BpfMapDef::lru_hash(spec.key_size, spec.value_size, max_entries),
             MapKind::PerCpuHash => {

@@ -1870,6 +1870,17 @@ impl<'a> HirToMirLowering<'a> {
             );
         } else if matches!(
             map_kind,
+            MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray
+        ) {
+            self.vreg_type_hints.insert(
+                map_vreg,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::U32),
+                },
+            );
+        } else if matches!(
+            map_kind,
             MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap
         ) {
             self.vreg_type_hints.insert(

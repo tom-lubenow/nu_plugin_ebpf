@@ -164,6 +164,7 @@ pub enum BpfMapType {
     PerCpuHash = 5,
     PerCpuArray = 6,
     StackTrace = 7,
+    CgroupArray = 8,
     LruHash = 9,
     LruPerCpuHash = 10,
     LpmTrie = 11,
@@ -225,6 +226,18 @@ impl BpfMapDef {
             map_type: BpfMapType::Array as u32,
             key_size: 4, // u32 index
             value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a cgroup array map definition.
+    pub fn cgroup_array(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::CgroupArray as u32,
+            key_size: 4,
+            value_size: 4,
             max_entries,
             map_flags: 0,
             pinning: BpfPinningType::None,

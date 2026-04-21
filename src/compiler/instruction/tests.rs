@@ -502,6 +502,42 @@ fn test_queue_stack_helpers_use_expected_explicit_map_kind_families() {
 }
 
 #[test]
+fn test_cgroup_array_helpers_use_fixed_map_kind() {
+    for (helper, arg_idx) in [
+        (BpfHelper::SkbUnderCgroup, 1),
+        (BpfHelper::CurrentTaskUnderCgroup, 0),
+    ] {
+        assert_eq!(helper.local_helper_map_arg_index(), Some(arg_idx));
+        assert_eq!(
+            helper.helper_map_arg_kind(arg_idx),
+            Some(MapKind::CgroupArray)
+        );
+        assert!(helper.supports_local_helper_map_fd(arg_idx));
+        assert!(!helper.helper_requires_explicit_map_kind(arg_idx));
+    }
+}
+
+#[test]
+fn test_cgroup_membership_helper_signatures() {
+    let skb_sig = HelperSignature::for_id(BpfHelper::SkbUnderCgroup as u32)
+        .expect("expected bpf_skb_under_cgroup helper signature");
+    assert_eq!(skb_sig.min_args, 3);
+    assert_eq!(skb_sig.max_args, 3);
+    assert_eq!(skb_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(skb_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(skb_sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(skb_sig.ret_kind, HelperRetKind::Scalar);
+
+    let task_sig = HelperSignature::for_id(BpfHelper::CurrentTaskUnderCgroup as u32)
+        .expect("expected bpf_current_task_under_cgroup helper signature");
+    assert_eq!(task_sig.min_args, 2);
+    assert_eq!(task_sig.max_args, 2);
+    assert_eq!(task_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(task_sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(task_sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_storage_helpers_use_fixed_local_storage_map_kinds() {
     for (helper, kind) in [
         (BpfHelper::SkStorageGet, MapKind::SkStorage),

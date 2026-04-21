@@ -19,7 +19,9 @@ impl BpfHelper {
             9 => Some(Self::SkbStoreBytes),
             10 => Some(Self::L3CsumReplace),
             11 => Some(Self::L4CsumReplace),
+            33 => Some(Self::SkbUnderCgroup),
             34 => Some(Self::GetHashRecalc),
+            37 => Some(Self::CurrentTaskUnderCgroup),
             38 => Some(Self::SkbChangeTail),
             39 => Some(Self::SkbPullData),
             40 => Some(Self::CsumUpdate),
@@ -163,6 +165,18 @@ impl BpfHelper {
             BpfHelper::L3CsumReplace | BpfHelper::L4CsumReplace => HelperSignature {
                 min_args: 5,
                 max_args: 5,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkbUnderCgroup => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::CurrentTaskUnderCgroup => HelperSignature {
+                min_args: 2,
+                max_args: 2,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },

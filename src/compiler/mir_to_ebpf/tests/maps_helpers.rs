@@ -2500,6 +2500,57 @@ fn test_compile_map_peek_helper_with_loaded_bloom_filter_map_fd() {
 }
 
 #[test]
+fn test_compile_current_task_under_cgroup_helper_with_loaded_cgroup_array_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "tracked_cgroups".to_string(),
+            kind: MapKind::CgroupArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CurrentTaskUnderCgroup as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("current_task_under_cgroup helper with local cgroup array should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "tracked_cgroups")
+        .expect("expected cgroup array map");
+    assert_eq!(map.def.map_type, BpfMapType::CgroupArray as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 4);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "tracked_cgroups"),
+        "expected cgroup array relocation"
+    );
+}
+
+#[test]
 fn test_compile_map_pop_helper_with_loaded_queue_map_fd() {
     use crate::compiler::elf::BpfMapType;
     use crate::compiler::mir::*;

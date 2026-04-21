@@ -543,6 +543,7 @@ fn test_program_type_metadata_for_cgroup_device() {
 
 #[test]
 fn test_bpf_map_type_constants_match_kernel_uapi() {
+    assert_eq!(BpfMapType::CgroupArray as u32, 8);
     assert_eq!(BpfMapType::DevMap as u32, 14);
     assert_eq!(BpfMapType::SockMap as u32, 15);
     assert_eq!(BpfMapType::CpuMap as u32, 16);

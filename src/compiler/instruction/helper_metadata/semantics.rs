@@ -593,6 +593,31 @@ impl BpfHelper {
             },
         ];
 
+        const SKB_UNDER_CGROUP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper skb_under_cgroup skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper skb_under_cgroup map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const CURRENT_TASK_UNDER_CGROUP_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper current_task_under_cgroup map",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const SK_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1309,6 +1334,16 @@ impl BpfHelper {
             },
             BpfHelper::GetStackId => HelperSemantics {
                 ptr_arg_rules: GET_STACKID_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbUnderCgroup => HelperSemantics {
+                ptr_arg_rules: SKB_UNDER_CGROUP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::CurrentTaskUnderCgroup => HelperSemantics {
+                ptr_arg_rules: CURRENT_TASK_UNDER_CGROUP_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

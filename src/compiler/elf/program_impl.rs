@@ -305,6 +305,7 @@ impl EbpfProgram {
                 x if x == BpfMapType::PerfEventArray as u32 => "PerfEventArray",
                 x if x == BpfMapType::PerCpuHash as u32 => "PerCpuHash",
                 x if x == BpfMapType::PerCpuArray as u32 => "PerCpuArray",
+                x if x == BpfMapType::CgroupArray as u32 => "CgroupArray",
                 x if x == BpfMapType::LruHash as u32 => "LruHash",
                 x if x == BpfMapType::LruPerCpuHash as u32 => "LruPerCpuHash",
                 x if x == BpfMapType::LpmTrie as u32 => "LpmTrie",
