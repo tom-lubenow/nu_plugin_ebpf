@@ -191,6 +191,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetCurrentTaskBtf)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_cgrp_storage_get"),
+        Some(BpfHelper::CgrpStorageGet)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("cgroup_storage_delete"),
+        Some(BpfHelper::CgrpStorageDelete)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("get_current_task_btf"),
         Some(BpfHelper::GetCurrentTaskBtf)
     ));
@@ -486,6 +494,8 @@ fn test_storage_helpers_use_fixed_local_storage_map_kinds() {
         (BpfHelper::TaskStorageDelete, MapKind::TaskStorage),
         (BpfHelper::InodeStorageGet, MapKind::InodeStorage),
         (BpfHelper::InodeStorageDelete, MapKind::InodeStorage),
+        (BpfHelper::CgrpStorageGet, MapKind::CgrpStorage),
+        (BpfHelper::CgrpStorageDelete, MapKind::CgrpStorage),
     ] {
         assert_eq!(helper.local_helper_map_arg_index(), Some(0));
         assert_eq!(helper.helper_map_arg_kind(0), Some(kind));
@@ -837,6 +847,24 @@ fn test_helper_signature_sk_storage_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::CgrpStorageGet as u32)
+        .expect("expected bpf_cgrp_storage_get helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+
+    let sig = HelperSignature::for_id(BpfHelper::CgrpStorageDelete as u32)
+        .expect("expected bpf_cgrp_storage_delete helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1043,6 +1071,14 @@ fn test_helper_ref_kind_mappings() {
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::InodeStorageDelete, 1),
         Some(KfuncRefKind::Inode)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::CgrpStorageGet, 1),
+        Some(KfuncRefKind::Cgroup)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::CgrpStorageDelete, 1),
+        Some(KfuncRefKind::Cgroup)
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SkcToTcpSock, 0),

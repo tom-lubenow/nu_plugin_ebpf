@@ -234,6 +234,10 @@ pub enum BpfHelper {
     InodeStorageGet = 145,
     /// long bpf_inode_storage_delete(map, inode)
     InodeStorageDelete = 146,
+    /// void *bpf_cgrp_storage_get(map, cgroup, value, flags)
+    CgrpStorageGet = 210,
+    /// long bpf_cgrp_storage_delete(map, cgroup)
+    CgrpStorageDelete = 211,
     /// struct socket *bpf_sock_from_file(file)
     SockFromFile = 162,
     /// struct pt_regs *bpf_task_pt_regs(task)
@@ -351,6 +355,8 @@ impl BpfHelper {
             BpfHelper::SkcToUnixSock => "bpf_skc_to_unix_sock",
             BpfHelper::InodeStorageGet => "bpf_inode_storage_get",
             BpfHelper::InodeStorageDelete => "bpf_inode_storage_delete",
+            BpfHelper::CgrpStorageGet => "bpf_cgrp_storage_get",
+            BpfHelper::CgrpStorageDelete => "bpf_cgrp_storage_delete",
             BpfHelper::SockFromFile => "bpf_sock_from_file",
             BpfHelper::TaskPtRegs => "bpf_task_pt_regs",
             BpfHelper::RingbufOutput => "bpf_ringbuf_output",
@@ -463,6 +469,8 @@ impl BpfHelper {
             "skc_to_unix_sock" => Some(Self::SkcToUnixSock),
             "inode_storage_get" => Some(Self::InodeStorageGet),
             "inode_storage_delete" => Some(Self::InodeStorageDelete),
+            "cgrp_storage_get" | "cgroup_storage_get" => Some(Self::CgrpStorageGet),
+            "cgrp_storage_delete" | "cgroup_storage_delete" => Some(Self::CgrpStorageDelete),
             "sock_from_file" => Some(Self::SockFromFile),
             "task_pt_regs" => Some(Self::TaskPtRegs),
             "ringbuf_output" => Some(Self::RingbufOutput),
@@ -494,6 +502,7 @@ impl BpfHelper {
             (Self::SkStorageGet | Self::SkStorageDelete, 0) => Some(MapKind::SkStorage),
             (Self::TaskStorageGet | Self::TaskStorageDelete, 0) => Some(MapKind::TaskStorage),
             (Self::InodeStorageGet | Self::InodeStorageDelete, 0) => Some(MapKind::InodeStorage),
+            (Self::CgrpStorageGet | Self::CgrpStorageDelete, 0) => Some(MapKind::CgrpStorage),
             _ => None,
         }
     }
@@ -519,7 +528,9 @@ impl BpfHelper {
             | Self::TaskStorageGet
             | Self::TaskStorageDelete
             | Self::InodeStorageGet
-            | Self::InodeStorageDelete => Some(0),
+            | Self::InodeStorageDelete
+            | Self::CgrpStorageGet
+            | Self::CgrpStorageDelete => Some(0),
             _ => None,
         }
     }

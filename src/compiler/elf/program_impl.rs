@@ -313,6 +313,7 @@ impl EbpfProgram {
                 x if x == BpfMapType::SkStorage as u32 => "SkStorage",
                 x if x == BpfMapType::InodeStorage as u32 => "InodeStorage",
                 x if x == BpfMapType::TaskStorage as u32 => "TaskStorage",
+                x if x == BpfMapType::CgrpStorage as u32 => "CgrpStorage",
                 _ => "Unknown",
             }
         }

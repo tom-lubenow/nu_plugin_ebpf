@@ -707,6 +707,7 @@ pub const fn helper_pointer_arg_ref_kind(
         (BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete, 1) => {
             Some(KfuncRefKind::Inode)
         }
+        (BpfHelper::CgrpStorageGet | BpfHelper::CgrpStorageDelete, 1) => Some(KfuncRefKind::Cgroup),
         (BpfHelper::SockFromFile, 0) => Some(KfuncRefKind::File),
         _ => None,
     }

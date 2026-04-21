@@ -77,6 +77,7 @@ pub enum MapKind {
     SkStorage,
     InodeStorage,
     TaskStorage,
+    CgrpStorage,
     ProgArray,
 }
 
@@ -224,6 +225,10 @@ impl MirType {
 
     pub fn is_inode_ptr(&self) -> bool {
         self.is_named_kernel_struct_ptr(&["inode"])
+    }
+
+    pub fn is_cgroup_ptr(&self) -> bool {
+        self.is_named_kernel_struct_ptr(&["cgroup"])
     }
 
     pub fn is_socket_ptr(&self) -> bool {

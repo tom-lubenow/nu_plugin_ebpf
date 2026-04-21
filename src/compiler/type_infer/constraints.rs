@@ -284,9 +284,10 @@ impl<'a> TypeInference<'a> {
                         (HMType::Unknown, HMType::Unknown)
                     }
                     MapKind::StackTrace => (HMType::U32, HMType::Unknown),
-                    MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage => {
-                        (HMType::U32, HMType::Unknown)
-                    }
+                    MapKind::SkStorage
+                    | MapKind::InodeStorage
+                    | MapKind::TaskStorage
+                    | MapKind::CgrpStorage => (HMType::U32, HMType::Unknown),
                     _ => (HMType::Unknown, HMType::Unknown),
                 };
                 let map_ty = HMType::MapRef {
@@ -523,7 +524,10 @@ impl<'a> TypeInference<'a> {
                     val_ty: Box::new(val_ty),
                 }
             }
-            BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet => {
+            BpfHelper::SkStorageGet
+            | BpfHelper::TaskStorageGet
+            | BpfHelper::InodeStorageGet
+            | BpfHelper::CgrpStorageGet => {
                 let hinted_map_ref = self
                     .type_hints
                     .and_then(|hints| hints.get(map_vreg))
@@ -542,7 +546,8 @@ impl<'a> TypeInference<'a> {
             }
             BpfHelper::SkStorageDelete
             | BpfHelper::TaskStorageDelete
-            | BpfHelper::InodeStorageDelete => {
+            | BpfHelper::InodeStorageDelete
+            | BpfHelper::CgrpStorageDelete => {
                 let hinted_map_ref = self
                     .type_hints
                     .and_then(|hints| hints.get(map_vreg))
@@ -595,7 +600,10 @@ impl<'a> TypeInference<'a> {
     ) -> Option<HMType> {
         if !matches!(
             helper,
-            BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet
+            BpfHelper::SkStorageGet
+                | BpfHelper::TaskStorageGet
+                | BpfHelper::InodeStorageGet
+                | BpfHelper::CgrpStorageGet
         ) {
             return None;
         }

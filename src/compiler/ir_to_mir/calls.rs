@@ -1886,7 +1886,10 @@ impl<'a> HirToMirLowering<'a> {
             );
         } else if matches!(
             map_kind,
-            MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage
+            MapKind::SkStorage
+                | MapKind::InodeStorage
+                | MapKind::TaskStorage
+                | MapKind::CgrpStorage
         ) {
             self.vreg_type_hints.insert(
                 map_vreg,
@@ -1901,9 +1904,10 @@ impl<'a> HirToMirLowering<'a> {
 
     fn storage_helper_init_arg_idx(helper: BpfHelper) -> Option<usize> {
         match helper {
-            BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet => {
-                Some(2)
-            }
+            BpfHelper::SkStorageGet
+            | BpfHelper::TaskStorageGet
+            | BpfHelper::InodeStorageGet
+            | BpfHelper::CgrpStorageGet => Some(2),
             _ => None,
         }
     }

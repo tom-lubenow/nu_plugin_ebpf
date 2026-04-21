@@ -63,6 +63,9 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
             | (Some(BpfHelper::SkStorageGet), 2)
             | (Some(BpfHelper::InodeStorageGet), 2)
             | (Some(BpfHelper::TaskStorageGet), 2)
+            | (Some(BpfHelper::CgrpStorageGet), 1)
+            | (Some(BpfHelper::CgrpStorageGet), 2)
+            | (Some(BpfHelper::CgrpStorageDelete), 1)
     ) || helper_allows_maybe_null_arg(helper, arg_idx, program, probe_ctx))
         && matches!(
             value_range(arg, state),
@@ -651,6 +654,7 @@ fn helper_expected_named_arg_shape(
         KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
         KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
         KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
+        KfuncRefKind::Cgroup => Some((MirType::is_cgroup_ptr, "cgroup pointer")),
         _ => None,
     }
 }

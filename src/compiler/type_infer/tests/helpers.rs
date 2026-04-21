@@ -3896,6 +3896,122 @@ fn test_infer_helper_task_storage_get_return_uses_map_value_hint() {
 }
 
 #[test]
+fn test_infer_helper_cgrp_storage_get_allows_null_cgroup_and_returns_map_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CgrpStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_cgrp_storage_get to allow null cgroup");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!(
+            "Expected helper cgrp_storage_get map pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn test_infer_helper_cgrp_storage_get_return_uses_map_value_hint() {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let cgroup = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CgrpStorageGet as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(cgroup),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Array {
+        elem: Box::new(MirType::U8),
+        len: 16,
+    };
+    let hints = HashMap::from([
+        (
+            map,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty.clone()),
+            },
+        ),
+        (cgroup, MirType::named_kernel_struct_ptr("cgroup")),
+    ]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let types = ti.infer(&func).unwrap();
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::Ptr {
+            pointee: Box::new(value_ty),
+            address_space: AddressSpace::Map,
+        })
+    );
+}
+
+#[test]
+fn test_type_error_helper_cgrp_storage_get_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let cgroup = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CgrpStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(cgroup),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail cgrp_storage_get");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_cgrp_storage_get' arg1 expects cgroup pointer")
+    }));
+}
+
+#[test]
 fn test_type_error_helper_task_storage_get_rejects_anonymous_kernel_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

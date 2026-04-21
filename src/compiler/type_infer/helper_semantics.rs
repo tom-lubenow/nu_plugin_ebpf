@@ -132,6 +132,9 @@ impl<'a> TypeInference<'a> {
                 | (Some(BpfHelper::SkStorageGet), 2)
                 | (Some(BpfHelper::InodeStorageGet), 2)
                 | (Some(BpfHelper::TaskStorageGet), 2)
+                | (Some(BpfHelper::CgrpStorageGet), 1)
+                | (Some(BpfHelper::CgrpStorageGet), 2)
+                | (Some(BpfHelper::CgrpStorageDelete), 1)
         ) || self
             .probe_ctx
             .as_ref()
@@ -869,6 +872,7 @@ fn helper_expected_named_arg_shape(
         KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
         KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
         KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
+        KfuncRefKind::Cgroup => Some((MirType::is_cgroup_ptr, "cgroup pointer")),
         _ => None,
     }
 }

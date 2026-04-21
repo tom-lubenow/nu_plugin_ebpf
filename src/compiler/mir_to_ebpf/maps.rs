@@ -290,6 +290,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::SkStorage
                 | MapKind::InodeStorage
                 | MapKind::TaskStorage
+                | MapKind::CgrpStorage
                 | MapKind::RingBuf
                 | MapKind::StackTrace
                 | MapKind::ProgArray
@@ -423,7 +424,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::PerfEventArray | MapKind::ProgArray => {
                 self.register_generic_map_spec(map, 4, Some(4))?;
             }
-            MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage => {
+            MapKind::SkStorage
+            | MapKind::InodeStorage
+            | MapKind::TaskStorage
+            | MapKind::CgrpStorage => {
                 let value_size = self
                     .generic_map_specs
                     .get(&map.name)
@@ -612,6 +616,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::SkStorage => BpfMapDef::sk_storage(spec.value_size),
             MapKind::InodeStorage => BpfMapDef::inode_storage(spec.value_size),
             MapKind::TaskStorage => BpfMapDef::task_storage(spec.value_size),
+            MapKind::CgrpStorage => BpfMapDef::cgrp_storage(spec.value_size),
             MapKind::ProgArray => BpfMapDef::prog_array(1024),
         };
         Ok(map_def)

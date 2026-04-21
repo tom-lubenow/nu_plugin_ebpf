@@ -179,6 +179,7 @@ pub enum BpfMapType {
     RingBuf = 27,
     InodeStorage = 28,
     TaskStorage = 29,
+    CgrpStorage = 32,
 }
 
 /// Pinning type for BPF maps (libbpf convention)
@@ -337,6 +338,11 @@ impl BpfMapDef {
     /// Create a task-local storage map definition.
     pub fn task_storage(value_size: u32) -> Self {
         Self::local_storage(BpfMapType::TaskStorage, value_size)
+    }
+
+    /// Create a cgroup-local storage map definition.
+    pub fn cgrp_storage(value_size: u32) -> Self {
+        Self::local_storage(BpfMapType::CgrpStorage, value_size)
     }
 
     /// Create a generic devmap definition.

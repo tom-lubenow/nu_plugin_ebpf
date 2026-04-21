@@ -235,7 +235,12 @@ fn storage_get_helper_return_type(
 ) -> Option<MirType> {
     if !matches!(
         BpfHelper::from_u32(helper_id),
-        Some(BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet)
+        Some(
+            BpfHelper::SkStorageGet
+                | BpfHelper::TaskStorageGet
+                | BpfHelper::InodeStorageGet
+                | BpfHelper::CgrpStorageGet
+        )
     ) {
         return None;
     }
@@ -393,7 +398,10 @@ pub(crate) fn infer_instruction_def_type(
                 },
                 true,
             )),
-            MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage => Some((
+            MapKind::SkStorage
+            | MapKind::InodeStorage
+            | MapKind::TaskStorage
+            | MapKind::CgrpStorage => Some((
                 *dst,
                 MirType::MapRef {
                     key_ty: Box::new(MirType::U32),

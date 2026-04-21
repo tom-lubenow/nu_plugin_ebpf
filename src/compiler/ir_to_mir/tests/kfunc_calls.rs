@@ -3732,6 +3732,120 @@ fn test_helper_call_task_storage_literal_lowers_and_compiles() {
 }
 
 #[test]
+fn test_helper_call_cgrp_storage_literal_lowers_and_compiles() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_cgrp_storage_get".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"demo_cgrp_storage".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgrp_storage_get helper-call should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef { name, kind: MapKind::CgrpStorage },
+            ..
+        } if name == "demo_cgrp_storage"
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::CgrpStorageGet as u32 && args.len() == 4
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("cgrp_storage_get helper-call should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_cgrp_storage")
+        .expect("expected cgrp-storage runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::CgrpStorage as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 8);
+    assert_eq!(map.def.max_entries, 0);
+    assert_eq!(map.def.map_flags, 1);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_cgrp_storage"),
+        "expected cgrp-storage map relocation"
+    );
+}
+
+#[test]
 fn test_helper_call_task_storage_init_value_shapes_map_layout() {
     let func = HirFunction {
         blocks: vec![HirBlock {

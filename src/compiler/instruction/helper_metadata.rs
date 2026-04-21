@@ -100,6 +100,8 @@ impl BpfHelper {
             162 => Some(Self::SockFromFile),
             175 => Some(Self::TaskPtRegs),
             178 => Some(Self::SkcToUnixSock),
+            210 => Some(Self::CgrpStorageGet),
+            211 => Some(Self::CgrpStorageDelete),
             114 => Some(Self::ProbeReadUserStr),
             115 => Some(Self::ProbeReadKernelStr),
             130 => Some(Self::RingbufOutput),
@@ -459,6 +461,18 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::PointerMaybeNull,
             },
             BpfHelper::InodeStorageDelete => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::CgrpStorageGet => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::CgrpStorageDelete => HelperSignature {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, P, S, S, S],

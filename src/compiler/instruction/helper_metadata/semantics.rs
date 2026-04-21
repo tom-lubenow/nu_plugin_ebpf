@@ -806,6 +806,47 @@ impl BpfHelper {
             },
         ];
 
+        const CGRP_STORAGE_GET_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper cgrp_storage_get map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper cgrp_storage_get cgroup",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper cgrp_storage_get value",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
+        const CGRP_STORAGE_DELETE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper cgrp_storage_delete map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper cgrp_storage_delete cgroup",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         const SOCK_FROM_FILE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper sock_from_file file",
@@ -1320,6 +1361,16 @@ impl BpfHelper {
             },
             BpfHelper::InodeStorageDelete => HelperSemantics {
                 ptr_arg_rules: INODE_STORAGE_DELETE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::CgrpStorageGet => HelperSemantics {
+                ptr_arg_rules: CGRP_STORAGE_GET_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::CgrpStorageDelete => HelperSemantics {
+                ptr_arg_rules: CGRP_STORAGE_DELETE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
