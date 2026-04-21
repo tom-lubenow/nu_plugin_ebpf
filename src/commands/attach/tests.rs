@@ -8037,6 +8037,40 @@ fn test_compile_xdp_ctx_data_meta_byte_store_program() {
 }
 
 #[test]
+fn test_compile_additional_direct_packet_write_programs() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("data_meta"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc ctx.data_meta[0] store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::String(b"pass".to_vec()),
+        "sk_skb ctx.data[0] store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "sk_skb_parser ctx.data[0] store",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_sock_create_ctx_mark_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::CgroupSock,

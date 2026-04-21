@@ -472,6 +472,7 @@ Near-term priority order:
   - Recent progress: attach-flow compile fixtures now cover the remaining modeled writable skb metadata surfaces (`tc.priority`, `tc.tc_index`, `tc.tc_classid`, `tc.tstamp`, `cgroup_skb:ingress.mark`, `sk_skb.priority`, and `sk_skb_parser.tc_index`) without adding separate live attach tests.
   - Recent progress: attach-flow compile fixtures now also cover the remaining modeled cgroup socket scalar store aliases (`cgroup_sockopt:set.optname`, `cgroup_sockopt:get.optlen`, `cgroup_sockopt:get.sockopt_retval`, `cgroup_sock_addr:bind4.local_port`, and `cgroup_sock_addr:sendmsg4.local_ip4`).
   - Recent progress: attach-flow compile fixtures now cover current-task cgroup fields on XDP (`ctx.cgroup_id` and `ctx.ancestor_cgroup_id.N`), locking down that base-helper surface outside tracing programs.
+  - Recent progress: attach-flow compile fixtures now cover the full direct packet-write allowlist, including `tc.data_meta[0]`, `sk_skb.data[0]`, and `sk_skb_parser.data[0]` stores in addition to the existing XDP/TC packet stores.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.
