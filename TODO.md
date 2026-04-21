@@ -334,6 +334,7 @@ Near-term priority order:
 - [ ] Improve control-flow expressiveness safely.
   - Keep bounded-loop guarantees while supporting more realistic higher-level control patterns.
   - Recent progress: static descending integer ranges now lower through the same bounded-loop machinery in MIR/LIR/codegen, with matching type inference, verifier-types, and VCC range handling.
+  - Recent progress: bounded numeric-list `Iterate` now lowers through the same loop-header/loop-back machinery as range iteration, with a runtime `idx < len` guard that preserves verifier-friendly static bounds while allowing ordinary list-driven loops.
   - Recent progress: HIR `return early` now lowers through the ordinary MIR return path instead of being rejected outright.
   - Recent progress: HIR `branch-if-empty` now lowers through the compiler's `nothing` sentinel compare instead of being rejected outright.
   - Recent progress: metadata-backed `record spread` now merges compiler-known source fields instead of being rejected outright, preserving downstream field semantics for spread string/record flows.

@@ -359,8 +359,8 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
-                for (dst, src) in inits {
-                    self.emit(MirInst::Copy { dst, src });
+                for inst in inits {
+                    self.emit(inst);
                 }
             }
 
@@ -412,23 +412,6 @@ impl<'a> HirToMirLowering<'a> {
                 end,
             } = &block.terminator
             {
-                let range = self
-                    .get_metadata(*stream)
-                    .and_then(|m| m.bounded_range)
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "Iterate requires a compile-time known range (e.g., 1..10)".into(),
-                        )
-                    })?;
-                let dst_vreg = self.get_vreg(*dst);
-                let counter_vreg = self.get_vreg(*stream);
-
-                let limit = if range.inclusive {
-                    range.end + range.step.signum()
-                } else {
-                    range.end
-                };
-
                 let body_block = *self.hir_block_map.get(body).ok_or_else(|| {
                     CompileError::UnsupportedInstruction("Invalid loop body".into())
                 })?;
@@ -440,34 +423,123 @@ impl<'a> HirToMirLowering<'a> {
                         CompileError::UnsupportedInstruction("Invalid loop exit".into())
                     })?
                 };
+                if let Some(range) = self.get_metadata(*stream).and_then(|m| m.bounded_range) {
+                    let dst_vreg = self.get_vreg(*dst);
+                    let counter_vreg = self.get_vreg(*stream);
 
-                self.terminate(MirInst::LoopHeader {
-                    counter: counter_vreg,
-                    start: range.start,
-                    step: range.step,
-                    limit,
-                    body: body_block,
-                    exit: exit_block,
-                });
+                    let limit = if range.inclusive {
+                        range.end + range.step.signum()
+                    } else {
+                        range.end
+                    };
 
-                self.loop_body_inits
-                    .entry(body_block)
-                    .or_default()
-                    .push((dst_vreg, MirValue::VReg(counter_vreg)));
-                if !cleanup_return_exit {
+                    self.terminate(MirInst::LoopHeader {
+                        counter: counter_vreg,
+                        start: range.start,
+                        step: range.step,
+                        limit,
+                        body: body_block,
+                        exit: exit_block,
+                    });
+
                     self.loop_body_inits
-                        .entry(exit_block)
+                        .entry(body_block)
                         .or_default()
-                        .push((dst_vreg, MirValue::Const(0)));
+                        .push(MirInst::Copy {
+                            dst: dst_vreg,
+                            src: MirValue::VReg(counter_vreg),
+                        });
+                    if !cleanup_return_exit {
+                        self.loop_body_inits
+                            .entry(exit_block)
+                            .or_default()
+                            .push(MirInst::Copy {
+                                dst: dst_vreg,
+                                src: MirValue::Const(0),
+                            });
+                    }
+
+                    self.loop_contexts.push(LoopContext {
+                        header_block: self.current_block,
+                        exit_block,
+                        counter_vreg,
+                        step: range.step,
+                    });
+                    continue;
                 }
 
-                self.loop_contexts.push(LoopContext {
-                    header_block: self.current_block,
-                    exit_block,
-                    counter_vreg,
-                    step: range.step,
-                });
-                continue;
+                if let Some((_slot, max_len)) =
+                    self.get_metadata(*stream).and_then(|m| m.list_buffer)
+                {
+                    let dst_vreg = self.get_vreg(*dst);
+                    let list_vreg = self.get_vreg(*stream);
+                    let counter_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: counter_vreg,
+                        src: MirValue::Const(0),
+                    });
+
+                    let guard_block = self.func.alloc_block();
+                    self.terminate(MirInst::LoopHeader {
+                        counter: counter_vreg,
+                        start: 0,
+                        step: 1,
+                        limit: max_len as i64,
+                        body: guard_block,
+                        exit: exit_block,
+                    });
+
+                    let old_block = self.current_block;
+                    self.current_block = guard_block;
+                    let len_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::ListLen {
+                        dst: len_vreg,
+                        list: list_vreg,
+                    });
+                    let cmp_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: cmp_vreg,
+                        op: BinOpKind::Lt,
+                        lhs: MirValue::VReg(counter_vreg),
+                        rhs: MirValue::VReg(len_vreg),
+                    });
+                    self.terminate(MirInst::Branch {
+                        cond: cmp_vreg,
+                        if_true: body_block,
+                        if_false: exit_block,
+                    });
+                    self.current_block = old_block;
+
+                    self.loop_body_inits
+                        .entry(body_block)
+                        .or_default()
+                        .push(MirInst::ListGet {
+                            dst: dst_vreg,
+                            list: list_vreg,
+                            idx: MirValue::VReg(counter_vreg),
+                        });
+                    if !cleanup_return_exit {
+                        self.loop_body_inits
+                            .entry(exit_block)
+                            .or_default()
+                            .push(MirInst::Copy {
+                                dst: dst_vreg,
+                                src: MirValue::Const(0),
+                            });
+                    }
+
+                    self.loop_contexts.push(LoopContext {
+                        header_block: old_block,
+                        exit_block,
+                        counter_vreg,
+                        step: 1,
+                    });
+                    continue;
+                }
+
+                return Err(CompileError::UnsupportedInstruction(
+                    "Iterate requires a compile-time known range or bounded list".into(),
+                ));
             }
             self.lower_terminator(&block.terminator)?;
         }
@@ -1085,11 +1157,17 @@ impl<'a> HirToMirLowering<'a> {
                 self.loop_body_inits
                     .entry(body_block)
                     .or_default()
-                    .push((dst_vreg, MirValue::VReg(counter_vreg)));
+                    .push(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::VReg(counter_vreg),
+                    });
                 self.loop_body_inits
                     .entry(exit_block)
                     .or_default()
-                    .push((dst_vreg, MirValue::Const(0)));
+                    .push(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::Const(0),
+                    });
 
                 self.loop_contexts.push(LoopContext {
                     header_block: self.current_block,

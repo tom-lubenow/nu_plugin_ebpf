@@ -480,6 +480,148 @@ fn test_lower_descending_range_iterate_emits_signed_loop_header() {
 }
 
 #[test]
+fn test_lower_bounded_list_iterate_uses_runtime_length_guard() {
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::List { capacity: 4 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(10),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(20),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(3),
+                    stream: RegId::new(0),
+                    body: HirBlockId(1),
+                    end: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(0),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bounded list iterate should lower");
+
+    let (counter, start, step, limit, guard_block, exit_block) = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::LoopHeader {
+                counter,
+                start,
+                step,
+                limit,
+                body,
+                exit,
+            } => Some((*counter, *start, *step, *limit, *body, *exit)),
+            _ => None,
+        })
+        .expect("expected bounded list iterate loop header");
+    assert_eq!(start, 0);
+    assert_eq!(step, 1);
+    assert_eq!(limit, 4);
+
+    let guard = result.program.main.block(guard_block);
+    assert!(
+        guard
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. }))
+    );
+    assert!(guard.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Lt,
+            lhs: MirValue::VReg(lhs),
+            rhs: MirValue::VReg(_),
+            ..
+        } if *lhs == counter
+    )));
+
+    let (body_block, branch_exit) = match guard.terminator {
+        MirInst::Branch {
+            if_true, if_false, ..
+        } => (if_true, if_false),
+        ref other => panic!("expected guard branch terminator, got {other:?}"),
+    };
+    assert_eq!(branch_exit, exit_block);
+
+    let body = result.program.main.block(body_block);
+    assert!(body.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::ListGet {
+            idx: MirValue::VReg(idx),
+            ..
+        } if *idx == counter
+    )));
+
+    let exit = result.program.main.block(exit_block);
+    let exit_initializes_result = exit.instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )
+    }) || matches!(
+        exit.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(0))
+        }
+    );
+    assert!(
+        exit_initializes_result,
+        "expected exit edge to initialize the list-iterate result register"
+    );
+}
+
+#[test]
 fn test_lower_fentry_aggregate_scalar_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("tv_nsec")],
