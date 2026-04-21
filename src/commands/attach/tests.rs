@@ -6309,6 +6309,18 @@ fn test_compile_cgroup_sock_post_bind4_ctx_local_port_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_post_bind6_ctx_local_ip6_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:post_bind6",
+        CellPath {
+            members: vec![string_member("local_ip6"), int_member(1)],
+        },
+        "cgroup_sock:post_bind6 ctx.local_ip6[1] count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_device_ctx_major_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupDevice,
@@ -6345,6 +6357,18 @@ fn test_compile_cgroup_sockopt_set_ctx_level_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_addr_connect6_ctx_user_ip6_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect6",
+        CellPath {
+            members: vec![string_member("user_ip6"), int_member(2)],
+        },
+        "cgroup_sock_addr:connect6 ctx.user_ip6[2] count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_addr_sendmsg4_ctx_msg_src_ip4_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockAddr,
@@ -6353,6 +6377,18 @@ fn test_compile_cgroup_sock_addr_sendmsg4_ctx_msg_src_ip4_counter_program() {
             members: vec![string_member("msg_src_ip4")],
         },
         "cgroup_sock_addr:sendmsg4 ctx.msg_src_ip4 count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_sendmsg6_ctx_msg_src_ip6_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:sendmsg6",
+        CellPath {
+            members: vec![string_member("msg_src_ip6"), int_member(3)],
+        },
+        "cgroup_sock_addr:sendmsg6 ctx.msg_src_ip6[3] count",
     );
 }
 
@@ -6739,6 +6775,34 @@ fn test_compile_cgroup_sysctl_ctx_file_pos_store_program() {
         HirLiteral::Int(4),
         HirLiteral::Int(1),
         "cgroup_sysctl ctx.file_pos store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_connect6_ctx_user_ip6_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect6",
+        CellPath {
+            members: vec![string_member("user_ip6"), int_member(2)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::Int(1),
+        "cgroup_sock_addr:connect6 ctx.user_ip6[2] store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_sendmsg6_ctx_msg_src_ip6_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:sendmsg6",
+        CellPath {
+            members: vec![string_member("msg_src_ip6"), int_member(3)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::Int(1),
+        "cgroup_sock_addr:sendmsg6 ctx.msg_src_ip6[3] store",
     );
 }
 
