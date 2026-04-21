@@ -4450,7 +4450,7 @@ fn test_probe_context_rejects_direct_socket_fields_on_socket_filter_and_tc() {
             .ctx_field_access_error(&CtxField::RemotePort)
             .expect("expected socket_filter remote_port access error")
             .contains(
-                "ctx.remote_port is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                "ctx.remote_port is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
             )
     );
     assert!(
@@ -4464,7 +4464,7 @@ fn test_probe_context_rejects_direct_socket_fields_on_socket_filter_and_tc() {
         tc.ctx_field_access_error(&CtxField::RemotePort)
             .expect("expected tc remote_port access error")
             .contains(
-                "ctx.remote_port is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                "ctx.remote_port is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
             )
     );
 }
