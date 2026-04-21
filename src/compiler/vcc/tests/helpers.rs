@@ -52,6 +52,50 @@ fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
 }
 
 #[test]
+fn test_verify_mir_helper_map_lookup_percpu_rejects_out_of_bounds_key_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key_base = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key_base,
+        src: MirValue::StackSlot(key_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: key,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(key_base),
+        rhs: MirValue::Const(8),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapLookupPercpuElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(key), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected helper key bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_ringbuf_output_checks_data_bounds() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

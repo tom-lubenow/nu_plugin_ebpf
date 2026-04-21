@@ -3752,6 +3752,50 @@ fn test_infer_helper_map_lookup_returns_pointer() {
 }
 
 #[test]
+fn test_infer_helper_map_lookup_percpu_returns_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let cpu = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: cpu,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::MapLookupPercpuElem as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(key),
+            MirValue::VReg(cpu),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!("Expected helper map lookup percpu pointer return, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_type_error_helper_map_queue_helpers_reject_non_stack_map_arg() {
     let helpers = [
         (

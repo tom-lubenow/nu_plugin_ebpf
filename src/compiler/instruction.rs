@@ -52,6 +52,8 @@ impl EbpfReg {
 pub enum BpfHelper {
     /// void *bpf_map_lookup_elem(map, key)
     MapLookupElem = 1,
+    /// void *bpf_map_lookup_percpu_elem(map, key, cpu)
+    MapLookupPercpuElem = 195,
     /// int bpf_map_update_elem(map, key, value, flags)
     MapUpdateElem = 2,
     /// int bpf_map_delete_elem(map, key)
@@ -326,6 +328,7 @@ impl BpfHelper {
     pub const fn name(self) -> &'static str {
         match self {
             BpfHelper::MapLookupElem => "bpf_map_lookup_elem",
+            BpfHelper::MapLookupPercpuElem => "bpf_map_lookup_percpu_elem",
             BpfHelper::MapUpdateElem => "bpf_map_update_elem",
             BpfHelper::MapDeleteElem => "bpf_map_delete_elem",
             BpfHelper::ProbeRead => "bpf_probe_read",
@@ -471,6 +474,7 @@ impl BpfHelper {
         };
         match canonical {
             "map_lookup_elem" => Some(Self::MapLookupElem),
+            "map_lookup_percpu_elem" => Some(Self::MapLookupPercpuElem),
             "map_update_elem" => Some(Self::MapUpdateElem),
             "map_delete_elem" => Some(Self::MapDeleteElem),
             "probe_read" => Some(Self::ProbeRead),
@@ -676,6 +680,7 @@ impl BpfHelper {
             Self::RingbufOutput
             | Self::RingbufReserve
             | Self::RingbufQuery
+            | Self::MapLookupPercpuElem
             | Self::MapPushElem
             | Self::MapPopElem
             | Self::MapPeekElem
@@ -709,6 +714,7 @@ impl BpfHelper {
                 }
                 Self::MapPopElem => Some(HelperExplicitMapKindFamily::QueueStack),
                 Self::RedirectMap => Some(HelperExplicitMapKindFamily::RedirectMap),
+                Self::MapLookupPercpuElem => Some(HelperExplicitMapKindFamily::PerCpuLookupMap),
                 _ => None,
             },
             _ => None,
@@ -758,6 +764,7 @@ pub enum HelperExplicitMapKindFamily {
     QueueStack,
     QueueStackBloom,
     RedirectMap,
+    PerCpuLookupMap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

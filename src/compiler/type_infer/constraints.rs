@@ -524,6 +524,27 @@ impl<'a> TypeInference<'a> {
                     val_ty: Box::new(val_ty),
                 }
             }
+            BpfHelper::MapLookupPercpuElem => {
+                let hinted_map_ref = self
+                    .type_hints
+                    .and_then(|hints| hints.get(map_vreg))
+                    .is_some_and(|ty| matches!(ty, MirType::MapRef { .. }));
+                if !hinted_map_ref {
+                    return;
+                }
+                let key_ty = match args.get(1).map(|value| self.value_type(value)) {
+                    Some(HMType::Ptr { pointee, .. }) => *pointee,
+                    Some(other) => other,
+                    None => return,
+                };
+                HMType::MapRef {
+                    key_ty: Box::new(key_ty),
+                    val_ty: Box::new(
+                        self.hinted_map_ref_value_type(*map_vreg)
+                            .unwrap_or(HMType::Unknown),
+                    ),
+                }
+            }
             BpfHelper::SkStorageGet
             | BpfHelper::TaskStorageGet
             | BpfHelper::InodeStorageGet

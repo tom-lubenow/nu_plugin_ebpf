@@ -4213,6 +4213,193 @@ fn test_helper_call_map_push_literal_queue_lowers_and_compiles() {
 }
 
 #[test]
+fn test_helper_call_map_lookup_percpu_literal_lowers_and_compiles() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_map_lookup_percpu_elem".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"demo_percpu_hash".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"key0".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String(b"per-cpu-hash".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                        ],
+                        named: vec![(b"kind".to_vec(), RegId::new(5))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("map_lookup_percpu helper-call should type-check");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map_lookup_percpu helper-call should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef { name, kind: MapKind::PerCpuHash },
+            ..
+        } if name == "demo_percpu_hash"
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::MapLookupPercpuElem as u32 && args.len() == 3
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        None,
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled = compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("map_lookup_percpu helper-call should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_percpu_hash")
+        .expect("expected per-cpu hash runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::PerCpuHash as u32);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_percpu_hash"),
+        "expected per-cpu hash relocation"
+    );
+}
+
+#[test]
+fn test_helper_call_map_lookup_percpu_literal_requires_kind() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_map_lookup_percpu_elem".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"demo_percpu_hash".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"key0".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("map_lookup_percpu helper-call should type-check");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map_lookup_percpu helper-call should require an explicit map kind");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("requires --kind per-cpu-hash"),
+                "unexpected error: {msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_contains_bloom_filter_lowers_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {

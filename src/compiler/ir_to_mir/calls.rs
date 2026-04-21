@@ -2,11 +2,12 @@ use super::*;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature, KfuncSignature,
+    helper_acquire_ref_kind,
 };
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
 };
-use crate::compiler::{EbpfProgramType, ProgramIntrinsic};
+use crate::compiler::{EbpfProgramType, ProgramIntrinsic, TypeInference};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_call(
@@ -830,8 +831,27 @@ impl<'a> HirToMirLowering<'a> {
                     helper: helper_id,
                     args,
                 });
-                if matches!(sig.ret_kind, HelperRetKind::Scalar) {
-                    self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                match sig.ret_kind {
+                    HelperRetKind::Scalar => {
+                        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                    }
+                    HelperRetKind::PointerNonNull | HelperRetKind::PointerMaybeNull => {
+                        let ret_ty = TypeInference::precise_helper_return_mir_type(helper)
+                            .unwrap_or_else(|| {
+                                let address_space = if matches!(helper, BpfHelper::KptrXchg)
+                                    || helper_acquire_ref_kind(helper).is_some()
+                                {
+                                    AddressSpace::Kernel
+                                } else {
+                                    AddressSpace::Map
+                                };
+                                MirType::Ptr {
+                                    pointee: Box::new(MirType::Unknown),
+                                    address_space,
+                                }
+                            });
+                        self.vreg_type_hints.insert(dst_vreg, ret_ty);
+                    }
                 }
             }
 
@@ -2416,6 +2436,9 @@ impl<'a> HirToMirLowering<'a> {
                 Some(HelperExplicitMapKindFamily::RedirectMap) => {
                     self.required_redirect_map_kind_arg("helper-call")?
                 }
+                Some(HelperExplicitMapKindFamily::PerCpuLookupMap) => {
+                    self.required_per_cpu_lookup_map_kind_arg("helper-call")?
+                }
                 None => {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "internal error: helper '{}' arg{} is not a map operand",
@@ -2452,13 +2475,32 @@ impl<'a> HirToMirLowering<'a> {
             );
         } else if matches!(
             map_kind,
-            MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray
+            MapKind::Array
+                | MapKind::PerCpuArray
+                | MapKind::CgroupArray
+                | MapKind::PerfEventArray
+                | MapKind::ProgArray
         ) {
             self.vreg_type_hints.insert(
                 map_vreg,
                 MirType::MapRef {
                     key_ty: Box::new(MirType::U32),
                     val_ty: Box::new(MirType::U32),
+                },
+            );
+        } else if matches!(
+            map_kind,
+            MapKind::Hash
+                | MapKind::LpmTrie
+                | MapKind::LruHash
+                | MapKind::PerCpuHash
+                | MapKind::LruPerCpuHash
+        ) {
+            self.vreg_type_hints.insert(
+                map_vreg,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::Unknown),
+                    val_ty: Box::new(MirType::Unknown),
                 },
             );
         } else if matches!(

@@ -407,6 +407,30 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn required_per_cpu_lookup_map_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::PerCpuHash) => Ok(MapKind::PerCpuHash),
+            Some(MapKind::PerCpuArray) => Ok(MapKind::PerCpuArray),
+            Some(MapKind::LruPerCpuHash) => Ok(MapKind::LruPerCpuHash),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash, got {:?}",
+                other
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
+            ))),
+        }
+    }
+
     pub(super) fn required_socket_map_kind_arg(
         &self,
         context: &str,

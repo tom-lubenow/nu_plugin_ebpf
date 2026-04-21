@@ -1138,7 +1138,7 @@ impl BpfHelper {
         ];
 
         match self {
-            BpfHelper::MapLookupElem => HelperSemantics {
+            BpfHelper::MapLookupElem | BpfHelper::MapLookupPercpuElem => HelperSemantics {
                 ptr_arg_rules: MAP_LOOKUP_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,

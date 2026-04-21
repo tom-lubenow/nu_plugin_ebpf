@@ -32,6 +32,7 @@ Last updated: 2026-04-21.
   - Extended typed helper semantics coverage to `trace_printk` pointer-space/size/bounds checks through the shared metadata path.
   - Extended typed helper probe-read coverage to include `bpf_probe_read_user` / `bpf_probe_read_kernel` signatures and source-pointer space checks (`User` vs non-`User`) across type inference, verifier_types, and VCC.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
+  - Typed helper map lookup coverage now includes `bpf_map_lookup_percpu_elem` (helper ID `195`) with pointer return modeling, map/key pointer semantics, and raw helper-call materialization for explicitly selected per-cpu map kinds.
   - Typed helper map queue/stack coverage now includes `bpf_map_push_elem` / `bpf_map_pop_elem` / `bpf_map_peek_elem` signatures and pointer-arg semantics (stack-only map handle, stack/map value buffer) with parity tests across type inference, verifier_types, and VCC.
   - Typed helper ringbuf coverage now also includes `bpf_ringbuf_query` signature and map-handle pointer-space checks across type inference, verifier_types, and VCC.
   - Added helper-side pointer-space and range-aware size/bounds checks in the verifier, with matching VCC checks for map ops, probe-read variants, ringbuf output, perf-event output, `get_stackid`, `get_stack`, `tail_call`, and `get_current_comm`.

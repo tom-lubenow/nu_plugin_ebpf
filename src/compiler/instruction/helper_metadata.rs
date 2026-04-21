@@ -7,6 +7,7 @@ impl BpfHelper {
     pub const fn from_u32(helper_id: u32) -> Option<Self> {
         match helper_id {
             1 => Some(Self::MapLookupElem),
+            195 => Some(Self::MapLookupPercpuElem),
             2 => Some(Self::MapUpdateElem),
             3 => Some(Self::MapDeleteElem),
             4 => Some(Self::ProbeRead),
@@ -152,6 +153,12 @@ impl BpfHelper {
             BpfHelper::MapLookupElem => HelperSignature {
                 min_args: 2,
                 max_args: 2,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::MapLookupPercpuElem => HelperSignature {
+                min_args: 3,
+                max_args: 3,
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
             },

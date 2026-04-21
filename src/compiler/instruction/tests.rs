@@ -63,6 +63,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::RedirectMap)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_map_lookup_percpu_elem"),
+        Some(BpfHelper::MapLookupPercpuElem)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_redirect_neigh"),
         Some(BpfHelper::RedirectNeigh)
     ));
@@ -427,6 +431,18 @@ fn test_helper_signature_map_queue_helpers() {
 }
 
 #[test]
+fn test_helper_signature_map_lookup_percpu_elem() {
+    let sig = HelperSignature::for_id(BpfHelper::MapLookupPercpuElem as u32)
+        .expect("expected bpf_map_lookup_percpu_elem helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+}
+
+#[test]
 fn test_helper_signature_get_socket_cookie() {
     let sig = HelperSignature::for_id(BpfHelper::GetSocketCookie as u32)
         .expect("expected bpf_get_socket_cookie helper signature");
@@ -599,6 +615,21 @@ fn test_redirect_map_helper_uses_explicit_redirect_map_kind_family() {
     assert!(BpfHelper::RedirectMap.helper_requires_explicit_map_kind(0));
     assert!(BpfHelper::RedirectMap.supports_local_helper_map_fd(0));
     assert_eq!(BpfHelper::RedirectMap.helper_map_arg_kind(0), None);
+}
+
+#[test]
+fn test_map_lookup_percpu_helper_uses_explicit_per_cpu_map_kind_family() {
+    assert_eq!(
+        BpfHelper::MapLookupPercpuElem.local_helper_map_arg_index(),
+        Some(0)
+    );
+    assert_eq!(
+        BpfHelper::MapLookupPercpuElem.helper_explicit_map_kind_family(0),
+        Some(HelperExplicitMapKindFamily::PerCpuLookupMap)
+    );
+    assert!(BpfHelper::MapLookupPercpuElem.helper_requires_explicit_map_kind(0));
+    assert!(BpfHelper::MapLookupPercpuElem.supports_local_helper_map_fd(0));
+    assert_eq!(BpfHelper::MapLookupPercpuElem.helper_map_arg_kind(0), None);
 }
 
 #[test]

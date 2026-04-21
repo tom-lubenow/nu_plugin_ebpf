@@ -391,6 +391,34 @@ impl<'a> MirToEbpfCompiler<'a> {
         map: &crate::compiler::mir::MapRef,
     ) -> Result<(), CompileError> {
         match map.kind {
+            MapKind::Hash
+            | MapKind::Array
+            | MapKind::LpmTrie
+            | MapKind::LruHash
+            | MapKind::PerCpuHash
+            | MapKind::PerCpuArray
+            | MapKind::LruPerCpuHash => {
+                let key_size = match self.current_types.get(&dst) {
+                    Some(MirType::MapRef { key_ty, .. }) => key_ty.size().max(1),
+                    _ => 8,
+                };
+                let value_size = self
+                    .generic_map_specs
+                    .get(&map.name)
+                    .filter(|spec| spec.kind == map.kind)
+                    .map(|spec| spec.value_size as usize)
+                    .or_else(|| {
+                        self.generic_map_value_types
+                            .get(map)
+                            .map(|ty| ty.size().max(1))
+                    })
+                    .or_else(|| match self.current_types.get(&dst) {
+                        Some(MirType::MapRef { val_ty, .. }) => Some(val_ty.size().max(1)),
+                        _ => None,
+                    })
+                    .unwrap_or(8);
+                self.register_generic_map_spec(map, key_size, Some(value_size))?;
+            }
             MapKind::SockMap => self.register_generic_map_spec(map, 4, Some(4))?,
             MapKind::SockHash => {
                 let key_size = match self.current_types.get(&dst) {
@@ -446,12 +474,6 @@ impl<'a> MirToEbpfCompiler<'a> {
                     })
                     .unwrap_or(8);
                 self.register_generic_map_spec(map, 4, Some(value_size))?;
-            }
-            other => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "load-map-fd does not support map kind {:?} for '{}'",
-                    other, map.name
-                )));
             }
         }
 
