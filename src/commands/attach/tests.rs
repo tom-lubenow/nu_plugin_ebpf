@@ -10055,6 +10055,185 @@ fn test_compile_sk_msg_adjust_message_pull_program() {
 }
 
 #[test]
+fn test_compile_socket_redirect_kind_programs() {
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect-socket".to_string())]);
+
+    for (
+        context,
+        program_type,
+        target,
+        map_name,
+        map_kind_arg,
+        key,
+        expected_kind,
+        expected_helper,
+        expected_flags,
+    ) in [
+        (
+            "sk_msg sockmap",
+            EbpfProgramType::SkMsg,
+            "/sys/fs/bpf/demo_sockmap",
+            "demo_msg_sockmap",
+            "sockmap",
+            HirLiteral::Int(3),
+            MapKind::SockMap,
+            BpfHelper::MsgRedirectMap,
+            0,
+        ),
+        (
+            "sk_msg sockhash",
+            EbpfProgramType::SkMsg,
+            "/sys/fs/bpf/demo_sockhash",
+            "demo_msg_sockhash",
+            "sockhash",
+            HirLiteral::String(b"peer-a".to_vec()),
+            MapKind::SockHash,
+            BpfHelper::MsgRedirectHash,
+            2,
+        ),
+        (
+            "sk_skb sockmap",
+            EbpfProgramType::SkSkb,
+            "/sys/fs/bpf/demo_sockmap",
+            "demo_skb_sockmap",
+            "sockmap",
+            HirLiteral::Int(4),
+            MapKind::SockMap,
+            BpfHelper::SkRedirectMap,
+            0,
+        ),
+        (
+            "sk_skb sockhash",
+            EbpfProgramType::SkSkb,
+            "/sys/fs/bpf/demo_sockmap",
+            "demo_skb_sockhash",
+            "sockhash",
+            HirLiteral::String(b"peer-b".to_vec()),
+            MapKind::SockHash,
+            BpfHelper::SkRedirectHash,
+            3,
+        ),
+        (
+            "sk_skb_parser sockmap",
+            EbpfProgramType::SkSkbParser,
+            "/sys/fs/bpf/demo_sockmap",
+            "demo_parser_sockmap",
+            "sockmap",
+            HirLiteral::Int(5),
+            MapKind::SockMap,
+            BpfHelper::SkRedirectMap,
+            0,
+        ),
+        (
+            "sk_skb_parser sockhash",
+            EbpfProgramType::SkSkbParser,
+            "/sys/fs/bpf/demo_sockmap",
+            "demo_parser_sockhash",
+            "sockhash",
+            HirLiteral::String(b"peer-c".to_vec()),
+            MapKind::SockHash,
+            BpfHelper::SkRedirectHash,
+            4,
+        ),
+    ] {
+        let hir = make_intrinsic_call_return_program(
+            DeclId::new(42),
+            vec![HirLiteral::String(map_name.as_bytes().to_vec()), key],
+            vec![
+                (b"kind".to_vec(), HirLiteral::String(map_kind_arg.into())),
+                (b"flags".to_vec(), HirLiteral::Int(expected_flags)),
+            ],
+            vec![],
+            HirLiteral::Int(1),
+        );
+        let probe_ctx = ProbeContext::new(program_type, target);
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} redirect-socket should lower: {err}"));
+
+        let block = lowering.program.main.block(lowering.program.main.entry);
+        assert!(
+            block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind },
+                    ..
+                } if name == map_name && *kind == expected_kind
+            )),
+            "{context} redirect-socket should load the expected map fd"
+        );
+        assert!(
+            block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == expected_helper as u32
+                    && args.len() == 4
+                    && matches!(
+                        args.get(3),
+                        Some(crate::compiler::mir::MirValue::Const(flags)) if *flags == expected_flags
+                    )
+            )),
+            "{context} redirect-socket should call the expected socket redirect helper"
+        );
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("{context} redirect-socket should compile: {err}"));
+
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+        let map = result
+            .maps
+            .iter()
+            .find(|map| map.name == map_name)
+            .unwrap_or_else(|| panic!("{context} redirect-socket should emit map {map_name}"));
+        let expected_def = match expected_kind {
+            MapKind::SockMap => BpfMapDef::sock_map(10240),
+            MapKind::SockHash => BpfMapDef::sock_hash(map.def.key_size, 10240),
+            _ => unreachable!("socket redirect only accepts sockmap/sockhash"),
+        };
+        assert_eq!(map.def.map_type, expected_def.map_type);
+        assert_eq!(map.def.value_size, expected_def.value_size);
+        assert_eq!(map.def.max_entries, expected_def.max_entries);
+        if expected_kind == MapKind::SockMap {
+            assert_eq!(map.def.key_size, expected_def.key_size);
+        } else {
+            assert!(
+                map.def.key_size > 1,
+                "{context} sockhash should infer key size from the key value"
+            );
+        }
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|reloc| reloc.symbol_name == map_name),
+            "{context} redirect-socket should emit a map relocation"
+        );
+    }
+}
+
+#[test]
 fn test_compile_optimized_external_queue_map_peek_whole_struct_emit() {
     let hir = make_map_take_whole_value_program(DeclId::new(43), DeclId::new(44), "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
