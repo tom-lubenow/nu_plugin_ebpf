@@ -129,7 +129,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         kind: MapKind,
         key_size: Option<u32>,
     ) -> Result<(), CompileError> {
-        if !matches!(kind, MapKind::Hash | MapKind::PerCpuHash) {
+        if !kind.supports_builtin_counter_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
                 map_name, kind
@@ -555,12 +555,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         let mut inferred_key_size = key_size.max(1) as u32;
-        if matches!(
-            map.kind,
-            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter | MapKind::RingBuf
-        ) {
+        if map.kind.is_keyless_map() {
             inferred_key_size = 0;
-        } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+        } else if map.kind.is_array_index_map() {
             inferred_key_size = 4;
         }
         let (inferred_value_size, defaulted) = match value_size {

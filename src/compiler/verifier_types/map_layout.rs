@@ -49,7 +49,7 @@ pub(super) fn check_counter_map_kind(
     if !is_counter_map_name(&map.name) {
         return;
     }
-    if !matches!(map.kind, MapKind::Hash | MapKind::PerCpuHash) {
+    if !map.kind.supports_builtin_counter_map() {
         errors.push(VerifierTypeError::new(format!(
             "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
             map.name, map.kind
@@ -121,12 +121,9 @@ pub(super) fn register_generic_map_layout_spec(
     }
 
     let mut inferred_key_size = key_size.max(1) as u32;
-    if matches!(
-        map.kind,
-        MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
-    ) {
+    if map.kind.is_keyless_map() {
         inferred_key_size = 0;
-    } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
+    } else if map.kind.is_array_index_map() {
         inferred_key_size = 4;
     }
     let (inferred_value_size, defaulted) = match value_size {

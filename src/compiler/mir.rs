@@ -117,6 +117,21 @@ impl MapKind {
         )
     }
 
+    pub fn supports_builtin_counter_map(self) -> bool {
+        matches!(self, MapKind::Hash | MapKind::PerCpuHash)
+    }
+
+    pub fn is_array_index_map(self) -> bool {
+        matches!(self, MapKind::Array | MapKind::PerCpuArray)
+    }
+
+    pub fn is_keyless_map(self) -> bool {
+        matches!(
+            self,
+            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter | MapKind::RingBuf
+        )
+    }
+
     pub fn supports_map_fd_materialization(self) -> bool {
         match self {
             MapKind::Hash

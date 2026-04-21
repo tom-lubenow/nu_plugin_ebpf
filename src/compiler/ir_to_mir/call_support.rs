@@ -789,7 +789,7 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
-        if matches!(map_kind, MapKind::Array | MapKind::PerCpuArray) {
+        if map_kind.is_array_index_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map delete is not supported for array map kind {:?} ('{}')",
                 map_kind, map_name

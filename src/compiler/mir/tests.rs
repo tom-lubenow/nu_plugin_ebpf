@@ -85,4 +85,18 @@ fn test_map_kind_surface_classification() {
     assert!(MapKind::CpuMap.is_redirect_map());
     assert!(MapKind::XskMap.is_redirect_map());
     assert!(!MapKind::SockMap.is_redirect_map());
+
+    assert!(MapKind::Hash.supports_builtin_counter_map());
+    assert!(MapKind::PerCpuHash.supports_builtin_counter_map());
+    assert!(!MapKind::Array.supports_builtin_counter_map());
+
+    assert!(MapKind::Array.is_array_index_map());
+    assert!(MapKind::PerCpuArray.is_array_index_map());
+    assert!(!MapKind::Hash.is_array_index_map());
+
+    assert!(MapKind::Queue.is_keyless_map());
+    assert!(MapKind::Stack.is_keyless_map());
+    assert!(MapKind::BloomFilter.is_keyless_map());
+    assert!(MapKind::RingBuf.is_keyless_map());
+    assert!(!MapKind::Array.is_keyless_map());
 }

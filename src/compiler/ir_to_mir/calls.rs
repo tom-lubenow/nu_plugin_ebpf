@@ -2780,12 +2780,9 @@ impl<'a> HirToMirLowering<'a> {
             );
         } else if matches!(
             map_kind,
-            MapKind::Array
-                | MapKind::PerCpuArray
-                | MapKind::CgroupArray
-                | MapKind::PerfEventArray
-                | MapKind::ProgArray
-        ) {
+            MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray
+        ) || map_kind.is_array_index_map()
+        {
             self.vreg_type_hints.insert(
                 map_vreg,
                 MirType::MapRef {
@@ -2816,10 +2813,7 @@ impl<'a> HirToMirLowering<'a> {
                     val_ty: Box::new(MirType::Unknown),
                 },
             );
-        } else if matches!(
-            map_kind,
-            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
-        ) {
+        } else if map_kind.is_keyless_map() {
             self.vreg_type_hints.insert(
                 map_vreg,
                 MirType::MapRef {
