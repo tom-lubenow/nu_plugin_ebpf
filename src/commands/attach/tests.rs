@@ -2774,6 +2774,124 @@ fn make_list_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_typed_global_define_count_program(
+    define_decl_id: DeclId,
+    get_decl_id: DeclId,
+    count_decl_id: DeclId,
+    type_spec: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(type_spec.into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_typed_global_define_list_get_count_program(
+    define_decl_id: DeclId,
+    get_decl_id: DeclId,
+    count_decl_id: DeclId,
+    type_spec: &str,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_hist".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(type_spec.into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(0)],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 7],
+        ast: vec![None; 7],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_cgroup_sock_addr_nullable_socket_branch_program(count_decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -6432,6 +6550,98 @@ fn test_compile_optimized_sock_ops_stack_map_pop_count_program() {
             .any(|reloc| reloc.symbol_name == map.name)
     );
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_xdp_typed_global_define_type_int_program() {
+    let hir = make_typed_global_define_count_program(
+        DeclId::new(40),
+        DeclId::new(41),
+        DeclId::new(42),
+        "int",
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([
+        (DeclId::new(40), "global-define".to_string()),
+        (DeclId::new(41), "global-get".to_string()),
+        (DeclId::new(42), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed global-define int alias should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("typed global-define int alias should compile through attach flow");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "typed global-define int alias should produce bytecode"
+    );
+}
+
+#[test]
+fn test_compile_xdp_typed_global_define_type_list_int_program() {
+    let hir = make_typed_global_define_list_get_count_program(
+        DeclId::new(40),
+        DeclId::new(41),
+        DeclId::new(42),
+        "list:int:4",
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([
+        (DeclId::new(40), "global-define".to_string()),
+        (DeclId::new(41), "global-get".to_string()),
+        (DeclId::new(42), "count".to_string()),
+    ]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed global-define list:int alias should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("typed global-define list:int alias should compile through attach flow");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "typed global-define list:int alias should produce bytecode"
+    );
 }
 
 #[test]

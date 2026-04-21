@@ -113,7 +113,7 @@ impl ParsedNamedGlobalType {
             "i8" => Some((MirType::I8, NamedGlobalTypeShape::I8)),
             "i16" => Some((MirType::I16, NamedGlobalTypeShape::I16)),
             "i32" => Some((MirType::I32, NamedGlobalTypeShape::I32)),
-            "i64" => Some((MirType::I64, NamedGlobalTypeShape::I64)),
+            "i64" | "int" => Some((MirType::I64, NamedGlobalTypeShape::I64)),
             "duration" => Some((MirType::I64, NamedGlobalTypeShape::Duration)),
             "filesize" => Some((MirType::I64, NamedGlobalTypeShape::Filesize)),
             "u8" => Some((MirType::U8, NamedGlobalTypeShape::U8)),
@@ -282,7 +282,8 @@ impl ParsedNamedGlobalType {
         }
 
         if let Some(max_len) = spec
-            .strip_prefix("list:i64:")
+            .strip_prefix("list:int:")
+            .or_else(|| spec.strip_prefix("list:i64:"))
             .map(|len| {
                 len.parse::<usize>().map_err(|_| {
                     CompileError::UnsupportedInstruction(format!(
@@ -314,7 +315,7 @@ impl ParsedNamedGlobalType {
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:i64:N, or nested record{{field:type,...}}",
+            "unsupported global type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, or nested record{{field:type,...}}",
             spec
         )))
     }

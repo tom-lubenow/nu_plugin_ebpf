@@ -121,7 +121,7 @@ impl<'a> HirToMirLowering<'a> {
                         "{prefix} because nested field '{path}' needs explicit binary length; use a concrete record initializer to establish nested byte-buffer lengths, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-size byte fields"
                     ),
                     (None, NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
-                        "{prefix} because plain Nushell list type annotations do not carry fixed numeric-list capacity; use a concrete list initializer such as `[]` to establish the exact capacity, or use `global-define --type list:i64:N` when you need an explicit zero-initialized fixed-capacity numeric list"
+                        "{prefix} because plain Nushell list type annotations do not carry fixed numeric-list capacity; use a concrete list initializer such as `[]` to establish the exact capacity, or use `global-define --type list:int:N` (alias `list:i64:N`) when you need an explicit zero-initialized fixed-capacity numeric list"
                     ),
                     (Some(path), NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
                         "{prefix} because nested field '{path}' needs explicit numeric-list capacity; use a concrete record initializer to establish nested list capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity list fields"

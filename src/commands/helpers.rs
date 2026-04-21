@@ -412,9 +412,9 @@ globals used by earlier `global-get`s.
 Examples:
   7 | global-define seen_pid
   $ctx.pid | global-define --zero seen_pid
-  global-define --type i64 seen_pid
+  global-define --type int seen_pid
   "bash" | global-define --type string:16 seen_comm
-  global-define --type 'record{pid:i64,comm:bytes:16}' seen_state
+  global-define --type 'record{pid:int,comm:bytes:16}' seen_state
   let state = (global-get seen_pid)"#
     }
 
@@ -424,7 +424,7 @@ Examples:
             .named(
                 "type",
                 SyntaxShape::String,
-                "Declare a global from a type spec (zero-initialized with no input, or explicitly initialized from a compile-time constant input) using i8/i16/i32/i64/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:i64:N/record{field:type,...}",
+                "Declare a global from a type spec (zero-initialized with no input, or explicitly initialized from a compile-time constant input) using i8/i16/i32/int(i64)/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:int:N(list:i64:N)/record{field:type,...}",
                 None,
             )
             .switch(
@@ -449,7 +449,7 @@ Examples:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type i64 seen_pid; global-get seen_pid }",
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type int seen_pid; global-get seen_pid }",
                 description: "Declare a zero-initialized named per-program global directly from a type spec",
                 result: None,
             },
@@ -464,7 +464,7 @@ Examples:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type 'record{pid:i64,comm:bytes:16}' seen_state; (global-get seen_state).pid | count }",
+                example: "ebpf attach 'kprobe:sys_read' {|ctx| global-define --type 'record{pid:int,comm:bytes:16}' seen_state; (global-get seen_state).pid | count }",
                 description: "Declare a zero-initialized flat record global directly from a type spec",
                 result: None,
             },
