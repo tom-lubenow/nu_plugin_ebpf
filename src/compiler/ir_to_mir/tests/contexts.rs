@@ -400,6 +400,60 @@ fn test_lower_cgroup_sock_ctx_state_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_release_ctx_bound_dev_if_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("bound_dev_if")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_release");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock sock_release ctx.bound_dev_if should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::BoundDevIf,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_release_ctx_priority_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("priority")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_release");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock sock_release ctx.priority should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::SockPriority,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_tc_ctx_socket_family_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("family")],
@@ -3584,6 +3638,68 @@ fn test_lower_cgroup_sock_ctx_mark_assignment_on_sock_create() {
         inst,
         MirInst::StoreCtxField {
             target: CtxStoreTarget::CgroupSockMark,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_ctx_bound_dev_if_assignment_on_sock_release() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("bound_dev_if")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_release");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock sock_release ctx.bound_dev_if assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockBoundDevIf,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_ctx_priority_assignment_on_sock_release() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_release");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock sock_release ctx.priority assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::CgroupSockPriority,
             ty: MirType::U32,
             ..
         }

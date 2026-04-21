@@ -5236,6 +5236,30 @@ fn test_compile_cgroup_sock_ctx_family_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_sock_release_ctx_bound_dev_if_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_release",
+        CellPath {
+            members: vec![string_member("bound_dev_if")],
+        },
+        "cgroup_sock:sock_release ctx.bound_dev_if count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_sock_release_ctx_priority_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_release",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        "cgroup_sock:sock_release ctx.priority count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_addr_ctx_user_port_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockAddr,
@@ -5708,6 +5732,34 @@ fn test_compile_cgroup_sock_sock_create_ctx_mark_store_program() {
         HirLiteral::Int(7),
         HirLiteral::Int(1),
         "cgroup_sock:sock_create ctx.mark store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_sock_release_ctx_bound_dev_if_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_release",
+        CellPath {
+            members: vec![string_member("bound_dev_if")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(1),
+        "cgroup_sock:sock_release ctx.bound_dev_if store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_sock_release_ctx_priority_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_release",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(1),
+        "cgroup_sock:sock_release ctx.priority store",
     );
 }
 
