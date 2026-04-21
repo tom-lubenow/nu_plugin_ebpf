@@ -1589,6 +1589,7 @@ impl ProgramSpec {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn struct_ops_family(&self) -> Option<StructOpsFamily> {
         self.struct_ops_value_type_name()
             .map(StructOpsFamily::from_value_type_name)

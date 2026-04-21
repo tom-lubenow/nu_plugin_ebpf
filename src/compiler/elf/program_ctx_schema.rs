@@ -294,6 +294,7 @@ impl EbpfProgramType {
         context_family_ctx_field_is_raw_context_pointer(self.context_family(), field)
     }
 
+    #[cfg(test)]
     pub(crate) fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
         self.ctx_field_is_raw_context_pointer(field)
             || program_type_ctx_field_pointer_is_non_null(*self, field)
