@@ -26,6 +26,7 @@ impl BpfHelper {
             39 => Some(Self::SkbPullData),
             40 => Some(Self::CsumUpdate),
             41 => Some(Self::SetHashInvalid),
+            42 => Some(Self::GetNumaNodeId),
             48 => Some(Self::SetHash),
             43 => Some(Self::SkbChangeHead),
             44 => Some(Self::XdpAdjustHead),
@@ -286,6 +287,7 @@ impl BpfHelper {
             | BpfHelper::KtimeGetBootNs
             | BpfHelper::GetPrandomU32
             | BpfHelper::GetSmpProcessorId
+            | BpfHelper::GetNumaNodeId
             | BpfHelper::GetCurrentPidTgid
             | BpfHelper::GetCurrentUidGid
             | BpfHelper::GetCurrentCgroupId => HelperSignature {

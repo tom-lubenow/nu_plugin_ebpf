@@ -2040,6 +2040,25 @@ fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
 }
 
 #[test]
+fn test_infer_get_numa_node_id_helper_returns_i64() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetNumaNodeId as u32,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_numa_node_id to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_infer_tc_egress_skb_metadata_helpers() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),

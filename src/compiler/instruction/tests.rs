@@ -51,6 +51,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetPrandomU32)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_numa_node_id"),
+        Some(BpfHelper::GetNumaNodeId)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_redirect"),
         Some(BpfHelper::Redirect)
     ));
@@ -651,6 +655,12 @@ fn test_helper_signature_get_current_task_btf() {
 fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::GetPrandomU32 as u32)
         .expect("expected bpf_get_prandom_u32 helper signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::GetNumaNodeId as u32)
+        .expect("expected bpf_get_numa_node_id helper signature");
     assert_eq!(sig.min_args, 0);
     assert_eq!(sig.max_args, 0);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);

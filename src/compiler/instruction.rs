@@ -90,6 +90,8 @@ pub enum BpfHelper {
     CsumUpdate = 40,
     /// void bpf_set_hash_invalid(skb)
     SetHashInvalid = 41,
+    /// long bpf_get_numa_node_id(void)
+    GetNumaNodeId = 42,
     /// long bpf_set_hash(skb, hash)
     SetHash = 48,
     /// long bpf_skb_change_head(skb, len, flags)
@@ -315,6 +317,7 @@ impl BpfHelper {
             BpfHelper::GetHashRecalc => "bpf_get_hash_recalc",
             BpfHelper::CsumUpdate => "bpf_csum_update",
             BpfHelper::SetHashInvalid => "bpf_set_hash_invalid",
+            BpfHelper::GetNumaNodeId => "bpf_get_numa_node_id",
             BpfHelper::SetHash => "bpf_set_hash",
             BpfHelper::SkbChangeHead => "bpf_skb_change_head",
             BpfHelper::XdpAdjustHead => "bpf_xdp_adjust_head",
@@ -445,6 +448,7 @@ impl BpfHelper {
             "get_hash_recalc" => Some(Self::GetHashRecalc),
             "csum_update" => Some(Self::CsumUpdate),
             "set_hash_invalid" => Some(Self::SetHashInvalid),
+            "get_numa_node_id" => Some(Self::GetNumaNodeId),
             "set_hash" => Some(Self::SetHash),
             "skb_change_head" => Some(Self::SkbChangeHead),
             "xdp_adjust_head" => Some(Self::XdpAdjustHead),
