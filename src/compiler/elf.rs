@@ -848,6 +848,39 @@ pub enum EbpfProgramType {
     StructOps,
 }
 
+struct ProgramBtfCallableSurfaceSpec {
+    program_types: &'static [EbpfProgramType],
+    surface: ProgramBtfCallableSurface,
+}
+
+const FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Fentry, EbpfProgramType::Fexit];
+
+const TP_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::TpBtf];
+
+const LSM_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Lsm];
+
+const STRUCT_OPS_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::StructOps];
+
+const BTF_CALLABLE_SURFACES: &[ProgramBtfCallableSurfaceSpec] = &[
+    ProgramBtfCallableSurfaceSpec {
+        program_types: FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::FunctionTrampoline,
+    },
+    ProgramBtfCallableSurfaceSpec {
+        program_types: TP_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::TpBtf,
+    },
+    ProgramBtfCallableSurfaceSpec {
+        program_types: LSM_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::LsmHook,
+    },
+    ProgramBtfCallableSurfaceSpec {
+        program_types: STRUCT_OPS_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::StructOpsCallback,
+    },
+];
+
 impl EbpfProgramType {
     pub fn info(&self) -> &'static ProgramTypeInfo {
         match self {
@@ -972,15 +1005,10 @@ impl EbpfProgramType {
     }
 
     pub fn btf_callable_surface(&self) -> Option<ProgramBtfCallableSurface> {
-        match self {
-            EbpfProgramType::Fentry | EbpfProgramType::Fexit => {
-                Some(ProgramBtfCallableSurface::FunctionTrampoline)
-            }
-            EbpfProgramType::TpBtf => Some(ProgramBtfCallableSurface::TpBtf),
-            EbpfProgramType::Lsm => Some(ProgramBtfCallableSurface::LsmHook),
-            EbpfProgramType::StructOps => Some(ProgramBtfCallableSurface::StructOpsCallback),
-            _ => None,
-        }
+        BTF_CALLABLE_SURFACES
+            .iter()
+            .find(|surface| surface.program_types.contains(self))
+            .map(|surface| surface.surface)
     }
 
     pub fn uses_raw_tracepoint_args(&self) -> bool {

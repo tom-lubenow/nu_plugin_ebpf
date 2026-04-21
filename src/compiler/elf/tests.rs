@@ -1046,6 +1046,10 @@ fn test_program_type_btf_callable_surface_follows_program_model() {
         Some(ProgramBtfCallableSurface::FunctionTrampoline)
     );
     assert_eq!(
+        EbpfProgramType::Fexit.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::FunctionTrampoline)
+    );
+    assert_eq!(
         EbpfProgramType::TpBtf.btf_callable_surface(),
         Some(ProgramBtfCallableSurface::TpBtf)
     );
