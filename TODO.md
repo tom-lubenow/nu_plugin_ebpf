@@ -285,6 +285,7 @@ Near-term priority order:
   - Recent progress: XDP targets now accept explicit safe/default generic, driver, and hardware attach modes (`xdp:IFACE[:skb|drv|hw][:frags]`), preserving `IFACE` for attach while emitting the `xdp.frags` ELF section when multi-buffer support is requested.
   - Recent progress: task pt_regs register reads now have an ordinary projection surface (`ctx.task.pt_regs.arg0` through `.arg5` and `.retval`) backed by `bpf_task_pt_regs` plus the shared pt_regs offset resolver, so current-task register snapshots no longer require raw helper spelling.
   - Recent progress: program-specific context alias routing now uses explicit alias-surface tables and a tracepoint builtin-preservation allowlist instead of an inline `EbpfProgramType` selector match.
+  - Recent progress: `ProbeContext` schema fallback accessors now route through the resolved `program_type()` instead of directly consulting the stored legacy `probe_type`, keeping typed `ProgramSpec` metadata on the main path.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.
