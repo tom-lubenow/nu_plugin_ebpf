@@ -614,6 +614,8 @@ const CGROUP_SYSCTL_CTX_FIELDS: &[CtxField] = &[
     CtxField::SysctlFilePos,
     CtxField::SysctlName,
     CtxField::SysctlBaseName,
+    CtxField::SysctlCurrentValue,
+    CtxField::SysctlNewValue,
 ];
 const CGROUP_SOCKOPT_CTX_FIELDS: &[CtxField] = &[
     CtxField::SockoptLevel,

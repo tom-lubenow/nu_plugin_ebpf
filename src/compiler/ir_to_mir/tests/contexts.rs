@@ -777,6 +777,10 @@ fn test_lower_cgroup_sysctl_ctx_name_fields() {
         ("name", CtxField::SysctlName),
         ("sysctl_base_name", CtxField::SysctlBaseName),
         ("base_name", CtxField::SysctlBaseName),
+        ("sysctl_current_value", CtxField::SysctlCurrentValue),
+        ("current_value", CtxField::SysctlCurrentValue),
+        ("sysctl_new_value", CtxField::SysctlNewValue),
+        ("new_value", CtxField::SysctlNewValue),
     ] {
         let hir = make_ctx_path_program(CellPath {
             members: vec![string_member(field_name)],

@@ -4249,6 +4249,67 @@ fn test_compile_cgroup_sysctl_name_fields_call_sysctl_get_name() {
 }
 
 #[test]
+fn test_compile_cgroup_sysctl_value_fields_call_sysctl_value_helpers() {
+    for (field, expected_helper) in [
+        (
+            CtxField::SysctlCurrentValue,
+            BpfHelper::SysctlGetCurrentValue,
+        ),
+        (CtxField::SysctlNewValue, BpfHelper::SysctlGetNewValue),
+    ] {
+        let ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+        let mut func = LirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let slot = func.alloc_stack_slot(
+            crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN,
+            8,
+            StackSlotKind::Local,
+        );
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(LirInst::LoadCtxField {
+                dst,
+                field,
+                slot: Some(slot),
+            });
+        func.block_mut(entry).terminator = LirInst::Return {
+            val: Some(MirValue::VReg(dst)),
+        };
+
+        let program = LirProgram::new(func);
+        let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+        compiler
+            .prepare_function_state(
+                &program.main,
+                compiler.available_regs.clone(),
+                program.main.precolored.clone(),
+            )
+            .unwrap();
+        compiler.compile_function(&program.main).unwrap();
+        compiler.fixup_jumps().unwrap();
+
+        assert!(compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_ALU64 | opcode::BPF_MOV | opcode::BPF_X
+                && insn.dst_reg == EbpfReg::R1.as_u8()
+                && insn.src_reg == EbpfReg::R9.as_u8()
+        }));
+        assert!(compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_ALU64 | opcode::BPF_MOV | opcode::BPF_K
+                && insn.dst_reg == EbpfReg::R3.as_u8()
+                && insn.imm == crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN as i32
+        }));
+        assert!(compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL && insn.imm == expected_helper as i32
+        }));
+    }
+}
+
+#[test]
 fn test_compile_tc_tstamp_store_uses_real_skb_tstamp_offset() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
 

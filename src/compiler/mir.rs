@@ -739,6 +739,10 @@ pub enum CtxField {
     SysctlName,
     /// Sysctl base name copied by bpf_sysctl_get_name(ctx, ..., BPF_F_SYSCTL_BASE_NAME)
     SysctlBaseName,
+    /// Sysctl current value copied by bpf_sysctl_get_current_value(ctx, ...)
+    SysctlCurrentValue,
+    /// Sysctl proposed new value copied by bpf_sysctl_get_new_value(ctx, ...)
+    SysctlNewValue,
     /// bpf_sockopt::level
     SockoptLevel,
     /// bpf_sockopt::optname
@@ -886,6 +890,8 @@ impl CtxField {
             CtxField::SysctlFilePos => "file_pos".to_string(),
             CtxField::SysctlName => "sysctl_name".to_string(),
             CtxField::SysctlBaseName => "sysctl_base_name".to_string(),
+            CtxField::SysctlCurrentValue => "sysctl_current_value".to_string(),
+            CtxField::SysctlNewValue => "sysctl_new_value".to_string(),
             CtxField::SockoptLevel => "level".to_string(),
             CtxField::SockoptOptname => "optname".to_string(),
             CtxField::SockoptOptlen => "optlen".to_string(),

@@ -15,6 +15,8 @@ const SK_MSG_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("size", CtxField
 const CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("name", CtxField::SysctlName),
     ("base_name", CtxField::SysctlBaseName),
+    ("current_value", CtxField::SysctlCurrentValue),
+    ("new_value", CtxField::SysctlNewValue),
 ];
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
     &[("retval", CtxField::SockoptRetval)];
@@ -119,6 +121,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("file_pos", CtxField::SysctlFilePos),
     ("sysctl_name", CtxField::SysctlName),
     ("sysctl_base_name", CtxField::SysctlBaseName),
+    ("sysctl_current_value", CtxField::SysctlCurrentValue),
+    ("sysctl_new_value", CtxField::SysctlNewValue),
     ("rtt_min", CtxField::SockOpsRttMin),
     ("snd_ssthresh", CtxField::SockOpsSndSsthresh),
     ("rcv_nxt", CtxField::SockOpsRcvNxt),

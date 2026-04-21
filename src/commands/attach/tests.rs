@@ -7059,6 +7059,30 @@ fn test_compile_cgroup_sysctl_ctx_base_name_alias_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sysctl_ctx_current_value_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("sysctl_current_value")],
+        },
+        "cgroup_sysctl ctx.sysctl_current_value count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sysctl_ctx_new_value_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("new_value"), int_member(0)],
+        },
+        "cgroup_sysctl ctx.new_value[0] count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_set_ctx_level_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockopt,

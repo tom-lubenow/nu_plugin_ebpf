@@ -619,15 +619,16 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             }),
             false,
         ),
-        CtxField::SysctlName | CtxField::SysctlBaseName => {
-            BaseContextFieldSchemaSpec::stack_backed(
-                ContextFieldTypeSpec::stack_backed(MirType::Array {
-                    elem: Box::new(MirType::U8),
-                    len: SYSCTL_STRING_FIELD_LEN,
-                }),
-                false,
-            )
-        }
+        CtxField::SysctlName
+        | CtxField::SysctlBaseName
+        | CtxField::SysctlCurrentValue
+        | CtxField::SysctlNewValue => BaseContextFieldSchemaSpec::stack_backed(
+            ContextFieldTypeSpec::stack_backed(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: SYSCTL_STRING_FIELD_LEN,
+            }),
+            false,
+        ),
         CtxField::Arg(_) | CtxField::RetVal | CtxField::KStack | CtxField::UStack => {
             return None;
         }

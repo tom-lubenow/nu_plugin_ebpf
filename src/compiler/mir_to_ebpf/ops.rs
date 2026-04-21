@@ -1588,11 +1588,20 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
-            CtxField::SysctlName | CtxField::SysctlBaseName => {
-                let flags = match field {
-                    CtxField::SysctlName => 0,
-                    CtxField::SysctlBaseName => BPF_F_SYSCTL_BASE_NAME,
+            CtxField::SysctlName
+            | CtxField::SysctlBaseName
+            | CtxField::SysctlCurrentValue
+            | CtxField::SysctlNewValue => {
+                let helper = match field {
+                    CtxField::SysctlName | CtxField::SysctlBaseName => BpfHelper::SysctlGetName,
+                    CtxField::SysctlCurrentValue => BpfHelper::SysctlGetCurrentValue,
+                    CtxField::SysctlNewValue => BpfHelper::SysctlGetNewValue,
                     _ => unreachable!(),
+                };
+                let name_flags = match field {
+                    CtxField::SysctlName => Some(0),
+                    CtxField::SysctlBaseName => Some(BPF_F_SYSCTL_BASE_NAME),
+                    _ => None,
                 };
                 let field_name = field.display_name();
                 let buf_offset = if let Some(slot) = slot {
@@ -1624,10 +1633,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                     EbpfReg::R3,
                     SYSCTL_STRING_FIELD_LEN as i32,
                 ));
-                self.instructions
-                    .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags));
-                self.instructions
-                    .push(EbpfInsn::call(BpfHelper::SysctlGetName));
+                if let Some(flags) = name_flags {
+                    self.instructions
+                        .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags));
+                }
+                self.instructions.push(EbpfInsn::call(helper));
 
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R10));
