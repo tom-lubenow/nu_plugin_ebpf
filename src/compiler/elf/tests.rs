@@ -1029,12 +1029,21 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     assert!(ingress.helper_call_error(BpfHelper::RedirectPeer).is_none());
     assert!(ingress.helper_call_error(BpfHelper::SkAssign).is_none());
     assert_eq!(
+        ingress.helper_call_error(BpfHelper::SkbCgroupId),
+        Some("helper 'bpf_skb_cgroup_id' is only valid in tc egress programs".to_string())
+    );
+    assert_eq!(
         egress.helper_call_error(BpfHelper::RedirectPeer),
         Some("helper 'bpf_redirect_peer' is only valid in tc ingress programs".to_string())
     );
     assert_eq!(
         egress.helper_call_error(BpfHelper::SkAssign),
         Some("helper 'bpf_sk_assign' is only valid in tc ingress programs".to_string())
+    );
+    assert!(
+        egress
+            .helper_call_error(BpfHelper::SkbAncestorCgroupId)
+            .is_none()
     );
     assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
     assert!(connect.helper_call_error(BpfHelper::GetSockOpt).is_none());
@@ -1103,6 +1112,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbUnderCgroup),
         Some("helper 'bpf_skb_under_cgroup' is only valid in tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupId),
+        Some("helper 'bpf_skb_cgroup_id' is only valid in tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
@@ -1401,6 +1414,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbUnderCgroup),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbAncestorCgroupId),
         None
     );
     assert_eq!(

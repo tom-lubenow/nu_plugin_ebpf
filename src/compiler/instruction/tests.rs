@@ -207,6 +207,18 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkAncestorCgroupId)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_cgroup_id"),
+        Some(BpfHelper::SkbCgroupId)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_ancestor_cgroup_id"),
+        Some(BpfHelper::SkbAncestorCgroupId)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_get_current_ancestor_cgroup_id"),
+        Some(BpfHelper::GetCurrentAncestorCgroupId)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_current_task_btf"),
         Some(BpfHelper::GetCurrentTaskBtf)
     ));
@@ -593,6 +605,13 @@ fn test_helper_signature_get_current_cgroup_id() {
     assert_eq!(sig.min_args, 0);
     assert_eq!(sig.max_args, 0);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::GetCurrentAncestorCgroupId as u32)
+        .expect("expected bpf_get_current_ancestor_cgroup_id helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -708,6 +727,21 @@ fn test_helper_signatures_sk_cgroup_helpers() {
 
     let sig = HelperSignature::for_id(BpfHelper::SkAncestorCgroupId as u32)
         .expect("expected bpf_sk_ancestor_cgroup_id helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbCgroupId as u32)
+        .expect("expected bpf_skb_cgroup_id helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbAncestorCgroupId as u32)
+        .expect("expected bpf_skb_ancestor_cgroup_id helper signature");
     assert_eq!(sig.min_args, 2);
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);

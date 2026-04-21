@@ -1303,10 +1303,32 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::SkbCgroupId => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper skb_cgroup_id skb",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::SkAncestorCgroupId => HelperSemantics {
                 ptr_arg_rules: &[HelperPtrArgRule {
                     arg_idx: 0,
                     op: "helper sk_ancestor_cgroup_id sk",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbAncestorCgroupId => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper skb_ancestor_cgroup_id skb",
                     allowed: KERNEL,
                     fixed_size: None,
                     size_from_arg: None,

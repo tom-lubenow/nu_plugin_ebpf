@@ -1991,6 +1991,130 @@ fn test_infer_sk_cgroup_helpers_in_cgroup_skb_program() {
 }
 
 #[test]
+fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetCurrentAncestorCgroupId as u32,
+        args: vec![MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_current_ancestor_cgroup_id to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_skb_cgroup_helpers_in_tc_egress_program() {
+    for (helper, extra_args) in [
+        (BpfHelper::SkbCgroupId, vec![]),
+        (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(extra_args.into_iter())
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected skb cgroup helper to infer on tc egress");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_skb_cgroup_helpers_reject_tc_ingress() {
+    for (helper, extra_args) in [
+        (BpfHelper::SkbCgroupId, vec![]),
+        (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(extra_args.into_iter())
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb cgroup helper to reject tc ingress");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("is only valid in tc egress programs"))
+        );
+    }
+}
+
+#[test]
+fn test_type_error_skb_cgroup_helpers_reject_non_tc_program() {
+    for (helper, extra_args) in [
+        (BpfHelper::SkbCgroupId, vec![]),
+        (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: std::iter::once(MirValue::VReg(ctx))
+                .chain(extra_args.into_iter())
+                .collect(),
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb cgroup helper to reject non-tc program");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("is only valid in tc programs"))
+        );
+    }
+}
+
+#[test]
 fn test_type_error_redirect_peer_helper_rejects_tc_egress() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();

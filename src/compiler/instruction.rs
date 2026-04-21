@@ -112,6 +112,8 @@ pub enum BpfHelper {
     GetCurrentUidGid = 15,
     /// u64 bpf_get_current_cgroup_id(void)
     GetCurrentCgroupId = 80,
+    /// u64 bpf_get_current_ancestor_cgroup_id(int ancestor_level)
+    GetCurrentAncestorCgroupId = 123,
     /// int bpf_get_current_comm(buf, size)
     GetCurrentComm = 16,
     /// long bpf_msg_apply_bytes(msg, bytes)
@@ -144,6 +146,10 @@ pub enum BpfHelper {
     MsgRedirectMap = 60,
     /// u64 bpf_get_netns_cookie(ctx)
     GetNetnsCookie = 122,
+    /// u64 bpf_skb_cgroup_id(skb)
+    SkbCgroupId = 79,
+    /// u64 bpf_skb_ancestor_cgroup_id(skb, ancestor_level)
+    SkbAncestorCgroupId = 83,
     /// long bpf_sock_hash_update(skops, map, key, flags)
     SockHashUpdate = 70,
     /// long bpf_msg_redirect_hash(msg, map, key, flags)
@@ -308,6 +314,7 @@ impl BpfHelper {
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
+            BpfHelper::GetCurrentAncestorCgroupId => "bpf_get_current_ancestor_cgroup_id",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
@@ -324,6 +331,8 @@ impl BpfHelper {
             BpfHelper::SockOpsCbFlagsSet => "bpf_sock_ops_cb_flags_set",
             BpfHelper::MsgRedirectMap => "bpf_msg_redirect_map",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
+            BpfHelper::SkbCgroupId => "bpf_skb_cgroup_id",
+            BpfHelper::SkbAncestorCgroupId => "bpf_skb_ancestor_cgroup_id",
             BpfHelper::SockHashUpdate => "bpf_sock_hash_update",
             BpfHelper::MsgRedirectHash => "bpf_msg_redirect_hash",
             BpfHelper::SkRedirectHash => "bpf_sk_redirect_hash",
@@ -429,6 +438,7 @@ impl BpfHelper {
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
+            "get_current_ancestor_cgroup_id" => Some(Self::GetCurrentAncestorCgroupId),
             "get_current_comm" => Some(Self::GetCurrentComm),
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
@@ -445,6 +455,8 @@ impl BpfHelper {
             "sock_ops_cb_flags_set" => Some(Self::SockOpsCbFlagsSet),
             "msg_redirect_map" => Some(Self::MsgRedirectMap),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
+            "skb_cgroup_id" => Some(Self::SkbCgroupId),
+            "skb_ancestor_cgroup_id" => Some(Self::SkbAncestorCgroupId),
             "sock_hash_update" => Some(Self::SockHashUpdate),
             "msg_redirect_hash" => Some(Self::MsgRedirectHash),
             "sk_redirect_hash" => Some(Self::SkRedirectHash),

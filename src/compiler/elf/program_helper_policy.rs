@@ -357,6 +357,8 @@ fn helper_list_contains(helpers: &[BpfHelper], helper: BpfHelper) -> bool {
 }
 
 const TC_INGRESS_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::RedirectPeer, BpfHelper::SkAssign];
+const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] =
+    &[BpfHelper::SkbCgroupId, BpfHelper::SkbAncestorCgroupId];
 const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[
     BpfHelper::Bind,
     BpfHelper::GetSockOpt,
@@ -424,7 +426,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::RedirectPeer
         | BpfHelper::RedirectNeigh
         | BpfHelper::SkbSetTstamp
-        | BpfHelper::SkbUnderCgroup => HelperProgramSurfaceSpec {
+        | BpfHelper::SkbUnderCgroup
+        | BpfHelper::SkbCgroupId
+        | BpfHelper::SkbAncestorCgroupId => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Tc,
         },
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
@@ -665,6 +669,14 @@ impl ProgramSpec {
             {
                 Some(format!(
                     "helper '{}' is only valid in tc ingress programs",
+                    helper.name()
+                ))
+            }
+            ProgramAttachShape::Tc { ingress: true }
+                if helper_list_contains(TC_EGRESS_ONLY_HELPERS, helper) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tc egress programs",
                     helper.name()
                 ))
             }
