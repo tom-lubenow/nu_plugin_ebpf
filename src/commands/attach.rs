@@ -694,6 +694,9 @@ Aggregation commands:
   count             - Count occurrences by key
   histogram         - Add value to log2 histogram
 
+Supported Nushell primitives:
+  random int        - Return a BPF pseudo-random integer (zero-arg form)
+
 Timing commands:
   start-timer       - Record timestamp (use with --pin for cross-probe timing)
   stop-timer        - Calculate elapsed nanoseconds since start-timer

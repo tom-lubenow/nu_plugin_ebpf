@@ -113,6 +113,27 @@ fn make_nested_metadata_record_call_program(decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_no_arg_call_program(decl_id: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::Call {
+                decl_id,
+                src_dst: RegId::new(0),
+                args: HirCallArgs::default(),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_mir_function_creation() {
     let mut func = MirFunction::new();
@@ -122,6 +143,30 @@ fn test_mir_function_creation() {
     assert_eq!(v0.0, 0);
     assert_eq!(v1.0, 1);
     assert_eq!(func.vreg_count, 2);
+}
+
+#[test]
+fn test_lower_random_int_calls_prandom_helper() {
+    let decl_id = DeclId::new(42);
+    let hir = make_no_arg_call_program(decl_id);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(decl_id, "random int".to_string());
+
+    let result = lower_hir_to_mir(&hir, None, &decl_names).expect("random int should lower to MIR");
+
+    let helper = result
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. } => Some((*helper, args.clone())),
+            _ => None,
+        })
+        .expect("expected helper call");
+
+    assert_eq!(helper.0, BpfHelper::GetPrandomU32 as u32);
+    assert!(helper.1.is_empty(), "random int should pass no helper args");
 }
 
 #[test]

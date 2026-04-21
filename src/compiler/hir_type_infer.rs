@@ -390,6 +390,7 @@ impl<'a> HirTypeInference<'a> {
                     .map(|s| s.as_str())
                     .unwrap_or("");
                 let ret_ty = match name {
+                    "random int" => HMType::I64,
                     "stop-timer" => HMType::U64,
                     _ => HMType::Unknown,
                 };

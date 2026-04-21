@@ -203,6 +203,33 @@ impl<'a> HirToMirLowering<'a> {
                 self.emit(MirInst::StopTimer { dst: dst_vreg });
             }
 
+            "random int" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "random int does not accept flags in eBPF".into(),
+                    ));
+                }
+                self.require_only_named_args("random int", &[])?;
+                if !self.positional_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "random int does not accept positional arguments in eBPF".into(),
+                    ));
+                }
+                if self.pipeline_input.is_some() || src_dst_had_value {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "random int does not accept pipeline input in eBPF".into(),
+                    ));
+                }
+
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: BpfHelper::GetPrandomU32 as u32,
+                    args: Vec::new(),
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "read-str" => {
                 let ptr_vreg = self.pipeline_input.unwrap_or(dst_vreg);
 

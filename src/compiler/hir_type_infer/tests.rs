@@ -222,6 +222,34 @@ fn test_ctx_param_is_seeded_as_pointer_for_helper_call() {
 }
 
 #[test]
+fn test_random_int_infers_integer() {
+    let decl_id = DeclId::new(42);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::Call {
+                decl_id,
+                src_dst: RegId::new(0),
+                args: HirCallArgs::default(),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(decl_id, "random int".to_string());
+
+    let inferred = infer_hir_types(&program, &decl_names).expect("random int should infer");
+    assert_eq!(inferred.main.get(&RegId::new(0)), Some(&HMType::I64));
+}
+
+#[test]
 fn test_record_spread_requires_record_source() {
     let func = HirFunction {
         blocks: vec![HirBlock {

@@ -2741,6 +2741,34 @@ fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgra
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_random_int_count_program(random_decl_id: DeclId, count_decl_id: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: random_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 2],
+        ast: vec![None; 2],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bound_ctx_path_projection_call_program(
     root_path: CellPath,
     projection_path: CellPath,
@@ -6454,6 +6482,25 @@ fn test_compile_xdp_ctx_data_meta_byte_counter_program() {
             members: vec![string_member("data_meta"), int_member(0)],
         },
         "xdp ctx.data_meta[0] count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_random_int_counter_program() {
+    let random_decl_id = DeclId::new(42);
+    let count_decl_id = DeclId::new(43);
+    let hir = make_random_int_count_program(random_decl_id, count_decl_id);
+    let decl_names = HashMap::from([
+        (random_decl_id, "random int".to_string()),
+        (count_decl_id, "count".to_string()),
+    ]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "xdp random int count",
     );
 }
 

@@ -32,7 +32,18 @@ use crate::kernel_btf::TrampolineFieldSelector;
 
 /// Common Nushell commands used in eBPF closures.
 const NU_CLOSURE_COMMANDS: &[&str] = &[
-    "where", "each", "skip", "first", "last", "get", "select", "reject", "default", "if", "match",
+    "where",
+    "each",
+    "skip",
+    "first",
+    "last",
+    "get",
+    "select",
+    "reject",
+    "default",
+    "if",
+    "match",
+    "random int",
 ];
 
 fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>, LabeledError> {
