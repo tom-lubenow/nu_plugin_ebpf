@@ -32,6 +32,140 @@ fn context_family_ctx_field_is_raw_context_pointer(
         )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProgramContextLayoutSpec {
+    program_type: EbpfProgramType,
+    data_meta: Option<PacketContextKind>,
+    socket_family: Option<SocketContextLayout>,
+    sock_type: Option<SocketContextLayout>,
+    protocol: Option<SocketContextLayout>,
+    socket_ref: Option<SocketContextLayout>,
+    ingress_ifindex: Option<IngressIfindexContextLayout>,
+    sock_mark_priority: Option<SocketContextLayout>,
+    sock_state: Option<SocketContextLayout>,
+}
+
+impl ProgramContextLayoutSpec {
+    const fn skb_backed(
+        program_type: EbpfProgramType,
+        data_meta: Option<PacketContextKind>,
+    ) -> Self {
+        Self {
+            program_type,
+            data_meta,
+            socket_family: None,
+            sock_type: None,
+            protocol: Some(SocketContextLayout::SkBuff),
+            socket_ref: Some(SocketContextLayout::SkBuff),
+            ingress_ifindex: Some(IngressIfindexContextLayout::SkBuff),
+            sock_mark_priority: Some(SocketContextLayout::SkBuff),
+            sock_state: None,
+        }
+    }
+}
+
+const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::Xdp,
+        data_meta: Some(PacketContextKind::XdpMd),
+        socket_family: None,
+        sock_type: None,
+        protocol: None,
+        socket_ref: None,
+        ingress_ifindex: Some(IngressIfindexContextLayout::XdpMd),
+        sock_mark_priority: None,
+        sock_state: None,
+    },
+    ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SocketFilter, None),
+    ProgramContextLayoutSpec::skb_backed(EbpfProgramType::Tc, Some(PacketContextKind::SkBuff)),
+    ProgramContextLayoutSpec {
+        socket_family: Some(SocketContextLayout::SkBuff),
+        ..ProgramContextLayoutSpec::skb_backed(EbpfProgramType::CgroupSkb, None)
+    },
+    ProgramContextLayoutSpec {
+        socket_family: Some(SocketContextLayout::SkBuff),
+        ..ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SkSkb, None)
+    },
+    ProgramContextLayoutSpec {
+        socket_family: Some(SocketContextLayout::SkBuff),
+        ..ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SkSkbParser, None)
+    },
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::CgroupSock,
+        data_meta: None,
+        socket_family: Some(SocketContextLayout::CgroupSock),
+        sock_type: Some(SocketContextLayout::CgroupSock),
+        protocol: Some(SocketContextLayout::CgroupSock),
+        socket_ref: Some(SocketContextLayout::CgroupSock),
+        ingress_ifindex: None,
+        sock_mark_priority: Some(SocketContextLayout::CgroupSock),
+        sock_state: Some(SocketContextLayout::CgroupSock),
+    },
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::CgroupSockAddr,
+        data_meta: None,
+        socket_family: Some(SocketContextLayout::SockAddr),
+        sock_type: Some(SocketContextLayout::SockAddr),
+        protocol: Some(SocketContextLayout::SockAddr),
+        socket_ref: Some(SocketContextLayout::SockAddr),
+        ingress_ifindex: None,
+        sock_mark_priority: None,
+        sock_state: None,
+    },
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::CgroupSockopt,
+        data_meta: None,
+        socket_family: None,
+        sock_type: None,
+        protocol: None,
+        socket_ref: Some(SocketContextLayout::CgroupSockopt),
+        ingress_ifindex: None,
+        sock_mark_priority: None,
+        sock_state: None,
+    },
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::SkLookup,
+        data_meta: None,
+        socket_family: Some(SocketContextLayout::SkLookup),
+        sock_type: None,
+        protocol: Some(SocketContextLayout::SkLookup),
+        socket_ref: Some(SocketContextLayout::SkLookup),
+        ingress_ifindex: Some(IngressIfindexContextLayout::SkLookup),
+        sock_mark_priority: None,
+        sock_state: None,
+    },
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::SkMsg,
+        data_meta: None,
+        socket_family: Some(SocketContextLayout::SkMsg),
+        sock_type: None,
+        protocol: None,
+        socket_ref: Some(SocketContextLayout::SkMsg),
+        ingress_ifindex: None,
+        sock_mark_priority: None,
+        sock_state: None,
+    },
+    ProgramContextLayoutSpec {
+        program_type: EbpfProgramType::SockOps,
+        data_meta: None,
+        socket_family: Some(SocketContextLayout::SockOps),
+        sock_type: None,
+        protocol: None,
+        socket_ref: Some(SocketContextLayout::SockOps),
+        ingress_ifindex: None,
+        sock_mark_priority: None,
+        sock_state: Some(SocketContextLayout::SockOps),
+    },
+];
+
+fn program_context_layout_spec(
+    program_type: EbpfProgramType,
+) -> Option<&'static ProgramContextLayoutSpec> {
+    PROGRAM_CONTEXT_LAYOUT_SPECS
+        .iter()
+        .find(|spec| spec.program_type == program_type)
+}
+
 impl EbpfProgramType {
     pub fn supports_tracepoint_fields(&self) -> bool {
         self.info().supports_tracepoint_fields
@@ -62,11 +196,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn data_meta_context_kind(&self) -> Option<PacketContextKind> {
-        match self {
-            EbpfProgramType::Xdp => Some(PacketContextKind::XdpMd),
-            EbpfProgramType::Tc => Some(PacketContextKind::SkBuff),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.data_meta)
     }
 
     pub fn supports_packet_len_ctx_field(&self) -> bool {
@@ -86,17 +216,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
-        match self {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
-            EbpfProgramType::CgroupSkb | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser => {
-                Some(SocketContextLayout::SkBuff)
-            }
-            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.socket_family)
     }
 
     pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
@@ -104,59 +224,27 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
-        match self {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.sock_type)
     }
 
     pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
-        match self {
-            _ if self.supports_skb_ctx_fields() => Some(SocketContextLayout::SkBuff),
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.protocol)
     }
 
     pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
-        match self {
-            _ if self.supports_skb_ctx_fields() => Some(SocketContextLayout::SkBuff),
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
-            EbpfProgramType::CgroupSockopt => Some(SocketContextLayout::CgroupSockopt),
-            EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),
-            EbpfProgramType::SkMsg => Some(SocketContextLayout::SkMsg),
-            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.socket_ref)
     }
 
     pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
-        match self {
-            EbpfProgramType::Xdp => Some(IngressIfindexContextLayout::XdpMd),
-            EbpfProgramType::SkLookup => Some(IngressIfindexContextLayout::SkLookup),
-            _ if self.supports_skb_ctx_fields() => Some(IngressIfindexContextLayout::SkBuff),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.ingress_ifindex)
     }
 
     pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
-        match self {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            _ if self.supports_skb_ctx_fields() => Some(SocketContextLayout::SkBuff),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.sock_mark_priority)
     }
 
     pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
-        match self {
-            EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
-            EbpfProgramType::SockOps => Some(SocketContextLayout::SockOps),
-            _ => None,
-        }
+        program_context_layout_spec(*self).and_then(|spec| spec.sock_state)
     }
 
     pub fn supports_ingress_ifindex_ctx_field(&self) -> bool {

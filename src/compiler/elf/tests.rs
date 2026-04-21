@@ -3484,6 +3484,40 @@ fn test_cgroup_sock_addr_tuple_aliases_use_attach_shape() {
 }
 
 #[test]
+fn test_program_type_context_layouts_use_program_model_table() {
+    assert_eq!(
+        EbpfProgramType::Xdp.data_meta_context_kind(),
+        Some(PacketContextKind::XdpMd)
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.data_meta_context_kind(),
+        Some(PacketContextKind::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::SocketFilter.socket_ref_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.socket_family_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSock.sock_state_context_layout(),
+        Some(SocketContextLayout::CgroupSock)
+    );
+    assert_eq!(
+        EbpfProgramType::SkLookup.ingress_ifindex_context_layout(),
+        Some(IngressIfindexContextLayout::SkLookup)
+    );
+    assert_eq!(EbpfProgramType::SkMsg.protocol_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::CgroupSockAddr.sock_type_context_layout(),
+        Some(SocketContextLayout::SockAddr)
+    );
+    assert_eq!(EbpfProgramType::Kprobe.socket_ref_context_layout(), None);
+}
+
+#[test]
 fn test_program_type_resolves_sock_ops_field_names() {
     assert_eq!(
         EbpfProgramType::SockOps
