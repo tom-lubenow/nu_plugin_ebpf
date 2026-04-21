@@ -457,6 +457,9 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::SockoptRetval => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::I32))
         }
+        CtxField::Task => BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(
+            MirType::named_kernel_struct_ptr("task_struct"),
+        )),
         CtxField::Context => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),

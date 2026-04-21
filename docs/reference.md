@@ -14,6 +14,7 @@ The closure receives a context parameter with these fields:
 | `uid` | User ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `gid` | Group ID | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
+| `task` | Current `task_struct *` pointer from `bpf_get_current_task_btf` | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe, lsm, perf_event |
 | `cgroup_id` | Current task cgroup ID | all current program types |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |

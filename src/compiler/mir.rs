@@ -505,6 +505,8 @@ pub enum CtxField {
     Gid,
     /// Process name (comm)
     Comm,
+    /// Current task_struct pointer
+    Task,
     /// CPU ID
     Cpu,
     /// Timestamp (nanoseconds)
@@ -724,6 +726,7 @@ impl CtxField {
             CtxField::Uid => "uid".to_string(),
             CtxField::Gid => "gid".to_string(),
             CtxField::Comm => "comm".to_string(),
+            CtxField::Task => "task".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
             CtxField::CgroupId => "cgroup_id".to_string(),

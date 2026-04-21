@@ -216,6 +216,8 @@ pub enum BpfHelper {
     TaskStorageGet = 156,
     /// long bpf_task_storage_delete(map, task)
     TaskStorageDelete = 157,
+    /// struct task_struct *bpf_get_current_task_btf(void)
+    GetCurrentTaskBtf = 158,
     /// struct tcp6_sock *bpf_skc_to_tcp6_sock(sk)
     SkcToTcp6Sock = 136,
     /// struct tcp_sock *bpf_skc_to_tcp_sock(sk)
@@ -340,6 +342,7 @@ impl BpfHelper {
             BpfHelper::SkAncestorCgroupId => "bpf_sk_ancestor_cgroup_id",
             BpfHelper::TaskStorageGet => "bpf_task_storage_get",
             BpfHelper::TaskStorageDelete => "bpf_task_storage_delete",
+            BpfHelper::GetCurrentTaskBtf => "bpf_get_current_task_btf",
             BpfHelper::SkcToTcp6Sock => "bpf_skc_to_tcp6_sock",
             BpfHelper::SkcToTcpSock => "bpf_skc_to_tcp_sock",
             BpfHelper::SkcToTcpTimewaitSock => "bpf_skc_to_tcp_timewait_sock",
@@ -451,6 +454,7 @@ impl BpfHelper {
             "sk_ancestor_cgroup_id" => Some(Self::SkAncestorCgroupId),
             "task_storage_get" => Some(Self::TaskStorageGet),
             "task_storage_delete" => Some(Self::TaskStorageDelete),
+            "get_current_task_btf" => Some(Self::GetCurrentTaskBtf),
             "skc_to_tcp6_sock" => Some(Self::SkcToTcp6Sock),
             "skc_to_tcp_sock" => Some(Self::SkcToTcpSock),
             "skc_to_tcp_timewait_sock" => Some(Self::SkcToTcpTimewaitSock),

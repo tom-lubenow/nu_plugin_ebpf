@@ -92,11 +92,13 @@ Context parameter syntax (recommended):
   The closure can take a context parameter to access program context information:
 
   Universal tracing fields (all tracing attach types):
-    {|ctx| $ctx.pid }     - Get process ID (thread ID)
+    {|ctx| $ctx.pid }     - Get kernel PID / thread ID
+    {|ctx| $ctx.tid }     - Alias for ctx.pid
     {|ctx| $ctx.tgid }    - Get thread group ID (process ID)
     {|ctx| $ctx.uid }     - Get user ID
     {|ctx| $ctx.gid }     - Get group ID
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
+    {|ctx| $ctx.task }    - Get current task_struct pointer
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
 
@@ -270,6 +272,7 @@ Context parameter syntax (recommended):
 
   lsm targets:
     {|ctx| $ctx.pid }    - Get current thread ID at hook time
+    {|ctx| $ctx.task }   - Get current task_struct pointer at hook time
     {|ctx| $ctx.comm }   - Get current command name at hook time
     {|ctx| $ctx.arg.file }   - Get a named BTF-typed LSM hook argument
     {|ctx| $ctx.arg.file.f_flags } - Project through named BTF-backed LSM hook arguments

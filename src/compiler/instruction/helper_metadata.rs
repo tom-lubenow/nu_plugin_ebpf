@@ -96,6 +96,7 @@ impl BpfHelper {
             146 => Some(Self::InodeStorageDelete),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
+            158 => Some(Self::GetCurrentTaskBtf),
             162 => Some(Self::SockFromFile),
             175 => Some(Self::TaskPtRegs),
             178 => Some(Self::SkcToUnixSock),
@@ -232,6 +233,12 @@ impl BpfHelper {
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetCurrentTaskBtf => HelperSignature {
+                min_args: 0,
+                max_args: 0,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
             },
             BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail => {
                 HelperSignature {

@@ -2509,6 +2509,46 @@ fn make_ctx_path_program(cell_path: CellPath) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_path_non_null_program(cell_path: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(cell_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::NotEqual),
+                    rhs: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
@@ -6015,6 +6055,20 @@ fn test_compile_kprobe_ctx_tgid_counter_program() {
             members: vec![string_member("tgid")],
         },
         "kprobe ctx.tgid count",
+    );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_task_non_null_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("task")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        &HashMap::new(),
+        "kprobe ctx.task non-null check",
     );
 }
 

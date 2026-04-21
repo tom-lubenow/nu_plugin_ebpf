@@ -2433,6 +2433,45 @@ fn test_compile_kprobe_cgroup_id_load_calls_helper() {
 }
 
 #[test]
+fn test_compile_kprobe_task_load_calls_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::Task,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::GetCurrentTaskBtf as i32
+    }));
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_compile_perf_event_sample_period_load_uses_ctx_dword_offset_168() {
     let ctx = ProbeContext::new(

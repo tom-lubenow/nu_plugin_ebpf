@@ -437,6 +437,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::Task => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetCurrentTaskBtf));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::Timestamp => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::KtimeGetNs));

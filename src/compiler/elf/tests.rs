@@ -1265,6 +1265,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCurrentTaskBtf),
+        Some(
+            "helper 'bpf_get_current_task_btf' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::InodeStorageGet),
         Some("helper 'bpf_inode_storage_get' is only valid in lsm programs".to_string())
     );
@@ -3052,6 +3059,16 @@ fn test_program_type_resolves_tracepoint_builtin_alias_names() {
 }
 
 #[test]
+fn test_program_type_resolves_task_field_name() {
+    assert_eq!(
+        EbpfProgramType::Kprobe
+            .resolve_ctx_field_name("task")
+            .expect("kprobe task should resolve"),
+        CtxField::Task
+    );
+}
+
+#[test]
 fn test_program_type_resolves_sock_ops_field_names() {
     assert_eq!(
         EbpfProgramType::SockOps
@@ -4031,6 +4048,22 @@ fn test_probe_context_allows_netns_cookie_on_cgroup_skb_and_cgroup_sockopt() {
 fn test_probe_context_allows_cgroup_id_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::CgroupId).is_none());
+}
+
+#[test]
+fn test_probe_context_allows_task_on_task_aware_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    assert!(ctx.ctx_field_access_error(&CtxField::Task).is_none());
+    assert!(ctx.validate_load_ctx_field(&CtxField::Task).is_ok());
+}
+
+#[test]
+fn test_probe_context_rejects_task_on_packet_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::Task)
+        .expect("expected ctx.task field access error");
+    assert!(err.contains("ctx.task is not available on xdp programs"));
 }
 
 #[test]

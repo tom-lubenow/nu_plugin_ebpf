@@ -187,6 +187,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkAncestorCgroupId)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_current_task_btf"),
+        Some(BpfHelper::GetCurrentTaskBtf)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("get_current_task_btf"),
+        Some(BpfHelper::GetCurrentTaskBtf)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -486,6 +494,15 @@ fn test_helper_signature_get_current_cgroup_id() {
     assert_eq!(sig.min_args, 0);
     assert_eq!(sig.max_args, 0);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_get_current_task_btf() {
+    let sig = HelperSignature::for_id(BpfHelper::GetCurrentTaskBtf as u32)
+        .expect("expected bpf_get_current_task_btf helper signature");
+    assert_eq!(sig.min_args, 0);
+    assert_eq!(sig.max_args, 0);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
 }
 
 #[test]

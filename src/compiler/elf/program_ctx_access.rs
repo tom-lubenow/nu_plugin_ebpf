@@ -368,6 +368,7 @@ const TASK_CTX_FIELDS: &[CtxField] = &[
     CtxField::Uid,
     CtxField::Gid,
     CtxField::Comm,
+    CtxField::Task,
 ];
 const PERF_EVENT_CTX_FIELDS: &[CtxField] = &[CtxField::PerfSamplePeriod, CtxField::PerfAddr];
 const SKB_CTX_FIELDS: &[CtxField] = &[

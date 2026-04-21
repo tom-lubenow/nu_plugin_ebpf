@@ -97,6 +97,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "uid" => CtxField::Uid,
         "gid" => CtxField::Gid,
         "comm" => CtxField::Comm,
+        "task" => CtxField::Task,
         "cpu" => CtxField::Cpu,
         "ktime" | "timestamp" => CtxField::Timestamp,
         "cgroup_id" => CtxField::CgroupId,
