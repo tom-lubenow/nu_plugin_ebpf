@@ -1142,7 +1142,8 @@ impl BpfHelper {
             | BpfHelper::L4CsumReplace
             | BpfHelper::GetHashRecalc
             | BpfHelper::CsumUpdate
-            | BpfHelper::SetHashInvalid => HelperSemantics {
+            | BpfHelper::SetHashInvalid
+            | BpfHelper::SetHash => HelperSemantics {
                 ptr_arg_rules: SKB_MUTATE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,

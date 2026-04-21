@@ -711,6 +711,7 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
             vec![MirValue::Const(0x8100), MirValue::Const(1)],
         ),
         (BpfHelper::SkbVlanPop, vec![]),
+        (BpfHelper::SetHash, vec![MirValue::Const(0)]),
         (
             BpfHelper::SkbAdjustRoom,
             vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
@@ -804,6 +805,11 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
             BpfHelper::SkbVlanPop,
             vec![],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+            BpfHelper::SetHash,
+            vec![MirValue::Const(0)],
         ),
         (
             ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),

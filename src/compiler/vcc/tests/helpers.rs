@@ -1926,6 +1926,7 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
         BpfHelper::SkbPullData,
         BpfHelper::CsumUpdate,
         BpfHelper::SetHashInvalid,
+        BpfHelper::SetHash,
         BpfHelper::SkbChangeHead,
         BpfHelper::SkbVlanPush,
         BpfHelper::SkbVlanPop,
@@ -1950,6 +1951,7 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
             ],
             BpfHelper::CloneRedirect => vec![MirValue::Const(1), MirValue::Const(0)],
             BpfHelper::GetHashRecalc | BpfHelper::SetHashInvalid => vec![],
+            BpfHelper::SetHash => vec![MirValue::Const(0)],
             BpfHelper::SkbChangeTail | BpfHelper::SkbChangeHead => {
                 vec![MirValue::Const(64), MirValue::Const(0)]
             }

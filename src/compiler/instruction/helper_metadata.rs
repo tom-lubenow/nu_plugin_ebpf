@@ -26,6 +26,7 @@ impl BpfHelper {
             39 => Some(Self::SkbPullData),
             40 => Some(Self::CsumUpdate),
             41 => Some(Self::SetHashInvalid),
+            48 => Some(Self::SetHash),
             43 => Some(Self::SkbChangeHead),
             44 => Some(Self::XdpAdjustHead),
             23 => Some(Self::Redirect),
@@ -232,6 +233,12 @@ impl BpfHelper {
             BpfHelper::GetHashRecalc | BpfHelper::SetHashInvalid => HelperSignature {
                 min_args: 1,
                 max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SetHash => HelperSignature {
+                min_args: 2,
+                max_args: 2,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },

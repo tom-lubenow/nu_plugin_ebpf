@@ -415,6 +415,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkbPullData
         | BpfHelper::CsumUpdate
         | BpfHelper::SetHashInvalid
+        | BpfHelper::SetHash
         | BpfHelper::SkbChangeHead
         | BpfHelper::SkbVlanPush
         | BpfHelper::SkbVlanPop

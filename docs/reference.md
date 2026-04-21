@@ -183,7 +183,7 @@ through the ordinary helper surface, including `bpf_skb_store_bytes`,
 `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
 `bpf_clone_redirect`, `bpf_skb_vlan_push`, `bpf_skb_vlan_pop`,
 `bpf_get_hash_recalc`, `bpf_csum_update`, and
-`bpf_set_hash_invalid`. These skb mutation helpers invalidate guarded
+`bpf_set_hash`, and `bpf_set_hash_invalid`. These skb mutation helpers invalidate guarded
 direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_skb_load_bytes` works on `socket_filter`, `tc`, `cgroup_skb`,
