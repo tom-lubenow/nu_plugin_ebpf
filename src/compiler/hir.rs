@@ -365,6 +365,47 @@ pub fn supports_numeric_constant_list(value: &Value) -> bool {
     matches!(value, Value::List { vals, .. } if vals.iter().all(is_numeric_constant_value))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FixedArrayConstantElementShape {
+    ScalarI64,
+    Binary(usize),
+    Record(Vec<(String, FixedArrayConstantElementShape)>),
+}
+
+fn fixed_array_constant_element_shape(value: &Value) -> Option<FixedArrayConstantElementShape> {
+    if is_numeric_constant_value(value) {
+        return Some(FixedArrayConstantElementShape::ScalarI64);
+    }
+
+    match value {
+        Value::Binary { val, .. } => Some(FixedArrayConstantElementShape::Binary(val.len())),
+        Value::Record { val, .. } => val
+            .iter()
+            .map(|(name, field)| {
+                fixed_array_constant_element_shape(field)
+                    .map(|field_shape| (name.clone(), field_shape))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(FixedArrayConstantElementShape::Record),
+        _ => None,
+    }
+}
+
+pub fn supports_fixed_array_constant_list(value: &Value) -> bool {
+    let Value::List { vals, .. } = value else {
+        return false;
+    };
+    let Some((first, rest)) = vals.split_first() else {
+        return false;
+    };
+    let Some(first_shape) = fixed_array_constant_element_shape(first) else {
+        return false;
+    };
+
+    rest.iter()
+        .all(|value| fixed_array_constant_element_shape(value).as_ref() == Some(&first_shape))
+}
+
 pub fn supports_constant_value(value: &Value) -> bool {
     fn supports_nested_constant_value(value: &Value) -> bool {
         if HirLiteral::from_constant_value(value).is_some() {
@@ -380,7 +421,9 @@ pub fn supports_constant_value(value: &Value) -> bool {
         }
     }
 
-    supports_nested_constant_value(value) || supports_numeric_constant_list(value)
+    supports_nested_constant_value(value)
+        || supports_numeric_constant_list(value)
+        || supports_fixed_array_constant_list(value)
 }
 
 /// Infer the context parameter VarId from IR instructions.

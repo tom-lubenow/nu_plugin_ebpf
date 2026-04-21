@@ -338,6 +338,61 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
+    fn constant_fixed_array_element_rodata_repr(
+        value: &Value,
+    ) -> Result<(MirType, Vec<u8>), CompileError> {
+        if let Some(repr) = Self::scalar_constant_rodata_repr(value) {
+            return Ok(repr);
+        }
+        if let Value::Binary { val, .. } = value {
+            return Self::binary_constant_rodata_repr(val);
+        }
+        if let Value::Record { val, .. } = value {
+            if Self::mutable_global_value_semantics(value)?.is_some() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "constant fixed arrays do not yet support record elements containing string or numeric-list buffers".into(),
+                ));
+            }
+            return Self::constant_record_rodata_repr(val);
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "LoadValue of type {} is not supported in fixed-array constant lowering",
+            value.get_type()
+        )))
+    }
+
+    fn constant_fixed_array_rodata_repr(
+        values: &[Value],
+    ) -> Result<(MirType, Vec<u8>), CompileError> {
+        let Some((first, rest)) = values.split_first() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "constant fixed arrays require at least one element to infer layout".into(),
+            ));
+        };
+
+        let (elem_ty, mut data) = Self::constant_fixed_array_element_rodata_repr(first)?;
+        for (idx, value) in rest.iter().enumerate() {
+            let actual_idx = idx + 1;
+            let (item_ty, item_data) = Self::constant_fixed_array_element_rodata_repr(value)?;
+            if item_ty != elem_ty {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "constant fixed arrays require homogeneous element layouts; element 0 has {:?}, element {} has {:?}",
+                    elem_ty, actual_idx, item_ty
+                )));
+            }
+            data.extend_from_slice(&item_data);
+        }
+
+        Ok((
+            MirType::Array {
+                elem: Box::new(elem_ty),
+                len: values.len(),
+            },
+            data,
+        ))
+    }
+
     pub(super) fn constant_record_rodata_repr(
         record: &nu_protocol::Record,
     ) -> Result<(MirType, Vec<u8>), CompileError> {
@@ -474,6 +529,51 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_constant_fixed_array_value(
+        &mut self,
+        dst: RegId,
+        values: &[Value],
+    ) -> Result<(), CompileError> {
+        let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+            self.assign_fresh_vreg(dst)
+        } else {
+            self.get_vreg(dst)
+        };
+        self.reg_metadata.insert(dst.get(), RegMetadata::default());
+
+        let (array_ty, data) = Self::constant_fixed_array_rodata_repr(values)?;
+        let symbol = self.alloc_readonly_global_name();
+        self.readonly_globals.push(ReadonlyGlobal {
+            name: symbol.clone(),
+            data,
+        });
+
+        let global_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: global_vreg,
+            symbol,
+            ty: array_ty.clone(),
+        });
+
+        let base_runtime_ty = MirType::Ptr {
+            pointee: Box::new(array_ty.clone()),
+            address_space: AddressSpace::Map,
+        };
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::VReg(global_vreg),
+        });
+        self.vreg_type_hints
+            .insert(global_vreg, base_runtime_ty.clone());
+        self.vreg_type_hints.insert(dst_vreg, base_runtime_ty);
+
+        let meta = self.get_or_create_metadata(dst);
+        meta.is_context = false;
+        meta.field_type = Some(array_ty);
+
+        Ok(())
+    }
+
     pub(super) fn lower_constant_value(
         &mut self,
         dst: RegId,
@@ -494,7 +594,11 @@ impl<'a> HirToMirLowering<'a> {
             match value {
                 Value::Record { val, .. } => self.lower_constant_record_value(dst, val.as_ref())?,
                 Value::List { vals, .. } if allow_top_level_list => {
-                    self.lower_constant_list_value(dst, vals)?
+                    if crate::compiler::hir::supports_numeric_constant_list(value) {
+                        self.lower_constant_list_value(dst, vals)?;
+                    } else {
+                        self.lower_constant_fixed_array_value(dst, vals)?;
+                    }
                 }
                 Value::List { .. } => {
                     return Err(CompileError::UnsupportedInstruction(

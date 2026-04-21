@@ -352,7 +352,7 @@ fn test_lower_load_value_numeric_list_uses_readonly_global_payload() {
 }
 
 #[test]
-fn test_lower_load_value_non_numeric_list_is_rejected() {
+fn test_lower_load_value_unsupported_non_numeric_list_is_rejected() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -385,11 +385,72 @@ fn test_lower_load_value_non_numeric_list_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("non-numeric constant list values should remain unsupported");
+    .expect_err("lists with unsupported fixed-array elements should remain unsupported");
 
     assert!(
         err.to_string()
-            .contains("constant lists currently only support numeric scalar elements")
+            .contains("LoadValue of type string is not supported in fixed-array constant lowering")
+    );
+}
+
+#[test]
+fn test_lower_load_value_record_list_uses_fixed_array_readonly_global() {
+    let mut first = Record::new();
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::list(
+                    vec![
+                        Value::record(first, Span::test_data()),
+                        Value::record(second, Span::test_data()),
+                    ],
+                    Span::test_data(),
+                )),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("homogeneous record constant lists should lower as fixed-array rodata");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&2i64.to_le_bytes());
+    expected.extend_from_slice(&9i64.to_le_bytes());
+    expected.extend_from_slice(&3i64.to_le_bytes());
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert_eq!(result.readonly_globals[0].data, expected);
+    assert!(
+        result.program.main.blocks[0]
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadGlobal { .. })),
+        "expected fixed-array constant lowering to load from readonly globals"
     );
 }
 
