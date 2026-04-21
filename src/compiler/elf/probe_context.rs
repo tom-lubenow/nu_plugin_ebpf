@@ -7,7 +7,8 @@ use super::{
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
-    program_type_ctx_field_projection_spec, program_type_ctx_field_type_spec,
+    program_type_ctx_field_pointer_is_non_null, program_type_ctx_field_projection_spec,
+    program_type_ctx_field_type_spec, static_ctx_field_pointer_is_non_null,
     static_ctx_field_projection_spec, static_ctx_field_type_spec,
 };
 use crate::compiler::hindley_milner::HMType;
@@ -49,6 +50,16 @@ impl ProbeContext {
         probe_ctx.map_or(matches!(field, CtxField::Context), |ctx| {
             ctx.ctx_field_is_raw_context_pointer(field)
         })
+    }
+
+    pub(crate) fn resolve_ctx_field_pointer_is_non_null(
+        probe_ctx: Option<&Self>,
+        field: &CtxField,
+    ) -> bool {
+        probe_ctx.map_or_else(
+            || matches!(field, CtxField::Context) || static_ctx_field_pointer_is_non_null(field),
+            |ctx| ctx.ctx_field_pointer_is_non_null(field),
+        )
     }
 
     pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
@@ -144,6 +155,16 @@ impl ProbeContext {
         self.parsed_program_spec().map_or_else(
             || self.program_type().ctx_field_is_raw_context_pointer(field),
             |spec| spec.ctx_field_is_raw_context_pointer(field),
+        )
+    }
+
+    pub(crate) fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
+        self.parsed_program_spec().map_or_else(
+            || {
+                self.program_type().ctx_field_is_raw_context_pointer(field)
+                    || program_type_ctx_field_pointer_is_non_null(self.program_type(), field)
+            },
+            |spec| spec.ctx_field_pointer_is_non_null(field),
         )
     }
 

@@ -962,6 +962,21 @@ fn test_program_type_raw_context_pointer_aliases_follow_context_family() {
 }
 
 #[test]
+fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() {
+    assert!(EbpfProgramType::Kprobe.ctx_field_pointer_is_non_null(&CtxField::Task));
+    assert!(!EbpfProgramType::Xdp.ctx_field_pointer_is_non_null(&CtxField::Task));
+    assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
+    assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
+
+    let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+    assert!(kprobe.ctx_field_pointer_is_non_null(&CtxField::Task));
+    assert!(ProbeContext::resolve_ctx_field_pointer_is_non_null(
+        Some(&kprobe),
+        &CtxField::Task
+    ));
+}
+
+#[test]
 fn test_program_type_btf_callable_surface_follows_program_model() {
     assert_eq!(
         EbpfProgramType::Fentry.btf_callable_surface(),

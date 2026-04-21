@@ -4,8 +4,8 @@ use super::{
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
-    ctx_field_sock_ops_load_guard, program_type_ctx_field_projection_spec,
-    program_type_ctx_field_type_spec,
+    ctx_field_sock_ops_load_guard, program_type_ctx_field_pointer_is_non_null,
+    program_type_ctx_field_projection_spec, program_type_ctx_field_type_spec,
 };
 use crate::program_spec::ProgramSpec;
 
@@ -294,6 +294,11 @@ impl EbpfProgramType {
         context_family_ctx_field_is_raw_context_pointer(self.context_family(), field)
     }
 
+    pub(crate) fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
+        self.ctx_field_is_raw_context_pointer(field)
+            || program_type_ctx_field_pointer_is_non_null(*self, field)
+    }
+
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
         context_family_ctx_field_load_guard(self.context_family(), field)
     }
@@ -302,6 +307,12 @@ impl EbpfProgramType {
 impl ProgramSpec {
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
         self.program_type().ctx_field_is_raw_context_pointer(field)
+    }
+
+    pub(crate) fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
+        self.ctx_field_access_error(field).is_none()
+            && (self.ctx_field_is_raw_context_pointer(field)
+                || program_type_ctx_field_pointer_is_non_null(self.program_type(), field))
     }
 
     pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {

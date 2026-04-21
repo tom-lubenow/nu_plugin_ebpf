@@ -160,6 +160,7 @@ enum BaseContextFieldProjectionKind {
 struct BaseContextFieldSchemaSpec {
     type_spec: ContextFieldTypeSpec,
     projection_kind: BaseContextFieldProjectionKind,
+    pointer_non_null: bool,
     sock_ops_load_guard: Option<SockOpsCallbackGuard>,
 }
 
@@ -168,6 +169,7 @@ impl BaseContextFieldSchemaSpec {
         Self {
             type_spec,
             projection_kind: BaseContextFieldProjectionKind::None,
+            pointer_non_null: false,
             sock_ops_load_guard: None,
         }
     }
@@ -176,6 +178,7 @@ impl BaseContextFieldSchemaSpec {
         Self {
             type_spec,
             projection_kind: BaseContextFieldProjectionKind::Direct,
+            pointer_non_null: false,
             sock_ops_load_guard: None,
         }
     }
@@ -184,6 +187,7 @@ impl BaseContextFieldSchemaSpec {
         Self {
             type_spec,
             projection_kind: BaseContextFieldProjectionKind::SocketValidated,
+            pointer_non_null: false,
             sock_ops_load_guard: None,
         }
     }
@@ -194,8 +198,14 @@ impl BaseContextFieldSchemaSpec {
             projection_kind: BaseContextFieldProjectionKind::StackBacked {
                 normalize_u32_words_host_order,
             },
+            pointer_non_null: false,
             sock_ops_load_guard: None,
         }
+    }
+
+    fn non_null_pointer(mut self) -> Self {
+        self.pointer_non_null = true;
+        self
     }
 
     fn with_sock_ops_load_guard(mut self, guard: SockOpsCallbackGuard) -> Self {
@@ -226,6 +236,10 @@ impl BaseContextFieldSchemaSpec {
 
     fn sock_ops_load_guard(&self) -> Option<SockOpsCallbackGuard> {
         self.sock_ops_load_guard
+    }
+
+    fn pointer_is_non_null(&self) -> bool {
+        self.pointer_non_null
     }
 }
 
@@ -459,7 +473,8 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         }
         CtxField::Task => BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(
             MirType::named_kernel_struct_ptr("task_struct"),
-        )),
+        ))
+        .non_null_pointer(),
         CtxField::Context => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),
@@ -539,6 +554,10 @@ fn raw_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
     base_ctx_field_schema_spec(field).map(|spec| spec.type_spec)
 }
 
+fn raw_ctx_field_pointer_is_non_null(field: &CtxField) -> bool {
+    base_ctx_field_schema_spec(field).is_some_and(|spec| spec.pointer_is_non_null())
+}
+
 pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
     raw_ctx_field_type_spec(field)
 }
@@ -552,6 +571,18 @@ pub(crate) fn program_type_ctx_field_type_spec(
         .is_none()
         .then(|| raw_ctx_field_type_spec(field))
         .flatten()
+}
+
+pub(crate) fn static_ctx_field_pointer_is_non_null(field: &CtxField) -> bool {
+    raw_ctx_field_pointer_is_non_null(field)
+}
+
+pub(crate) fn program_type_ctx_field_pointer_is_non_null(
+    program_type: EbpfProgramType,
+    field: &CtxField,
+) -> bool {
+    program_type.base_ctx_field_access_error(field).is_none()
+        && raw_ctx_field_pointer_is_non_null(field)
 }
 
 pub(crate) fn ctx_field_sock_ops_load_guard(field: &CtxField) -> Option<SockOpsCallbackGuard> {

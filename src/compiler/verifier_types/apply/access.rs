@@ -273,9 +273,9 @@ pub(super) fn apply_load_ctx_field_inst(
             _ => {}
         }
     }
-    if matches!(field, CtxField::Task)
+    if ProbeContext::resolve_ctx_field_pointer_is_non_null(probe_ctx, field)
         && let VerifierType::Ptr {
-            space: AddressSpace::Kernel,
+            space,
             bounds,
             ringbuf_ref,
             kfunc_ref,
@@ -283,7 +283,7 @@ pub(super) fn apply_load_ctx_field_inst(
         } = ty
     {
         ty = VerifierType::Ptr {
-            space: AddressSpace::Kernel,
+            space,
             nullability: Nullability::NonNull,
             bounds,
             ringbuf_ref,
