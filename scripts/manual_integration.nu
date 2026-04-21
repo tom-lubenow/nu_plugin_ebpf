@@ -913,7 +913,7 @@ step 63 "sk_msg pinned sockhash live attach and detach" {
             ^bpftool map create $map_path type sockhash key 4 value 4 entries 16 name nu_skmsg | ignore
 
             let dry_run_code = ([
-                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| ($ctx.sk.family + $ctx.sk.src_port + $ctx.sk.dst_port + ($ctx.sk.state mod 1024)) | count; "pass" } | describe'
+                'ebpf attach --dry-run "sk_msg:__MAP__" {|ctx| ($ctx.size + $ctx.sk.family + $ctx.sk.src_port + $ctx.sk.dst_port + ($ctx.sk.state mod 1024)) | count; "pass" } | describe'
             ] | str join (char newline) | str replace "__MAP__" $map_path)
 
             let describe = (run-nu-with-plugin $plugin_bin $dry_run_code | str trim)
@@ -1098,7 +1098,7 @@ step 68 "cgroup_sockopt dry-run retval assignment" {
     let code = ([
         'ebpf attach --dry-run "cgroup_sockopt:/sys/fs/cgroup:get" {|ctx|'
         '    mut ctx = $ctx'
-        '    $ctx.sockopt_retval = 0'
+        '    $ctx.retval = 0'
         '    "allow"'
         '} | describe'
     ] | str join (char newline))
