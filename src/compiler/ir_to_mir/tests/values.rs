@@ -613,6 +613,66 @@ fn test_lower_load_value_record_with_nested_numeric_list_uses_readonly_global() 
 }
 
 #[test]
+fn test_lower_load_value_record_with_nested_record_list_uses_readonly_global() {
+    let mut first = Record::new();
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let mut rec = Record::new();
+    rec.push(
+        "entries",
+        Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::record(rec, Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("records with nested homogeneous record lists should lower through rodata");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&2i64.to_le_bytes());
+    expected.extend_from_slice(&9i64.to_le_bytes());
+    expected.extend_from_slice(&3i64.to_le_bytes());
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert_eq!(result.readonly_globals[0].data, expected);
+}
+
+#[test]
 fn test_lower_captured_record_emit_preserves_nested_struct_field_type() {
     let capture_var = VarId::new(13);
     let emit_decl = DeclId::new(80);

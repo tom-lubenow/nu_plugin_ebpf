@@ -139,7 +139,7 @@ fn lower_capture_literals(
             return Err(LabeledError::new("Unsupported captured value in eBPF closure")
                 .with_label(
                     format!(
-                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, binary, glob, filesize, duration, nothing, top-level numeric scalar lists, top-level homogeneous fixed arrays of scalar/binary/record constants, and recursively constant records",
+                        "captured variable {} has unsupported type {}; supported captured constants are int, bool, string, binary, glob, filesize, duration, nothing, numeric scalar lists, homogeneous fixed arrays of scalar/binary/record constants, and recursively constant records",
                         var_id.get(),
                         value.get_type()
                     ),

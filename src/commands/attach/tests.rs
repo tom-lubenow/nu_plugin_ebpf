@@ -3097,6 +3097,99 @@ fn make_typed_global_define_record_array_initializer_field_count_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_typed_global_define_record_with_record_array_initializer_field_count_program(
+    define_decl_id: DeclId,
+    get_decl_id: DeclId,
+    count_decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut first = Record::with_capacity(2);
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::with_capacity(2);
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let mut state = Record::with_capacity(1);
+    state.push(
+        "entries",
+        Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(state, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(
+                        "record{entries:array{record{pid:int,cpu:u32}:2}}".into(),
+                    ),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![
+                            string_member("entries"),
+                            int_member(1),
+                            string_member("cpu"),
+                        ],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 8],
+        ast: vec![None; 8],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_annotated_mut_int_count_program(count_decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let global_var = VarId::new(10);
@@ -7197,6 +7290,28 @@ fn test_compile_xdp_typed_global_define_type_fixed_record_array_initializer_prog
         "lo",
         &decl_names,
         "typed global-define initialized fixed record array should compile through attach flow",
+    );
+}
+
+#[test]
+fn test_compile_xdp_typed_global_define_type_nested_fixed_record_array_initializer_program() {
+    let hir = make_typed_global_define_record_with_record_array_initializer_field_count_program(
+        DeclId::new(40),
+        DeclId::new(41),
+        DeclId::new(42),
+    );
+    let decl_names = HashMap::from([
+        (DeclId::new(40), "global-define".to_string()),
+        (DeclId::new(41), "global-get".to_string()),
+        (DeclId::new(42), "count".to_string()),
+    ]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "typed global-define nested initialized fixed record array should compile through attach flow",
     );
 }
 

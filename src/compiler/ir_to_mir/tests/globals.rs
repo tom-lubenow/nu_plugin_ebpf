@@ -2583,6 +2583,142 @@ fn test_lower_global_define_type_record_with_list_initializer_uses_named_data_gl
 }
 
 #[test]
+fn test_lower_global_define_type_record_with_fixed_record_array_initializer_uses_named_data_global()
+{
+    let define_decl = DeclId::new(1094);
+    let global_get_decl = DeclId::new(1095);
+    let count_decl = DeclId::new(1096);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let mut first = Record::with_capacity(2);
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::with_capacity(2);
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let mut state = Record::with_capacity(1);
+    state.push(
+        "entries",
+        Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(state, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(
+                        "record{entries:array{record{pid:int,cpu:u32}:2}}".into(),
+                    ),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![
+                            string_member("entries"),
+                            int_member(1),
+                            string_member("cpu"),
+                        ],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type record{...array{record{...}:N}...} should lower");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&2u32.to_le_bytes());
+    expected.extend_from_slice(&9i64.to_le_bytes());
+    expected.extend_from_slice(&3u32.to_le_bytes());
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_state");
+    assert_eq!(result.data_globals[0].data, expected);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected nested initialized fixed record-array global field to be usable as a scalar key"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_fixed_array_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1082);
     let global_get_decl = DeclId::new(1083);

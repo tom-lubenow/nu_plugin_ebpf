@@ -414,6 +414,7 @@ pub fn supports_constant_value(value: &Value) -> bool {
 
         match value {
             value if supports_numeric_constant_list(value) => true,
+            value if supports_fixed_array_constant_list(value) => true,
             Value::Record { val, .. } => val
                 .iter()
                 .all(|(_, field)| supports_nested_constant_value(field)),
@@ -421,9 +422,7 @@ pub fn supports_constant_value(value: &Value) -> bool {
         }
     }
 
-    supports_nested_constant_value(value)
-        || supports_numeric_constant_list(value)
-        || supports_fixed_array_constant_list(value)
+    supports_nested_constant_value(value) || supports_numeric_constant_list(value)
 }
 
 /// Infer the context parameter VarId from IR instructions.

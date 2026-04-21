@@ -94,6 +94,34 @@ fn test_supports_constant_value_for_top_level_homogeneous_record_array() {
 }
 
 #[test]
+fn test_supports_constant_value_for_record_with_nested_homogeneous_record_array() {
+    let mut first = Record::new();
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let mut root = Record::new();
+    root.push(
+        "entries",
+        Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    assert!(supports_constant_value(&Value::record(
+        root,
+        Span::test_data()
+    )));
+}
+
+#[test]
 fn test_infer_ctx_param_from_leading_collect_store_pattern() {
     let ctx_var = VarId::new(80);
     let ir = IrBlock {

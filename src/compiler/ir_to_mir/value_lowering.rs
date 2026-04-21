@@ -416,6 +416,11 @@ impl<'a> HirToMirLowering<'a> {
             {
                 return Ok((ty, data));
             }
+            if crate::compiler::hir::supports_fixed_array_constant_list(value)
+                && let Value::List { vals, .. } = value
+            {
+                return HirToMirLowering::constant_fixed_array_rodata_repr(vals);
+            }
 
             match value {
                 Value::Record { val, .. } => HirToMirLowering::constant_record_rodata_repr(val),
