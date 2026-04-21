@@ -202,6 +202,13 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
     },
 ];
 
+const DIRECT_PACKET_WRITE_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Xdp,
+    EbpfProgramType::Tc,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+];
+
 fn program_context_layout_spec(
     program_type: EbpfProgramType,
 ) -> Option<&'static ProgramContextLayoutSpec> {
@@ -228,7 +235,7 @@ impl EbpfProgramType {
     }
 
     pub fn supports_direct_packet_writes(&self) -> bool {
-        self.info().supports_direct_packet_writes
+        DIRECT_PACKET_WRITE_PROGRAMS.contains(self)
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
