@@ -333,6 +333,15 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_context_label(&self) -> String {
+        if let Some(spec) = self.parsed_program_spec() {
+            if !matches!(
+                spec,
+                ProgramSpec::StructOps { .. } | ProgramSpec::StructOpsCallback { .. }
+            ) {
+                return spec.to_string();
+            }
+        }
+
         match self.program_type().btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => format!(
                 "struct_ops {}.{}",

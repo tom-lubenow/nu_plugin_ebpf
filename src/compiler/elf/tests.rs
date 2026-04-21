@@ -678,6 +678,22 @@ fn test_probe_context_btf_context_label_formats_struct_ops() {
 }
 
 #[test]
+fn test_probe_context_btf_context_label_preserves_sleepable_spec_prefix() {
+    let fentry = ProbeContext::from_program_spec(
+        ProgramSpec::parse("fentry.s:security_file_open").expect("sleepable fentry spec"),
+    );
+    assert_eq!(fentry.btf_context_label(), "fentry.s:security_file_open");
+
+    let lsm = ProbeContext::from_program_spec(
+        ProgramSpec::parse("lsm.s:file_open").expect("sleepable lsm spec"),
+    );
+    assert_eq!(
+        lsm.btf_arg_name_invalid_error("missing"),
+        "ctx.arg.missing is not a valid argument name for lsm.s:file_open"
+    );
+}
+
+#[test]
 fn test_probe_context_btf_arg_index_by_name_uses_tp_btf_lookup() {
     let tracepoint_name = "sys_enter";
     let ctx = ProbeContext::new(EbpfProgramType::TpBtf, tracepoint_name);
