@@ -30,6 +30,12 @@ struct ContextFieldAccessSurfaceSpec {
     secondary_requirement: Option<ContextFieldAccessRequirement>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProgramContextFieldAccessSurfaceSpec {
+    program_type: EbpfProgramType,
+    surfaces: &'static [ContextFieldAccessSurfaceSpec],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CgroupSockAddrTupleAliasSpec {
     field: CtxField,
@@ -396,6 +402,29 @@ const SK_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
             "cgroup_sock, socket_filter, tc, and cgroup_skb programs",
         ),
     ),
+];
+
+const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::SocketFilter,
+        surfaces: SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::Tc,
+        surfaces: TC_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::CgroupSkb,
+        surfaces: CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::SkSkb,
+        surfaces: SK_SKB_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::SkSkbParser,
+        surfaces: SK_SKB_CTX_FIELD_ACCESS_SURFACES,
+    },
 ];
 
 const CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
@@ -769,6 +798,15 @@ fn find_ctx_field_access_surface(
         .cloned()
 }
 
+fn program_ctx_field_access_surfaces(
+    program_type: EbpfProgramType,
+) -> Option<&'static [ContextFieldAccessSurfaceSpec]> {
+    PROGRAM_CTX_FIELD_ACCESS_SURFACES
+        .iter()
+        .find(|surface| surface.program_type == program_type)
+        .map(|surface| surface.surfaces)
+}
+
 fn find_base_ctx_field_access_requirement(
     field: &CtxField,
 ) -> Option<BaseContextFieldAccessRequirement> {
@@ -1087,19 +1125,7 @@ impl ProgramSpec {
             ProgramAttachShape::CgroupSockAddr { .. } => {
                 Some(CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES)
             }
-            _ if self.program_type().supports_socket_filter_ctx_surface() => {
-                Some(SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES)
-            }
-            _ if self.program_type().supports_tc_ctx_surface() => {
-                Some(TC_CTX_FIELD_ACCESS_SURFACES)
-            }
-            _ if self.program_type().supports_cgroup_skb_ctx_surface() => {
-                Some(CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES)
-            }
-            _ if self.program_type().supports_sk_skb_ctx_surface() => {
-                Some(SK_SKB_CTX_FIELD_ACCESS_SURFACES)
-            }
-            _ => None,
+            _ => program_ctx_field_access_surfaces(self.program_type()),
         }
     }
 

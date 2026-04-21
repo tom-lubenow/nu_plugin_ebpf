@@ -48,6 +48,12 @@ struct ContextWriteSurfaceSpec {
     availability: Option<ContextWriteAvailability>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProgramContextWriteSurfaceSpec {
+    program_type: EbpfProgramType,
+    surfaces: &'static [ContextWriteSurfaceSpec],
+}
+
 impl ContextStoreTargetSpec {
     fn resolve(
         &self,
@@ -496,6 +502,37 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
 ];
 
+const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::SocketFilter,
+        surfaces: SOCKET_FILTER_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::Tc,
+        surfaces: TC_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::SkSkb,
+        surfaces: SK_SKB_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::SkSkbParser,
+        surfaces: SK_SKB_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::CgroupSkb,
+        surfaces: CGROUP_SKB_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::CgroupSysctl,
+        surfaces: CGROUP_SYSCTL_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::SockOps,
+        surfaces: SOCK_OPS_CTX_WRITE_SURFACES,
+    },
+];
+
 fn find_ctx_write_surface(
     field_name: &str,
     surfaces: &[ContextWriteSurfaceSpec],
@@ -514,6 +551,15 @@ fn find_ctx_store_surface(
         .iter()
         .find(|surface| surface.matches_store_target(target))
         .cloned()
+}
+
+fn program_ctx_write_surfaces(
+    program_type: EbpfProgramType,
+) -> Option<&'static [ContextWriteSurfaceSpec]> {
+    PROGRAM_CTX_WRITE_SURFACES
+        .iter()
+        .find(|surface| surface.program_type == program_type)
+        .map(|surface| surface.surfaces)
 }
 
 impl CtxStoreTarget {
@@ -578,23 +624,7 @@ impl ProgramSpec {
             ProgramAttachShape::CgroupSock { .. } => Some(CGROUP_SOCK_CTX_WRITE_SURFACES),
             ProgramAttachShape::CgroupSockopt { .. } => Some(CGROUP_SOCKOPT_CTX_WRITE_SURFACES),
             ProgramAttachShape::CgroupSockAddr { .. } => Some(CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES),
-            _ if self.program_type().supports_socket_filter_ctx_surface() => {
-                Some(SOCKET_FILTER_CTX_WRITE_SURFACES)
-            }
-            _ if self.program_type().supports_tc_ctx_surface() => Some(TC_CTX_WRITE_SURFACES),
-            _ if self.program_type().supports_sk_skb_ctx_surface() => {
-                Some(SK_SKB_CTX_WRITE_SURFACES)
-            }
-            _ if self.program_type().supports_cgroup_skb_ctx_surface() => {
-                Some(CGROUP_SKB_CTX_WRITE_SURFACES)
-            }
-            _ if self.program_type().supports_cgroup_sysctl_ctx_fields() => {
-                Some(CGROUP_SYSCTL_CTX_WRITE_SURFACES)
-            }
-            _ if self.program_type().supports_sock_ops_ctx_fields() => {
-                Some(SOCK_OPS_CTX_WRITE_SURFACES)
-            }
-            _ => None,
+            _ => program_ctx_write_surfaces(self.program_type()),
         }
     }
 

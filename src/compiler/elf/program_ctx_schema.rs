@@ -312,22 +312,6 @@ impl EbpfProgramType {
         matches!(self.context_family(), ProgramContextFamily::SkBuffPacket)
     }
 
-    pub fn supports_socket_filter_ctx_surface(&self) -> bool {
-        matches!(self, EbpfProgramType::SocketFilter)
-    }
-
-    pub fn supports_tc_ctx_surface(&self) -> bool {
-        matches!(self, EbpfProgramType::Tc)
-    }
-
-    pub fn supports_cgroup_skb_ctx_surface(&self) -> bool {
-        matches!(self, EbpfProgramType::CgroupSkb)
-    }
-
-    pub fn supports_sk_skb_ctx_surface(&self) -> bool {
-        matches!(self, EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser)
-    }
-
     pub fn supports_socket_ref_ctx_field(&self) -> bool {
         self.socket_ref_context_layout().is_some()
     }

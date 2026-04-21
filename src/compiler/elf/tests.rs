@@ -982,22 +982,6 @@ fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
 }
 
 #[test]
-fn test_program_type_skb_surface_selectors_follow_program_model() {
-    assert!(EbpfProgramType::SocketFilter.supports_socket_filter_ctx_surface());
-    assert!(!EbpfProgramType::Tc.supports_socket_filter_ctx_surface());
-
-    assert!(EbpfProgramType::Tc.supports_tc_ctx_surface());
-    assert!(!EbpfProgramType::CgroupSkb.supports_tc_ctx_surface());
-
-    assert!(EbpfProgramType::CgroupSkb.supports_cgroup_skb_ctx_surface());
-    assert!(!EbpfProgramType::SocketFilter.supports_cgroup_skb_ctx_surface());
-
-    assert!(EbpfProgramType::SkSkb.supports_sk_skb_ctx_surface());
-    assert!(EbpfProgramType::SkSkbParser.supports_sk_skb_ctx_surface());
-    assert!(!EbpfProgramType::SocketFilter.supports_sk_skb_ctx_surface());
-}
-
-#[test]
 fn test_program_type_helper_backed_cookie_field_surfaces_follow_program_model() {
     assert!(EbpfProgramType::SocketFilter.supports_socket_cookie_ctx_field());
     assert!(EbpfProgramType::CgroupSock.supports_socket_cookie_ctx_field());
