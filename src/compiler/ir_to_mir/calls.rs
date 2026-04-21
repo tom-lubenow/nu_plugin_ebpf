@@ -685,6 +685,8 @@ impl<'a> HirToMirLowering<'a> {
                     .iter()
                     .any(|(_, arg_reg)| self.is_context_reg(*arg_reg));
                 let mut args = Vec::new();
+                let mut helper_arg_regs: Vec<(usize, RegId)> = Vec::new();
+                let mut helper_map_args: Vec<(usize, MapRef, VReg)> = Vec::new();
                 if let Some(input) = self.pipeline_input {
                     if has_explicit_context_arg {
                         // Real attached closures carry the program context as ambient
@@ -699,6 +701,9 @@ impl<'a> HirToMirLowering<'a> {
                         } else {
                             input
                         };
+                        if let Some(input_reg) = self.pipeline_input_reg {
+                            helper_arg_regs.push((args.len(), input_reg));
+                        }
                         args.push(MirValue::VReg(arg_vreg));
                     }
                 } else if src_dst_had_value && sig.max_args != 0 && self.positional_args.len() == 1
@@ -708,16 +713,16 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         dst_vreg
                     };
+                    helper_arg_regs.push((args.len(), src_dst));
                     args.push(MirValue::VReg(arg_vreg));
                 }
                 for (arg_vreg, arg_reg) in positional_args {
                     let helper_arg_idx = args.len();
                     if helper.supports_local_helper_map_fd(helper_arg_idx) {
-                        args.push(self.materialize_helper_map_fd_arg(
-                            helper,
-                            helper_arg_idx,
-                            arg_reg,
-                        )?);
+                        let (arg, map_ref, map_vreg) =
+                            self.materialize_helper_map_fd_arg(helper, helper_arg_idx, arg_reg)?;
+                        helper_map_args.push((helper_arg_idx, map_ref, map_vreg));
+                        args.push(arg);
                         continue;
                     }
                     let helper_arg_vreg = if self.is_context_reg(arg_reg) {
@@ -725,6 +730,7 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         arg_vreg
                     };
+                    helper_arg_regs.push((helper_arg_idx, arg_reg));
                     args.push(MirValue::VReg(helper_arg_vreg));
                 }
                 if args.len() > 5 {
@@ -732,6 +738,13 @@ impl<'a> HirToMirLowering<'a> {
                         "BPF helper calls support at most 5 arguments".into(),
                     ));
                 }
+
+                self.record_storage_helper_value_schema(
+                    helper,
+                    dst_vreg,
+                    &helper_map_args,
+                    &helper_arg_regs,
+                )?;
 
                 self.emit(MirInst::CallHelper {
                     dst: dst_vreg,
@@ -1797,7 +1810,7 @@ impl<'a> HirToMirLowering<'a> {
         helper: BpfHelper,
         arg_idx: usize,
         arg_reg: RegId,
-    ) -> Result<MirValue, CompileError> {
+    ) -> Result<(MirValue, MapRef, VReg), CompileError> {
         let map_name = match self.literal_string_arg(arg_reg, "helper-call") {
             Ok(name) => name,
             Err(_) => {
@@ -1827,8 +1840,12 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
         };
-        let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
-        Ok(MirValue::VReg(map_vreg))
+        let map_ref = MapRef {
+            name: map_name,
+            kind: map_kind,
+        };
+        let map_vreg = self.emit_typed_map_fd_load(map_ref.name.clone(), map_ref.kind);
+        Ok((MirValue::VReg(map_vreg), map_ref, map_vreg))
     }
 
     fn emit_typed_map_fd_load(&mut self, map_name: String, map_kind: MapKind) -> VReg {
@@ -1880,5 +1897,80 @@ impl<'a> HirToMirLowering<'a> {
             );
         }
         map_vreg
+    }
+
+    fn storage_helper_init_arg_idx(helper: BpfHelper) -> Option<usize> {
+        match helper {
+            BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet => {
+                Some(2)
+            }
+            _ => None,
+        }
+    }
+
+    fn storage_helper_init_value_type_from_reg(&self, value_reg: RegId) -> Option<MirType> {
+        let value_ty = self.get_metadata(value_reg).and_then(|meta| {
+            meta.field_type
+                .clone()
+                .or_else(|| Self::metadata_record_layout(meta))
+        })?;
+        match value_ty {
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } => Some(pointee.as_ref().clone()),
+            MirType::Array { .. } | MirType::Struct { .. } => Some(value_ty),
+            _ => None,
+        }
+    }
+
+    fn record_storage_helper_value_schema(
+        &mut self,
+        helper: BpfHelper,
+        dst_vreg: VReg,
+        helper_map_args: &[(usize, MapRef, VReg)],
+        helper_arg_regs: &[(usize, RegId)],
+    ) -> Result<(), CompileError> {
+        let Some(init_arg_idx) = Self::storage_helper_init_arg_idx(helper) else {
+            return Ok(());
+        };
+        let Some((_, map_ref, map_vreg)) = helper_map_args.iter().find(|(idx, _, _)| *idx == 0)
+        else {
+            return Ok(());
+        };
+        let Some((_, init_reg)) = helper_arg_regs.iter().find(|(idx, _)| *idx == init_arg_idx)
+        else {
+            return Ok(());
+        };
+        let Some(value_ty) = self.storage_helper_init_value_type_from_reg(*init_reg) else {
+            return Ok(());
+        };
+
+        if self.externally_seeded_map_value_types.contains(map_ref)
+            && let Some(existing) = self.named_map_value_type(map_ref)
+            && existing != &value_ty
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "storage helper init value type for '{}' conflicts with pinned map schema",
+                map_ref.name
+            )));
+        }
+
+        self.register_named_map_value_type(map_ref, &value_ty);
+        self.vreg_type_hints.insert(
+            *map_vreg,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty.clone()),
+            },
+        );
+        self.vreg_type_hints.insert(
+            dst_vreg,
+            MirType::Ptr {
+                pointee: Box::new(value_ty),
+                address_space: AddressSpace::Map,
+            },
+        );
+        Ok(())
     }
 }
