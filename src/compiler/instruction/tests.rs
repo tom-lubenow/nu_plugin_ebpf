@@ -478,6 +478,23 @@ fn test_redirect_map_helper_uses_explicit_redirect_map_kind_family() {
 }
 
 #[test]
+fn test_storage_helpers_use_fixed_local_storage_map_kinds() {
+    for (helper, kind) in [
+        (BpfHelper::SkStorageGet, MapKind::SkStorage),
+        (BpfHelper::SkStorageDelete, MapKind::SkStorage),
+        (BpfHelper::TaskStorageGet, MapKind::TaskStorage),
+        (BpfHelper::TaskStorageDelete, MapKind::TaskStorage),
+        (BpfHelper::InodeStorageGet, MapKind::InodeStorage),
+        (BpfHelper::InodeStorageDelete, MapKind::InodeStorage),
+    ] {
+        assert_eq!(helper.local_helper_map_arg_index(), Some(0));
+        assert_eq!(helper.helper_map_arg_kind(0), Some(kind));
+        assert!(helper.supports_local_helper_map_fd(0));
+        assert!(!helper.helper_requires_explicit_map_kind(0));
+    }
+}
+
+#[test]
 fn test_helper_signature_get_netns_cookie() {
     let sig = HelperSignature::for_id(BpfHelper::GetNetnsCookie as u32)
         .expect("expected bpf_get_netns_cookie helper signature");

@@ -491,6 +491,9 @@ impl BpfHelper {
             (Self::SockHashUpdate | Self::MsgRedirectHash | Self::SkRedirectHash, 1) => {
                 Some(MapKind::SockHash)
             }
+            (Self::SkStorageGet | Self::SkStorageDelete, 0) => Some(MapKind::SkStorage),
+            (Self::TaskStorageGet | Self::TaskStorageDelete, 0) => Some(MapKind::TaskStorage),
+            (Self::InodeStorageGet | Self::InodeStorageDelete, 0) => Some(MapKind::InodeStorage),
             _ => None,
         }
     }
@@ -511,6 +514,12 @@ impl BpfHelper {
             | Self::SockHashUpdate
             | Self::MsgRedirectHash
             | Self::SkRedirectHash => Some(1),
+            Self::SkStorageGet
+            | Self::SkStorageDelete
+            | Self::TaskStorageGet
+            | Self::TaskStorageDelete
+            | Self::InodeStorageGet
+            | Self::InodeStorageDelete => Some(0),
             _ => None,
         }
     }

@@ -174,8 +174,11 @@ pub enum BpfMapType {
     SockHash = 18,
     Queue = 22,
     Stack = 23,
+    SkStorage = 24,
     DevMapHash = 25,
     RingBuf = 27,
+    InodeStorage = 28,
+    TaskStorage = 29,
 }
 
 /// Pinning type for BPF maps (libbpf convention)
@@ -308,6 +311,32 @@ impl BpfMapDef {
             map_flags: 0,
             pinning: BpfPinningType::None,
         }
+    }
+
+    fn local_storage(map_type: BpfMapType, value_size: u32) -> Self {
+        Self {
+            map_type: map_type as u32,
+            key_size: 4,
+            value_size,
+            max_entries: 0,
+            map_flags: 1, // BPF_F_NO_PREALLOC
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a socket-local storage map definition.
+    pub fn sk_storage(value_size: u32) -> Self {
+        Self::local_storage(BpfMapType::SkStorage, value_size)
+    }
+
+    /// Create an inode-local storage map definition.
+    pub fn inode_storage(value_size: u32) -> Self {
+        Self::local_storage(BpfMapType::InodeStorage, value_size)
+    }
+
+    /// Create a task-local storage map definition.
+    pub fn task_storage(value_size: u32) -> Self {
+        Self::local_storage(BpfMapType::TaskStorage, value_size)
     }
 
     /// Create a generic devmap definition.

@@ -548,7 +548,11 @@ fn test_bpf_map_type_constants_match_kernel_uapi() {
     assert_eq!(BpfMapType::CpuMap as u32, 16);
     assert_eq!(BpfMapType::XskMap as u32, 17);
     assert_eq!(BpfMapType::SockHash as u32, 18);
+    assert_eq!(BpfMapType::SkStorage as u32, 24);
     assert_eq!(BpfMapType::DevMapHash as u32, 25);
+    assert_eq!(BpfMapType::RingBuf as u32, 27);
+    assert_eq!(BpfMapType::InodeStorage as u32, 28);
+    assert_eq!(BpfMapType::TaskStorage as u32, 29);
 }
 
 #[test]

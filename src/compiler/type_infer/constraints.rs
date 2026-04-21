@@ -275,6 +275,9 @@ impl<'a> TypeInference<'a> {
                         (HMType::Unknown, HMType::Unknown)
                     }
                     MapKind::StackTrace => (HMType::U32, HMType::Unknown),
+                    MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage => {
+                        (HMType::U32, HMType::Unknown)
+                    }
                     _ => (HMType::Unknown, HMType::Unknown),
                 };
                 let map_ty = HMType::MapRef {

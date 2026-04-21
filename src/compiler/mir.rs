@@ -74,6 +74,9 @@ pub enum MapKind {
     XskMap,
     SockMap,
     SockHash,
+    SkStorage,
+    InodeStorage,
+    TaskStorage,
     ProgArray,
 }
 

@@ -287,6 +287,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::XskMap
                 | MapKind::SockMap
                 | MapKind::SockHash
+                | MapKind::SkStorage
+                | MapKind::InodeStorage
+                | MapKind::TaskStorage
                 | MapKind::RingBuf
                 | MapKind::StackTrace
                 | MapKind::ProgArray
@@ -419,6 +422,24 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::StackTrace => self.register_generic_map_spec(map, 4, Some(127 * 8))?,
             MapKind::PerfEventArray | MapKind::ProgArray => {
                 self.register_generic_map_spec(map, 4, Some(4))?;
+            }
+            MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage => {
+                let value_size = self
+                    .generic_map_specs
+                    .get(&map.name)
+                    .filter(|spec| spec.kind == map.kind)
+                    .map(|spec| spec.value_size as usize)
+                    .or_else(|| {
+                        self.generic_map_value_types
+                            .get(map)
+                            .map(|ty| ty.size().max(1))
+                    })
+                    .or_else(|| match self.current_types.get(&dst) {
+                        Some(MirType::MapRef { val_ty, .. }) => Some(val_ty.size().max(1)),
+                        _ => None,
+                    })
+                    .unwrap_or(8);
+                self.register_generic_map_spec(map, 4, Some(value_size))?;
             }
             other => {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -588,6 +609,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::XskMap => BpfMapDef::xsk_map(max_entries),
             MapKind::SockMap => BpfMapDef::sock_map(max_entries),
             MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, max_entries),
+            MapKind::SkStorage => BpfMapDef::sk_storage(spec.value_size),
+            MapKind::InodeStorage => BpfMapDef::inode_storage(spec.value_size),
+            MapKind::TaskStorage => BpfMapDef::task_storage(spec.value_size),
             MapKind::ProgArray => BpfMapDef::prog_array(1024),
         };
         Ok(map_def)

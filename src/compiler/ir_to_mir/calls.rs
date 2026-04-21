@@ -1867,6 +1867,17 @@ impl<'a> HirToMirLowering<'a> {
                     val_ty: Box::new(MirType::Unknown),
                 },
             );
+        } else if matches!(
+            map_kind,
+            MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage
+        ) {
+            self.vreg_type_hints.insert(
+                map_vreg,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::Unknown),
+                },
+            );
         }
         map_vreg
     }

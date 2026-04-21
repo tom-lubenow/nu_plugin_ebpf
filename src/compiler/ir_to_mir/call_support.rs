@@ -196,6 +196,9 @@ impl<'a> HirToMirLowering<'a> {
             "xskmap" | "xsk-map" | "xsk_map" => Some(MapKind::XskMap),
             "sock-map" | "sock_map" | "sockmap" => Some(MapKind::SockMap),
             "sock-hash" | "sock_hash" | "sockhash" => Some(MapKind::SockHash),
+            "sk-storage" | "sk_storage" | "skstorage" => Some(MapKind::SkStorage),
+            "inode-storage" | "inode_storage" | "inodestorage" => Some(MapKind::InodeStorage),
+            "task-storage" | "task_storage" | "taskstorage" => Some(MapKind::TaskStorage),
             _ => None,
         }
     }
@@ -227,6 +230,11 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"
+                )))
+            }
+            Some(MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is reserved for BPF local-storage helpers; pass a literal map name as arg0 to the matching storage helper-call instead"
                 )))
             }
             Some(_) | None => Err(CompileError::UnsupportedInstruction(format!(

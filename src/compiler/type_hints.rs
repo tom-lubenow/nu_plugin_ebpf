@@ -366,6 +366,14 @@ pub(crate) fn infer_instruction_def_type(
                 },
                 true,
             )),
+            MapKind::SkStorage | MapKind::InodeStorage | MapKind::TaskStorage => Some((
+                *dst,
+                MirType::MapRef {
+                    key_ty: Box::new(MirType::U32),
+                    val_ty: Box::new(MirType::Unknown),
+                },
+                true,
+            )),
             MapKind::RingBuf => Some((
                 *dst,
                 MirType::MapRef {
