@@ -7657,6 +7657,60 @@ fn test_compile_cgroup_sockopt_get_ctx_retval_store_program() {
 }
 
 #[test]
+fn test_compile_remaining_cgroup_socket_scalar_store_programs() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:set",
+        CellPath {
+            members: vec![string_member("optname")],
+        },
+        HirLiteral::Int(2),
+        HirLiteral::Int(1),
+        "cgroup_sockopt:set ctx.optname store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("optlen")],
+        },
+        HirLiteral::Int(4),
+        HirLiteral::Int(1),
+        "cgroup_sockopt:get ctx.optlen store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("sockopt_retval")],
+        },
+        HirLiteral::Int(0),
+        HirLiteral::Int(1),
+        "cgroup_sockopt:get ctx.sockopt_retval store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:bind4",
+        CellPath {
+            members: vec![string_member("local_port")],
+        },
+        HirLiteral::Int(8080),
+        HirLiteral::Int(1),
+        "cgroup_sock_addr:bind4 ctx.local_port store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:sendmsg4",
+        CellPath {
+            members: vec![string_member("local_ip4")],
+        },
+        HirLiteral::Int(0x7f000001),
+        HirLiteral::Int(1),
+        "cgroup_sock_addr:sendmsg4 ctx.local_ip4 store",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_get_guarded_ctx_optval_byte_store_program() {
     let hir = make_gt_zero_guarded_ctx_path_store_program(
         CellPath {
