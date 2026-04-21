@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::compiler::elf::ProbeContext;
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirType,
     MirTypeHints, MirValue, StackSlotId, StructField, VReg,
@@ -227,6 +228,32 @@ fn stored_generic_map_value_type(ty: &MirType) -> MirType {
     }
 }
 
+fn storage_get_helper_return_type(
+    helper_id: u32,
+    args: &[MirValue],
+    hints: &HashMap<VReg, MirType>,
+) -> Option<MirType> {
+    if !matches!(
+        BpfHelper::from_u32(helper_id),
+        Some(BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet)
+    ) {
+        return None;
+    }
+    let MirValue::VReg(map_vreg) = args.first()? else {
+        return None;
+    };
+    let Some(MirType::MapRef { val_ty, .. }) = hints.get(map_vreg) else {
+        return None;
+    };
+    if matches!(val_ty.as_ref(), MirType::Unknown) {
+        return None;
+    }
+    Some(MirType::Ptr {
+        pointee: Box::new(val_ty.as_ref().clone()),
+        address_space: AddressSpace::Map,
+    })
+}
+
 pub(crate) fn infer_generic_map_value_types(
     func: &MirFunction,
     hints: &HashMap<VReg, MirType>,
@@ -422,6 +449,9 @@ pub(crate) fn infer_instruction_def_type(
             arg_types
                 .all(|ty| ty == first)
                 .then_some((*dst, first, false))
+        }
+        MirInst::CallHelper { dst, helper, args } => {
+            storage_get_helper_return_type(*helper, args, hints).map(|ty| (*dst, ty, true))
         }
         _ => None,
     }
@@ -781,6 +811,58 @@ mod tests {
         );
 
         assert_eq!(hints.get(&lookup), Some(&looked_up_ty));
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_uses_storage_map_value_type() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let map = func.alloc_vreg();
+        let task = func.alloc_vreg();
+        let storage_value = func.alloc_vreg();
+        let value_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 32,
+        };
+
+        func.block_mut(bb0).instructions.push(MirInst::CallHelper {
+            dst: storage_value,
+            helper: BpfHelper::TaskStorageGet as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(task),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(storage_value)),
+        };
+
+        let mut hints = HashMap::from([(
+            map,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty.clone()),
+            },
+        )]);
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert_eq!(
+            hints.get(&storage_value),
+            Some(&MirType::Ptr {
+                pointee: Box::new(value_ty),
+                address_space: AddressSpace::Map,
+            })
+        );
     }
 
     #[test]

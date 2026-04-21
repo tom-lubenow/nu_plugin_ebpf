@@ -155,6 +155,15 @@ impl<'a> TypeInference<'a> {
                         }
                         HelperRetKind::PointerNonNull | HelperRetKind::PointerMaybeNull => {
                             if let Some(helper_kind) = BpfHelper::from_u32(*helper)
+                                && let Some(storage_ret_ty) =
+                                    self.storage_helper_return_type(helper_kind, args)
+                            {
+                                self.constrain(
+                                    dst_ty,
+                                    storage_ret_ty,
+                                    "helper_call_storage_ptr_ret",
+                                );
+                            } else if let Some(helper_kind) = BpfHelper::from_u32(*helper)
                                 && let Some(precise_ty) =
                                     TypeInference::precise_helper_return_mir_type(helper_kind)
                             {
@@ -514,6 +523,41 @@ impl<'a> TypeInference<'a> {
                     val_ty: Box::new(val_ty),
                 }
             }
+            BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet => {
+                let hinted_map_ref = self
+                    .type_hints
+                    .and_then(|hints| hints.get(map_vreg))
+                    .is_some_and(|ty| matches!(ty, MirType::MapRef { .. }));
+                if !hinted_map_ref {
+                    return;
+                }
+                let val_ty = self
+                    .storage_helper_init_value_type(args)
+                    .or_else(|| self.hinted_map_ref_value_type(*map_vreg))
+                    .unwrap_or(HMType::Unknown);
+                HMType::MapRef {
+                    key_ty: Box::new(HMType::U32),
+                    val_ty: Box::new(val_ty),
+                }
+            }
+            BpfHelper::SkStorageDelete
+            | BpfHelper::TaskStorageDelete
+            | BpfHelper::InodeStorageDelete => {
+                let hinted_map_ref = self
+                    .type_hints
+                    .and_then(|hints| hints.get(map_vreg))
+                    .is_some_and(|ty| matches!(ty, MirType::MapRef { .. }));
+                if !hinted_map_ref {
+                    return;
+                }
+                HMType::MapRef {
+                    key_ty: Box::new(HMType::U32),
+                    val_ty: Box::new(
+                        self.hinted_map_ref_value_type(*map_vreg)
+                            .unwrap_or(HMType::Unknown),
+                    ),
+                }
+            }
             _ => return,
         };
 
@@ -522,6 +566,51 @@ impl<'a> TypeInference<'a> {
             map_ty,
             format!("helper_map_ref {}", helper.name()),
         );
+    }
+
+    fn hinted_map_ref_value_type(&self, map_vreg: VReg) -> Option<HMType> {
+        match self.type_hints.and_then(|hints| hints.get(&map_vreg)) {
+            Some(MirType::MapRef { val_ty, .. }) => Some(HMType::from_mir_type(val_ty)),
+            _ => None,
+        }
+    }
+
+    fn storage_helper_init_value_type(&mut self, args: &[MirValue]) -> Option<HMType> {
+        match args.get(2)? {
+            MirValue::Const(0) => None,
+            value => match self.value_type(value) {
+                HMType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack | AddressSpace::Map,
+                } => Some(*pointee),
+                _ => None,
+            },
+        }
+    }
+
+    fn storage_helper_return_type(
+        &mut self,
+        helper: BpfHelper,
+        args: &[MirValue],
+    ) -> Option<HMType> {
+        if !matches!(
+            helper,
+            BpfHelper::SkStorageGet | BpfHelper::TaskStorageGet | BpfHelper::InodeStorageGet
+        ) {
+            return None;
+        }
+
+        let value_ty = self.storage_helper_init_value_type(args).or_else(|| {
+            let MirValue::VReg(map_vreg) = args.first()? else {
+                return None;
+            };
+            self.hinted_map_ref_value_type(*map_vreg)
+        })?;
+
+        Some(HMType::Ptr {
+            pointee: Box::new(value_ty),
+            address_space: AddressSpace::Map,
+        })
     }
 
     pub(super) fn constrain(

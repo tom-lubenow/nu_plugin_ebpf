@@ -3851,6 +3851,51 @@ fn test_infer_helper_task_storage_get_returns_map_pointer() {
 }
 
 #[test]
+fn test_infer_helper_task_storage_get_return_uses_map_value_hint() {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TaskStorageGet as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Array {
+        elem: Box::new(MirType::U8),
+        len: 16,
+    };
+    let hints = HashMap::from([
+        (
+            map,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty.clone()),
+            },
+        ),
+        (task, MirType::named_kernel_struct_ptr("task_struct")),
+    ]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let types = ti.infer(&func).unwrap();
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::Ptr {
+            pointee: Box::new(value_ty),
+            address_space: AddressSpace::Map,
+        })
+    );
+}
+
+#[test]
 fn test_type_error_helper_task_storage_get_rejects_anonymous_kernel_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
