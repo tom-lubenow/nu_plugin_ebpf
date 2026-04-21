@@ -303,10 +303,6 @@ impl EbpfProgramType {
         self.info().supports_egress_ifindex_ctx_field
     }
 
-    pub fn supports_skb_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::SkBuffPacket)
-    }
-
     pub fn supports_socket_ref_ctx_field(&self) -> bool {
         self.socket_ref_context_layout().is_some()
     }
@@ -357,34 +353,6 @@ impl EbpfProgramType {
 
     pub fn supports_lookup_cookie_ctx_field(&self) -> bool {
         program_context_layout_spec(*self).is_some_and(|spec| spec.lookup_cookie)
-    }
-
-    pub fn supports_cgroup_sock_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::CgroupSock)
-    }
-
-    pub fn supports_cgroup_sock_addr_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::CgroupSockAddr)
-    }
-
-    pub fn supports_cgroup_sockopt_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::CgroupSockopt)
-    }
-
-    pub fn supports_cgroup_sysctl_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::CgroupSysctl)
-    }
-
-    pub fn supports_device_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::CgroupDevice)
-    }
-
-    pub fn supports_sock_ops_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::SockOps)
-    }
-
-    pub fn supports_lirc_ctx_fields(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::LircMode2)
     }
 
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {

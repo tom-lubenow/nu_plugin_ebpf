@@ -459,14 +459,13 @@ impl<'a> HirToMirLowering<'a> {
                     "{context} --kind {kind} is a socket redirection map; use socket-map specific operations instead"
                 )))
             }
-            Some(other) => Err(
-                Self::reserved_special_map_kind_error(context, &kind, other).unwrap_or_else(|| {
+            Some(other) => Err(Self::reserved_special_map_kind_error(context, &kind, other)
+                .unwrap_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
                         "{context} does not support map kind {:?}",
                         other
                     ))
-                }),
-            ),
+                })),
             None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must be one of: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sk-storage, task-storage, inode-storage, cgrp-storage, bloom-filter, cgroup-array"
             ))),
