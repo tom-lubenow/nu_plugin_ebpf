@@ -2312,7 +2312,7 @@ fn test_lower_map_put_rejects_sockhash_kind() {
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
-            assert!(msg.contains("map-put --kind sockmap/sockhash is only valid in sock_ops"));
+            assert!(msg.contains("helper 'bpf_sock_hash_update' is only valid in sock_ops"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

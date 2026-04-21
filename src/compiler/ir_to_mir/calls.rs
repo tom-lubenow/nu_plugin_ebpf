@@ -7,7 +7,7 @@ use crate::compiler::instruction::{
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, MapOpKind, STRING_COUNTER_MAP_NAME,
 };
-use crate::compiler::{EbpfProgramType, ProgramIntrinsic, TypeInference};
+use crate::compiler::{ProgramIntrinsic, TypeInference};
 
 const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
@@ -1941,13 +1941,13 @@ impl<'a> HirToMirLowering<'a> {
                 map_ref.kind
             ))
         })?;
-        if !self
-            .probe_ctx
-            .is_some_and(|ctx| matches!(ctx.program_type(), EbpfProgramType::SockOps))
-        {
-            return Err(CompileError::UnsupportedInstruction(
-                "map-put --kind sockmap/sockhash is only valid in sock_ops programs".into(),
-            ));
+        let probe_ctx = self.probe_ctx.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "map-put --kind sockmap/sockhash requires a sock_ops program context".into(),
+            )
+        })?;
+        if let Some(message) = probe_ctx.helper_call_error(helper) {
+            return Err(CompileError::UnsupportedInstruction(message));
         }
         let ctx_vreg = self
             .pipeline_input
