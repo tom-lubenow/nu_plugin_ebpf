@@ -5369,6 +5369,20 @@ fn test_compile_tc_ctx_mark_store_program() {
 }
 
 #[test]
+fn test_compile_tc_ctx_data_byte_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::Int(0),
+        "tc ctx.data[0] store",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_skb_egress_ctx_tstamp_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::CgroupSkb,
@@ -5379,6 +5393,58 @@ fn test_compile_cgroup_skb_egress_ctx_tstamp_store_program() {
         HirLiteral::Int(123),
         HirLiteral::Int(1),
         "cgroup_skb:egress ctx.tstamp store",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_ethertype_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ethertype"),
+            ],
+        },
+        HirLiteral::Int(0x86dd),
+        HirLiteral::Int(2),
+        "xdp ctx.data.eth.ethertype store",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_eth_ipv6_udp_dst_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv6"),
+                string_member("udp"),
+                string_member("dst"),
+            ],
+        },
+        HirLiteral::Int(53),
+        HirLiteral::Int(2),
+        "xdp ctx.data.eth.ipv6.udp.dst store",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_data_meta_byte_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("data_meta"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(2),
+        "xdp ctx.data_meta[0] store",
     );
 }
 
