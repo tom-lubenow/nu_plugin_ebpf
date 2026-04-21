@@ -3856,6 +3856,52 @@ fn assert_ctx_path_count_program_compiles(
     );
 }
 
+fn assert_guarded_sock_ops_ctx_path_count_program_compiles(
+    callback_op: i64,
+    counted_path: CellPath,
+    context: &str,
+) {
+    let hir = make_eq_guarded_ctx_path_count_program(
+        CellPath {
+            members: vec![string_member("op")],
+        },
+        HirLiteral::Int(callback_op),
+        counted_path,
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower through attach flow: {err}"));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("optimized {context} should compile: {err}"));
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+}
+
 fn assert_attach_program_compiles(
     hir: &HirProgram,
     program_type: EbpfProgramType,
@@ -6762,128 +6808,46 @@ fn test_compile_sk_msg_ctx_data_byte_counter_program() {
 
 #[test]
 fn test_compile_sock_ops_guarded_ctx_packet_len_counter_program() {
-    let hir = make_eq_guarded_ctx_path_count_program(
-        CellPath {
-            members: vec![string_member("op")],
-        },
-        HirLiteral::Int(BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB),
+    assert_guarded_sock_ops_ctx_path_count_program_compiles(
+        BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
         CellPath {
             members: vec![string_member("packet_len")],
         },
-        DeclId::new(42),
+        "guarded sock_ops ctx.packet_len count",
     );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+}
 
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("guarded sock_ops ctx.packet_len count should lower through attach flow");
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
+#[test]
+fn test_compile_sock_ops_guarded_ctx_len_alias_counter_program() {
+    assert_guarded_sock_ops_ctx_path_count_program_compiles(
+        BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
+        CellPath {
+            members: vec![string_member("len")],
+        },
+        "guarded sock_ops ctx.len count",
     );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized guarded sock_ops ctx.packet_len count should compile");
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
 fn test_compile_sock_ops_guarded_ctx_data_byte_counter_program() {
-    let hir = make_eq_guarded_ctx_path_count_program(
-        CellPath {
-            members: vec![string_member("op")],
-        },
-        HirLiteral::Int(BPF_SOCK_OPS_PARSE_HDR_OPT_CB),
+    assert_guarded_sock_ops_ctx_path_count_program_compiles(
+        BPF_SOCK_OPS_PARSE_HDR_OPT_CB,
         CellPath {
             members: vec![string_member("data"), int_member(0)],
         },
-        DeclId::new(42),
+        "guarded sock_ops ctx.data[0] count",
     );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("guarded sock_ops ctx.data[0] count should lower through attach flow");
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized guarded sock_ops ctx.data[0] count should compile");
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
 fn test_compile_sock_ops_guarded_ctx_skb_tcp_flags_counter_program() {
-    let hir = make_eq_guarded_ctx_path_count_program(
-        CellPath {
-            members: vec![string_member("op")],
-        },
-        HirLiteral::Int(BPF_SOCK_OPS_HDR_OPT_LEN_CB),
+    assert_guarded_sock_ops_ctx_path_count_program_compiles(
+        BPF_SOCK_OPS_HDR_OPT_LEN_CB,
         CellPath {
             members: vec![string_member("skb_tcp_flags")],
         },
-        DeclId::new(42),
+        "guarded sock_ops ctx.skb_tcp_flags count",
     );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("guarded sock_ops ctx.skb_tcp_flags count should lower through attach flow");
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized guarded sock_ops ctx.skb_tcp_flags count should compile");
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
@@ -6907,6 +6871,18 @@ fn test_compile_sk_msg_ctx_len_alias_counter_program() {
             members: vec![string_member("len")],
         },
         "sk_msg ctx.len count",
+    );
+}
+
+#[test]
+fn test_compile_sk_msg_ctx_size_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("size")],
+        },
+        "sk_msg ctx.size count",
     );
 }
 

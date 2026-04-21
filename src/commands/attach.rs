@@ -358,6 +358,7 @@ Context parameter syntax (recommended):
     {|ctx| mut ctx = $ctx; $ctx.reply = 1; 1 } - Write the raw sock_ops reply word through ordinary assignment
     {|ctx| mut ctx = $ctx; $ctx.replylong.0 = 7; 1 } - Write a raw replylong u32 word through ordinary assignment
     {|ctx| $ctx.packet_len } - Get the packet length when packet metadata is available
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.data }    - Get the packet data pointer when packet metadata is available
     {|ctx| $ctx.data_end } - Get the packet end pointer when packet metadata is available
     {|ctx| $ctx.family }  - Get socket family
@@ -427,6 +428,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.packet_len } - Get total message size in bytes
     {|ctx| $ctx.len } - Alias for ctx.packet_len
+    {|ctx| $ctx.size } - Kernel-native alias for ctx.packet_len
     {|ctx| $ctx.data }    - Get the packet/message data pointer
     {|ctx| $ctx.data_end } - Get the end pointer for packet/message access
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
