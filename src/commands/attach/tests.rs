@@ -2771,6 +2771,63 @@ fn make_random_int_count_program(random_decl_id: DeclId, count_decl_id: DeclId) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_random_int_range_count_program(
+    random_decl_id: DeclId,
+    count_decl_id: DeclId,
+    start: i64,
+    end: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(start),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(0),
+                        step: RegId::new(1),
+                        end: RegId::new(2),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: random_decl_id,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bound_ctx_path_projection_call_program(
     root_path: CellPath,
     projection_path: CellPath,
@@ -7087,6 +7144,25 @@ fn test_compile_xdp_random_int_counter_program() {
         "lo",
         &decl_names,
         "xdp random int count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_random_int_range_counter_program() {
+    let random_decl_id = DeclId::new(42);
+    let count_decl_id = DeclId::new(43);
+    let hir = make_random_int_range_count_program(random_decl_id, count_decl_id, 10, 20);
+    let decl_names = HashMap::from([
+        (random_decl_id, "random int".to_string()),
+        (count_decl_id, "count".to_string()),
+    ]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "xdp random int bounded range count",
     );
 }
 
