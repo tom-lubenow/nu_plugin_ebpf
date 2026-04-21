@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::ProgramIntrinsic;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature, KfuncSignature,
@@ -7,6 +6,7 @@ use crate::compiler::instruction::{
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
 };
+use crate::compiler::{EbpfProgramType, ProgramIntrinsic};
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_call(
@@ -986,65 +986,66 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-put")?;
                 self.validate_generic_map_name(&map_name, "map-put")?;
                 let map_kind = self.generic_map_kind_arg("map-put")?;
-                self.validate_generic_map_update_kind(map_kind, &map_name)?;
                 let map_ref = MapRef {
                     name: map_name.clone(),
                     kind: map_kind,
                 };
-                let key_vreg = self
+                let (key_vreg, key_reg) = self
                     .positional_args
                     .get(1)
-                    .map(|(vreg, _)| *vreg)
+                    .map(|(vreg, reg)| (*vreg, *reg))
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
                             "map-put requires a key as the second positional argument".into(),
                         )
                     })?;
-                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
-                    let raw = self
-                        .get_metadata(*reg)
-                        .and_then(|m| m.literal_int)
+                let flags = self
+                    .optional_nonnegative_named_u64_arg("map-put", "flags")?
+                    .unwrap_or(0);
+
+                if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+                    self.lower_socket_map_put(
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        map_ref,
+                        key_vreg,
+                        key_reg,
+                        flags,
+                    )?;
+                } else {
+                    self.validate_generic_map_update_kind(map_kind, &map_name)?;
+                    let value_vreg = self
+                        .pipeline_input
+                        .or_else(|| src_dst_had_value.then_some(dst_vreg))
                         .ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
-                                "map-put --flags must be a compile-time integer literal".into(),
+                                "map-put requires a value from pipeline input".into(),
                             )
                         })?;
-                    u64::try_from(raw).map_err(|_| {
-                        CompileError::UnsupportedInstruction("map-put --flags must be >= 0".into())
-                    })?
-                } else {
-                    0
-                };
-                let value_vreg = self
-                    .pipeline_input
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "map-put requires a value from pipeline input".into(),
-                        )
-                    })?;
-                let value_reg = self
-                    .pipeline_input_reg
-                    .or_else(|| src_dst_had_value.then_some(src_dst));
-                let stored_value_vreg = if let Some(value_reg) = value_reg {
-                    self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
-                } else {
-                    value_vreg
-                };
+                    let value_reg = self
+                        .pipeline_input_reg
+                        .or_else(|| src_dst_had_value.then_some(src_dst));
+                    let stored_value_vreg = if let Some(value_reg) = value_reg {
+                        self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
+                    } else {
+                        value_vreg
+                    };
 
-                self.emit(MirInst::MapUpdate {
-                    map: map_ref.clone(),
-                    key: key_vreg,
-                    val: stored_value_vreg,
-                    flags,
-                });
-                self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-put")?;
+                    self.emit(MirInst::MapUpdate {
+                        map: map_ref.clone(),
+                        key: key_vreg,
+                        val: stored_value_vreg,
+                        flags,
+                    });
+                    self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-put")?;
 
-                self.emit(MirInst::Copy {
-                    dst: dst_vreg,
-                    src: MirValue::Const(0),
-                });
-                self.reset_call_result_metadata(src_dst);
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::Const(0),
+                    });
+                    self.reset_call_result_metadata(src_dst);
+                }
             }
 
             "map-push" => {
@@ -1825,6 +1826,94 @@ impl<'a> HirToMirLowering<'a> {
             MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageDelete),
             _ => None,
         }
+    }
+
+    fn socket_map_update_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
+        match map_kind {
+            MapKind::SockMap => Some(BpfHelper::SockMapUpdate),
+            MapKind::SockHash => Some(BpfHelper::SockHashUpdate),
+            _ => None,
+        }
+    }
+
+    fn lower_socket_map_put(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        map_ref: MapRef,
+        key_vreg: VReg,
+        key_reg: RegId,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        let helper = Self::socket_map_update_helper_for_kind(map_ref.kind).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "map-put does not support socket map kind {:?}",
+                map_ref.kind
+            ))
+        })?;
+        if !self
+            .probe_ctx
+            .is_some_and(|ctx| matches!(ctx.program_type(), EbpfProgramType::SockOps))
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "map-put --kind sockmap/sockhash is only valid in sock_ops programs".into(),
+            ));
+        }
+        let ctx_vreg = self
+            .pipeline_input
+            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-put --kind sockmap/sockhash requires a sock_ops context from pipeline input"
+                        .into(),
+                )
+            })?;
+        let ctx_reg = self
+            .pipeline_input_reg
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let ctx_vreg = if ctx_reg.is_some_and(|reg| self.is_context_reg(reg)) {
+            self.materialize_context_pointer_arg()
+        } else {
+            ctx_vreg
+        };
+
+        let (key_ptr_vreg, _key_ty) =
+            self.materialize_map_value_probe_pointer(Some(key_reg), key_vreg, "map-put")?;
+        let map_key_ty = if matches!(map_ref.kind, MapKind::SockMap) {
+            MirType::U32
+        } else {
+            // Sockhash key layout is inferred from the helper key pointer.
+            // Seeding it here can conflict with path-specific pointer metadata.
+            MirType::Unknown
+        };
+        let map_vreg = self.emit_typed_map_fd_load(map_ref.name, map_ref.kind);
+        self.vreg_type_hints.insert(
+            map_vreg,
+            MirType::MapRef {
+                key_ty: Box::new(map_key_ty),
+                val_ty: Box::new(MirType::U32),
+            },
+        );
+
+        let status_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallHelper {
+            dst: status_vreg,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx_vreg),
+                MirValue::VReg(map_vreg),
+                MirValue::VReg(key_ptr_vreg),
+                MirValue::Const(flags as i64),
+            ],
+        });
+        self.vreg_type_hints.insert(status_vreg, MirType::I64);
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(0),
+        });
+        self.reset_call_result_metadata(src_dst);
+        Ok(())
     }
 
     fn local_storage_object_vreg(&mut self, object_vreg: VReg, object_reg: Option<RegId>) -> VReg {

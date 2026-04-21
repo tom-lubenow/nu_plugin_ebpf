@@ -696,7 +696,7 @@ impl PluginCommand for MapPut {
     }
 
     fn description(&self) -> &str {
-        "Insert or update a value in a named generic BPF map."
+        "Insert or update a value in a named BPF map."
     }
 
     fn extra_description(&self) -> &str {
@@ -706,6 +706,10 @@ raw `bpf_map_update_elem` flags when needed. With `ebpf attach --pin`, the
 value layout becomes available to later pinned `map-get` users in the same
 group. If the pipeline input is a whole typed `map-get` value, `map-put`
 stores the underlying aggregate bytes rather than the pointer wrapper.
+
+For `--kind sockmap` or `--kind sockhash`, the pipeline input must be the
+current `sock_ops` context and the key is the second positional argument. This
+lowers to `bpf_sock_{map,hash}_update`.
 
 Example:
   $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash
@@ -722,7 +726,7 @@ leading `u32` prefix length followed by the trie payload bytes."#
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash (default hash; queue/stack use map-push instead)",
+                "Map kind: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sockmap, or sockhash (default hash; queue/stack use map-push instead)",
                 None,
             )
             .named(
@@ -735,11 +739,18 @@ leading `u32` prefix length followed by the trie payload bytes."#
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![Example {
-            example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash }",
-            description: "Store a typed struct value in a named hash map",
-            result: None,
-        }]
+        vec![
+            Example {
+                example: "ebpf attach 'fentry:security_file_open' {|ctx| $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash }",
+                description: "Store a typed struct value in a named hash map",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx | map-put active_sockets $ctx.remote_port --kind sockmap }",
+                description: "Update a sockmap from the current sock_ops context",
+                result: None,
+            },
+        ]
     }
 
     fn run(

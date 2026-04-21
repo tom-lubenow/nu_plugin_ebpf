@@ -168,6 +168,73 @@ fn make_task_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_sock_ops_socket_map_put_program(
+    map_put_decl: DeclId,
+    kind: &str,
+    flags: i64,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"active_sockets".to_vec()),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(2),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("remote_port")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(2),
+            path: RegId::new(3),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::String(kind.as_bytes().to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(flags),
+        },
+        HirStmt::Call {
+            decl_id: map_put_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1), RegId::new(2)],
+                named: vec![
+                    (b"kind".to_vec(), RegId::new(4)),
+                    (b"flags".to_vec(), RegId::new(5)),
+                ],
+                ..Default::default()
+            },
+        },
+    ];
+    let spans_len = stmts.len() + 1;
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); spans_len],
+        ast: vec![None; spans_len],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 #[test]
 fn test_lower_map_get_preserves_prior_typed_struct_schema() {
     let hir =
@@ -1463,6 +1530,108 @@ fn test_lower_map_put_respects_lpm_trie_kind() {
 }
 
 #[test]
+fn test_lower_map_put_sockmap_uses_socket_update_helper() {
+    let hir = make_sock_ops_socket_map_put_program(DeclId::new(42), "sockmap", 7);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sockmap map-put should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::SockMap,
+                    },
+                    ..
+                } if name == "active_sockets"
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::SockMapUpdate as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(7))
+            ))
+    );
+}
+
+#[test]
+fn test_lower_map_put_sockhash_uses_socket_update_helper() {
+    let hir = make_sock_ops_socket_map_put_program(DeclId::new(42), "sockhash", 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sockhash map-put should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::SockHash,
+                    },
+                    ..
+                } if name == "active_sockets"
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::SockHashUpdate as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(0))
+            ))
+    );
+}
+
+#[test]
 fn test_lower_map_push_respects_queue_kind_and_flags() {
     let hir = make_map_push_program(DeclId::new(42), 1, "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -1952,9 +2121,7 @@ fn test_lower_map_put_rejects_sockhash_kind() {
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
-            assert!(msg.contains("map-put is not supported for socket map kind"));
-            assert!(msg.contains("SockHash"));
-            assert!(msg.contains("use specialized socket-map update helpers instead"));
+            assert!(msg.contains("map-put --kind sockmap/sockhash is only valid in sock_ops"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
