@@ -8,6 +8,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME};
+use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::CellPath;
 use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
@@ -2077,6 +2078,146 @@ fn test_lower_fentry_array_element_projection() {
         helper_reads >= 1,
         "expected a helper read for pointer-backed array element access"
     );
+}
+
+#[test]
+fn test_compile_fixed_array_iterate_over_struct_elements() {
+    let decl_names = HashMap::new();
+    let closure_irs = HashMap::new();
+    let captures: Vec<(VarId, Value)> = Vec::new();
+    let user_functions = HashMap::new();
+    let decl_signatures = HashMap::new();
+    let mut lowering = HirToMirLowering::new(
+        None,
+        &decl_names,
+        &closure_irs,
+        &captures,
+        None,
+        None,
+        None,
+        None,
+        &user_functions,
+        &decl_signatures,
+    );
+    let header_block = lowering.func.alloc_block();
+    lowering.func.entry = header_block;
+    lowering.current_block = header_block;
+
+    let element_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "pid".to_string(),
+                ty: MirType::I64,
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "uid".to_string(),
+                ty: MirType::U32,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let array_ty = MirType::Array {
+        elem: Box::new(element_ty.clone()),
+        len: 2,
+    };
+    let array_slot =
+        lowering
+            .func
+            .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+    lowering.record_stack_slot_type(array_slot, array_ty.clone());
+
+    let stream_reg = RegId::new(0);
+    let stream_vreg = lowering.get_vreg(stream_reg);
+    lowering.emit(MirInst::Copy {
+        dst: stream_vreg,
+        src: MirValue::StackSlot(array_slot),
+    });
+    lowering.vreg_type_hints.insert(
+        stream_vreg,
+        MirType::Ptr {
+            pointee: Box::new(array_ty),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let iter_reg = RegId::new(1);
+    let path_reg = RegId::new(2);
+    let body_block = lowering.func.alloc_block();
+    let exit_block = lowering.func.alloc_block();
+
+    assert!(
+        lowering
+            .lower_fixed_array_iterate(iter_reg, stream_reg, body_block, exit_block, true)
+            .expect("fixed array iterate over struct elements should lower"),
+        "expected fixed array iterate helper to accept a stack-backed array of structs"
+    );
+
+    lowering.current_block = body_block;
+    lowering
+        .lower_load_literal(
+            path_reg,
+            &HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        )
+        .expect("field path literal should lower");
+    lowering
+        .lower_follow_cell_path(iter_reg, path_reg)
+        .expect("loop body should be able to project a field from the iterated struct element");
+    lowering.terminate(MirInst::Jump {
+        target: header_block,
+    });
+
+    lowering.current_block = exit_block;
+    lowering.terminate(MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    });
+
+    assert!(
+        lowering
+            .func
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::LoopHeader { .. })),
+        "expected fixed array iterate lowering to emit a loop header"
+    );
+    assert!(
+        lowering
+            .func
+            .blocks
+            .iter()
+            .find(|block| block.id == body_block)
+            .into_iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 0,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected the loop body to load the projected struct field from the iterated element"
+    );
+
+    let (mut program, mut type_hints, _, _, _, _, _) = lowering.finish_with_hints();
+    optimize_with_ssa_hints(
+        &mut program.main,
+        None,
+        &mut type_hints.main,
+        &type_hints.main_stack_slots,
+        &type_hints.generic_map_value_types,
+    );
+    let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
+        .expect("fixed array iterate over struct elements should compile");
+    assert!(!result.bytecode.is_empty(), "expected bytecode output");
 }
 
 #[test]

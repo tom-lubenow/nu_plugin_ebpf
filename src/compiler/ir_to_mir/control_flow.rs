@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::elf::ProgramReturnAlias;
 
 impl<'a> HirToMirLowering<'a> {
-    fn lower_fixed_array_iterate(
+    pub(super) fn lower_fixed_array_iterate(
         &mut self,
         dst: RegId,
         stream: RegId,
@@ -32,19 +32,9 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return Ok(false);
         };
-        let MirType::Array { elem, len } = pointee.as_ref() else {
+        let MirType::Array { len, .. } = pointee.as_ref() else {
             return Ok(false);
         };
-        if matches!(
-            elem.as_ref(),
-            MirType::Array { .. } | MirType::Struct { .. }
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "Iterate on fixed arrays currently supports only scalar elements, got {:?}",
-                elem.as_ref()
-            )));
-        }
-
         let dst_vreg = self.get_vreg(dst);
         let counter_vreg = self.func.alloc_vreg();
         self.emit(MirInst::Copy {
