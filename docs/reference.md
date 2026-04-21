@@ -386,6 +386,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 
 Modeled tracing/perf stack helpers are available through the helper escape hatch. `bpf_get_stackid` is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` is constrained to the same program families and accepts a stack/map buffer with a nonnegative size, including `0`.
 Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.
+The perf-event-only `bpf_read_branch_records` helper is also modeled for branch-stack captures through `helper-call`, including its stack/map output buffer and zero-size query behavior.
 
 ## Discovering Tracepoints
 

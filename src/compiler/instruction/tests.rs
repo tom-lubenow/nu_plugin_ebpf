@@ -307,6 +307,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::PerfProgReadValue)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_read_branch_records"),
+        Some(BpfHelper::ReadBranchRecords)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -717,6 +721,19 @@ fn test_helper_signature_perf_prog_read_value() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_read_branch_records() {
+    let sig = HelperSignature::for_id(BpfHelper::ReadBranchRecords as u32)
+        .expect("expected bpf_read_branch_records helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
@@ -1135,6 +1152,18 @@ fn test_helper_csum_diff_zero_size_pointer_contract() {
 }
 
 #[test]
+fn test_read_branch_records_zero_size_pointer_contract() {
+    assert_eq!(
+        BpfHelper::ReadBranchRecords.zero_size_pointer_arg_size_arg(1),
+        Some(2)
+    );
+    assert_eq!(
+        BpfHelper::ReadBranchRecords.zero_size_pointer_arg_size_arg(0),
+        None
+    );
+}
+
+#[test]
 fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
@@ -1198,6 +1227,28 @@ fn test_perf_prog_read_value_helper_contract() {
     let buf = semantics.ptr_arg_rules[1];
     assert_eq!(buf.arg_idx, 1);
     assert_eq!(buf.op, "helper perf_prog_read_value buf");
+    assert!(buf.allowed.allow_stack);
+    assert!(buf.allowed.allow_map);
+    assert!(!buf.allowed.allow_kernel);
+    assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_read_branch_records_helper_contract() {
+    let semantics = BpfHelper::ReadBranchRecords.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let ctx = semantics.ptr_arg_rules[0];
+    assert_eq!(ctx.arg_idx, 0);
+    assert_eq!(ctx.op, "helper read_branch_records ctx");
+    assert!(ctx.allowed.allow_kernel);
+    assert!(!ctx.allowed.allow_stack);
+    assert_eq!(ctx.size_from_arg, None);
+
+    let buf = semantics.ptr_arg_rules[1];
+    assert_eq!(buf.arg_idx, 1);
+    assert_eq!(buf.op, "helper read_branch_records buf");
     assert!(buf.allowed.allow_stack);
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);

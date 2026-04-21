@@ -639,6 +639,22 @@ impl BpfHelper {
                 size_from_arg: Some(2),
             },
         ];
+        const READ_BRANCH_RECORDS_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper read_branch_records ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper read_branch_records buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
 
         const GET_STACKID_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1498,6 +1514,11 @@ impl BpfHelper {
             BpfHelper::PerfProgReadValue => HelperSemantics {
                 ptr_arg_rules: PERF_PROG_READ_VALUE_RULES,
                 positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ReadBranchRecords => HelperSemantics {
+                ptr_arg_rules: READ_BRANCH_RECORDS_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::GetStackId => HelperSemantics {

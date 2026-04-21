@@ -448,7 +448,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEventOutput,
         },
-        BpfHelper::PerfProgReadValue => HelperProgramSurfaceSpec {
+        BpfHelper::PerfProgReadValue | BpfHelper::ReadBranchRecords => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEvent,
         },
         BpfHelper::GetStackId

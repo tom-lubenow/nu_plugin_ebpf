@@ -182,6 +182,8 @@ pub enum BpfHelper {
     KtimeGetTaiNs = 208,
     /// u64 bpf_jiffies64(void)
     Jiffies64 = 118,
+    /// long bpf_read_branch_records(ctx, buf, size, flags)
+    ReadBranchRecords = 119,
     /// u64 bpf_get_func_ip(void *ctx)
     GetFuncIp = 173,
     /// u64 bpf_get_attach_cookie(void *ctx)
@@ -383,6 +385,7 @@ impl BpfHelper {
             BpfHelper::KtimeGetCoarseNs => "bpf_ktime_get_coarse_ns",
             BpfHelper::KtimeGetTaiNs => "bpf_ktime_get_tai_ns",
             BpfHelper::Jiffies64 => "bpf_jiffies64",
+            BpfHelper::ReadBranchRecords => "bpf_read_branch_records",
             BpfHelper::GetFuncIp => "bpf_get_func_ip",
             BpfHelper::GetAttachCookie => "bpf_get_attach_cookie",
             BpfHelper::LoadHdrOpt => "bpf_load_hdr_opt",
@@ -524,6 +527,7 @@ impl BpfHelper {
             "ktime_get_coarse_ns" => Some(Self::KtimeGetCoarseNs),
             "ktime_get_tai_ns" => Some(Self::KtimeGetTaiNs),
             "jiffies64" => Some(Self::Jiffies64),
+            "read_branch_records" => Some(Self::ReadBranchRecords),
             "get_func_ip" => Some(Self::GetFuncIp),
             "get_attach_cookie" => Some(Self::GetAttachCookie),
             "load_hdr_opt" => Some(Self::LoadHdrOpt),
@@ -597,6 +601,7 @@ impl BpfHelper {
         match (self, arg_idx) {
             (Self::CsumDiff, 0) => Some(1),
             (Self::CsumDiff, 2) => Some(3),
+            (Self::ReadBranchRecords, 1) => Some(2),
             _ => None,
         }
     }

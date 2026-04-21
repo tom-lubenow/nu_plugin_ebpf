@@ -71,6 +71,7 @@ impl BpfHelper {
             71 => Some(Self::MsgRedirectHash),
             72 => Some(Self::SkRedirectHash),
             118 => Some(Self::Jiffies64),
+            119 => Some(Self::ReadBranchRecords),
             125 => Some(Self::KtimeGetBootNs),
             160 => Some(Self::KtimeGetCoarseNs),
             173 => Some(Self::GetFuncIp),
@@ -404,6 +405,12 @@ impl BpfHelper {
             BpfHelper::PerfProgReadValue => HelperSignature {
                 min_args: 3,
                 max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::ReadBranchRecords => HelperSignature {
+                min_args: 4,
+                max_args: 4,
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },

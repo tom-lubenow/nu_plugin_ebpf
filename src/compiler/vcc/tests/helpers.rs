@@ -2400,6 +2400,107 @@ fn test_verify_mir_for_probe_context_csum_diff_allows_null_zero_side() {
 }
 
 #[test]
+fn test_verify_mir_read_branch_records_allows_null_zero_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ReadBranchRecords as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected read_branch_records to accept null buffer with zero size");
+}
+
+#[test]
+fn test_verify_mir_read_branch_records_rejects_null_nonzero_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ReadBranchRecords as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected read_branch_records to reject null buffer with nonzero size");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 119 arg1 requires arg2 = 0 when arg1 is null")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_csum_diff_rejects_null_nonzero_side() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

@@ -1142,6 +1142,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_perf_prog_read_value' is only valid in perf_event programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::ReadBranchRecords),
+        Some("helper 'bpf_read_branch_records' is only valid in perf_event programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStackId),
         Some(
             "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
@@ -1454,6 +1458,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::PerfProgReadValue),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::ReadBranchRecords),
         None
     );
     assert_eq!(
