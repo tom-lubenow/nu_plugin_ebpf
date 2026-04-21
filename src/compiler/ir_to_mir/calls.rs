@@ -835,6 +835,45 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
+            "tail-call" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "tail-call does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("tail-call", &[])?;
+
+                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "tail-call requires a literal program-array map name as the first positional argument"
+                            .into(),
+                    )
+                })?;
+                let map_name = self.literal_string_arg(map_reg, "tail-call")?;
+                self.validate_generic_map_name(&map_name, "tail-call")?;
+                let index_vreg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "tail-call requires a target index from pipeline input or a second positional argument"
+                                .into(),
+                        )
+                    })?;
+
+                self.terminate(MirInst::TailCall {
+                    prog_map: MapRef {
+                        name: map_name,
+                        kind: MapKind::ProgArray,
+                    },
+                    index: MirValue::VReg(index_vreg),
+                });
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "map-get" => {
                 let result_vreg = if src_dst_had_value {
                     self.assign_fresh_vreg(src_dst)

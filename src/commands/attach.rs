@@ -713,6 +713,7 @@ Timing commands:
 Advanced commands:
   helper-call       - Call a modeled BPF helper by name
   kfunc-call        - Call a typed kernel kfunc by name (optional --btf-id)
+  tail-call         - Tail call through a named prog-array map
   map-push          - Push into a named queue or stack map (--kind queue|stack)
   map-peek          - Peek the next queue/stack value as a maybe-null pointer
   map-pop           - Pop the next queue/stack value as a maybe-null pointer

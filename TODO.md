@@ -13,6 +13,7 @@ Last updated: 2026-04-21.
 - [x] Implement tail calls end-to-end.
   - Implemented bytecode lowering to `bpf_tail_call` and failure fallback termination.
   - Added `ProgArray` map emission and relocation plumbing, with positive/negative compiler tests.
+  - Exposed a first-class `tail-call` Nu command that lowers through the modeled MIR terminator instead of requiring the raw helper-call escape hatch.
 
 - [x] Implement generic map operations end-to-end.
   - Added `MapLookup` / `MapUpdate` / `MapDelete` codegen for generic map ops, while preserving the specialized `count` lowering path.

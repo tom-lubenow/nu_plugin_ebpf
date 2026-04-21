@@ -3451,6 +3451,155 @@ fn test_redirect_map_intrinsic_requires_explicit_kind_and_compiles() {
 }
 
 #[test]
+fn test_tail_call_intrinsic_lowers_to_terminator_and_compiles() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"dispatch_targets".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "tail-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("tail-call intrinsic should type-check");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tail-call intrinsic should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(matches!(
+        &block.terminator,
+        MirInst::TailCall {
+            prog_map: MapRef { name, kind: MapKind::ProgArray },
+            index: MirValue::VReg(_),
+        } if name == "dispatch_targets"
+    ));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("tail-call intrinsic should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "dispatch_targets")
+        .expect("expected prog-array runtime artifact");
+    assert_eq!(map.def.map_type, BpfMapType::ProgArray as u32);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "dispatch_targets"),
+        "expected prog-array relocation"
+    );
+}
+
+#[test]
+fn test_tail_call_intrinsic_rejects_following_non_cleanup_statement() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"dispatch_targets".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "tail-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("tail-call intrinsic should type-check");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("tail-call followed by code should be rejected");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => assert!(
+            msg.contains("terminal eBPF command must be the final expression"),
+            "{msg}"
+        ),
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_redirect_map_intrinsic_rejects_non_xdp_programs() {
     let func = HirFunction {
         blocks: vec![HirBlock {

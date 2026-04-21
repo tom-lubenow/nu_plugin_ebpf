@@ -1157,6 +1157,7 @@ pub enum ProgramIntrinsic {
     RedirectSocket,
     HelperCall,
     KfuncCall,
+    TailCall,
     GlobalDefine,
     GlobalGet,
     GlobalSet,
@@ -1189,6 +1190,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::RedirectSocket => "redirect-socket",
             ProgramIntrinsic::HelperCall => "helper-call",
             ProgramIntrinsic::KfuncCall => "kfunc-call",
+            ProgramIntrinsic::TailCall => "tail-call",
             ProgramIntrinsic::GlobalDefine => "global-define",
             ProgramIntrinsic::GlobalGet => "global-get",
             ProgramIntrinsic::GlobalSet => "global-set",
@@ -1217,6 +1219,7 @@ impl ProgramIntrinsic {
             "redirect-socket" => Some(ProgramIntrinsic::RedirectSocket),
             "helper-call" => Some(ProgramIntrinsic::HelperCall),
             "kfunc-call" => Some(ProgramIntrinsic::KfuncCall),
+            "tail-call" => Some(ProgramIntrinsic::TailCall),
             "global-define" => Some(ProgramIntrinsic::GlobalDefine),
             "global-get" => Some(ProgramIntrinsic::GlobalGet),
             "global-set" => Some(ProgramIntrinsic::GlobalSet),
@@ -1245,6 +1248,7 @@ impl ProgramIntrinsic {
             | ProgramIntrinsic::RedirectSocket
             | ProgramIntrinsic::HelperCall => ProgramCapability::HelperCalls,
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,
+            ProgramIntrinsic::TailCall => ProgramCapability::TailCalls,
             ProgramIntrinsic::GlobalDefine
             | ProgramIntrinsic::GlobalGet
             | ProgramIntrinsic::GlobalSet => ProgramCapability::Globals,

@@ -2107,6 +2107,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::RedirectSocket)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("tail-call"),
+        Some(ProgramIntrinsic::TailCall)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("global-set"),
         Some(ProgramIntrinsic::GlobalSet)
     );
@@ -2138,6 +2142,10 @@ fn test_program_intrinsic_command_registry() {
     assert_eq!(
         ProgramIntrinsic::RedirectSocket.required_capability(),
         ProgramCapability::HelperCalls
+    );
+    assert_eq!(
+        ProgramIntrinsic::TailCall.required_capability(),
+        ProgramCapability::TailCalls
     );
     assert_eq!(
         ProgramIntrinsic::GlobalGet.required_capability(),

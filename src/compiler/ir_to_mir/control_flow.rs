@@ -157,6 +157,23 @@ impl<'a> HirToMirLowering<'a> {
         };
     }
 
+    fn current_block_has_real_terminator(&self) -> bool {
+        !matches!(
+            &self.func.block(self.current_block).terminator,
+            MirInst::Placeholder
+        )
+    }
+
+    fn is_terminal_cleanup_stmt(stmt: &HirStmt) -> bool {
+        matches!(
+            stmt,
+            HirStmt::Drop { .. }
+                | HirStmt::Drain { .. }
+                | HirStmt::DrainIfEnd { .. }
+                | HirStmt::DropVariable { .. }
+        )
+    }
+
     fn return_seed_for_reg(
         &self,
         reg: RegId,
@@ -455,7 +472,18 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             for stmt in &block.stmts {
+                if self.current_block_has_real_terminator() {
+                    if Self::is_terminal_cleanup_stmt(stmt) {
+                        continue;
+                    }
+                    return Err(CompileError::UnsupportedInstruction(
+                        "terminal eBPF command must be the final expression in its block".into(),
+                    ));
+                }
                 self.lower_stmt(stmt)?;
+            }
+            if self.current_block_has_real_terminator() {
+                continue;
             }
             if let HirTerminator::Goto { target } | HirTerminator::Jump { target } =
                 &block.terminator

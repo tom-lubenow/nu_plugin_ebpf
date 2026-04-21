@@ -939,6 +939,7 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::RedirectSocket,
     ProgramIntrinsic::HelperCall,
     ProgramIntrinsic::KfuncCall,
+    ProgramIntrinsic::TailCall,
     ProgramIntrinsic::GlobalDefine,
     ProgramIntrinsic::GlobalGet,
     ProgramIntrinsic::GlobalSet,

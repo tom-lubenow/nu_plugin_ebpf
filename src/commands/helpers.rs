@@ -10,6 +10,7 @@
 //! - read-kernel-str: Read string from kernel memory pointer
 //! - helper-call: Escape hatch for invoking a modeled BPF helper by name
 //! - kfunc-call: Escape hatch for invoking a typed kernel kfunc by name
+//! - tail-call: Transfer control to a program in a named prog-array map
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
 //! - map-get / map-put / map-delete / map-push / map-peek / map-pop:
 //!   Generic BPF map operations
@@ -301,6 +302,65 @@ already modeled directly."#
     ) -> Result<PipelineData, LabeledError> {
         // Stub for non-eBPF execution (e.g., help display).
         Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct TailCall;
+
+impl PluginCommand for TailCall {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "tail-call"
+    }
+
+    fn description(&self) -> &str {
+        "Tail call into a program stored in a named BPF prog-array map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Transfers control to the program stored at INDEX in the named prog-array
+map. On success the current program does not return. If the tail call misses or
+exceeds the kernel tail-call limit, the compiler emits a safe fallback return of
+0. Use pipeline input as the index, or pass the index as the second positional
+argument.
+
+Example:
+  $ctx.pid | tail-call dispatch_targets"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("tail-call")
+            .input_output_types(vec![
+                (Type::Int, Type::Nothing),
+                (Type::Nothing, Type::Nothing),
+            ])
+            .required("name", SyntaxShape::String, "Program-array map name")
+            .optional(
+                "index",
+                SyntaxShape::Any,
+                "Optional target index; otherwise uses pipeline input",
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| 0 | tail-call dispatch_targets }",
+            description: "Tail call to program-array slot 0",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::nothing(call.head), None))
     }
 }
 
