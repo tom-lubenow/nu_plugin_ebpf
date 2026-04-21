@@ -4495,6 +4495,74 @@ fn make_map_push_program(map_push_decl: DeclId, flags: i64, kind: &str) -> HirPr
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_sock_ops_socket_map_put_program(
+    map_put_decl: DeclId,
+    map_name: &str,
+    kind: &str,
+    flags: i64,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(map_name.as_bytes().to_vec()),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(2),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("remote_port")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(2),
+            path: RegId::new(3),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::String(kind.as_bytes().to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(flags),
+        },
+        HirStmt::Call {
+            decl_id: map_put_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1), RegId::new(2)],
+                named: vec![
+                    (b"kind".to_vec(), RegId::new(4)),
+                    (b"flags".to_vec(), RegId::new(5)),
+                ],
+                ..Default::default()
+            },
+        },
+    ];
+    let stmt_count = stmts.len();
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); stmt_count],
+        ast: vec![None; stmt_count],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_hash_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -10229,6 +10297,121 @@ fn test_compile_socket_redirect_kind_programs() {
                 .iter()
                 .any(|reloc| reloc.symbol_name == map_name),
             "{context} redirect-socket should emit a map relocation"
+        );
+    }
+}
+
+#[test]
+fn test_compile_sock_ops_socket_map_update_programs() {
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    for (context, map_name, kind_arg, expected_kind, expected_helper, expected_flags) in [
+        (
+            "sock_ops sockmap",
+            "active_sockmap",
+            "sockmap",
+            MapKind::SockMap,
+            BpfHelper::SockMapUpdate,
+            7,
+        ),
+        (
+            "sock_ops sockhash",
+            "active_sockhash",
+            "sockhash",
+            MapKind::SockHash,
+            BpfHelper::SockHashUpdate,
+            0,
+        ),
+    ] {
+        let hir = make_sock_ops_socket_map_put_program(
+            DeclId::new(42),
+            map_name,
+            kind_arg,
+            expected_flags,
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} map-put should lower: {err}"));
+
+        let block = lowering.program.main.block(lowering.program.main.entry);
+        assert!(
+            block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind },
+                    ..
+                } if name == map_name && *kind == expected_kind
+            )),
+            "{context} map-put should load the expected socket map fd"
+        );
+        assert!(
+            block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == expected_helper as u32
+                    && args.len() == 4
+                    && matches!(
+                        args.get(3),
+                        Some(crate::compiler::mir::MirValue::Const(flags)) if *flags == expected_flags
+                    )
+            )),
+            "{context} map-put should call the expected socket-map update helper"
+        );
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("{context} map-put should compile: {err}"));
+
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+        let map = result
+            .maps
+            .iter()
+            .find(|map| map.name == map_name)
+            .unwrap_or_else(|| panic!("{context} map-put should emit map {map_name}"));
+        let expected_def = match expected_kind {
+            MapKind::SockMap => BpfMapDef::sock_map(10240),
+            MapKind::SockHash => BpfMapDef::sock_hash(map.def.key_size, 10240),
+            _ => unreachable!("socket map update only accepts sockmap/sockhash"),
+        };
+        assert_eq!(map.def.map_type, expected_def.map_type);
+        assert_eq!(map.def.value_size, expected_def.value_size);
+        assert_eq!(map.def.max_entries, expected_def.max_entries);
+        if expected_kind == MapKind::SockMap {
+            assert_eq!(map.def.key_size, expected_def.key_size);
+        } else {
+            assert!(
+                map.def.key_size > 1,
+                "{context} sockhash should infer key size from the socket key"
+            );
+        }
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|reloc| reloc.symbol_name == map_name),
+            "{context} map-put should emit a map relocation"
         );
     }
 }

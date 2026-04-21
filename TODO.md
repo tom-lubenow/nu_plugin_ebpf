@@ -300,6 +300,7 @@ Near-term priority order:
   - Recent progress: `map-contains --kind cgroup-array` now selects its `tc` skb helper versus broad current-task helper through the shared program model instead of embedding an exact program-type match in Nu-call lowering.
   - Recent progress: attach-flow compile coverage now exercises `redirect-map` map FD materialization for all modeled redirect map kinds (`devmap`, `devmap-hash`, `cpumap`, and `xskmap`), including emitted map definitions and relocations.
   - Recent progress: attach-flow compile coverage now also exercises `redirect-socket` helper/map selection across `sk_msg`, `sk_skb`, and `sk_skb_parser` for both `sockmap` and `sockhash`, including emitted map definitions and relocations.
+  - Recent progress: attach-flow compile coverage now covers the producer side of socket maps too: `sock_ops` `map-put --kind sockmap|sockhash` lowers through the socket-map update helpers and emits the corresponding map definitions/relocations.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.
