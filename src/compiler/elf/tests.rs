@@ -3497,24 +3497,31 @@ fn test_program_type_context_layouts_use_program_model_table() {
         EbpfProgramType::SocketFilter.socket_ref_context_layout(),
         Some(SocketContextLayout::SkBuff)
     );
+    assert!(EbpfProgramType::SocketFilter.supports_netns_cookie_ctx_field());
     assert_eq!(
         EbpfProgramType::CgroupSkb.socket_family_context_layout(),
         Some(SocketContextLayout::SkBuff)
     );
+    assert!(EbpfProgramType::CgroupSkb.supports_socket_uid_ctx_field());
     assert_eq!(
         EbpfProgramType::CgroupSock.sock_state_context_layout(),
         Some(SocketContextLayout::CgroupSock)
     );
+    assert!(EbpfProgramType::CgroupSock.supports_socket_cookie_ctx_field());
     assert_eq!(
         EbpfProgramType::SkLookup.ingress_ifindex_context_layout(),
         Some(IngressIfindexContextLayout::SkLookup)
     );
+    assert!(EbpfProgramType::SkLookup.supports_lookup_cookie_ctx_field());
+    assert!(!EbpfProgramType::SkLookup.supports_netns_cookie_ctx_field());
     assert_eq!(EbpfProgramType::SkMsg.protocol_context_layout(), None);
+    assert!(EbpfProgramType::SkMsg.supports_netns_cookie_ctx_field());
     assert_eq!(
         EbpfProgramType::CgroupSockAddr.sock_type_context_layout(),
         Some(SocketContextLayout::SockAddr)
     );
     assert_eq!(EbpfProgramType::Kprobe.socket_ref_context_layout(), None);
+    assert!(!EbpfProgramType::Kprobe.supports_socket_cookie_ctx_field());
 }
 
 #[test]

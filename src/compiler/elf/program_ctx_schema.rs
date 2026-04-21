@@ -43,23 +43,33 @@ struct ProgramContextLayoutSpec {
     ingress_ifindex: Option<IngressIfindexContextLayout>,
     sock_mark_priority: Option<SocketContextLayout>,
     sock_state: Option<SocketContextLayout>,
+    socket_cookie: bool,
+    socket_uid: bool,
+    netns_cookie: bool,
+    lookup_cookie: bool,
 }
 
 impl ProgramContextLayoutSpec {
     const fn skb_backed(
         program_type: EbpfProgramType,
         data_meta: Option<PacketContextKind>,
+        socket_family: Option<SocketContextLayout>,
+        netns_cookie: bool,
     ) -> Self {
         Self {
             program_type,
             data_meta,
-            socket_family: None,
+            socket_family,
             sock_type: None,
             protocol: Some(SocketContextLayout::SkBuff),
             socket_ref: Some(SocketContextLayout::SkBuff),
             ingress_ifindex: Some(IngressIfindexContextLayout::SkBuff),
             sock_mark_priority: Some(SocketContextLayout::SkBuff),
             sock_state: None,
+            socket_cookie: true,
+            socket_uid: true,
+            netns_cookie,
+            lookup_cookie: false,
         }
     }
 }
@@ -75,21 +85,36 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: Some(IngressIfindexContextLayout::XdpMd),
         sock_mark_priority: None,
         sock_state: None,
+        socket_cookie: false,
+        socket_uid: false,
+        netns_cookie: false,
+        lookup_cookie: false,
     },
-    ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SocketFilter, None),
-    ProgramContextLayoutSpec::skb_backed(EbpfProgramType::Tc, Some(PacketContextKind::SkBuff)),
-    ProgramContextLayoutSpec {
-        socket_family: Some(SocketContextLayout::SkBuff),
-        ..ProgramContextLayoutSpec::skb_backed(EbpfProgramType::CgroupSkb, None)
-    },
-    ProgramContextLayoutSpec {
-        socket_family: Some(SocketContextLayout::SkBuff),
-        ..ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SkSkb, None)
-    },
-    ProgramContextLayoutSpec {
-        socket_family: Some(SocketContextLayout::SkBuff),
-        ..ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SkSkbParser, None)
-    },
+    ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SocketFilter, None, None, true),
+    ProgramContextLayoutSpec::skb_backed(
+        EbpfProgramType::Tc,
+        Some(PacketContextKind::SkBuff),
+        None,
+        true,
+    ),
+    ProgramContextLayoutSpec::skb_backed(
+        EbpfProgramType::CgroupSkb,
+        None,
+        Some(SocketContextLayout::SkBuff),
+        true,
+    ),
+    ProgramContextLayoutSpec::skb_backed(
+        EbpfProgramType::SkSkb,
+        None,
+        Some(SocketContextLayout::SkBuff),
+        false,
+    ),
+    ProgramContextLayoutSpec::skb_backed(
+        EbpfProgramType::SkSkbParser,
+        None,
+        Some(SocketContextLayout::SkBuff),
+        false,
+    ),
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSock,
         data_meta: None,
@@ -100,6 +125,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: None,
         sock_mark_priority: Some(SocketContextLayout::CgroupSock),
         sock_state: Some(SocketContextLayout::CgroupSock),
+        socket_cookie: true,
+        socket_uid: false,
+        netns_cookie: true,
+        lookup_cookie: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockAddr,
@@ -111,6 +140,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: None,
         sock_mark_priority: None,
         sock_state: None,
+        socket_cookie: true,
+        socket_uid: false,
+        netns_cookie: true,
+        lookup_cookie: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockopt,
@@ -122,6 +155,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: None,
         sock_mark_priority: None,
         sock_state: None,
+        socket_cookie: false,
+        socket_uid: false,
+        netns_cookie: true,
+        lookup_cookie: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkLookup,
@@ -133,6 +170,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: Some(IngressIfindexContextLayout::SkLookup),
         sock_mark_priority: None,
         sock_state: None,
+        socket_cookie: false,
+        socket_uid: false,
+        netns_cookie: false,
+        lookup_cookie: true,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkMsg,
@@ -144,6 +185,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: None,
         sock_mark_priority: None,
         sock_state: None,
+        socket_cookie: false,
+        socket_uid: false,
+        netns_cookie: true,
+        lookup_cookie: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SockOps,
@@ -155,6 +200,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: None,
         sock_mark_priority: None,
         sock_state: Some(SocketContextLayout::SockOps),
+        socket_cookie: true,
+        socket_uid: false,
+        netns_cookie: true,
+        lookup_cookie: false,
     },
 ];
 
@@ -316,39 +365,19 @@ impl EbpfProgramType {
     }
 
     pub fn supports_socket_cookie_ctx_field(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::SocketFilter
-                | EbpfProgramType::Tc
-                | EbpfProgramType::CgroupSkb
-                | EbpfProgramType::CgroupSock
-                | EbpfProgramType::CgroupSockAddr
-                | EbpfProgramType::SkSkb
-                | EbpfProgramType::SkSkbParser
-                | EbpfProgramType::SockOps
-        )
+        program_context_layout_spec(*self).is_some_and(|spec| spec.socket_cookie)
     }
 
     pub fn supports_socket_uid_ctx_field(&self) -> bool {
-        self.supports_skb_ctx_fields()
+        program_context_layout_spec(*self).is_some_and(|spec| spec.socket_uid)
     }
 
     pub fn supports_netns_cookie_ctx_field(&self) -> bool {
-        matches!(
-            self,
-            EbpfProgramType::SocketFilter
-                | EbpfProgramType::Tc
-                | EbpfProgramType::CgroupSkb
-                | EbpfProgramType::CgroupSock
-                | EbpfProgramType::CgroupSockopt
-                | EbpfProgramType::CgroupSockAddr
-                | EbpfProgramType::SkMsg
-                | EbpfProgramType::SockOps
-        )
+        program_context_layout_spec(*self).is_some_and(|spec| spec.netns_cookie)
     }
 
     pub fn supports_lookup_cookie_ctx_field(&self) -> bool {
-        matches!(self, EbpfProgramType::SkLookup)
+        program_context_layout_spec(*self).is_some_and(|spec| spec.lookup_cookie)
     }
 
     pub fn supports_cgroup_sock_ctx_fields(&self) -> bool {
