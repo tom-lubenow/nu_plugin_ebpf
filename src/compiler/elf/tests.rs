@@ -2150,6 +2150,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::RedirectSocket)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("assign-socket"),
+        Some(ProgramIntrinsic::AssignSocket)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("tail-call"),
         Some(ProgramIntrinsic::TailCall)
     );
@@ -2184,6 +2188,10 @@ fn test_program_intrinsic_command_registry() {
     );
     assert_eq!(
         ProgramIntrinsic::RedirectSocket.required_capability(),
+        ProgramCapability::HelperCalls
+    );
+    assert_eq!(
+        ProgramIntrinsic::AssignSocket.required_capability(),
         ProgramCapability::HelperCalls
     );
     assert_eq!(

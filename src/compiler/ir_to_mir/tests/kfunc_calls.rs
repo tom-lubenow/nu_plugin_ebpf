@@ -1983,6 +1983,137 @@ fn test_redirect_socket_intrinsic_lowers_to_sk_redirect_map_and_compiles() {
 }
 
 #[test]
+fn test_assign_socket_intrinsic_lowers_to_sk_assign_and_compiles() {
+    let ctx_var = VarId::new(101);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"replace".to_vec(), b"no-reuseport".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(DeclId::new(42), "assign-socket".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("assign-socket intrinsic should type-check before lowering");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("assign-socket intrinsic should lower on sk_lookup");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkAssign as u32
+            && args.len() == 3
+            && matches!(args[0], MirValue::VReg(_))
+            && matches!(args[1], MirValue::VReg(_))
+            && args[2] == MirValue::Const(3)
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("assign-socket intrinsic should compile on sk_lookup");
+
+    assert!(!compiled.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_assign_socket_intrinsic_rejects_nonzero_tc_flags() {
+    let ctx_var = VarId::new(101);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        flags: vec![b"replace".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(DeclId::new(42), "assign-socket".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("assign-socket intrinsic should type-check before attach-aware lowering");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("assign-socket should reject non-zero tc flags");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"));
+        }
+        other => panic!("unexpected error: {:?}", other),
+    }
+}
+
+#[test]
 fn test_redirect_socket_intrinsic_lowers_to_msg_redirect_hash_and_compiles() {
     let ctx_var = VarId::new(102);
     let func = HirFunction {

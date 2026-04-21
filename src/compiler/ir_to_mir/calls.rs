@@ -9,6 +9,9 @@ use crate::compiler::mir::{
 };
 use crate::compiler::{EbpfProgramType, ProgramIntrinsic, TypeInference};
 
+const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
+const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_call(
         &mut self,
@@ -624,6 +627,71 @@ impl<'a> HirToMirLowering<'a> {
                         MirValue::VReg(ctx_vreg),
                         MirValue::VReg(map_vreg),
                         MirValue::VReg(key_vreg),
+                        MirValue::Const(flags as i64),
+                    ],
+                });
+                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.reset_call_result_metadata(src_dst);
+            }
+
+            "assign-socket" => {
+                self.require_only_named_args("assign-socket", &["flags"])?;
+                if self.positional_args.len() > 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "assign-socket accepts at most one socket argument".into(),
+                    ));
+                }
+
+                let Some(ctx) = self.probe_ctx else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "assign-socket requires a known attached program context".into(),
+                    ));
+                };
+                if let Some(message) = ctx.helper_call_error(BpfHelper::SkAssign) {
+                    return Err(CompileError::UnsupportedInstruction(message));
+                }
+
+                let mut flags = self
+                    .optional_nonnegative_named_u64_arg("assign-socket", "flags")?
+                    .unwrap_or(0);
+                for flag in &self.named_flags {
+                    match flag.as_str() {
+                        "replace" => flags |= BPF_SK_LOOKUP_F_REPLACE,
+                        "no-reuseport" => flags |= BPF_SK_LOOKUP_F_NO_REUSEPORT,
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "assign-socket does not accept flag '{}'",
+                                flag
+                            )));
+                        }
+                    }
+                }
+                if let Some((2, message)) = ctx.helper_zero_arg_requirement(BpfHelper::SkAssign)
+                    && flags != 0
+                {
+                    return Err(CompileError::UnsupportedInstruction(message.to_string()));
+                }
+
+                let sk_vreg = self
+                    .positional_args
+                    .first()
+                    .map(|(vreg, _)| *vreg)
+                    .or(self.pipeline_input)
+                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "assign-socket requires a socket pointer or null from pipeline input or the first positional argument"
+                                .into(),
+                        )
+                    })?;
+
+                let ctx_vreg = self.materialize_context_pointer_arg();
+                self.emit(MirInst::CallHelper {
+                    dst: dst_vreg,
+                    helper: BpfHelper::SkAssign as u32,
+                    args: vec![
+                        MirValue::VReg(ctx_vreg),
+                        MirValue::VReg(sk_vreg),
                         MirValue::Const(flags as i64),
                     ],
                 });

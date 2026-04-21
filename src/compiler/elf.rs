@@ -1155,6 +1155,7 @@ pub enum ProgramIntrinsic {
     Redirect,
     RedirectMap,
     RedirectSocket,
+    AssignSocket,
     HelperCall,
     KfuncCall,
     TailCall,
@@ -1189,6 +1190,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::Redirect => "redirect",
             ProgramIntrinsic::RedirectMap => "redirect-map",
             ProgramIntrinsic::RedirectSocket => "redirect-socket",
+            ProgramIntrinsic::AssignSocket => "assign-socket",
             ProgramIntrinsic::HelperCall => "helper-call",
             ProgramIntrinsic::KfuncCall => "kfunc-call",
             ProgramIntrinsic::TailCall => "tail-call",
@@ -1219,6 +1221,7 @@ impl ProgramIntrinsic {
             "redirect" => Some(ProgramIntrinsic::Redirect),
             "redirect-map" => Some(ProgramIntrinsic::RedirectMap),
             "redirect-socket" => Some(ProgramIntrinsic::RedirectSocket),
+            "assign-socket" => Some(ProgramIntrinsic::AssignSocket),
             "helper-call" => Some(ProgramIntrinsic::HelperCall),
             "kfunc-call" => Some(ProgramIntrinsic::KfuncCall),
             "tail-call" => Some(ProgramIntrinsic::TailCall),
@@ -1249,6 +1252,7 @@ impl ProgramIntrinsic {
             | ProgramIntrinsic::Redirect
             | ProgramIntrinsic::RedirectMap
             | ProgramIntrinsic::RedirectSocket
+            | ProgramIntrinsic::AssignSocket
             | ProgramIntrinsic::HelperCall => ProgramCapability::HelperCalls,
             ProgramIntrinsic::KfuncCall => ProgramCapability::KfuncCalls,
             ProgramIntrinsic::TailCall => ProgramCapability::TailCalls,
