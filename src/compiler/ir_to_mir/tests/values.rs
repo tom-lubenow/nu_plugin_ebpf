@@ -2,8 +2,14 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
+use nu_protocol::ast::{CellPath, PathMember};
+use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
+
+fn string_member(name: &str) -> PathMember {
+    PathMember::test_string(name.to_string(), false, Casing::Sensitive)
+}
 
 #[test]
 fn test_lower_load_value_duration_as_const() {
@@ -451,6 +457,216 @@ fn test_lower_load_value_record_list_uses_fixed_array_readonly_global() {
             .iter()
             .any(|inst| matches!(inst, MirInst::LoadGlobal { .. })),
         "expected fixed-array constant lowering to load from readonly globals"
+    );
+}
+
+#[test]
+fn test_lower_load_value_record_array_get_then_field_projection() {
+    let get_decl = DeclId::new(900);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let mut first = Record::new();
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::record(first, Span::test_data()),
+                            Value::record(second, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("cpu")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get followed by field projection should work on constant record fixed arrays");
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::Const(16),
+                    ..
+                }
+            )),
+        "expected `get 1` to offset by one fixed-size record element"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 8,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected projected `cpu` field to load from the selected record element"
+    );
+}
+
+#[test]
+fn test_lower_load_value_record_array_iterate_projects_field() {
+    let mut first = Record::new();
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::record(first, Span::test_data()),
+                            Value::record(second, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                }],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(1),
+                    stream: RegId::new(0),
+                    body: HirBlockId(1),
+                    end: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(1),
+                        path: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(0),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("iterate should work on constant record fixed arrays");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::LoopHeader { .. })),
+        "expected fixed-array record iteration to emit a bounded loop"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 0,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected loop body field projection to load the iterated record pid field"
     );
 }
 

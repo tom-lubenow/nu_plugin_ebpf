@@ -638,7 +638,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 return Err(CompileError::UnsupportedInstruction(
-                    "Iterate requires a compile-time known range, bounded list, or fixed scalar array"
+                    "Iterate requires a compile-time known range, bounded list, or fixed array"
                         .into(),
                 ));
             }
@@ -1336,7 +1336,7 @@ impl<'a> HirToMirLowering<'a> {
                 {
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
-                        "Iterate requires a compile-time known range, bounded list, or fixed scalar array"
+                        "Iterate requires a compile-time known range, bounded list, or fixed array"
                             .into(),
                     ));
                 }
