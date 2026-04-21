@@ -225,7 +225,8 @@ fn test_program_type_metadata_for_fexit() {
     );
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
-    assert!(!info.is_userspace);
+    assert!(!EbpfProgramType::Fexit.is_userspace());
+    assert!(EbpfProgramType::Uprobe.is_userspace());
 }
 
 #[test]

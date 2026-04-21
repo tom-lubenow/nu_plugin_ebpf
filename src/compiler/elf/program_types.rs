@@ -32,7 +32,6 @@ pub struct ProgramTypeInfo {
     pub supported_capabilities: &'static [ProgramCapability],
     pub arg_access: ProgramValueAccess,
     pub retval_access: ProgramValueAccess,
-    pub is_userspace: bool,
 }
 
 pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
@@ -100,7 +99,6 @@ pub(super) const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -116,7 +114,6 @@ pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
-    is_userspace: false,
 };
 
 pub(super) const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -132,7 +129,6 @@ pub(super) const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -148,7 +144,6 @@ pub(super) const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
-    is_userspace: false,
 };
 
 pub(super) const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -164,7 +159,6 @@ pub(super) const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -180,7 +174,6 @@ pub(super) const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -196,7 +189,6 @@ pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::RawTracepoint,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -212,7 +204,6 @@ pub(super) const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
-    is_userspace: true,
 };
 
 pub(super) const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -228,7 +219,6 @@ pub(super) const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
-    is_userspace: true,
 };
 
 pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -244,7 +234,6 @@ pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -260,7 +249,6 @@ pub(super) const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -276,7 +264,6 @@ pub(super) const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::PtRegs,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -292,7 +279,6 @@ pub(super) const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -308,7 +294,6 @@ pub(super) const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -324,7 +309,6 @@ pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -340,7 +324,6 @@ pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -356,7 +339,6 @@ pub(super) const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const SK_SKB_PARSER_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -372,7 +354,6 @@ pub(super) const SK_SKB_PARSER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -388,7 +369,6 @@ pub(super) const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -404,7 +384,6 @@ pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -420,7 +399,6 @@ pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -436,7 +414,6 @@ pub(super) const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -452,7 +429,6 @@ pub(super) const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const CGROUP_SOCKOPT_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -468,7 +444,6 @@ pub(super) const CGROUP_SOCKOPT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -484,7 +459,6 @@ pub(super) const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const LIRC_MODE2_INFO: ProgramTypeInfo = ProgramTypeInfo {
@@ -500,7 +474,6 @@ pub(super) const LIRC_MODE2_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const STRUCT_OPS_CAPABILITIES: &[ProgramCapability] = &[
@@ -524,7 +497,6 @@ pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supported_capabilities: STRUCT_OPS_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,
-    is_userspace: false,
 };
 
 pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[

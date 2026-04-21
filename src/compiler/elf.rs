@@ -994,7 +994,7 @@ impl EbpfProgramType {
 
     /// Returns true if this is a userspace probe (uprobe or uretprobe)
     pub fn is_userspace(&self) -> bool {
-        self.info().is_userspace
+        matches!(self.target_kind(), ProgramTargetKind::UserFunction)
     }
 
     /// Returns true if this program type exposes function arguments via ctx.argN.
