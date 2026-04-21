@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::ctx_field_schema::ContextFieldTypeSpec;
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
@@ -316,6 +317,58 @@ impl<'a> HirToMirLowering<'a> {
         Ok(element_ty)
     }
 
+    fn lower_context_ancestor_cgroup_id_projection(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        path: &CellPath,
+    ) -> Result<bool, CompileError> {
+        let Some(PathMember::String { val: root, .. }) = path.members.first() else {
+            return Ok(false);
+        };
+        if root != "ancestor_cgroup_id" {
+            return Ok(false);
+        }
+        let [_, level_member] = path.members.as_slice() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "ctx.ancestor_cgroup_id requires a constant numeric ancestor level, e.g. $ctx.ancestor_cgroup_id.0"
+                    .into(),
+            ));
+        };
+        let PathMember::Int { val: level, .. } = level_member else {
+            return Err(CompileError::UnsupportedInstruction(
+                "ctx.ancestor_cgroup_id requires a constant numeric ancestor level, e.g. $ctx.ancestor_cgroup_id.0"
+                    .into(),
+            ));
+        };
+        let Ok(level_i32) = i32::try_from(*level) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "ctx.ancestor_cgroup_id requires ancestor level 0..{}, got {}",
+                i32::MAX,
+                level
+            )));
+        };
+        if let Some(message) = self
+            .probe_ctx
+            .and_then(|ctx| ctx.helper_call_error(BpfHelper::GetCurrentAncestorCgroupId))
+        {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        self.emit(MirInst::CallHelper {
+            dst: dst_vreg,
+            helper: BpfHelper::GetCurrentAncestorCgroupId as u32,
+            args: vec![MirValue::Const(i64::from(level_i32))],
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = false;
+        meta.field_type = Some(MirType::I64);
+        meta.root_ctx_field = None;
+        meta.source_var = None;
+        Ok(true)
+    }
+
     /// Lower FollowCellPath instruction (context field access like $ctx.pid)
     pub(super) fn lower_follow_cell_path(
         &mut self,
@@ -399,6 +452,10 @@ impl<'a> HirToMirLowering<'a> {
             meta.annotated_semantics = projected_semantics;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);
+            return Ok(());
+        }
+
+        if self.lower_context_ancestor_cgroup_id_projection(src_dst, dst_vreg, &path)? {
             return Ok(());
         }
 

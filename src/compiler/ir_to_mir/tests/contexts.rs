@@ -3090,6 +3090,58 @@ fn test_lower_kprobe_ctx_cgroup_id_field() {
 }
 
 #[test]
+fn test_lower_kprobe_ctx_ancestor_cgroup_id_projection_calls_helper() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("ancestor_cgroup_id"), int_member(2)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kprobe ctx.ancestor_cgroup_id.2 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::GetCurrentAncestorCgroupId as u32
+            && args == &[MirValue::Const(2)]
+    )));
+}
+
+#[test]
+fn test_lower_kprobe_ctx_ancestor_cgroup_id_projection_rejects_missing_level() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("ancestor_cgroup_id")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("ctx.ancestor_cgroup_id without a level should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.ancestor_cgroup_id requires a constant numeric ancestor level")
+    );
+}
+
+#[test]
 fn test_lower_kprobe_time_ctx_fields() {
     for (field_name, expected_field) in [
         ("ktime", CtxField::Timestamp),

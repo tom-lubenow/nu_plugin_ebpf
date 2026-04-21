@@ -16,6 +16,7 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `task` | Current `task_struct *` pointer from `bpf_get_current_task_btf`; the legacy `bpf_get_current_task` helper is also modeled as a typed non-null task pointer. BTF-backed fields such as `task.pid` can be projected when kernel BTF is available | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe, lsm, perf_event |
 | `cgroup_id` | Current task cgroup ID | all current program types |
+| `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all current program types |
 | `cpu` | CPU ID | all non-struct_ops program types |
 | `numa_node` / `numa_node_id` | Current NUMA node ID from `bpf_get_numa_node_id` | all non-struct_ops program types |
 | `ktime` | Kernel timestamp (ns) | All |
@@ -330,9 +331,9 @@ Compiler-managed named globals are still available through `global-define`, `glo
 Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`, `bloom-filter`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `queue` and `stack` use `map-push`, `map-peek`, and `map-pop` instead of `map-put` / `map-get`. `bloom-filter` uses first-class `map-push` to insert values; membership probes are available through the raw `bpf_map_peek_elem` helper surface with a stack/map pointer value argument until a native contains-style surface exists. It does not support first-class `map-peek`, `map-pop`, `map-get`, `map-put`, or `map-delete`. `cgroup-array` maps are helper-owned maps for cgroup membership checks and are materialized automatically when passing a literal map name to `bpf_skb_under_cgroup` or `bpf_current_task_under_cgroup`; they are intentionally not accepted by generic map commands. `bpf_skb_under_cgroup` is tc-only in the supported program model, while `bpf_current_task_under_cgroup` remains available as a generic raw helper when cgroups are enabled. `lpm-trie` uses the kernel's raw trie-key layout, so the key bytes must already begin with a `u32` prefix length followed by the trie payload.
 
 The current-task cgroup ID is available as the ordinary `ctx.cgroup_id`
-field. If an ancestor ID is needed, use the modeled raw helper escape
-hatch `helper-call "bpf_get_current_ancestor_cgroup_id" LEVEL`; it
-returns the same scalar ID shape as `bpf_get_current_cgroup_id`.
+field. Ancestor IDs use a constant numeric cell-path level, for example
+`ctx.ancestor_cgroup_id.0`, and return the same scalar ID shape as
+`bpf_get_current_cgroup_id`.
 
 `ctx.ktime` remains the preferred ordinary timestamp surface. Specific
 kernel clocks/counters are also available as ordinary fields:

@@ -6144,6 +6144,18 @@ fn test_compile_kprobe_ctx_tgid_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_ancestor_cgroup_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("ancestor_cgroup_id"), int_member(0)],
+        },
+        "kprobe ctx.ancestor_cgroup_id.0 count",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_ctx_task_non_null_program() {
     let hir = make_ctx_path_non_null_program(CellPath {
         members: vec![string_member("task")],

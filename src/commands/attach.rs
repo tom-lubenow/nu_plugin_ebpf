@@ -106,6 +106,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.cpu }     - Get current CPU ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
+    {|ctx| $ctx.ancestor_cgroup_id.0 } - Get current ancestor cgroup ID at constant level 0
     {|ctx| $ctx.packet_len } - Get packet length from xdp_md or __sk_buff
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs
