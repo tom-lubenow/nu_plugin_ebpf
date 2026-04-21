@@ -83,6 +83,101 @@ pub enum MapKind {
     ProgArray,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MapOpKind {
+    Lookup,
+    Update,
+    Delete,
+    Push,
+}
+
+impl MapKind {
+    pub fn supports_any_generic_map_op(self) -> bool {
+        matches!(
+            self,
+            MapKind::Hash
+                | MapKind::Array
+                | MapKind::LpmTrie
+                | MapKind::LruHash
+                | MapKind::PerCpuHash
+                | MapKind::PerCpuArray
+                | MapKind::LruPerCpuHash
+                | MapKind::Queue
+                | MapKind::Stack
+                | MapKind::BloomFilter
+        )
+    }
+
+    pub fn supports_generic_map_op(self, op: MapOpKind) -> bool {
+        match op {
+            MapOpKind::Lookup | MapOpKind::Update => matches!(
+                self,
+                MapKind::Hash
+                    | MapKind::Array
+                    | MapKind::LpmTrie
+                    | MapKind::LruHash
+                    | MapKind::PerCpuHash
+                    | MapKind::PerCpuArray
+                    | MapKind::LruPerCpuHash
+            ),
+            MapOpKind::Delete => matches!(
+                self,
+                MapKind::Hash
+                    | MapKind::LpmTrie
+                    | MapKind::LruHash
+                    | MapKind::PerCpuHash
+                    | MapKind::LruPerCpuHash
+            ),
+            MapOpKind::Push => {
+                matches!(self, MapKind::Queue | MapKind::Stack | MapKind::BloomFilter)
+            }
+        }
+    }
+
+    pub fn generic_map_op_error(self, op: MapOpKind, map_name: &str) -> String {
+        if !self.supports_any_generic_map_op() {
+            return format!(
+                "map operations do not support map kind {:?} for '{}'",
+                self, map_name
+            );
+        }
+
+        match (op, self) {
+            (MapOpKind::Lookup, MapKind::BloomFilter) => {
+                format!("map lookup is not supported for bloom-filter map '{map_name}'")
+            }
+            (MapOpKind::Update, MapKind::BloomFilter) => {
+                format!(
+                    "map update is not supported for bloom-filter map '{map_name}'; use map-push"
+                )
+            }
+            (MapOpKind::Delete, MapKind::BloomFilter) => {
+                format!("map delete is not supported for bloom-filter map '{map_name}'")
+            }
+            (MapOpKind::Delete, MapKind::Array | MapKind::PerCpuArray) => format!(
+                "map delete is not supported for array map kind {:?} ('{}')",
+                self, map_name
+            ),
+            (MapOpKind::Push, _) => format!(
+                "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
+                self, map_name
+            ),
+            (MapOpKind::Lookup, _) => format!(
+                "map lookup is not supported for map kind {:?} ('{}')",
+                self, map_name
+            ),
+            (MapOpKind::Update, _) => format!(
+                "map update is not supported for map kind {:?} ('{}')",
+                self, map_name
+            ),
+            (MapOpKind::Delete, _) => format!(
+                "map delete is not supported for map kind {:?} ('{}')",
+                self, map_name
+            ),
+        }
+    }
+}
+
 pub const RINGBUF_MAP_NAME: &str = "events";
 pub const COUNTER_MAP_NAME: &str = "counters";
 pub const STRING_COUNTER_MAP_NAME: &str = "str_counters";

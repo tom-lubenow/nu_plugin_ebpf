@@ -43,9 +43,9 @@ use super::instruction::{
 };
 use super::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, COUNTER_MAP_NAME, CtxField,
-    HISTOGRAM_MAP_NAME, MapKind, MirFunction, MirInst, MirType, MirValue, STRING_COUNTER_MAP_NAME,
-    StackSlotId, StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind,
-    VReg,
+    HISTOGRAM_MAP_NAME, MapKind, MapOpKind, MirFunction, MirInst, MirType, MirValue,
+    STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
+    TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
 };
 
 mod constraints;

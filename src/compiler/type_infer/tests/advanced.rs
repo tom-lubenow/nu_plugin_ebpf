@@ -1300,3 +1300,35 @@ fn test_type_infer_rejects_array_map_delete() {
             && e.message.contains("slots")
     }));
 }
+
+#[test]
+fn test_type_infer_rejects_queue_map_lookup() {
+    let mut func = make_test_function();
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::MapLookup {
+        dst,
+        map: MapRef {
+            name: "queue_lookup".to_string(),
+            kind: MapKind::Queue,
+        },
+        key,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errors = ti
+        .infer(&func)
+        .expect_err("queue map lookup should be rejected during validation");
+
+    assert!(errors.iter().any(|e| {
+        e.message
+            .contains("map lookup is not supported for map kind Queue")
+    }));
+}

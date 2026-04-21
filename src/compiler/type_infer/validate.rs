@@ -451,12 +451,19 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
+            MirInst::MapLookup { map, .. } => {
+                if !map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+                    errors.push(TypeError::new(
+                        map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
+                    ));
+                }
+            }
+
             MirInst::MapUpdate { map, key, val, .. } => {
-                if matches!(map.kind, MapKind::BloomFilter) {
-                    errors.push(TypeError::new(format!(
-                        "map update is not supported for bloom-filter map '{}'; use map-push",
-                        map.name
-                    )));
+                if !map.kind.supports_generic_map_op(MapOpKind::Update) {
+                    errors.push(TypeError::new(
+                        map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
+                    ));
                 }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
@@ -495,19 +502,10 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::MapDelete { map, key } => {
-                if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
-                    errors.push(TypeError::new(format!(
-                        "map delete is not supported for array map kind {:?} ('{}')",
-                        map.kind, map.name
-                    )));
-                } else if matches!(
-                    map.kind,
-                    MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
-                ) {
-                    errors.push(TypeError::new(format!(
-                        "map delete is not supported for map kind {:?} ('{}')",
-                        map.kind, map.name
-                    )));
+                if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
+                    errors.push(TypeError::new(
+                        map.kind.generic_map_op_error(MapOpKind::Delete, &map.name),
+                    ));
                 }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
@@ -535,14 +533,10 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::MapPush { map, val, .. } => {
-                if !matches!(
-                    map.kind,
-                    MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
-                ) {
-                    errors.push(TypeError::new(format!(
-                        "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
-                        map.kind, map.name
-                    )));
+                if !map.kind.supports_generic_map_op(MapOpKind::Push) {
+                    errors.push(TypeError::new(
+                        map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
+                    ));
                 }
 
                 let val_ty = self.mir_type_for_vreg(*val, types);

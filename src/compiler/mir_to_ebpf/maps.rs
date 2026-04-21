@@ -689,11 +689,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         key: VReg,
         key_reg: EbpfReg,
     ) -> Result<(), CompileError> {
-        if matches!(map.kind, MapKind::BloomFilter) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map lookup is not supported for bloom-filter map '{}'",
-                map.name
-            )));
+        if !map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+            return Err(CompileError::UnsupportedInstruction(
+                map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
+            ));
         }
         let key_layout = self.map_operand_layout(key, "map key", 8)?;
         let key_size = match key_layout {
@@ -722,11 +721,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         val_reg: EbpfReg,
         flags: u64,
     ) -> Result<(), CompileError> {
-        if matches!(map.kind, MapKind::BloomFilter) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map update is not supported for bloom-filter map '{}'; use map-push",
-                map.name
-            )));
+        if !map.kind.supports_generic_map_op(MapOpKind::Update) {
+            return Err(CompileError::UnsupportedInstruction(
+                map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
+            ));
         }
         let key_layout = self.map_operand_layout(key, "map key", 8)?;
         let val_layout = self.map_operand_layout(val, "map value", 8)?;
@@ -760,17 +758,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         key: VReg,
         key_reg: EbpfReg,
     ) -> Result<(), CompileError> {
-        if matches!(map.kind, MapKind::BloomFilter) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map delete is not supported for bloom-filter map '{}'",
-                map.name
-            )));
-        }
-        if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map delete is not supported for array map kind {:?} ('{}')",
-                map.kind, map.name
-            )));
+        if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
+            return Err(CompileError::UnsupportedInstruction(
+                map.kind.generic_map_op_error(MapOpKind::Delete, &map.name),
+            ));
         }
         let key_layout = self.map_operand_layout(key, "map key", 8)?;
         let key_size = match key_layout {
@@ -792,14 +783,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         val_reg: EbpfReg,
         flags: u64,
     ) -> Result<(), CompileError> {
-        if !matches!(
-            map.kind,
-            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
-        ) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
-                map.kind, map.name
-            )));
+        if !map.kind.supports_generic_map_op(MapOpKind::Push) {
+            return Err(CompileError::UnsupportedInstruction(
+                map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
+            ));
         }
         let val_layout = self.map_operand_layout(val, "map value", 8)?;
         let value_size = match val_layout {

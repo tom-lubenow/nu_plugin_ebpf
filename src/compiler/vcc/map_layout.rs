@@ -12,22 +12,6 @@ fn map_value_limit(map_name: &str) -> Option<i64> {
     }
 }
 
-fn supports_generic_map_kind(kind: MapKind) -> bool {
-    matches!(
-        kind,
-        MapKind::Hash
-            | MapKind::Array
-            | MapKind::LpmTrie
-            | MapKind::LruHash
-            | MapKind::PerCpuHash
-            | MapKind::PerCpuArray
-            | MapKind::LruPerCpuHash
-            | MapKind::Queue
-            | MapKind::Stack
-            | MapKind::BloomFilter
-    )
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct VccMapLayoutSpec {
     kind: MapKind,
@@ -137,7 +121,7 @@ fn register_generic_map_layout_spec(
     if is_builtin_map_name(&map.name) {
         return;
     }
-    if !supports_generic_map_kind(map.kind) {
+    if !map.kind.supports_any_generic_map_op() {
         errors.push(VccError::new(
             VccErrorKind::UnsupportedInstruction,
             format!(
@@ -225,13 +209,10 @@ fn check_generic_map_layout_constraints(
         for inst in &block.instructions {
             match inst {
                 MirInst::MapLookup { dst, map, key } => {
-                    if matches!(map.kind, MapKind::BloomFilter) {
+                    if !map.kind.supports_generic_map_op(MapOpKind::Lookup) {
                         errors.push(VccError::new(
                             VccErrorKind::UnsupportedInstruction,
-                            format!(
-                                "map lookup is not supported for bloom-filter map '{}'",
-                                map.name
-                            ),
+                            map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
                         ));
                         continue;
                     }
@@ -251,13 +232,10 @@ fn check_generic_map_layout_constraints(
                     );
                 }
                 MirInst::MapUpdate { map, key, val, .. } => {
-                    if matches!(map.kind, MapKind::BloomFilter) {
+                    if !map.kind.supports_generic_map_op(MapOpKind::Update) {
                         errors.push(VccError::new(
                             VccErrorKind::UnsupportedInstruction,
-                            format!(
-                                "map update is not supported for bloom-filter map '{}'; use map-push",
-                                map.name
-                            ),
+                            map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
                         ));
                         continue;
                     }
@@ -281,13 +259,10 @@ fn check_generic_map_layout_constraints(
                     );
                 }
                 MirInst::MapDelete { map, key } => {
-                    if matches!(map.kind, MapKind::BloomFilter) {
+                    if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
                         errors.push(VccError::new(
                             VccErrorKind::UnsupportedInstruction,
-                            format!(
-                                "map delete is not supported for bloom-filter map '{}'",
-                                map.name
-                            ),
+                            map.kind.generic_map_op_error(MapOpKind::Delete, &map.name),
                         ));
                         continue;
                     }
@@ -300,6 +275,13 @@ fn check_generic_map_layout_constraints(
                     register_generic_map_layout_spec(map, key_size, None, &mut specs, &mut errors);
                 }
                 MirInst::MapPush { map, val, .. } => {
+                    if !map.kind.supports_generic_map_op(MapOpKind::Push) {
+                        errors.push(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
+                        ));
+                        continue;
+                    }
                     check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(value_size) =
                         infer_map_operand_size(*val, "map value", types, &mut errors)

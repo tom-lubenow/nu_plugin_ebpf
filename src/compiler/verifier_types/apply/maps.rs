@@ -8,11 +8,10 @@ pub(super) fn apply_map_lookup_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if !supports_generic_map_kind(map.kind) {
-        errors.push(VerifierTypeError::new(format!(
-            "map operations do not support map kind {:?} for '{}'",
-            map.kind, map.name
-        )));
+    if !map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+        errors.push(VerifierTypeError::new(
+            map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
+        ));
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_key_access(map, key, types, state, errors);
@@ -64,11 +63,10 @@ pub(super) fn apply_map_update_inst(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if !supports_generic_map_kind(map.kind) {
-        errors.push(VerifierTypeError::new(format!(
-            "map operations do not support map kind {:?} for '{}'",
-            map.kind, map.name
-        )));
+    if !map.kind.supports_generic_map_op(MapOpKind::Update) {
+        errors.push(VerifierTypeError::new(
+            map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
+        ));
     }
     if flags > i32::MAX as u64 {
         errors.push(VerifierTypeError::new(format!(
@@ -88,16 +86,10 @@ pub(super) fn apply_map_delete_inst(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if !supports_generic_map_kind(map.kind) {
-        errors.push(VerifierTypeError::new(format!(
-            "map operations do not support map kind {:?} for '{}'",
-            map.kind, map.name
-        )));
-    } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
-        errors.push(VerifierTypeError::new(format!(
-            "map delete is not supported for array map kind {:?} ('{}')",
-            map.kind, map.name
-        )));
+    if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
+        errors.push(VerifierTypeError::new(
+            map.kind.generic_map_op_error(MapOpKind::Delete, &map.name),
+        ));
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_key_access(map, key, types, state, errors);

@@ -281,6 +281,7 @@ Near-term priority order:
   - Recent progress: local-storage maps now have resource-oriented `map-get` / `map-delete` forms for `sk-storage`, `task-storage`, `inode-storage`, and `cgrp-storage`, lowering through the modeled storage helpers while preserving typed init-value schemas.
   - Recent progress: socket maps now have a resource-oriented `sock_ops` update path via `map-put --kind sockmap|sockhash`, complementing the existing `redirect-socket` consume path.
   - Recent progress: added `BPF_MAP_TYPE_CGROUP_ARRAY` map definitions plus first-class `map-contains --kind cgroup-array` membership probes. Tc programs lower to `bpf_skb_under_cgroup` for the current packet; other programs lower to `bpf_current_task_under_cgroup` for the current task.
+  - Recent progress: generic MIR map-operation capability policy now lives on `MapKind`, so type inference, verifier_types, VCC, and backend codegen reject unsupported operation/kind pairs consistently instead of relying only on Nu lowering.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.

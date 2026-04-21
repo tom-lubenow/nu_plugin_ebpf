@@ -37,7 +37,7 @@ use crate::compiler::instruction::{
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use crate::compiler::mir::{
     BYTES_COUNTER_MAP_NAME, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
-    KSTACK_MAP_NAME, MapKind, MapRef, MirProgram, MirType, MirTypeHints, MirValue,
+    KSTACK_MAP_NAME, MapKind, MapOpKind, MapRef, MirProgram, MirType, MirTypeHints, MirValue,
     RINGBUF_MAP_NAME, RecordFieldDef, STRING_COUNTER_MAP_NAME, StackSlot, StackSlotId,
     StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
     UnaryOpKind, VReg,

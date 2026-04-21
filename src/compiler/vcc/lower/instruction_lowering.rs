@@ -422,22 +422,10 @@ impl<'a> VccLowerer<'a> {
                 });
             }
             MirInst::MapLookup { dst, map, key } => {
-                if matches!(map.kind, MapKind::BloomFilter) {
+                if !map.kind.supports_generic_map_op(MapOpKind::Lookup) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map lookup is not supported for bloom-filter map '{}'",
-                            map.name
-                        ),
-                    ));
-                }
-                if !supports_generic_map_kind(map.kind) {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map operations do not support map kind {:?} for '{}'",
-                            map.kind, map.name
-                        ),
+                        map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
                     ));
                 }
                 self.verify_map_key(&map.name, *key, out)?;
@@ -533,22 +521,10 @@ impl<'a> VccLowerer<'a> {
                 val,
                 flags,
             } => {
-                if matches!(map.kind, MapKind::BloomFilter) {
+                if !map.kind.supports_generic_map_op(MapOpKind::Update) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map update is not supported for bloom-filter map '{}'; use map-push",
-                            map.name
-                        ),
-                    ));
-                }
-                if !supports_generic_map_kind(map.kind) {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map operations do not support map kind {:?} for '{}'",
-                            map.kind, map.name
-                        ),
+                        map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
                     ));
                 }
                 if *flags > i32::MAX as u64 {
@@ -564,55 +540,19 @@ impl<'a> VccLowerer<'a> {
                 self.verify_map_value(*val, out)?;
             }
             MirInst::MapDelete { map, key } => {
-                if matches!(map.kind, MapKind::BloomFilter) {
+                if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map delete is not supported for bloom-filter map '{}'",
-                            map.name
-                        ),
-                    ));
-                }
-                if !supports_generic_map_kind(map.kind) {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map operations do not support map kind {:?} for '{}'",
-                            map.kind, map.name
-                        ),
-                    ));
-                }
-                if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map delete is not supported for array map kind {:?} ('{}')",
-                            map.kind, map.name
-                        ),
+                        map.kind.generic_map_op_error(MapOpKind::Delete, &map.name),
                     ));
                 }
                 self.verify_map_key(&map.name, *key, out)?;
             }
             MirInst::MapPush { map, val, flags } => {
-                if !supports_generic_map_kind(map.kind) {
+                if !map.kind.supports_generic_map_op(MapOpKind::Push) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map operations do not support map kind {:?} for '{}'",
-                            map.kind, map.name
-                        ),
-                    ));
-                }
-                if !matches!(
-                    map.kind,
-                    MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
-                ) {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
-                            map.kind, map.name
-                        ),
+                        map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
                     ));
                 }
                 if *flags > i32::MAX as u64 {

@@ -165,6 +165,46 @@ fn test_map_lookup_rejects_unsupported_map_kind() {
 }
 
 #[test]
+fn test_map_lookup_rejects_queue_map_kind() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst,
+        map: MapRef {
+            name: "queue_lookup".to_string(),
+            kind: MapKind::Queue,
+        },
+        key,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    let err = verify_mir(&func, &types).expect_err("expected queue lookup rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("map lookup is not supported for map kind Queue")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_map_lookup_accepts_lru_hash_kind() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

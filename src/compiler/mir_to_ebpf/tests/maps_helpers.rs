@@ -1492,6 +1492,49 @@ fn test_map_delete_rejects_array_maps() {
 }
 
 #[test]
+fn test_map_lookup_rejects_queue_maps() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst,
+        map: MapRef {
+            name: "queue_lookup".to_string(),
+            kind: MapKind::Queue,
+        },
+        key,
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    match compile_mir_to_ebpf(&program, None) {
+        Ok(_) => panic!("expected queue map lookup rejection, got Ok"),
+        Err(err) => {
+            let msg = err.to_string();
+            assert!(
+                msg.contains("map lookup is not supported for map kind Queue"),
+                "unexpected error: {msg}"
+            );
+        }
+    }
+}
+
+#[test]
 fn test_tail_call_compiles_and_emits_prog_array_map() {
     use crate::compiler::mir::*;
 

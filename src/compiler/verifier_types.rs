@@ -34,9 +34,9 @@ use super::instruction::{
 };
 use super::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField,
-    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
-    RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
-    VReg,
+    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapOpKind, MapRef, MirFunction, MirInst, MirType,
+    MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, TIMESTAMP_MAP_NAME,
+    USTACK_MAP_NAME, VReg,
 };
 use super::subfn_summaries::SubfunctionReturnSummary;
 
