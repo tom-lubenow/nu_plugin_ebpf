@@ -799,6 +799,23 @@ fn test_verify_mir_for_probe_context_accepts_sock_ops_sk_txhash_store() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_sock_ops_cb_flags_store() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SockOpsCbFlags,
+            val: MirValue::Const(7),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected sock_ops cb_flags store to be accepted");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_cgroup_sock_mark_store_on_sock_create() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)

@@ -3304,6 +3304,45 @@ fn test_type_error_store_ctx_reply_rejects_non_sock_ops_program() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_ctx_cb_flags_on_sock_ops() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockOpsCbFlags,
+        val: MirValue::Const(1),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("sock_ops cb_flags store should type-check on sock_ops");
+}
+
+#[test]
+fn test_type_error_store_ctx_cb_flags_rejects_non_sock_ops_program() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SockOpsCbFlags,
+        val: MirValue::Const(1),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("sock_ops cb_flags store should be rejected outside sock_ops");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("ctx.cb_flags is only available on sock_ops programs")
+    }));
+}
+
+#[test]
 fn test_type_error_store_ctx_sk_txhash_rejects_non_sock_ops_program() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));

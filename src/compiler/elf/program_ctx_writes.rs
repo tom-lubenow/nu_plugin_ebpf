@@ -396,6 +396,11 @@ const SOCK_OPS_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
     ContextWriteSurfaceSpec::named_store("replylong", ContextStoreTargetSpec::SockOpsReplyLongWord),
     ContextWriteSurfaceSpec::store_field(
+        "cb_flags",
+        CtxField::SockOpsCbFlags,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockOpsCbFlags),
+    ),
+    ContextWriteSurfaceSpec::store_field(
         "sk_txhash",
         CtxField::SockOpsSkTxhash,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockOpsSkTxhash),
@@ -510,6 +515,7 @@ impl CtxStoreTarget {
     pub(crate) fn ctx_field(&self) -> Option<CtxField> {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
+            CtxStoreTarget::SockOpsCbFlags => Some(CtxField::SockOpsCbFlags),
             CtxStoreTarget::SockOpsSkTxhash => Some(CtxField::SockOpsSkTxhash),
             CtxStoreTarget::CgroupSockBoundDevIf
             | CtxStoreTarget::CgroupSockMark
@@ -537,6 +543,7 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
+            | CtxStoreTarget::SockOpsCbFlags
             | CtxStoreTarget::SockOpsSkTxhash => Some(ProgramContextFamily::SockOps),
             CtxStoreTarget::CgroupSockBoundDevIf
             | CtxStoreTarget::CgroupSockMark

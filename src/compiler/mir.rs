@@ -915,6 +915,8 @@ pub enum CtxStoreTarget {
     SockOpsReply,
     /// `bpf_sock_ops.replylong[idx]`
     SockOpsReplyLong(u8),
+    /// `bpf_sock_ops_cb_flags_set(ctx, flags)`
+    SockOpsCbFlags,
     /// `bpf_sock_ops.sk_txhash`
     SockOpsSkTxhash,
     /// `bpf_sock.bound_dev_if`
@@ -962,6 +964,7 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
+            | CtxStoreTarget::SockOpsCbFlags
             | CtxStoreTarget::SockOpsSkTxhash
             | CtxStoreTarget::CgroupSockBoundDevIf
             | CtxStoreTarget::CgroupSockMark
@@ -990,6 +993,12 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 format!(
                     "writable sock_ops reply fields require a u32 store, got {:?}",
+                    actual
+                )
+            }
+            CtxStoreTarget::SockOpsCbFlags => {
+                format!(
+                    "writable sock_ops cb_flags requires a u32 store, got {:?}",
                     actual
                 )
             }
@@ -1050,6 +1059,9 @@ impl CtxStoreTarget {
         match self {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => {
                 "writable sock_ops reply fields are only supported on sock_ops programs"
+            }
+            CtxStoreTarget::SockOpsCbFlags => {
+                "writable sock_ops cb_flags is only supported on sock_ops programs"
             }
             CtxStoreTarget::SockOpsSkTxhash => {
                 "writable sock_ops sk_txhash is only supported on sock_ops programs"

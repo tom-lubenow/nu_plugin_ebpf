@@ -3486,6 +3486,11 @@ fn test_probe_context_resolves_sock_ops_store_targets() {
         CtxStoreTarget::SockOpsReplyLong(2)
     );
     assert_eq!(
+        ctx.resolve_ctx_store_target("cb_flags", None)
+            .expect("sock_ops cb_flags target should resolve"),
+        CtxStoreTarget::SockOpsCbFlags
+    );
+    assert_eq!(
         ctx.resolve_ctx_store_target("sk_txhash", None)
             .expect("sock_ops sk_txhash target should resolve"),
         CtxStoreTarget::SockOpsSkTxhash
@@ -3504,6 +3509,10 @@ fn test_probe_context_validates_sock_ops_store_targets() {
             .is_ok()
     );
     assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SockOpsCbFlags)
+            .is_ok()
+    );
+    assert!(
         ctx.validate_ctx_store_target(&CtxStoreTarget::SockOpsSkTxhash)
             .is_ok()
     );
@@ -3518,6 +3527,14 @@ fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
     assert!(
         err.to_string()
             .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    );
+
+    let err = ctx
+        .validate_ctx_store_target(&CtxStoreTarget::SockOpsCbFlags)
+        .expect_err("sock_ops cb_flags store target should be rejected outside sock_ops");
+    assert!(
+        err.to_string()
+            .contains("ctx.cb_flags is only available on sock_ops programs")
     );
 
     let err = ctx
@@ -3541,6 +3558,12 @@ fn test_program_type_base_ctx_store_target_error_follows_context_family() {
             .base_ctx_store_target_error(&CtxStoreTarget::SockOpsReply)
             .unwrap()
             .contains("writable sock_ops reply fields are only supported on sock_ops programs")
+    );
+    assert!(
+        EbpfProgramType::SkMsg
+            .base_ctx_store_target_error(&CtxStoreTarget::SockOpsCbFlags)
+            .unwrap()
+            .contains("writable sock_ops cb_flags is only supported on sock_ops programs")
     );
     assert!(
         EbpfProgramType::SkMsg

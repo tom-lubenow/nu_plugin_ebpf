@@ -3930,6 +3930,54 @@ fn test_compile_sock_ops_sk_txhash_store_uses_u32_ctx_word() {
 }
 
 #[test]
+fn test_compile_sock_ops_cb_flags_store_calls_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: value,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StoreCtxField {
+            target: CtxStoreTarget::SockOpsCbFlags,
+            val: MirValue::VReg(value),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_ALU64 | opcode::BPF_MOV | opcode::BPF_X
+            && insn.dst_reg == EbpfReg::R1.as_u8()
+            && insn.src_reg == EbpfReg::R9.as_u8()
+    }));
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::SockOpsCbFlagsSet as i32
+    }));
+}
+
+#[test]
 fn test_compile_cgroup_sock_direct_scalar_stores_use_bpf_sock_offsets() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
 

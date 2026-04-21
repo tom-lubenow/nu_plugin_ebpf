@@ -84,6 +84,15 @@ impl<'a> MirToEbpfCompiler<'a> {
         };
         ctx.validate_ctx_store_target(target)?;
         let val_reg = self.value_to_reg(val)?;
+        if matches!(target, CtxStoreTarget::SockOpsCbFlags) {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R2, val_reg));
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+            self.instructions
+                .push(EbpfInsn::call(BpfHelper::SockOpsCbFlagsSet));
+            return Ok(());
+        }
         let (offset, store_reg) = match target {
             CtxStoreTarget::SockOpsReply => (Self::bpf_sock_ops_args_offset(), val_reg),
             CtxStoreTarget::SockOpsReplyLong(index) => (
@@ -95,6 +104,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     })?,
                 val_reg,
             ),
+            CtxStoreTarget::SockOpsCbFlags => unreachable!("helper-backed store handled above"),
             CtxStoreTarget::SockOpsSkTxhash => {
                 (Self::bpf_sock_ops_extra_metric_offsets().10, val_reg)
             }
