@@ -394,11 +394,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::Redirect => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTc,
         },
-        BpfHelper::RedirectPeer | BpfHelper::RedirectNeigh | BpfHelper::SkbSetTstamp => {
-            HelperProgramSurfaceSpec {
-                family: HelperProgramSurfaceFamily::Tc,
-            }
-        }
+        BpfHelper::RedirectPeer
+        | BpfHelper::RedirectNeigh
+        | BpfHelper::SkbSetTstamp
+        | BpfHelper::SkbUnderCgroup => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::Tc,
+        },
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEventOutput,
         },
