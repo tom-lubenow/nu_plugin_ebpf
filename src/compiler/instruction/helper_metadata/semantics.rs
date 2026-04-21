@@ -998,6 +998,48 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const GET_FUNC_ARG_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper get_func_arg ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper get_func_arg value",
+                allowed: STACK_MAP,
+                fixed_size: Some(8),
+                size_from_arg: None,
+            },
+        ];
+
+        const GET_FUNC_RET_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper get_func_ret ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper get_func_ret value",
+                allowed: STACK_MAP,
+                fixed_size: Some(8),
+                size_from_arg: None,
+            },
+        ];
+
+        const GET_FUNC_ARG_CNT_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_func_arg_cnt ctx",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const GET_LISTENER_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper get_listener_sock sk",
@@ -1620,6 +1662,21 @@ impl BpfHelper {
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
                 ptr_arg_rules: TASK_PT_REGS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetFuncArg => HelperSemantics {
+                ptr_arg_rules: GET_FUNC_ARG_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetFuncRet => HelperSemantics {
+                ptr_arg_rules: GET_FUNC_RET_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetFuncArgCnt => HelperSemantics {
+                ptr_arg_rules: GET_FUNC_ARG_CNT_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

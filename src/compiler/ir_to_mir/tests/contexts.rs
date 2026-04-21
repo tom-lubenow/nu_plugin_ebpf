@@ -2984,6 +2984,33 @@ fn test_lower_kprobe_tracing_helper_ctx_fields() {
 }
 
 #[test]
+fn test_lower_fentry_arg_count_ctx_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg_count")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_sys_openat2");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fentry ctx.arg_count should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::ArgCount,
+            ..
+        }
+    )));
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_lower_perf_event_ctx_sample_period_field() {
     let hir = make_ctx_path_program(CellPath {

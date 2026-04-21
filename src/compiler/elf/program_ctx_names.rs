@@ -69,6 +69,7 @@ const TRACEPOINT_PRESERVED_CTX_FIELD_NAMES: &[&str] = &[
     "tai_time",
     "jiffies",
     "cgroup_id",
+    "arg_count",
     "kstack",
     "ustack",
 ];
@@ -197,6 +198,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "optval_end" => CtxField::SockoptOptvalEnd,
         "sockopt_retval" => CtxField::SockoptRetval,
         "retval" => CtxField::RetVal,
+        "arg_count" => CtxField::ArgCount,
         "kstack" => CtxField::KStack,
         "ustack" => CtxField::UStack,
         s if s.starts_with("arg") => {

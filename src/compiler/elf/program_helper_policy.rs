@@ -45,6 +45,8 @@ enum HelperProgramSurfaceFamily {
     SocketCast,
     TaskStorage,
     Lsm,
+    TrampolineArgs,
+    Fexit,
     SkStorageGet,
     SkStorageDelete,
     TracingSocket,
@@ -233,6 +235,14 @@ impl HelperProgramSurfaceFamily {
                     | EbpfProgramType::Lsm
             ),
             Self::Lsm => matches!(program_type, EbpfProgramType::Lsm),
+            Self::TrampolineArgs => matches!(
+                program_type,
+                EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::Lsm
+            ),
+            Self::Fexit => matches!(program_type, EbpfProgramType::Fexit),
             Self::SkStorageGet => matches!(
                 program_type,
                 EbpfProgramType::Tc
@@ -319,6 +329,8 @@ impl HelperProgramSurfaceFamily {
                 "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, and lsm"
             }
             Self::Lsm => "lsm",
+            Self::TrampolineArgs => "fentry, fexit, tp_btf, and lsm",
+            Self::Fexit => "fexit",
             Self::SkStorageGet => {
                 "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm"
             }
@@ -520,6 +532,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         },
         BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Lsm,
+        },
+        BpfHelper::GetFuncArg | BpfHelper::GetFuncArgCnt => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TrampolineArgs,
+        },
+        BpfHelper::GetFuncRet => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::Fexit,
         },
         BpfHelper::SkStorageGet => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SkStorageGet,

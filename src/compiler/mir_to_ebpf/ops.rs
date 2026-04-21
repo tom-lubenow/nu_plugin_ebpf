@@ -1571,6 +1571,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::add64_imm(dst, comm_offset as i32));
             }
+            CtxField::ArgCount => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetFuncArgCnt));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::Arg(n) => {
                 let n = *n as usize;
                 match self.probe_ctx {

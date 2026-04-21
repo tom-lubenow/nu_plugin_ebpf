@@ -2522,6 +2522,45 @@ fn test_compile_kprobe_tracing_ctx_fields_call_expected_helpers() {
 }
 
 #[test]
+fn test_compile_fentry_arg_count_calls_expected_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_sys_openat2");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::ArgCount,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::GetFuncArgCnt as i32
+    }));
+}
+
+#[test]
 fn test_compile_kprobe_task_load_calls_helper() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
 

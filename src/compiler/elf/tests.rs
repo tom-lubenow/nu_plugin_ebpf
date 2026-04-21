@@ -1146,6 +1146,24 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_read_branch_records' is only valid in perf_event programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncArg),
+        Some(
+            "helper 'bpf_get_func_arg' is only valid in fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncArgCnt),
+        Some(
+            "helper 'bpf_get_func_arg_cnt' is only valid in fentry, fexit, tp_btf, and lsm programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::GetFuncRet),
+        Some("helper 'bpf_get_func_ret' is only valid in fexit programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStackId),
         Some(
             "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
@@ -1462,6 +1480,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::ReadBranchRecords),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::GetFuncArg),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Lsm.helper_call_error(BpfHelper::GetFuncArgCnt),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Fexit.helper_call_error(BpfHelper::GetFuncRet),
         None
     );
     assert_eq!(
@@ -3321,6 +3351,11 @@ fn test_program_spec_tracepoint_ctx_name_resolution_uses_program_model() {
             .expect("tracepoint arg3 should preserve builtin arg"),
         CtxField::Arg(3)
     );
+    assert_eq!(
+        spec.resolve_ctx_field_name("arg_count")
+            .expect("tracepoint arg_count should preserve builtin name"),
+        CtxField::ArgCount
+    );
 }
 
 #[test]
@@ -3346,6 +3381,28 @@ fn test_probe_context_rejects_arg_on_tracepoint() {
         .ctx_field_access_error(&CtxField::Arg(0))
         .expect("expected tracepoint arg access error");
     assert!(err.contains("ctx.arg0 is only available on contexts with argument access"));
+}
+
+#[test]
+fn test_probe_context_arg_count_field_surface_follows_program_model() {
+    for program_type in [
+        EbpfProgramType::Fentry,
+        EbpfProgramType::Fexit,
+        EbpfProgramType::TpBtf,
+        EbpfProgramType::Lsm,
+    ] {
+        let ctx = ProbeContext::new(program_type, "do_sys_openat2");
+        assert!(
+            ctx.ctx_field_access_error(&CtxField::ArgCount).is_none(),
+            "ctx.arg_count should be allowed on {program_type:?}"
+        );
+    }
+
+    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = xdp
+        .ctx_field_access_error(&CtxField::ArgCount)
+        .expect("expected arg_count rejection on xdp");
+    assert!(err.contains("ctx.arg_count is only available on BTF-backed tracing contexts"));
 }
 
 #[test]

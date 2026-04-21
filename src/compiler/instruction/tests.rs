@@ -303,6 +303,18 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetAttachCookie)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_func_arg"),
+        Some(BpfHelper::GetFuncArg)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_get_func_ret"),
+        Some(BpfHelper::GetFuncRet)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_get_func_arg_cnt"),
+        Some(BpfHelper::GetFuncArgCnt)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_perf_prog_read_value"),
         Some(BpfHelper::PerfProgReadValue)
     ));
@@ -735,6 +747,33 @@ fn test_helper_signature_read_branch_records() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_trampoline_arg_helpers() {
+    let arg = HelperSignature::for_id(BpfHelper::GetFuncArg as u32)
+        .expect("expected bpf_get_func_arg helper signature");
+    assert_eq!(arg.min_args, 3);
+    assert_eq!(arg.max_args, 3);
+    assert_eq!(arg.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(arg.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(arg.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(arg.ret_kind, HelperRetKind::Scalar);
+
+    let ret = HelperSignature::for_id(BpfHelper::GetFuncRet as u32)
+        .expect("expected bpf_get_func_ret helper signature");
+    assert_eq!(ret.min_args, 2);
+    assert_eq!(ret.max_args, 2);
+    assert_eq!(ret.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(ret.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(ret.ret_kind, HelperRetKind::Scalar);
+
+    let count = HelperSignature::for_id(BpfHelper::GetFuncArgCnt as u32)
+        .expect("expected bpf_get_func_arg_cnt helper signature");
+    assert_eq!(count.min_args, 1);
+    assert_eq!(count.max_args, 1);
+    assert_eq!(count.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(count.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1253,6 +1292,32 @@ fn test_read_branch_records_helper_contract() {
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);
     assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_trampoline_arg_helper_contracts() {
+    let arg = BpfHelper::GetFuncArg.semantics();
+    assert_eq!(arg.ptr_arg_rules.len(), 2);
+    assert_eq!(arg.ptr_arg_rules[0].op, "helper get_func_arg ctx");
+    assert!(arg.ptr_arg_rules[0].allowed.allow_kernel);
+    assert_eq!(arg.ptr_arg_rules[1].op, "helper get_func_arg value");
+    assert!(arg.ptr_arg_rules[1].allowed.allow_stack);
+    assert!(arg.ptr_arg_rules[1].allowed.allow_map);
+    assert_eq!(arg.ptr_arg_rules[1].fixed_size, Some(8));
+
+    let ret = BpfHelper::GetFuncRet.semantics();
+    assert_eq!(ret.ptr_arg_rules.len(), 2);
+    assert_eq!(ret.ptr_arg_rules[0].op, "helper get_func_ret ctx");
+    assert!(ret.ptr_arg_rules[0].allowed.allow_kernel);
+    assert_eq!(ret.ptr_arg_rules[1].op, "helper get_func_ret value");
+    assert!(ret.ptr_arg_rules[1].allowed.allow_stack);
+    assert!(ret.ptr_arg_rules[1].allowed.allow_map);
+    assert_eq!(ret.ptr_arg_rules[1].fixed_size, Some(8));
+
+    let count = BpfHelper::GetFuncArgCnt.semantics();
+    assert_eq!(count.ptr_arg_rules.len(), 1);
+    assert_eq!(count.ptr_arg_rules[0].op, "helper get_func_arg_cnt ctx");
+    assert!(count.ptr_arg_rules[0].allowed.allow_kernel);
 }
 
 #[test]

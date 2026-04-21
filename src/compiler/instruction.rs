@@ -296,6 +296,12 @@ pub enum BpfHelper {
     SockFromFile = 162,
     /// struct pt_regs *bpf_task_pt_regs(task)
     TaskPtRegs = 175,
+    /// long bpf_get_func_arg(ctx, n, value)
+    GetFuncArg = 183,
+    /// long bpf_get_func_ret(ctx, value)
+    GetFuncRet = 184,
+    /// long bpf_get_func_arg_cnt(ctx)
+    GetFuncArgCnt = 185,
     /// long bpf_ringbuf_output(map, data, size, flags)
     RingbufOutput = 130,
     /// void *bpf_ringbuf_reserve(map, size, flags)
@@ -442,6 +448,9 @@ impl BpfHelper {
             BpfHelper::CgrpStorageDelete => "bpf_cgrp_storage_delete",
             BpfHelper::SockFromFile => "bpf_sock_from_file",
             BpfHelper::TaskPtRegs => "bpf_task_pt_regs",
+            BpfHelper::GetFuncArg => "bpf_get_func_arg",
+            BpfHelper::GetFuncRet => "bpf_get_func_ret",
+            BpfHelper::GetFuncArgCnt => "bpf_get_func_arg_cnt",
             BpfHelper::RingbufOutput => "bpf_ringbuf_output",
             BpfHelper::RingbufReserve => "bpf_ringbuf_reserve",
             BpfHelper::RingbufSubmit => "bpf_ringbuf_submit",
@@ -584,6 +593,9 @@ impl BpfHelper {
             "cgrp_storage_delete" | "cgroup_storage_delete" => Some(Self::CgrpStorageDelete),
             "sock_from_file" => Some(Self::SockFromFile),
             "task_pt_regs" => Some(Self::TaskPtRegs),
+            "get_func_arg" => Some(Self::GetFuncArg),
+            "get_func_ret" => Some(Self::GetFuncRet),
+            "get_func_arg_cnt" => Some(Self::GetFuncArgCnt),
             "ringbuf_output" => Some(Self::RingbufOutput),
             "ringbuf_reserve" => Some(Self::RingbufReserve),
             "ringbuf_submit" => Some(Self::RingbufSubmit),

@@ -120,6 +120,7 @@ The closure receives a context parameter with these fields:
 | `optval_end` | Kernel pointer to the end of the sockopt buffer | cgroup_sockopt |
 | `sockopt_retval` | Getsockopt return value on `get` hooks | cgroup_sockopt |
 | `arg0`-`argN` | Function arguments or raw sampled ABI register slots; kernel-BTF-backed contexts also expose named `ctx.arg.<name>` aliases when kernel BTF includes names | kprobe, uprobe, fentry, fexit, tp_btf, lsm, struct_ops, raw_tracepoint, perf_event |
+| `arg_count` | Number of argument registers available to a BTF-backed tracing program (`bpf_get_func_arg_cnt`) | fentry, fexit, tp_btf, lsm |
 | `retval` | Return value | kretprobe, uretprobe, fexit |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
@@ -387,6 +388,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 Modeled tracing/perf stack helpers are available through the helper escape hatch. `bpf_get_stackid` is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` is constrained to the same program families and accepts a stack/map buffer with a nonnegative size, including `0`.
 Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.
 The perf-event-only `bpf_read_branch_records` helper is also modeled for branch-stack captures through `helper-call`, including its stack/map output buffer and zero-size query behavior.
+BTF-backed tracing argument count is available as `ctx.arg_count`; the lower-level `bpf_get_func_arg`, `bpf_get_func_ret`, and `bpf_get_func_arg_cnt` helpers are modeled for explicit `helper-call` use when fixed `ctx.argN` / `ctx.retval` projections are not the right fit.
 
 ## Discovering Tracepoints
 

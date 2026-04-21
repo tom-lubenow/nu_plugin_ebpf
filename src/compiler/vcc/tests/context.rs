@@ -256,6 +256,27 @@ fn test_verify_mir_for_probe_context_allows_perf_event_helper_field_loads() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_allows_arg_count_field_load() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst,
+            field: CtxField::ArgCount,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::U64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "do_sys_openat2");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected fentry ctx.arg_count field to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_missing_tracepoint_field_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

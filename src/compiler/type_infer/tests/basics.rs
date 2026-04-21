@@ -2818,6 +2818,27 @@ fn test_tracing_helper_ctx_fields_are_u64() {
 }
 
 #[test]
+fn test_arg_count_ctx_field_is_u64() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst,
+        field: CtxField::ArgCount,
+        slot: None,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::Fentry,
+        "do_sys_openat2",
+    )));
+    let types = ti.infer(&func).unwrap();
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
+}
+
+#[test]
 fn test_type_propagation_through_chain() {
     // Test that types propagate through a chain of copies
     let mut func = make_test_function();

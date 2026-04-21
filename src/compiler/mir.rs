@@ -735,6 +735,8 @@ pub enum CtxField {
     SockoptRetval,
     /// Program argument (pt_regs-backed probes, raw tracepoints, and BTF-backed trampolines)
     Arg(u8),
+    /// Number of argument registers available to BTF-backed tracing programs
+    ArgCount,
     /// Return value (kretprobe/uretprobe)
     RetVal,
     /// Kernel stack ID
@@ -864,6 +866,7 @@ impl CtxField {
             CtxField::SockoptOptvalEnd => "optval_end".to_string(),
             CtxField::SockoptRetval => "sockopt_retval".to_string(),
             CtxField::Arg(idx) => format!("arg{}", idx),
+            CtxField::ArgCount => "arg_count".to_string(),
             CtxField::RetVal => "retval".to_string(),
             CtxField::KStack => "kstack".to_string(),
             CtxField::UStack => "ustack".to_string(),

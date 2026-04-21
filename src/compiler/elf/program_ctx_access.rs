@@ -672,6 +672,7 @@ enum BaseContextFieldAccessRequirement {
     CgroupSockoptRetvalField,
     LircFields,
     ArgFields,
+    ArgCountField,
     RetvalField,
     StackFields,
     TracingHelperFields,
@@ -714,6 +715,13 @@ impl BaseContextFieldAccessRequirement {
             }
             Self::LircFields => program_type.supports_lirc_ctx_fields(),
             Self::ArgFields => program_type.supports_ctx_args(),
+            Self::ArgCountField => matches!(
+                program_type,
+                EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+                    | EbpfProgramType::Lsm
+            ),
             Self::RetvalField => program_type.supports_ctx_retval(),
             Self::StackFields => program_type.supports_stack_ctx_fields(),
             Self::TracingHelperFields => matches!(
@@ -846,6 +854,9 @@ impl BaseContextFieldAccessRequirement {
                 "ctx.{} is only available on contexts with argument access (kprobe, uprobe, fentry, fexit, tp_btf, lsm, struct_ops, and raw_tracepoint)",
                 field.display_name()
             ),
+            Self::ArgCountField => {
+                "ctx.arg_count is only available on BTF-backed tracing contexts (fentry, fexit, tp_btf, and lsm)".to_string()
+            }
             Self::RetvalField => "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit)".to_string(),
             Self::TracepointFields => match field {
                 CtxField::TracepointField(name) => format!(
@@ -863,6 +874,7 @@ fn base_ctx_field_access_requirement(
 ) -> Option<BaseContextFieldAccessRequirement> {
     Some(match field {
         CtxField::Arg(_) => BaseContextFieldAccessRequirement::ArgFields,
+        CtxField::ArgCount => BaseContextFieldAccessRequirement::ArgCountField,
         CtxField::RetVal => BaseContextFieldAccessRequirement::RetvalField,
         CtxField::TracepointField(_) => BaseContextFieldAccessRequirement::TracepointFields,
         _ => return find_base_ctx_field_access_requirement(field),
