@@ -25,6 +25,8 @@ enum HelperProgramSurfaceFamily {
     TcSkSkb,
     XdpTc,
     Tc,
+    SkbLoadBytes,
+    SkbLoadBytesRelative,
     PerfEventOutput,
     GetStackId,
     LegacyProbeRead,
@@ -62,6 +64,18 @@ impl HelperProgramSurfaceFamily {
             ),
             Self::XdpTc => matches!(program_type, EbpfProgramType::Xdp | EbpfProgramType::Tc),
             Self::Tc => matches!(program_type, EbpfProgramType::Tc),
+            Self::SkbLoadBytes => matches!(
+                program_type,
+                EbpfProgramType::SocketFilter
+                    | EbpfProgramType::Tc
+                    | EbpfProgramType::CgroupSkb
+                    | EbpfProgramType::SkSkb
+                    | EbpfProgramType::SkSkbParser
+            ),
+            Self::SkbLoadBytesRelative => matches!(
+                program_type,
+                EbpfProgramType::SocketFilter | EbpfProgramType::Tc | EbpfProgramType::CgroupSkb
+            ),
             Self::PerfEventOutput => matches!(
                 program_type,
                 EbpfProgramType::CgroupDevice
@@ -269,6 +283,8 @@ impl HelperProgramSurfaceFamily {
             Self::TcSkSkb => "tc, sk_skb, and sk_skb_parser",
             Self::XdpTc => "xdp and tc",
             Self::Tc => "tc",
+            Self::SkbLoadBytes => "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+            Self::SkbLoadBytesRelative => "socket_filter, tc, and cgroup_skb",
             Self::PerfEventOutput => {
                 "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp"
             }
@@ -376,6 +392,11 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
                 family: HelperProgramSurfaceFamily::Xdp,
             }
         }
+        BpfHelper::XdpGetBuffLen | BpfHelper::XdpLoadBytes | BpfHelper::XdpStoreBytes => {
+            HelperProgramSurfaceSpec {
+                family: HelperProgramSurfaceFamily::Xdp,
+            }
+        }
         BpfHelper::RedirectMap => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Xdp,
         },
@@ -390,6 +411,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkbChangeHead
         | BpfHelper::SkbAdjustRoom => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcSkSkb,
+        },
+        BpfHelper::SkbLoadBytes => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::SkbLoadBytes,
+        },
+        BpfHelper::SkbLoadBytesRelative => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,
         },
         BpfHelper::Redirect => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTc,

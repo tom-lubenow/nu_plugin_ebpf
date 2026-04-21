@@ -1137,9 +1137,27 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_xdp_adjust_meta' is only valid in xdp programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::XdpLoadBytes),
+        Some("helper 'bpf_xdp_load_bytes' is only valid in xdp programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbPullData),
         Some(
             "helper 'bpf_skb_pull_data' is only valid in tc, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbLoadBytes),
+        Some(
+            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbLoadBytesRelative),
+        Some(
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, and cgroup_skb programs"
                 .to_string()
         )
     );
@@ -1402,7 +1420,23 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::XdpGetBuffLen),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::XdpStoreBytes),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbChangeHead),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SocketFilter.helper_call_error(BpfHelper::SkbLoadBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbLoadBytesRelative),
         None
     );
     assert_eq!(

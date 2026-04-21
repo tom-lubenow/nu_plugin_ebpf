@@ -3019,6 +3019,158 @@ fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
 }
 
 #[test]
+fn test_infer_packet_byte_helpers_follow_program_surface() {
+    for (helper, program_type, target, args_len) in [
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::SocketFilter,
+            "udp4:127.0.0.1:31337",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:ingress",
+            5,
+        ),
+        (BpfHelper::XdpLoadBytes, EbpfProgramType::Xdp, "lo", 4),
+        (BpfHelper::XdpStoreBytes, EbpfProgramType::Xdp, "lo", 4),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        let mut args = vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ];
+        if args_len == 5 {
+            args.push(MirValue::Const(0));
+        }
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti.infer(&func).unwrap_or_else(|errs| {
+            panic!("expected helper {} to infer: {:?}", helper.name(), errs)
+        });
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
+    for (helper, program_type, target, expected) in [
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::SkSkb,
+            "/sys/fs/bpf/demo_sockmap",
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, and cgroup_skb programs",
+        ),
+        (
+            BpfHelper::XdpStoreBytes,
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            "helper 'bpf_xdp_store_bytes' is only valid in xdp programs",
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        let mut args = vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ];
+        if matches!(helper, BpfHelper::SkbLoadBytesRelative) {
+            args.push(MirValue::Const(0));
+        }
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected packet-byte helper program-surface error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_skb_load_bytes_rejects_small_destination_buffer() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(2, 2, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbLoadBytes as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(4),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb_load_bytes destination buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper skb_load_bytes to requires 4 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

@@ -43,6 +43,38 @@ impl BpfHelper {
                 size_from_arg: Some(3),
             },
         ];
+        const SKB_LOAD_BYTES_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper skb_load_bytes skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper skb_load_bytes to",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
+        const XDP_BUFFER_BYTES_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper xdp_bytes ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper xdp_bytes buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1101,6 +1133,11 @@ impl BpfHelper {
                 positive_size_args: &[3],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::SkbLoadBytes | BpfHelper::SkbLoadBytesRelative => HelperSemantics {
+                ptr_arg_rules: SKB_LOAD_BYTES_RULES,
+                positive_size_args: &[3],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::L3CsumReplace
             | BpfHelper::L4CsumReplace
             | BpfHelper::GetHashRecalc
@@ -1166,6 +1203,16 @@ impl BpfHelper {
                     ringbuf_record_arg0: false,
                 }
             }
+            BpfHelper::XdpGetBuffLen => HelperSemantics {
+                ptr_arg_rules: XDP_ADJUST_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::XdpLoadBytes | BpfHelper::XdpStoreBytes => HelperSemantics {
+                ptr_arg_rules: XDP_BUFFER_BYTES_RULES,
+                positive_size_args: &[3],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::RedirectNeigh => HelperSemantics {
                 ptr_arg_rules: REDIRECT_NEIGH_RULES,
                 positive_size_args: &[],

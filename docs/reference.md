@@ -182,7 +182,12 @@ forms are still modeled when you need the escape hatch. `tc`,
 through the ordinary helper surface, including `bpf_skb_store_bytes`,
 `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
 `bpf_get_hash_recalc`, `bpf_csum_update`, and
-`bpf_set_hash_invalid`. The skb-backed packet contexts
+`bpf_set_hash_invalid`. Raw packet-copy helpers are modeled too:
+`bpf_skb_load_bytes` works on `socket_filter`, `tc`, `cgroup_skb`,
+`sk_skb`, and `sk_skb_parser`; `bpf_skb_load_bytes_relative` works on
+`socket_filter`, `tc`, and `cgroup_skb`; and
+`bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
+`bpf_xdp_store_bytes` are XDP-only. The skb-backed packet contexts
 (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as
 `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or

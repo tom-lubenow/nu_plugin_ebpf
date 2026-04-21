@@ -160,8 +160,12 @@ pub enum BpfHelper {
     ReserveHdrOpt = 144,
     /// int bpf_perf_event_output(ctx, map, flags, data, size)
     PerfEventOutput = 25,
+    /// long bpf_skb_load_bytes(skb, offset, to, len)
+    SkbLoadBytes = 26,
     /// long bpf_get_stackid(ctx, map, flags)
     GetStackId = 27,
+    /// long bpf_skb_load_bytes_relative(skb, offset, to, len, start_header)
+    SkbLoadBytesRelative = 68,
     /// struct bpf_sock *bpf_sk_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
     SkLookupTcp = 84,
     /// struct bpf_sock *bpf_sk_lookup_udp(ctx, tuple, tuple_size, netns, flags)
@@ -180,6 +184,12 @@ pub enum BpfHelper {
     MsgPopData = 91,
     /// long bpf_xdp_adjust_tail(xdp_md, delta)
     XdpAdjustTail = 65,
+    /// u64 bpf_xdp_get_buff_len(xdp_md)
+    XdpGetBuffLen = 188,
+    /// long bpf_xdp_load_bytes(xdp_md, offset, buf, len)
+    XdpLoadBytes = 189,
+    /// long bpf_xdp_store_bytes(xdp_md, offset, buf, len)
+    XdpStoreBytes = 190,
     /// struct bpf_sock *bpf_sk_fullsock(sk)
     SkFullsock = 95,
     /// long bpf_rc_repeat(ctx)
@@ -322,7 +332,9 @@ impl BpfHelper {
             BpfHelper::StoreHdrOpt => "bpf_store_hdr_opt",
             BpfHelper::ReserveHdrOpt => "bpf_reserve_hdr_opt",
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
+            BpfHelper::SkbLoadBytes => "bpf_skb_load_bytes",
             BpfHelper::GetStackId => "bpf_get_stackid",
+            BpfHelper::SkbLoadBytesRelative => "bpf_skb_load_bytes_relative",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
             BpfHelper::SkLookupUdp => "bpf_sk_lookup_udp",
             BpfHelper::SkRelease => "bpf_sk_release",
@@ -332,6 +344,9 @@ impl BpfHelper {
             BpfHelper::MsgPushData => "bpf_msg_push_data",
             BpfHelper::MsgPopData => "bpf_msg_pop_data",
             BpfHelper::XdpAdjustTail => "bpf_xdp_adjust_tail",
+            BpfHelper::XdpGetBuffLen => "bpf_xdp_get_buff_len",
+            BpfHelper::XdpLoadBytes => "bpf_xdp_load_bytes",
+            BpfHelper::XdpStoreBytes => "bpf_xdp_store_bytes",
             BpfHelper::RcRepeat => "bpf_rc_repeat",
             BpfHelper::RcKeydown => "bpf_rc_keydown",
             BpfHelper::RcPointerRel => "bpf_rc_pointer_rel",
@@ -438,7 +453,9 @@ impl BpfHelper {
             "store_hdr_opt" => Some(Self::StoreHdrOpt),
             "reserve_hdr_opt" => Some(Self::ReserveHdrOpt),
             "perf_event_output" => Some(Self::PerfEventOutput),
+            "skb_load_bytes" => Some(Self::SkbLoadBytes),
             "get_stackid" => Some(Self::GetStackId),
+            "skb_load_bytes_relative" => Some(Self::SkbLoadBytesRelative),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
             "sk_lookup_udp" => Some(Self::SkLookupUdp),
             "sk_release" => Some(Self::SkRelease),
@@ -448,6 +465,9 @@ impl BpfHelper {
             "msg_push_data" => Some(Self::MsgPushData),
             "msg_pop_data" => Some(Self::MsgPopData),
             "xdp_adjust_tail" => Some(Self::XdpAdjustTail),
+            "xdp_get_buff_len" => Some(Self::XdpGetBuffLen),
+            "xdp_load_bytes" => Some(Self::XdpLoadBytes),
+            "xdp_store_bytes" => Some(Self::XdpStoreBytes),
             "rc_repeat" => Some(Self::RcRepeat),
             "rc_keydown" => Some(Self::RcKeydown),
             "rc_pointer_rel" => Some(Self::RcPointerRel),

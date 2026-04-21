@@ -1956,6 +1956,120 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_out_of_bounds_sourc
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs() {
+    for (helper, program_type, target, expected) in [
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::SkSkb,
+            "/sys/fs/bpf/demo_sockmap",
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, and cgroup_skb programs",
+        ),
+        (
+            BpfHelper::XdpLoadBytes,
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            "helper 'bpf_xdp_load_bytes' is only valid in xdp programs",
+        ),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let mut args = vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ];
+        if matches!(helper, BpfHelper::SkbLoadBytesRelative) {
+            args.push(MirValue::Const(0));
+        }
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected packet-byte helper program-surface error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_load_bytes_rejects_out_of_bounds_destination_buffer() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(2, 2, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbLoadBytes as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(4),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb_load_bytes to reject out-of-bounds stack buffer");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("pointer access out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_sock_map_update_rejects_out_of_bounds_key_pointer() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();

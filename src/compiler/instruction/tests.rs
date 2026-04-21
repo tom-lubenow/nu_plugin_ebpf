@@ -139,6 +139,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbChangeTail)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_load_bytes"),
+        Some(BpfHelper::SkbLoadBytes)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_load_bytes_relative"),
+        Some(BpfHelper::SkbLoadBytesRelative)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_pull_data"),
         Some(BpfHelper::SkbPullData)
     ));
@@ -161,6 +169,18 @@ fn test_bpf_helper_name_roundtrip() {
     assert!(matches!(
         BpfHelper::from_name("bpf_msg_pop_data"),
         Some(BpfHelper::MsgPopData)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_xdp_get_buff_len"),
+        Some(BpfHelper::XdpGetBuffLen)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_xdp_load_bytes"),
+        Some(BpfHelper::XdpLoadBytes)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_xdp_store_bytes"),
+        Some(BpfHelper::XdpStoreBytes)
     ));
     assert!(matches!(
         BpfHelper::from_name("bpf_sysctl_get_name"),
@@ -734,6 +754,27 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbLoadBytes as u32)
+        .expect("expected bpf_skb_load_bytes helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbLoadBytesRelative as u32)
+        .expect("expected bpf_skb_load_bytes_relative helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -784,6 +825,25 @@ fn test_helper_signatures_xdp_adjust_helpers() {
         assert_eq!(sig.max_args, 2);
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    let sig = HelperSignature::for_id(BpfHelper::XdpGetBuffLen as u32)
+        .expect("expected bpf_xdp_get_buff_len helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    for helper in [BpfHelper::XdpLoadBytes, BpfHelper::XdpStoreBytes] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected xdp bytes helper signature");
+        assert_eq!(sig.min_args, 4);
+        assert_eq!(sig.max_args, 4);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
 }

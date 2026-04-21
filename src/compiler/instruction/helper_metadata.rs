@@ -29,10 +29,12 @@ impl BpfHelper {
             43 => Some(Self::SkbChangeHead),
             44 => Some(Self::XdpAdjustHead),
             23 => Some(Self::Redirect),
+            26 => Some(Self::SkbLoadBytes),
             51 => Some(Self::RedirectMap),
             152 => Some(Self::RedirectNeigh),
             155 => Some(Self::RedirectPeer),
             54 => Some(Self::XdpAdjustMeta),
+            68 => Some(Self::SkbLoadBytesRelative),
             12 => Some(Self::TailCall),
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
@@ -71,6 +73,9 @@ impl BpfHelper {
             90 => Some(Self::MsgPushData),
             91 => Some(Self::MsgPopData),
             65 => Some(Self::XdpAdjustTail),
+            188 => Some(Self::XdpGetBuffLen),
+            189 => Some(Self::XdpLoadBytes),
+            190 => Some(Self::XdpStoreBytes),
             77 => Some(Self::RcRepeat),
             78 => Some(Self::RcKeydown),
             92 => Some(Self::RcPointerRel),
@@ -157,6 +162,18 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkbStoreBytes => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkbLoadBytes => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkbLoadBytesRelative => HelperSignature {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, P, S, S],
@@ -264,6 +281,18 @@ impl BpfHelper {
                     ret_kind: HelperRetKind::Scalar,
                 }
             }
+            BpfHelper::XdpGetBuffLen => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::XdpLoadBytes | BpfHelper::XdpStoreBytes => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::Redirect => HelperSignature {
                 min_args: 2,
                 max_args: 2,

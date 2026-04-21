@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-20.
+Last updated: 2026-04-21.
 
 ## Current compiler gaps
 
@@ -110,6 +110,7 @@ Last updated: 2026-04-20.
   - Typed helper inode-storage coverage now also includes `bpf_inode_storage_get` / `bpf_inode_storage_delete`, including map/inode pointer-space checks, null-init support for `inode_storage_get`, and inode ref-family checks on tracked refs across verifier_types and VCC.
   - Typed helper storage-arg parity now also rejects anonymous raw kernel pointers for `bpf_sk_storage_{get,delete}`, `bpf_task_storage_{get,delete}`, and `bpf_inode_storage_{get,delete}`, while still accepting tracked refs and explicitly typed socket/task/inode pointers across type inference, verifier_types, and VCC.
   - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` / `bpf_skc_to_tcp_sock` / `bpf_skc_to_tcp6_sock` / `bpf_skc_to_tcp_timewait_sock` / `bpf_skc_to_tcp_request_sock` / `bpf_skc_to_udp6_sock` / `bpf_skc_to_unix_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
+  - Typed helper packet-copy coverage now also includes `bpf_skb_load_bytes`, `bpf_skb_load_bytes_relative`, `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and `bpf_xdp_store_bytes`, with program-surface, pointer-space, positive-size, and buffer-bounds parity across type inference, verifier_types, and VCC.
   - Verifier/VCC helper-arg parity now enforces socket ref-family provenance for tracked kernel refs passed to socket-pointer helpers (`bpf_get_listener_sock` / `bpf_sk_fullsock` / `bpf_tcp_sock`), rejecting mixed-family refs (e.g., task ref args).
   - VCC now aligns typed pointer nullability with verifier_types (`Map`/`Kernel`/`User` pointers are `MaybeNull` until guarded), including parity tests for load/read_str/helper flows that require explicit null checks.
   - VCC helper pointer-space checks now resolve `Unknown` vreg pointer spaces via effective MIR address-space fallback, preventing helper-space-rule bypasses for typed stack pointers.
