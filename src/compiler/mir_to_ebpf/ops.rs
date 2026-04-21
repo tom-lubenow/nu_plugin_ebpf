@@ -417,7 +417,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 // Keep lower 32 bits, zero upper bits
                 self.instructions.push(EbpfInsn::and32_imm(dst, -1));
             }
-            CtxField::Tid => {
+            CtxField::Tgid => {
                 // Upper 32 bits = thread group ID (what userspace calls PID)
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetCurrentPidTgid));

@@ -17,7 +17,7 @@ const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
 const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("pid", CtxField::Pid),
     ("tid", CtxField::Pid),
-    ("tgid", CtxField::Tid),
+    ("tgid", CtxField::Tgid),
     ("uid", CtxField::Uid),
     ("gid", CtxField::Gid),
     ("comm", CtxField::Comm),

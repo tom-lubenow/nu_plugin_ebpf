@@ -410,7 +410,7 @@ pub(crate) fn synthetic_bpf_tcp_sock_type() -> MirType {
 fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchemaSpec> {
     Some(match field {
         CtxField::Pid
-        | CtxField::Tid
+        | CtxField::Tgid
         | CtxField::Uid
         | CtxField::Gid
         | CtxField::PktType

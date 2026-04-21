@@ -3387,7 +3387,7 @@ fn test_program_type_resolves_tracepoint_builtin_alias_names() {
         EbpfProgramType::Kprobe
             .resolve_ctx_field_name("tgid")
             .expect("kprobe tgid should resolve as the thread-group id"),
-        CtxField::Tid
+        CtxField::Tgid
     );
     assert_eq!(
         EbpfProgramType::Tracepoint
@@ -3399,7 +3399,7 @@ fn test_program_type_resolves_tracepoint_builtin_alias_names() {
         EbpfProgramType::Tracepoint
             .resolve_ctx_field_name("tgid")
             .expect("tracepoint tgid should preserve builtin alias"),
-        CtxField::Tid
+        CtxField::Tgid
     );
     assert_eq!(
         EbpfProgramType::Tracepoint
