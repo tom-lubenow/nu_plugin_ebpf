@@ -7040,9 +7040,9 @@ fn test_compile_cgroup_sysctl_ctx_name_counter_program() {
         EbpfProgramType::CgroupSysctl,
         "/sys/fs/cgroup",
         CellPath {
-            members: vec![string_member("sysctl_name"), int_member(0)],
+            members: vec![string_member("sysctl_name")],
         },
-        "cgroup_sysctl ctx.sysctl_name[0] count",
+        "cgroup_sysctl ctx.sysctl_name count",
     );
 }
 

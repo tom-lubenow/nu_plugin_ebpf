@@ -168,15 +168,16 @@ impl<'a> HirToMirLowering<'a> {
                     flags: 0,
                 });
 
+                let result_vreg = self.assign_fresh_vreg(src_dst);
+
                 // Return 0
                 self.emit(MirInst::Copy {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     src: MirValue::Const(0),
                 });
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
 
-                // Set type for key (useful for pointer safety)
-                let meta = self.get_or_create_metadata(src_dst);
-                meta.field_type = key_type;
+                self.reset_call_result_metadata(src_dst);
             }
 
             "histogram" => {

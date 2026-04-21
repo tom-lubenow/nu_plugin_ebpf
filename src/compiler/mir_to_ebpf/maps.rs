@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::AddressSpace;
 
 impl<'a> MirToEbpfCompiler<'a> {
     /// Compile map update (specialized for `count` command semantics).
@@ -11,15 +12,34 @@ impl<'a> MirToEbpfCompiler<'a> {
         // For count: lookup key, increment, update
         let key_size = self.counter_map_key_size(map_name, key)?;
         let aligned_key_size = key_size.div_ceil(8) * 8;
-        let total_size = aligned_key_size + 8; // key + value
+        let use_stack_key_directly = map_name != COUNTER_MAP_NAME
+            && matches!(
+                self.current_types.get(&key),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Stack,
+                    pointee,
+                }) if matches!(
+                    pointee.as_ref(),
+                    MirType::Array { .. } | MirType::Struct { .. }
+                )
+            );
+        let total_size = if use_stack_key_directly {
+            16 // value + spilled key pointer
+        } else {
+            aligned_key_size + 8 // key bytes + value
+        };
         self.check_stack_space(total_size as i16)?;
         // Stack grows downward - decrement first
         self.stack_offset -= total_size as i16;
         let val_offset = self.stack_offset; // value at lower address
-        let key_offset = self.stack_offset + 8; // key at higher address
+        let key_offset = self.stack_offset + 8; // key bytes or spilled key pointer
 
         if map_name == COUNTER_MAP_NAME {
             // Store key to stack
+            self.instructions
+                .push(EbpfInsn::stxdw(EbpfReg::R10, key_offset, key_reg));
+        } else if use_stack_key_directly {
+            // Preserve the existing stack-backed aggregate pointer across helper calls.
             self.instructions
                 .push(EbpfInsn::stxdw(EbpfReg::R10, key_offset, key_reg));
         } else {
@@ -36,10 +56,15 @@ impl<'a> MirToEbpfCompiler<'a> {
             symbol_name: map_name.to_string(),
         });
 
-        self.instructions
-            .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
-        self.instructions
-            .push(EbpfInsn::add64_imm(EbpfReg::R2, key_offset as i32));
+        if use_stack_key_directly {
+            self.instructions
+                .push(EbpfInsn::ldxdw(EbpfReg::R2, EbpfReg::R10, key_offset));
+        } else {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
+            self.instructions
+                .push(EbpfInsn::add64_imm(EbpfReg::R2, key_offset as i32));
+        }
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapLookupElem));
 
@@ -78,10 +103,15 @@ impl<'a> MirToEbpfCompiler<'a> {
             symbol_name: map_name.to_string(),
         });
 
-        self.instructions
-            .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
-        self.instructions
-            .push(EbpfInsn::add64_imm(EbpfReg::R2, key_offset as i32));
+        if use_stack_key_directly {
+            self.instructions
+                .push(EbpfInsn::ldxdw(EbpfReg::R2, EbpfReg::R10, key_offset));
+        } else {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
+            self.instructions
+                .push(EbpfInsn::add64_imm(EbpfReg::R2, key_offset as i32));
+        }
         self.instructions
             .push(EbpfInsn::mov64_reg(EbpfReg::R3, EbpfReg::R10));
         self.instructions
