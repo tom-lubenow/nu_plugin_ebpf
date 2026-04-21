@@ -5398,6 +5398,17 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
         CtxStoreTarget::CgroupSockAddrUserIp4
     );
 
+    let getpeername4 = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getpeername4",
+    );
+    assert_eq!(
+        getpeername4
+            .resolve_ctx_store_target("remote_ip4", None)
+            .expect("cgroup_sock_addr getpeername4 remote_ip4 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserIp4
+    );
+
     let bind6 = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind6");
     assert_eq!(
         bind6
@@ -5409,6 +5420,23 @@ fn test_probe_context_resolves_cgroup_sock_addr_ipv6_and_msg_source_store_target
         bind6
             .resolve_ctx_store_target("local_port", None)
             .expect("cgroup_sock_addr bind6 local_port target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserPort
+    );
+
+    let getsockname6 = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getsockname6",
+    );
+    assert_eq!(
+        getsockname6
+            .resolve_ctx_store_target("local_ip6", Some(1))
+            .expect("cgroup_sock_addr getsockname6 local_ip6.1 target should resolve"),
+        CtxStoreTarget::CgroupSockAddrUserIp6Word(1)
+    );
+    assert_eq!(
+        getsockname6
+            .resolve_ctx_store_target("local_port", None)
+            .expect("cgroup_sock_addr getsockname6 local_port target should resolve"),
         CtxStoreTarget::CgroupSockAddrUserPort
     );
 }

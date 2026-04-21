@@ -6843,6 +6843,30 @@ fn test_compile_cgroup_sock_addr_connect6_ctx_user_ip6_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_addr_getpeername4_ctx_remote_ip4_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getpeername4",
+        CellPath {
+            members: vec![string_member("remote_ip4")],
+        },
+        "cgroup_sock_addr:getpeername4 ctx.remote_ip4 count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_getsockname6_ctx_local_ip6_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getsockname6",
+        CellPath {
+            members: vec![string_member("local_ip6"), int_member(1)],
+        },
+        "cgroup_sock_addr:getsockname6 ctx.local_ip6[1] count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_addr_sendmsg4_ctx_msg_src_ip4_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockAddr,
@@ -7241,6 +7265,34 @@ fn test_compile_cgroup_sock_addr_connect6_ctx_user_ip6_store_program() {
         HirLiteral::Int(42),
         HirLiteral::Int(1),
         "cgroup_sock_addr:connect6 ctx.user_ip6[2] store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_getpeername4_ctx_remote_ip4_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getpeername4",
+        CellPath {
+            members: vec![string_member("remote_ip4")],
+        },
+        HirLiteral::Int(0x7f000001),
+        HirLiteral::Int(1),
+        "cgroup_sock_addr:getpeername4 ctx.remote_ip4 store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_getsockname6_ctx_local_ip6_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getsockname6",
+        CellPath {
+            members: vec![string_member("local_ip6"), int_member(1)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::Int(1),
+        "cgroup_sock_addr:getsockname6 ctx.local_ip6[1] store",
     );
 }
 
