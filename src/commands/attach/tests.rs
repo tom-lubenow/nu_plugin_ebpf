@@ -6702,6 +6702,28 @@ fn test_compile_socket_helper_ctx_projection_programs() {
 }
 
 #[test]
+fn test_compile_bound_socket_helper_ctx_projection_program() {
+    let hir = make_bound_ctx_path_projection_call_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        CellPath {
+            members: vec![string_member("tcp"), string_member("snd_cwnd")],
+        },
+        DeclId::new(42),
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        &decl_names,
+        "bound cgroup_sockopt:get ctx.sk.tcp.snd_cwnd count",
+    );
+}
+
+#[test]
 fn test_compile_sk_lookup_ctx_local_port_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkLookup,

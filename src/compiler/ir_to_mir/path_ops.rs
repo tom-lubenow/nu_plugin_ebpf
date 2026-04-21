@@ -447,6 +447,9 @@ impl<'a> HirToMirLowering<'a> {
                 .and_then(|semantics| {
                     Self::project_annotated_value_semantics(&semantics, &path.members)
                 });
+            let root_ctx_field = self
+                .get_metadata(src_dst)
+                .and_then(|meta| meta.root_ctx_field.clone());
             self.vreg_type_hints.insert(
                 base_vreg,
                 self.vreg_type_hints
@@ -461,13 +464,13 @@ impl<'a> HirToMirLowering<'a> {
                 &base_runtime_ty,
                 &path.members,
                 &path_desc,
-                None,
+                root_ctx_field.as_ref(),
                 projected_semantics.as_ref(),
             )?;
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
-            meta.root_ctx_field = None;
+            meta.root_ctx_field = root_ctx_field;
             meta.annotated_semantics = projected_semantics;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);

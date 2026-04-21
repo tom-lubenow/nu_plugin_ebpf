@@ -214,6 +214,45 @@ fn test_lower_cgroup_skb_ctx_sk_cgroup_id_projection_calls_helper() {
 }
 
 #[test]
+fn test_lower_bound_cgroup_skb_ctx_sk_cgroup_id_projection_calls_helper() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        CellPath {
+            members: vec![string_member("cgroup_id")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound cgroup_skb ctx.sk cgroup_id should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::SkCgroupId as u32 && args.len() == 1
+            )))
+    );
+}
+
+#[test]
 fn test_lower_cgroup_skb_ctx_sk_ancestor_cgroup_id_projection_calls_helper() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![
@@ -425,6 +464,46 @@ fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
         ],
         BpfHelper::TcpSock,
         "cgroup_sockopt ctx.sk.tcp.snd_cwnd",
+    );
+}
+
+#[test]
+fn test_lower_bound_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        CellPath {
+            members: vec![string_member("tcp"), string_member("snd_cwnd")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound cgroup_sockopt ctx.sk tcp metric should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::TcpSock as u32 && args.len() == 1
+            ))),
+        "bound socket projection should call bpf_tcp_sock"
     );
 }
 
