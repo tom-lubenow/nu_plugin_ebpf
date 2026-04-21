@@ -57,9 +57,7 @@ impl<'a> HirToMirLowering<'a> {
                     })?;
                 Ok(Some(spec))
             }
-            (Some(ctx), CtxField::RetVal)
-                if matches!(ctx.retval_access(), ProgramValueAccess::Trampoline) =>
-            {
+            (Some(ctx), CtxField::RetVal) if ctx.retval_access().is_trampoline() => {
                 let spec = ctx
                     .btf_ret_spec()
                     .map_err(CompileError::UnsupportedInstruction)?

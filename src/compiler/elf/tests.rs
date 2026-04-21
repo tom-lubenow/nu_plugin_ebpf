@@ -428,6 +428,21 @@ fn test_program_type_uses_raw_tracepoint_arg_access() {
 }
 
 #[test]
+fn test_program_value_access_predicates_follow_model() {
+    assert!(!ProgramValueAccess::None.exposes_value());
+    assert!(ProgramValueAccess::PtRegs.exposes_value());
+    assert!(ProgramValueAccess::RawTracepoint.exposes_value());
+    assert!(ProgramValueAccess::Trampoline.exposes_value());
+
+    assert!(ProgramValueAccess::PtRegs.is_pt_regs());
+    assert!(!ProgramValueAccess::RawTracepoint.is_pt_regs());
+    assert!(ProgramValueAccess::RawTracepoint.is_raw_tracepoint());
+    assert!(!ProgramValueAccess::Trampoline.is_raw_tracepoint());
+    assert!(ProgramValueAccess::Trampoline.is_trampoline());
+    assert!(!ProgramValueAccess::PtRegs.is_trampoline());
+}
+
+#[test]
 fn test_program_type_socket_layouts_follow_program_model() {
     assert_eq!(
         EbpfProgramType::CgroupSock.socket_family_context_layout(),

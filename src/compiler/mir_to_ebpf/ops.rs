@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::ProgramValueAccess;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
@@ -1765,7 +1764,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::RetVal => match self.probe_ctx {
-                Some(ctx) if matches!(ctx.retval_access(), ProgramValueAccess::Trampoline) => {
+                Some(ctx) if ctx.retval_access().is_trampoline() => {
                     let spec = ctx
                         .btf_ret_spec()
                         .map_err(CompileError::UnsupportedInstruction)?

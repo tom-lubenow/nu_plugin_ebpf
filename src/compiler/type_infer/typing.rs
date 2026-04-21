@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::ProgramValueAccess;
 use crate::kernel_btf::TypeInfo;
 
 impl<'a> TypeInference<'a> {
@@ -188,7 +187,7 @@ impl<'a> TypeInference<'a> {
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return Ok(None);
         };
-        if !matches!(ctx.retval_access(), ProgramValueAccess::Trampoline) {
+        if !ctx.retval_access().is_trampoline() {
             return Ok(None);
         }
 

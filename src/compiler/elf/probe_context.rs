@@ -584,7 +584,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_ret_spec(&self) -> Result<Option<TrampolineValueSpec>, String> {
-        if !matches!(self.retval_access(), ProgramValueAccess::Trampoline) {
+        if !self.retval_access().is_trampoline() {
             return Ok(None);
         }
 
@@ -599,7 +599,7 @@ impl ProbeContext {
     }
 
     pub(crate) fn btf_ret_type_info(&self) -> Result<Option<TypeInfo>, String> {
-        if !matches!(self.retval_access(), ProgramValueAccess::Trampoline) {
+        if !self.retval_access().is_trampoline() {
             return Ok(None);
         }
 
@@ -683,9 +683,7 @@ impl ProbeContext {
             CtxField::Arg(idx) if self.uses_btf_trampoline() => {
                 self.btf_arg_type_info(*idx as usize)
             }
-            CtxField::RetVal if matches!(self.retval_access(), ProgramValueAccess::Trampoline) => {
-                self.btf_ret_type_info()
-            }
+            CtxField::RetVal if self.retval_access().is_trampoline() => self.btf_ret_type_info(),
             CtxField::TracepointField(name) => self.tracepoint_field_type_info(name),
             _ => Ok(None),
         }
@@ -696,7 +694,7 @@ impl ProbeContext {
         field_path: &[TrampolineFieldSelector],
         path_desc: &str,
     ) -> Result<Option<TrampolineFieldProjection>, String> {
-        if !matches!(self.retval_access(), ProgramValueAccess::Trampoline) {
+        if !self.retval_access().is_trampoline() {
             return Ok(None);
         }
 
@@ -853,7 +851,7 @@ impl ProbeContext {
     pub(crate) fn validate_load_ctx_field(&self, field: &CtxField) -> Result<(), CompileError> {
         self.validate_ctx_field_access(field)?;
         match field {
-            CtxField::Arg(idx) if matches!(self.arg_access(), ProgramValueAccess::PtRegs) => {
+            CtxField::Arg(idx) if self.arg_access().is_pt_regs() => {
                 let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
                     CompileError::UnsupportedInstruction(format!(
                         "pt_regs argument access unavailable: {e}"
@@ -866,9 +864,7 @@ impl ProbeContext {
                     )));
                 }
             }
-            CtxField::Arg(idx)
-                if matches!(self.arg_access(), ProgramValueAccess::RawTracepoint) =>
-            {
+            CtxField::Arg(idx) if self.arg_access().is_raw_tracepoint() => {
                 let byte_offset = usize::from(*idx).checked_mul(8).ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
                         "raw tracepoint arg offset overflow".into(),
@@ -892,14 +888,14 @@ impl ProbeContext {
                     ));
                 }
             }
-            CtxField::RetVal if matches!(self.retval_access(), ProgramValueAccess::PtRegs) => {
+            CtxField::RetVal if self.retval_access().is_pt_regs() => {
                 KernelBtf::get().pt_regs_offsets().map_err(|e| {
                     CompileError::UnsupportedInstruction(format!(
                         "pt_regs return value access unavailable: {e}"
                     ))
                 })?;
             }
-            CtxField::RetVal if matches!(self.retval_access(), ProgramValueAccess::Trampoline) => {
+            CtxField::RetVal if self.retval_access().is_trampoline() => {
                 if self
                     .btf_ret_spec()
                     .map_err(CompileError::UnsupportedInstruction)?

@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::ProgramValueAccess;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::UnaryOpKind;
 use crate::kernel_btf::{

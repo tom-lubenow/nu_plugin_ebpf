@@ -975,10 +975,7 @@ impl EbpfProgramType {
     }
 
     pub fn uses_btf_trampoline(&self) -> bool {
-        matches!(
-            (self.arg_access(), self.retval_access()),
-            (ProgramValueAccess::Trampoline, _) | (_, ProgramValueAccess::Trampoline)
-        )
+        self.arg_access().is_trampoline() || self.retval_access().is_trampoline()
     }
 
     pub fn btf_callable_surface(&self) -> Option<ProgramBtfCallableSurface> {
@@ -989,12 +986,12 @@ impl EbpfProgramType {
     }
 
     pub fn uses_raw_tracepoint_args(&self) -> bool {
-        matches!(self.arg_access(), ProgramValueAccess::RawTracepoint)
+        self.arg_access().is_raw_tracepoint()
     }
 
     /// Returns true if this runs at function return time.
     pub fn is_return_probe(&self) -> bool {
-        !matches!(self.retval_access(), ProgramValueAccess::None)
+        self.retval_access().exposes_value()
     }
 
     /// Returns true if this is a userspace probe (uprobe or uretprobe)
@@ -1004,12 +1001,12 @@ impl EbpfProgramType {
 
     /// Returns true if this program type exposes function arguments via ctx.argN.
     pub fn supports_ctx_args(&self) -> bool {
-        !matches!(self.arg_access(), ProgramValueAccess::None)
+        self.arg_access().exposes_value()
     }
 
     /// Returns true if this program type exposes ctx.retval.
     pub fn supports_ctx_retval(&self) -> bool {
-        !matches!(self.retval_access(), ProgramValueAccess::None)
+        self.retval_access().exposes_value()
     }
 }
 
@@ -1114,6 +1111,24 @@ pub enum ProgramValueAccess {
     PtRegs,
     RawTracepoint,
     Trampoline,
+}
+
+impl ProgramValueAccess {
+    pub fn exposes_value(self) -> bool {
+        !matches!(self, ProgramValueAccess::None)
+    }
+
+    pub fn is_pt_regs(self) -> bool {
+        matches!(self, ProgramValueAccess::PtRegs)
+    }
+
+    pub fn is_raw_tracepoint(self) -> bool {
+        matches!(self, ProgramValueAccess::RawTracepoint)
+    }
+
+    pub fn is_trampoline(self) -> bool {
+        matches!(self, ProgramValueAccess::Trampoline)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
