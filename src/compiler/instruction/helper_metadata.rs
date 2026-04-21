@@ -21,6 +21,7 @@ impl BpfHelper {
             11 => Some(Self::L4CsumReplace),
             33 => Some(Self::SkbUnderCgroup),
             34 => Some(Self::GetHashRecalc),
+            35 => Some(Self::GetCurrentTask),
             37 => Some(Self::CurrentTaskUnderCgroup),
             38 => Some(Self::SkbChangeTail),
             39 => Some(Self::SkbPullData),
@@ -303,7 +304,7 @@ impl BpfHelper {
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::GetCurrentTaskBtf => HelperSignature {
+            BpfHelper::GetCurrentTask | BpfHelper::GetCurrentTaskBtf => HelperSignature {
                 min_args: 0,
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],

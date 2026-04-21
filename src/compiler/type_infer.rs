@@ -215,7 +215,9 @@ impl<'a> TypeInference<'a> {
             | BpfHelper::SkcToUdp6Sock
             | BpfHelper::SkcToUnixSock => Some(MirType::named_kernel_struct_ptr("bpf_sock")),
             BpfHelper::SockFromFile => Some(MirType::named_kernel_struct_ptr("socket")),
-            BpfHelper::GetCurrentTaskBtf => Some(MirType::named_kernel_struct_ptr("task_struct")),
+            BpfHelper::GetCurrentTask | BpfHelper::GetCurrentTaskBtf => {
+                Some(MirType::named_kernel_struct_ptr("task_struct"))
+            }
             BpfHelper::TaskPtRegs => Some(MirType::named_kernel_struct_ptr("pt_regs")),
             _ => None,
         }

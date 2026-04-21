@@ -503,11 +503,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkcToUnixSock => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketCast,
         },
-        BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete | BpfHelper::GetCurrentTaskBtf => {
-            HelperProgramSurfaceSpec {
-                family: HelperProgramSurfaceFamily::TaskStorage,
-            }
-        }
+        BpfHelper::TaskStorageGet
+        | BpfHelper::TaskStorageDelete
+        | BpfHelper::GetCurrentTask
+        | BpfHelper::GetCurrentTaskBtf => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TaskStorage,
+        },
         BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Lsm,
         },

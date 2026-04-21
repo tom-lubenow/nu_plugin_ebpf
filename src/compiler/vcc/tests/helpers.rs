@@ -10261,34 +10261,36 @@ fn test_verify_mir_helper_task_pt_regs_accepts_named_task_pointer() {
 
 #[test]
 fn test_verify_mir_helper_task_pt_regs_accepts_current_task_without_null_check() {
-    let (mut func, entry) = new_mir_function();
-    func.param_count = 1;
+    for helper in [BpfHelper::GetCurrentTask, BpfHelper::GetCurrentTaskBtf] {
+        let (mut func, entry) = new_mir_function();
+        func.param_count = 1;
 
-    let task = func.alloc_vreg();
-    let regs = func.alloc_vreg();
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst: task,
-            helper: BpfHelper::GetCurrentTaskBtf as u32,
-            args: vec![],
-        });
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst: regs,
-            helper: BpfHelper::TaskPtRegs as u32,
-            args: vec![MirValue::VReg(task)],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
+        let task = func.alloc_vreg();
+        let regs = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: task,
+                helper: helper as u32,
+                args: vec![],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: regs,
+                helper: BpfHelper::TaskPtRegs as u32,
+                args: vec![MirValue::VReg(task)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let mut types = HashMap::new();
-    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
-    types.insert(regs, MirType::named_kernel_struct_ptr("pt_regs"));
+        let mut types = HashMap::new();
+        types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+        types.insert(regs, MirType::named_kernel_struct_ptr("pt_regs"));
 
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
-    verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect("expected current task helper return to be non-null");
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected current task helper return to be non-null");
+    }
 }
 
 #[test]

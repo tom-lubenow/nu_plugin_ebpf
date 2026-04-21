@@ -86,6 +86,8 @@ pub enum BpfHelper {
     SkbPullData = 39,
     /// u32 bpf_get_hash_recalc(skb)
     GetHashRecalc = 34,
+    /// u64 bpf_get_current_task(void)
+    GetCurrentTask = 35,
     /// s64 bpf_csum_update(skb, csum)
     CsumUpdate = 40,
     /// void bpf_set_hash_invalid(skb)
@@ -317,6 +319,7 @@ impl BpfHelper {
             BpfHelper::CurrentTaskUnderCgroup => "bpf_current_task_under_cgroup",
             BpfHelper::SkbPullData => "bpf_skb_pull_data",
             BpfHelper::GetHashRecalc => "bpf_get_hash_recalc",
+            BpfHelper::GetCurrentTask => "bpf_get_current_task",
             BpfHelper::CsumUpdate => "bpf_csum_update",
             BpfHelper::SetHashInvalid => "bpf_set_hash_invalid",
             BpfHelper::GetNumaNodeId => "bpf_get_numa_node_id",
@@ -449,6 +452,7 @@ impl BpfHelper {
             "current_task_under_cgroup" => Some(Self::CurrentTaskUnderCgroup),
             "skb_pull_data" => Some(Self::SkbPullData),
             "get_hash_recalc" => Some(Self::GetHashRecalc),
+            "get_current_task" => Some(Self::GetCurrentTask),
             "csum_update" => Some(Self::CsumUpdate),
             "set_hash_invalid" => Some(Self::SetHashInvalid),
             "get_numa_node_id" => Some(Self::GetNumaNodeId),
