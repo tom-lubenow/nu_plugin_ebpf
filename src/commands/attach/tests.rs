@@ -6544,6 +6544,30 @@ fn test_compile_cgroup_sockopt_get_ctx_sockopt_retval_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sockopt_get_ctx_retval_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("retval")],
+        },
+        "cgroup_sockopt:get ctx.retval count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_get_ctx_optlen_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("optlen")],
+        },
+        "cgroup_sockopt:get ctx.optlen count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_get_ctx_netns_cookie_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockopt,
@@ -7321,6 +7345,34 @@ fn test_compile_cgroup_sockopt_set_ctx_level_store_program() {
         HirLiteral::Int(1),
         HirLiteral::Int(1),
         "cgroup_sockopt:set ctx.level store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_set_ctx_optlen_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:set",
+        CellPath {
+            members: vec![string_member("optlen")],
+        },
+        HirLiteral::Int(4),
+        HirLiteral::Int(1),
+        "cgroup_sockopt:set ctx.optlen store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_get_ctx_retval_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![string_member("retval")],
+        },
+        HirLiteral::Int(0),
+        HirLiteral::Int(1),
+        "cgroup_sockopt:get ctx.retval store",
     );
 }
 
