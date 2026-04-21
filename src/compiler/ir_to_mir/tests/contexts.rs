@@ -334,6 +334,135 @@ fn test_lower_sk_msg_ctx_sk_cgroup_id_projection_rejected() {
 }
 
 #[test]
+fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("sk"),
+            string_member("tcp"),
+            string_member("snd_cwnd"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sockopt ctx.sk.tcp.snd_cwnd should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Socket,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::TcpSock as u32 && args.len() == 1
+            )))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            ))),
+        "projection should default to zero on null socket/non-TCP paths"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U32,
+                    ..
+                }
+            ))),
+        "tcp metric should load from the helper-returned bpf_tcp_sock layout"
+    );
+}
+
+#[test]
+fn test_lower_ctx_sk_tcp_projection_rejects_missing_metric() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("tcp")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bare ctx.sk.tcp should be rejected");
+
+    assert!(err.to_string().contains("requires a TCP socket field"));
+}
+
+#[test]
+fn test_lower_sk_lookup_ctx_sk_tcp_projection_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("sk"),
+            string_member("tcp"),
+            string_member("snd_cwnd"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sk_lookup ctx.sk.tcp.snd_cwnd should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("helper 'bpf_tcp_sock' is only valid")
+    );
+}
+
+#[test]
 fn test_lower_cgroup_sock_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"allow".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");

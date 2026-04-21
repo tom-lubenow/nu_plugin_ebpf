@@ -6616,6 +6616,22 @@ fn test_compile_cgroup_sockopt_get_ctx_netns_cookie_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sockopt_get_ctx_sk_tcp_metric_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        CellPath {
+            members: vec![
+                string_member("sk"),
+                string_member("tcp"),
+                string_member("snd_cwnd"),
+            ],
+        },
+        "cgroup_sockopt:get ctx.sk.tcp.snd_cwnd count",
+    );
+}
+
+#[test]
 fn test_compile_sk_lookup_ctx_local_port_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkLookup,

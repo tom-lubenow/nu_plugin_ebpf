@@ -265,6 +265,7 @@ Near-term priority order:
   - Recent progress: typed helper arg-shape parity now routes through shared helper ref-family metadata, so socket/object helper families (`bpf_sk_assign`, socket storage helpers, `bpf_get_listener_sock`, `bpf_sk_fullsock`, `bpf_tcp_sock`, `bpf_skc_to_*`, `bpf_sock_from_file`, and `bpf_task_pt_regs`) reject anonymous raw kernel pointers while still accepting tracked refs, explicitly typed pointers, and helper-specific null sentinels across type inference, verifier_types, and VCC.
   - Recent progress: struct_ops callback compile contexts now use an explicit modeled `ProgramSpec` callback variant instead of smuggling callback identity through `ProbeContext.target`, and callback-scoped `sched_ext` kfunc legality now resolves through that same program model rather than a probe-context-local special case.
   - Recent progress: the modeled attach shape now also distinguishes struct_ops callbacks, including callback sleepability, so callback-scoped sched_ext policy no longer depends on ad hoc callback-name checks outside the shared program model.
+  - Recent progress: socket-context TCP metrics can now be read as ordinary null-safe projections (`ctx.sk.tcp.<field>`) on program surfaces where `bpf_tcp_sock` is valid, keeping those reads off raw `helper-call` spelling while still routing through shared helper policy.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.
