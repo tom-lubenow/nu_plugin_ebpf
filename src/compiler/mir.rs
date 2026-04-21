@@ -92,6 +92,61 @@ pub enum MapOpKind {
 }
 
 impl MapKind {
+    pub fn is_queue_or_stack(self) -> bool {
+        matches!(self, MapKind::Queue | MapKind::Stack)
+    }
+
+    pub fn is_socket_map(self) -> bool {
+        matches!(self, MapKind::SockMap | MapKind::SockHash)
+    }
+
+    pub fn is_local_storage(self) -> bool {
+        matches!(
+            self,
+            MapKind::SkStorage
+                | MapKind::InodeStorage
+                | MapKind::TaskStorage
+                | MapKind::CgrpStorage
+        )
+    }
+
+    pub fn is_redirect_map(self) -> bool {
+        matches!(
+            self,
+            MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap
+        )
+    }
+
+    pub fn supports_map_fd_materialization(self) -> bool {
+        match self {
+            MapKind::Hash
+            | MapKind::Array
+            | MapKind::CgroupArray
+            | MapKind::LpmTrie
+            | MapKind::LruHash
+            | MapKind::PerCpuHash
+            | MapKind::PerCpuArray
+            | MapKind::LruPerCpuHash
+            | MapKind::PerfEventArray
+            | MapKind::Queue
+            | MapKind::Stack
+            | MapKind::BloomFilter
+            | MapKind::RingBuf
+            | MapKind::StackTrace
+            | MapKind::DevMap
+            | MapKind::DevMapHash
+            | MapKind::CpuMap
+            | MapKind::XskMap
+            | MapKind::SockMap
+            | MapKind::SockHash
+            | MapKind::SkStorage
+            | MapKind::InodeStorage
+            | MapKind::TaskStorage
+            | MapKind::CgrpStorage
+            | MapKind::ProgArray => true,
+        }
+    }
+
     pub fn supports_any_generic_map_op(self) -> bool {
         matches!(
             self,

@@ -239,30 +239,9 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn is_generic_data_map_kind(kind: MapKind) -> bool {
-        matches!(
-            kind,
-            MapKind::Hash
-                | MapKind::Array
-                | MapKind::Queue
-                | MapKind::Stack
-                | MapKind::LpmTrie
-                | MapKind::LruHash
-                | MapKind::PerCpuHash
-                | MapKind::PerCpuArray
-                | MapKind::LruPerCpuHash
-                | MapKind::SockMap
-                | MapKind::SockHash
-        )
-    }
-
-    pub(super) fn is_local_storage_map_kind(kind: MapKind) -> bool {
-        matches!(
-            kind,
-            MapKind::SkStorage
-                | MapKind::InodeStorage
-                | MapKind::TaskStorage
-                | MapKind::CgrpStorage
-        )
+        kind.supports_generic_map_op(MapOpKind::Lookup)
+            || kind.is_queue_or_stack()
+            || kind.is_socket_map()
     }
 
     pub(super) fn generic_map_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
@@ -275,17 +254,10 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
             ))),
-            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
-                Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"
-                )))
-            }
-            Some(
-                MapKind::SkStorage
-                | MapKind::InodeStorage
-                | MapKind::TaskStorage
-                | MapKind::CgrpStorage,
-            ) => Err(CompileError::UnsupportedInstruction(format!(
+            Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for bpf_redirect_map helper-call; generic map commands only support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still require their specialized helpers"
+            ))),
+            Some(map_kind) if map_kind.is_local_storage() => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for BPF local-storage maps; use map-get/map-delete with --kind {kind} instead of generic map update operations"
             ))),
             Some(map_kind) => Err(
@@ -308,15 +280,13 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
-            Some(kind) if Self::is_local_storage_map_kind(kind) => Ok(kind),
+            Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
             ))),
-            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
-                Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
-                )))
-            }
+            Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, and local-storage map kinds for map-get"
+            ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not a lookup map; use map-contains --kind bloom-filter"
             ))),
@@ -340,15 +310,13 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
-            Some(kind) if Self::is_local_storage_map_kind(kind) => Ok(kind),
+            Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls"
             ))),
-            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
-                Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
-                )))
-            }
+            Some(map_kind) if map_kind.is_redirect_map() => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for bpf_redirect_map / redirect-map; generic map commands only support hash, lpm-trie, lru-hash, per-cpu-hash, lru-per-cpu-hash, and local-storage map kinds for map-delete"
+            ))),
             Some(MapKind::BloomFilter) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is not deletable"
             ))),
@@ -441,20 +409,20 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
             Some(kind) if kind.supports_generic_map_op(MapOpKind::Lookup) => Ok(kind),
-            Some(kind) if Self::is_local_storage_map_kind(kind) => Ok(kind),
+            Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
             Some(MapKind::CgroupArray) => Ok(MapKind::CgroupArray),
-            Some(MapKind::Queue | MapKind::Stack) => {
+            Some(map_kind) if map_kind.is_queue_or_stack() => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "{context} --kind {kind} is not a lookup map; use map-peek or map-pop for queue/stack entries"
                 )))
             }
-            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
+            Some(map_kind) if map_kind.is_redirect_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map"
                 )))
             }
-            Some(MapKind::SockMap | MapKind::SockHash) => {
+            Some(map_kind) if map_kind.is_socket_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "{context} --kind {kind} is a socket redirection map; use socket-map specific operations instead"
                 )))
@@ -532,8 +500,7 @@ impl<'a> HirToMirLowering<'a> {
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::SockMap) => Ok(MapKind::SockMap),
-            Some(MapKind::SockHash) => Ok(MapKind::SockHash),
+            Some(map_kind) if map_kind.is_socket_map() => Ok(map_kind),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind sockmap or --kind sockhash, got {:?}",
                 other
@@ -828,13 +795,13 @@ impl<'a> HirToMirLowering<'a> {
                 map_kind, map_name
             )));
         }
-        if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+        if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map delete is not supported for map kind {:?} ('{}')",
                 map_kind, map_name
             )));
         }
-        if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+        if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-delete is not supported for socket map kind {:?} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
                 map_kind, map_name
@@ -848,13 +815,13 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
-        if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+        if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-get is not supported for map kind {:?} ('{}'); use map-push and future queue/stack-specific operations instead",
                 map_kind, map_name
             )));
         }
-        if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+        if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-get is not supported for socket map kind {:?} ('{}'); use specialized socket-map helpers instead",
                 map_kind, map_name
@@ -868,13 +835,13 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
-        if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+        if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-put is not supported for map kind {:?} ('{}'); use map-push instead",
                 map_kind, map_name
             )));
         }
-        if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+        if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-put is not supported for socket map kind {:?} ('{}'); use specialized socket-map update helpers instead",
                 map_kind, map_name

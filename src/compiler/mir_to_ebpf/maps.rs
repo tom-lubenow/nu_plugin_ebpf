@@ -298,37 +298,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         )
     }
 
-    fn supported_generic_map_kind(kind: MapKind) -> bool {
-        matches!(
-            kind,
-            MapKind::Hash
-                | MapKind::Array
-                | MapKind::LpmTrie
-                | MapKind::LruHash
-                | MapKind::PerCpuHash
-                | MapKind::PerCpuArray
-                | MapKind::LruPerCpuHash
-                | MapKind::CgroupArray
-                | MapKind::PerfEventArray
-                | MapKind::Queue
-                | MapKind::Stack
-                | MapKind::BloomFilter
-                | MapKind::DevMap
-                | MapKind::DevMapHash
-                | MapKind::CpuMap
-                | MapKind::XskMap
-                | MapKind::SockMap
-                | MapKind::SockHash
-                | MapKind::SkStorage
-                | MapKind::InodeStorage
-                | MapKind::TaskStorage
-                | MapKind::CgrpStorage
-                | MapKind::RingBuf
-                | MapKind::StackTrace
-                | MapKind::ProgArray
-        )
-    }
-
     fn map_operand_layout(
         &self,
         vreg: VReg,
@@ -578,7 +547,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         if Self::is_builtin_map_name(&map.name) {
             return Ok(());
         }
-        if !Self::supported_generic_map_kind(map.kind) {
+        if !map.kind.supports_map_fd_materialization() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map operations do not support map kind {:?} for '{}'",
                 map.kind, map.name

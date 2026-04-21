@@ -989,7 +989,7 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name.clone(),
                     kind: map_kind,
                 };
-                if Self::is_local_storage_map_kind(map_kind) {
+                if map_kind.is_local_storage() {
                     self.lower_local_storage_map_get(
                         src_dst,
                         dst_vreg,
@@ -1092,7 +1092,7 @@ impl<'a> HirToMirLowering<'a> {
                     .optional_nonnegative_named_u64_arg("map-put", "flags")?
                     .unwrap_or(0);
 
-                if matches!(map_kind, MapKind::SockMap | MapKind::SockHash) {
+                if map_kind.is_socket_map() {
                     self.lower_socket_map_put(
                         src_dst,
                         dst_vreg,
@@ -1246,7 +1246,7 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name,
                     kind: map_kind,
                 };
-                if Self::is_local_storage_map_kind(map_kind) {
+                if map_kind.is_local_storage() {
                     self.lower_local_storage_map_delete(
                         src_dst,
                         dst_vreg,
@@ -2334,8 +2334,12 @@ impl<'a> HirToMirLowering<'a> {
             map_kind if map_kind.supports_generic_map_op(MapOpKind::Lookup) => {
                 self.lower_generic_map_contains(src_dst, dst_vreg, src_dst_had_value, map_kind)
             }
-            map_kind if Self::is_local_storage_map_kind(map_kind) => self
-                .lower_local_storage_map_contains(src_dst, dst_vreg, src_dst_had_value, map_kind),
+            map_kind if map_kind.is_local_storage() => self.lower_local_storage_map_contains(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                map_kind,
+            ),
             other => Err(CompileError::UnsupportedInstruction(format!(
                 "{CONTEXT} does not support map kind {:?}",
                 other
@@ -2804,10 +2808,7 @@ impl<'a> HirToMirLowering<'a> {
                     val_ty: Box::new(MirType::Unknown),
                 },
             );
-        } else if matches!(
-            map_kind,
-            MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap
-        ) {
+        } else if map_kind.is_redirect_map() {
             self.vreg_type_hints.insert(
                 map_vreg,
                 MirType::MapRef {
