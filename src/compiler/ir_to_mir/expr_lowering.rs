@@ -814,6 +814,51 @@ impl<'a> HirToMirLowering<'a> {
             }
         };
 
+        if root_ctx_field == Some(&CtxField::Socket)
+            && path_members.len() == 1
+            && matches!(
+                path_members.first(),
+                Some(PathMember::String { val, .. }) if val == "cgroup_id"
+            )
+        {
+            if let Some(message) = self
+                .probe_ctx
+                .and_then(|ctx| ctx.helper_call_error(BpfHelper::SkCgroupId))
+            {
+                return Err(CompileError::UnsupportedInstruction(message));
+            }
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::Const(0),
+            });
+            let has_socket_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: has_socket_vreg,
+                op: BinOpKind::Ne,
+                lhs: MirValue::VReg(base_vreg),
+                rhs: MirValue::Const(0),
+            });
+            let helper_block = self.func.alloc_block();
+            let join_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: has_socket_vreg,
+                if_true: helper_block,
+                if_false: join_block,
+            });
+
+            self.current_block = helper_block;
+            self.emit(MirInst::CallHelper {
+                dst: dst_vreg,
+                helper: BpfHelper::SkCgroupId as u32,
+                args: vec![MirValue::VReg(base_vreg)],
+            });
+            self.terminate(MirInst::Jump { target: join_block });
+
+            self.current_block = join_block;
+            self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+            return Ok(MirType::I64);
+        }
+
         for (segment_idx, member) in path_members.iter().enumerate() {
             let is_last = segment_idx + 1 == path_members.len();
             if let ValueCursor::PacketScalar {

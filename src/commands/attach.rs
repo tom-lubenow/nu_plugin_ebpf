@@ -257,6 +257,9 @@ Context parameter syntax (recommended):
     required. Return values are snapshot lengths: `0` drops the packet,
     positive values keep it, and aliases like `pass` / `keep` expand to
     `ctx.packet_len`.
+    `cgroup_skb` also exposes `$ctx.sk.cgroup_id` as the current socket's
+    cgroup id through the modeled `bpf_sk_cgroup_id` helper, returning `0`
+    when no socket is present.
 
   lirc_mode2 fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

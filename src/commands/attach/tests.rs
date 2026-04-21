@@ -6529,6 +6529,18 @@ fn test_compile_cgroup_skb_ctx_mark_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_skb_ctx_sk_cgroup_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        CellPath {
+            members: vec![string_member("sk"), string_member("cgroup_id")],
+        },
+        "cgroup_skb ctx.sk.cgroup_id count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_post_bind4_ctx_local_port_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSock,
