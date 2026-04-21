@@ -6314,6 +6314,42 @@ fn test_compile_perf_event_ctx_cpu_counter_program() {
 }
 
 #[test]
+fn test_compile_perf_event_ctx_perf_counter_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+        CellPath {
+            members: vec![string_member("perf_counter")],
+        },
+        "perf_event ctx.perf_counter count",
+    );
+}
+
+#[test]
+fn test_compile_perf_event_ctx_perf_enabled_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+        CellPath {
+            members: vec![string_member("perf_enabled")],
+        },
+        "perf_event ctx.perf_enabled count",
+    );
+}
+
+#[test]
+fn test_compile_perf_event_ctx_perf_running_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+        CellPath {
+            members: vec![string_member("perf_running")],
+        },
+        "perf_event ctx.perf_running count",
+    );
+}
+
+#[test]
 fn test_compile_perf_event_ctx_arg0_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::PerfEvent,

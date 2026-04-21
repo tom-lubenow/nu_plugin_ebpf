@@ -439,6 +439,7 @@ Near-term priority order:
   - Recent progress: attach compile fixtures now also cover the `ctx.protocol` skb protocol alias across `socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`, plus packet-length aliases across XDP, skb-backed, `sk_msg`, and guarded packet-aware `sock_ops` lowering paths (`ctx.len`, plus kernel-native `ctx.size` on `sk_msg`); coverage also includes representative helper-backed and kernel-native aliases such as `ctx.function_ip`, `ctx.bpf_cookie`, `ctx.numa_node_id`, `ctx.ifindex`, `ctx.xdp_buffer_len`, and `ctx.recalc_hash`.
   - Recent progress: attach-flow compile fixtures now also cover attach-sensitive `cgroup_sock_addr:getpeername4` / `getsockname6` tuple aliases through both ordinary reads and writable cell-path assignments, locking down the less common sock_addr hooks without adding live attach risk.
   - Recent progress: attach-flow compile fixtures now explicitly cover `cgroup_sockopt:get` `ctx.retval` alias reads/stores plus `ctx.optlen` reads and `cgroup_sockopt:set` `ctx.optlen` stores, so the public sockopt aliases and mutable scalar surface are covered end to end instead of only in lower/codegen unit tests.
+  - Recent progress: attach-flow compile fixtures now cover perf-event counter snapshot fields (`ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`) through the public attach path, not just internal helper/codegen tests.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.
