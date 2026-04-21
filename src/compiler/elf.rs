@@ -1122,6 +1122,7 @@ pub(crate) enum CtxWriteTarget {
     StoreField(CtxStoreTarget),
     SysctlNewValue,
     SockoptOptvalByte(usize),
+    AssignSocket,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

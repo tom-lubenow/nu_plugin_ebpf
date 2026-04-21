@@ -475,9 +475,44 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
                 return Ok(());
             }
+            CtxWriteTarget::AssignSocket => {
+                self.lower_socket_assignment_update(new_value, &path_desc)?;
+                return Ok(());
+            }
         }
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = true;
+        Ok(())
+    }
+
+    fn lower_socket_assignment_update(
+        &mut self,
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a known attached program context",
+                path_desc
+            )));
+        };
+        if let Some(message) = ctx.helper_call_error(BpfHelper::SkAssign) {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        let sk_vreg = self.get_vreg(new_value);
+        let ctx_vreg = self.materialize_context_pointer_arg();
+        let status_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallHelper {
+            dst: status_vreg,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![
+                MirValue::VReg(ctx_vreg),
+                MirValue::VReg(sk_vreg),
+                MirValue::Const(0),
+            ],
+        });
+        self.vreg_type_hints.insert(status_vreg, MirType::I64);
         Ok(())
     }
 

@@ -199,13 +199,14 @@ Context parameter syntax (recommended):
     paths for the default neighbor-resolution form, lowering to
     `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
     `0`. The raw `helper-call "bpf_redirect*"` forms remain available as
-    escape hatches. `assign-socket SK [--flags FLAGS]` is the preferred
-    first-class surface for `bpf_sk_assign`, supplying the ambient context
-    pointer automatically and returning the helper status. It is valid on
-    `tc:...:ingress` with zero flags and on `sk_lookup`, where
-    `--replace` and `--no-reuseport` map to the corresponding
-    `BPF_SK_LOOKUP_F_*` flags. Passing `0` as the socket resets a
-    previous `sk_lookup` selection.
+    escape hatches. `mut ctx = $ctx; $ctx.sk = $sk` is the preferred
+    zero-flag surface for `bpf_sk_assign`, supplying the ambient context
+    pointer automatically. `assign-socket SK [--flags FLAGS]` remains
+    available when the program needs the helper status or explicit
+    `sk_lookup` flags. It is valid on `tc:...:ingress` with zero flags and
+    on `sk_lookup`, where `--replace` and `--no-reuseport` map to the
+    corresponding `BPF_SK_LOOKUP_F_*` flags. Assigning `0` to `ctx.sk`
+    resets a previous `sk_lookup` selection.
     Raw numeric return codes still work. Packet reads
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
@@ -662,9 +663,9 @@ Context parameter syntax (recommended):
     `1`/`0` result codes. `allow` / `deny` aliases also work. IPv6
     addresses are exposed as fixed arrays of four host-order u32 words, so
     normal Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`.
-    `assign-socket $sk --replace` selects a socket through
-    `bpf_sk_assign`; `assign-socket 0 --replace` clears an earlier
-    selection.
+    `mut ctx = $ctx; $ctx.sk = $sk` selects a socket through zero-flag
+    `bpf_sk_assign`; `$ctx.sk = 0` clears an earlier selection.
+    `assign-socket` remains available when explicit flags are needed.
 
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
@@ -760,7 +761,7 @@ Timing commands:
 Advanced commands:
   helper-call       - Call a modeled BPF helper by name
   kfunc-call        - Call a typed kernel kfunc by name (optional --btf-id)
-  assign-socket     - Select/reset a socket with bpf_sk_assign
+  assign-socket     - Select/reset a socket with bpf_sk_assign when flags/status are needed
   tail-call         - Tail call through a named prog-array map
   map-push          - Push into a named queue or stack map (--kind queue|stack)
   map-peek          - Peek the next queue/stack value as a maybe-null pointer

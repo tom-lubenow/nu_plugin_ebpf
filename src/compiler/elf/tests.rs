@@ -3796,6 +3796,34 @@ fn test_probe_context_resolves_cgroup_sysctl_new_value_write_target() {
 }
 
 #[test]
+fn test_probe_context_resolves_socket_assignment_write_target() {
+    let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    assert_eq!(
+        sk_lookup
+            .resolve_ctx_write_target("sk", None)
+            .expect("sk_lookup ctx.sk write target should resolve"),
+        CtxWriteTarget::AssignSocket
+    );
+
+    let tc_ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert_eq!(
+        tc_ingress
+            .resolve_ctx_write_target("sk", None)
+            .expect("tc ingress ctx.sk write target should resolve"),
+        CtxWriteTarget::AssignSocket
+    );
+}
+
+#[test]
+fn test_probe_context_rejects_socket_assignment_on_tc_egress() {
+    let tc_egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    let err = tc_egress
+        .resolve_ctx_write_target("sk", None)
+        .expect_err("tc egress ctx.sk write target should reject");
+    assert!(err.contains("helper 'bpf_sk_assign' is only valid in tc ingress programs"));
+}
+
+#[test]
 fn test_probe_context_resolves_skb_tstamp_store_target_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert_eq!(

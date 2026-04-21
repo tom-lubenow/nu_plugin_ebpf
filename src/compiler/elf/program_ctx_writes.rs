@@ -1,4 +1,5 @@
 use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
 use crate::program_spec::{
     ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
@@ -32,6 +33,7 @@ enum ContextWriteTargetSpec {
     Store(ContextStoreTargetSpec),
     SysctlNewValue,
     SockoptOptvalByte,
+    AssignSocket,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +178,14 @@ impl ContextWriteTargetSpec {
                     "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
                 )),
             },
+            Self::AssignSocket => match index {
+                Some(_) => Err(format!(
+                    "ctx.{field_name} does not support indexed assignment"
+                )),
+                None => spec
+                    .helper_call_error(BpfHelper::SkAssign)
+                    .map_or(Ok(CtxWriteTarget::AssignSocket), Err),
+            },
         }
     }
 
@@ -184,6 +194,7 @@ impl ContextWriteTargetSpec {
             Self::Store(spec) => spec.matches_target(target),
             Self::SysctlNewValue => false,
             Self::SockoptOptvalByte => false,
+            Self::AssignSocket => false,
         }
     }
 }
@@ -293,10 +304,12 @@ impl ContextWriteSurfaceSpec {
                     CtxWriteTarget::StoreField(target) => target,
                     CtxWriteTarget::SysctlNewValue => unreachable!(),
                     CtxWriteTarget::SockoptOptvalByte(_) => unreachable!(),
+                    CtxWriteTarget::AssignSocket => unreachable!(),
                 },
             )),
             ContextWriteTargetSpec::SysctlNewValue => None,
             ContextWriteTargetSpec::SockoptOptvalByte => None,
+            ContextWriteTargetSpec::AssignSocket => None,
         }
     }
 
@@ -319,6 +332,7 @@ const SOCKET_FILTER_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     )];
 
 const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::special_write("sk", ContextWriteTargetSpec::AssignSocket),
     ContextWriteSurfaceSpec::store_field(
         "mark",
         CtxField::SockMark,
@@ -518,6 +532,12 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
 ];
 
+const SK_LOOKUP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
+    &[ContextWriteSurfaceSpec::special_write(
+        "sk",
+        ContextWriteTargetSpec::AssignSocket,
+    )];
+
 const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::SocketFilter,
@@ -546,6 +566,10 @@ const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::SockOps,
         surfaces: SOCK_OPS_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::SkLookup,
+        surfaces: SK_LOOKUP_CTX_WRITE_SURFACES,
     },
 ];
 
