@@ -565,6 +565,12 @@ pub enum CtxField {
     SkbCb,
     /// skb tc_classid (`__sk_buff.tc_classid`)
     TcClassid,
+    /// skb cgroup class ID from `bpf_get_cgroup_classid`
+    CgroupClassid,
+    /// skb route realm from `bpf_get_route_realm`
+    RouteRealm,
+    /// skb cgroup ID from `bpf_skb_cgroup_id`
+    SkbCgroupId,
     /// skb napi_id (`__sk_buff.napi_id`)
     NapiId,
     /// skb wire_len (`__sk_buff.wire_len`)
@@ -783,6 +789,9 @@ impl CtxField {
             CtxField::VlanProto => "vlan_proto".to_string(),
             CtxField::SkbCb => "cb".to_string(),
             CtxField::TcClassid => "tc_classid".to_string(),
+            CtxField::CgroupClassid => "cgroup_classid".to_string(),
+            CtxField::RouteRealm => "route_realm".to_string(),
+            CtxField::SkbCgroupId => "skb_cgroup_id".to_string(),
             CtxField::NapiId => "napi_id".to_string(),
             CtxField::WireLen => "wire_len".to_string(),
             CtxField::GsoSegs => "gso_segs".to_string(),

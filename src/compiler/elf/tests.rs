@@ -3863,6 +3863,42 @@ fn test_probe_context_allows_packet_fields_on_tc() {
 }
 
 #[test]
+fn test_probe_context_allows_tc_egress_helper_backed_ctx_fields_on_tc_egress() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+    for field in [
+        CtxField::CgroupClassid,
+        CtxField::RouteRealm,
+        CtxField::SkbCgroupId,
+    ] {
+        assert!(ctx.ctx_field_access_error(&field).is_none());
+    }
+}
+
+#[test]
+fn test_probe_context_rejects_tc_egress_helper_backed_ctx_fields_on_tc_ingress() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    for field in [
+        CtxField::CgroupClassid,
+        CtxField::RouteRealm,
+        CtxField::SkbCgroupId,
+    ] {
+        let err = ctx
+            .ctx_field_access_error(&field)
+            .expect("expected tc ingress access error");
+        assert!(err.contains("is only available on tc egress programs"));
+    }
+}
+
+#[test]
+fn test_probe_context_rejects_tc_egress_helper_backed_ctx_fields_on_non_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::CgroupClassid)
+        .expect("expected non-tc access error");
+    assert!(err.contains("ctx.cgroup_classid is only available on tc egress programs"));
+}
+
+#[test]
 fn test_probe_context_rejects_data_meta_on_cgroup_skb() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
     let err = ctx

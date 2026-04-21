@@ -39,6 +39,9 @@ The closure receives a context parameter with these fields:
 | `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `cb` | skb control-block words as five host-order `u32` values | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_classid` | skb tc_classid | tc |
+| `cgroup_classid` | skb cgroup class ID from `bpf_get_cgroup_classid` | tc egress |
+| `route_realm` | skb route realm from `bpf_get_route_realm` | tc egress |
+| `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc egress |
 | `napi_id` | skb napi_id | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `wire_len` | skb wire_len | tc |
 | `gso_segs` | skb GSO segment count | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -204,11 +207,11 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_xdp_store_bytes` are XDP-only. XDP and TC also model
 `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
 multiples of four, and a null `from` or `to` buffer is accepted only
-when the paired size is zero. `bpf_skb_cgroup_id` and
-`bpf_skb_ancestor_cgroup_id` are modeled as TC-egress-only helper
-calls, matching the upstream skb cgroup helper contract. TC egress
-also models `bpf_get_cgroup_classid` and `bpf_get_route_realm` for
-skb classid and route-realm metadata. The
+when the paired size is zero. TC egress exposes skb cgroup/classifier
+metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
+`ctx.route_realm` fields. `bpf_skb_ancestor_cgroup_id` remains a
+modeled TC-egress-only helper call because it requires an ancestor
+level argument. The
 skb-backed packet contexts
 (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as

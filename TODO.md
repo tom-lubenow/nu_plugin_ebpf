@@ -118,6 +118,7 @@ Last updated: 2026-04-21.
   - Typed helper cgroup-ID coverage now includes `bpf_get_current_ancestor_cgroup_id` plus TC-egress-only skb cgroup helpers (`bpf_skb_cgroup_id` / `bpf_skb_ancestor_cgroup_id`) with attach-sensitive policy parity across type inference, verifier_types, and VCC.
   - Typed helper task-pointer coverage now includes legacy `bpf_get_current_task` alongside `bpf_get_current_task_btf`, returning a non-null typed `task_struct` pointer on task-aware program surfaces.
   - Typed helper TC-egress skb metadata coverage now includes `bpf_get_cgroup_classid` and `bpf_get_route_realm`, with attach-sensitive policy parity across type inference, verifier_types, and VCC.
+  - Ordinary TC-egress context access now exposes helper-backed skb metadata without raw helper spelling as `ctx.cgroup_classid`, `ctx.route_realm`, and `ctx.skb_cgroup_id`.
   - Typed helper skb mutation coverage now also includes `bpf_clone_redirect`, `bpf_skb_vlan_push`, and `bpf_skb_vlan_pop`, and packet-pointer invalidation now covers the documented skb mutators that can change the underlying packet buffer.
   - Typed helper skb hash coverage now includes `bpf_set_hash`, completing the modeled `bpf_get_hash_recalc` / `bpf_set_hash` / `bpf_set_hash_invalid` helper surface.
   - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the tc/sk_skb/sk_skb_parser helper surface.

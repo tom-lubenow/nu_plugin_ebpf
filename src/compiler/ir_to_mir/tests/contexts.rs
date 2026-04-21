@@ -2896,6 +2896,36 @@ fn test_lower_cgroup_sockopt_ctx_netns_cookie_field() {
 }
 
 #[test]
+fn test_lower_tc_egress_helper_backed_ctx_fields() {
+    for (field_name, expected_field) in [
+        ("cgroup_classid", CtxField::CgroupClassid),
+        ("route_realm", CtxField::RouteRealm),
+        ("skb_cgroup_id", CtxField::SkbCgroupId),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|_| panic!("tc egress ctx.{field_name} should lower"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField { field, .. } if field == &expected_field
+        )));
+    }
+}
+
+#[test]
 fn test_lower_kprobe_ctx_cgroup_id_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("cgroup_id")],

@@ -7,6 +7,7 @@ type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldA
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
+    TcEgressOnly,
     CgroupSockCreateReleaseOnly,
     CgroupSockPostBindOnly,
     CgroupSockPostBindIpv4Only,
@@ -32,6 +33,13 @@ struct ContextFieldAccessSurfaceSpec {
 impl ContextFieldAccessRequirement {
     fn error(self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
+            Self::TcEgressOnly => match spec.attach_shape() {
+                ProgramAttachShape::Tc { ingress: false } => None,
+                ProgramAttachShape::Tc { .. } => Some(format!(
+                    "ctx.{field_name} is only available on tc egress programs"
+                )),
+                _ => None,
+            },
             Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
                 ProgramAttachShape::CgroupSock {
                     post_bind: true, ..
@@ -207,6 +215,24 @@ const SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] 
         CtxField::Hwtstamp,
         "hwtstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+    ),
+];
+
+const TC_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::CgroupClassid,
+        "cgroup_classid",
+        ContextFieldAccessRequirement::TcEgressOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::RouteRealm,
+        "route_realm",
+        ContextFieldAccessRequirement::TcEgressOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::SkbCgroupId,
+        "skb_cgroup_id",
+        ContextFieldAccessRequirement::TcEgressOnly,
     ),
 ];
 
@@ -497,6 +523,14 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         &[CtxField::PacketLen],
         BaseContextFieldAccessRequirement::PacketLenField,
     ),
+    (
+        &[
+            CtxField::CgroupClassid,
+            CtxField::RouteRealm,
+            CtxField::SkbCgroupId,
+        ],
+        BaseContextFieldAccessRequirement::TcEgressHelperFields,
+    ),
     (SKB_CTX_FIELDS, BaseContextFieldAccessRequirement::SkbFields),
     (
         &[CtxField::Data, CtxField::DataEnd],
@@ -665,6 +699,7 @@ enum BaseContextFieldAccessRequirement {
     SocketCommonFields,
     SockTypeField,
     ProtocolField,
+    TcEgressHelperFields,
     CgroupSockFields,
     SockMarkPriorityFields,
     CgroupSysctlFields,
@@ -707,6 +742,7 @@ impl BaseContextFieldAccessRequirement {
             Self::SocketCommonFields => program_type.supports_socket_common_ctx_fields(),
             Self::SockTypeField => program_type.supports_sock_type_ctx_field(),
             Self::ProtocolField => program_type.supports_protocol_ctx_field(),
+            Self::TcEgressHelperFields => matches!(program_type, EbpfProgramType::Tc),
             Self::CgroupSockFields => program_type.supports_cgroup_sock_ctx_fields(),
             Self::SockMarkPriorityFields => program_type.supports_sock_mark_priority_ctx_fields(),
             Self::CgroupSysctlFields => program_type.supports_cgroup_sysctl_ctx_fields(),
@@ -780,6 +816,10 @@ impl BaseContextFieldAccessRequirement {
             Self::DataMetaField => {
                 format!("ctx.{} is only available on xdp and tc programs", field.display_name())
             }
+            Self::TcEgressHelperFields => format!(
+                "ctx.{} is only available on tc egress programs",
+                field.display_name()
+            ),
             Self::SocketTupleFields => format!(
                 "ctx.{} is only available on cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
@@ -900,6 +940,9 @@ impl ProgramSpec {
             }
             _ if self.program_type().supports_socket_filter_ctx_surface() => {
                 Some(SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES)
+            }
+            _ if self.program_type().supports_tc_ctx_surface() => {
+                Some(TC_CTX_FIELD_ACCESS_SURFACES)
             }
             _ if self.program_type().supports_cgroup_skb_ctx_surface() => {
                 Some(CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES)
