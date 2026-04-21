@@ -197,6 +197,10 @@ fn test_parse_probe_spec_xdp_attach_mode() {
     let (prog_type, target) = parse_probe_spec("xdp:lo:drv:frags").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Xdp);
     assert_eq!(target, "lo:drv:frags");
+
+    let (prog_type, target) = parse_probe_spec("xdp:lo:skb:frags").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Xdp);
+    assert_eq!(target, "lo:skb:frags");
 }
 
 #[test]
@@ -260,6 +264,19 @@ fn test_parse_program_spec_xdp_attach_modes() {
     );
     assert_eq!(spec.to_string(), "xdp:lo:hw:frags");
     assert_eq!(spec.section_name(), "xdp.frags");
+
+    let spec = parse_program_spec("xdp:lo:skb:frags").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Xdp {
+            target: XdpTarget {
+                interface: "lo".to_string(),
+                attach_mode: XdpAttachMode::Skb,
+                frags: true,
+            },
+        }
+    );
+    assert_eq!(spec.to_string(), "xdp:lo:frags");
 }
 
 #[test]

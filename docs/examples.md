@@ -71,7 +71,10 @@ let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.netns_cookie 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
 
-# XDP attaches default to safe SKB/generic mode; add :frags for multi-buffer support
+# XDP attaches default to safe SKB/generic mode; explicit :skb is equivalent
+ebpf attach --dry-run 'xdp:lo:skb' {|ctx| $ctx.packet_len | count; 'pass' }
+
+# Add :frags for multi-buffer support
 ebpf attach --dry-run 'xdp:lo:frags' {|ctx| $ctx.xdp_buff_len | count; 'pass' }
 
 # Use driver mode only when you intentionally want native XDP attach behavior
