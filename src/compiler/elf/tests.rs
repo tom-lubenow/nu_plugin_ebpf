@@ -2079,6 +2079,10 @@ fn test_program_intrinsic_command_registry() {
         Some(ProgramIntrinsic::MapPush)
     );
     assert_eq!(
+        ProgramIntrinsic::from_command_name("map-contains"),
+        Some(ProgramIntrinsic::MapContains)
+    );
+    assert_eq!(
         ProgramIntrinsic::from_command_name("map-peek"),
         Some(ProgramIntrinsic::MapPeek)
     );
@@ -2153,6 +2157,10 @@ fn test_program_intrinsic_command_registry() {
     );
     assert_eq!(
         ProgramIntrinsic::MapPush.required_capability(),
+        ProgramCapability::GenericMaps
+    );
+    assert_eq!(
+        ProgramIntrinsic::MapContains.required_capability(),
         ProgramCapability::GenericMaps
     );
     assert_eq!(

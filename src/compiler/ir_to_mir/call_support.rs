@@ -300,6 +300,28 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn required_bloom_filter_map_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind bloom-filter"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind bloom-filter, got {:?}",
+                other
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be bloom-filter"
+            ))),
+        }
+    }
+
     pub(super) fn required_redirect_map_kind_arg(
         &self,
         context: &str,

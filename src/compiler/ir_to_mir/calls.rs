@@ -1110,6 +1110,10 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "map-contains" => {
+                self.lower_bloom_filter_map_contains(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "map-delete" => {
                 if !self.named_flags.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(
@@ -1921,6 +1925,173 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    fn lower_bloom_filter_map_contains(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const CONTEXT: &str = "map-contains";
+
+        if !self.named_flags.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "map-contains does not accept flags".into(),
+            ));
+        }
+        self.require_only_named_args(CONTEXT, &["kind"])?;
+
+        let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "map-contains requires a literal map name as the first positional argument".into(),
+            )
+        })?;
+        let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
+        self.validate_generic_map_name(&map_name, CONTEXT)?;
+        let map_kind = self.required_bloom_filter_map_kind_arg(CONTEXT)?;
+        let map_ref = MapRef {
+            name: map_name,
+            kind: map_kind,
+        };
+        let value_vreg = self
+            .positional_args
+            .get(1)
+            .map(|(vreg, _)| *vreg)
+            .or(self.pipeline_input)
+            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-contains requires a probe value from pipeline input or a second positional argument"
+                        .into(),
+                )
+            })?;
+        let value_reg = self
+            .positional_args
+            .get(1)
+            .map(|(_, reg)| *reg)
+            .or(self.pipeline_input_reg)
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let stored_value_vreg = if let Some(value_reg) = value_reg {
+            self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
+        } else {
+            value_vreg
+        };
+        self.record_named_map_value_schema_from_reg(&map_ref, value_reg, CONTEXT)?;
+
+        let (value_ptr_vreg, value_ty) =
+            self.materialize_map_value_probe_pointer(value_reg, stored_value_vreg, CONTEXT)?;
+
+        let map_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadMapFd {
+            dst: map_vreg,
+            map: map_ref,
+        });
+        self.vreg_type_hints.insert(
+            map_vreg,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::Unknown),
+                val_ty: Box::new(value_ty),
+            },
+        );
+
+        let status_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallHelper {
+            dst: status_vreg,
+            helper: BpfHelper::MapPeekElem as u32,
+            args: vec![MirValue::VReg(map_vreg), MirValue::VReg(value_ptr_vreg)],
+        });
+        self.vreg_type_hints.insert(status_vreg, MirType::I64);
+
+        self.emit(MirInst::BinOp {
+            dst: dst_vreg,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(status_vreg),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.reset_call_result_metadata(src_dst);
+        Ok(())
+    }
+
+    fn materialize_map_value_probe_pointer(
+        &mut self,
+        value_reg: Option<RegId>,
+        value_vreg: VReg,
+        context: &str,
+    ) -> Result<(VReg, MirType), CompileError> {
+        let value_ty = value_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|meta| {
+                meta.field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(meta))
+            })
+            .or_else(|| self.vreg_type_hints.get(&value_vreg).cloned())
+            .unwrap_or(MirType::U64);
+
+        match value_ty {
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } => Ok((value_vreg, pointee.as_ref().clone())),
+            MirType::Ptr { address_space, .. } => Err(CompileError::UnsupportedInstruction(
+                format!("{context} value pointer must be stack/map backed, got {address_space:?}"),
+            )),
+            value_ty @ (MirType::Array { .. } | MirType::Struct { .. }) => {
+                let Some(value_reg) = value_reg else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} aggregate values must come from a typed stack/map-backed value"
+                    )));
+                };
+                let ptr_vreg = self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?;
+                Ok((ptr_vreg, self.stored_generic_map_value_type(&value_ty)))
+            }
+            value_ty
+                if matches!(
+                    value_ty,
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                        | MirType::Bool
+                        | MirType::Unknown
+                ) =>
+            {
+                let slot = self.func.alloc_stack_slot(
+                    align_to_eight(value_ty.size().max(1)),
+                    value_ty.align().max(1),
+                    StackSlotKind::Local,
+                );
+                self.record_stack_slot_type(slot, value_ty.clone());
+                self.emit(MirInst::StoreSlot {
+                    slot,
+                    offset: 0,
+                    val: MirValue::VReg(value_vreg),
+                    ty: value_ty.clone(),
+                });
+                let ptr_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: ptr_vreg,
+                    src: MirValue::StackSlot(slot),
+                });
+                self.vreg_type_hints.insert(
+                    ptr_vreg,
+                    MirType::Ptr {
+                        pointee: Box::new(value_ty.clone()),
+                        address_space: AddressSpace::Stack,
+                    },
+                );
+                Ok((ptr_vreg, value_ty))
+            }
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} value must be scalar or stack/map-backed aggregate, got {other:?}"
+            ))),
+        }
     }
 
     fn materialize_helper_map_fd_arg(

@@ -67,9 +67,9 @@ pub use attach::EbpfAttach;
 pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
 pub use helpers::{
-    Count, Emit, GlobalDefine, GlobalGet, GlobalSet, HelperCall, Histogram, KfuncCall, MapDelete,
-    MapGet, MapPeek, MapPop, MapPush, MapPut, ReadKernelStr, ReadStr, StartTimer, StopTimer,
-    TailCall,
+    Count, Emit, GlobalDefine, GlobalGet, GlobalSet, HelperCall, Histogram, KfuncCall, MapContains,
+    MapDelete, MapGet, MapPeek, MapPop, MapPush, MapPut, ReadKernelStr, ReadStr, StartTimer,
+    StopTimer, TailCall,
 };
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;

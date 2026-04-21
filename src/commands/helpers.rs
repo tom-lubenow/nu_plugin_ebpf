@@ -12,7 +12,7 @@
 //! - kfunc-call: Escape hatch for invoking a typed kernel kfunc by name
 //! - tail-call: Transfer control to a program in a named prog-array map
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
-//! - map-get / map-put / map-delete / map-push / map-peek / map-pop:
+//! - map-get / map-put / map-delete / map-push / map-peek / map-pop / map-contains:
 //!   Generic BPF map operations
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
@@ -787,6 +787,67 @@ Example:
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
         Ok(PipelineData::Value(Value::int(0, call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapContains;
+
+impl PluginCommand for MapContains {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-contains"
+    }
+
+    fn description(&self) -> &str {
+        "Test membership in a named bloom-filter BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Checks whether the pipeline input or explicit value is probably present
+in a bloom-filter map. This wraps the kernel `bpf_map_peek_elem` membership
+probe and returns a boolean. Bloom filters can have false positives but not
+false negatives.
+
+Example:
+  let seen = ($ctx.pid | map-contains recent_pids --kind bloom-filter)"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-contains")
+            .input_output_types(vec![(Type::Any, Type::Bool), (Type::Nothing, Type::Bool)])
+            .required("name", SyntaxShape::String, "Map name")
+            .optional(
+                "value",
+                SyntaxShape::Any,
+                "Optional explicit value; otherwise uses pipeline input",
+            )
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: bloom-filter (required)",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-contains recent_pids --kind bloom-filter }",
+            description: "Check bloom-filter membership for the current PID",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::bool(false, call.head), None))
     }
 }
 

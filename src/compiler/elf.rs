@@ -1164,6 +1164,7 @@ pub enum ProgramIntrinsic {
     MapGet,
     MapPut,
     MapDelete,
+    MapContains,
     MapPush,
     MapPeek,
     MapPop,
@@ -1197,6 +1198,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::MapGet => "map-get",
             ProgramIntrinsic::MapPut => "map-put",
             ProgramIntrinsic::MapDelete => "map-delete",
+            ProgramIntrinsic::MapContains => "map-contains",
             ProgramIntrinsic::MapPush => "map-push",
             ProgramIntrinsic::MapPeek => "map-peek",
             ProgramIntrinsic::MapPop => "map-pop",
@@ -1226,6 +1228,7 @@ impl ProgramIntrinsic {
             "map-get" => Some(ProgramIntrinsic::MapGet),
             "map-put" => Some(ProgramIntrinsic::MapPut),
             "map-delete" => Some(ProgramIntrinsic::MapDelete),
+            "map-contains" => Some(ProgramIntrinsic::MapContains),
             "map-push" => Some(ProgramIntrinsic::MapPush),
             "map-peek" => Some(ProgramIntrinsic::MapPeek),
             "map-pop" => Some(ProgramIntrinsic::MapPop),
@@ -1255,6 +1258,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::MapGet
             | ProgramIntrinsic::MapPut
             | ProgramIntrinsic::MapDelete
+            | ProgramIntrinsic::MapContains
             | ProgramIntrinsic::MapPush
             | ProgramIntrinsic::MapPeek
             | ProgramIntrinsic::MapPop => ProgramCapability::GenericMaps,
