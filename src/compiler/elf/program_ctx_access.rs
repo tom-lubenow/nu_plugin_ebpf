@@ -609,7 +609,12 @@ const CGROUP_SOCK_ADDR_CTX_FIELDS: &[CtxField] = &[
     CtxField::MsgSrcIp6,
 ];
 const SOCK_MARK_PRIORITY_CTX_FIELDS: &[CtxField] = &[CtxField::SockMark, CtxField::SockPriority];
-const CGROUP_SYSCTL_CTX_FIELDS: &[CtxField] = &[CtxField::SysctlWrite, CtxField::SysctlFilePos];
+const CGROUP_SYSCTL_CTX_FIELDS: &[CtxField] = &[
+    CtxField::SysctlWrite,
+    CtxField::SysctlFilePos,
+    CtxField::SysctlName,
+    CtxField::SysctlBaseName,
+];
 const CGROUP_SOCKOPT_CTX_FIELDS: &[CtxField] = &[
     CtxField::SockoptLevel,
     CtxField::SockoptOptname,

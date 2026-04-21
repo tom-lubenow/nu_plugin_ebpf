@@ -7035,6 +7035,30 @@ fn test_compile_cgroup_sysctl_ctx_write_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sysctl_ctx_name_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("sysctl_name"), int_member(0)],
+        },
+        "cgroup_sysctl ctx.sysctl_name[0] count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sysctl_ctx_base_name_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("base_name"), int_member(0)],
+        },
+        "cgroup_sysctl ctx.base_name[0] count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_set_ctx_level_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockopt,

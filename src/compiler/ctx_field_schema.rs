@@ -90,6 +90,7 @@ const BPF_SOCK_OPS_TSTAMP_SND_SW_CB: i64 = 17;
 const BPF_SOCK_OPS_TSTAMP_SND_HW_CB: i64 = 18;
 const BPF_SOCK_OPS_TSTAMP_ACK_CB: i64 = 19;
 const BPF_SOCK_OPS_TSTAMP_SENDMSG_CB: i64 = 20;
+pub(crate) const SYSCTL_STRING_FIELD_LEN: usize = 256;
 
 impl ContextFieldLoadGuard {
     pub(crate) fn witness_field(self) -> CtxField {
@@ -618,6 +619,15 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             }),
             false,
         ),
+        CtxField::SysctlName | CtxField::SysctlBaseName => {
+            BaseContextFieldSchemaSpec::stack_backed(
+                ContextFieldTypeSpec::stack_backed(MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: SYSCTL_STRING_FIELD_LEN,
+                }),
+                false,
+            )
+        }
         CtxField::Arg(_) | CtxField::RetVal | CtxField::KStack | CtxField::UStack => {
             return None;
         }

@@ -12,6 +12,10 @@ enum CtxFieldNameResolutionMode {
 const XDP_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::IngressIfindex)];
 const SKB_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::Ifindex)];
 const SK_MSG_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("size", CtxField::PacketLen)];
+const CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
+    ("name", CtxField::SysctlName),
+    ("base_name", CtxField::SysctlBaseName),
+];
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
     &[("retval", CtxField::SockoptRetval)];
 const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
@@ -113,6 +117,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("srtt_us", CtxField::SockOpsSrttUs),
     ("write", CtxField::SysctlWrite),
     ("file_pos", CtxField::SysctlFilePos),
+    ("sysctl_name", CtxField::SysctlName),
+    ("sysctl_base_name", CtxField::SysctlBaseName),
     ("rtt_min", CtxField::SockOpsRttMin),
     ("snd_ssthresh", CtxField::SockOpsSndSsthresh),
     ("rcv_nxt", CtxField::SockOpsRcvNxt),
@@ -262,6 +268,7 @@ impl EbpfProgramType {
             | EbpfProgramType::SkSkb
             | EbpfProgramType::SkSkbParser => Some(SKB_CTX_FIELD_ALIAS_ENTRIES),
             EbpfProgramType::SkMsg => Some(SK_MSG_CTX_FIELD_ALIAS_ENTRIES),
+            EbpfProgramType::CgroupSysctl => Some(CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES),
             EbpfProgramType::CgroupSockopt => Some(CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES),
             _ => None,
         }

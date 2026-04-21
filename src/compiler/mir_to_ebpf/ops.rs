@@ -1,11 +1,13 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
+use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
 mod context;
 
 const BPF_CSUM_LEVEL_QUERY: i32 = 0;
+const BPF_F_SYSCTL_BASE_NAME: i32 = 1;
 
 impl<'a> MirToEbpfCompiler<'a> {
     fn cgroup_sock_addr_tuple_alias_field(&self, field: &CtxField) -> Option<CtxField> {
@@ -1585,6 +1587,52 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = Self::bpf_sysctl_offsets().1;
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SysctlName | CtxField::SysctlBaseName => {
+                let flags = match field {
+                    CtxField::SysctlName => 0,
+                    CtxField::SysctlBaseName => BPF_F_SYSCTL_BASE_NAME,
+                    _ => unreachable!(),
+                };
+                let field_name = field.display_name();
+                let buf_offset = if let Some(slot) = slot {
+                    *self.slot_offsets.get(&slot).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{field_name} stack slot not found"
+                        ))
+                    })?
+                } else {
+                    self.check_stack_space(SYSCTL_STRING_FIELD_LEN as i16)?;
+                    self.stack_offset -= SYSCTL_STRING_FIELD_LEN as i16;
+                    self.stack_offset
+                };
+
+                self.emit_zero_bytes(
+                    EbpfReg::R10,
+                    buf_offset,
+                    SYSCTL_STRING_FIELD_LEN,
+                    EbpfReg::R0,
+                )?;
+
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
+                self.instructions
+                    .push(EbpfInsn::add64_imm(EbpfReg::R2, buf_offset as i32));
+                self.instructions.push(EbpfInsn::mov64_imm(
+                    EbpfReg::R3,
+                    SYSCTL_STRING_FIELD_LEN as i32,
+                ));
+                self.instructions
+                    .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags));
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::SysctlGetName));
+
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R10));
+                self.instructions
+                    .push(EbpfInsn::add64_imm(dst, buf_offset as i32));
             }
             CtxField::SockoptLevel => {
                 let offset = Self::bpf_sockopt_offsets().3;

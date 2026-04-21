@@ -769,6 +769,42 @@ fn test_lower_cgroup_sysctl_ctx_write_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sysctl_ctx_name_fields() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    for (field_name, expected_field) in [
+        ("sysctl_name", CtxField::SysctlName),
+        ("name", CtxField::SysctlName),
+        ("sysctl_base_name", CtxField::SysctlBaseName),
+        ("base_name", CtxField::SysctlBaseName),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("cgroup_sysctl ctx.{field_name} should lower: {err}"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field,
+                slot: Some(_),
+                ..
+            } if field == &expected_field
+        )));
+    }
+}
+
+#[test]
 fn test_lower_cgroup_sysctl_ctx_file_pos_assignment() {
     let ctx_var = VarId::new(0);
     let func = HirFunction {

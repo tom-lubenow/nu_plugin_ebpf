@@ -313,10 +313,17 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.write }   - Get whether the sysctl knob is being written (`1`) or read (`0`)
     {|ctx| $ctx.file_pos } - Get the current sysctl file position
+    {|ctx| $ctx.sysctl_name } - Get the full sysctl path as a NUL-terminated 256-byte buffer
+    {|ctx| $ctx.name } - Alias for ctx.sysctl_name
+    {|ctx| $ctx.sysctl_base_name } - Get the sysctl leaf name as a NUL-terminated 256-byte buffer
+    {|ctx| $ctx.base_name } - Alias for ctx.sysctl_base_name
     {|ctx| mut ctx = $ctx; $ctx.file_pos = 0; 'allow' } - Override the sysctl file position through ordinary assignment
     Note: cgroup_sysctl closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `ctx.file_pos` is writable after shadowing the
     immutable closure parameter as mutable, while `ctx.write` remains read-only.
+    `ctx.sysctl_name` and `ctx.sysctl_base_name` lower through
+    `bpf_sysctl_get_name`; the raw helper remains available when a program
+    needs explicit return-code handling or a different buffer size.
     The kernel's sysctl helpers still keep their ordinary runtime semantics:
     `bpf_sysctl_get_new_value` and `bpf_sysctl_set_new_value` return `-EINVAL`
     on read contexts, and `bpf_sysctl_get_name` uses
