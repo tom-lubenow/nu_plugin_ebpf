@@ -1033,6 +1033,10 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
         Some("helper 'bpf_skb_cgroup_id' is only valid in tc egress programs".to_string())
     );
     assert_eq!(
+        ingress.helper_call_error(BpfHelper::GetRouteRealm),
+        Some("helper 'bpf_get_route_realm' is only valid in tc egress programs".to_string())
+    );
+    assert_eq!(
         egress.helper_call_error(BpfHelper::RedirectPeer),
         Some("helper 'bpf_redirect_peer' is only valid in tc ingress programs".to_string())
     );
@@ -1043,6 +1047,11 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     assert!(
         egress
             .helper_call_error(BpfHelper::SkbAncestorCgroupId)
+            .is_none()
+    );
+    assert!(
+        egress
+            .helper_call_error(BpfHelper::GetCgroupClassid)
             .is_none()
     );
     assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
@@ -1116,6 +1125,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupId),
         Some("helper 'bpf_skb_cgroup_id' is only valid in tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCgroupClassid),
+        Some("helper 'bpf_get_cgroup_classid' is only valid in tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),

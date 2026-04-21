@@ -219,6 +219,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetCurrentAncestorCgroupId)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_cgroup_classid"),
+        Some(BpfHelper::GetCgroupClassid)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("get_route_realm"),
+        Some(BpfHelper::GetRouteRealm)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_current_task_btf"),
         Some(BpfHelper::GetCurrentTaskBtf)
     ));
@@ -747,6 +755,18 @@ fn test_helper_signatures_sk_cgroup_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_tc_egress_skb_metadata_helpers() {
+    for helper in [BpfHelper::GetCgroupClassid, BpfHelper::GetRouteRealm] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected skb metadata helper signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
 }
 
 #[test]

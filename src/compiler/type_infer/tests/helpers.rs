@@ -2010,8 +2010,10 @@ fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
 }
 
 #[test]
-fn test_infer_skb_cgroup_helpers_in_tc_egress_program() {
+fn test_infer_tc_egress_skb_metadata_helpers() {
     for (helper, extra_args) in [
+        (BpfHelper::GetCgroupClassid, vec![]),
+        (BpfHelper::GetRouteRealm, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {
@@ -2037,14 +2039,16 @@ fn test_infer_skb_cgroup_helpers_in_tc_egress_program() {
         let mut ti = TypeInference::new(Some(probe_ctx));
         let types = ti
             .infer(&func)
-            .expect("expected skb cgroup helper to infer on tc egress");
+            .expect("expected tc-egress skb metadata helper to infer");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
 }
 
 #[test]
-fn test_type_error_skb_cgroup_helpers_reject_tc_ingress() {
+fn test_type_error_tc_egress_skb_metadata_helpers_reject_tc_ingress() {
     for (helper, extra_args) in [
+        (BpfHelper::GetCgroupClassid, vec![]),
+        (BpfHelper::GetRouteRealm, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {
@@ -2070,7 +2074,7 @@ fn test_type_error_skb_cgroup_helpers_reject_tc_ingress() {
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti
             .infer(&func)
-            .expect_err("expected skb cgroup helper to reject tc ingress");
+            .expect_err("expected tc-egress skb metadata helper to reject tc ingress");
         assert!(
             errs.iter()
                 .any(|e| e.message.contains("is only valid in tc egress programs"))
@@ -2079,8 +2083,10 @@ fn test_type_error_skb_cgroup_helpers_reject_tc_ingress() {
 }
 
 #[test]
-fn test_type_error_skb_cgroup_helpers_reject_non_tc_program() {
+fn test_type_error_tc_egress_skb_metadata_helpers_reject_non_tc_program() {
     for (helper, extra_args) in [
+        (BpfHelper::GetCgroupClassid, vec![]),
+        (BpfHelper::GetRouteRealm, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {
@@ -2106,7 +2112,7 @@ fn test_type_error_skb_cgroup_helpers_reject_non_tc_program() {
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti
             .infer(&func)
-            .expect_err("expected skb cgroup helper to reject non-tc program");
+            .expect_err("expected tc-egress skb metadata helper to reject non-tc program");
         assert!(
             errs.iter()
                 .any(|e| e.message.contains("is only valid in tc programs"))

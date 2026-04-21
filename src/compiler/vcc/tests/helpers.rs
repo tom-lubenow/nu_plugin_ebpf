@@ -874,8 +874,10 @@ fn test_verify_mir_for_probe_context_sk_cgroup_helpers_accept_cgroup_skb() {
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_skb_cgroup_helpers_accept_tc_egress() {
+fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_egress() {
     for (helper, extra_args) in [
+        (BpfHelper::GetCgroupClassid, vec![]),
+        (BpfHelper::GetRouteRealm, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {
@@ -913,13 +915,15 @@ fn test_verify_mir_for_probe_context_skb_cgroup_helpers_accept_tc_egress() {
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected skb cgroup helper tc-egress context to verify");
+            .expect("expected tc-egress skb metadata helper to verify");
     }
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_skb_cgroup_helpers_reject_tc_ingress() {
+fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_tc_ingress() {
     for (helper, extra_args) in [
+        (BpfHelper::GetCgroupClassid, vec![]),
+        (BpfHelper::GetRouteRealm, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {
@@ -957,7 +961,7 @@ fn test_verify_mir_for_probe_context_skb_cgroup_helpers_reject_tc_ingress() {
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected skb cgroup helper tc-ingress context error");
+            .expect_err("expected tc-egress skb metadata helper tc-ingress context error");
         assert!(
             err.iter()
                 .any(|e| e.message.contains("is only valid in tc egress programs"))
@@ -966,8 +970,10 @@ fn test_verify_mir_for_probe_context_skb_cgroup_helpers_reject_tc_ingress() {
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_skb_cgroup_helpers_reject_non_tc() {
+fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_non_tc() {
     for (helper, extra_args) in [
+        (BpfHelper::GetCgroupClassid, vec![]),
+        (BpfHelper::GetRouteRealm, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {
@@ -1005,7 +1011,7 @@ fn test_verify_mir_for_probe_context_skb_cgroup_helpers_reject_non_tc() {
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected skb cgroup helper non-tc context error");
+            .expect_err("expected tc-egress skb metadata helper non-tc context error");
         assert!(
             err.iter()
                 .any(|e| e.message.contains("is only valid in tc programs"))

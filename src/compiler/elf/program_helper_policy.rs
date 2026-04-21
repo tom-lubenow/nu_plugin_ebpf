@@ -357,8 +357,12 @@ fn helper_list_contains(helpers: &[BpfHelper], helper: BpfHelper) -> bool {
 }
 
 const TC_INGRESS_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::RedirectPeer, BpfHelper::SkAssign];
-const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] =
-    &[BpfHelper::SkbCgroupId, BpfHelper::SkbAncestorCgroupId];
+const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] = &[
+    BpfHelper::GetCgroupClassid,
+    BpfHelper::GetRouteRealm,
+    BpfHelper::SkbCgroupId,
+    BpfHelper::SkbAncestorCgroupId,
+];
 const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[
     BpfHelper::Bind,
     BpfHelper::GetSockOpt,
@@ -427,6 +431,8 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::RedirectNeigh
         | BpfHelper::SkbSetTstamp
         | BpfHelper::SkbUnderCgroup
+        | BpfHelper::GetCgroupClassid
+        | BpfHelper::GetRouteRealm
         | BpfHelper::SkbCgroupId
         | BpfHelper::SkbAncestorCgroupId => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Tc,

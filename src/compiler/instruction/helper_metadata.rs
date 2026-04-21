@@ -41,6 +41,8 @@ impl BpfHelper {
             80 => Some(Self::GetCurrentCgroupId),
             123 => Some(Self::GetCurrentAncestorCgroupId),
             16 => Some(Self::GetCurrentComm),
+            17 => Some(Self::GetCgroupClassid),
+            24 => Some(Self::GetRouteRealm),
             61 => Some(Self::MsgApplyBytes),
             62 => Some(Self::MsgCorkBytes),
             63 => Some(Self::MsgPullData),
@@ -445,6 +447,12 @@ impl BpfHelper {
             BpfHelper::GetCurrentComm => HelperSignature {
                 min_args: 2,
                 max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => HelperSignature {
+                min_args: 1,
+                max_args: 1,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },

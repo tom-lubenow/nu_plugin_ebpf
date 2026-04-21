@@ -189,7 +189,9 @@ through the ordinary helper surface, including `bpf_skb_store_bytes`,
 `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
 `bpf_xdp_store_bytes` are XDP-only. `bpf_skb_cgroup_id` and
 `bpf_skb_ancestor_cgroup_id` are modeled as TC-egress-only helper
-calls, matching the upstream skb cgroup helper contract. The
+calls, matching the upstream skb cgroup helper contract. TC egress
+also models `bpf_get_cgroup_classid` and `bpf_get_route_realm` for
+skb classid and route-realm metadata. The
 skb-backed packet contexts
 (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as

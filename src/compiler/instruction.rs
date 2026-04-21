@@ -116,6 +116,10 @@ pub enum BpfHelper {
     GetCurrentAncestorCgroupId = 123,
     /// int bpf_get_current_comm(buf, size)
     GetCurrentComm = 16,
+    /// u32 bpf_get_cgroup_classid(skb)
+    GetCgroupClassid = 17,
+    /// u32 bpf_get_route_realm(skb)
+    GetRouteRealm = 24,
     /// long bpf_msg_apply_bytes(msg, bytes)
     MsgApplyBytes = 61,
     /// long bpf_msg_cork_bytes(msg, bytes)
@@ -316,6 +320,8 @@ impl BpfHelper {
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
             BpfHelper::GetCurrentAncestorCgroupId => "bpf_get_current_ancestor_cgroup_id",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
+            BpfHelper::GetCgroupClassid => "bpf_get_cgroup_classid",
+            BpfHelper::GetRouteRealm => "bpf_get_route_realm",
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
             BpfHelper::MsgPullData => "bpf_msg_pull_data",
@@ -440,6 +446,8 @@ impl BpfHelper {
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
             "get_current_ancestor_cgroup_id" => Some(Self::GetCurrentAncestorCgroupId),
             "get_current_comm" => Some(Self::GetCurrentComm),
+            "get_cgroup_classid" => Some(Self::GetCgroupClassid),
+            "get_route_realm" => Some(Self::GetRouteRealm),
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
             "msg_pull_data" => Some(Self::MsgPullData),
