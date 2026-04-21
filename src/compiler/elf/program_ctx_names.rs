@@ -114,6 +114,8 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "ktime_coarse" | "coarse_ktime" | "coarse_time" => CtxField::CoarseTimestamp,
         "ktime_tai" | "tai_ktime" | "tai_time" => CtxField::TaiTimestamp,
         "jiffies" => CtxField::Jiffies,
+        "func_ip" | "function_ip" => CtxField::FuncIp,
+        "attach_cookie" | "bpf_cookie" => CtxField::AttachCookie,
         "cgroup_id" => CtxField::CgroupId,
         "sample_period" => CtxField::PerfSamplePeriod,
         "addr" => CtxField::PerfAddr,

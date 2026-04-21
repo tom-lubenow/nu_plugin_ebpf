@@ -529,6 +529,10 @@ pub enum CtxField {
     TaiTimestamp,
     /// Kernel jiffies counter
     Jiffies,
+    /// Address of the current traced function/probe target
+    FuncIp,
+    /// Per-attachment cookie supplied by userspace at attach/link creation time
+    AttachCookie,
     /// Current task cgroup ID
     CgroupId,
     /// perf_event sample period (`bpf_perf_event_data::sample_period`)
@@ -751,6 +755,8 @@ impl CtxField {
             CtxField::CoarseTimestamp => "ktime_coarse".to_string(),
             CtxField::TaiTimestamp => "ktime_tai".to_string(),
             CtxField::Jiffies => "jiffies".to_string(),
+            CtxField::FuncIp => "func_ip".to_string(),
+            CtxField::AttachCookie => "attach_cookie".to_string(),
             CtxField::CgroupId => "cgroup_id".to_string(),
             CtxField::PerfSamplePeriod => "sample_period".to_string(),
             CtxField::PerfAddr => "addr".to_string(),

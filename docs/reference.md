@@ -22,6 +22,8 @@ The closure receives a context parameter with these fields:
 | `ktime_coarse` | Coarse kernel timestamp (ns) | All |
 | `ktime_tai` | TAI kernel timestamp (ns) | All |
 | `jiffies` | Kernel jiffies counter | All |
+| `func_ip` | Address of the traced function/probe target (`bpf_get_func_ip`) | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
+| `attach_cookie` | Per-attachment cookie supplied at link/attach time (`bpf_get_attach_cookie`) | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
 | `sample_period` | Sample period from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `addr` | Sampled address from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |

@@ -472,6 +472,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::FuncIp => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions.push(EbpfInsn::call(BpfHelper::GetFuncIp));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::AttachCookie => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetAttachCookie));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::Cpu => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetSmpProcessorId));

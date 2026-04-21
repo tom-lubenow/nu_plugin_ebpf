@@ -1152,6 +1152,20 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncIp),
+        Some(
+            "helper 'bpf_get_func_ip' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetAttachCookie),
+        Some(
+            "helper 'bpf_get_attach_cookie' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::ProbeRead),
         Some(
             "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
@@ -1436,6 +1450,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::GetStack),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::GetFuncIp),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint.helper_call_error(BpfHelper::GetAttachCookie),
         None
     );
     assert_eq!(
@@ -1821,6 +1843,54 @@ fn test_helper_backed_ctx_field_surface_stays_within_helper_surface() {
             }
         }
     }
+}
+
+#[test]
+fn test_tracing_helper_ctx_field_surface_follows_program_model() {
+    for (program_type, target) in [
+        (EbpfProgramType::Kprobe, "ksys_read"),
+        (EbpfProgramType::Kretprobe, "ksys_read"),
+        (EbpfProgramType::Uprobe, "/bin/true:main"),
+        (EbpfProgramType::Uretprobe, "/bin/true:main"),
+        (
+            EbpfProgramType::PerfEvent,
+            "software:cpu-clock:period=100000",
+        ),
+        (EbpfProgramType::RawTracepoint, "sched_switch"),
+        (EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat"),
+        (EbpfProgramType::Fentry, "vfs_read"),
+        (EbpfProgramType::Fexit, "vfs_read"),
+        (EbpfProgramType::TpBtf, "sched_switch"),
+    ] {
+        let ctx = ProbeContext::new(program_type, target);
+        assert!(ctx.ctx_field_access_error(&CtxField::FuncIp).is_none());
+        assert!(
+            ctx.ctx_field_access_error(&CtxField::AttachCookie)
+                .is_none()
+        );
+        assert!(
+            program_type
+                .helper_call_error(BpfHelper::GetFuncIp)
+                .is_none()
+        );
+        assert!(
+            program_type
+                .helper_call_error(BpfHelper::GetAttachCookie)
+                .is_none()
+        );
+    }
+
+    let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    assert!(
+        xdp.ctx_field_access_error(&CtxField::FuncIp)
+            .expect("expected ctx.func_ip rejection")
+            .contains("ctx.func_ip is only available on kprobe")
+    );
+    assert!(
+        xdp.ctx_field_access_error(&CtxField::AttachCookie)
+            .expect("expected ctx.attach_cookie rejection")
+            .contains("ctx.attach_cookie is only available on kprobe")
+    );
 }
 
 #[test]

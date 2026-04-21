@@ -458,6 +458,8 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::CoarseTimestamp
         | CtxField::TaiTimestamp
         | CtxField::Jiffies
+        | CtxField::FuncIp
+        | CtxField::AttachCookie
         | CtxField::CgroupId
         | CtxField::PerfSamplePeriod
         | CtxField::PerfAddr

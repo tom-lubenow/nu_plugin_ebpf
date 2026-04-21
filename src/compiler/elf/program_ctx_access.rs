@@ -459,6 +459,7 @@ const LIRC_CTX_FIELDS: &[CtxField] = &[
     CtxField::LircMode,
 ];
 const STACK_CTX_FIELDS: &[CtxField] = &[CtxField::KStack, CtxField::UStack];
+const TRACING_HELPER_CTX_FIELDS: &[CtxField] = &[CtxField::FuncIp, CtxField::AttachCookie];
 
 const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] = &[
     (
@@ -588,6 +589,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         STACK_CTX_FIELDS,
         BaseContextFieldAccessRequirement::StackFields,
     ),
+    (
+        TRACING_HELPER_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::TracingHelperFields,
+    ),
 ];
 
 fn find_ctx_field_access_surface(
@@ -659,6 +664,7 @@ enum BaseContextFieldAccessRequirement {
     ArgFields,
     RetvalField,
     StackFields,
+    TracingHelperFields,
     TracepointFields,
 }
 
@@ -699,6 +705,19 @@ impl BaseContextFieldAccessRequirement {
             Self::ArgFields => program_type.supports_ctx_args(),
             Self::RetvalField => program_type.supports_ctx_retval(),
             Self::StackFields => program_type.supports_stack_ctx_fields(),
+            Self::TracingHelperFields => matches!(
+                program_type,
+                EbpfProgramType::Kprobe
+                    | EbpfProgramType::Kretprobe
+                    | EbpfProgramType::Uprobe
+                    | EbpfProgramType::Uretprobe
+                    | EbpfProgramType::PerfEvent
+                    | EbpfProgramType::RawTracepoint
+                    | EbpfProgramType::Tracepoint
+                    | EbpfProgramType::Fentry
+                    | EbpfProgramType::Fexit
+                    | EbpfProgramType::TpBtf
+            ),
             Self::TracepointFields => program_type.supports_tracepoint_fields(),
         }
     }
@@ -712,6 +731,10 @@ impl BaseContextFieldAccessRequirement {
                     program_type.canonical_prefix()
                 )
             }
+            Self::TracingHelperFields => format!(
+                "ctx.{} is only available on kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs",
+                field.display_name()
+            ),
             Self::PerfEventField if !program_type.uses_perf_event_context() => {
                 format!(
                     "ctx.{} is only available on perf_event programs",

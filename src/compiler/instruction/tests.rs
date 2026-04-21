@@ -295,6 +295,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Jiffies64)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_func_ip"),
+        Some(BpfHelper::GetFuncIp)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_get_attach_cookie"),
+        Some(BpfHelper::GetAttachCookie)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -678,6 +686,21 @@ fn test_helper_signature_get_current_task_btf() {
         assert_eq!(sig.min_args, 0);
         assert_eq!(sig.max_args, 0);
         assert_eq!(sig.ret_kind, HelperRetKind::PointerNonNull);
+    }
+}
+
+#[test]
+fn test_helper_signatures_tracing_context_helpers() {
+    for (helper, name) in [
+        (BpfHelper::GetFuncIp, "bpf_get_func_ip"),
+        (BpfHelper::GetAttachCookie, "bpf_get_attach_cookie"),
+    ] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {name} helper signature"));
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
 }
 
@@ -1121,6 +1144,26 @@ fn test_helper_get_stack_buffer_contract() {
     assert!(!buf.allowed.allow_kernel);
     assert!(!buf.allowed.allow_user);
     assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_tracing_context_helper_contracts() {
+    for (helper, op) in [
+        (BpfHelper::GetFuncIp, "helper get_func_ip ctx"),
+        (BpfHelper::GetAttachCookie, "helper get_attach_cookie ctx"),
+    ] {
+        let semantics = helper.semantics();
+        assert!(semantics.positive_size_args.is_empty());
+        assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+        let ctx = semantics.ptr_arg_rules[0];
+        assert_eq!(ctx.arg_idx, 0);
+        assert_eq!(ctx.op, op);
+        assert!(ctx.allowed.allow_kernel);
+        assert!(!ctx.allowed.allow_user);
+        assert_eq!(ctx.fixed_size, None);
+        assert_eq!(ctx.size_from_arg, None);
+    }
 }
 
 #[test]

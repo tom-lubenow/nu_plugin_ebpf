@@ -656,6 +656,20 @@ impl BpfHelper {
                 size_from_arg: Some(2),
             },
         ];
+        const GET_FUNC_IP_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_func_ip ctx",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+        const GET_ATTACH_COOKIE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_attach_cookie ctx",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
 
         const SKB_UNDER_CGROUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1472,6 +1486,16 @@ impl BpfHelper {
             },
             BpfHelper::GetStack => HelperSemantics {
                 ptr_arg_rules: GET_STACK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetFuncIp => HelperSemantics {
+                ptr_arg_rules: GET_FUNC_IP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetAttachCookie => HelperSemantics {
+                ptr_arg_rules: GET_ATTACH_COOKIE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

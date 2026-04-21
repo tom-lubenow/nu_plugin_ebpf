@@ -445,7 +445,10 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEventOutput,
         },
-        BpfHelper::GetStackId | BpfHelper::GetStack => HelperProgramSurfaceSpec {
+        BpfHelper::GetStackId
+        | BpfHelper::GetStack
+        | BpfHelper::GetFuncIp
+        | BpfHelper::GetAttachCookie => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::GetStackId,
         },
         BpfHelper::ProbeRead => HelperProgramSurfaceSpec {

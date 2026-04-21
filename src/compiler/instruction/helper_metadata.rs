@@ -72,6 +72,8 @@ impl BpfHelper {
             118 => Some(Self::Jiffies64),
             125 => Some(Self::KtimeGetBootNs),
             160 => Some(Self::KtimeGetCoarseNs),
+            173 => Some(Self::GetFuncIp),
+            174 => Some(Self::GetAttachCookie),
             142 => Some(Self::LoadHdrOpt),
             143 => Some(Self::StoreHdrOpt),
             144 => Some(Self::ReserveHdrOpt),
@@ -317,6 +319,12 @@ impl BpfHelper {
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::PointerNonNull,
+            },
+            BpfHelper::GetFuncIp | BpfHelper::GetAttachCookie => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail => {
                 HelperSignature {
