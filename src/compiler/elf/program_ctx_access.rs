@@ -876,7 +876,80 @@ enum BaseContextFieldAccessRequirement {
     TracepointFields,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BaseContextFieldAccessProgramSurfaceSpec {
+    requirement: BaseContextFieldAccessRequirement,
+    program_types: &'static [EbpfProgramType],
+}
+
+const SKB_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Tc,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+];
+
+const BTF_ARG_COUNT_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::TpBtf,
+    EbpfProgramType::Lsm,
+];
+
+const TRACING_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Kprobe,
+    EbpfProgramType::Kretprobe,
+    EbpfProgramType::Uprobe,
+    EbpfProgramType::Uretprobe,
+    EbpfProgramType::PerfEvent,
+    EbpfProgramType::RawTracepoint,
+    EbpfProgramType::Tracepoint,
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::TpBtf,
+];
+
+const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgramSurfaceSpec] = &[
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::XdpHelperFields,
+        program_types: &[EbpfProgramType::Xdp],
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::SkbChecksumHelperFields,
+        program_types: SKB_HELPER_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::SkbHashHelperFields,
+        program_types: SKB_HELPER_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::TcEgressHelperFields,
+        program_types: &[EbpfProgramType::Tc],
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::ArgCountField,
+        program_types: BTF_ARG_COUNT_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::TracingHelperFields,
+        program_types: TRACING_HELPER_FIELD_PROGRAMS,
+    },
+];
+
+fn base_context_field_access_program_surface(
+    requirement: BaseContextFieldAccessRequirement,
+) -> Option<&'static [EbpfProgramType]> {
+    BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES
+        .iter()
+        .find(|surface| surface.requirement == requirement)
+        .map(|surface| surface.program_types)
+}
+
 impl BaseContextFieldAccessRequirement {
+    fn allowed_by_program_surface(self, program_type: EbpfProgramType) -> bool {
+        base_context_field_access_program_surface(self)
+            .is_some_and(|program_types| program_types.contains(&program_type))
+    }
+
     fn is_allowed(self, program_type: EbpfProgramType) -> bool {
         match self {
             Self::TaskFields => program_type.supports_task_ctx_fields(),
@@ -884,16 +957,10 @@ impl BaseContextFieldAccessRequirement {
             Self::TimestampField => program_type.supports_timestamp_ctx_field(),
             Self::PerfEventField => program_type.supports_perf_event_ctx_fields(),
             Self::PerfEventHelperFields => program_type.uses_perf_event_context(),
-            Self::XdpHelperFields => matches!(program_type, EbpfProgramType::Xdp),
+            Self::XdpHelperFields => self.allowed_by_program_surface(program_type),
             Self::PacketLenField => program_type.supports_packet_len_ctx_field(),
-            Self::SkbChecksumHelperFields => matches!(
-                program_type,
-                EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
-            ),
-            Self::SkbHashHelperFields => matches!(
-                program_type,
-                EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
-            ),
+            Self::SkbChecksumHelperFields => self.allowed_by_program_surface(program_type),
+            Self::SkbHashHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbFields => program_type.supports_skb_ctx_fields(),
             Self::PacketDataFields => program_type.supports_packet_data_ctx_fields(),
             Self::DataMetaField => program_type.supports_data_meta_ctx_field(),
@@ -913,7 +980,7 @@ impl BaseContextFieldAccessRequirement {
             Self::SocketCommonFields => program_type.supports_socket_common_ctx_fields(),
             Self::SockTypeField => program_type.supports_sock_type_ctx_field(),
             Self::ProtocolField => program_type.supports_protocol_ctx_field(),
-            Self::TcEgressHelperFields => matches!(program_type, EbpfProgramType::Tc),
+            Self::TcEgressHelperFields => self.allowed_by_program_surface(program_type),
             Self::CgroupSockFields => program_type.supports_cgroup_sock_ctx_fields(),
             Self::SockMarkPriorityFields => program_type.supports_sock_mark_priority_ctx_fields(),
             Self::CgroupSysctlFields => program_type.supports_cgroup_sysctl_ctx_fields(),
@@ -922,28 +989,10 @@ impl BaseContextFieldAccessRequirement {
             }
             Self::LircFields => program_type.supports_lirc_ctx_fields(),
             Self::ArgFields => program_type.supports_ctx_args(),
-            Self::ArgCountField => matches!(
-                program_type,
-                EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-                    | EbpfProgramType::Lsm
-            ),
+            Self::ArgCountField => self.allowed_by_program_surface(program_type),
             Self::RetvalField => program_type.supports_ctx_retval(),
             Self::StackFields => program_type.supports_stack_ctx_fields(),
-            Self::TracingHelperFields => matches!(
-                program_type,
-                EbpfProgramType::Kprobe
-                    | EbpfProgramType::Kretprobe
-                    | EbpfProgramType::Uprobe
-                    | EbpfProgramType::Uretprobe
-                    | EbpfProgramType::PerfEvent
-                    | EbpfProgramType::RawTracepoint
-                    | EbpfProgramType::Tracepoint
-                    | EbpfProgramType::Fentry
-                    | EbpfProgramType::Fexit
-                    | EbpfProgramType::TpBtf
-            ),
+            Self::TracingHelperFields => self.allowed_by_program_surface(program_type),
             Self::TracepointFields => program_type.supports_tracepoint_fields(),
         }
     }
