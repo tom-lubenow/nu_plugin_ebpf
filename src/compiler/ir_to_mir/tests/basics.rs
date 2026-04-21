@@ -4130,6 +4130,136 @@ fn test_inline_where_closure_preserves_captured_bool() {
 }
 
 #[test]
+fn test_inline_where_closure_bounded_list_iterate_lowers() {
+    let closure_block_id = nu_protocol::BlockId::new(1);
+    let where_decl = DeclId::new(77);
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(42),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: where_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let closure = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::List { capacity: 2 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(8),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(2),
+                    stream: RegId::new(0),
+                    body: HirBlockId(2),
+                    end: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Bool(true),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let hir = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(where_decl, "where".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("where closure bounded-list iterate should lower");
+
+    let saw_loop = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .any(|block| matches!(block.terminator, MirInst::LoopHeader { .. }));
+    assert!(
+        saw_loop,
+        "expected inlined where closure iterate to lower a loop header"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_scalar_uses_global_backing_and_skips_init_store() {
     let global_var = VarId::new(250);
     let func = HirFunction {
