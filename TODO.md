@@ -440,6 +440,7 @@ Near-term priority order:
   - Recent progress: attach-flow compile fixtures now also cover attach-sensitive `cgroup_sock_addr:getpeername4` / `getsockname6` tuple aliases through both ordinary reads and writable cell-path assignments, locking down the less common sock_addr hooks without adding live attach risk.
   - Recent progress: attach-flow compile fixtures now explicitly cover `cgroup_sockopt:get` `ctx.retval` alias reads/stores plus `ctx.optlen` reads and `cgroup_sockopt:set` `ctx.optlen` stores, so the public sockopt aliases and mutable scalar surface are covered end to end instead of only in lower/codegen unit tests.
   - Recent progress: attach-flow compile fixtures now cover perf-event counter snapshot fields (`ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`) through the public attach path, not just internal helper/codegen tests.
+  - Recent progress: attach-flow compile fixtures now cover direct skb socket tuple aliases on `cgroup_skb`, `sk_skb`, and `sk_skb_parser`, locking down the public `ctx.remote_*` / `ctx.local_*` surface on those non-tracing families.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

@@ -6803,6 +6803,30 @@ fn test_compile_cgroup_skb_ctx_protocol_alias_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_skb_ctx_remote_ip4_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        CellPath {
+            members: vec![string_member("remote_ip4")],
+        },
+        "cgroup_skb ctx.remote_ip4 count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_skb_ctx_local_port_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:egress",
+        CellPath {
+            members: vec![string_member("local_port")],
+        },
+        "cgroup_skb ctx.local_port count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_skb_ctx_sk_cgroup_id_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSkb,
@@ -7103,6 +7127,18 @@ fn test_compile_sk_skb_ctx_protocol_alias_counter_program() {
 }
 
 #[test]
+fn test_compile_sk_skb_ctx_remote_port_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("remote_port")],
+        },
+        "sk_skb ctx.remote_port count",
+    );
+}
+
+#[test]
 fn test_compile_sk_skb_parser_ctx_packet_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkSkbParser,
@@ -7123,6 +7159,18 @@ fn test_compile_sk_skb_parser_ctx_protocol_alias_counter_program() {
             members: vec![string_member("protocol")],
         },
         "sk_skb_parser ctx.protocol count",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_parser_ctx_remote_ip6_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("remote_ip6"), int_member(2)],
+        },
+        "sk_skb_parser ctx.remote_ip6.2 count",
     );
 }
 
