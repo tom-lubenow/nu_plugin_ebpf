@@ -2954,29 +2954,31 @@ fn test_lower_tc_egress_helper_backed_ctx_fields() {
 
 #[test]
 fn test_lower_tc_ctx_csum_level_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("csum_level")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    for (field_name, expected_field) in [
+        ("csum_level", CtxField::CsumLevel),
+        ("hash_recalc", CtxField::HashRecalc),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("tc ctx.csum_level should lower");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|_| panic!("tc ctx.{field_name} should lower"));
 
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::CsumLevel,
-            ..
-        }
-    )));
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField { field, .. } if field == &expected_field
+        )));
+    }
 }
 
 #[test]

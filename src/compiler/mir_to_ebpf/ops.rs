@@ -575,6 +575,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::HashRecalc => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetHashRecalc));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::SkbCgroupId => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));

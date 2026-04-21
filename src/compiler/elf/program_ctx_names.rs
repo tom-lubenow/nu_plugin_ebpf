@@ -155,6 +155,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "egress_ifindex" => CtxField::EgressIfindex,
         "tc_index" => CtxField::TcIndex,
         "hash" => CtxField::SkbHash,
+        "hash_recalc" | "recalc_hash" => CtxField::HashRecalc,
         "user_family" => CtxField::UserFamily,
         "user_ip4" => CtxField::UserIp4,
         "user_ip6" => CtxField::UserIp6,

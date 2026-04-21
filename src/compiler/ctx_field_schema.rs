@@ -389,6 +389,7 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::EgressIfindex
         | CtxField::TcIndex
         | CtxField::SkbHash
+        | CtxField::HashRecalc
         | CtxField::UserFamily
         | CtxField::UserIp4
         | CtxField::UserPort

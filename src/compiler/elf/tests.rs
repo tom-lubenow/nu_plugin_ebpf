@@ -3916,6 +3916,7 @@ fn test_probe_context_allows_csum_level_on_supported_skb_helper_programs() {
         ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
     ] {
         assert!(ctx.ctx_field_access_error(&CtxField::CsumLevel).is_none());
+        assert!(ctx.ctx_field_access_error(&CtxField::HashRecalc).is_none());
     }
 }
 
@@ -3927,6 +3928,13 @@ fn test_probe_context_rejects_csum_level_on_unsupported_skb_program() {
         .expect("expected unsupported csum_level access error");
     assert!(
         err.contains("ctx.csum_level is only available on tc, sk_skb, and sk_skb_parser programs")
+    );
+
+    let err = ctx
+        .ctx_field_access_error(&CtxField::HashRecalc)
+        .expect("expected unsupported hash_recalc access error");
+    assert!(
+        err.contains("ctx.hash_recalc is only available on tc, sk_skb, and sk_skb_parser programs")
     );
 }
 

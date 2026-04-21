@@ -532,6 +532,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::SkbChecksumHelperFields,
     ),
     (
+        &[CtxField::HashRecalc],
+        BaseContextFieldAccessRequirement::SkbHashHelperFields,
+    ),
+    (
         &[
             CtxField::CgroupClassid,
             CtxField::RouteRealm,
@@ -690,6 +694,7 @@ enum BaseContextFieldAccessRequirement {
     XdpHelperFields,
     PacketLenField,
     SkbChecksumHelperFields,
+    SkbHashHelperFields,
     SkbFields,
     PacketDataFields,
     DataMetaField,
@@ -735,6 +740,10 @@ impl BaseContextFieldAccessRequirement {
             Self::XdpHelperFields => matches!(program_type, EbpfProgramType::Xdp),
             Self::PacketLenField => program_type.supports_packet_len_ctx_field(),
             Self::SkbChecksumHelperFields => matches!(
+                program_type,
+                EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
+            ),
+            Self::SkbHashHelperFields => matches!(
                 program_type,
                 EbpfProgramType::Tc | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser
             ),
@@ -829,6 +838,10 @@ impl BaseContextFieldAccessRequirement {
             | Self::RxQueueIndexField
             | Self::EgressIfindexField => packet_field_access_error(program_type, field),
             Self::SkbChecksumHelperFields => format!(
+                "ctx.{} is only available on tc, sk_skb, and sk_skb_parser programs",
+                field.display_name()
+            ),
+            Self::SkbHashHelperFields => format!(
                 "ctx.{} is only available on tc, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),

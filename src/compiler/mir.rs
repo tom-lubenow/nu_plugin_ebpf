@@ -607,6 +607,8 @@ pub enum CtxField {
     TcIndex,
     /// skb hash (`__sk_buff.hash`)
     SkbHash,
+    /// skb hash from `bpf_get_hash_recalc`
+    HashRecalc,
     /// bpf_sock_addr::user_family
     UserFamily,
     /// bpf_sock_addr::user_ip4 (normalized to host byte order)
@@ -814,6 +816,7 @@ impl CtxField {
             CtxField::EgressIfindex => "egress_ifindex".to_string(),
             CtxField::TcIndex => "tc_index".to_string(),
             CtxField::SkbHash => "hash".to_string(),
+            CtxField::HashRecalc => "hash_recalc".to_string(),
             CtxField::UserFamily => "user_family".to_string(),
             CtxField::UserIp4 => "user_ip4".to_string(),
             CtxField::UserIp6 => "user_ip6".to_string(),

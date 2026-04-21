@@ -121,6 +121,7 @@ Last updated: 2026-04-21.
   - Ordinary TC-egress context access now exposes helper-backed skb metadata without raw helper spelling as `ctx.cgroup_classid`, `ctx.route_realm`, and `ctx.skb_cgroup_id`.
   - Typed helper skb mutation coverage now also includes `bpf_clone_redirect`, `bpf_skb_vlan_push`, and `bpf_skb_vlan_pop`, and packet-pointer invalidation now covers the documented skb mutators that can change the underlying packet buffer.
   - Typed helper skb hash coverage now includes `bpf_set_hash`, completing the modeled `bpf_get_hash_recalc` / `bpf_set_hash` / `bpf_set_hash_invalid` helper surface.
+  - Ordinary skb hash context access now exposes the read-style `bpf_get_hash_recalc` form as `ctx.hash_recalc` / `ctx.recalc_hash` on tc/sk_skb/sk_skb_parser programs.
   - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the tc/sk_skb/sk_skb_parser helper surface.
   - Ordinary skb checksum context access now exposes the read-only `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)` form as `ctx.csum_level` on tc/sk_skb/sk_skb_parser programs.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.

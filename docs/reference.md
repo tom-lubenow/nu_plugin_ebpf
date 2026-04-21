@@ -61,6 +61,7 @@ The closure receives a context parameter with these fields:
 | `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_index` | skb tc_index | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `hash` | skb hash | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `hash_recalc` / `recalc_hash` | skb hash from `bpf_get_hash_recalc`, recomputing it if needed | tc, sk_skb, sk_skb_parser |
 | `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
 | `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
@@ -218,7 +219,9 @@ metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 modeled TC-egress-only helper call because it requires an ancestor
 level argument. `ctx.csum_level` exposes the checksum-level query form
 of `bpf_csum_level` on TC and `sk_skb` programs; inc/dec/reset remain
-helper-call operations because they mutate skb metadata. The
+helper-call operations because they mutate skb metadata.
+`ctx.hash_recalc` exposes `bpf_get_hash_recalc` on the same
+TC/`sk_skb` surface when a valid skb hash is needed after packet edits. The
 skb-backed packet contexts
 (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as
