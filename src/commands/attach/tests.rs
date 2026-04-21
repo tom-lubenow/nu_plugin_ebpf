@@ -2774,6 +2774,67 @@ fn make_list_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_iterate_count_program(cell_path: CellPath, count_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(cell_path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(2),
+                    stream: RegId::new(0),
+                    body: HirBlockId(2),
+                    end: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs::default(),
+                }],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_typed_global_define_count_program(
     define_decl_id: DeclId,
     get_decl_id: DeclId,
@@ -6810,6 +6871,48 @@ fn test_compile_xdp_descending_range_iterate_count_program() {
     assert!(
         !result.bytecode.is_empty(),
         "descending range iterate count should produce bytecode"
+    );
+}
+
+#[test]
+fn test_compile_sk_lookup_socket_src_ip6_iterate_count_program() {
+    let hir = make_ctx_iterate_count_program(
+        CellPath {
+            members: vec![string_member("sk"), string_member("src_ip6")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.sk.src_ip6 iterate/count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("sk_lookup ctx.sk.src_ip6 iterate/count should compile through attach flow");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "sk_lookup ctx.sk.src_ip6 iterate/count should produce bytecode"
     );
 }
 

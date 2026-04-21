@@ -2,6 +2,106 @@ use super::*;
 use crate::compiler::elf::ProgramReturnAlias;
 
 impl<'a> HirToMirLowering<'a> {
+    fn lower_fixed_array_iterate(
+        &mut self,
+        dst: RegId,
+        stream: RegId,
+        body_block: BlockId,
+        exit_block: BlockId,
+        initialize_exit_value: bool,
+    ) -> Result<bool, CompileError> {
+        let mut stream_vreg = self.get_vreg(stream);
+        let mut base_runtime_ty = match self.typed_value_runtime_type(stream, stream_vreg) {
+            Some(ty) => ty,
+            None => return Ok(false),
+        };
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            stream_vreg = self.materialized_metadata_aggregate_vreg(stream, stream_vreg)?;
+            base_runtime_ty = match self.typed_value_runtime_type(stream, stream_vreg) {
+                Some(ty) => ty,
+                None => return Ok(false),
+            };
+        }
+
+        let MirType::Ptr {
+            pointee,
+            address_space: _,
+        } = &base_runtime_ty
+        else {
+            return Ok(false);
+        };
+        let MirType::Array { elem, len } = pointee.as_ref() else {
+            return Ok(false);
+        };
+        if matches!(
+            elem.as_ref(),
+            MirType::Array { .. } | MirType::Struct { .. }
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "Iterate on fixed arrays currently supports only scalar elements, got {:?}",
+                elem.as_ref()
+            )));
+        }
+
+        let dst_vreg = self.get_vreg(dst);
+        let counter_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: counter_vreg,
+            src: MirValue::Const(0),
+        });
+
+        let limit = i64::try_from(*len).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "Iterate fixed array length {} does not fit in i64 loop bounds",
+                len
+            ))
+        })?;
+        let load_block = self.func.alloc_block();
+        self.terminate(MirInst::LoopHeader {
+            counter: counter_vreg,
+            start: 0,
+            step: 1,
+            limit,
+            body: load_block,
+            exit: exit_block,
+        });
+
+        let header_block = self.current_block;
+        let root_ctx_field = self
+            .get_metadata(stream)
+            .and_then(|meta| meta.root_ctx_field.clone());
+        self.current_block = load_block;
+        self.lower_dynamic_typed_numeric_get(
+            dst,
+            stream_vreg,
+            &base_runtime_ty,
+            MirValue::VReg(counter_vreg),
+            root_ctx_field.as_ref(),
+        )?;
+        self.terminate(MirInst::Jump { target: body_block });
+        self.current_block = header_block;
+
+        if initialize_exit_value {
+            self.loop_body_inits
+                .entry(exit_block)
+                .or_default()
+                .push(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+        }
+
+        self.loop_contexts.push(LoopContext {
+            header_block,
+            exit_block,
+            counter_vreg,
+            step: 1,
+        });
+        Ok(true)
+    }
+
     pub(super) fn cleanup_return_src(hir: &HirFunction, target: HirBlockId) -> Option<RegId> {
         fn cleanup_only_for_src(stmts: &[HirStmt], src: RegId) -> bool {
             stmts.iter().all(|stmt| {
@@ -537,8 +637,19 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
 
+                if self.lower_fixed_array_iterate(
+                    *dst,
+                    *stream,
+                    body_block,
+                    exit_block,
+                    !cleanup_return_exit,
+                )? {
+                    continue;
+                }
+
                 return Err(CompileError::UnsupportedInstruction(
-                    "Iterate requires a compile-time known range or bounded list".into(),
+                    "Iterate requires a compile-time known range, bounded list, or fixed scalar array"
+                        .into(),
                 ));
             }
             self.lower_terminator(&block.terminator)?;
@@ -1230,9 +1341,13 @@ impl<'a> HirToMirLowering<'a> {
                         counter_vreg,
                         step: 1,
                     });
+                } else if self
+                    .lower_fixed_array_iterate(*dst, *stream, body_block, exit_block, true)?
+                {
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
-                        "Iterate requires a compile-time known range or bounded list".into(),
+                        "Iterate requires a compile-time known range, bounded list, or fixed scalar array"
+                            .into(),
                     ));
                 }
             }

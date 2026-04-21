@@ -1977,6 +1977,38 @@ fn test_lower_sk_lookup_ctx_socket_src_ip6_index_field() {
 }
 
 #[test]
+fn test_lower_sk_lookup_ctx_socket_src_ip6_iterate_count() {
+    let hir = make_ctx_iterate_count_program(
+        CellPath {
+            members: vec![string_member("sk"), string_member("src_ip6")],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.sk.src_ip6 iterate/count should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::LoopHeader { .. })),
+        "expected fixed-array iterate lowering to emit a bounded loop header"
+    );
+}
+
+#[test]
 fn test_lower_sk_msg_ctx_socket_family_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("family")],

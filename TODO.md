@@ -336,6 +336,7 @@ Near-term priority order:
   - Recent progress: static descending integer ranges now lower through the same bounded-loop machinery in MIR/LIR/codegen, with matching type inference, verifier-types, and VCC range handling.
   - Recent progress: bounded numeric-list `Iterate` now lowers through the same loop-header/loop-back machinery as range iteration, with a runtime `idx < len` guard that preserves verifier-friendly static bounds while allowing ordinary list-driven loops.
   - Recent progress: the shared terminator-lowering path used by inlined user functions and closure bodies now accepts bounded-list `Iterate` too, so aggregate-builder-driven inlining no longer regresses to the older range-only loop lowering path.
+  - Recent progress: bounded `Iterate` now also accepts fixed scalar arrays carried through typed pointer values, reusing the existing dynamic typed `get` lowering inside the same verifier-friendly loop shape.
   - Recent progress: HIR `return early` now lowers through the ordinary MIR return path instead of being rejected outright.
   - Recent progress: HIR `branch-if-empty` now lowers through the compiler's `nothing` sentinel compare instead of being rejected outright.
   - Recent progress: metadata-backed `record spread` now merges compiler-known source fields instead of being rejected outright, preserving downstream field semantics for spread string/record flows.

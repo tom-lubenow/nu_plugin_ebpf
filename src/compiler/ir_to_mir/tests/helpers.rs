@@ -87,6 +87,67 @@ pub(super) fn make_ctx_path_call_program(path: CellPath, decl_id: DeclId) -> Hir
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+pub(super) fn make_ctx_iterate_count_program(path: CellPath, decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(2),
+                    stream: RegId::new(0),
+                    body: HirBlockId(2),
+                    end: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs::default(),
+                }],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 pub(super) fn make_ctx_upsert_program(path: CellPath, lit: HirLiteral) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
