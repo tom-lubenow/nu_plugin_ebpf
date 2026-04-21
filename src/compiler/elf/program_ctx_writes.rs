@@ -430,6 +430,11 @@ const CGROUP_SOCKOPT_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::SockoptRetval,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptRetval),
     ),
+    ContextWriteSurfaceSpec::store_field(
+        "retval",
+        CtxField::SockoptRetval,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SockoptRetval),
+    ),
     ContextWriteSurfaceSpec::special_write("optval", ContextWriteTargetSpec::SockoptOptvalByte),
 ];
 

@@ -11,6 +11,9 @@ enum CtxFieldNameResolutionMode {
 
 const XDP_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::IngressIfindex)];
 const SKB_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("ifindex", CtxField::Ifindex)];
+const SK_MSG_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[("size", CtxField::PacketLen)];
+const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
+    &[("retval", CtxField::SockoptRetval)];
 const NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("ifindex", CtxField::Ifindex),
     ("access_type", CtxField::DeviceAccessType),
@@ -235,6 +238,8 @@ impl EbpfProgramType {
             | EbpfProgramType::CgroupSkb
             | EbpfProgramType::SkSkb
             | EbpfProgramType::SkSkbParser => Some(SKB_CTX_FIELD_ALIAS_ENTRIES),
+            EbpfProgramType::SkMsg => Some(SK_MSG_CTX_FIELD_ALIAS_ENTRIES),
+            EbpfProgramType::CgroupSockopt => Some(CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES),
             _ => None,
         }
     }

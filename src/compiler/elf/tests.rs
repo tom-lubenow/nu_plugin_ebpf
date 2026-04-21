@@ -3283,6 +3283,28 @@ fn test_program_type_resolves_skb_ifindex_alias() {
 }
 
 #[test]
+fn test_program_type_resolves_program_specific_context_aliases() {
+    assert_eq!(
+        EbpfProgramType::SkMsg
+            .resolve_ctx_field_name("size")
+            .expect("sk_msg size alias should resolve"),
+        CtxField::PacketLen
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSockopt
+            .resolve_ctx_field_name("retval")
+            .expect("cgroup_sockopt retval alias should resolve"),
+        CtxField::SockoptRetval
+    );
+    assert_eq!(
+        EbpfProgramType::Kretprobe
+            .resolve_ctx_field_name("retval")
+            .expect("kretprobe retval should keep return-probe meaning"),
+        CtxField::RetVal
+    );
+}
+
+#[test]
 fn test_program_type_resolves_tracepoint_specific_field_names() {
     assert_eq!(
         EbpfProgramType::Tracepoint
@@ -4929,6 +4951,11 @@ fn test_probe_context_resolves_cgroup_sockopt_retval_store_target() {
     assert_eq!(
         ctx.resolve_ctx_store_target("sockopt_retval", None)
             .expect("cgroup_sockopt:get retval target should resolve"),
+        CtxStoreTarget::SockoptRetval
+    );
+    assert_eq!(
+        ctx.resolve_ctx_store_target("retval", None)
+            .expect("cgroup_sockopt:get retval alias target should resolve"),
         CtxStoreTarget::SockoptRetval
     );
     assert!(
