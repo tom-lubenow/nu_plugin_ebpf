@@ -306,13 +306,10 @@ impl<'a> TypeInference<'a> {
                 self.constrain(counter_ty, HMType::I64, "loop_counter");
             }
 
-            MirInst::ListNew { dst, .. } => {
+            MirInst::ListNew { dst, max_len, .. } => {
                 // List pointer is essentially a pointer to stack (list buffer)
                 let dst_ty = self.vreg_type(*dst);
-                let list_ptr_ty = HMType::Ptr {
-                    pointee: Box::new(HMType::I64),
-                    address_space: AddressSpace::Stack,
-                };
+                let list_ptr_ty = self.list_pointer_type(Some(*dst), Some(*max_len));
                 self.constrain(dst_ty, list_ptr_ty, "list_new");
             }
 
@@ -320,10 +317,7 @@ impl<'a> TypeInference<'a> {
                 // Length is u64
                 let dst_ty = self.vreg_type(*dst);
                 let list_ty = self.vreg_type(*list);
-                let list_ptr_ty = HMType::Ptr {
-                    pointee: Box::new(HMType::I64),
-                    address_space: AddressSpace::Stack,
-                };
+                let list_ptr_ty = self.list_pointer_type(Some(*list), None);
                 self.constrain(dst_ty, HMType::U64, "list_len");
                 self.constrain(list_ty, list_ptr_ty, "list_len_src");
             }
@@ -332,10 +326,7 @@ impl<'a> TypeInference<'a> {
                 // Element is i64 (all values stored as 64-bit)
                 let dst_ty = self.vreg_type(*dst);
                 let list_ty = self.vreg_type(*list);
-                let list_ptr_ty = HMType::Ptr {
-                    pointee: Box::new(HMType::I64),
-                    address_space: AddressSpace::Stack,
-                };
+                let list_ptr_ty = self.list_pointer_type(Some(*list), None);
                 self.constrain(dst_ty, HMType::I64, "list_get");
                 self.constrain(list_ty, list_ptr_ty, "list_get_src");
             }
@@ -387,10 +378,7 @@ impl<'a> TypeInference<'a> {
 
             MirInst::ListPush { list, item } => {
                 let list_ty = self.vreg_type(*list);
-                let list_ptr_ty = HMType::Ptr {
-                    pointee: Box::new(HMType::I64),
-                    address_space: AddressSpace::Stack,
-                };
+                let list_ptr_ty = self.list_pointer_type(Some(*list), None);
                 let item_ty = self.vreg_type(*item);
                 self.constrain(list_ty, list_ptr_ty, "list_push_list");
                 self.constrain(item_ty, HMType::I64, "list_push_item");
@@ -450,6 +438,28 @@ impl<'a> TypeInference<'a> {
                     pointee: Box::new(HMType::U8),
                     address_space: AddressSpace::Stack,
                 }),
+        }
+    }
+
+    fn list_pointer_type(&mut self, list_vreg: Option<VReg>, max_len: Option<usize>) -> HMType {
+        if let Some(vreg) = list_vreg
+            && let Some(hint) = self.type_hints.and_then(|hints| hints.get(&vreg))
+        {
+            return HMType::from_mir_type(hint);
+        }
+
+        let pointee = if let Some(max_len) = max_len {
+            HMType::Array {
+                elem: Box::new(HMType::I64),
+                len: max_len.saturating_add(1),
+            }
+        } else {
+            HMType::Var(self.tvar_gen.fresh())
+        };
+
+        HMType::Ptr {
+            pointee: Box::new(pointee),
+            address_space: AddressSpace::Stack,
         }
     }
 

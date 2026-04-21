@@ -120,7 +120,14 @@ impl LirFunction {
     }
 
     pub fn alloc_block(&mut self) -> BlockId {
-        let id = BlockId(self.blocks.len() as u32);
+        let next_id = self
+            .blocks
+            .iter()
+            .map(|block| block.id.0)
+            .max()
+            .map(|id| id.saturating_add(1))
+            .unwrap_or(0);
+        let id = BlockId(next_id);
         self.blocks.push(LirBlock::new(id));
         id
     }

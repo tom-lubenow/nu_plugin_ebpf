@@ -17,3 +17,19 @@ fn test_block_lookup_index_fast_path_and_fallback() {
     func.block_mut(b1).terminator = MirInst::Return { val: None };
     assert!(matches!(func.block(b1).terminator, MirInst::Return { .. }));
 }
+
+#[test]
+fn test_alloc_block_stays_unique_after_block_removal() {
+    let mut func = MirFunction::new();
+    let b0 = func.alloc_block();
+    let b1 = func.alloc_block();
+
+    func.blocks.remove(0);
+
+    let b2 = func.alloc_block();
+    assert_eq!(b2, BlockId(2));
+    assert!(func.has_block(b1));
+    assert!(func.has_block(b2));
+    assert_ne!(b1, b2);
+    assert!(!func.has_block(b0));
+}

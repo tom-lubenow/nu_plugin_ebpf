@@ -8,7 +8,7 @@ use crate::compiler::hir_to_mir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, MapKind, MapRef, MirInst, StructField};
-use crate::compiler::passes::optimize_with_ssa_hints;
+use crate::compiler::passes::{ListLowering, MirPass, optimize_with_ssa_hints};
 use crate::compiler::{
     CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
     StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
@@ -2700,6 +2700,75 @@ fn make_intrinsic_call_return_program(
         ast: vec![None; stmt_count],
         comments: vec![],
         register_count: next_reg + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_list_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::List { capacity: 4 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(10),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(20),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(3),
+                    stream: RegId::new(0),
+                    body: HirBlockId(2),
+                    end: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                }],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 4,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -6181,6 +6250,101 @@ fn test_compile_optimized_sock_ops_stack_map_pop_count_program() {
             .any(|reloc| reloc.symbol_name == map.name)
     );
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_xdp_bounded_list_iterate_count_program() {
+    let hir = make_list_iterate_count_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bounded list iterate count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("bounded list iterate count should compile through attach flow");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "bounded list iterate count should produce bytecode"
+    );
+}
+
+#[test]
+fn test_optimize_xdp_bounded_list_iterate_count_program_lowers_all_list_ops() {
+    let hir = make_list_iterate_count_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bounded list iterate count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let cfg = crate::compiler::cfg::CFG::build(&lowering.program.main);
+    let pass = ListLowering;
+    let _ = pass.run(&mut lowering.program.main, &cfg);
+
+    let remaining: Vec<_> = lowering
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| {
+            block
+                .instructions
+                .iter()
+                .chain(std::iter::once(&block.terminator))
+        })
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::ListNew { .. }
+                    | MirInst::ListPush { .. }
+                    | MirInst::ListLen { .. }
+                    | MirInst::ListGet { .. }
+            )
+        })
+        .cloned()
+        .collect();
+
+    assert!(
+        remaining.is_empty(),
+        "expected no list ops after list lowering, found {remaining:?} in blocks {:?}",
+        lowering.program.main.blocks
+    );
 }
 
 #[test]

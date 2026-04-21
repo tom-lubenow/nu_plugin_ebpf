@@ -202,13 +202,15 @@ fn test_run_with_type_hints_seeds_list_push_temps() {
         .iter()
         .flat_map(|block| block.instructions.iter())
         .find_map(|inst| match inst {
-            MirInst::ListLen {
+            MirInst::Load {
                 dst,
-                list: lowered_list,
-            } if *lowered_list == list => Some(*dst),
+                ptr,
+                offset: 0,
+                ty: MirType::U64,
+            } if *ptr == list => Some(*dst),
             _ => None,
         })
-        .expect("expected lowered list push to reuse ListLen");
+        .expect("expected lowered list push to materialize the list length load");
     let eq_cond = func
         .blocks
         .iter()

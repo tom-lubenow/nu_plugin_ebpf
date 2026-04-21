@@ -156,6 +156,7 @@ impl ListLowering {
                             compare_block_id = next_compare_id;
                         }
 
+                        worklist.push_back(block_id);
                         worklist.push_back(cont_id);
                         changed = true;
                         break;
