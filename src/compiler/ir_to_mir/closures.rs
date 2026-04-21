@@ -809,8 +809,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let source_meta = self.get_metadata(items).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
-                "Record spread requires a source record with compiler-known fields in eBPF"
-                    .into(),
+                "Record spread requires a source record with compiler-known fields in eBPF".into(),
             )
         })?;
 

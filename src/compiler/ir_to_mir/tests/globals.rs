@@ -1672,8 +1672,8 @@ fn test_lower_global_get_before_later_typed_global_define_uses_named_bss_global(
 }
 
 #[test]
-fn test_lower_global_get_before_later_typed_global_define_with_constant_upsert_uses_named_data_global(
-) {
+fn test_lower_global_get_before_later_typed_global_define_with_constant_upsert_uses_named_data_global()
+ {
     let get_decl = DeclId::new(1070);
     let define_decl = DeclId::new(1071);
     let decl_names = HashMap::from([
@@ -2036,8 +2036,8 @@ fn test_lower_global_define_type_record_with_constant_upsert_initializer_uses_na
 }
 
 #[test]
-fn test_lower_global_define_type_i64_with_constant_follow_cell_path_initializer_uses_named_data_global(
-) {
+fn test_lower_global_define_type_i64_with_constant_follow_cell_path_initializer_uses_named_data_global()
+ {
     let define_decl = DeclId::new(1078);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
 
@@ -2179,8 +2179,8 @@ fn test_lower_global_define_type_record_from_metadata_builder_uses_named_data_gl
 }
 
 #[test]
-fn test_lower_global_define_type_string_with_constant_string_append_initializer_uses_named_data_global(
-) {
+fn test_lower_global_define_type_string_with_constant_string_append_initializer_uses_named_data_global()
+ {
     let define_decl = DeclId::new(1079);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
 
@@ -2250,8 +2250,8 @@ fn test_lower_global_define_type_string_with_constant_string_append_initializer_
 }
 
 #[test]
-fn test_lower_global_define_type_string_with_constant_binary_concat_initializer_uses_named_data_global(
-) {
+fn test_lower_global_define_type_string_with_constant_binary_concat_initializer_uses_named_data_global()
+ {
     let define_decl = DeclId::new(1080);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
 

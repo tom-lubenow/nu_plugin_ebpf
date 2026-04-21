@@ -1472,17 +1472,19 @@ fn test_verify_mir_for_program_perf_event_output_helper_rejects_lsm() {
             kind: MapKind::PerfEventArray,
         },
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::PerfEventOutput as u32,
-        args: vec![
-            MirValue::VReg(ctx),
-            MirValue::VReg(map),
-            MirValue::Const(0),
-            MirValue::StackSlot(data_slot),
-            MirValue::Const(8),
-        ],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::PerfEventOutput as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
@@ -1527,11 +1529,13 @@ fn test_verify_mir_for_program_get_stackid_helper_rejects_xdp() {
             kind: MapKind::StackTrace,
         },
     });
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::GetStackId as u32,
-        args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStackId as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::VReg(map), MirValue::Const(0)],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
@@ -1569,15 +1573,17 @@ fn test_verify_mir_for_program_probe_read_helper_rejects_xdp() {
     let dst = func.alloc_vreg();
     let out_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
 
-    func.block_mut(entry).instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::ProbeRead as u32,
-        args: vec![
-            MirValue::StackSlot(out_slot),
-            MirValue::Const(8),
-            MirValue::VReg(ctx),
-        ],
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ProbeRead as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(8),
+                MirValue::VReg(ctx),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();

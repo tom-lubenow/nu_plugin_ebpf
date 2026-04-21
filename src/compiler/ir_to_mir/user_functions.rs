@@ -522,7 +522,8 @@ impl<'a> HirToMirLowering<'a> {
                             reg_constants.insert(*dst, Value::list(Vec::new(), Span::unknown()));
                         }
                         HirLiteral::Record { .. } => {
-                            reg_constants.insert(*dst, Value::record(Record::new(), Span::unknown()));
+                            reg_constants
+                                .insert(*dst, Value::record(Record::new(), Span::unknown()));
                         }
                         _ => return None,
                     }
@@ -567,11 +568,12 @@ impl<'a> HirToMirLowering<'a> {
                 reg_constants.insert(*src_dst, Value::string(dst, Span::unknown()));
             }
             HirStmt::GlobFrom { src_dst, no_expand } => {
-                let source = reg_constants.get(src_dst)?.clone().coerce_into_string().ok()?;
-                reg_constants.insert(
-                    *src_dst,
-                    Value::glob(source, *no_expand, Span::unknown()),
-                );
+                let source = reg_constants
+                    .get(src_dst)?
+                    .clone()
+                    .coerce_into_string()
+                    .ok()?;
+                reg_constants.insert(*src_dst, Value::glob(source, *no_expand, Span::unknown()));
             }
             HirStmt::ListPush { src_dst, item } => {
                 let Value::List { mut vals, .. } = reg_constants.get(src_dst)?.clone() else {

@@ -8948,8 +8948,7 @@ fn test_verify_mir_helper_sk_storage_delete_rejects_non_socket_reference() {
     types.insert(delete_ret, MirType::I64);
     types.insert(cleanup_ret, MirType::I64);
 
-    let err =
-        verify_mir(&func, &types).expect_err("expected sk_storage_delete ref-kind mismatch");
+    let err = verify_mir(&func, &types).expect_err("expected sk_storage_delete ref-kind mismatch");
     assert!(
         err.iter().any(|e| e
             .message

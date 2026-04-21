@@ -174,8 +174,7 @@ fn test_hir_to_mir_return_early_lowers_like_return() {
     let mir = lower_hir_to_mir(&hir, None, &HashMap::new())
         .expect("return early should lower through the ordinary return path");
 
-    verify_mir(&mir.main, &HashMap::new())
-        .expect("return early should verify after MIR lowering");
+    verify_mir(&mir.main, &HashMap::new()).expect("return early should verify after MIR lowering");
 }
 
 #[test]
@@ -223,6 +222,5 @@ fn test_hir_to_mir_branch_if_empty_lowers_through_nothing_compare() {
         "expected branch-if-empty lowering to emit a nothing-sentinel comparison"
     );
 
-    verify_mir(&mir.main, &HashMap::new())
-        .expect("branch-if-empty lowering should verify");
+    verify_mir(&mir.main, &HashMap::new()).expect("branch-if-empty lowering should verify");
 }

@@ -637,7 +637,9 @@ fn eval_supported_constant_get_call(
 ) -> Result<Value, LabeledError> {
     let value = input.ok_or_else(|| {
         LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            format!("`{cmd_name}` in a compile-time global initializer must receive pipeline input"),
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
             span,
         )
     })?;
@@ -665,7 +667,9 @@ fn eval_supported_constant_list_mutation_call(
 ) -> Result<Value, LabeledError> {
     let value = input.ok_or_else(|| {
         LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            format!("`{cmd_name}` in a compile-time global initializer must receive pipeline input"),
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
             span,
         )
     })?;
@@ -677,11 +681,12 @@ fn eval_supported_constant_list_mutation_call(
 
     let value_span = value.span();
     let Value::List { vals, .. } = value else {
-        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
-            .with_label(
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!("`{cmd_name}` in a compile-time global initializer requires list input"),
                 span,
-            ));
+            ),
+        );
     };
 
     let updated = match cmd_name {
