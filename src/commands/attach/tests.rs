@@ -6306,6 +6306,18 @@ fn test_compile_socket_filter_ctx_pkt_type_counter_program() {
 }
 
 #[test]
+fn test_compile_socket_filter_ctx_protocol_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("protocol")],
+        },
+        "socket_filter ctx.protocol count",
+    );
+}
+
+#[test]
 fn test_compile_socket_filter_ctx_vlan_tci_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SocketFilter,
@@ -6529,6 +6541,18 @@ fn test_compile_tc_ctx_wire_len_counter_program() {
 }
 
 #[test]
+fn test_compile_tc_ctx_protocol_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("protocol")],
+        },
+        "tc ctx.protocol count",
+    );
+}
+
+#[test]
 fn test_compile_tc_egress_ctx_skb_ancestor_cgroup_id_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Tc,
@@ -6549,6 +6573,18 @@ fn test_compile_cgroup_skb_ctx_mark_counter_program() {
             members: vec![string_member("mark")],
         },
         "cgroup_skb ctx.mark count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_skb_ctx_protocol_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        CellPath {
+            members: vec![string_member("protocol")],
+        },
+        "cgroup_skb ctx.protocol count",
     );
 }
 
@@ -6863,6 +6899,18 @@ fn test_compile_sk_skb_ctx_packet_len_counter_program() {
 }
 
 #[test]
+fn test_compile_sk_skb_ctx_protocol_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("protocol")],
+        },
+        "sk_skb ctx.protocol count",
+    );
+}
+
+#[test]
 fn test_compile_sk_skb_parser_ctx_packet_len_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::SkSkbParser,
@@ -6871,6 +6919,18 @@ fn test_compile_sk_skb_parser_ctx_packet_len_counter_program() {
             members: vec![string_member("packet_len")],
         },
         "sk_skb_parser ctx.packet_len count",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_parser_ctx_protocol_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("protocol")],
+        },
+        "sk_skb_parser ctx.protocol count",
     );
 }
 

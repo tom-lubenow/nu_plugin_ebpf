@@ -111,6 +111,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type on skb-backed packet programs
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping on skb-backed packet programs
     {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order on skb-backed packet programs
+    {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol on skb-backed packet programs
     {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present on skb-backed packet programs
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI on skb-backed packet programs
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
@@ -461,6 +462,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
     {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order
+    {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol on skb-backed packet programs
     {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
@@ -505,6 +507,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.pkt_type } - Get the skb pkt_type
     {|ctx| $ctx.queue_mapping } - Get the skb queue_mapping
     {|ctx| $ctx.eth_protocol } - Get the skb protocol / ethertype in host byte order
+    {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol on skb-backed packet programs
     {|ctx| $ctx.vlan_present } - Get whether skb VLAN metadata is present
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order
