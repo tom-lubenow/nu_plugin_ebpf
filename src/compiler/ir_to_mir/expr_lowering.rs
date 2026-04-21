@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::ProgramValueAccess;
-use crate::compiler::ctx_field_schema::synthetic_bpf_tcp_sock_type;
+use crate::compiler::ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::UnaryOpKind;
@@ -887,30 +887,59 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(MirType::I64);
         }
 
-        let socket_tcp_projection = if root_ctx_field == Some(&CtxField::Socket) {
+        let socket_helper_projection = if root_ctx_field == Some(&CtxField::Socket) {
             match path_members {
                 [PathMember::String { val, .. }, rest @ ..]
                     if val == "tcp" || val == "tcp_sock" =>
                 {
-                    Some(rest)
+                    Some((
+                        "ctx.sk.tcp",
+                        BpfHelper::TcpSock,
+                        MirType::Ptr {
+                            pointee: Box::new(synthetic_bpf_tcp_sock_type()),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        rest,
+                    ))
                 }
+                [PathMember::String { val, .. }, rest @ ..]
+                    if val == "full" || val == "fullsock" || val == "full_sock" =>
+                {
+                    Some((
+                        "ctx.sk.full",
+                        BpfHelper::SkFullsock,
+                        MirType::Ptr {
+                            pointee: Box::new(synthetic_bpf_sock_type()),
+                            address_space: AddressSpace::Kernel,
+                        },
+                        rest,
+                    ))
+                }
+                [PathMember::String { val, .. }, rest @ ..] if val == "listener" => Some((
+                    "ctx.sk.listener",
+                    BpfHelper::GetListenerSock,
+                    MirType::Ptr {
+                        pointee: Box::new(synthetic_bpf_sock_type()),
+                        address_space: AddressSpace::Kernel,
+                    },
+                    rest,
+                )),
                 _ => None,
             }
         } else {
             None
         };
 
-        if let Some(tcp_members) = socket_tcp_projection {
-            if tcp_members.is_empty() {
+        if let Some((projection_name, helper, helper_ret_ty, field_members)) =
+            socket_helper_projection
+        {
+            if field_members.is_empty() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "typed field path '{}' requires a TCP socket field after ctx.sk.tcp, e.g. ctx.sk.tcp.snd_cwnd",
-                    path_desc
+                    "typed field path '{}' requires a socket field after {}, e.g. {}.family",
+                    path_desc, projection_name, projection_name
                 )));
             }
-            if let Some(message) = self
-                .probe_ctx
-                .and_then(|ctx| ctx.helper_call_error(BpfHelper::TcpSock))
-            {
+            if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
                 return Err(CompileError::UnsupportedInstruction(message));
             }
 
@@ -934,28 +963,25 @@ impl<'a> HirToMirLowering<'a> {
             });
 
             self.current_block = helper_block;
-            let tcp_ptr_ty = MirType::Ptr {
-                pointee: Box::new(synthetic_bpf_tcp_sock_type()),
-                address_space: AddressSpace::Kernel,
-            };
-            let tcp_vreg = self.func.alloc_vreg();
-            self.vreg_type_hints.insert(tcp_vreg, tcp_ptr_ty.clone());
+            let helper_ret_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints
+                .insert(helper_ret_vreg, helper_ret_ty.clone());
             self.emit(MirInst::CallHelper {
-                dst: tcp_vreg,
-                helper: BpfHelper::TcpSock as u32,
+                dst: helper_ret_vreg,
+                helper: helper as u32,
                 args: vec![MirValue::VReg(base_vreg)],
             });
 
-            let has_tcp_vreg = self.func.alloc_vreg();
+            let has_helper_ret_vreg = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
-                dst: has_tcp_vreg,
+                dst: has_helper_ret_vreg,
                 op: BinOpKind::Ne,
-                lhs: MirValue::VReg(tcp_vreg),
+                lhs: MirValue::VReg(helper_ret_vreg),
                 rhs: MirValue::Const(0),
             });
             let field_block = self.func.alloc_block();
             self.terminate(MirInst::Branch {
-                cond: has_tcp_vreg,
+                cond: has_helper_ret_vreg,
                 if_true: field_block,
                 if_false: join_block,
             });
@@ -964,9 +990,9 @@ impl<'a> HirToMirLowering<'a> {
             let projected_ty = self.lower_typed_value_projection(
                 dst_reg,
                 dst_vreg,
-                tcp_vreg,
-                &tcp_ptr_ty,
-                tcp_members,
+                helper_ret_vreg,
+                &helper_ret_ty,
+                field_members,
                 path_desc,
                 None,
                 projected_semantics,

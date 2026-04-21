@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::ctx_field_schema::synthetic_bpf_tcp_sock_type;
+use super::ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
 use super::elf::{ProbeContext, ProgramCapability, ProgramTypeInfo};
 use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
@@ -207,7 +207,10 @@ impl<'a> TypeInference<'a> {
             | BpfHelper::SkLookupUdp
             | BpfHelper::SkcLookupTcp
             | BpfHelper::GetListenerSock
-            | BpfHelper::SkFullsock => Some(MirType::named_kernel_struct_ptr("bpf_sock")),
+            | BpfHelper::SkFullsock => Some(MirType::Ptr {
+                pointee: Box::new(synthetic_bpf_sock_type()),
+                address_space: AddressSpace::Kernel,
+            }),
             BpfHelper::TcpSock => Some(MirType::Ptr {
                 pointee: Box::new(synthetic_bpf_tcp_sock_type()),
                 address_space: AddressSpace::Kernel,

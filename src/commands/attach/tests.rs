@@ -6616,19 +6616,43 @@ fn test_compile_cgroup_sockopt_get_ctx_netns_cookie_counter_program() {
 }
 
 #[test]
-fn test_compile_cgroup_sockopt_get_ctx_sk_tcp_metric_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::CgroupSockopt,
-        "/sys/fs/cgroup:get",
-        CellPath {
-            members: vec![
+fn test_compile_socket_helper_ctx_projection_programs() {
+    let cases = [
+        (
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+            vec![
                 string_member("sk"),
                 string_member("tcp"),
                 string_member("snd_cwnd"),
             ],
-        },
-        "cgroup_sockopt:get ctx.sk.tcp.snd_cwnd count",
-    );
+            "cgroup_sockopt:get ctx.sk.tcp.snd_cwnd count",
+        ),
+        (
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            vec![
+                string_member("sk"),
+                string_member("full"),
+                string_member("family"),
+            ],
+            "tc ctx.sk.full.family count",
+        ),
+        (
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:ingress",
+            vec![
+                string_member("sk"),
+                string_member("listener"),
+                string_member("family"),
+            ],
+            "cgroup_skb ctx.sk.listener.family count",
+        ),
+    ];
+
+    for (program_type, target, members, context) in cases {
+        assert_ctx_path_count_program_compiles(program_type, target, CellPath { members }, context);
+    }
 }
 
 #[test]

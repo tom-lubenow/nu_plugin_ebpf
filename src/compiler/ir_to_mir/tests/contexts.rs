@@ -6,7 +6,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxStoreTarget;
-use nu_protocol::ast::CellPath;
+use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
 use std::collections::HashMap;
 
@@ -333,17 +333,15 @@ fn test_lower_sk_msg_ctx_sk_cgroup_id_projection_rejected() {
     );
 }
 
-#[test]
-fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![
-            string_member("sk"),
-            string_member("tcp"),
-            string_member("snd_cwnd"),
-        ],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
-
+fn assert_ctx_sk_helper_projection_lowers(
+    program_type: EbpfProgramType,
+    target: &str,
+    members: Vec<PathMember>,
+    expected_helper: BpfHelper,
+    context: &str,
+) {
+    let hir = make_ctx_path_program(CellPath { members });
+    let probe_ctx = ProbeContext::new(program_type, target);
     let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
@@ -352,7 +350,7 @@ fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("cgroup_sockopt ctx.sk.tcp.snd_cwnd should lower");
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
 
     assert!(
         result
@@ -377,10 +375,10 @@ fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
             .any(|block| block.instructions.iter().any(|inst| matches!(
                 inst,
                 MirInst::CallHelper {
-                    helper,
+                    helper: helper_id,
                     args,
                     ..
-                } if *helper == BpfHelper::TcpSock as u32 && args.len() == 1
+                } if *helper_id == expected_helper as u32 && args.len() == 1
             )))
     );
     assert!(
@@ -396,7 +394,7 @@ fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
                     ..
                 }
             ))),
-        "projection should default to zero on null socket/non-TCP paths"
+        "{context} should default to zero on null helper paths"
     );
     assert!(
         result
@@ -411,7 +409,52 @@ fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
                     ..
                 }
             ))),
-        "tcp metric should load from the helper-returned bpf_tcp_sock layout"
+        "{context} should load a scalar field from the helper-returned socket layout"
+    );
+}
+
+#[test]
+fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
+    assert_ctx_sk_helper_projection_lowers(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        vec![
+            string_member("sk"),
+            string_member("tcp"),
+            string_member("snd_cwnd"),
+        ],
+        BpfHelper::TcpSock,
+        "cgroup_sockopt ctx.sk.tcp.snd_cwnd",
+    );
+}
+
+#[test]
+fn test_lower_tc_ctx_sk_full_projection_calls_helper() {
+    assert_ctx_sk_helper_projection_lowers(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        vec![
+            string_member("sk"),
+            string_member("full"),
+            string_member("family"),
+        ],
+        BpfHelper::SkFullsock,
+        "tc ctx.sk.full.family",
+    );
+}
+
+#[test]
+fn test_lower_cgroup_skb_ctx_sk_listener_projection_calls_helper() {
+    assert_ctx_sk_helper_projection_lowers(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        vec![
+            string_member("sk"),
+            string_member("listener"),
+            string_member("family"),
+        ],
+        BpfHelper::GetListenerSock,
+        "cgroup_skb ctx.sk.listener.family",
     );
 }
 
@@ -432,7 +475,10 @@ fn test_lower_ctx_sk_tcp_projection_rejects_missing_metric() {
     )
     .expect_err("bare ctx.sk.tcp should be rejected");
 
-    assert!(err.to_string().contains("requires a TCP socket field"));
+    assert!(
+        err.to_string()
+            .contains("requires a socket field after ctx.sk.tcp")
+    );
 }
 
 #[test]

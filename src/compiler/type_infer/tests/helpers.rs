@@ -6,6 +6,34 @@ const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
+fn assert_bpf_sock_ptr(ty: Option<&MirType>) {
+    let Some(MirType::Ptr {
+        pointee,
+        address_space,
+    }) = ty
+    else {
+        panic!("expected bpf_sock kernel pointer, got {ty:?}");
+    };
+    assert_eq!(*address_space, AddressSpace::Kernel);
+
+    let MirType::Struct {
+        name: Some(name),
+        fields,
+        ..
+    } = pointee.as_ref()
+    else {
+        panic!("expected bpf_sock struct pointee, got {pointee:?}");
+    };
+    assert_eq!(name, "bpf_sock");
+
+    let family = fields
+        .iter()
+        .find(|field| field.name == "family")
+        .expect("expected bpf_sock.family field");
+    assert_eq!(family.ty, MirType::U32);
+    assert_eq!(family.offset, 4);
+}
+
 fn assert_bpf_tcp_sock_ptr(ty: Option<&MirType>) {
     let Some(MirType::Ptr {
         pointee,
@@ -5202,10 +5230,7 @@ fn test_infer_helper_get_listener_sock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    assert_eq!(
-        types.get(&dst),
-        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
-    );
+    assert_bpf_sock_ptr(types.get(&dst));
 }
 
 #[test]
@@ -5247,10 +5272,7 @@ fn test_infer_helper_sk_fullsock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    assert_eq!(
-        types.get(&dst),
-        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
-    );
+    assert_bpf_sock_ptr(types.get(&dst));
 }
 
 #[test]
