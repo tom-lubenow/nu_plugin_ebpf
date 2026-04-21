@@ -472,7 +472,7 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::TaskFields,
     ),
     (
-        &[CtxField::Cpu],
+        &[CtxField::Cpu, CtxField::NumaNode],
         BaseContextFieldAccessRequirement::CpuField,
     ),
     (

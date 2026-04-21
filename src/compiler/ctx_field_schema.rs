@@ -370,7 +370,6 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::Tid
         | CtxField::Uid
         | CtxField::Gid
-        | CtxField::Cpu
         | CtxField::PktType
         | CtxField::QueueMapping
         | CtxField::EthProtocol
@@ -452,6 +451,12 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         }
         CtxField::TstampType => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U8))
+        }
+        CtxField::NumaNode => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::I64))
+        }
+        CtxField::Cpu => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
         }
         CtxField::Timestamp
         | CtxField::BootTimestamp

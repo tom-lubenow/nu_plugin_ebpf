@@ -519,6 +519,8 @@ pub enum CtxField {
     Task,
     /// CPU ID
     Cpu,
+    /// Current NUMA node ID
+    NumaNode,
     /// Timestamp (nanoseconds)
     Timestamp,
     /// Boot-time timestamp (nanoseconds, includes suspend)
@@ -758,6 +760,7 @@ impl CtxField {
             CtxField::Comm => "comm".to_string(),
             CtxField::Task => "task".to_string(),
             CtxField::Cpu => "cpu".to_string(),
+            CtxField::NumaNode => "numa_node".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
             CtxField::BootTimestamp => "ktime_boot".to_string(),
             CtxField::CoarseTimestamp => "ktime_coarse".to_string(),

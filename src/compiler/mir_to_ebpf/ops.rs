@@ -493,6 +493,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::NumaNode => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetNumaNodeId));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::CgroupId => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetCurrentCgroupId));

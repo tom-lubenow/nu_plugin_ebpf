@@ -3314,6 +3314,12 @@ fn test_program_type_resolves_tracepoint_builtin_alias_names() {
             .expect("tracepoint arg3 should preserve builtin arg"),
         CtxField::Arg(3)
     );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("numa_node_id")
+            .expect("tracepoint numa_node_id should preserve builtin alias"),
+        CtxField::NumaNode
+    );
 }
 
 #[test]
@@ -3775,6 +3781,7 @@ fn test_probe_context_rejects_pid_on_xdp() {
 fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::Cpu).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NumaNode).is_none());
     for field in [
         CtxField::Timestamp,
         CtxField::BootTimestamp,
@@ -3784,6 +3791,15 @@ fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
     ] {
         assert!(ctx.ctx_field_access_error(&field).is_none());
     }
+}
+
+#[test]
+fn test_probe_context_rejects_numa_node_on_struct_ops() {
+    let ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::NumaNode)
+        .expect("expected struct_ops numa_node access error");
+    assert!(err.contains("ctx.numa_node is not available on struct_ops programs"));
 }
 
 #[test]

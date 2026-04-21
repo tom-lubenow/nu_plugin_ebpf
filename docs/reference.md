@@ -16,7 +16,8 @@ The closure receives a context parameter with these fields:
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe |
 | `task` | Current `task_struct *` pointer from `bpf_get_current_task_btf`; the legacy `bpf_get_current_task` helper is also modeled as a typed non-null task pointer. BTF-backed fields such as `task.pid` can be projected when kernel BTF is available | kprobe, kretprobe, fentry, fexit, tracepoint, raw_tracepoint, uprobe, uretprobe, lsm, perf_event |
 | `cgroup_id` | Current task cgroup ID | all current program types |
-| `cpu` | CPU ID | All |
+| `cpu` | CPU ID | all non-struct_ops program types |
+| `numa_node` / `numa_node_id` | Current NUMA node ID from `bpf_get_numa_node_id` | all non-struct_ops program types |
 | `ktime` | Kernel timestamp (ns) | All |
 | `ktime_boot` | Boot-time kernel timestamp (ns, includes suspend time) | All |
 | `ktime_coarse` | Coarse kernel timestamp (ns) | All |
