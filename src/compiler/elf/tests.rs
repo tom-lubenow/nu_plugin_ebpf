@@ -3806,6 +3806,7 @@ fn test_probe_context_rejects_numa_node_on_struct_ops() {
 fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::XdpBuffLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataMeta).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -3821,6 +3822,15 @@ fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
         ctx.ctx_field_access_error(&CtxField::EgressIfindex)
             .is_none()
     );
+}
+
+#[test]
+fn test_probe_context_rejects_xdp_buff_len_on_non_xdp() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::XdpBuffLen)
+        .expect("expected non-xdp xdp_buff_len access error");
+    assert!(err.contains("ctx.xdp_buff_len is only available on xdp programs"));
 }
 
 #[test]

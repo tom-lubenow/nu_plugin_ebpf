@@ -520,6 +520,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::PerfEventHelperFields,
     ),
     (
+        &[CtxField::XdpBuffLen],
+        BaseContextFieldAccessRequirement::XdpHelperFields,
+    ),
+    (
         &[CtxField::PacketLen],
         BaseContextFieldAccessRequirement::PacketLenField,
     ),
@@ -679,6 +683,7 @@ enum BaseContextFieldAccessRequirement {
     TimestampField,
     PerfEventField,
     PerfEventHelperFields,
+    XdpHelperFields,
     PacketLenField,
     SkbFields,
     PacketDataFields,
@@ -722,6 +727,7 @@ impl BaseContextFieldAccessRequirement {
             Self::TimestampField => program_type.supports_timestamp_ctx_field(),
             Self::PerfEventField => program_type.supports_perf_event_ctx_fields(),
             Self::PerfEventHelperFields => program_type.uses_perf_event_context(),
+            Self::XdpHelperFields => matches!(program_type, EbpfProgramType::Xdp),
             Self::PacketLenField => program_type.supports_packet_len_ctx_field(),
             Self::SkbFields => program_type.supports_skb_ctx_fields(),
             Self::PacketDataFields => program_type.supports_packet_data_ctx_fields(),
@@ -802,6 +808,10 @@ impl BaseContextFieldAccessRequirement {
             ),
             Self::PerfEventHelperFields => format!(
                 "ctx.{} is only available on perf_event programs",
+                field.display_name()
+            ),
+            Self::XdpHelperFields => format!(
+                "ctx.{} is only available on xdp programs",
                 field.display_name()
             ),
             Self::PacketLenField

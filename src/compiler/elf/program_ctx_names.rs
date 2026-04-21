@@ -126,6 +126,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "perf_counter" => CtxField::PerfCounter,
         "perf_enabled" => CtxField::PerfEnabled,
         "perf_running" => CtxField::PerfRunning,
+        "xdp_buff_len" | "xdp_buffer_len" => CtxField::XdpBuffLen,
         "packet_len" | "len" => CtxField::PacketLen,
         "pkt_type" => CtxField::PktType,
         "queue_mapping" => CtxField::QueueMapping,

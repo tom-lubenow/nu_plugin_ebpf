@@ -549,6 +549,8 @@ pub enum CtxField {
     PerfRunning,
     /// XDP packet length (`data_end - data`)
     PacketLen,
+    /// Total XDP buffer length, including paged fragments
+    XdpBuffLen,
     /// skb packet type (`__sk_buff.pkt_type`)
     PktType,
     /// skb queue mapping (`__sk_buff.queue_mapping`)
@@ -781,6 +783,7 @@ impl CtxField {
             CtxField::PerfEnabled => "perf_enabled".to_string(),
             CtxField::PerfRunning => "perf_running".to_string(),
             CtxField::PacketLen => "packet_len".to_string(),
+            CtxField::XdpBuffLen => "xdp_buff_len".to_string(),
             CtxField::PktType => "pkt_type".to_string(),
             CtxField::QueueMapping => "queue_mapping".to_string(),
             CtxField::EthProtocol => "eth_protocol".to_string(),

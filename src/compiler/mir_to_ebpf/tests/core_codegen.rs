@@ -2443,6 +2443,50 @@ fn test_compile_tc_egress_helper_backed_ctx_fields_call_expected_helpers() {
 }
 
 #[test]
+fn test_compile_xdp_buff_len_ctx_field_calls_expected_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::XdpBuffLen,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_ALU64 | opcode::BPF_MOV | opcode::BPF_X
+            && insn.dst_reg == EbpfReg::R1.as_u8()
+            && insn.src_reg == EbpfReg::R9.as_u8()
+    }));
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::XdpGetBuffLen as i32
+    }));
+}
+
+#[test]
 fn test_compile_kprobe_cgroup_id_load_calls_helper() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
 

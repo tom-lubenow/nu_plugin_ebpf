@@ -330,6 +330,26 @@ fn test_infer_tc_egress_helper_backed_ctx_fields() {
 }
 
 #[test]
+fn test_infer_ctx_xdp_buff_len() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::XdpBuffLen,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U64));
+}
+
+#[test]
 fn test_infer_ctx_comm() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

@@ -474,6 +474,7 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::PerfCounter
         | CtxField::PerfEnabled
         | CtxField::PerfRunning
+        | CtxField::XdpBuffLen
         | CtxField::SkbCgroupId
         | CtxField::LookupCookie
         | CtxField::SocketCookie
