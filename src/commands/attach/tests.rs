@@ -2741,6 +2741,63 @@ fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgra
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_bound_ctx_path_projection_call_program(
+    root_path: CellPath,
+    projection_path: CellPath,
+    decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let bound_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(root_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: bound_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: bound_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(projection_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(2),
+                    path: RegId::new(3),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 9],
+        ast: vec![None; 9],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_ctx_path_store_program(
     cell_path: CellPath,
     new_value: HirLiteral,
@@ -6089,6 +6146,36 @@ fn test_compile_kprobe_ctx_task_pid_counter_program() {
             members: vec![string_member("task"), string_member("pid")],
         },
         "kprobe ctx.task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_kprobe_bound_ctx_task_pid_counter_program() {
+    let path = [TrampolineFieldSelector::Field("pid".to_string())];
+    if !matches!(
+        KernelBtf::get().kernel_named_type_field_projection("task_struct", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    ) {
+        return;
+    }
+
+    let hir = make_bound_ctx_path_projection_call_program(
+        CellPath {
+            members: vec![string_member("task")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        DeclId::new(42),
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        &decl_names,
+        "bound kprobe ctx.task.pid count",
     );
 }
 

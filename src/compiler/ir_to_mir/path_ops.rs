@@ -694,6 +694,11 @@ impl<'a> HirToMirLowering<'a> {
             slot,
         });
 
+        let task_root_runtime_ty = if ctx_field == CtxField::Task {
+            self.task_struct_root_runtime_type().ok().flatten()
+        } else {
+            None
+        };
         let ctx_field_types = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &ctx_field);
         let (field_type, runtime_type_hint) = match &ctx_field {
             CtxField::Arg(_)
@@ -708,7 +713,10 @@ impl<'a> HirToMirLowering<'a> {
                 .unwrap_or((MirType::I64, None)),
             _ if ctx_field_types.is_some() => {
                 let spec = ctx_field_types.unwrap();
-                (spec.semantic_ty, Some(spec.runtime_ty))
+                (
+                    spec.semantic_ty,
+                    Some(task_root_runtime_ty.unwrap_or(spec.runtime_ty)),
+                )
             }
             _ => precise_trampoline_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
