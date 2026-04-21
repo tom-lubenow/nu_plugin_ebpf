@@ -168,6 +168,58 @@ fn make_task_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("task")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(b"task_state".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::String(b"task-storage".to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: map_contains_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                named: vec![(b"kind".to_vec(), RegId::new(3))],
+                ..Default::default()
+            },
+        },
+    ];
+    let spans_len = stmts.len() + 1;
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); spans_len],
+        ast: vec![None; spans_len],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_sock_ops_socket_map_put_program(
     map_put_decl: DeclId,
     kind: &str,
@@ -388,6 +440,75 @@ fn test_lower_map_delete_task_storage_uses_storage_helper() {
                     if *helper == BpfHelper::TaskStorageDelete as u32 && args.len() == 2
             ))
     );
+}
+
+#[test]
+fn test_lower_map_contains_task_storage_uses_storage_lookup() {
+    let hir = make_task_storage_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("task-storage map-contains should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::TaskStorage,
+                    },
+                    ..
+                } if name == "task_state"
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::TaskStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[2], MirValue::Const(0))
+                        && matches!(args[3], MirValue::Const(0))
+            ))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Ne,
+                    rhs: MirValue::Const(0),
+                    ..
+                }
+            ))
+    );
+    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
 }
 
 #[test]

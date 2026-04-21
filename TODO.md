@@ -286,6 +286,7 @@ Near-term priority order:
   - Recent progress: added `BPF_MAP_TYPE_CGROUP_ARRAY` map definitions plus first-class `map-contains --kind cgroup-array` membership probes. Tc programs lower to `bpf_skb_under_cgroup` for the current packet; other programs lower to `bpf_current_task_under_cgroup` for the current task.
   - Recent progress: generic MIR map-operation capability policy now lives on `MapKind`, so type inference, verifier_types, VCC, and backend codegen reject unsupported operation/kind pairs consistently instead of relying only on Nu lowering.
   - Recent progress: `map-contains` now works on ordinary lookup-capable generic maps, defaulting to hash maps and lowering to `bpf_map_lookup_elem(...) != 0`, while retaining the special bloom-filter and cgroup-array helper paths.
+  - Recent progress: `map-contains --kind sk-storage|task-storage|inode-storage|cgrp-storage` now performs lookup-only local-storage presence checks over the owning object pointer, keeping that boolean path on the same resource-oriented map surface as `map-get` and `map-delete`.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.

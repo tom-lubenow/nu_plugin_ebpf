@@ -850,6 +850,11 @@ generic map. Without `--kind`, the map kind defaults to `hash`; explicit lookup
 map kinds include `array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`,
 `per-cpu-array`, and `lru-per-cpu-hash`.
 
+With local-storage map kinds (`sk-storage`, `task-storage`, `inode-storage`,
+or `cgrp-storage`), the pipeline input or explicit value is the owning kernel
+object pointer. The command performs a lookup-only storage get and returns
+whether storage already exists.
+
 With `--kind bloom-filter`, the value is a bloom-filter probe value. This wraps
 the kernel `bpf_map_peek_elem` membership probe and returns a boolean. Bloom
 filters can have false positives but not false negatives.
@@ -860,6 +865,7 @@ wraps `bpf_current_task_under_cgroup` for the current task.
 
 Example:
   let exists = ($ctx.pid | map-contains seen_pids)
+  let has_state = ($ctx.task | map-contains task_state --kind task-storage)
   let seen = ($ctx.pid | map-contains recent_pids --kind bloom-filter)
   let in_group = (map-contains tracked_cgroups 0 --kind cgroup-array)"#
     }
@@ -887,6 +893,11 @@ Example:
             Example {
                 example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-contains seen_pids }",
                 description: "Check hash-map membership for the current PID",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'fentry:security_file_open' {|ctx| $ctx.task | map-contains task_state --kind task-storage }",
+                description: "Check whether task-local storage exists for the current task",
                 result: None,
             },
             Example {

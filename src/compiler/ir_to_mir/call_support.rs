@@ -389,6 +389,7 @@ impl<'a> HirToMirLowering<'a> {
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
             Some(kind) if kind.supports_generic_map_op(MapOpKind::Lookup) => Ok(kind),
+            Some(kind) if Self::is_local_storage_map_kind(kind) => Ok(kind),
             Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
             Some(MapKind::CgroupArray) => Ok(MapKind::CgroupArray),
             Some(MapKind::Queue | MapKind::Stack) => {
@@ -406,20 +407,12 @@ impl<'a> HirToMirLowering<'a> {
                     "{context} --kind {kind} is a socket redirection map; use socket-map specific operations instead"
                 )))
             }
-            Some(
-                MapKind::SkStorage
-                | MapKind::InodeStorage
-                | MapKind::TaskStorage
-                | MapKind::CgrpStorage,
-            ) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} is a local-storage map; use map-get over an owner object instead"
-            ))),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} does not support map kind {:?}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, bloom-filter, cgroup-array"
+                "{context} --kind must be one of: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, sk-storage, task-storage, inode-storage, cgrp-storage, bloom-filter, cgroup-array"
             ))),
         }
     }

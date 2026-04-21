@@ -766,7 +766,7 @@ Advanced commands:
   map-push          - Push into a named queue or stack map (--kind queue|stack)
   map-peek          - Peek the next queue/stack value as a maybe-null pointer
   map-pop           - Pop the next queue/stack value as a maybe-null pointer
-  map-contains      - Test lookup-map, bloom-filter, or cgroup-array membership
+  map-contains      - Test lookup-map, local-storage, bloom-filter, or cgroup-array membership
 
 Flags:
   --stream (-s)     Stream events in real-time. The command blocks and yields
