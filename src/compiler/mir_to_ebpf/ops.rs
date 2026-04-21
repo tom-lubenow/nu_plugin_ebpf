@@ -449,6 +449,29 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::BootTimestamp => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::KtimeGetBootNs));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::CoarseTimestamp => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::KtimeGetCoarseNs));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::TaiTimestamp => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::KtimeGetTaiNs));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::Jiffies => {
+                self.instructions.push(EbpfInsn::call(BpfHelper::Jiffies64));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::Cpu => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetSmpProcessorId));

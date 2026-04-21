@@ -18,6 +18,10 @@ The closure receives a context parameter with these fields:
 | `cgroup_id` | Current task cgroup ID | all current program types |
 | `cpu` | CPU ID | All |
 | `ktime` | Kernel timestamp (ns) | All |
+| `ktime_boot` | Boot-time kernel timestamp (ns, includes suspend time) | All |
+| `ktime_coarse` | Coarse kernel timestamp (ns) | All |
+| `ktime_tai` | TAI kernel timestamp (ns) | All |
+| `jiffies` | Kernel jiffies counter | All |
 | `sample_period` | Sample period from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `addr` | Sampled address from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
@@ -308,10 +312,10 @@ field. If an ancestor ID is needed, use the modeled raw helper escape
 hatch `helper-call "bpf_get_current_ancestor_cgroup_id" LEVEL`; it
 returns the same scalar ID shape as `bpf_get_current_cgroup_id`.
 
-`ctx.ktime` remains the preferred ordinary timestamp surface. When a
-specific kernel clock/counter is needed, the modeled helper escape hatch
-also accepts the no-arg scalar helpers `bpf_ktime_get_boot_ns`,
-`bpf_ktime_get_coarse_ns`, `bpf_ktime_get_tai_ns`, and `bpf_jiffies64`.
+`ctx.ktime` remains the preferred ordinary timestamp surface. Specific
+kernel clocks/counters are also available as ordinary fields:
+`ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
+The corresponding modeled helper escape hatch forms remain available.
 
 `redirect-map` is the first-class XDP surface for `bpf_redirect_map`. It takes a literal map name plus a key, requires `--kind devmap`, `--kind devmap-hash`, `--kind cpumap`, or `--kind xskmap`, and returns the helper result directly so it can be the closure's final XDP action. `--flags` stays available for the helper's fallback return-code bits when the map lookup misses.
 

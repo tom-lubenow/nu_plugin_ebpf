@@ -521,6 +521,14 @@ pub enum CtxField {
     Cpu,
     /// Timestamp (nanoseconds)
     Timestamp,
+    /// Boot-time timestamp (nanoseconds, includes suspend)
+    BootTimestamp,
+    /// Coarse kernel timestamp (nanoseconds)
+    CoarseTimestamp,
+    /// TAI timestamp (nanoseconds)
+    TaiTimestamp,
+    /// Kernel jiffies counter
+    Jiffies,
     /// Current task cgroup ID
     CgroupId,
     /// perf_event sample period (`bpf_perf_event_data::sample_period`)
@@ -739,6 +747,10 @@ impl CtxField {
             CtxField::Task => "task".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
+            CtxField::BootTimestamp => "ktime_boot".to_string(),
+            CtxField::CoarseTimestamp => "ktime_coarse".to_string(),
+            CtxField::TaiTimestamp => "ktime_tai".to_string(),
+            CtxField::Jiffies => "jiffies".to_string(),
             CtxField::CgroupId => "cgroup_id".to_string(),
             CtxField::PerfSamplePeriod => "sample_period".to_string(),
             CtxField::PerfAddr => "addr".to_string(),

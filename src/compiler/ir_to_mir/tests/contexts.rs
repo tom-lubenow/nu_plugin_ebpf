@@ -2923,6 +2923,38 @@ fn test_lower_kprobe_ctx_cgroup_id_field() {
 }
 
 #[test]
+fn test_lower_kprobe_time_ctx_fields() {
+    for (field_name, expected_field) in [
+        ("ktime", CtxField::Timestamp),
+        ("ktime_boot", CtxField::BootTimestamp),
+        ("ktime_coarse", CtxField::CoarseTimestamp),
+        ("ktime_tai", CtxField::TaiTimestamp),
+        ("jiffies", CtxField::Jiffies),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|_| panic!("kprobe ctx.{field_name} should lower"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField { field, .. } if field == &expected_field
+        )));
+    }
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_lower_perf_event_ctx_sample_period_field() {
     let hir = make_ctx_path_program(CellPath {

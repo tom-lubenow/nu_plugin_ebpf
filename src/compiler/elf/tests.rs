@@ -3621,7 +3621,15 @@ fn test_probe_context_rejects_pid_on_xdp() {
 fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::Cpu).is_none());
-    assert!(ctx.ctx_field_access_error(&CtxField::Timestamp).is_none());
+    for field in [
+        CtxField::Timestamp,
+        CtxField::BootTimestamp,
+        CtxField::CoarseTimestamp,
+        CtxField::TaiTimestamp,
+        CtxField::Jiffies,
+    ] {
+        assert!(ctx.ctx_field_access_error(&field).is_none());
+    }
 }
 
 #[test]

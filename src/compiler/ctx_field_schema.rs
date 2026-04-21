@@ -454,6 +454,10 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U8))
         }
         CtxField::Timestamp
+        | CtxField::BootTimestamp
+        | CtxField::CoarseTimestamp
+        | CtxField::TaiTimestamp
+        | CtxField::Jiffies
         | CtxField::CgroupId
         | CtxField::PerfSamplePeriod
         | CtxField::PerfAddr

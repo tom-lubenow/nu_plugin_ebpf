@@ -470,7 +470,13 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::CpuField,
     ),
     (
-        &[CtxField::Timestamp],
+        &[
+            CtxField::Timestamp,
+            CtxField::BootTimestamp,
+            CtxField::CoarseTimestamp,
+            CtxField::TaiTimestamp,
+            CtxField::Jiffies,
+        ],
         BaseContextFieldAccessRequirement::TimestampField,
     ),
     (
