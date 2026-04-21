@@ -372,6 +372,62 @@ fn test_map_leading_annotated_mut_globals_supports_constant_record_array_initial
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_nested_constant_record_array_initializer() {
+    let source = "{|| mut state: record<entries: list<record<pid: int cpu: int>> total: int> = {entries: [{pid: 7, cpu: 2} {pid: 9, cpu: 3}], total: 2}; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("nested constant record array initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(
+                val.get("total").and_then(|value| value.as_int().ok()),
+                Some(2)
+            );
+            let Some(Value::List { vals, .. }) = val.get("entries") else {
+                panic!("expected entries field to be a list");
+            };
+            assert_eq!(vals.len(), 2);
+            let Value::Record { val, .. } = &vals[1] else {
+                panic!(
+                    "expected second entries element to be a record, got {:?}",
+                    vals[1]
+                );
+            };
+            assert_eq!(
+                val.get("pid").and_then(|value| value.as_int().ok()),
+                Some(9)
+            );
+            assert_eq!(
+                val.get("cpu").and_then(|value| value.as_int().ok()),
+                Some(3)
+            );
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_upsert_initializer() {
     let source = "{|| mut state: record<pid: int ok: bool> = ({pid: 0, ok: false} | upsert pid (2 ** 3)); $state }";
     let ir_block = IrBlock {
@@ -3425,6 +3481,88 @@ fn make_annotated_mut_fixed_record_array_field_count_program(
             ],
             Span::test_data(),
         ),
+    }];
+    hir
+}
+
+fn make_annotated_mut_record_with_fixed_record_array_field_count_program(
+    count_decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let global_var = VarId::new(10);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![
+                            string_member("entries"),
+                            int_member(1),
+                            string_member("cpu"),
+                        ],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut first = Record::new();
+    first.push("pid", Value::int(7, Span::test_data()));
+    first.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("cpu", Value::int(3, Span::test_data()));
+
+    let mut state = Record::new();
+    state.push(
+        "entries",
+        Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    state.push("total", Value::int(2, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    hir.annotated_mut_globals = vec![crate::compiler::hir::AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([
+            (
+                "entries".to_string(),
+                Type::List(Box::new(Type::Record(Box::new([
+                    ("pid".to_string(), Type::Int),
+                    ("cpu".to_string(), Type::Int),
+                ])))),
+            ),
+            ("total".to_string(), Type::Int),
+        ])),
+        initial_value: Value::record(state, Span::test_data()),
     }];
     hir
 }
@@ -7488,6 +7626,21 @@ fn test_compile_xdp_annotated_mut_fixed_record_array_field_count_program() {
         "lo",
         &decl_names,
         "annotated mut fixed record array field count should compile through attach flow",
+    );
+}
+
+#[test]
+fn test_compile_xdp_annotated_mut_record_with_fixed_record_array_field_count_program() {
+    let hir =
+        make_annotated_mut_record_with_fixed_record_array_field_count_program(DeclId::new(42));
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "annotated mut nested fixed record array field count should compile through attach flow",
     );
 }
 
