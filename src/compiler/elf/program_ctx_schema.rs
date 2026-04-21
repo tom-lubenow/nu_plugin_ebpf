@@ -9,18 +9,6 @@ use crate::compiler::ctx_field_schema::{
 };
 use crate::program_spec::ProgramSpec;
 
-fn context_family_ctx_field_load_guard(
-    context_family: ProgramContextFamily,
-    field: &CtxField,
-) -> Option<ContextFieldLoadGuard> {
-    match context_family {
-        ProgramContextFamily::SockOps => {
-            ctx_field_sock_ops_load_guard(field).map(ContextFieldLoadGuard::SockOpsCallback)
-        }
-        _ => None,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProgramContextLayoutSpec {
     program_type: EbpfProgramType,
@@ -37,6 +25,7 @@ struct ProgramContextLayoutSpec {
     netns_cookie: bool,
     lookup_cookie: bool,
     raw_socket_context_pointer: bool,
+    sock_ops_load_guards: bool,
 }
 
 impl ProgramContextLayoutSpec {
@@ -61,6 +50,7 @@ impl ProgramContextLayoutSpec {
             netns_cookie,
             lookup_cookie: false,
             raw_socket_context_pointer: false,
+            sock_ops_load_guards: false,
         }
     }
 }
@@ -81,6 +71,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SocketFilter, None, None, true),
     ProgramContextLayoutSpec::skb_backed(
@@ -122,6 +113,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: true,
+        sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockAddr,
@@ -138,6 +130,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockopt,
@@ -154,6 +147,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkLookup,
@@ -170,6 +164,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: true,
         raw_socket_context_pointer: false,
+        sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkMsg,
@@ -186,6 +181,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SockOps,
@@ -202,6 +198,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        sock_ops_load_guards: true,
     },
 ];
 
@@ -404,7 +401,10 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
-        context_family_ctx_field_load_guard(self.context_family(), field)
+        program_context_layout_spec(*self)
+            .filter(|spec| spec.sock_ops_load_guards)
+            .and_then(|_| ctx_field_sock_ops_load_guard(field))
+            .map(ContextFieldLoadGuard::SockOpsCallback)
     }
 }
 

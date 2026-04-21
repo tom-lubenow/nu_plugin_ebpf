@@ -964,7 +964,7 @@ fn test_probe_context_ctx_field_load_guard_is_program_type_aware() {
 }
 
 #[test]
-fn test_program_type_ctx_field_load_guard_follows_context_family() {
+fn test_program_type_ctx_field_load_guard_follows_context_layout() {
     assert_eq!(
         EbpfProgramType::SockOps.ctx_field_load_guard(&CtxField::PacketLen),
         Some(ContextFieldLoadGuard::SockOpsCallback(
