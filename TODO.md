@@ -442,6 +442,7 @@ Near-term priority order:
   - Recent progress: attach-flow compile fixtures now cover perf-event counter snapshot fields (`ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`) through the public attach path, not just internal helper/codegen tests.
   - Recent progress: attach-flow compile fixtures now cover direct skb socket tuple aliases on `cgroup_skb`, `sk_skb`, and `sk_skb_parser`, locking down the public `ctx.remote_*` / `ctx.local_*` surface on those non-tracing families.
   - Recent progress: attach-flow compile fixtures now cover the full `cgroup_device` scalar read surface (`ctx.access_type`, `ctx.major`, `ctx.minor`) plus representative writable skb metadata stores on `socket_filter` and `cgroup_skb` (`ctx.cb[N]`, `ctx.priority`).
+  - Recent progress: attach-flow compile fixtures now cover all modeled writable `sock_ops` fields (`ctx.reply`, `ctx.replylong[N]`, helper-backed `ctx.cb_flags`, and `ctx.sk_txhash`), so those ordinary assignment surfaces are validated through the public attach lowering path.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

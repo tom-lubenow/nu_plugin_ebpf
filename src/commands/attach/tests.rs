@@ -7429,6 +7429,62 @@ fn test_compile_cgroup_sysctl_ctx_file_pos_store_program() {
 }
 
 #[test]
+fn test_compile_sock_ops_ctx_reply_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("reply")],
+        },
+        HirLiteral::Int(1),
+        HirLiteral::Int(1),
+        "sock_ops ctx.reply store",
+    );
+}
+
+#[test]
+fn test_compile_sock_ops_ctx_replylong_word_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("replylong"), int_member(2)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(1),
+        "sock_ops ctx.replylong[2] store",
+    );
+}
+
+#[test]
+fn test_compile_sock_ops_ctx_cb_flags_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("cb_flags")],
+        },
+        HirLiteral::Int(1),
+        HirLiteral::Int(1),
+        "sock_ops ctx.cb_flags store",
+    );
+}
+
+#[test]
+fn test_compile_sock_ops_ctx_sk_txhash_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("sk_txhash")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(1),
+        "sock_ops ctx.sk_txhash store",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_addr_connect6_ctx_user_ip6_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::CgroupSockAddr,
