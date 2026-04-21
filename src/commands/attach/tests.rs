@@ -6073,6 +6073,26 @@ fn test_compile_kprobe_ctx_task_non_null_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_task_pid_counter_program() {
+    let path = [TrampolineFieldSelector::Field("pid".to_string())];
+    if !matches!(
+        KernelBtf::get().kernel_named_type_field_projection("task_struct", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    ) {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("task"), string_member("pid")],
+        },
+        "kprobe ctx.task.pid count",
+    );
+}
+
+#[test]
 fn test_compile_perf_event_ctx_cpu_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::PerfEvent,

@@ -1,8 +1,49 @@
 use super::*;
 use crate::compiler::mir::AddressSpace;
-use crate::kernel_btf::{TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
 impl<'a> HirToMirLowering<'a> {
+    fn task_struct_root_runtime_type(&self) -> Result<Option<MirType>, CompileError> {
+        let type_info = KernelBtf::get()
+            .kernel_named_type_info("task_struct")
+            .map_err(|err| {
+                CompileError::UnsupportedInstruction(format!(
+                    "failed to resolve ctx.task task_struct layout from kernel BTF: {err}"
+                ))
+            })?;
+        let TypeInfo::Struct {
+            name,
+            btf_type_id,
+            size,
+            ..
+        } = type_info
+        else {
+            return Ok(None);
+        };
+        if size == 0 {
+            return Ok(None);
+        }
+
+        let task_ty = MirType::Struct {
+            name: Some(name),
+            kernel_btf_type_id: btf_type_id,
+            fields: vec![crate::compiler::mir::StructField {
+                name: "__opaque".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: size,
+                },
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            }],
+        };
+        Ok(Some(MirType::Ptr {
+            pointee: Box::new(task_ty),
+            address_space: AddressSpace::Kernel,
+        }))
+    }
+
     fn tracepoint_root_field_types(
         &self,
         name: &str,
@@ -388,6 +429,35 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                     base_vreg,
                     &base_ty,
+                    remaining_members,
+                    &Self::typed_value_path_desc(&path.members),
+                    Some(&ctx_field),
+                    None,
+                )?;
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.is_context = false;
+                meta.field_type = Some(projected_ty);
+                meta.root_ctx_field = Some(ctx_field.clone());
+                meta.source_var = None;
+                return Ok(());
+            }
+
+            if ctx_field == CtxField::Task
+                && let Some(root_runtime_ty) = self.task_struct_root_runtime_type()?
+            {
+                let base_vreg = self.func.alloc_vreg();
+                self.vreg_type_hints
+                    .insert(base_vreg, root_runtime_ty.clone());
+                self.emit(MirInst::LoadCtxField {
+                    dst: base_vreg,
+                    field: ctx_field.clone(),
+                    slot: None,
+                });
+                let projected_ty = self.lower_typed_value_projection(
+                    src_dst,
+                    dst_vreg,
+                    base_vreg,
+                    &root_runtime_ty,
                     remaining_members,
                     &Self::typed_value_path_desc(&path.members),
                     Some(&ctx_field),
