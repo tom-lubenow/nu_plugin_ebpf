@@ -298,6 +298,7 @@ Near-term priority order:
   - Recent progress: `map-contains --kind sk-storage|task-storage|inode-storage|cgrp-storage` now performs lookup-only local-storage presence checks over the owning object pointer, keeping that boolean path on the same resource-oriented map surface as `map-get` and `map-delete`.
   - Recent progress: special map-kind spellings for `ringbuf`, `perf-event-array`, `stack-trace`, and `prog-array` are now recognized for diagnostics, so generic `map-*` misuse points users toward `emit`, perf-event output helpers, `ctx.kstack` / `ctx.ustack`, or `tail-call` instead of reporting an unknown map family.
   - Recent progress: `map-contains --kind cgroup-array` now selects its `tc` skb helper versus broad current-task helper through the shared program model instead of embedding an exact program-type match in Nu-call lowering.
+  - Recent progress: attach-flow compile coverage now exercises `redirect-map` map FD materialization for all modeled redirect map kinds (`devmap`, `devmap-hash`, `cpumap`, and `xskmap`), including emitted map definitions and relocations.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.

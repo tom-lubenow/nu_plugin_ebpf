@@ -9887,6 +9887,122 @@ fn test_compile_tc_redirect_peer_program() {
 }
 
 #[test]
+fn test_compile_xdp_redirect_map_kind_programs() {
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect-map".to_string())]);
+
+    for (map_name, map_kind_arg, expected_kind, expected_def) in [
+        (
+            "demo_devmap",
+            "devmap",
+            MapKind::DevMap,
+            BpfMapDef::dev_map(10240),
+        ),
+        (
+            "demo_devmap_hash",
+            "devmap-hash",
+            MapKind::DevMapHash,
+            BpfMapDef::dev_map_hash(4, 10240),
+        ),
+        (
+            "demo_cpumap",
+            "cpumap",
+            MapKind::CpuMap,
+            BpfMapDef::cpu_map(10240),
+        ),
+        (
+            "demo_xskmap",
+            "xskmap",
+            MapKind::XskMap,
+            BpfMapDef::xsk_map(10240),
+        ),
+    ] {
+        let hir = make_intrinsic_call_return_program(
+            DeclId::new(42),
+            vec![
+                HirLiteral::String(map_name.as_bytes().to_vec()),
+                HirLiteral::Int(7),
+            ],
+            vec![(b"kind".to_vec(), HirLiteral::String(map_kind_arg.into()))],
+            vec![],
+            HirLiteral::Int(2),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("xdp redirect-map --kind {map_kind_arg} should lower: {err}"));
+
+        let block = lowering.program.main.block(lowering.program.main.entry);
+        assert!(
+            block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind },
+                    ..
+                } if name == map_name && *kind == expected_kind
+            )),
+            "xdp redirect-map --kind {map_kind_arg} should load the expected map fd"
+        );
+        assert!(
+            block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::RedirectMap as u32
+                    && args.len() == 3
+                    && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
+            )),
+            "xdp redirect-map --kind {map_kind_arg} should call bpf_redirect_map"
+        );
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| {
+            panic!("xdp redirect-map --kind {map_kind_arg} should compile: {err}")
+        });
+
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+        let map = result
+            .maps
+            .iter()
+            .find(|map| map.name == map_name)
+            .unwrap_or_else(|| {
+                panic!("xdp redirect-map --kind {map_kind_arg} should emit map {map_name}")
+            });
+        assert_eq!(map.def.map_type, expected_def.map_type);
+        assert_eq!(map.def.key_size, expected_def.key_size);
+        assert_eq!(map.def.value_size, expected_def.value_size);
+        assert_eq!(map.def.max_entries, expected_def.max_entries);
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|reloc| reloc.symbol_name == map_name),
+            "xdp redirect-map --kind {map_kind_arg} should emit a map relocation"
+        );
+    }
+}
+
+#[test]
 fn test_compile_sk_msg_adjust_message_pull_program() {
     let hir = make_intrinsic_call_return_program(
         DeclId::new(42),
