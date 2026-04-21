@@ -1001,6 +1001,8 @@ fn test_program_type_ctx_field_load_guard_follows_context_layout() {
 
 #[test]
 fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
+    assert!(ProgramContextFamily::PerfEvent.is_perf_event());
+    assert!(!ProgramContextFamily::Probe.is_perf_event());
     assert!(EbpfProgramType::PerfEvent.uses_perf_event_context());
     assert!(!EbpfProgramType::Xdp.uses_perf_event_context());
     assert_eq!(

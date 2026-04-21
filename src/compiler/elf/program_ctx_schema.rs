@@ -1,6 +1,5 @@
 use super::{
-    CtxField, EbpfProgramType, IngressIfindexContextLayout, PacketContextKind,
-    ProgramContextFamily, SocketContextLayout,
+    CtxField, EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
@@ -304,7 +303,7 @@ impl EbpfProgramType {
     }
 
     pub fn uses_perf_event_context(&self) -> bool {
-        matches!(self.context_family(), ProgramContextFamily::PerfEvent)
+        self.context_family().is_perf_event()
     }
 
     pub fn supports_perf_event_ctx_fields(&self) -> bool {

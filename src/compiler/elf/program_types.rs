@@ -18,6 +18,12 @@ pub enum ProgramContextFamily {
     StructOps,
 }
 
+impl ProgramContextFamily {
+    pub fn is_perf_event(self) -> bool {
+        matches!(self, Self::PerfEvent)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProgramTypeInfo {
     pub program_type: EbpfProgramType,
