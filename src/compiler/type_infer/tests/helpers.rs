@@ -4164,6 +4164,59 @@ fn test_type_error_helper_cgrp_storage_get_rejects_anonymous_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_cgrp_storage_delete_allows_null_cgroup() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CgrpStorageDelete as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_cgrp_storage_delete to allow null cgroup");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_helper_cgrp_storage_delete_rejects_anonymous_kernel_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let cgroup = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CgrpStorageDelete as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::VReg(cgroup)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected anonymous kernel pointer to fail cgrp_storage_delete");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_cgrp_storage_delete' arg1 expects cgroup pointer")
+    }));
+}
+
+#[test]
 fn test_type_error_helper_task_storage_get_rejects_anonymous_kernel_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

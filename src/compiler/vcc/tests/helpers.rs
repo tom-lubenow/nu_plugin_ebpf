@@ -7476,6 +7476,170 @@ fn test_verify_mir_helper_inode_storage_delete_rejects_non_kernel_inode_pointer(
 }
 
 #[test]
+fn test_verify_mir_helper_cgrp_storage_get_allows_null_cgroup_and_init_value() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::CgrpStorageGet as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected cgrp_storage_get null cgroup to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_cgrp_storage_get_rejects_anonymous_kernel_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let cgroup = func.alloc_vreg();
+    let cgroup_non_null = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cgroup_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(cgroup),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: cgroup_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: storage,
+        helper: BpfHelper::CgrpStorageGet as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::VReg(cgroup),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cgroup_non_null, MirType::Bool);
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected anonymous kernel pointer to fail cgrp_storage_get");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_cgrp_storage_get' arg1 expects cgroup pointer")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_cgrp_storage_delete_allows_null_cgroup() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::CgrpStorageDelete as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected cgrp_storage_delete null cgroup to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_cgrp_storage_delete_rejects_anonymous_kernel_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let cgroup = func.alloc_vreg();
+    let cgroup_non_null = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cgroup_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(cgroup),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: cgroup_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: ret,
+        helper: BpfHelper::CgrpStorageDelete as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::VReg(cgroup)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cgroup_non_null, MirType::Bool);
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected anonymous kernel pointer to fail cgrp_storage_delete");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_cgrp_storage_delete' arg1 expects cgroup pointer")
+    }));
+}
+
+#[test]
 fn test_verify_mir_unknown_helper_rejects_more_than_five_args() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
