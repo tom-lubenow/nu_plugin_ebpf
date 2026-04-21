@@ -1,7 +1,7 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramSpec};
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
@@ -821,29 +821,34 @@ impl ProgramSpec {
     }
 
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
-        match self.attach_shape() {
-            ProgramAttachShape::CgroupSock {
-                post_bind: false, ..
-            } if CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) => Some(format!(
-                "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
-            )),
-            ProgramAttachShape::CgroupSock {
-                post_bind: true,
-                family: Some(ProgramAttachAddressFamily::Ipv4),
-            } if CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS.contains(&member_name) => None,
-            ProgramAttachShape::CgroupSock { .. }
-                if CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS.contains(&member_name) =>
+        let attach_shape = self.attach_shape();
+        match member_name {
+            _ if attach_shape.is_cgroup_sock_create_release()
+                && CGROUP_SOCK_POST_BIND_ONLY_MEMBERS.contains(&member_name) =>
+            {
+                Some(format!(
+                    "ctx.sk.{member_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
+                ))
+            }
+            _ if attach_shape.is_cgroup_sock_post_bind_family(ProgramAttachAddressFamily::Ipv4)
+                && CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS.contains(&member_name) =>
+            {
+                None
+            }
+            _ if attach_shape.is_cgroup_sock()
+                && CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS.contains(&member_name) =>
             {
                 Some(format!(
                     "ctx.sk.{member_name} is only available on cgroup_sock post_bind4 hooks"
                 ))
             }
-            ProgramAttachShape::CgroupSock {
-                post_bind: true,
-                family: Some(ProgramAttachAddressFamily::Ipv6),
-            } if CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS.contains(&member_name) => None,
-            ProgramAttachShape::CgroupSock { .. }
-                if CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS.contains(&member_name) =>
+            _ if attach_shape.is_cgroup_sock_post_bind_family(ProgramAttachAddressFamily::Ipv6)
+                && CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS.contains(&member_name) =>
+            {
+                None
+            }
+            _ if attach_shape.is_cgroup_sock()
+                && CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS.contains(&member_name) =>
             {
                 Some(format!(
                     "ctx.sk.{member_name} is only available on cgroup_sock post_bind6 hooks"

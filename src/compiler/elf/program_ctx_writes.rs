@@ -1,7 +1,7 @@
 use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramSpec};
 
 fn bounded_index(field_name: &str, index: usize, upper_inclusive: u8) -> Result<u8, String> {
     let index = u8::try_from(index).map_err(|_| {
@@ -661,11 +661,15 @@ impl EbpfProgramType {
 
 impl ProgramSpec {
     fn ctx_write_surfaces(&self) -> Option<&'static [ContextWriteSurfaceSpec]> {
-        match self.attach_shape() {
-            ProgramAttachShape::CgroupSock { .. } => Some(CGROUP_SOCK_CTX_WRITE_SURFACES),
-            ProgramAttachShape::CgroupSockopt { .. } => Some(CGROUP_SOCKOPT_CTX_WRITE_SURFACES),
-            ProgramAttachShape::CgroupSockAddr { .. } => Some(CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES),
-            _ => program_ctx_write_surfaces(self.program_type()),
+        let attach_shape = self.attach_shape();
+        if attach_shape.is_cgroup_sock() {
+            Some(CGROUP_SOCK_CTX_WRITE_SURFACES)
+        } else if attach_shape.is_cgroup_sockopt() {
+            Some(CGROUP_SOCKOPT_CTX_WRITE_SURFACES)
+        } else if attach_shape.cgroup_sock_addr().is_some() {
+            Some(CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES)
+        } else {
+            program_ctx_write_surfaces(self.program_type())
         }
     }
 

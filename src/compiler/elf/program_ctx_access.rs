@@ -1,7 +1,5 @@
 use super::{CtxField, EbpfProgramType};
-use crate::program_spec::{
-    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
-};
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec};
 
 type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
 
@@ -1339,15 +1337,15 @@ impl EbpfProgramType {
 
 impl ProgramSpec {
     fn ctx_field_access_surfaces(&self) -> Option<&'static [ContextFieldAccessSurfaceSpec]> {
-        match self.attach_shape() {
-            ProgramAttachShape::CgroupSock { .. } => Some(CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES),
-            ProgramAttachShape::CgroupSockopt { .. } => {
-                Some(CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES)
-            }
-            ProgramAttachShape::CgroupSockAddr { .. } => {
-                Some(CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES)
-            }
-            _ => program_ctx_field_access_surfaces(self.program_type()),
+        let attach_shape = self.attach_shape();
+        if attach_shape.is_cgroup_sock() {
+            Some(CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES)
+        } else if attach_shape.is_cgroup_sockopt() {
+            Some(CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES)
+        } else if attach_shape.cgroup_sock_addr().is_some() {
+            Some(CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES)
+        } else {
+            program_ctx_field_access_surfaces(self.program_type())
         }
     }
 
@@ -1357,9 +1355,7 @@ impl ProgramSpec {
     }
 
     pub(crate) fn cgroup_sock_addr_tuple_alias_field(&self, field: &CtxField) -> Option<CtxField> {
-        let ProgramAttachShape::CgroupSockAddr { family, hook } = self.attach_shape() else {
-            return None;
-        };
+        let (family, hook) = self.attach_shape().cgroup_sock_addr()?;
 
         CGROUP_SOCK_ADDR_TUPLE_ALIAS_FIELDS
             .iter()

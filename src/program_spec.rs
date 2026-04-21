@@ -1491,6 +1491,10 @@ impl ProgramAttachShape {
         matches!(self, Self::CgroupSockopt { get: false })
     }
 
+    pub(crate) fn is_cgroup_sockopt(self) -> bool {
+        matches!(self, Self::CgroupSockopt { .. })
+    }
+
     pub(crate) fn cgroup_sock_addr(
         self,
     ) -> Option<(ProgramAttachAddressFamily, ProgramAttachSockAddrHook)> {
@@ -2022,6 +2026,7 @@ mod tests {
         );
         assert!(sockopt_get.attach_shape().is_cgroup_sockopt_get());
         assert!(!sockopt_get.attach_shape().is_cgroup_sockopt_set());
+        assert!(sockopt_get.attach_shape().is_cgroup_sockopt());
         assert_eq!(
             sendmsg6.attach_shape(),
             ProgramAttachShape::CgroupSockAddr {
