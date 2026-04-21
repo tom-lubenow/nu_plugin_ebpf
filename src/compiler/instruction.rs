@@ -186,6 +186,8 @@ pub enum BpfHelper {
     SkbLoadBytes = 26,
     /// long bpf_get_stackid(ctx, map, flags)
     GetStackId = 27,
+    /// s64 bpf_csum_diff(from, from_size, to, to_size, seed)
+    CsumDiff = 28,
     /// long bpf_skb_load_bytes_relative(skb, offset, to, len, start_header)
     SkbLoadBytesRelative = 68,
     /// struct bpf_sock *bpf_sk_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
@@ -369,6 +371,7 @@ impl BpfHelper {
             BpfHelper::PerfEventOutput => "bpf_perf_event_output",
             BpfHelper::SkbLoadBytes => "bpf_skb_load_bytes",
             BpfHelper::GetStackId => "bpf_get_stackid",
+            BpfHelper::CsumDiff => "bpf_csum_diff",
             BpfHelper::SkbLoadBytesRelative => "bpf_skb_load_bytes_relative",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
             BpfHelper::SkLookupUdp => "bpf_sk_lookup_udp",
@@ -502,6 +505,7 @@ impl BpfHelper {
             "perf_event_output" => Some(Self::PerfEventOutput),
             "skb_load_bytes" => Some(Self::SkbLoadBytes),
             "get_stackid" => Some(Self::GetStackId),
+            "csum_diff" => Some(Self::CsumDiff),
             "skb_load_bytes_relative" => Some(Self::SkbLoadBytesRelative),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
             "sk_lookup_udp" => Some(Self::SkLookupUdp),
@@ -557,6 +561,31 @@ impl BpfHelper {
             "kptr_xchg" => Some(Self::KptrXchg),
             "probe_read_user_str" => Some(Self::ProbeReadUserStr),
             "probe_read_kernel_str" => Some(Self::ProbeReadKernelStr),
+            _ => None,
+        }
+    }
+
+    pub const fn zero_size_pointer_arg_size_arg(self, arg_idx: usize) -> Option<usize> {
+        match (self, arg_idx) {
+            (Self::CsumDiff, 0) => Some(1),
+            (Self::CsumDiff, 2) => Some(3),
+            _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_multiple_of_requirement(
+        self,
+        arg_idx: usize,
+    ) -> Option<(i64, &'static str)> {
+        match (self, arg_idx) {
+            (Self::CsumDiff, 1) => Some((
+                4,
+                "helper 'bpf_csum_diff' requires arg1 to be a multiple of 4",
+            )),
+            (Self::CsumDiff, 3) => Some((
+                4,
+                "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4",
+            )),
             _ => None,
         }
     }

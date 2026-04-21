@@ -179,6 +179,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::CsumLevel)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_csum_diff"),
+        Some(BpfHelper::CsumDiff)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_adjust_room"),
         Some(BpfHelper::SkbAdjustRoom)
     ));
@@ -891,6 +895,17 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::CsumDiff as u32)
+        .expect("expected bpf_csum_diff helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1024,6 +1039,32 @@ fn test_helpers_with_reserved_zero_flags() {
             1,
             2,
             "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
+        ))
+    );
+}
+
+#[test]
+fn test_helper_csum_diff_zero_size_pointer_contract() {
+    assert_eq!(
+        BpfHelper::CsumDiff.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::CsumDiff.zero_size_pointer_arg_size_arg(2),
+        Some(3)
+    );
+    assert_eq!(
+        BpfHelper::CsumDiff.scalar_arg_multiple_of_requirement(1),
+        Some((
+            4,
+            "helper 'bpf_csum_diff' requires arg1 to be a multiple of 4"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::CsumDiff.scalar_arg_multiple_of_requirement(3),
+        Some((
+            4,
+            "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4"
         ))
     );
 }

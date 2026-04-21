@@ -75,6 +75,7 @@ impl BpfHelper {
             144 => Some(Self::ReserveHdrOpt),
             25 => Some(Self::PerfEventOutput),
             27 => Some(Self::GetStackId),
+            28 => Some(Self::CsumDiff),
             84 => Some(Self::SkLookupTcp),
             85 => Some(Self::SkLookupUdp),
             86 => Some(Self::SkRelease),
@@ -492,6 +493,12 @@ impl BpfHelper {
                 min_args: 3,
                 max_args: 3,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::CsumDiff => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {

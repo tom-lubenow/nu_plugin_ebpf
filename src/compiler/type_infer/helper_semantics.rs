@@ -135,17 +135,20 @@ impl<'a> TypeInference<'a> {
                 | (Some(BpfHelper::CgrpStorageGet), 1)
                 | (Some(BpfHelper::CgrpStorageGet), 2)
                 | (Some(BpfHelper::CgrpStorageDelete), 1)
-        ) || self
-            .probe_ctx
-            .as_ref()
-            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
-            .is_some_and(|policy| {
-                matches!(
-                    BpfHelper::from_u32(helper_id),
-                    Some(BpfHelper::GetSocketCookie)
-                ) && arg_idx == 0
-                    && policy.allows_maybe_null()
-            })
+        ) || BpfHelper::from_u32(helper_id)
+            .and_then(|helper| helper.zero_size_pointer_arg_size_arg(arg_idx))
+            .is_some()
+            || self
+                .probe_ctx
+                .as_ref()
+                .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+                .is_some_and(|policy| {
+                    matches!(
+                        BpfHelper::from_u32(helper_id),
+                        Some(BpfHelper::GetSocketCookie)
+                    ) && arg_idx == 0
+                        && policy.allows_maybe_null()
+                })
     }
 
     pub(super) fn helper_ptr_space_allowed(
@@ -228,6 +231,48 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    pub(super) fn helper_nonnegative_size_upper_bound(
+        &self,
+        helper_id: u32,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) -> Option<usize> {
+        match self.value_range_for(value, value_ranges) {
+            ValueRange::Known { min, max } => {
+                if min < 0 || max < 0 {
+                    errors.push(TypeError::new(format!(
+                        "helper {} arg{} must be >= 0",
+                        helper_id, arg_idx
+                    )));
+                    return None;
+                }
+                usize::try_from(max).ok()
+            }
+            _ => None,
+        }
+    }
+
+    fn validate_helper_scalar_multiple_of(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some((multiple, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx) else {
+            return;
+        };
+        if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
+            && min == max
+            && min.rem_euclid(multiple) != 0
+        {
+            errors.push(TypeError::new(message));
+        }
+    }
+
     fn known_const_vreg(
         &self,
         vreg: VReg,
@@ -286,6 +331,9 @@ impl<'a> TypeInference<'a> {
                 );
             }
         }
+        for (arg_idx, value) in args.iter().enumerate().take(5) {
+            self.validate_helper_scalar_multiple_of(helper, arg_idx, value, value_ranges, errors);
+        }
 
         for rule in semantics.ptr_arg_rules {
             let Some(arg) = args.get(rule.arg_idx) else {
@@ -293,7 +341,22 @@ impl<'a> TypeInference<'a> {
             };
             let access_size = match (rule.fixed_size, rule.size_from_arg) {
                 (Some(size), _) => Some(size),
-                (None, Some(size_arg)) => positive_size_bounds[size_arg],
+                (None, Some(size_arg)) => positive_size_bounds[size_arg].or_else(|| {
+                    helper
+                        .zero_size_pointer_arg_size_arg(rule.arg_idx)
+                        .filter(|paired_size_arg| *paired_size_arg == size_arg)
+                        .and_then(|_| {
+                            args.get(size_arg).and_then(|value| {
+                                self.helper_nonnegative_size_upper_bound(
+                                    helper_id,
+                                    size_arg,
+                                    value,
+                                    value_ranges,
+                                    errors,
+                                )
+                            })
+                        })
+                }),
                 (None, None) => None,
             };
             if self.helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx)
@@ -302,6 +365,19 @@ impl<'a> TypeInference<'a> {
                     ValueRange::Known { min: 0, max: 0 }
                 )
             {
+                if let Some(size_arg) = helper.zero_size_pointer_arg_size_arg(rule.arg_idx)
+                    && !args.get(size_arg).is_some_and(|value| {
+                        matches!(
+                            self.value_range_for(value, value_ranges),
+                            ValueRange::Known { min: 0, max: 0 }
+                        )
+                    })
+                {
+                    errors.push(TypeError::new(format!(
+                        "helper {} arg{} requires arg{} = 0 when arg{} is null",
+                        helper_id, rule.arg_idx, size_arg, rule.arg_idx
+                    )));
+                }
                 continue;
             }
             match arg {

@@ -1209,6 +1209,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CsumDiff),
+        Some("helper 'bpf_csum_diff' is only valid in xdp and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::CsumDiff),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkRedirectMap),
         Some(
             "helper 'bpf_sk_redirect_map' is only valid in sk_skb and sk_skb_parser programs"

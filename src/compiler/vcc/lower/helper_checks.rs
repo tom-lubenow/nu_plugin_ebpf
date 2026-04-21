@@ -376,7 +376,10 @@ impl<'a> VccLowerer<'a> {
                 | (Some(BpfHelper::CgrpStorageGet), 1)
                 | (Some(BpfHelper::CgrpStorageGet), 2)
                 | (Some(BpfHelper::CgrpStorageDelete), 1)
-        ) || self
+        ) || BpfHelper::from_u32(helper_id)
+            .and_then(|helper| helper.zero_size_pointer_arg_size_arg(arg_idx))
+            .is_some()
+            || self
             .probe_ctx
             .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
             .or_else(|| {
@@ -864,6 +867,59 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    pub(super) fn helper_nonnegative_size_upper_bound(
+        &self,
+        helper_id: u32,
+        arg_idx: usize,
+        value: &MirValue,
+    ) -> Result<Option<usize>, VccError> {
+        match value {
+            MirValue::Const(v) => {
+                if *v < 0 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!("helper {} arg{} must be >= 0", helper_id, arg_idx),
+                    ));
+                }
+                let size = usize::try_from(*v).map_err(|_| {
+                    VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!("helper {} arg{} is out of range", helper_id, arg_idx),
+                    )
+                })?;
+                Ok(Some(size))
+            }
+            MirValue::VReg(_) => Ok(None),
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
+    fn verify_helper_scalar_multiple_of(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+    ) -> Result<(), VccError> {
+        let Some((multiple, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx) else {
+            return Ok(());
+        };
+        if let MirValue::Const(v) = value
+            && v.rem_euclid(multiple) != 0
+        {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                message,
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn verify_helper_semantics(
         &mut self,
         helper_id: u32,
@@ -882,6 +938,9 @@ impl<'a> VccLowerer<'a> {
                     self.helper_positive_size_upper_bound(helper_id, *size_arg, arg, out)?;
             }
         }
+        for (arg_idx, value) in args.iter().enumerate().take(5) {
+            self.verify_helper_scalar_multiple_of(helper, arg_idx, value)?;
+        }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.verify_get_socket_cookie_arg_shape(args)?;
@@ -893,9 +952,67 @@ impl<'a> VccLowerer<'a> {
             };
             let access_size = match (rule.fixed_size, rule.size_from_arg) {
                 (Some(size), _) => Some(size),
-                (None, Some(size_arg)) => positive_size_bounds[size_arg],
+                (None, Some(size_arg)) => {
+                    if let Some(size) = positive_size_bounds[size_arg] {
+                        Some(size)
+                    } else if helper.zero_size_pointer_arg_size_arg(rule.arg_idx)
+                        == Some(size_arg)
+                    {
+                        args.get(size_arg)
+                            .map(|value| {
+                                self.helper_nonnegative_size_upper_bound(
+                                    helper_id, size_arg, value,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                    } else {
+                        None
+                    }
+                }
                 (None, None) => None,
             };
+            if self.helper_pointer_arg_allows_const_zero(helper_id, rule.arg_idx) {
+                match arg {
+                    MirValue::Const(0) => {
+                        if let Some(size_arg) = helper.zero_size_pointer_arg_size_arg(rule.arg_idx)
+                            && let Some(size) = args.get(size_arg)
+                        {
+                            self.verify_helper_scalar_const_eq(
+                                helper_id,
+                                size_arg,
+                                size,
+                                0,
+                                &format!(
+                                    "helper {} arg{} requires arg{} = 0 when arg{} is null",
+                                    helper_id, rule.arg_idx, size_arg, rule.arg_idx
+                                ),
+                                out,
+                            )?;
+                        }
+                        continue;
+                    }
+                    MirValue::VReg(vreg) if !self.is_pointer_reg(*vreg) => {
+                        if let Some(size_arg) = helper.zero_size_pointer_arg_size_arg(rule.arg_idx)
+                            && let Some(size) = args.get(size_arg)
+                        {
+                            self.verify_helper_scalar_const_eq(
+                                helper_id,
+                                size_arg,
+                                size,
+                                0,
+                                &format!(
+                                    "helper {} arg{} requires arg{} = 0 when arg{} is null",
+                                    helper_id, rule.arg_idx, size_arg, rule.arg_idx
+                                ),
+                                out,
+                            )?;
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
             let dynamic_size = rule.size_from_arg.and_then(|size_arg| args.get(size_arg));
             self.check_helper_ptr_arg_value(
                 helper_id,

@@ -1959,6 +1959,113 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_out_of_bounds_sourc
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_csum_diff_allows_null_zero_side() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumDiff as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(to_slot),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected csum_diff to accept null from with zero from_size");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_csum_diff_rejects_null_nonzero_side() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumDiff as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(4),
+                MirValue::StackSlot(to_slot),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected csum_diff to reject null from with nonzero from_size");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 28 arg0 requires arg1 = 0 when arg0 is null")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_csum_diff_rejects_unaligned_size() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    let from_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumDiff as u32,
+            args: vec![
+                MirValue::StackSlot(from_slot),
+                MirValue::Const(2),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected csum_diff to reject non-word-sized from_size");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_csum_diff' requires arg1 to be a multiple of 4")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_program_packet_byte_helpers_reject_invalid_programs() {
     for (helper, program_info, expected) in [
         (

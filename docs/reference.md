@@ -190,7 +190,10 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `sk_skb`, and `sk_skb_parser`; `bpf_skb_load_bytes_relative` works on
 `socket_filter`, `tc`, and `cgroup_skb`; and
 `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
-`bpf_xdp_store_bytes` are XDP-only. `bpf_skb_cgroup_id` and
+`bpf_xdp_store_bytes` are XDP-only. XDP and TC also model
+`bpf_csum_diff`; its `from_size` and `to_size` arguments must be
+multiples of four, and a null `from` or `to` buffer is accepted only
+when the paired size is zero. `bpf_skb_cgroup_id` and
 `bpf_skb_ancestor_cgroup_id` are modeled as TC-egress-only helper
 calls, matching the upstream skb cgroup helper contract. TC egress
 also models `bpf_get_cgroup_classid` and `bpf_get_route_realm` for

@@ -429,7 +429,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::SkbLoadBytesRelative => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,
         },
-        BpfHelper::Redirect => HelperProgramSurfaceSpec {
+        BpfHelper::CsumDiff | BpfHelper::Redirect => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTc,
         },
         BpfHelper::RedirectPeer

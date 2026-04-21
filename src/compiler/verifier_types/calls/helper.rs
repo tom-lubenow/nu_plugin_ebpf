@@ -66,7 +66,8 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
             | (Some(BpfHelper::CgrpStorageGet), 1)
             | (Some(BpfHelper::CgrpStorageGet), 2)
             | (Some(BpfHelper::CgrpStorageDelete), 1)
-    ) || helper_allows_maybe_null_arg(helper, arg_idx, program, probe_ctx))
+    ) || helper.zero_size_pointer_arg_size_arg(arg_idx).is_some()
+        || helper_allows_maybe_null_arg(helper, arg_idx, program, probe_ctx))
         && matches!(
             value_range(arg, state),
             ValueRange::Known { min: 0, max: 0 }
@@ -92,6 +93,46 @@ pub(in crate::compiler::verifier_types) fn helper_positive_size_upper_bound(
             usize::try_from(max).ok()
         }
         _ => None,
+    }
+}
+
+pub(in crate::compiler::verifier_types) fn helper_nonnegative_size_upper_bound(
+    helper_id: u32,
+    arg_idx: usize,
+    value: &MirValue,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<usize> {
+    match value_range(value, state) {
+        ValueRange::Known { min, max } => {
+            if min < 0 || max < 0 {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} must be >= 0",
+                    helper_id, arg_idx
+                )));
+                return None;
+            }
+            usize::try_from(max).ok()
+        }
+        _ => None,
+    }
+}
+
+fn validate_helper_scalar_multiple_of(
+    helper: BpfHelper,
+    arg_idx: usize,
+    value: &MirValue,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some((multiple, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx) else {
+        return;
+    };
+    if let ValueRange::Known { min, max } = value_range(value, state)
+        && min == max
+        && min.rem_euclid(multiple) != 0
+    {
+        errors.push(VerifierTypeError::new(message));
     }
 }
 
@@ -257,6 +298,9 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                 helper_positive_size_upper_bound(helper_id, *size_arg, value, state, errors);
         }
     }
+    for (arg_idx, value) in args.iter().enumerate().take(5) {
+        validate_helper_scalar_multiple_of(helper, arg_idx, value, state, errors);
+    }
 
     for rule in semantics.ptr_arg_rules {
         let Some(arg) = args.get(rule.arg_idx) else {
@@ -264,9 +308,43 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         };
         let access_size = match (rule.fixed_size, rule.size_from_arg) {
             (Some(size), _) => Some(size),
-            (None, Some(size_arg)) => positive_size_bounds[size_arg],
+            (None, Some(size_arg)) => positive_size_bounds[size_arg].or_else(|| {
+                helper
+                    .zero_size_pointer_arg_size_arg(rule.arg_idx)
+                    .filter(|paired_size_arg| *paired_size_arg == size_arg)
+                    .and_then(|_| {
+                        args.get(size_arg).and_then(|value| {
+                            helper_nonnegative_size_upper_bound(
+                                helper_id, size_arg, value, state, errors,
+                            )
+                        })
+                    })
+            }),
             (None, None) => None,
         };
+        if helper_pointer_arg_allows_const_zero(
+            helper_id,
+            rule.arg_idx,
+            arg,
+            state,
+            program,
+            probe_ctx,
+        ) {
+            if let Some(size_arg) = helper.zero_size_pointer_arg_size_arg(rule.arg_idx)
+                && !args.get(size_arg).is_some_and(|value| {
+                    matches!(
+                        value_range(value, state),
+                        ValueRange::Known { min: 0, max: 0 }
+                    )
+                })
+            {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} requires arg{} = 0 when arg{} is null",
+                    helper_id, rule.arg_idx, size_arg, rule.arg_idx
+                )));
+            }
+            continue;
+        }
         check_helper_ptr_arg_value(
             helper_id,
             rule.arg_idx,

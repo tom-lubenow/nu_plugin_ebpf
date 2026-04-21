@@ -3356,6 +3356,127 @@ fn test_type_error_skb_load_bytes_rejects_small_destination_buffer() {
 }
 
 #[test]
+fn test_infer_helper_csum_diff_allows_null_zero_side() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumDiff as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::StackSlot(to_slot),
+            MirValue::Const(4),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let types = ti
+        .infer(&func)
+        .expect("expected csum_diff to allow null from with zero from_size");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_helper_csum_diff_rejects_null_nonzero_side() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumDiff as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(4),
+            MirValue::StackSlot(to_slot),
+            MirValue::Const(4),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected csum_diff to reject null from with nonzero from_size");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 28 arg0 requires arg1 = 0 when arg0 is null")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_helper_csum_diff_rejects_unaligned_size() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let from_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumDiff as u32,
+        args: vec![
+            MirValue::StackSlot(from_slot),
+            MirValue::Const(2),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected csum_diff to reject non-word-sized from_size");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_csum_diff' requires arg1 to be a multiple of 4")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_helper_csum_diff_rejects_small_buffer() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let from_slot = func.alloc_stack_slot(2, 2, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumDiff as u32,
+        args: vec![
+            MirValue::StackSlot(from_slot),
+            MirValue::Const(4),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected csum_diff to reject too-small from buffer");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper csum_diff from requires 4 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
