@@ -137,6 +137,14 @@ The closure receives a context parameter with these fields:
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
 
+`ctx.sk.tcp` currently exposes `snd_cwnd`, `srtt_us`, `rtt_min`,
+`snd_ssthresh`, `rcv_nxt`, `snd_nxt`, `snd_una`, `mss_cache`,
+`ecn_flags`, `rate_delivered`, `rate_interval_us`, `packets_out`,
+`retrans_out`, `total_retrans`, `segs_in`, `data_segs_in`, `segs_out`,
+`data_segs_out`, `lost_out`, `sacked_out`, `bytes_received`,
+`bytes_acked`, `dsack_dups`, `delivered`, `delivered_ce`, and
+`icsk_retransmits`.
+
 ## Program-Family Notes
 
 Kernel-BTF-backed attach specs accept both the normal and sleepable

@@ -6715,6 +6715,16 @@ fn test_compile_socket_helper_ctx_projection_programs() {
             "cgroup_sockopt:get ctx.sk.tcp.snd_cwnd count",
         ),
         (
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+            vec![
+                string_member("sk"),
+                string_member("tcp"),
+                string_member("delivered_ce"),
+            ],
+            "cgroup_sockopt:get ctx.sk.tcp.delivered_ce count",
+        ),
+        (
             EbpfProgramType::Tc,
             "lo:ingress",
             vec![
@@ -6748,7 +6758,7 @@ fn test_compile_bound_socket_helper_ctx_projection_program() {
             members: vec![string_member("sk")],
         },
         CellPath {
-            members: vec![string_member("tcp"), string_member("snd_cwnd")],
+            members: vec![string_member("tcp"), string_member("icsk_retransmits")],
         },
         DeclId::new(42),
     );
@@ -6759,7 +6769,7 @@ fn test_compile_bound_socket_helper_ctx_projection_program() {
         EbpfProgramType::CgroupSockopt,
         "/sys/fs/cgroup:get",
         &decl_names,
-        "bound cgroup_sockopt:get ctx.sk.tcp.snd_cwnd count",
+        "bound cgroup_sockopt:get ctx.sk.tcp.icsk_retransmits count",
     );
 }
 

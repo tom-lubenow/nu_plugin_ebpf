@@ -54,19 +54,21 @@ fn assert_bpf_tcp_sock_ptr(ty: Option<&MirType>) {
     };
     assert_eq!(name, "bpf_tcp_sock");
 
-    let snd_cwnd = fields
-        .iter()
-        .find(|field| field.name == "snd_cwnd")
-        .expect("expected bpf_tcp_sock.snd_cwnd field");
-    assert_eq!(snd_cwnd.ty, MirType::U32);
-    assert_eq!(snd_cwnd.offset, 0);
+    let assert_field = |name: &str, ty: MirType, offset| {
+        let field = fields
+            .iter()
+            .find(|field| field.name == name)
+            .unwrap_or_else(|| panic!("expected bpf_tcp_sock.{name} field"));
+        assert_eq!(field.ty, ty);
+        assert_eq!(field.offset, offset);
+    };
 
-    let bytes_acked = fields
-        .iter()
-        .find(|field| field.name == "bytes_acked")
-        .expect("expected bpf_tcp_sock.bytes_acked field");
-    assert_eq!(bytes_acked.ty, MirType::U64);
-    assert_eq!(bytes_acked.offset, 88);
+    assert_field("snd_cwnd", MirType::U32, 0);
+    assert_field("bytes_acked", MirType::U64, 88);
+    assert_field("dsack_dups", MirType::U32, 96);
+    assert_field("delivered", MirType::U32, 100);
+    assert_field("delivered_ce", MirType::U32, 104);
+    assert_field("icsk_retransmits", MirType::U32, 108);
 }
 
 #[test]
