@@ -1008,7 +1008,7 @@ fn test_program_type_helper_backed_cookie_field_surfaces_follow_program_model() 
 }
 
 #[test]
-fn test_program_type_raw_context_pointer_aliases_follow_context_family() {
+fn test_program_type_raw_context_pointer_aliases_follow_context_layout() {
     assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Context));
     assert!(EbpfProgramType::CgroupSock.ctx_field_is_raw_context_pointer(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_is_raw_context_pointer(&CtxField::Socket));

@@ -21,17 +21,6 @@ fn context_family_ctx_field_load_guard(
     }
 }
 
-fn context_family_ctx_field_is_raw_context_pointer(
-    context_family: ProgramContextFamily,
-    field: &CtxField,
-) -> bool {
-    matches!(field, CtxField::Context)
-        || matches!(
-            (context_family, field),
-            (ProgramContextFamily::CgroupSock, CtxField::Socket)
-        )
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProgramContextLayoutSpec {
     program_type: EbpfProgramType,
@@ -47,6 +36,7 @@ struct ProgramContextLayoutSpec {
     socket_uid: bool,
     netns_cookie: bool,
     lookup_cookie: bool,
+    raw_socket_context_pointer: bool,
 }
 
 impl ProgramContextLayoutSpec {
@@ -70,6 +60,7 @@ impl ProgramContextLayoutSpec {
             socket_uid: true,
             netns_cookie,
             lookup_cookie: false,
+            raw_socket_context_pointer: false,
         }
     }
 }
@@ -89,6 +80,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: false,
         lookup_cookie: false,
+        raw_socket_context_pointer: false,
     },
     ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SocketFilter, None, None, true),
     ProgramContextLayoutSpec::skb_backed(
@@ -129,6 +121,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: true,
         lookup_cookie: false,
+        raw_socket_context_pointer: true,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockAddr,
@@ -144,6 +137,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: true,
         lookup_cookie: false,
+        raw_socket_context_pointer: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSockopt,
@@ -159,6 +153,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: true,
         lookup_cookie: false,
+        raw_socket_context_pointer: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkLookup,
@@ -174,6 +169,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: false,
         lookup_cookie: true,
+        raw_socket_context_pointer: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SkMsg,
@@ -189,6 +185,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: true,
         lookup_cookie: false,
+        raw_socket_context_pointer: false,
     },
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::SockOps,
@@ -204,6 +201,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         socket_uid: false,
         netns_cookie: true,
         lookup_cookie: false,
+        raw_socket_context_pointer: false,
     },
 ];
 
@@ -393,7 +391,10 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
-        context_family_ctx_field_is_raw_context_pointer(self.context_family(), field)
+        matches!(field, CtxField::Context)
+            || (matches!(field, CtxField::Socket)
+                && program_context_layout_spec(*self)
+                    .is_some_and(|spec| spec.raw_socket_context_pointer))
     }
 
     #[cfg(test)]
