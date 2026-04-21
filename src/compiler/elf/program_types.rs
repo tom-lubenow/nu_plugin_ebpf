@@ -499,6 +499,36 @@ pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     retval_access: ProgramValueAccess::None,
 };
 
+pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
+    EbpfProgramType::Kprobe,
+    EbpfProgramType::Kretprobe,
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::TpBtf,
+    EbpfProgramType::Tracepoint,
+    EbpfProgramType::RawTracepoint,
+    EbpfProgramType::Uprobe,
+    EbpfProgramType::Uretprobe,
+    EbpfProgramType::Lsm,
+    EbpfProgramType::Xdp,
+    EbpfProgramType::PerfEvent,
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::CgroupDevice,
+    EbpfProgramType::SkLookup,
+    EbpfProgramType::SkMsg,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SockOps,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::CgroupSock,
+    EbpfProgramType::CgroupSysctl,
+    EbpfProgramType::CgroupSockopt,
+    EbpfProgramType::CgroupSockAddr,
+    EbpfProgramType::LircMode2,
+    EbpfProgramType::StructOps,
+];
+
 pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kprobe",
     "kretprobe",

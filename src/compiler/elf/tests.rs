@@ -2193,6 +2193,36 @@ fn test_program_type_supports_raw_tracepoint_alias() {
 }
 
 #[test]
+fn test_program_type_spec_prefix_registry_matches_alias_metadata() {
+    let advertised_prefixes: std::collections::HashSet<_> =
+        EbpfProgramType::supported_spec_prefixes()
+            .iter()
+            .copied()
+            .collect();
+
+    for program_type in EbpfProgramType::supported_program_types() {
+        for alias in program_type.info().spec_aliases {
+            assert!(
+                advertised_prefixes.contains(alias),
+                "{program_type:?} alias {alias:?} should be advertised"
+            );
+            assert_eq!(
+                EbpfProgramType::from_spec_prefix(alias),
+                Some(*program_type),
+                "{program_type:?} alias {alias:?} should resolve back to its program type"
+            );
+        }
+    }
+
+    for prefix in EbpfProgramType::supported_spec_prefixes() {
+        assert!(
+            EbpfProgramType::from_spec_prefix(prefix).is_some(),
+            "advertised prefix {prefix:?} should resolve to a program type"
+        );
+    }
+}
+
+#[test]
 fn test_program_intrinsic_command_registry() {
     assert_eq!(
         ProgramIntrinsic::from_command_name("helper-call"),

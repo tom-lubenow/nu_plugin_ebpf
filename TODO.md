@@ -211,6 +211,7 @@ Near-term priority order:
   - Add program-type-aware compile targets (section naming, context type, helper set, attach/load path).
   - Keep tracing as one target among many instead of the default architecture.
   - Recent progress: `ProgramSpec` now owns typed target parsing plus section-name/attach input derivation shared by loader, compiler, and attach paths; `ProbeContext` now caches that typed `ProgramSpec` instead of reparsing `probe_type + target` on demand, which also keeps `struct_ops` callback probe contexts tied to the correct value type; and helper-call legality now mostly resolves through modeled `ProgramSpec` / `EbpfProgramType` policy instead of ad hoc validator matches.
+  - Recent progress: supported program-type enumeration now lives in one registry used by spec-prefix parsing, with regression coverage that every advertised prefix and every per-program alias round-trips through `EbpfProgramType` metadata.
   - Recent progress: `ProbeContext::new` now also accepts full canonical probe spec strings as a fallback (not just raw targets), canonicalizing matching inputs back to structured `ProgramSpec` metadata instead of silently dropping attach-kind information.
   - Recent progress: sleepable BTF attach specs (`fentry.s`, `fexit.s`, and `lsm.s`) now preserve their `.s` section spelling through typed `ProgramSpec` parsing, dry-run ELF emission, and loader attach compilation instead of being collapsed to non-sleepable section names.
 

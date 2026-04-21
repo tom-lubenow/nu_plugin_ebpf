@@ -918,38 +918,15 @@ impl EbpfProgramType {
         PROGRAM_SPEC_PREFIXES
     }
 
+    pub fn supported_program_types() -> &'static [EbpfProgramType] {
+        ALL_PROGRAM_TYPES
+    }
+
     pub fn from_spec_prefix(prefix: &str) -> Option<Self> {
-        [
-            EbpfProgramType::Kprobe,
-            EbpfProgramType::Kretprobe,
-            EbpfProgramType::Fentry,
-            EbpfProgramType::Fexit,
-            EbpfProgramType::TpBtf,
-            EbpfProgramType::Tracepoint,
-            EbpfProgramType::RawTracepoint,
-            EbpfProgramType::Uprobe,
-            EbpfProgramType::Uretprobe,
-            EbpfProgramType::Lsm,
-            EbpfProgramType::Xdp,
-            EbpfProgramType::PerfEvent,
-            EbpfProgramType::SocketFilter,
-            EbpfProgramType::CgroupDevice,
-            EbpfProgramType::SkLookup,
-            EbpfProgramType::SkMsg,
-            EbpfProgramType::SkSkb,
-            EbpfProgramType::SkSkbParser,
-            EbpfProgramType::SockOps,
-            EbpfProgramType::Tc,
-            EbpfProgramType::CgroupSkb,
-            EbpfProgramType::CgroupSock,
-            EbpfProgramType::CgroupSysctl,
-            EbpfProgramType::CgroupSockopt,
-            EbpfProgramType::CgroupSockAddr,
-            EbpfProgramType::LircMode2,
-            EbpfProgramType::StructOps,
-        ]
-        .into_iter()
-        .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
+        ALL_PROGRAM_TYPES
+            .iter()
+            .copied()
+            .find(|program_type| program_type.info().spec_aliases.contains(&prefix))
     }
 
     pub fn canonical_prefix(&self) -> &'static str {
