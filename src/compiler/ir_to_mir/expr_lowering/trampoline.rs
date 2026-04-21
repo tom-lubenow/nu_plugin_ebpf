@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::BpfHelper;
 
 #[derive(Debug, Clone)]
 pub(in crate::compiler::ir_to_mir) struct TypedProjectionStep {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel_btf::KernelBtf;
 
 #[derive(Copy, Clone)]
 pub(in crate::compiler::ir_to_mir) enum PacketPayloadStepKind {
