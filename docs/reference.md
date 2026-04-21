@@ -351,7 +351,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 
 ## Language Surface Policy
 
-- Prefer ordinary Nushell syntax plus the small first-class eBPF command set (`emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`) whenever the operation has an honest language form. Ordinary Nushell primitives are preferred over helper wrappers too; zero-argument `random int` lowers to `bpf_get_prandom_u32`.
+- Prefer ordinary Nushell syntax plus the small first-class eBPF command set (`emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`) whenever the operation has an honest language form. Ordinary Nushell primitives are preferred over helper wrappers too; `random int` lowers to `bpf_get_prandom_u32`.
 - Keep that permanent first-class surface intentionally small. Those commands should exist because they model real eBPF operations that do not already have a clear Nushell shape, not because every helper needs a bespoke wrapper.
 - Prefer leading typed `mut` bindings for private compiler-managed globals. Use `global-define`, `global-get`, and `global-set` when you truly need an explicit shared name or a source-order-independent declaration.
 - Treat `map-*` and `global-*` as convenience surface around concrete eBPF capabilities, not as a goal to invent a second parallel language when plain Nushell syntax would be clearer. They are justified when they name a real map/global resource directly; they are not a template for growing new wrappers by default.
@@ -378,7 +378,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `emit` | Send value to userspace |
 | `count` | Increment counter by key |
 | `histogram` | Add value to log2 histogram |
-| `random int` | Return a BPF pseudo-random integer using `bpf_get_prandom_u32`; eBPF currently supports only the zero-argument form |
+| `random int` | Return a BPF pseudo-random integer using `bpf_get_prandom_u32`; eBPF supports the zero-argument form and compile-time bounded ranges covering at most `2^32` values |
 | `start-timer` | Record start timestamp |
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |

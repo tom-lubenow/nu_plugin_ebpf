@@ -10,7 +10,7 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-use nu_protocol::ast::CellPath;
+use nu_protocol::ast::{CellPath, RangeInclusion};
 use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
 use std::collections::HashMap;
 
@@ -134,6 +134,53 @@ fn make_no_arg_call_program(decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_random_int_range_call_program(decl_id: DeclId, start: i64, end: i64) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(start),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(0),
+                        step: RegId::new(1),
+                        end: RegId::new(2),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_mir_function_creation() {
     let mut func = MirFunction::new();
@@ -167,6 +214,54 @@ fn test_lower_random_int_calls_prandom_helper() {
 
     assert_eq!(helper.0, BpfHelper::GetPrandomU32 as u32);
     assert!(helper.1.is_empty(), "random int should pass no helper args");
+}
+
+#[test]
+fn test_lower_random_int_bounded_range_scales_prandom_result() {
+    let decl_id = DeclId::new(42);
+    let hir = make_random_int_range_call_program(decl_id, 10, 20);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(decl_id, "random int".to_string());
+
+    let result = lower_hir_to_mir(&hir, None, &decl_names)
+        .expect("random int bounded range should lower to MIR");
+    let instructions: Vec<_> = result
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::CallHelper {
+                helper,
+                args,
+                ..
+            } if *helper == BpfHelper::GetPrandomU32 as u32 && args.is_empty()
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Mod,
+                rhs: MirValue::Const(11),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Add,
+                rhs: MirValue::Const(10),
+                ..
+            }
+        )
+    }));
 }
 
 #[test]

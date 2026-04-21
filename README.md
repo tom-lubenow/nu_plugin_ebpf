@@ -94,7 +94,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 
 - Prefer leading typed `mut` bindings for small private per-program state.
 - Prefer ordinary Nushell expressions inside those bindings and typed `global-define --type` initializers. Arithmetic, cell-path projection, record/list construction, and string concatenation are intended surface forms when they stay compile-time constant and preserve an honest fixed layout.
-- Use ordinary zero-argument `random int` when you need BPF pseudo-randomness; it lowers to `bpf_get_prandom_u32` without spelling a raw helper call.
+- Use ordinary `random int` when you need BPF pseudo-randomness; the zero-argument form and compile-time bounded ranges lower to `bpf_get_prandom_u32` without spelling a raw helper call.
 - For scalar or scalar-record layouts whose size is fixed by the annotation alone, `mut state: ... = null` now zero-initializes that global without dropping to `global-define`.
 - Typed record `mut` initializers may omit scalar or nested scalar-record fields that should start zeroed, as long as the annotation alone still fixes their honest layout. Typed list `mut` initializers may also seed fixed arrays from homogeneous scalar/binary/record constants when the initializer provides the concrete length, including when that list is nested inside a typed record global.
 - Use `global-define`, `global-get`, and `global-set` when you need an explicit shared name or a source-order-independent declaration.
@@ -107,7 +107,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 ### Surface Policy
 
 - The long-term first-class command surface is intentionally small: `emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, and `redirect-socket`.
-- Ordinary Nushell primitives should stay ordinary when possible. For example, zero-argument `random int` is supported directly rather than through a bespoke helper wrapper.
+- Ordinary Nushell primitives should stay ordinary when possible. For example, `random int` is supported directly rather than through a bespoke helper wrapper.
 - `map-*` and `global-*` are convenience surfaces around real eBPF resources, not a second parallel language. Prefer ordinary Nushell variables and expressions until you truly need an explicit shared map/global resource.
 - `helper-call` and `kfunc-call` are ABI escape hatches. They remain available, but the preferred direction is to keep lifting common operations into typed context projection and smaller first-class commands.
 

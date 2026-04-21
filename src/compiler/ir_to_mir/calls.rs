@@ -210,9 +210,9 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
                 self.require_only_named_args("random int", &[])?;
-                if !self.positional_args.is_empty() {
+                if self.positional_args.len() > 1 {
                     return Err(CompileError::UnsupportedInstruction(
-                        "random int does not accept positional arguments in eBPF".into(),
+                        "random int accepts at most one range argument in eBPF".into(),
                     ));
                 }
                 if self.pipeline_input.is_some() || src_dst_had_value {
@@ -226,6 +226,58 @@ impl<'a> HirToMirLowering<'a> {
                     helper: BpfHelper::GetPrandomU32 as u32,
                     args: Vec::new(),
                 });
+
+                if let Some((_, range_reg)) = self.positional_args.first().copied() {
+                    let range = self
+                        .get_metadata(range_reg)
+                        .and_then(|meta| meta.bounded_range)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "random int range must be a compile-time bounded integer range"
+                                    .into(),
+                            )
+                        })?;
+                    let min = range.start;
+                    let max = if range.inclusive {
+                        range.end
+                    } else {
+                        range.end.checked_sub(1).ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "random int range end is too small".into(),
+                            )
+                        })?
+                    };
+                    if max < min {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "random int range end must be >= start".into(),
+                        ));
+                    }
+                    let span = (max as i128) - (min as i128) + 1;
+                    let max_span = u32::MAX as i128 + 1;
+                    if !(1..=max_span).contains(&span) {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "random int eBPF ranges must cover at most 2^32 values".into(),
+                        ));
+                    }
+
+                    let span_operand = self.large_const_operand(&MirType::I64, span as i64);
+                    self.emit(MirInst::BinOp {
+                        dst: dst_vreg,
+                        op: BinOpKind::Mod,
+                        lhs: MirValue::VReg(dst_vreg),
+                        rhs: span_operand,
+                    });
+                    if min != 0 {
+                        let min_operand = self.large_const_operand(&MirType::I64, min);
+                        self.emit(MirInst::BinOp {
+                            dst: dst_vreg,
+                            op: BinOpKind::Add,
+                            lhs: MirValue::VReg(dst_vreg),
+                            rhs: min_operand,
+                        });
+                    }
+                }
+
                 self.vreg_type_hints.insert(dst_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }

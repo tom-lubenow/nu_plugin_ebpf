@@ -695,7 +695,7 @@ Aggregation commands:
   histogram         - Add value to log2 histogram
 
 Supported Nushell primitives:
-  random int        - Return a BPF pseudo-random integer (zero-arg form)
+  random int        - Return a BPF pseudo-random integer (zero-arg or bounded range)
 
 Timing commands:
   start-timer       - Record timestamp (use with --pin for cross-probe timing)
