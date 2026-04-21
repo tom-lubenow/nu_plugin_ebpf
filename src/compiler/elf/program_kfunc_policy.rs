@@ -1,4 +1,4 @@
-use crate::program_spec::{ProgramAttachShape, ProgramSpec, StructOpsFamily};
+use crate::program_spec::{ProgramSpec, StructOpsFamily};
 
 const SCHED_EXT_DISPATCH_ONLY_KFUNCS: &[&str] = &[
     "scx_bpf_dispatch_nr_slots",
@@ -47,10 +47,8 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
 
 impl ProgramSpec {
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
-        let ProgramAttachShape::StructOpsCallback {
-            family: StructOpsFamily::SchedExt,
-            sleepable,
-        } = self.attach_shape()
+        let Some((StructOpsFamily::SchedExt, sleepable)) =
+            self.attach_shape().struct_ops_callback()
         else {
             return None;
         };

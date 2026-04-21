@@ -1503,6 +1503,13 @@ impl ProgramAttachShape {
             _ => None,
         }
     }
+
+    pub(crate) fn struct_ops_callback(self) -> Option<(StructOpsFamily, bool)> {
+        match self {
+            Self::StructOpsCallback { family, sleepable } => Some((family, sleepable)),
+            _ => None,
+        }
+    }
 }
 
 impl ProgramSpec {
@@ -1832,15 +1839,17 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
             ProgramSpec::Xdp { target } => target.section_name().to_string(),
-            ProgramSpec::StructOpsCallback { callback_name, .. } => match self.attach_shape() {
-                ProgramAttachShape::StructOpsCallback {
-                    sleepable: true, ..
-                } => format!("struct_ops.s/{callback_name}"),
-                ProgramAttachShape::StructOpsCallback { .. } => {
+            ProgramSpec::StructOpsCallback { callback_name, .. } => {
+                let sleepable = self
+                    .attach_shape()
+                    .struct_ops_callback()
+                    .is_some_and(|(_, sleepable)| sleepable);
+                if sleepable {
+                    format!("struct_ops.s/{callback_name}")
+                } else {
                     format!("struct_ops/{callback_name}")
                 }
-                _ => unreachable!("struct_ops callback attach shape must stay typed"),
-            },
+            }
             _ => {
                 let prog_type = self.program_type();
                 if prog_type.info().section_uses_target {
@@ -2049,11 +2058,19 @@ mod tests {
             }
         );
         assert_eq!(
+            sched_ext_select_cpu.attach_shape().struct_ops_callback(),
+            Some((StructOpsFamily::SchedExt, false))
+        );
+        assert_eq!(
             sched_ext_init.attach_shape(),
             ProgramAttachShape::StructOpsCallback {
                 family: StructOpsFamily::SchedExt,
                 sleepable: true,
             }
+        );
+        assert_eq!(
+            sched_ext_init.attach_shape().struct_ops_callback(),
+            Some((StructOpsFamily::SchedExt, true))
         );
         assert_eq!(sched_ext_select_cpu.section_name(), "struct_ops/select_cpu");
         assert_eq!(sched_ext_init.section_name(), "struct_ops.s/init");
