@@ -30,6 +30,14 @@ struct ContextFieldAccessSurfaceSpec {
     secondary_requirement: Option<ContextFieldAccessRequirement>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CgroupSockAddrTupleAliasSpec {
+    field: CtxField,
+    target_field: CtxField,
+    hooks: &'static [ProgramAttachSockAddrHook],
+    family: Option<ProgramAttachAddressFamily>,
+}
+
 impl ContextFieldAccessRequirement {
     fn error(self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
         match self {
@@ -189,6 +197,107 @@ impl ContextFieldAccessSurfaceSpec {
             })
     }
 }
+
+impl CgroupSockAddrTupleAliasSpec {
+    const fn new(
+        field: CtxField,
+        target_field: CtxField,
+        hooks: &'static [ProgramAttachSockAddrHook],
+        family: Option<ProgramAttachAddressFamily>,
+    ) -> Self {
+        Self {
+            field,
+            target_field,
+            hooks,
+            family,
+        }
+    }
+
+    fn matches(
+        &self,
+        field: &CtxField,
+        hook: ProgramAttachSockAddrHook,
+        family: ProgramAttachAddressFamily,
+    ) -> bool {
+        &self.field == field
+            && self.hooks.contains(&hook)
+            && match self.family {
+                Some(required_family) => required_family == family,
+                None => true,
+            }
+    }
+}
+
+const CGROUP_SOCK_ADDR_REMOTE_TUPLE_HOOKS: &[ProgramAttachSockAddrHook] = &[
+    ProgramAttachSockAddrHook::Connect,
+    ProgramAttachSockAddrHook::GetPeerName,
+    ProgramAttachSockAddrHook::SendMsg,
+    ProgramAttachSockAddrHook::RecvMsg,
+];
+
+const CGROUP_SOCK_ADDR_LOCAL_IP_ALIAS_HOOKS: &[ProgramAttachSockAddrHook] = &[
+    ProgramAttachSockAddrHook::Bind,
+    ProgramAttachSockAddrHook::GetSockName,
+];
+
+const CGROUP_SOCK_ADDR_SENDMSG_HOOKS: &[ProgramAttachSockAddrHook] =
+    &[ProgramAttachSockAddrHook::SendMsg];
+
+const CGROUP_SOCK_ADDR_LOCAL_TUPLE_HOOKS: &[ProgramAttachSockAddrHook] = &[
+    ProgramAttachSockAddrHook::Bind,
+    ProgramAttachSockAddrHook::GetSockName,
+];
+
+const CGROUP_SOCK_ADDR_TUPLE_ALIAS_FIELDS: &[CgroupSockAddrTupleAliasSpec] = &[
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::RemoteIp4,
+        CtxField::UserIp4,
+        CGROUP_SOCK_ADDR_REMOTE_TUPLE_HOOKS,
+        Some(ProgramAttachAddressFamily::Ipv4),
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::RemoteIp6,
+        CtxField::UserIp6,
+        CGROUP_SOCK_ADDR_REMOTE_TUPLE_HOOKS,
+        Some(ProgramAttachAddressFamily::Ipv6),
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::RemotePort,
+        CtxField::UserPort,
+        CGROUP_SOCK_ADDR_REMOTE_TUPLE_HOOKS,
+        None,
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::LocalIp4,
+        CtxField::UserIp4,
+        CGROUP_SOCK_ADDR_LOCAL_IP_ALIAS_HOOKS,
+        Some(ProgramAttachAddressFamily::Ipv4),
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::LocalIp4,
+        CtxField::MsgSrcIp4,
+        CGROUP_SOCK_ADDR_SENDMSG_HOOKS,
+        Some(ProgramAttachAddressFamily::Ipv4),
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::LocalIp6,
+        CtxField::UserIp6,
+        CGROUP_SOCK_ADDR_LOCAL_IP_ALIAS_HOOKS,
+        Some(ProgramAttachAddressFamily::Ipv6),
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::LocalIp6,
+        CtxField::MsgSrcIp6,
+        CGROUP_SOCK_ADDR_SENDMSG_HOOKS,
+        Some(ProgramAttachAddressFamily::Ipv6),
+    ),
+    CgroupSockAddrTupleAliasSpec::new(
+        CtxField::LocalPort,
+        CtxField::UserPort,
+        CGROUP_SOCK_ADDR_LOCAL_TUPLE_HOOKS,
+        None,
+    ),
+];
 
 const SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ContextFieldAccessSurfaceSpec::new(
@@ -1004,58 +1113,10 @@ impl ProgramSpec {
             return None;
         };
 
-        match (field, hook, family) {
-            (
-                CtxField::RemoteIp4,
-                ProgramAttachSockAddrHook::Connect
-                | ProgramAttachSockAddrHook::GetPeerName
-                | ProgramAttachSockAddrHook::SendMsg
-                | ProgramAttachSockAddrHook::RecvMsg,
-                ProgramAttachAddressFamily::Ipv4,
-            ) => Some(CtxField::UserIp4),
-            (
-                CtxField::RemoteIp6,
-                ProgramAttachSockAddrHook::Connect
-                | ProgramAttachSockAddrHook::GetPeerName
-                | ProgramAttachSockAddrHook::SendMsg
-                | ProgramAttachSockAddrHook::RecvMsg,
-                ProgramAttachAddressFamily::Ipv6,
-            ) => Some(CtxField::UserIp6),
-            (
-                CtxField::RemotePort,
-                ProgramAttachSockAddrHook::Connect
-                | ProgramAttachSockAddrHook::GetPeerName
-                | ProgramAttachSockAddrHook::SendMsg
-                | ProgramAttachSockAddrHook::RecvMsg,
-                _,
-            ) => Some(CtxField::UserPort),
-            (
-                CtxField::LocalIp4,
-                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
-                ProgramAttachAddressFamily::Ipv4,
-            ) => Some(CtxField::UserIp4),
-            (
-                CtxField::LocalIp4,
-                ProgramAttachSockAddrHook::SendMsg,
-                ProgramAttachAddressFamily::Ipv4,
-            ) => Some(CtxField::MsgSrcIp4),
-            (
-                CtxField::LocalIp6,
-                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
-                ProgramAttachAddressFamily::Ipv6,
-            ) => Some(CtxField::UserIp6),
-            (
-                CtxField::LocalIp6,
-                ProgramAttachSockAddrHook::SendMsg,
-                ProgramAttachAddressFamily::Ipv6,
-            ) => Some(CtxField::MsgSrcIp6),
-            (
-                CtxField::LocalPort,
-                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
-                _,
-            ) => Some(CtxField::UserPort),
-            _ => None,
-        }
+        CGROUP_SOCK_ADDR_TUPLE_ALIAS_FIELDS
+            .iter()
+            .find(|alias| alias.matches(field, hook, family))
+            .map(|alias| alias.target_field.clone())
     }
 
     fn attach_ctx_field_access_error(&self, field: &CtxField) -> Option<String> {

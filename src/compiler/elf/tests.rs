@@ -3426,6 +3426,64 @@ fn test_program_type_resolves_task_field_name() {
 }
 
 #[test]
+fn test_cgroup_sock_addr_tuple_aliases_use_attach_shape() {
+    let connect4 =
+        ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect4").expect("connect4 spec");
+    assert_eq!(
+        connect4.cgroup_sock_addr_tuple_alias_field(&CtxField::RemoteIp4),
+        Some(CtxField::UserIp4)
+    );
+    assert_eq!(
+        connect4.cgroup_sock_addr_tuple_alias_field(&CtxField::RemotePort),
+        Some(CtxField::UserPort)
+    );
+    assert_eq!(
+        connect4.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalIp4),
+        None
+    );
+
+    let sendmsg4 =
+        ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg4").expect("sendmsg4 spec");
+    assert_eq!(
+        sendmsg4.cgroup_sock_addr_tuple_alias_field(&CtxField::RemoteIp4),
+        Some(CtxField::UserIp4)
+    );
+    assert_eq!(
+        sendmsg4.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalIp4),
+        Some(CtxField::MsgSrcIp4)
+    );
+    assert_eq!(
+        sendmsg4.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalPort),
+        None
+    );
+
+    let bind6 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:bind6").expect("bind6 spec");
+    assert_eq!(
+        bind6.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalIp6),
+        Some(CtxField::UserIp6)
+    );
+    assert_eq!(
+        bind6.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalPort),
+        Some(CtxField::UserPort)
+    );
+    assert_eq!(
+        bind6.cgroup_sock_addr_tuple_alias_field(&CtxField::RemoteIp6),
+        None
+    );
+
+    let recvmsg6 =
+        ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:recvmsg6").expect("recvmsg6 spec");
+    assert_eq!(
+        recvmsg6.cgroup_sock_addr_tuple_alias_field(&CtxField::RemoteIp6),
+        Some(CtxField::UserIp6)
+    );
+    assert_eq!(
+        recvmsg6.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalIp6),
+        None
+    );
+}
+
+#[test]
 fn test_program_type_resolves_sock_ops_field_names() {
     assert_eq!(
         EbpfProgramType::SockOps
