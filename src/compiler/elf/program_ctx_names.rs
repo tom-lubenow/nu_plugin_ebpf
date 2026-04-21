@@ -138,6 +138,7 @@ fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
         "tc_classid" => CtxField::TcClassid,
         "cgroup_classid" => CtxField::CgroupClassid,
         "route_realm" => CtxField::RouteRealm,
+        "csum_level" => CtxField::CsumLevel,
         "skb_cgroup_id" => CtxField::SkbCgroupId,
         "napi_id" => CtxField::NapiId,
         "wire_len" => CtxField::WireLen,

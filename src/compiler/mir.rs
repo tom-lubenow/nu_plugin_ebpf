@@ -571,6 +571,8 @@ pub enum CtxField {
     CgroupClassid,
     /// skb route realm from `bpf_get_route_realm`
     RouteRealm,
+    /// skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`
+    CsumLevel,
     /// skb cgroup ID from `bpf_skb_cgroup_id`
     SkbCgroupId,
     /// skb napi_id (`__sk_buff.napi_id`)
@@ -794,6 +796,7 @@ impl CtxField {
             CtxField::TcClassid => "tc_classid".to_string(),
             CtxField::CgroupClassid => "cgroup_classid".to_string(),
             CtxField::RouteRealm => "route_realm".to_string(),
+            CtxField::CsumLevel => "csum_level".to_string(),
             CtxField::SkbCgroupId => "skb_cgroup_id".to_string(),
             CtxField::NapiId => "napi_id".to_string(),
             CtxField::WireLen => "wire_len".to_string(),

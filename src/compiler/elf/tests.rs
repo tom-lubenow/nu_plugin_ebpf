@@ -3909,6 +3909,28 @@ fn test_probe_context_rejects_tc_egress_helper_backed_ctx_fields_on_non_tc() {
 }
 
 #[test]
+fn test_probe_context_allows_csum_level_on_supported_skb_helper_programs() {
+    for ctx in [
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+        ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+    ] {
+        assert!(ctx.ctx_field_access_error(&CtxField::CsumLevel).is_none());
+    }
+}
+
+#[test]
+fn test_probe_context_rejects_csum_level_on_unsupported_skb_program() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::CsumLevel)
+        .expect("expected unsupported csum_level access error");
+    assert!(
+        err.contains("ctx.csum_level is only available on tc, sk_skb, and sk_skb_parser programs")
+    );
+}
+
+#[test]
 fn test_probe_context_rejects_data_meta_on_cgroup_skb() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
     let err = ctx

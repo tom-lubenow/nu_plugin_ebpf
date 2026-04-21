@@ -2953,6 +2953,33 @@ fn test_lower_tc_egress_helper_backed_ctx_fields() {
 }
 
 #[test]
+fn test_lower_tc_ctx_csum_level_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("csum_level")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc ctx.csum_level should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::CsumLevel,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_kprobe_ctx_cgroup_id_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("cgroup_id")],

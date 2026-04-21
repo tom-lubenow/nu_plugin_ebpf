@@ -42,6 +42,7 @@ The closure receives a context parameter with these fields:
 | `tc_classid` | skb tc_classid | tc |
 | `cgroup_classid` | skb cgroup class ID from `bpf_get_cgroup_classid` | tc egress |
 | `route_realm` | skb route realm from `bpf_get_route_realm` | tc egress |
+| `csum_level` | skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`; returns a negative error if the kernel cannot query it | tc, sk_skb, sk_skb_parser |
 | `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc egress |
 | `napi_id` | skb napi_id | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `wire_len` | skb wire_len | tc |
@@ -215,7 +216,9 @@ TC egress exposes skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields. `bpf_skb_ancestor_cgroup_id` remains a
 modeled TC-egress-only helper call because it requires an ancestor
-level argument. The
+level argument. `ctx.csum_level` exposes the checksum-level query form
+of `bpf_csum_level` on TC and `sk_skb` programs; inc/dec/reset remain
+helper-call operations because they mutate skb metadata. The
 skb-backed packet contexts
 (`socket_filter`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as

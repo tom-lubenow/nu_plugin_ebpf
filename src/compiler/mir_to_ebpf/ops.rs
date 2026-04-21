@@ -5,6 +5,8 @@ use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
 mod context;
 
+const BPF_CSUM_LEVEL_QUERY: i32 = 0;
+
 impl<'a> MirToEbpfCompiler<'a> {
     fn cgroup_sock_addr_tuple_alias_field(&self, field: &CtxField) -> Option<CtxField> {
         self.probe_ctx
@@ -561,6 +563,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetRouteRealm));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::CsumLevel => {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+                self.instructions
+                    .push(EbpfInsn::mov64_imm(EbpfReg::R2, BPF_CSUM_LEVEL_QUERY));
+                self.instructions.push(EbpfInsn::call(BpfHelper::CsumLevel));
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
