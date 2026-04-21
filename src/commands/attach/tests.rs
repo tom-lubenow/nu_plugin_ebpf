@@ -2774,6 +2774,74 @@ fn make_list_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_cgroup_sock_addr_nullable_socket_branch_program(count_decl_id: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("sk")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::BranchIfEmpty {
+                    src: RegId::new(0),
+                    if_true: HirBlockId(2),
+                    if_false: HirBlockId(1),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("family")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: count_decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::ReturnEarly { src: RegId::new(2) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 7],
+        ast: vec![None; 7],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn assert_ctx_path_count_program_compiles(
     program_type: EbpfProgramType,
     target: &str,
@@ -6344,6 +6412,43 @@ fn test_optimize_xdp_bounded_list_iterate_count_program_lowers_all_list_ops() {
         remaining.is_empty(),
         "expected no list ops after list lowering, found {remaining:?} in blocks {:?}",
         lowering.program.main.blocks
+    );
+}
+
+#[test]
+fn test_compile_cgroup_sock_addr_nullable_socket_branch_program() {
+    let hir = make_cgroup_sock_addr_nullable_socket_branch_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "connect4");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("nullable cgroup_sock_addr ctx.sk branch should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("nullable cgroup_sock_addr ctx.sk branch should compile through attach flow");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "nullable cgroup_sock_addr ctx.sk branch should produce bytecode"
     );
 }
 
