@@ -6891,6 +6891,30 @@ fn test_compile_cgroup_device_ctx_major_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_device_ctx_access_type_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupDevice,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("access_type")],
+        },
+        "cgroup_device ctx.access_type count",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_device_ctx_minor_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupDevice,
+        "/sys/fs/cgroup",
+        CellPath {
+            members: vec![string_member("minor")],
+        },
+        "cgroup_device ctx.minor count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sysctl_ctx_write_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSysctl,
@@ -7237,6 +7261,48 @@ fn test_compile_tc_ctx_cb_word_store_program() {
         HirLiteral::Int(7),
         HirLiteral::Int(0),
         "tc ctx.cb[2] store",
+    );
+}
+
+#[test]
+fn test_compile_socket_filter_ctx_cb_word_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SocketFilter,
+        "udp4:127.0.0.1:31337",
+        CellPath {
+            members: vec![string_member("cb"), int_member(1)],
+        },
+        HirLiteral::Int(9),
+        HirLiteral::Int(0),
+        "socket_filter ctx.cb[1] store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_skb_egress_ctx_priority_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:egress",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(3),
+        HirLiteral::Int(1),
+        "cgroup_skb:egress ctx.priority store",
+    );
+}
+
+#[test]
+fn test_compile_cgroup_skb_egress_ctx_cb_word_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:egress",
+        CellPath {
+            members: vec![string_member("cb"), int_member(3)],
+        },
+        HirLiteral::Int(11),
+        HirLiteral::Int(1),
+        "cgroup_skb:egress ctx.cb[3] store",
     );
 }
 
