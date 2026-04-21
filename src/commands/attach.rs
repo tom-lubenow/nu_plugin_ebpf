@@ -116,6 +116,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array on skb-backed packet programs
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid on tc programs
+    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on tc egress
+    {|ctx| $ctx.route_realm } - Get skb route realm on tc egress
+    {|ctx| $ctx.skb_cgroup_id } - Get skb cgroup ID on tc egress
+    {|ctx| $ctx.skb_ancestor_cgroup_id.0 } - Get skb ancestor cgroup ID on tc egress at constant level 0
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
     {|ctx| $ctx.wire_len } - Get the skb wire_len on tc programs
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs

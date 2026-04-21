@@ -45,6 +45,7 @@ The closure receives a context parameter with these fields:
 | `route_realm` | skb route realm from `bpf_get_route_realm` | tc egress |
 | `csum_level` | skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`; returns a negative error if the kernel cannot query it | tc, sk_skb, sk_skb_parser |
 | `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc egress |
+| `skb_ancestor_cgroup_id.N` | skb ancestor cgroup ID at constant numeric level `N` from `bpf_skb_ancestor_cgroup_id` | tc egress |
 | `napi_id` | skb napi_id | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `wire_len` | skb wire_len | tc |
 | `gso_segs` | skb GSO segment count | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -216,9 +217,9 @@ when the paired size is zero. `ctx.xdp_buff_len` exposes
 multi-buffer packet size rather than the linear `ctx.packet_len`.
 TC egress exposes skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
-`ctx.route_realm` fields. `bpf_skb_ancestor_cgroup_id` remains a
-modeled TC-egress-only helper call because it requires an ancestor
-level argument. `ctx.csum_level` exposes the checksum-level query form
+`ctx.route_realm` fields. `ctx.skb_ancestor_cgroup_id.N` exposes the
+parameterized skb ancestor cgroup helper with a constant numeric
+ancestor level. `ctx.csum_level` exposes the checksum-level query form
 of `bpf_csum_level` on TC and `sk_skb` programs; inc/dec/reset remain
 helper-call operations because they mutate skb metadata.
 `ctx.hash_recalc` exposes `bpf_get_hash_recalc` on the same

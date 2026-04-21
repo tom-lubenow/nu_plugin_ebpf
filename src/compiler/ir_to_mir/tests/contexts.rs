@@ -3034,6 +3034,65 @@ fn test_lower_tc_egress_helper_backed_ctx_fields() {
 }
 
 #[test]
+fn test_lower_tc_egress_skb_ancestor_cgroup_id_projection_calls_helper() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("skb_ancestor_cgroup_id"), int_member(3)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc egress ctx.skb_ancestor_cgroup_id.3 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Context,
+            ..
+        }
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbAncestorCgroupId as u32
+            && matches!(args.as_slice(), [MirValue::VReg(_), MirValue::Const(3)])
+    )));
+}
+
+#[test]
+fn test_lower_tc_ingress_skb_ancestor_cgroup_id_projection_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("skb_ancestor_cgroup_id"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("tc ingress ctx.skb_ancestor_cgroup_id.0 should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("helper 'bpf_skb_ancestor_cgroup_id' is only valid in tc egress programs")
+    );
+}
+
+#[test]
 fn test_lower_tc_ctx_csum_level_field() {
     for (field_name, expected_field) in [
         ("csum_level", CtxField::CsumLevel),

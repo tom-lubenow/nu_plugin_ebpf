@@ -6529,6 +6529,18 @@ fn test_compile_tc_ctx_wire_len_counter_program() {
 }
 
 #[test]
+fn test_compile_tc_egress_ctx_skb_ancestor_cgroup_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:egress",
+        CellPath {
+            members: vec![string_member("skb_ancestor_cgroup_id"), int_member(0)],
+        },
+        "tc egress ctx.skb_ancestor_cgroup_id.0 count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_skb_ctx_mark_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSkb,
