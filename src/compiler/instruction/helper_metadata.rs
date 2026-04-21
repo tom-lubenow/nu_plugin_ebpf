@@ -238,7 +238,7 @@ impl BpfHelper {
                 min_args: 0,
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
-                ret_kind: HelperRetKind::PointerMaybeNull,
+                ret_kind: HelperRetKind::PointerNonNull,
             },
             BpfHelper::XdpAdjustHead | BpfHelper::XdpAdjustMeta | BpfHelper::XdpAdjustTail => {
                 HelperSignature {

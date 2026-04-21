@@ -63,6 +63,28 @@ pub(super) fn apply_call_helper_inst(
                 .get(&dst)
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Scalar),
+            HelperRetKind::PointerNonNull => match types.get(&dst).map(verifier_type_from_mir) {
+                Some(VerifierType::Ptr {
+                    space,
+                    bounds,
+                    ringbuf_ref,
+                    kfunc_ref,
+                    ..
+                }) => VerifierType::Ptr {
+                    space,
+                    nullability: Nullability::NonNull,
+                    bounds,
+                    ringbuf_ref,
+                    kfunc_ref,
+                },
+                _ => VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    nullability: Nullability::NonNull,
+                    bounds: None,
+                    ringbuf_ref: None,
+                    kfunc_ref: None,
+                },
+            },
             HelperRetKind::PointerMaybeNull => match BpfHelper::from_u32(helper) {
                 Some(BpfHelper::RingbufReserve) => {
                     state.set_live_ringbuf_ref(dst, true);

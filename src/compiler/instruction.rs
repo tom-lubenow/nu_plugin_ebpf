@@ -572,6 +572,7 @@ pub enum HelperExplicitMapKindFamily {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelperRetKind {
     Scalar,
+    PointerNonNull,
     PointerMaybeNull,
 }
 

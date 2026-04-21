@@ -357,6 +357,12 @@ impl<'a> VccLowerer<'a> {
                             _ => {}
                         }
                     }
+                    if matches!(field, CtxField::Task)
+                        && let VccValueType::Ptr(ref mut info) = ty
+                        && info.space == VccAddrSpace::Kernel
+                    {
+                        info.nullability = VccNullability::NonNull;
+                    }
                     if ProbeContext::resolve_ctx_field_is_raw_context_pointer(
                         self.probe_ctx,
                         field,

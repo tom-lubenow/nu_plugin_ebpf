@@ -4608,6 +4608,27 @@ fn test_infer_helper_sock_from_file_returns_kernel_pointer() {
 }
 
 #[test]
+fn test_infer_helper_get_current_task_btf_returns_task_pointer() {
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: task,
+        helper: BpfHelper::GetCurrentTaskBtf as u32,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+    assert!(
+        types.get(&task).is_some_and(MirType::is_task_struct_ptr),
+        "expected current-task helper to infer task_struct pointer, got {:?}",
+        types.get(&task)
+    );
+}
+
+#[test]
 fn test_infer_helper_task_pt_regs_returns_kernel_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();

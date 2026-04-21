@@ -109,6 +109,25 @@ impl<'a> VccLowerer<'a> {
 
         match sig.ret_kind {
             HelperRetKind::Scalar => inferred.unwrap_or(VccValueType::Scalar { range: None }),
+            HelperRetKind::PointerNonNull => match inferred {
+                Some(VccValueType::Ptr(mut info)) => {
+                    info.nullability = VccNullability::NonNull;
+                    VccValueType::Ptr(info)
+                }
+                _ => VccValueType::Ptr(VccPointerInfo {
+                    space: VccAddrSpace::Kernel,
+                    nullability: VccNullability::NonNull,
+                    bounds: None,
+                    packet_root: None,
+                    packet_root_field: None,
+                    packet_ctx_field: None,
+                    packet_end: false,
+                    context_buffer_root: None,
+                    context_buffer_end: false,
+                    ringbuf_ref: None,
+                    kfunc_ref: None,
+                }),
+            },
             HelperRetKind::PointerMaybeNull => {
                 if matches!(helper, Some(BpfHelper::RingbufReserve)) {
                     return VccValueType::Ptr(VccPointerInfo {

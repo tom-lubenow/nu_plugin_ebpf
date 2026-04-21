@@ -614,6 +614,36 @@ fn test_verify_mir_for_probe_context_accepts_sock_ops_tcp_flags_on_hdr_opt_len()
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_task_is_non_null_task_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let task = func.alloc_vreg();
+    let regs = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: task,
+            field: CtxField::Task,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: regs,
+            helper: BpfHelper::TaskPtRegs as u32,
+            args: vec![MirValue::VReg(task)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(regs, MirType::named_kernel_struct_ptr("pt_regs"));
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected ctx.task to satisfy task helpers without a null check");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_void_trampoline_retval_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

@@ -502,7 +502,7 @@ fn test_helper_signature_get_current_task_btf() {
         .expect("expected bpf_get_current_task_btf helper signature");
     assert_eq!(sig.min_args, 0);
     assert_eq!(sig.max_args, 0);
-    assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerNonNull);
 }
 
 #[test]
