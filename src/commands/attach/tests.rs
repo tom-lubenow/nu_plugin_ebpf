@@ -5419,6 +5419,20 @@ fn test_compile_tc_ctx_data_byte_store_program() {
 }
 
 #[test]
+fn test_compile_tc_ctx_cb_word_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("cb"), int_member(2)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc ctx.cb[2] store",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_skb_egress_ctx_tstamp_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::CgroupSkb,
@@ -5625,6 +5639,20 @@ fn test_compile_sk_skb_parser_ctx_priority_store_program() {
         HirLiteral::Int(3),
         HirLiteral::Int(0),
         "sk_skb_parser ctx.priority store",
+    );
+}
+
+#[test]
+fn test_compile_sk_skb_ctx_tc_index_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("tc_index")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "sk_skb ctx.tc_index store",
     );
 }
 
