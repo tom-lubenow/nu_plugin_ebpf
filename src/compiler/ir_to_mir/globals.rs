@@ -152,20 +152,24 @@ fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
 
 impl ParsedNamedGlobalType {
     fn is_fixed_array_element_type(&self) -> bool {
-        matches!(
-            &self.shape,
-            NamedGlobalTypeShape::I8
-                | NamedGlobalTypeShape::I16
-                | NamedGlobalTypeShape::I32
-                | NamedGlobalTypeShape::I64
-                | NamedGlobalTypeShape::Duration
-                | NamedGlobalTypeShape::Filesize
-                | NamedGlobalTypeShape::U8
-                | NamedGlobalTypeShape::U16
-                | NamedGlobalTypeShape::U32
-                | NamedGlobalTypeShape::U64
-                | NamedGlobalTypeShape::Bool
-        )
+        self.semantics.is_none()
+            && matches!(
+                &self.shape,
+                NamedGlobalTypeShape::I8
+                    | NamedGlobalTypeShape::I16
+                    | NamedGlobalTypeShape::I32
+                    | NamedGlobalTypeShape::I64
+                    | NamedGlobalTypeShape::Duration
+                    | NamedGlobalTypeShape::Filesize
+                    | NamedGlobalTypeShape::U8
+                    | NamedGlobalTypeShape::U16
+                    | NamedGlobalTypeShape::U32
+                    | NamedGlobalTypeShape::U64
+                    | NamedGlobalTypeShape::Bool
+                    | NamedGlobalTypeShape::Bytes { .. }
+                    | NamedGlobalTypeShape::FixedArray { .. }
+                    | NamedGlobalTypeShape::Record(_)
+            )
     }
 
     fn parse(spec: &str) -> Result<Self, CompileError> {
@@ -294,7 +298,7 @@ impl ParsedNamedGlobalType {
             let parsed_elem = Self::parse(elem_spec)?;
             if !parsed_elem.is_fixed_array_element_type() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "global fixed-array declarations currently support scalar element types only, got '{}'",
+                    "global fixed-array declarations require fixed-layout elements without string/list semantics, got '{}'",
                     elem_spec
                 )));
             }
@@ -423,7 +427,7 @@ impl ParsedNamedGlobalType {
         }
 
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{scalar:N}}, or nested record{{field:type,...}}",
+            "unsupported global type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{type:N}}, or nested record{{field:type,...}}",
             spec
         )))
     }

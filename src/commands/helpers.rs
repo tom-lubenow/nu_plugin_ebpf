@@ -425,7 +425,7 @@ Examples:
             .named(
                 "type",
                 SyntaxShape::String,
-                "Declare a global from a type spec (zero-initialized with no input, or explicitly initialized from a compile-time constant input) using i8/i16/i32/int(i64)/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:int:N(list:i64:N)/array{scalar:N}/record{field:type,...}",
+                "Declare a global from a type spec (zero-initialized with no input, or explicitly initialized from a compile-time constant input) using i8/i16/i32/int(i64)/duration/filesize/u8/u16/u32/u64/bool/bytes:N/string:N/list:int:N(list:i64:N)/array{type:N}/record{field:type,...}",
                 None,
             )
             .switch(

@@ -2953,6 +2953,69 @@ fn make_typed_global_define_list_get_count_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_typed_global_define_record_array_field_count_program(
+    define_decl_id: DeclId,
+    get_decl_id: DeclId,
+    count_decl_id: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_entries".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{record{pid:int,cpu:u32}:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1), string_member("cpu")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 7],
+        ast: vec![None; 7],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_annotated_mut_int_count_program(count_decl_id: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let global_var = VarId::new(10);
@@ -7009,6 +7072,28 @@ fn test_compile_xdp_typed_global_define_type_fixed_array_program() {
         "lo",
         &decl_names,
         "typed global-define fixed array should compile through attach flow",
+    );
+}
+
+#[test]
+fn test_compile_xdp_typed_global_define_type_fixed_record_array_program() {
+    let hir = make_typed_global_define_record_array_field_count_program(
+        DeclId::new(40),
+        DeclId::new(41),
+        DeclId::new(42),
+    );
+    let decl_names = HashMap::from([
+        (DeclId::new(40), "global-define".to_string()),
+        (DeclId::new(41), "global-get".to_string()),
+        (DeclId::new(42), "count".to_string()),
+    ]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Xdp,
+        "lo",
+        &decl_names,
+        "typed global-define fixed record array should compile through attach flow",
     );
 }
 
