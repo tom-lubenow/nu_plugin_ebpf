@@ -2828,6 +2828,40 @@ fn make_random_int_range_count_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_tail_call_program(tail_call_decl_id: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"dispatch_targets".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: tail_call_decl_id,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 3],
+        ast: vec![None; 3],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bound_ctx_path_projection_call_program(
     root_path: CellPath,
     projection_path: CellPath,
@@ -6534,6 +6568,54 @@ fn test_compile_kprobe_ctx_kstack_counter_program() {
 #[test]
 fn test_compile_kprobe_ctx_ustack_counter_program() {
     assert_ctx_stack_count_program_compiles("ustack", USTACK_MAP_NAME, "kprobe ctx.ustack count");
+}
+
+#[test]
+fn test_compile_kprobe_tail_call_program() {
+    let tail_call_decl_id = DeclId::new(42);
+    let hir = make_tail_call_program(tail_call_decl_id);
+    let decl_names = HashMap::from([(tail_call_decl_id, "tail-call".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tail-call should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("tail-call should compile through attach flow");
+
+    assert!(
+        result
+            .maps
+            .iter()
+            .any(|map| map.name == "dispatch_targets" && map.def == BpfMapDef::prog_array(1024)),
+        "tail-call should emit a prog_array map"
+    );
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "dispatch_targets"),
+        "tail-call should emit a prog_array relocation"
+    );
 }
 
 #[test]
