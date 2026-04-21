@@ -113,6 +113,7 @@ impl EbpfProgramType {
 
     pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
         match self {
+            _ if self.supports_skb_ctx_fields() => Some(SocketContextLayout::SkBuff),
             EbpfProgramType::CgroupSock => Some(SocketContextLayout::CgroupSock),
             EbpfProgramType::CgroupSockAddr => Some(SocketContextLayout::SockAddr),
             EbpfProgramType::SkLookup => Some(SocketContextLayout::SkLookup),

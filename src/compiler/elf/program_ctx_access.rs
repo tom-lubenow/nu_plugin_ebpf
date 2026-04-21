@@ -899,8 +899,12 @@ impl BaseContextFieldAccessRequirement {
                 "ctx.{} is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             ),
-            Self::SockTypeField | Self::ProtocolField => format!(
-                "ctx.{} is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs",
+            Self::SockTypeField => format!(
+                "ctx.{} is only available on cgroup_sock and cgroup_sock_addr programs",
+                field.display_name()
+            ),
+            Self::ProtocolField => format!(
+                "ctx.{} is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, and sk_lookup programs",
                 field.display_name()
             ),
             Self::CgroupSockFields => format!(

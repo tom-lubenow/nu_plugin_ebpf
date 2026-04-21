@@ -1023,28 +1023,43 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Protocol => {
-                let offset = match self
+                match self
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.protocol_context_layout())
                 {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().3,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().2,
-                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().6,
+                    Some(SocketContextLayout::CgroupSock) => {
+                        let offset = Self::bpf_sock_offsets().3;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                    }
+                    Some(SocketContextLayout::SkLookup) => {
+                        let offset = Self::bpf_sk_lookup_offsets().2;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                    }
+                    Some(SocketContextLayout::SockAddr) => {
+                        let offset = Self::bpf_sock_addr_offsets().6;
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                    }
+                    Some(SocketContextLayout::SkBuff) => {
+                        let offset = Self::sk_buff_vlan_offsets().0;
+                        self.instructions
+                            .push(EbpfInsn::ldxh(dst, EbpfReg::R9, offset));
+                        self.instructions.push(EbpfInsn::end16_to_be(dst));
+                    }
                     Some(
                         SocketContextLayout::CgroupSockopt
                         | SocketContextLayout::SkMsg
-                        | SocketContextLayout::SkBuff
                         | SocketContextLayout::SockOps,
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.protocol is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs".to_string(),
+                            "ctx.protocol is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, and sk_lookup programs".to_string(),
                         ));
                     }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                }
             }
             CtxField::Socket => {
                 let offset = match self

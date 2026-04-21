@@ -35,7 +35,7 @@ The closure receives a context parameter with these fields:
 | `xdp_buff_len` / `xdp_buffer_len` | Total XDP buffer length from `bpf_xdp_get_buff_len`, including paged fragments | xdp |
 | `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `eth_protocol` | skb protocol / ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_present` | Whether skb VLAN metadata is present | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_tci` | skb VLAN TCI | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -75,7 +75,7 @@ The closure receives a context parameter with these fields:
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
 | `family` | Kernel socket family | cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
-| `protocol` | Socket protocol | cgroup_sock, cgroup_sock_addr, sk_lookup |
+| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_skb, sk_skb_parser |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock (sock_create, sock_release) |
 | `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb |
 | `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |

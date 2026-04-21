@@ -3148,6 +3148,33 @@ fn test_lower_socket_filter_ctx_socket_uid_field() {
 }
 
 #[test]
+fn test_lower_sk_skb_ctx_protocol_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("protocol")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_skb ctx.protocol should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Protocol,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_sk_skb_parser_ctx_socket_uid_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("socket_uid")],

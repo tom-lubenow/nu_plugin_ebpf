@@ -617,6 +617,27 @@ fn test_verify_mir_for_probe_context_accepts_cgroup_sock_rx_queue_mapping_field(
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_protocol_alias_field() {
+    let (mut func, entry) = new_mir_function();
+    let protocol = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: protocol,
+            field: CtxField::Protocol,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(protocol, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected tc ctx.protocol alias to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_sock_ops_tcp_flags_on_hdr_opt_len() {
     let (mut func, entry) = new_mir_function();
     let guarded = func.alloc_block();

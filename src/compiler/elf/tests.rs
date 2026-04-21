@@ -456,7 +456,14 @@ fn test_program_type_socket_layouts_follow_program_model() {
         EbpfProgramType::SkSkbParser.sock_type_context_layout(),
         None
     );
-    assert_eq!(EbpfProgramType::SkSkbParser.protocol_context_layout(), None);
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.protocol_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::SocketFilter.protocol_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
     assert_eq!(
         EbpfProgramType::SocketFilter.socket_family_context_layout(),
         None
@@ -3953,6 +3960,7 @@ fn test_probe_context_allows_packet_fields_on_tc() {
             .is_none()
     );
     assert!(ctx.ctx_field_access_error(&CtxField::EthProtocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::VlanPresent).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::VlanTci).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::VlanProto).is_none());
@@ -4938,11 +4946,22 @@ fn test_probe_context_rejects_msg_source_ipv6_field_on_non_msg_hook() {
 fn test_probe_context_rejects_sock_addr_fields_on_packet_programs() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = ctx
-        .ctx_field_access_error(&CtxField::Protocol)
+        .ctx_field_access_error(&CtxField::UserFamily)
         .expect("expected sock addr field access error");
-    assert!(err.contains(
-        "ctx.protocol is only available on cgroup_sock, cgroup_sock_addr, and sk_lookup programs"
-    ));
+    assert!(err.contains("ctx.user_family is only available on cgroup_sock_addr programs"));
+}
+
+#[test]
+fn test_probe_context_rejects_sock_type_on_packet_programs() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = ctx
+        .ctx_field_access_error(&CtxField::SockType)
+        .expect("expected sock_type field access error");
+    assert!(
+        err.contains(
+            "ctx.sock_type is only available on cgroup_sock and cgroup_sock_addr programs"
+        )
+    );
 }
 
 #[test]
