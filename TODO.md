@@ -444,6 +444,7 @@ Near-term priority order:
   - Recent progress: attach-flow compile fixtures now cover the full `cgroup_device` scalar read surface (`ctx.access_type`, `ctx.major`, `ctx.minor`) plus representative writable skb metadata stores on `socket_filter` and `cgroup_skb` (`ctx.cb[N]`, `ctx.priority`).
   - Recent progress: attach-flow compile fixtures now cover all modeled writable `sock_ops` fields (`ctx.reply`, `ctx.replylong[N]`, helper-backed `ctx.cb_flags`, and `ctx.sk_txhash`), so those ordinary assignment surfaces are validated through the public attach lowering path.
   - Recent progress: added first-class `assign-socket` lowering for `bpf_sk_assign`, supplying the ambient context pointer automatically for `tc:...:ingress` / `sk_lookup`, supporting sk_lookup `--replace` / `--no-reuseport` flags, and covering the surface through lowering plus attach-flow compile fixtures.
+  - Recent progress: attach-flow compile fixtures now cover the remaining modeled writable skb metadata surfaces (`tc.priority`, `tc.tc_index`, `tc.tc_classid`, `tc.tstamp`, `cgroup_skb:ingress.mark`, `sk_skb.priority`, and `sk_skb_parser.tc_index`) without adding separate live attach tests.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

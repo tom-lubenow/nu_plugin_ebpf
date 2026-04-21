@@ -7321,6 +7321,80 @@ fn test_compile_cgroup_skb_egress_ctx_tstamp_store_program() {
 }
 
 #[test]
+fn test_compile_remaining_skb_metadata_store_programs() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(3),
+        HirLiteral::Int(0),
+        "tc ctx.priority store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("tc_index")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc ctx.tc_index store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("tc_classid")],
+        },
+        HirLiteral::Int(9),
+        HirLiteral::Int(0),
+        "tc ctx.tc_classid store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("tstamp")],
+        },
+        HirLiteral::Int(123),
+        HirLiteral::Int(0),
+        "tc ctx.tstamp store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(5),
+        HirLiteral::Int(1),
+        "cgroup_skb:ingress ctx.mark store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkSkb,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(3),
+        HirLiteral::Int(0),
+        "sk_skb ctx.priority store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkSkbParser,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("tc_index")],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "sk_skb_parser ctx.tc_index store",
+    );
+}
+
+#[test]
 fn test_compile_xdp_ctx_ethertype_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::Xdp,
