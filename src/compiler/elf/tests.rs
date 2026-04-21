@@ -374,6 +374,41 @@ fn test_program_type_return_action_aliases_cover_const_families() {
 }
 
 #[test]
+fn test_program_type_allow_deny_return_alias_surface_covers_policy_programs() {
+    for program_type in [
+        EbpfProgramType::CgroupSkb,
+        EbpfProgramType::CgroupDevice,
+        EbpfProgramType::CgroupSock,
+        EbpfProgramType::CgroupSysctl,
+        EbpfProgramType::CgroupSockopt,
+        EbpfProgramType::CgroupSockAddr,
+        EbpfProgramType::SkLookup,
+        EbpfProgramType::SkSkb,
+        EbpfProgramType::SkMsg,
+    ] {
+        assert_eq!(
+            program_type.return_action_alias("allow"),
+            Some(ProgramReturnAlias::Const(1)),
+            "{program_type:?} should accept allow/pass-style return aliases"
+        );
+        assert_eq!(
+            program_type.return_action_alias("deny"),
+            Some(ProgramReturnAlias::Const(0)),
+            "{program_type:?} should accept deny/drop-style return aliases"
+        );
+    }
+
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.return_action_alias("allow"),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::StructOps.return_action_alias("allow"),
+        None
+    );
+}
+
+#[test]
 fn test_program_type_return_action_aliases_cover_packet_len_aliases() {
     assert_eq!(
         EbpfProgramType::SocketFilter.return_action_alias("permit"),
