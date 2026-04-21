@@ -6,6 +6,41 @@ const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
+fn assert_bpf_tcp_sock_ptr(ty: Option<&MirType>) {
+    let Some(MirType::Ptr {
+        pointee,
+        address_space,
+    }) = ty
+    else {
+        panic!("expected bpf_tcp_sock kernel pointer, got {ty:?}");
+    };
+    assert_eq!(*address_space, AddressSpace::Kernel);
+
+    let MirType::Struct {
+        name: Some(name),
+        fields,
+        ..
+    } = pointee.as_ref()
+    else {
+        panic!("expected bpf_tcp_sock struct pointee, got {pointee:?}");
+    };
+    assert_eq!(name, "bpf_tcp_sock");
+
+    let snd_cwnd = fields
+        .iter()
+        .find(|field| field.name == "snd_cwnd")
+        .expect("expected bpf_tcp_sock.snd_cwnd field");
+    assert_eq!(snd_cwnd.ty, MirType::U32);
+    assert_eq!(snd_cwnd.offset, 0);
+
+    let bytes_acked = fields
+        .iter()
+        .find(|field| field.name == "bytes_acked")
+        .expect("expected bpf_tcp_sock.bytes_acked field");
+    assert_eq!(bytes_acked.ty, MirType::U64);
+    assert_eq!(bytes_acked.offset, 88);
+}
+
 #[test]
 fn test_subfn_polymorphic_id() {
     let mut subfn = MirFunction::with_name("id");
@@ -2726,12 +2761,7 @@ fn test_infer_tcp_sock_helper_in_cgroup_sockopt_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_tcp_sock to infer on cgroup_sockopt");
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!("expected kernel pointer type, got {:?}", other),
-    }
+    assert_bpf_tcp_sock_ptr(types.get(&dst));
 }
 
 #[test]
@@ -2785,12 +2815,10 @@ fn test_infer_skc_to_tcp_sock_helper_in_sk_lookup_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_skc_to_tcp_sock to infer on sk_lookup");
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!("expected kernel pointer type, got {:?}", other),
-    }
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("tcp_sock"))
+    );
 }
 
 #[test]
@@ -5220,10 +5248,7 @@ fn test_infer_helper_tcp_sock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    assert_eq!(
-        types.get(&dst),
-        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
-    );
+    assert_bpf_tcp_sock_ptr(types.get(&dst));
 }
 
 #[test]
@@ -5267,7 +5292,7 @@ fn test_infer_helper_skc_to_tcp_sock_returns_kernel_pointer() {
     let types = ti.infer(&func).unwrap();
     assert_eq!(
         types.get(&dst),
-        Some(&MirType::named_kernel_struct_ptr("bpf_sock"))
+        Some(&MirType::named_kernel_struct_ptr("tcp_sock"))
     );
 }
 
@@ -5310,27 +5335,34 @@ fn test_infer_helper_skc_to_tcp6_sock_returns_kernel_pointer() {
 
     let mut ti = TypeInference::new(None);
     let types = ti.infer(&func).unwrap();
-    match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
-            assert_eq!(*address_space, AddressSpace::Kernel);
-        }
-        other => panic!(
-            "Expected helper skc_to_tcp6_sock kernel pointer return, got {:?}",
-            other
-        ),
-    }
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("tcp6_sock"))
+    );
 }
 
 #[test]
 fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
     let helpers = [
-        BpfHelper::SkcToTcpTimewaitSock,
-        BpfHelper::SkcToTcpRequestSock,
-        BpfHelper::SkcToUdp6Sock,
-        BpfHelper::SkcToUnixSock,
+        (
+            BpfHelper::SkcToTcpTimewaitSock,
+            MirType::named_kernel_struct_ptr("tcp_timewait_sock"),
+        ),
+        (
+            BpfHelper::SkcToTcpRequestSock,
+            MirType::named_kernel_struct_ptr("tcp_request_sock"),
+        ),
+        (
+            BpfHelper::SkcToUdp6Sock,
+            MirType::named_kernel_struct_ptr("udp6_sock"),
+        ),
+        (
+            BpfHelper::SkcToUnixSock,
+            MirType::named_kernel_struct_ptr("unix_sock"),
+        ),
     ];
 
-    for helper in helpers {
+    for (helper, expected_ty) in helpers {
         let mut func = make_test_function();
         let pid = func.alloc_vreg();
         let ctx = func.alloc_vreg();
@@ -5370,15 +5402,7 @@ fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
         let types = ti
             .infer(&func)
             .unwrap_or_else(|errs| panic!("expected helper {helper:?} to infer: {errs:?}"));
-        match types.get(&dst) {
-            Some(MirType::Ptr { address_space, .. }) => {
-                assert_eq!(*address_space, AddressSpace::Kernel);
-            }
-            other => panic!(
-                "Expected helper {helper:?} kernel pointer return, got {:?}",
-                other
-            ),
-        }
+        assert_eq!(types.get(&dst), Some(&expected_ty));
     }
 }
 

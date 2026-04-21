@@ -19,6 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::ctx_field_schema::synthetic_bpf_tcp_sock_type;
 use super::elf::{ProbeContext, ProgramCapability, ProgramTypeInfo};
 use super::hindley_milner::{
     Constraint, HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
@@ -206,14 +207,21 @@ impl<'a> TypeInference<'a> {
             | BpfHelper::SkLookupUdp
             | BpfHelper::SkcLookupTcp
             | BpfHelper::GetListenerSock
-            | BpfHelper::SkFullsock
-            | BpfHelper::TcpSock
-            | BpfHelper::SkcToTcp6Sock
-            | BpfHelper::SkcToTcpSock
-            | BpfHelper::SkcToTcpTimewaitSock
-            | BpfHelper::SkcToTcpRequestSock
-            | BpfHelper::SkcToUdp6Sock
-            | BpfHelper::SkcToUnixSock => Some(MirType::named_kernel_struct_ptr("bpf_sock")),
+            | BpfHelper::SkFullsock => Some(MirType::named_kernel_struct_ptr("bpf_sock")),
+            BpfHelper::TcpSock => Some(MirType::Ptr {
+                pointee: Box::new(synthetic_bpf_tcp_sock_type()),
+                address_space: AddressSpace::Kernel,
+            }),
+            BpfHelper::SkcToTcp6Sock => Some(MirType::named_kernel_struct_ptr("tcp6_sock")),
+            BpfHelper::SkcToTcpSock => Some(MirType::named_kernel_struct_ptr("tcp_sock")),
+            BpfHelper::SkcToTcpTimewaitSock => {
+                Some(MirType::named_kernel_struct_ptr("tcp_timewait_sock"))
+            }
+            BpfHelper::SkcToTcpRequestSock => {
+                Some(MirType::named_kernel_struct_ptr("tcp_request_sock"))
+            }
+            BpfHelper::SkcToUdp6Sock => Some(MirType::named_kernel_struct_ptr("udp6_sock")),
+            BpfHelper::SkcToUnixSock => Some(MirType::named_kernel_struct_ptr("unix_sock")),
             BpfHelper::SockFromFile => Some(MirType::named_kernel_struct_ptr("socket")),
             BpfHelper::GetCurrentTask | BpfHelper::GetCurrentTaskBtf => {
                 Some(MirType::named_kernel_struct_ptr("task_struct"))

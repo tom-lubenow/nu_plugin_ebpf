@@ -131,6 +131,7 @@ Last updated: 2026-04-21.
   - Typed helper scalar coverage now includes `bpf_get_numa_node_id` as a broad no-arg scalar-return helper.
   - Ordinary context access now exposes the NUMA node helper without raw helper spelling as `ctx.numa_node` / `ctx.numa_node_id`.
   - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` / `bpf_skc_to_tcp_sock` / `bpf_skc_to_tcp6_sock` / `bpf_skc_to_tcp_timewait_sock` / `bpf_skc_to_tcp_request_sock` / `bpf_skc_to_udp6_sock` / `bpf_skc_to_unix_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
+  - Type inference now preserves precise socket-helper return types for those casts instead of collapsing everything to `bpf_sock *`, including a synthetic `bpf_tcp_sock` layout for projected TCP metrics.
   - Typed helper packet-copy coverage now also includes `bpf_skb_load_bytes`, `bpf_skb_load_bytes_relative`, `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and `bpf_xdp_store_bytes`, with program-surface, pointer-space, positive-size, and buffer-bounds parity across type inference, verifier_types, and VCC.
   - Ordinary XDP context access now exposes total multi-buffer packet size as `ctx.xdp_buff_len` / `ctx.xdp_buffer_len`, backed by `bpf_xdp_get_buff_len`.
   - Verifier/VCC helper-arg parity now enforces socket ref-family provenance for tracked kernel refs passed to socket-pointer helpers (`bpf_get_listener_sock` / `bpf_sk_fullsock` / `bpf_tcp_sock`), rejecting mixed-family refs (e.g., task ref args).

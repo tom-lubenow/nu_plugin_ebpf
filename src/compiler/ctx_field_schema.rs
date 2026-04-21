@@ -364,6 +364,49 @@ pub(crate) fn synthetic_bpf_sock_type() -> MirType {
     }
 }
 
+pub(crate) fn synthetic_bpf_tcp_sock_type() -> MirType {
+    let field = |name: &str, ty: MirType, offset| StructField {
+        name: name.to_string(),
+        ty,
+        offset,
+        synthetic: false,
+        bitfield: None,
+    };
+
+    MirType::Struct {
+        name: Some("bpf_tcp_sock".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            field("snd_cwnd", MirType::U32, 0),
+            field("srtt_us", MirType::U32, 4),
+            field("rtt_min", MirType::U32, 8),
+            field("snd_ssthresh", MirType::U32, 12),
+            field("rcv_nxt", MirType::U32, 16),
+            field("snd_nxt", MirType::U32, 20),
+            field("snd_una", MirType::U32, 24),
+            field("mss_cache", MirType::U32, 28),
+            field("ecn_flags", MirType::U32, 32),
+            field("rate_delivered", MirType::U32, 36),
+            field("rate_interval_us", MirType::U32, 40),
+            field("packets_out", MirType::U32, 44),
+            field("retrans_out", MirType::U32, 48),
+            field("total_retrans", MirType::U32, 52),
+            field("segs_in", MirType::U32, 56),
+            field("data_segs_in", MirType::U32, 60),
+            field("segs_out", MirType::U32, 64),
+            field("data_segs_out", MirType::U32, 68),
+            field("lost_out", MirType::U32, 72),
+            field("sacked_out", MirType::U32, 76),
+            field("bytes_received", MirType::U64, 80),
+            field("bytes_acked", MirType::U64, 88),
+            field("dsack_dups", MirType::U32, 96),
+            field("delivered", MirType::U32, 100),
+            field("delivered_ce", MirType::U32, 104),
+            field("icsk_retransmits", MirType::U32, 108),
+        ],
+    }
+}
+
 fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchemaSpec> {
     Some(match field {
         CtxField::Pid
