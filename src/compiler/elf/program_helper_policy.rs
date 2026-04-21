@@ -1,9 +1,7 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
-use crate::program_spec::{
-    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
-};
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
@@ -784,34 +782,33 @@ impl EbpfProgramType {
 
 impl ProgramSpec {
     fn attach_helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        match self.attach_shape() {
-            ProgramAttachShape::Tc { ingress: false }
-                if helper_list_contains(TC_INGRESS_ONLY_HELPERS, helper) =>
+        let attach_shape = self.attach_shape();
+        match attach_shape {
+            _ if attach_shape.is_tc_egress()
+                && helper_list_contains(TC_INGRESS_ONLY_HELPERS, helper) =>
             {
                 Some(format!(
                     "helper '{}' is only valid in tc ingress programs",
                     helper.name()
                 ))
             }
-            ProgramAttachShape::Tc { ingress: true }
-                if helper_list_contains(TC_EGRESS_ONLY_HELPERS, helper) =>
+            _ if attach_shape.is_tc_ingress()
+                && helper_list_contains(TC_EGRESS_ONLY_HELPERS, helper) =>
             {
                 Some(format!(
                     "helper '{}' is only valid in tc egress programs",
                     helper.name()
                 ))
             }
-            ProgramAttachShape::CgroupSockAddr {
-                hook: hook_kind, ..
-            } if helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper) => {
-                if !matches!(hook_kind, ProgramAttachSockAddrHook::Connect) {
-                    Some(format!(
-                        "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-                        helper.name()
-                    ))
-                } else {
-                    None
-                }
+            _ if attach_shape
+                .cgroup_sock_addr()
+                .is_some_and(|(_, hook)| !hook.is_connect())
+                && helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+                    helper.name()
+                ))
             }
             _ => None,
         }

@@ -1,9 +1,7 @@
 use super::{CtxWriteTarget, EbpfProgramType, ProgramContextFamily};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{CtxField, CtxStoreTarget};
-use crate::program_spec::{
-    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
-};
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachShape, ProgramSpec};
 
 fn bounded_index(field_name: &str, index: usize, upper_inclusive: u8) -> Result<u8, String> {
     let index = u8::try_from(index).map_err(|_| {
@@ -103,34 +101,41 @@ impl ContextStoreTargetSpec {
                 Some(_) => Err(format!(
                     "ctx.{field_name} does not support indexed assignment"
                 )),
-                None => match spec.attach_shape() {
-                    ProgramAttachShape::CgroupSockAddr {
-                        hook: ProgramAttachSockAddrHook::SendMsg,
-                        family: ProgramAttachAddressFamily::Ipv4,
-                    } => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp4),
-                    ProgramAttachShape::CgroupSockAddr {
-                        hook:
-                            ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
-                        family: ProgramAttachAddressFamily::Ipv4,
-                    } => Ok(CtxStoreTarget::CgroupSockAddrUserIp4),
-                    _ => Err(format!("ctx.{field_name} is not available on this hook")),
-                },
+                None => spec
+                    .attach_shape()
+                    .cgroup_sock_addr()
+                    .and_then(|(family, hook)| {
+                        (family == ProgramAttachAddressFamily::Ipv4).then_some(hook)
+                    })
+                    .and_then(|hook| {
+                        if hook.is_sendmsg() {
+                            Some(CtxStoreTarget::CgroupSockAddrMsgSrcIp4)
+                        } else if hook.exposes_local_tuple() {
+                            Some(CtxStoreTarget::CgroupSockAddrUserIp4)
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| format!("ctx.{field_name} is not available on this hook")),
             },
             Self::CgroupSockAddrLocalIp6WordAlias => match index {
                 Some(index) => {
                     let index = bounded_index(field_name, index, 3)?;
-                    match spec.attach_shape() {
-                        ProgramAttachShape::CgroupSockAddr {
-                            hook: ProgramAttachSockAddrHook::SendMsg,
-                            family: ProgramAttachAddressFamily::Ipv6,
-                        } => Ok(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index)),
-                        ProgramAttachShape::CgroupSockAddr {
-                            hook:
-                                ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
-                            family: ProgramAttachAddressFamily::Ipv6,
-                        } => Ok(CtxStoreTarget::CgroupSockAddrUserIp6Word(index)),
-                        _ => Err(format!("ctx.{field_name} is not available on this hook")),
-                    }
+                    spec.attach_shape()
+                        .cgroup_sock_addr()
+                        .and_then(|(family, hook)| {
+                            (family == ProgramAttachAddressFamily::Ipv6).then_some(hook)
+                        })
+                        .and_then(|hook| {
+                            if hook.is_sendmsg() {
+                                Some(CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index))
+                            } else if hook.exposes_local_tuple() {
+                                Some(CtxStoreTarget::CgroupSockAddrUserIp6Word(index))
+                            } else {
+                                None
+                            }
+                        })
+                        .ok_or_else(|| format!("ctx.{field_name} is not available on this hook"))
                 }
                 None => Err(format!(
                     "ctx.{field_name} assignment requires a fixed index, e.g. $ctx.{field_name}.0 = ..."
@@ -201,27 +206,23 @@ impl ContextWriteTargetSpec {
 
 impl ContextWriteAvailability {
     fn error(&self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
+        let attach_shape = spec.attach_shape();
         match self {
-            Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock {
-                    post_bind: true, ..
-                } => Some(format!(
+            Self::CgroupSockCreateReleaseOnly => {
+                attach_shape.is_cgroup_sock_post_bind().then(|| {
+                    format!(
                     "ctx.{field_name} is only writable on cgroup_sock sock_create/sock_release hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockoptSetOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockopt { get: true } => Some(format!(
-                    "ctx.{field_name} is only writable on cgroup_sockopt:set hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSkbEgressOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSkb { ingress: true } => Some(format!(
+                )
+                })
+            }
+            Self::CgroupSockoptSetOnly => attach_shape.is_cgroup_sockopt_get().then(|| {
+                format!("ctx.{field_name} is only writable on cgroup_sockopt:set hooks")
+            }),
+            Self::CgroupSkbEgressOnly => attach_shape.is_cgroup_skb_ingress().then(|| {
+                format!(
                     "ctx.{field_name} is only writable on tc and cgroup_skb:egress programs"
-                )),
-                _ => None,
-            },
+                )
+            }),
         }
     }
 }

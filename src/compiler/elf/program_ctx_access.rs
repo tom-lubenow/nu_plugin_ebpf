@@ -46,120 +46,83 @@ struct CgroupSockAddrTupleAliasSpec {
 
 impl ContextFieldAccessRequirement {
     fn error(self, spec: &ProgramSpec, field_name: &str) -> Option<String> {
+        let attach_shape = spec.attach_shape();
         match self {
-            Self::TcEgressOnly => match spec.attach_shape() {
-                ProgramAttachShape::Tc { ingress: false } => None,
-                ProgramAttachShape::Tc { .. } => Some(format!(
-                    "ctx.{field_name} is only available on tc egress programs"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockCreateReleaseOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock {
-                    post_bind: true, ..
-                } => Some(format!(
+            Self::TcEgressOnly => attach_shape.is_tc_ingress().then(|| {
+                format!("ctx.{field_name} is only available on tc egress programs")
+            }),
+            Self::CgroupSockCreateReleaseOnly => {
+                attach_shape.is_cgroup_sock_post_bind().then(|| {
+                    format!(
                     "ctx.{field_name} is only available on cgroup_sock sock_create/sock_release hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockPostBindOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock {
-                    post_bind: false, ..
-                } => Some(format!(
+                )
+                })
+            }
+            Self::CgroupSockPostBindOnly => attach_shape.is_cgroup_sock_create_release().then(|| {
+                format!(
                     "ctx.{field_name} is only available on cgroup_sock post_bind4/post_bind6 hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockPostBindIpv4Only => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock {
-                    post_bind: true,
-                    family: Some(ProgramAttachAddressFamily::Ipv4),
-                } => None,
-                ProgramAttachShape::CgroupSock { .. } => Some(format!(
-                    "ctx.{field_name} is only available on cgroup_sock post_bind4 hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockPostBindIpv6Only => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSock {
-                    post_bind: true,
-                    family: Some(ProgramAttachAddressFamily::Ipv6),
-                } => None,
-                ProgramAttachShape::CgroupSock { .. } => Some(format!(
-                    "ctx.{field_name} is only available on cgroup_sock post_bind6 hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockoptGetOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockopt { get: false } => Some(format!(
+                )
+            }),
+            Self::CgroupSockPostBindIpv4Only
+                if attach_shape.is_cgroup_sock_post_bind_family(ProgramAttachAddressFamily::Ipv4) =>
+            {
+                None
+            }
+            Self::CgroupSockPostBindIpv4Only if attach_shape.is_cgroup_sock() => Some(format!(
+                "ctx.{field_name} is only available on cgroup_sock post_bind4 hooks"
+            )),
+            Self::CgroupSockPostBindIpv4Only => None,
+            Self::CgroupSockPostBindIpv6Only
+                if attach_shape.is_cgroup_sock_post_bind_family(ProgramAttachAddressFamily::Ipv6) =>
+            {
+                None
+            }
+            Self::CgroupSockPostBindIpv6Only if attach_shape.is_cgroup_sock() => Some(format!(
+                "ctx.{field_name} is only available on cgroup_sock post_bind6 hooks"
+            )),
+            Self::CgroupSockPostBindIpv6Only => None,
+            Self::CgroupSockoptGetOnly => attach_shape.is_cgroup_sockopt_set().then(|| {
+                format!(
                     "ctx.{field_name} is only available on cgroup_sockopt:get hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockAddrIpv4Only => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockAddr {
-                    family: ProgramAttachAddressFamily::Ipv6,
-                    ..
-                } => Some(format!(
-                    "ctx.{field_name} is only available on IPv4 cgroup_sock_addr hooks (*4)"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockAddrIpv6Only => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockAddr {
-                    family: ProgramAttachAddressFamily::Ipv4,
-                    ..
-                } => Some(format!(
-                    "ctx.{field_name} is only available on IPv6 cgroup_sock_addr hooks (*6)"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockAddrRemoteTupleOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockAddr {
-                    hook:
-                        ProgramAttachSockAddrHook::Connect
-                        | ProgramAttachSockAddrHook::GetPeerName
-                        | ProgramAttachSockAddrHook::SendMsg
-                        | ProgramAttachSockAddrHook::RecvMsg,
-                    ..
-                } => None,
-                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                )
+            }),
+            Self::CgroupSockAddrIpv4Only => attach_shape.cgroup_sock_addr().and_then(|(family, _)| {
+                (family == ProgramAttachAddressFamily::Ipv6).then(|| {
+                    format!("ctx.{field_name} is only available on IPv4 cgroup_sock_addr hooks (*4)")
+                })
+            }),
+            Self::CgroupSockAddrIpv6Only => attach_shape.cgroup_sock_addr().and_then(|(family, _)| {
+                (family == ProgramAttachAddressFamily::Ipv4).then(|| {
+                    format!("ctx.{field_name} is only available on IPv6 cgroup_sock_addr hooks (*6)")
+                })
+            }),
+            Self::CgroupSockAddrRemoteTupleOnly => {
+                attach_shape.cgroup_sock_addr().and_then(|(_, hook)| {
+                    (!hook.exposes_remote_tuple()).then(|| format!(
                     "ctx.{field_name} is only available on cgroup_sock_addr connect4/connect6, getpeername4/getpeername6, sendmsg4/sendmsg6, and recvmsg4/recvmsg6 hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockAddrLocalIpAliasOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockAddr {
-                    hook:
-                        ProgramAttachSockAddrHook::Bind
-                        | ProgramAttachSockAddrHook::GetSockName
-                        | ProgramAttachSockAddrHook::SendMsg,
-                    ..
-                } => None,
-                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    ))
+                })
+            }
+            Self::CgroupSockAddrLocalIpAliasOnly => {
+                attach_shape.cgroup_sock_addr().and_then(|(_, hook)| {
+                    (!hook.exposes_local_ip_alias()).then(|| format!(
                     "ctx.{field_name} is only available on cgroup_sock_addr bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6 hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockAddrLocalTupleOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockAddr {
-                    hook: ProgramAttachSockAddrHook::Bind | ProgramAttachSockAddrHook::GetSockName,
-                    ..
-                } => None,
-                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    ))
+                })
+            }
+            Self::CgroupSockAddrLocalTupleOnly => {
+                attach_shape.cgroup_sock_addr().and_then(|(_, hook)| {
+                    (!hook.exposes_local_tuple()).then(|| format!(
                     "ctx.{field_name} is only available on cgroup_sock_addr bind4/bind6 and getsockname4/getsockname6 hooks"
-                )),
-                _ => None,
-            },
-            Self::CgroupSockAddrSendmsgOnly => match spec.attach_shape() {
-                ProgramAttachShape::CgroupSockAddr {
-                    hook: ProgramAttachSockAddrHook::SendMsg,
-                    ..
-                } => None,
-                ProgramAttachShape::CgroupSockAddr { .. } => Some(format!(
+                    ))
+                })
+            }
+            Self::CgroupSockAddrSendmsgOnly => {
+                attach_shape.cgroup_sock_addr().and_then(|(_, hook)| {
+                    (!hook.is_sendmsg()).then(|| format!(
                     "ctx.{field_name} is only available on cgroup_sock_addr sendmsg4/sendmsg6 hooks"
-                )),
-                _ => None,
+                    ))
+                })
             },
             Self::AllowedProgramsLabel(label) => {
                 Some(format!("ctx.{field_name} is only available on {label}"))

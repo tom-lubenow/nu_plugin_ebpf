@@ -839,11 +839,11 @@ impl CgroupSockAddrTarget {
     }
 
     pub fn supports_msg_source(&self) -> bool {
-        matches!(self.hook_kind(), ProgramAttachSockAddrHook::SendMsg)
+        self.hook_kind().is_sendmsg()
     }
 
     pub fn is_connect(&self) -> bool {
-        matches!(self.hook_kind(), ProgramAttachSockAddrHook::Connect)
+        self.hook_kind().is_connect()
     }
 }
 
@@ -1382,6 +1382,31 @@ pub(crate) enum ProgramAttachSockAddrHook {
     RecvMsg,
 }
 
+impl ProgramAttachSockAddrHook {
+    pub(crate) fn is_connect(self) -> bool {
+        matches!(self, Self::Connect)
+    }
+
+    pub(crate) fn is_sendmsg(self) -> bool {
+        matches!(self, Self::SendMsg)
+    }
+
+    pub(crate) fn exposes_remote_tuple(self) -> bool {
+        matches!(
+            self,
+            Self::Connect | Self::GetPeerName | Self::SendMsg | Self::RecvMsg
+        )
+    }
+
+    pub(crate) fn exposes_local_ip_alias(self) -> bool {
+        matches!(self, Self::Bind | Self::GetSockName | Self::SendMsg)
+    }
+
+    pub(crate) fn exposes_local_tuple(self) -> bool {
+        matches!(self, Self::Bind | Self::GetSockName)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProgramAttachShape {
     Generic,
@@ -1406,6 +1431,74 @@ pub(crate) enum ProgramAttachShape {
         family: StructOpsFamily,
         sleepable: bool,
     },
+}
+
+impl ProgramAttachShape {
+    pub(crate) fn is_tc_ingress(self) -> bool {
+        matches!(self, Self::Tc { ingress: true })
+    }
+
+    pub(crate) fn is_tc_egress(self) -> bool {
+        matches!(self, Self::Tc { ingress: false })
+    }
+
+    pub(crate) fn is_cgroup_skb_ingress(self) -> bool {
+        matches!(self, Self::CgroupSkb { ingress: true })
+    }
+
+    pub(crate) fn is_cgroup_sock_create_release(self) -> bool {
+        matches!(
+            self,
+            Self::CgroupSock {
+                post_bind: false,
+                ..
+            }
+        )
+    }
+
+    pub(crate) fn is_cgroup_sock_post_bind(self) -> bool {
+        matches!(
+            self,
+            Self::CgroupSock {
+                post_bind: true,
+                ..
+            }
+        )
+    }
+
+    pub(crate) fn is_cgroup_sock_post_bind_family(
+        self,
+        family: ProgramAttachAddressFamily,
+    ) -> bool {
+        matches!(
+            self,
+            Self::CgroupSock {
+                post_bind: true,
+                family: Some(actual),
+            } if actual == family
+        )
+    }
+
+    pub(crate) fn is_cgroup_sock(self) -> bool {
+        matches!(self, Self::CgroupSock { .. })
+    }
+
+    pub(crate) fn is_cgroup_sockopt_get(self) -> bool {
+        matches!(self, Self::CgroupSockopt { get: true })
+    }
+
+    pub(crate) fn is_cgroup_sockopt_set(self) -> bool {
+        matches!(self, Self::CgroupSockopt { get: false })
+    }
+
+    pub(crate) fn cgroup_sock_addr(
+        self,
+    ) -> Option<(ProgramAttachAddressFamily, ProgramAttachSockAddrHook)> {
+        match self {
+            Self::CgroupSockAddr { family, hook } => Some((family, hook)),
+            _ => None,
+        }
+    }
 }
 
 impl ProgramSpec {
@@ -1825,6 +1918,9 @@ mod tests {
         assert!(!connect4.supports_msg_source());
         assert!(connect4.is_connect());
         assert_eq!(connect4.hook_kind(), ProgramAttachSockAddrHook::Connect);
+        assert!(connect4.hook_kind().is_connect());
+        assert!(connect4.hook_kind().exposes_remote_tuple());
+        assert!(!connect4.hook_kind().exposes_local_tuple());
 
         let sendmsg6 = CgroupSockAddrTarget::parse("/sys/fs/cgroup:sendmsg6")
             .expect("sendmsg6 target should parse");
@@ -1833,6 +1929,10 @@ mod tests {
         assert!(sendmsg6.supports_msg_source());
         assert!(!sendmsg6.is_connect());
         assert_eq!(sendmsg6.hook_kind(), ProgramAttachSockAddrHook::SendMsg);
+        assert!(sendmsg6.hook_kind().is_sendmsg());
+        assert!(sendmsg6.hook_kind().exposes_remote_tuple());
+        assert!(sendmsg6.hook_kind().exposes_local_ip_alias());
+        assert!(!sendmsg6.hook_kind().exposes_local_tuple());
 
         let recvmsg4 = CgroupSockAddrTarget::parse("/sys/fs/cgroup:recvmsg4")
             .expect("recvmsg4 target should parse");
@@ -1841,6 +1941,9 @@ mod tests {
         assert!(!recvmsg4.supports_msg_source());
         assert!(!recvmsg4.is_connect());
         assert_eq!(recvmsg4.hook_kind(), ProgramAttachSockAddrHook::RecvMsg);
+        assert!(!recvmsg4.hook_kind().is_sendmsg());
+        assert!(recvmsg4.hook_kind().exposes_remote_tuple());
+        assert!(!recvmsg4.hook_kind().exposes_local_ip_alias());
     }
 
     #[test]
@@ -1888,10 +1991,13 @@ mod tests {
         };
 
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
+        assert!(tc.attach_shape().is_tc_ingress());
+        assert!(!tc.attach_shape().is_tc_egress());
         assert_eq!(
             cgroup_skb.attach_shape(),
             ProgramAttachShape::CgroupSkb { ingress: false }
         );
+        assert!(!cgroup_skb.attach_shape().is_cgroup_skb_ingress());
         assert_eq!(
             sock_post_bind.attach_shape(),
             ProgramAttachShape::CgroupSock {
@@ -1899,16 +2005,36 @@ mod tests {
                 family: Some(ProgramAttachAddressFamily::Ipv6),
             }
         );
+        assert!(sock_post_bind.attach_shape().is_cgroup_sock_post_bind());
+        assert!(
+            sock_post_bind
+                .attach_shape()
+                .is_cgroup_sock_post_bind_family(ProgramAttachAddressFamily::Ipv6)
+        );
+        assert!(
+            !sock_post_bind
+                .attach_shape()
+                .is_cgroup_sock_post_bind_family(ProgramAttachAddressFamily::Ipv4)
+        );
         assert_eq!(
             sockopt_get.attach_shape(),
             ProgramAttachShape::CgroupSockopt { get: true }
         );
+        assert!(sockopt_get.attach_shape().is_cgroup_sockopt_get());
+        assert!(!sockopt_get.attach_shape().is_cgroup_sockopt_set());
         assert_eq!(
             sendmsg6.attach_shape(),
             ProgramAttachShape::CgroupSockAddr {
                 family: ProgramAttachAddressFamily::Ipv6,
                 hook: ProgramAttachSockAddrHook::SendMsg,
             }
+        );
+        assert_eq!(
+            sendmsg6.attach_shape().cgroup_sock_addr(),
+            Some((
+                ProgramAttachAddressFamily::Ipv6,
+                ProgramAttachSockAddrHook::SendMsg
+            ))
         );
         assert_eq!(
             sched_ext_select_cpu.attach_shape(),
