@@ -759,12 +759,6 @@ impl EbpfObject {
             }
         }
 
-        if matches!(self.kind, EbpfObjectKind::Program) && !self.extra_data_symbols.is_empty() {
-            return Err(CompileError::InvalidProgram(
-                "ordinary program objects do not yet support extra data symbols".to_string(),
-            ));
-        }
-
         let mut program_names = HashSet::new();
         for program in &self.programs {
             if artifact_symbol_names.contains(program.name.as_str()) {
@@ -935,6 +929,52 @@ impl EbpfObject {
             }
         }
 
+        // Emit custom object-local data before programs so program relocations
+        // can target those symbols. Relocations from the data back to program
+        // symbols are applied after all program symbols have been emitted.
+        let mut data_sections: HashMap<(String, bool), object::write::SectionId> = HashMap::new();
+        let mut pending_data_relocations = Vec::new();
+        for data_symbol in &self.extra_data_symbols {
+            let section_key = (data_symbol.section_name.clone(), data_symbol.writable);
+            let section_id = if let Some(&section_id) = data_sections.get(&section_key) {
+                section_id
+            } else {
+                let kind = if data_symbol.writable {
+                    SectionKind::Data
+                } else {
+                    SectionKind::ReadOnlyData
+                };
+                let section_id =
+                    obj.add_section(vec![], data_symbol.section_name.as_bytes().to_vec(), kind);
+                let section = obj.section_mut(section_id);
+                let mut sh_flags = object::elf::SHF_ALLOC as u64;
+                if data_symbol.writable {
+                    sh_flags |= object::elf::SHF_WRITE as u64;
+                }
+                section.flags = SectionFlags::Elf { sh_flags };
+                data_sections.insert(section_key, section_id);
+                section_id
+            };
+
+            let symbol_offset =
+                obj.append_section_data(section_id, &data_symbol.data, data_symbol.align);
+            let sym_id = obj.add_symbol(Symbol {
+                name: data_symbol.name.as_bytes().to_vec(),
+                value: symbol_offset,
+                size: data_symbol.data.len() as u64,
+                kind: SymbolKind::Data,
+                scope: SymbolScope::Linkage,
+                weak: false,
+                section: SymbolSection::Section(section_id),
+                flags: SymbolFlags::Elf {
+                    st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
+                    st_other: object::elf::STV_DEFAULT,
+                },
+            });
+            symbol_ids.insert(data_symbol.name.clone(), sym_id);
+            pending_data_relocations.push((section_id, symbol_offset, data_symbol));
+        }
+
         if let Some(btf_data) = self.generate_btf() {
             let btf_section_id = obj.add_section(vec![], b".BTF".to_vec(), SectionKind::Metadata);
             obj.append_section_data(btf_section_id, &btf_data, 1);
@@ -1001,49 +1041,6 @@ impl EbpfObject {
                 )
                 .map_err(|e| CompileError::ElfError(e.to_string()))?;
             }
-        }
-
-        let mut data_sections: HashMap<(String, bool), object::write::SectionId> = HashMap::new();
-        let mut pending_data_relocations = Vec::new();
-        for data_symbol in &self.extra_data_symbols {
-            let section_key = (data_symbol.section_name.clone(), data_symbol.writable);
-            let section_id = if let Some(&section_id) = data_sections.get(&section_key) {
-                section_id
-            } else {
-                let kind = if data_symbol.writable {
-                    SectionKind::Data
-                } else {
-                    SectionKind::ReadOnlyData
-                };
-                let section_id =
-                    obj.add_section(vec![], data_symbol.section_name.as_bytes().to_vec(), kind);
-                let section = obj.section_mut(section_id);
-                let mut sh_flags = object::elf::SHF_ALLOC as u64;
-                if data_symbol.writable {
-                    sh_flags |= object::elf::SHF_WRITE as u64;
-                }
-                section.flags = SectionFlags::Elf { sh_flags };
-                data_sections.insert(section_key, section_id);
-                section_id
-            };
-
-            let symbol_offset =
-                obj.append_section_data(section_id, &data_symbol.data, data_symbol.align);
-            let sym_id = obj.add_symbol(Symbol {
-                name: data_symbol.name.as_bytes().to_vec(),
-                value: symbol_offset,
-                size: data_symbol.data.len() as u64,
-                kind: SymbolKind::Data,
-                scope: SymbolScope::Linkage,
-                weak: false,
-                section: SymbolSection::Section(section_id),
-                flags: SymbolFlags::Elf {
-                    st_info: (object::elf::STB_GLOBAL << 4) | object::elf::STT_OBJECT,
-                    st_other: object::elf::STV_DEFAULT,
-                },
-            });
-            symbol_ids.insert(data_symbol.name.clone(), sym_id);
-            pending_data_relocations.push((section_id, symbol_offset, data_symbol));
         }
 
         for (section_id, symbol_offset, data_symbol) in pending_data_relocations {

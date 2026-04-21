@@ -3298,7 +3298,18 @@ fn test_struct_ops_object_uses_sleepable_sched_ext_callback_section() {
 }
 
 #[test]
-fn test_program_object_rejects_extra_data_symbols() {
+fn test_program_object_allows_extra_data_symbols_and_program_relocations() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
+
+    let mut builder = EbpfBuilder::new();
+    let [insn1, insn2] = EbpfInsn::ld_map_fd(EbpfReg::R1);
+    builder.push(insn1);
+    builder.push(insn2);
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
     let object = EbpfObject {
         kind: EbpfObjectKind::Program,
         license: "GPL".to_string(),
@@ -3309,21 +3320,102 @@ fn test_program_object_rejects_extra_data_symbols() {
         extra_data_symbols: vec![ObjectDataSymbol {
             section_name: ".custom".to_string(),
             name: "blob".to_string(),
-            data: vec![1, 2, 3, 4],
+            data: vec![1, 2, 3, 4, 5, 6, 7, 8],
             align: 4,
             writable: false,
-            relocations: vec![],
+            relocations: vec![ObjectDataRelocation {
+                offset: 0,
+                field_name: None,
+                symbol_name: "uses_blob".to_string(),
+            }],
         }],
-        programs: vec![EbpfProgram::hello_world("sys_clone").into_program_section()],
+        programs: vec![
+            EbpfProgram::with_maps(
+                EbpfProgramType::Kprobe,
+                "sys_clone",
+                "uses_blob",
+                bytecode.clone(),
+                bytecode.len(),
+                vec![],
+                vec![SymbolRelocation {
+                    insn_offset: 0,
+                    symbol_name: "blob".to_string(),
+                }],
+                vec![],
+                None,
+                None,
+                HashMap::new(),
+                HashMap::new(),
+            )
+            .into_program_section(),
+        ],
     };
 
-    let err = object
+    object
         .validate_runtime_artifacts()
-        .expect_err("ordinary program object should reject extra data symbols");
+        .expect("ordinary program object should allow extra data symbols");
+
+    let elf = object
+        .to_elf()
+        .expect("ordinary program extra data symbol should emit");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let data_section = file
+        .section_by_name(".custom")
+        .expect("expected custom data section");
+    assert_eq!(
+        data_section
+            .data()
+            .expect("custom section data should be readable"),
+        &[1, 2, 3, 4, 5, 6, 7, 8]
+    );
+
+    let program_section = file
+        .section_by_name("kprobe/sys_clone")
+        .expect("expected program section");
+    let mut relocations = program_section.relocations();
+    let (reloc_offset, relocation) = relocations
+        .next()
+        .expect("expected program relocation to custom data symbol");
+    assert_eq!(reloc_offset, 0);
+    match relocation.target() {
+        RelocationTarget::Symbol(symbol_idx) => {
+            let symbol = file
+                .symbol_by_index(symbol_idx)
+                .expect("relocation symbol should exist");
+            assert_eq!(
+                symbol.name().expect("relocation symbol should have a name"),
+                "blob"
+            );
+        }
+        other => panic!("unexpected relocation target: {other:?}"),
+    }
     assert!(
-        err.to_string()
-            .contains("ordinary program objects do not yet support extra data symbols"),
-        "unexpected error: {err}"
+        relocations.next().is_none(),
+        "expected only one program relocation"
+    );
+
+    let mut data_relocations = data_section.relocations();
+    let (data_reloc_offset, data_relocation) = data_relocations
+        .next()
+        .expect("expected custom data relocation to program symbol");
+    assert_eq!(data_reloc_offset, 0);
+    match data_relocation.target() {
+        RelocationTarget::Symbol(symbol_idx) => {
+            let symbol = file
+                .symbol_by_index(symbol_idx)
+                .expect("data relocation symbol should exist");
+            assert_eq!(
+                symbol
+                    .name()
+                    .expect("data relocation symbol should have a name"),
+                "uses_blob"
+            );
+        }
+        other => panic!("unexpected data relocation target: {other:?}"),
+    }
+    assert!(
+        data_relocations.next().is_none(),
+        "expected only one data relocation"
     );
 }
 

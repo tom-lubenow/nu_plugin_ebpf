@@ -436,6 +436,7 @@ Near-term priority order:
   - Ensure symbol/relocation handling is deterministic and test-covered.
   - Recent progress: constant records and numeric lists now lower through compiler-generated `.rodata` symbols instead of purely stack-time materialization.
   - Recent progress: the backend/ELF layer now emits explicit `.data` and `.bss` global sections with named symbols and Aya-parseable data maps.
+  - Recent progress: ordinary program objects can now carry custom object-local data symbols and bidirectional relocations between program sections and those data sections, removing the previous struct_ops-only restriction on `extra_data_symbols`.
   - Recent progress: reassigned captured numeric scalars, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/binary/record constants, and representable constant records now lower as compiler-managed mutable globals backed by `.data`/`.bss`.
   - Recent progress: leading typed `mut` globals now accept `null` as a zero-init sentinel when the Nushell annotation itself fixes a truthful fixed layout (scalars and nested scalar-records), reducing the need to fall back to explicit `global-define --type` for simple structured state.
   - Recent progress: leading typed `mut` record initializers may now also omit scalar or nested scalar-record fields that should start zeroed, while still rejecting omitted fields whose real capacity cannot be known from a plain Nushell annotation alone.
