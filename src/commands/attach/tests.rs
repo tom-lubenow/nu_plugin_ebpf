@@ -8678,6 +8678,44 @@ fn test_compile_kprobe_cgroup_array_map_contains_program() {
 }
 
 #[test]
+fn test_compile_xdp_cgroup_array_map_contains_program() {
+    let hir = make_cgroup_array_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp cgroup-array map-contains should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized xdp cgroup-array map-contains should compile");
+
+    assert!(
+        result.maps.iter().any(|map| map.name == "tracked_cgroups"),
+        "expected cgroup-array runtime map artifact"
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_optimized_queue_map_peek_count_program() {
     let hir = make_seeded_map_take_count_program(
         DeclId::new(42),

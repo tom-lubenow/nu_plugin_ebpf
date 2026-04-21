@@ -4940,6 +4940,55 @@ fn test_map_contains_cgroup_array_uses_current_task_helper_off_tc() {
 }
 
 #[test]
+fn test_map_contains_cgroup_array_uses_current_task_helper_on_xdp() {
+    let hir_program = make_cgroup_array_map_contains_hir();
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp cgroup-array map-contains should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::CurrentTaskUnderCgroup as u32 && args.len() == 2
+    )));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("xdp cgroup-array map-contains should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "tracked_cgroups")
+        .expect("expected cgroup-array runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::CgroupArray as u32);
+}
+
+#[test]
 fn test_map_contains_rejects_non_lookup_map_kind() {
     let hir_program = make_generic_map_contains_hir(b"demo_queue", Some(b"queue"));
     let mut decl_names = HashMap::new();

@@ -860,8 +860,8 @@ the kernel `bpf_map_peek_elem` membership probe and returns a boolean. Bloom
 filters can have false positives but not false negatives.
 
 With `--kind cgroup-array`, the value is a cgroup-array index. On tc programs
-this wraps `bpf_skb_under_cgroup` for the current packet; on other programs it
-wraps `bpf_current_task_under_cgroup` for the current task.
+this wraps `bpf_skb_under_cgroup` for the current packet; on non-tc programs it
+wraps the base `bpf_current_task_under_cgroup` helper for the current task.
 
 Example:
   let exists = ($ctx.pid | map-contains seen_pids)

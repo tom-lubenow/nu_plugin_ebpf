@@ -1739,6 +1739,45 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
 }
 
 #[test]
+fn test_current_task_under_cgroup_is_base_helper_surface() {
+    for program_type in [
+        EbpfProgramType::Kprobe,
+        EbpfProgramType::Kretprobe,
+        EbpfProgramType::Fentry,
+        EbpfProgramType::Fexit,
+        EbpfProgramType::TpBtf,
+        EbpfProgramType::Tracepoint,
+        EbpfProgramType::RawTracepoint,
+        EbpfProgramType::Uprobe,
+        EbpfProgramType::Uretprobe,
+        EbpfProgramType::Lsm,
+        EbpfProgramType::Xdp,
+        EbpfProgramType::PerfEvent,
+        EbpfProgramType::SocketFilter,
+        EbpfProgramType::CgroupDevice,
+        EbpfProgramType::SkLookup,
+        EbpfProgramType::SkMsg,
+        EbpfProgramType::SkSkb,
+        EbpfProgramType::SkSkbParser,
+        EbpfProgramType::SockOps,
+        EbpfProgramType::Tc,
+        EbpfProgramType::CgroupSkb,
+        EbpfProgramType::CgroupSock,
+        EbpfProgramType::CgroupSysctl,
+        EbpfProgramType::CgroupSockopt,
+        EbpfProgramType::CgroupSockAddr,
+        EbpfProgramType::LircMode2,
+        EbpfProgramType::StructOps,
+    ] {
+        assert_eq!(
+            program_type.helper_call_error(BpfHelper::CurrentTaskUnderCgroup),
+            None,
+            "{program_type:?} should be able to call bpf_current_task_under_cgroup"
+        );
+    }
+}
+
+#[test]
 fn test_program_type_packet_redirect_helpers_follow_program_model() {
     assert!(matches!(
         EbpfProgramType::Xdp.packet_redirect_helper(),
