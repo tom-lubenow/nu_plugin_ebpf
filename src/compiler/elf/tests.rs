@@ -1195,6 +1195,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CloneRedirect),
+        Some(
+            "helper 'bpf_clone_redirect' is only valid in tc, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::L3CsumReplace),
         Some(
             "helper 'bpf_l3_csum_replace' is only valid in tc, sk_skb, and sk_skb_parser programs"

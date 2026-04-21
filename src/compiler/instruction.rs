@@ -106,6 +106,8 @@ pub enum BpfHelper {
     XdpAdjustMeta = 54,
     /// long bpf_tail_call(ctx, prog_array_map, index)
     TailCall = 12,
+    /// long bpf_clone_redirect(skb, ifindex, flags)
+    CloneRedirect = 13,
     /// u64 bpf_get_current_pid_tgid(void)
     GetCurrentPidTgid = 14,
     /// u64 bpf_get_current_uid_gid(void)
@@ -118,6 +120,10 @@ pub enum BpfHelper {
     GetCurrentComm = 16,
     /// u32 bpf_get_cgroup_classid(skb)
     GetCgroupClassid = 17,
+    /// long bpf_skb_vlan_push(skb, vlan_proto, vlan_tci)
+    SkbVlanPush = 18,
+    /// long bpf_skb_vlan_pop(skb)
+    SkbVlanPop = 19,
     /// u32 bpf_get_route_realm(skb)
     GetRouteRealm = 24,
     /// long bpf_msg_apply_bytes(msg, bytes)
@@ -315,12 +321,15 @@ impl BpfHelper {
             BpfHelper::RedirectPeer => "bpf_redirect_peer",
             BpfHelper::XdpAdjustMeta => "bpf_xdp_adjust_meta",
             BpfHelper::TailCall => "bpf_tail_call",
+            BpfHelper::CloneRedirect => "bpf_clone_redirect",
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
             BpfHelper::GetCurrentAncestorCgroupId => "bpf_get_current_ancestor_cgroup_id",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::GetCgroupClassid => "bpf_get_cgroup_classid",
+            BpfHelper::SkbVlanPush => "bpf_skb_vlan_push",
+            BpfHelper::SkbVlanPop => "bpf_skb_vlan_pop",
             BpfHelper::GetRouteRealm => "bpf_get_route_realm",
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
@@ -441,12 +450,15 @@ impl BpfHelper {
             "redirect_peer" => Some(Self::RedirectPeer),
             "xdp_adjust_meta" => Some(Self::XdpAdjustMeta),
             "tail_call" => Some(Self::TailCall),
+            "clone_redirect" => Some(Self::CloneRedirect),
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
             "get_current_ancestor_cgroup_id" => Some(Self::GetCurrentAncestorCgroupId),
             "get_current_comm" => Some(Self::GetCurrentComm),
             "get_cgroup_classid" => Some(Self::GetCgroupClassid),
+            "skb_vlan_push" => Some(Self::SkbVlanPush),
+            "skb_vlan_pop" => Some(Self::SkbVlanPop),
             "get_route_realm" => Some(Self::GetRouteRealm),
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
@@ -614,8 +626,14 @@ impl BpfHelper {
         matches!(
             self,
             Self::SkbChangeTail
+                | Self::SkbStoreBytes
+                | Self::L3CsumReplace
+                | Self::L4CsumReplace
+                | Self::CloneRedirect
                 | Self::SkbPullData
                 | Self::SkbChangeHead
+                | Self::SkbVlanPush
+                | Self::SkbVlanPop
                 | Self::XdpAdjustHead
                 | Self::XdpAdjustMeta
                 | Self::SkbAdjustRoom

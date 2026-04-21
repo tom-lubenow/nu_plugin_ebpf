@@ -697,11 +697,20 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
             BpfHelper::SkbChangeTail,
             vec![MirValue::Const(64), MirValue::Const(0)],
         ),
+        (
+            BpfHelper::CloneRedirect,
+            vec![MirValue::Const(1), MirValue::Const(0)],
+        ),
         (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
         (
             BpfHelper::SkbChangeHead,
             vec![MirValue::Const(14), MirValue::Const(0)],
         ),
+        (
+            BpfHelper::SkbVlanPush,
+            vec![MirValue::Const(0x8100), MirValue::Const(1)],
+        ),
+        (BpfHelper::SkbVlanPop, vec![]),
         (
             BpfHelper::SkbAdjustRoom,
             vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
@@ -780,6 +789,21 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
             BpfHelper::SkbChangeHead,
             vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::Tc, "lo:egress"),
+            BpfHelper::CloneRedirect,
+            vec![MirValue::Const(1), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::SkbVlanPush,
+            vec![MirValue::Const(0x8100), MirValue::Const(1)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::SkbVlanPop,
+            vec![],
         ),
         (
             ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),

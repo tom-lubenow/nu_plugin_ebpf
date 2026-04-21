@@ -1148,8 +1148,11 @@ impl BpfHelper {
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkbChangeTail
+            | BpfHelper::CloneRedirect
             | BpfHelper::SkbPullData
             | BpfHelper::SkbChangeHead
+            | BpfHelper::SkbVlanPush
+            | BpfHelper::SkbVlanPop
             | BpfHelper::SkbAdjustRoom
             | BpfHelper::SkbSetTstamp => HelperSemantics {
                 ptr_arg_rules: SKB_MUTATE_RULES,

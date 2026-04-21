@@ -151,6 +151,18 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbPullData)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_clone_redirect"),
+        Some(BpfHelper::CloneRedirect)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_vlan_push"),
+        Some(BpfHelper::SkbVlanPush)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("skb_vlan_pop"),
+        Some(BpfHelper::SkbVlanPop)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_change_head"),
         Some(BpfHelper::SkbChangeHead)
     ));
@@ -771,9 +783,14 @@ fn test_helper_signatures_tc_egress_skb_metadata_helpers() {
 
 #[test]
 fn test_helper_signatures_skb_packet_mutation_helpers() {
-    for helper in [BpfHelper::SkbChangeTail, BpfHelper::SkbChangeHead] {
+    for helper in [
+        BpfHelper::SkbChangeTail,
+        BpfHelper::SkbChangeHead,
+        BpfHelper::CloneRedirect,
+        BpfHelper::SkbVlanPush,
+    ] {
         let sig =
-            HelperSignature::for_id(helper as u32).expect("expected skb change helper signature");
+            HelperSignature::for_id(helper as u32).expect("expected skb mutation helper signature");
         assert_eq!(sig.min_args, 3);
         assert_eq!(sig.max_args, 3);
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
@@ -788,6 +805,13 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbVlanPop as u32)
+        .expect("expected bpf_skb_vlan_pop helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
     let sig = HelperSignature::for_id(BpfHelper::SkbAdjustRoom as u32)
@@ -906,8 +930,14 @@ fn test_helper_signatures_xdp_adjust_helpers() {
 fn test_helpers_with_packet_pointer_invalidation() {
     for helper in [
         BpfHelper::SkbChangeTail,
+        BpfHelper::SkbStoreBytes,
+        BpfHelper::L3CsumReplace,
+        BpfHelper::L4CsumReplace,
+        BpfHelper::CloneRedirect,
         BpfHelper::SkbPullData,
         BpfHelper::SkbChangeHead,
+        BpfHelper::SkbVlanPush,
+        BpfHelper::SkbVlanPop,
         BpfHelper::XdpAdjustHead,
         BpfHelper::XdpAdjustMeta,
         BpfHelper::SkbAdjustRoom,

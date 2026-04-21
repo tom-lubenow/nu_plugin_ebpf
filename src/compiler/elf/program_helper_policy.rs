@@ -410,11 +410,14 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkbStoreBytes
         | BpfHelper::L3CsumReplace
         | BpfHelper::L4CsumReplace
+        | BpfHelper::CloneRedirect
         | BpfHelper::GetHashRecalc
         | BpfHelper::SkbPullData
         | BpfHelper::CsumUpdate
         | BpfHelper::SetHashInvalid
         | BpfHelper::SkbChangeHead
+        | BpfHelper::SkbVlanPush
+        | BpfHelper::SkbVlanPop
         | BpfHelper::SkbAdjustRoom => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcSkSkb,
         },

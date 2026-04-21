@@ -1920,12 +1920,15 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
         BpfHelper::SkbStoreBytes,
         BpfHelper::L3CsumReplace,
         BpfHelper::L4CsumReplace,
+        BpfHelper::CloneRedirect,
         BpfHelper::GetHashRecalc,
         BpfHelper::SkbChangeTail,
         BpfHelper::SkbPullData,
         BpfHelper::CsumUpdate,
         BpfHelper::SetHashInvalid,
         BpfHelper::SkbChangeHead,
+        BpfHelper::SkbVlanPush,
+        BpfHelper::SkbVlanPop,
         BpfHelper::SkbAdjustRoom,
     ] {
         let (mut func, entry) = new_mir_function();
@@ -1945,10 +1948,13 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
+            BpfHelper::CloneRedirect => vec![MirValue::Const(1), MirValue::Const(0)],
             BpfHelper::GetHashRecalc | BpfHelper::SetHashInvalid => vec![],
             BpfHelper::SkbChangeTail | BpfHelper::SkbChangeHead => {
                 vec![MirValue::Const(64), MirValue::Const(0)]
             }
+            BpfHelper::SkbVlanPush => vec![MirValue::Const(0x8100), MirValue::Const(1)],
+            BpfHelper::SkbVlanPop => vec![],
             BpfHelper::SkbPullData | BpfHelper::CsumUpdate => vec![MirValue::Const(64)],
             BpfHelper::SkbAdjustRoom => {
                 vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)]
