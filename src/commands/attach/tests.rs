@@ -5995,6 +5995,30 @@ fn test_compile_raw_tracepoint_ctx_arg_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_tid_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("tid")],
+        },
+        "kprobe ctx.tid count",
+    );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_tgid_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("tgid")],
+        },
+        "kprobe ctx.tgid count",
+    );
+}
+
+#[test]
 fn test_compile_perf_event_ctx_cpu_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::PerfEvent,

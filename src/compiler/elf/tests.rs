@@ -3020,6 +3020,24 @@ fn test_program_type_resolves_tracepoint_specific_field_names() {
 #[test]
 fn test_program_type_resolves_tracepoint_builtin_alias_names() {
     assert_eq!(
+        EbpfProgramType::Kprobe
+            .resolve_ctx_field_name("tid")
+            .expect("kprobe tid should resolve as a pid alias"),
+        CtxField::Pid
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe
+            .resolve_ctx_field_name("tgid")
+            .expect("kprobe tgid should resolve as the thread-group id"),
+        CtxField::Tid
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("tid")
+            .expect("tracepoint tid should preserve builtin alias"),
+        CtxField::Pid
+    );
+    assert_eq!(
         EbpfProgramType::Tracepoint
             .resolve_ctx_field_name("tgid")
             .expect("tracepoint tgid should preserve builtin alias"),

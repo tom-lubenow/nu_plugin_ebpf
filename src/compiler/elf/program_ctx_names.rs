@@ -92,8 +92,8 @@ fn ctx_field_name_resolution_mode(program_type: EbpfProgramType) -> CtxFieldName
 
 fn generic_ctx_field_from_name(field_name: &str) -> Result<CtxField, String> {
     Ok(match field_name {
-        "pid" => CtxField::Pid,
-        "tid" | "tgid" => CtxField::Tid,
+        "pid" | "tid" => CtxField::Pid,
+        "tgid" => CtxField::Tid,
         "uid" => CtxField::Uid,
         "gid" => CtxField::Gid,
         "comm" => CtxField::Comm,

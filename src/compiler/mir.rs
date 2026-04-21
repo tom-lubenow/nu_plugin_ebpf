@@ -495,9 +495,9 @@ pub enum UnaryOpKind {
 pub enum CtxField {
     /// Raw program context pointer
     Context,
-    /// Process ID
+    /// Kernel PID / thread ID (low 32 bits of bpf_get_current_pid_tgid)
     Pid,
-    /// Thread ID
+    /// Thread-group ID / userspace process ID (high 32 bits of bpf_get_current_pid_tgid)
     Tid,
     /// User ID
     Uid,
@@ -720,7 +720,7 @@ impl CtxField {
         match self {
             CtxField::Context => "ctx".to_string(),
             CtxField::Pid => "pid".to_string(),
-            CtxField::Tid => "tid".to_string(),
+            CtxField::Tid => "tgid".to_string(),
             CtxField::Uid => "uid".to_string(),
             CtxField::Gid => "gid".to_string(),
             CtxField::Comm => "comm".to_string(),
