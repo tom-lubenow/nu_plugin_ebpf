@@ -1,7 +1,7 @@
 use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, GetSocketCookieArgPolicy,
     IngressIfindexContextLayout, PacketContextKind, ProbeContext, ProgramBtfCallableSurface,
-    ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
+    ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -300,10 +300,7 @@ impl ProbeContext {
 
     /// Returns true if this is a tracepoint
     pub fn is_tracepoint(&self) -> bool {
-        matches!(
-            self.program_type().target_kind(),
-            ProgramTargetKind::Tracepoint
-        )
+        self.program_type().target_kind().is_tracepoint()
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {

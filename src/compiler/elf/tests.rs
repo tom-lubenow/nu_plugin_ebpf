@@ -230,6 +230,14 @@ fn test_program_type_metadata_for_fexit() {
 }
 
 #[test]
+fn test_program_target_kind_predicates_follow_model() {
+    assert!(ProgramTargetKind::UserFunction.is_userspace_function());
+    assert!(!ProgramTargetKind::KernelFunction.is_userspace_function());
+    assert!(ProgramTargetKind::Tracepoint.is_tracepoint());
+    assert!(!ProgramTargetKind::RawTracepoint.is_tracepoint());
+}
+
+#[test]
 fn test_program_type_metadata_for_tp_btf() {
     let info = EbpfProgramType::TpBtf.info();
     assert_eq!(info.canonical_prefix, "tp_btf");

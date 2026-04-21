@@ -996,7 +996,7 @@ impl EbpfProgramType {
 
     /// Returns true if this is a userspace probe (uprobe or uretprobe)
     pub fn is_userspace(&self) -> bool {
-        matches!(self.target_kind(), ProgramTargetKind::UserFunction)
+        self.target_kind().is_userspace_function()
     }
 
     /// Returns true if this program type exposes function arguments via ctx.argN.
@@ -1079,6 +1079,16 @@ pub enum ProgramTargetKind {
     CgroupPathSockAddrAttachType,
     LircDevicePath,
     StructOpsCallback,
+}
+
+impl ProgramTargetKind {
+    pub fn is_userspace_function(self) -> bool {
+        matches!(self, Self::UserFunction)
+    }
+
+    pub fn is_tracepoint(self) -> bool {
+        matches!(self, Self::Tracepoint)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
