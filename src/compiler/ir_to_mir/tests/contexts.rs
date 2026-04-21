@@ -214,6 +214,103 @@ fn test_lower_cgroup_skb_ctx_sk_cgroup_id_projection_calls_helper() {
 }
 
 #[test]
+fn test_lower_cgroup_skb_ctx_sk_ancestor_cgroup_id_projection_calls_helper() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("sk"),
+            string_member("ancestor_cgroup_id"),
+            int_member(1),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_skb ctx.sk.ancestor_cgroup_id.1 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Copy {
+            src: MirValue::Const(0),
+            ..
+        }
+    )));
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::SkAncestorCgroupId as u32
+                    && matches!(args.as_slice(), [MirValue::VReg(_), MirValue::Const(1)])
+            )))
+    );
+}
+
+#[test]
+fn test_lower_cgroup_skb_ctx_sk_ancestor_cgroup_id_projection_rejects_missing_level() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("ancestor_cgroup_id")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("ctx.sk.ancestor_cgroup_id without a level should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("requires a constant numeric ancestor level")
+    );
+}
+
+#[test]
+fn test_lower_sk_msg_ctx_sk_ancestor_cgroup_id_projection_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("sk"),
+            string_member("ancestor_cgroup_id"),
+            int_member(0),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sk_msg ctx.sk.ancestor_cgroup_id should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("helper 'bpf_sk_ancestor_cgroup_id' is only valid in cgroup_skb programs")
+    );
+}
+
+#[test]
 fn test_lower_sk_msg_ctx_sk_cgroup_id_projection_rejected() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("cgroup_id")],

@@ -264,7 +264,8 @@ Context parameter syntax (recommended):
     `ctx.packet_len`.
     `cgroup_skb` also exposes `$ctx.sk.cgroup_id` as the current socket's
     cgroup id through the modeled `bpf_sk_cgroup_id` helper, returning `0`
-    when no socket is present.
+    when no socket is present. `$ctx.sk.ancestor_cgroup_id.0` exposes the
+    matching socket ancestor cgroup id helper with a constant numeric level.
 
   lirc_mode2 fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

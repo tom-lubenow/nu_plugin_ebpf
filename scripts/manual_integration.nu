@@ -598,7 +598,7 @@ step 38 "cgroup_skb root egress socket cgroup counter" {
         print "Skipping cgroup_skb smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "cgroup_skb:/sys/fs/cgroup:egress" {|ctx|
-            ($ctx.packet_len + ($ctx.sk.cgroup_id mod 1024)) | count
+            ($ctx.packet_len + ($ctx.sk.cgroup_id mod 1024) + ($ctx.sk.ancestor_cgroup_id.0 mod 1024)) | count
             'allow'
         } { trigger-ping-loopback } "cgroup_skb socket cgroup counter"
     }

@@ -814,17 +814,42 @@ impl<'a> HirToMirLowering<'a> {
             }
         };
 
-        if root_ctx_field == Some(&CtxField::Socket)
-            && path_members.len() == 1
-            && matches!(
-                path_members.first(),
-                Some(PathMember::String { val, .. }) if val == "cgroup_id"
-            )
-        {
-            if let Some(message) = self
-                .probe_ctx
-                .and_then(|ctx| ctx.helper_call_error(BpfHelper::SkCgroupId))
-            {
+        let socket_cgroup_projection = if root_ctx_field == Some(&CtxField::Socket) {
+            match path_members {
+                [PathMember::String { val, .. }] if val == "cgroup_id" => {
+                    Some((BpfHelper::SkCgroupId, Vec::new()))
+                }
+                [
+                    PathMember::String { val, .. },
+                    PathMember::Int { val: level, .. },
+                ] if val == "ancestor_cgroup_id" => {
+                    let level_i32 = i32::try_from(*level).map_err(|_| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' requires ancestor level 0..{}, got {}",
+                            path_desc,
+                            i32::MAX,
+                            level
+                        ))
+                    })?;
+                    Some((
+                        BpfHelper::SkAncestorCgroupId,
+                        vec![MirValue::Const(i64::from(level_i32))],
+                    ))
+                }
+                [PathMember::String { val, .. }, ..] if val == "ancestor_cgroup_id" => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' requires a constant numeric ancestor level, e.g. ctx.sk.ancestor_cgroup_id.0",
+                        path_desc
+                    )));
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        if let Some((helper, mut helper_args)) = socket_cgroup_projection {
+            if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
                 return Err(CompileError::UnsupportedInstruction(message));
             }
             self.emit(MirInst::Copy {
@@ -847,10 +872,12 @@ impl<'a> HirToMirLowering<'a> {
             });
 
             self.current_block = helper_block;
+            let mut args = vec![MirValue::VReg(base_vreg)];
+            args.append(&mut helper_args);
             self.emit(MirInst::CallHelper {
                 dst: dst_vreg,
-                helper: BpfHelper::SkCgroupId as u32,
-                args: vec![MirValue::VReg(base_vreg)],
+                helper: helper as u32,
+                args,
             });
             self.terminate(MirInst::Jump { target: join_block });
 
