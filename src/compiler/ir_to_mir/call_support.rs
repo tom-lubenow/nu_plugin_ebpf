@@ -4,7 +4,7 @@ use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
 };
-use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::{AddressSpace, MapOpKind};
 
 #[derive(Debug, Clone)]
 pub(super) struct ScalarKfuncOutArgWriteback {
@@ -382,25 +382,44 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn required_map_contains_map_kind_arg(
-        &self,
-        context: &str,
-    ) -> Result<MapKind, CompileError> {
+    pub(super) fn map_contains_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind bloom-filter or --kind cgroup-array"
-            )));
+            return Ok(MapKind::Hash);
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
+            Some(kind) if kind.supports_generic_map_op(MapOpKind::Lookup) => Ok(kind),
             Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
             Some(MapKind::CgroupArray) => Ok(MapKind::CgroupArray),
+            Some(MapKind::Queue | MapKind::Stack) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is not a lookup map; use map-peek or map-pop for queue/stack entries"
+                )))
+            }
+            Some(MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map"
+                )))
+            }
+            Some(MapKind::SockMap | MapKind::SockHash) => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is a socket redirection map; use socket-map specific operations instead"
+                )))
+            }
+            Some(
+                MapKind::SkStorage
+                | MapKind::InodeStorage
+                | MapKind::TaskStorage
+                | MapKind::CgrpStorage,
+            ) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is a local-storage map; use map-get over an owner object instead"
+            ))),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind bloom-filter or --kind cgroup-array, got {:?}",
+                "{context} does not support map kind {:?}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be bloom-filter or cgroup-array"
+                "{context} --kind must be one of: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, bloom-filter, cgroup-array"
             ))),
         }
     }

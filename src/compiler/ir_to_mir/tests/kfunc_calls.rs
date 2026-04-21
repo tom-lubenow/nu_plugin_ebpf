@@ -4631,6 +4631,143 @@ fn test_map_contains_bloom_filter_lowers_and_compiles() {
     assert_eq!(map.def.value_size, 8);
 }
 
+fn make_generic_map_contains_hir(map_name: &[u8], kind: Option<&[u8]>) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(7),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(map_name.to_vec()),
+        },
+    ];
+    let named = if let Some(kind) = kind {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(kind.to_vec()),
+        });
+        vec![(b"kind".to_vec(), RegId::new(2))]
+    } else {
+        vec![]
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: DeclId::new(42),
+        src_dst: RegId::new(0),
+        args: HirCallArgs {
+            positional: vec![RegId::new(1)],
+            named,
+            ..Default::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: if kind.is_some() { 3 } else { 2 },
+        file_count: 0,
+    };
+
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_map_contains_defaults_to_hash_lookup() {
+    let hir_program = make_generic_map_contains_hir(b"demo_hash", None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("hash map-contains should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::MapLookup {
+            map: MapRef {
+                name,
+                kind: MapKind::Hash,
+            },
+            ..
+        } if name == "demo_hash"
+    )));
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Ne,
+            rhs: MirValue::Const(0),
+            ..
+        }
+    )));
+    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        None,
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled = compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("hash map-contains should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_hash")
+        .expect("expected hash runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::Hash as u32);
+    assert_eq!(map.def.key_size, 8);
+    assert_eq!(map.def.value_size, 1);
+}
+
+#[test]
+fn test_map_contains_accepts_explicit_lookup_map_kind() {
+    let hir_program = make_generic_map_contains_hir(b"demo_array", Some(b"array"));
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("array map-contains should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::MapLookup {
+            map: MapRef {
+                name,
+                kind: MapKind::Array,
+            },
+            ..
+        } if name == "demo_array"
+    )));
+}
+
 fn make_cgroup_array_map_contains_hir() -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -4803,44 +4940,8 @@ fn test_map_contains_cgroup_array_uses_current_task_helper_off_tc() {
 }
 
 #[test]
-fn test_map_contains_requires_membership_map_kind() {
-    let func = HirFunction {
-        blocks: vec![HirBlock {
-            id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::Int(7),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::String(b"demo_hash".to_vec()),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::String(b"hash".to_vec()),
-                },
-                HirStmt::Call {
-                    decl_id: DeclId::new(42),
-                    src_dst: RegId::new(0),
-                    args: HirCallArgs {
-                        positional: vec![RegId::new(1)],
-                        named: vec![(b"kind".to_vec(), RegId::new(2))],
-                        ..Default::default()
-                    },
-                },
-            ],
-            terminator: HirTerminator::Return { src: RegId::new(0) },
-        }],
-        entry: HirBlockId(0),
-        spans: vec![],
-        ast: vec![],
-        comments: vec![],
-        register_count: 3,
-        file_count: 0,
-    };
-
-    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+fn test_map_contains_rejects_non_lookup_map_kind() {
+    let hir_program = make_generic_map_contains_hir(b"demo_queue", Some(b"queue"));
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "map-contains".to_string());
     let hir_types =
@@ -4854,14 +4955,11 @@ fn test_map_contains_requires_membership_map_kind() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("map-contains should reject unsupported map kinds");
+    .expect_err("map-contains should reject non-lookup map kinds");
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
-            assert!(
-                msg.contains("requires --kind bloom-filter or --kind cgroup-array"),
-                "{msg}"
-            );
+            assert!(msg.contains("not a lookup map"), "{msg}");
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }

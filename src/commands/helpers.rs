@@ -841,20 +841,25 @@ impl PluginCommand for MapContains {
     }
 
     fn description(&self) -> &str {
-        "Test membership in a named bloom-filter or cgroup-array BPF map."
+        "Test whether a key/value is present in a named BPF map."
     }
 
     fn extra_description(&self) -> &str {
-        r#"Checks whether the pipeline input or explicit value is probably present
-in a bloom-filter map. This wraps the kernel `bpf_map_peek_elem` membership
-probe and returns a boolean. Bloom filters can have false positives but not
-false negatives.
+        r#"Checks whether the pipeline input or explicit key is present in a lookup-capable
+generic map. Without `--kind`, the map kind defaults to `hash`; explicit lookup
+map kinds include `array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`,
+`per-cpu-array`, and `lru-per-cpu-hash`.
+
+With `--kind bloom-filter`, the value is a bloom-filter probe value. This wraps
+the kernel `bpf_map_peek_elem` membership probe and returns a boolean. Bloom
+filters can have false positives but not false negatives.
 
 With `--kind cgroup-array`, the value is a cgroup-array index. On tc programs
 this wraps `bpf_skb_under_cgroup` for the current packet; on other programs it
 wraps `bpf_current_task_under_cgroup` for the current task.
 
 Example:
+  let exists = ($ctx.pid | map-contains seen_pids)
   let seen = ($ctx.pid | map-contains recent_pids --kind bloom-filter)
   let in_group = (map-contains tracked_cgroups 0 --kind cgroup-array)"#
     }
@@ -871,7 +876,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: bloom-filter or cgroup-array (required)",
+                "Map kind; defaults to hash",
                 None,
             )
             .category(Category::Experimental)
@@ -879,6 +884,11 @@ Example:
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![
+            Example {
+                example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-contains seen_pids }",
+                description: "Check hash-map membership for the current PID",
+                result: None,
+            },
             Example {
                 example: "ebpf attach --dry-run 'kprobe:ksys_read' {|ctx| $ctx.pid | map-contains recent_pids --kind bloom-filter }",
                 description: "Check bloom-filter membership for the current PID",

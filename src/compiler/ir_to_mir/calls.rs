@@ -5,7 +5,7 @@ use crate::compiler::instruction::{
     helper_acquire_ref_kind,
 };
 use crate::compiler::mir::{
-    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, MapOpKind, STRING_COUNTER_MAP_NAME,
 };
 use crate::compiler::{EbpfProgramType, ProgramIntrinsic, TypeInference};
 
@@ -2324,12 +2324,15 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.require_only_named_args(CONTEXT, &["kind"])?;
 
-        match self.required_map_contains_map_kind_arg(CONTEXT)? {
+        match self.map_contains_kind_arg(CONTEXT)? {
             MapKind::BloomFilter => {
                 self.lower_bloom_filter_map_contains(src_dst, dst_vreg, src_dst_had_value)
             }
             MapKind::CgroupArray => {
                 self.lower_cgroup_array_map_contains(src_dst, dst_vreg, src_dst_had_value)
+            }
+            map_kind if map_kind.supports_generic_map_op(MapOpKind::Lookup) => {
+                self.lower_generic_map_contains(src_dst, dst_vreg, src_dst_had_value, map_kind)
             }
             other => Err(CompileError::UnsupportedInstruction(format!(
                 "{CONTEXT} does not support map kind {:?}",
@@ -2425,6 +2428,66 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_generic_map_contains(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        map_kind: MapKind,
+    ) -> Result<(), CompileError> {
+        const CONTEXT: &str = "map-contains";
+
+        let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "map-contains requires a literal map name as the first positional argument".into(),
+            )
+        })?;
+        let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
+        self.validate_generic_map_name(&map_name, CONTEXT)?;
+        self.validate_generic_map_lookup_kind(map_kind, &map_name)?;
+
+        let map_ref = MapRef {
+            name: map_name,
+            kind: map_kind,
+        };
+        let key_vreg = self
+            .positional_args
+            .get(1)
+            .map(|(vreg, _)| *vreg)
+            .or(self.pipeline_input)
+            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-contains requires a key from pipeline input or a second positional argument"
+                        .into(),
+                )
+            })?;
+        let lookup_vreg = self.func.alloc_vreg();
+
+        self.emit(MirInst::MapLookup {
+            dst: lookup_vreg,
+            map: map_ref.clone(),
+            key: key_vreg,
+        });
+        let stored_ty = self.named_map_value_type(&map_ref).cloned();
+        self.vreg_type_hints.insert(
+            lookup_vreg,
+            MirType::Ptr {
+                pointee: Box::new(stored_ty.unwrap_or(MirType::U8)),
+                address_space: AddressSpace::Map,
+            },
+        );
+        self.emit(MirInst::BinOp {
+            dst: dst_vreg,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(lookup_vreg),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.reset_call_result_metadata(src_dst);
+        Ok(())
+    }
+
     fn lower_cgroup_array_map_contains(
         &mut self,
         src_dst: RegId,
@@ -2447,7 +2510,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
         self.validate_generic_map_name(&map_name, CONTEXT)?;
-        let map_kind = self.required_map_contains_map_kind_arg(CONTEXT)?;
+        let map_kind = self.map_contains_kind_arg(CONTEXT)?;
         if map_kind != MapKind::CgroupArray {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{CONTEXT} requires --kind cgroup-array for cgroup membership probes"
