@@ -6378,6 +6378,30 @@ fn test_compile_kprobe_ctx_ancestor_cgroup_id_counter_program() {
 }
 
 #[test]
+fn test_compile_xdp_ctx_cgroup_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("cgroup_id")],
+        },
+        "xdp ctx.cgroup_id count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_ancestor_cgroup_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("ancestor_cgroup_id"), int_member(0)],
+        },
+        "xdp ctx.ancestor_cgroup_id.0 count",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_ctx_numa_node_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,
