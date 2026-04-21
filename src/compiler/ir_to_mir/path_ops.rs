@@ -1,14 +1,32 @@
 use super::*;
+use crate::compiler::ctx_field_schema::ContextFieldTypeSpec;
 use crate::compiler::mir::AddressSpace;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TrampolineValueKind, TypeInfo};
 
 impl<'a> HirToMirLowering<'a> {
-    fn task_struct_root_runtime_type(&self) -> Result<Option<MirType>, CompileError> {
+    fn ctx_field_kernel_btf_root_runtime_type(
+        &self,
+        field: &CtxField,
+        type_spec: &ContextFieldTypeSpec,
+    ) -> Result<Option<MirType>, CompileError> {
+        let Some(type_name) = type_spec.kernel_btf_runtime_type_name else {
+            return Ok(None);
+        };
+        self.kernel_btf_root_runtime_type(field, type_name)
+    }
+
+    fn kernel_btf_root_runtime_type(
+        &self,
+        field: &CtxField,
+        type_name: &str,
+    ) -> Result<Option<MirType>, CompileError> {
         let type_info = KernelBtf::get()
-            .kernel_named_type_info("task_struct")
+            .kernel_named_type_info(type_name)
             .map_err(|err| {
                 CompileError::UnsupportedInstruction(format!(
-                    "failed to resolve ctx.task task_struct layout from kernel BTF: {err}"
+                    "failed to resolve ctx.{} {} layout from kernel BTF: {err}",
+                    field.display_name(),
+                    type_name
                 ))
             })?;
         let TypeInfo::Struct {
@@ -24,7 +42,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(None);
         }
 
-        let task_ty = MirType::Struct {
+        let root_ty = MirType::Struct {
             name: Some(name),
             kernel_btf_type_id: btf_type_id,
             fields: vec![crate::compiler::mir::StructField {
@@ -39,7 +57,7 @@ impl<'a> HirToMirLowering<'a> {
             }],
         };
         Ok(Some(MirType::Ptr {
-            pointee: Box::new(task_ty),
+            pointee: Box::new(root_ty),
             address_space: AddressSpace::Kernel,
         }))
     }
@@ -392,6 +410,7 @@ impl<'a> HirToMirLowering<'a> {
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
         let ctx_projection_spec =
             ProbeContext::resolve_ctx_field_projection_spec(self.probe_ctx, &ctx_field);
+        let ctx_field_types = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &ctx_field);
 
         if !remaining_members.is_empty() {
             if let Some(spec) = ctx_projection_spec.as_ref() {
@@ -442,9 +461,13 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(());
             }
 
-            if ctx_field == CtxField::Task
-                && let Some(root_runtime_ty) = self.task_struct_root_runtime_type()?
-            {
+            let ctx_projection_root_runtime_ty = match ctx_field_types.as_ref() {
+                Some(type_spec) => {
+                    self.ctx_field_kernel_btf_root_runtime_type(&ctx_field, type_spec)?
+                }
+                None => None,
+            };
+            if let Some(root_runtime_ty) = ctx_projection_root_runtime_ty {
                 let base_vreg = self.func.alloc_vreg();
                 self.vreg_type_hints
                     .insert(base_vreg, root_runtime_ty.clone());
@@ -694,12 +717,11 @@ impl<'a> HirToMirLowering<'a> {
             slot,
         });
 
-        let task_root_runtime_ty = if ctx_field == CtxField::Task {
-            self.task_struct_root_runtime_type().ok().flatten()
-        } else {
-            None
-        };
-        let ctx_field_types = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &ctx_field);
+        let ctx_field_btf_root_runtime_ty = ctx_field_types.as_ref().and_then(|type_spec| {
+            self.ctx_field_kernel_btf_root_runtime_type(&ctx_field, type_spec)
+                .ok()
+                .flatten()
+        });
         let (field_type, runtime_type_hint) = match &ctx_field {
             CtxField::Arg(_)
                 if self
@@ -711,25 +733,27 @@ impl<'a> HirToMirLowering<'a> {
             CtxField::TracepointField(_) => tracepoint_root_types
                 .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
                 .unwrap_or((MirType::I64, None)),
-            _ if ctx_field_types.is_some() => {
-                let spec = ctx_field_types.unwrap();
-                (
-                    spec.semantic_ty,
-                    Some(task_root_runtime_ty.unwrap_or(spec.runtime_ty)),
-                )
+            _ => {
+                if let Some(spec) = ctx_field_types {
+                    (
+                        spec.semantic_ty,
+                        Some(ctx_field_btf_root_runtime_ty.unwrap_or(spec.runtime_ty)),
+                    )
+                } else {
+                    precise_trampoline_types
+                        .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
+                        .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {
+                            Some(TrampolineValueKind::Aggregate { size_bytes }) => (
+                                MirType::Array {
+                                    elem: Box::new(MirType::U8),
+                                    len: size_bytes,
+                                },
+                                None,
+                            ),
+                            _ => (MirType::I64, None),
+                        })
+                }
             }
-            _ => precise_trampoline_types
-                .map(|(semantic_ty, runtime_ty)| (semantic_ty, Some(runtime_ty)))
-                .unwrap_or_else(|| match trampoline_value_spec.map(|spec| spec.kind) {
-                    Some(TrampolineValueKind::Aggregate { size_bytes }) => (
-                        MirType::Array {
-                            elem: Box::new(MirType::U8),
-                            len: size_bytes,
-                        },
-                        None,
-                    ),
-                    _ => (MirType::I64, None),
-                }),
         };
         if let Some(runtime_ty) = runtime_type_hint {
             self.vreg_type_hints.insert(dst_vreg, runtime_ty);

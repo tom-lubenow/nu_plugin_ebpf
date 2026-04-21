@@ -7,6 +7,7 @@ use crate::compiler::{
 pub(crate) struct ContextFieldTypeSpec {
     pub semantic_ty: MirType,
     pub runtime_ty: MirType,
+    pub kernel_btf_runtime_type_name: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +36,7 @@ impl ContextFieldTypeSpec {
         Self {
             semantic_ty: ty.clone(),
             runtime_ty: ty,
+            kernel_btf_runtime_type_name: None,
         }
     }
 
@@ -45,7 +47,13 @@ impl ContextFieldTypeSpec {
                 address_space: AddressSpace::Stack,
             },
             semantic_ty,
+            kernel_btf_runtime_type_name: None,
         }
+    }
+
+    fn with_kernel_btf_runtime_type(mut self, type_name: &'static str) -> Self {
+        self.kernel_btf_runtime_type_name = Some(type_name);
+        self
     }
 }
 
@@ -471,9 +479,10 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::SockoptRetval => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::I32))
         }
-        CtxField::Task => BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(
-            MirType::named_kernel_struct_ptr("task_struct"),
-        ))
+        CtxField::Task => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("task_struct"))
+                .with_kernel_btf_runtime_type("task_struct"),
+        )
         .non_null_pointer(),
         CtxField::Context => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {

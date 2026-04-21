@@ -977,6 +977,17 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
 }
 
 #[test]
+fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
+    let task_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::Task)
+        .expect("expected ctx.task type spec");
+    assert_eq!(task_spec.kernel_btf_runtime_type_name, Some("task_struct"));
+
+    let pid_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::Pid)
+        .expect("expected ctx.pid type spec");
+    assert_eq!(pid_spec.kernel_btf_runtime_type_name, None);
+}
+
+#[test]
 fn test_program_type_btf_callable_surface_follows_program_model() {
     assert_eq!(
         EbpfProgramType::Fentry.btf_callable_surface(),
