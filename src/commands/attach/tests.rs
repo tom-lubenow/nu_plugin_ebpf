@@ -15,7 +15,7 @@ use crate::compiler::{
 };
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::DeclId;
-use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
+use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
 use nu_protocol::engine::Closure;
 use nu_protocol::ir::{Instruction, IrBlock};
@@ -2840,6 +2840,68 @@ fn make_cgroup_sock_addr_nullable_socket_branch_program(count_decl_id: DeclId) -
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_descending_range_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(-1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Range {
+                            start: RegId::new(0),
+                            step: RegId::new(1),
+                            end: RegId::new(2),
+                            inclusion: RangeInclusion::Inclusive,
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(4),
+                    stream: RegId::new(3),
+                    body: HirBlockId(1),
+                    end: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![HirStmt::Call {
+                    decl_id: count_decl_id,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs::default(),
+                }],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(0),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
 fn assert_ctx_path_count_program_compiles(
@@ -6449,6 +6511,43 @@ fn test_compile_cgroup_sock_addr_nullable_socket_branch_program() {
     assert!(
         !result.bytecode.is_empty(),
         "nullable cgroup_sock_addr ctx.sk branch should produce bytecode"
+    );
+}
+
+#[test]
+fn test_compile_xdp_descending_range_iterate_count_program() {
+    let hir = make_descending_range_iterate_count_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("descending range iterate count should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("descending range iterate count should compile through attach flow");
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "descending range iterate count should produce bytecode"
     );
 }
 
