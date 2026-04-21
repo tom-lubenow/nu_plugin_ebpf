@@ -509,6 +509,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, addr_offset));
             }
+            CtxField::PerfCounter => {
+                self.compile_perf_event_value_field(dst, 0)?;
+            }
+            CtxField::PerfEnabled => {
+                self.compile_perf_event_value_field(dst, 8)?;
+            }
+            CtxField::PerfRunning => {
+                self.compile_perf_event_value_field(dst, 16)?;
+            }
             CtxField::SocketCookie => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));

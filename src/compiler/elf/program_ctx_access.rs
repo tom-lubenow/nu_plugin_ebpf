@@ -460,6 +460,11 @@ const LIRC_CTX_FIELDS: &[CtxField] = &[
 ];
 const STACK_CTX_FIELDS: &[CtxField] = &[CtxField::KStack, CtxField::UStack];
 const TRACING_HELPER_CTX_FIELDS: &[CtxField] = &[CtxField::FuncIp, CtxField::AttachCookie];
+const PERF_EVENT_HELPER_CTX_FIELDS: &[CtxField] = &[
+    CtxField::PerfCounter,
+    CtxField::PerfEnabled,
+    CtxField::PerfRunning,
+];
 
 const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] = &[
     (
@@ -483,6 +488,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
     (
         PERF_EVENT_CTX_FIELDS,
         BaseContextFieldAccessRequirement::PerfEventField,
+    ),
+    (
+        PERF_EVENT_HELPER_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::PerfEventHelperFields,
     ),
     (
         &[CtxField::PacketLen],
@@ -635,6 +644,7 @@ enum BaseContextFieldAccessRequirement {
     CpuField,
     TimestampField,
     PerfEventField,
+    PerfEventHelperFields,
     PacketLenField,
     SkbFields,
     PacketDataFields,
@@ -675,6 +685,7 @@ impl BaseContextFieldAccessRequirement {
             Self::CpuField => program_type.supports_cpu_ctx_field(),
             Self::TimestampField => program_type.supports_timestamp_ctx_field(),
             Self::PerfEventField => program_type.supports_perf_event_ctx_fields(),
+            Self::PerfEventHelperFields => program_type.uses_perf_event_context(),
             Self::PacketLenField => program_type.supports_packet_len_ctx_field(),
             Self::SkbFields => program_type.supports_skb_ctx_fields(),
             Self::PacketDataFields => program_type.supports_packet_data_ctx_fields(),
@@ -743,6 +754,10 @@ impl BaseContextFieldAccessRequirement {
             }
             Self::PerfEventField => format!(
                 "ctx.{} is currently only modeled on x86_64 perf_event programs",
+                field.display_name()
+            ),
+            Self::PerfEventHelperFields => format!(
+                "ctx.{} is only available on perf_event programs",
                 field.display_name()
             ),
             Self::PacketLenField

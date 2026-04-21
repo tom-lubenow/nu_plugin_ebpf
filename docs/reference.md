@@ -26,6 +26,9 @@ The closure receives a context parameter with these fields:
 | `attach_cookie` | Per-attachment cookie supplied at link/attach time (`bpf_get_attach_cookie`) | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
 | `sample_period` | Sample period from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `addr` | Sampled address from `bpf_perf_event_data` | perf_event (x86_64 currently) |
+| `perf_counter` | Perf event counter value from `bpf_perf_prog_read_value` | perf_event |
+| `perf_enabled` | Perf event enabled time from `bpf_perf_prog_read_value` | perf_event |
+| `perf_running` | Perf event running time from `bpf_perf_prog_read_value` | perf_event |
 | `packet_len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks) | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -382,6 +385,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `map-pop` | Pop a maybe-null value pointer from a named queue or stack map |
 
 Modeled tracing/perf stack helpers are available through the helper escape hatch. `bpf_get_stackid` is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` is constrained to the same program families and accepts a stack/map buffer with a nonnegative size, including `0`.
+Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.
 
 ## Discovering Tracepoints
 

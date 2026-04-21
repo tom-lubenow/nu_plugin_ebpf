@@ -3015,6 +3015,39 @@ fn test_lower_perf_event_ctx_sample_period_field() {
 }
 
 #[test]
+fn test_lower_perf_event_helper_ctx_fields() {
+    for (field_name, expected_field) in [
+        ("perf_counter", CtxField::PerfCounter),
+        ("perf_enabled", CtxField::PerfEnabled),
+        ("perf_running", CtxField::PerfRunning),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(
+            EbpfProgramType::PerfEvent,
+            "software:cpu-clock:period=100000",
+        );
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|_| panic!("perf_event ctx.{field_name} should lower"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField { field, .. } if field == &expected_field
+        )));
+    }
+}
+
+#[test]
 fn test_lower_socket_filter_ctx_mark_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("mark")],

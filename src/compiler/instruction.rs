@@ -156,6 +156,8 @@ pub enum BpfHelper {
     SockMapUpdate = 53,
     /// long bpf_getsockopt(ctx, level, optname, optval, optlen)
     GetSockOpt = 57,
+    /// long bpf_perf_prog_read_value(ctx, buf, buf_size)
+    PerfProgReadValue = 56,
     /// long bpf_sock_ops_cb_flags_set(bpf_sock, argval)
     SockOpsCbFlagsSet = 59,
     /// long bpf_msg_redirect_map(msg, map, key, flags)
@@ -368,6 +370,7 @@ impl BpfHelper {
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
             BpfHelper::GetSockOpt => "bpf_getsockopt",
+            BpfHelper::PerfProgReadValue => "bpf_perf_prog_read_value",
             BpfHelper::SockOpsCbFlagsSet => "bpf_sock_ops_cb_flags_set",
             BpfHelper::MsgRedirectMap => "bpf_msg_redirect_map",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
@@ -508,6 +511,7 @@ impl BpfHelper {
             "sk_redirect_map" => Some(Self::SkRedirectMap),
             "sock_map_update" => Some(Self::SockMapUpdate),
             "getsockopt" => Some(Self::GetSockOpt),
+            "perf_prog_read_value" => Some(Self::PerfProgReadValue),
             "sock_ops_cb_flags_set" => Some(Self::SockOpsCbFlagsSet),
             "msg_redirect_map" => Some(Self::MsgRedirectMap),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),

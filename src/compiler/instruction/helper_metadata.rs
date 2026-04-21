@@ -60,6 +60,7 @@ impl BpfHelper {
             49 => Some(Self::SetSockOpt),
             52 => Some(Self::SkRedirectMap),
             53 => Some(Self::SockMapUpdate),
+            56 => Some(Self::PerfProgReadValue),
             57 => Some(Self::GetSockOpt),
             59 => Some(Self::SockOpsCbFlagsSet),
             60 => Some(Self::MsgRedirectMap),
@@ -398,6 +399,12 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::PerfProgReadValue => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SockOpsCbFlagsSet => HelperSignature {

@@ -226,6 +226,36 @@ fn test_verify_mir_for_probe_context_allows_perf_event_specific_field_loads() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_allows_perf_event_helper_field_loads() {
+    let (mut func, entry) = new_mir_function();
+    let mut types = HashMap::new();
+
+    for field in [
+        CtxField::PerfCounter,
+        CtxField::PerfEnabled,
+        CtxField::PerfRunning,
+    ] {
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst,
+                field,
+                slot: None,
+            });
+        types.insert(dst, MirType::U64);
+    }
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected perf_event helper ctx fields to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_missing_tracepoint_field_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

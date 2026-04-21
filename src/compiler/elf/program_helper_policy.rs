@@ -28,6 +28,7 @@ enum HelperProgramSurfaceFamily {
     SkbLoadBytes,
     SkbLoadBytesRelative,
     PerfEventOutput,
+    PerfEvent,
     GetStackId,
     LegacyProbeRead,
     SocketCookie,
@@ -103,6 +104,7 @@ impl HelperProgramSurfaceFamily {
                     | EbpfProgramType::SockOps
                     | EbpfProgramType::Xdp
             ),
+            Self::PerfEvent => matches!(program_type, EbpfProgramType::PerfEvent),
             Self::GetStackId => matches!(
                 program_type,
                 EbpfProgramType::Kprobe
@@ -288,6 +290,7 @@ impl HelperProgramSurfaceFamily {
             Self::PerfEventOutput => {
                 "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp"
             }
+            Self::PerfEvent => "perf_event",
             Self::GetStackId => {
                 "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf"
             }
@@ -444,6 +447,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         },
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEventOutput,
+        },
+        BpfHelper::PerfProgReadValue => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::PerfEvent,
         },
         BpfHelper::GetStackId
         | BpfHelper::GetStack

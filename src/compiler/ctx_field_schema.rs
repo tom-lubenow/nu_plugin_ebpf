@@ -463,6 +463,9 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::CgroupId
         | CtxField::PerfSamplePeriod
         | CtxField::PerfAddr
+        | CtxField::PerfCounter
+        | CtxField::PerfEnabled
+        | CtxField::PerfRunning
         | CtxField::LookupCookie
         | CtxField::SocketCookie
         | CtxField::NetnsCookie

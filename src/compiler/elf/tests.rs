@@ -1138,6 +1138,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::PerfProgReadValue),
+        Some("helper 'bpf_perf_prog_read_value' is only valid in perf_event programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStackId),
         Some(
             "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs"
@@ -1446,6 +1450,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::GetStackId),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::PerfEvent.helper_call_error(BpfHelper::PerfProgReadValue),
         None
     );
     assert_eq!(
@@ -4301,6 +4309,22 @@ fn test_probe_context_allows_perf_event_specific_fields() {
 }
 
 #[test]
+fn test_probe_context_allows_perf_event_helper_fields() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+
+    for field in [
+        CtxField::PerfCounter,
+        CtxField::PerfEnabled,
+        CtxField::PerfRunning,
+    ] {
+        assert!(ctx.ctx_field_access_error(&field).is_none());
+    }
+}
+
+#[test]
 fn test_probe_context_rejects_perf_event_specific_fields_on_non_perf_event_programs() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let sample_period_err = ctx
@@ -4314,6 +4338,11 @@ fn test_probe_context_rejects_perf_event_specific_fields_on_non_perf_event_progr
         .ctx_field_access_error(&CtxField::PerfAddr)
         .expect("expected addr field access error");
     assert!(addr_err.contains("ctx.addr is only available on perf_event programs"));
+
+    let counter_err = ctx
+        .ctx_field_access_error(&CtxField::PerfCounter)
+        .expect("expected perf_counter field access error");
+    assert!(counter_err.contains("ctx.perf_counter is only available on perf_event programs"));
 }
 
 #[test]

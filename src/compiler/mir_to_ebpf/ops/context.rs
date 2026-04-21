@@ -27,6 +27,39 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
+    pub(super) fn compile_perf_event_value_field(
+        &mut self,
+        dst: EbpfReg,
+        member_offset: i16,
+    ) -> Result<(), CompileError> {
+        const PERF_EVENT_VALUE_SIZE: i16 = 24;
+
+        self.check_stack_space(PERF_EVENT_VALUE_SIZE)?;
+        self.stack_offset -= PERF_EVENT_VALUE_SIZE;
+        let value_offset = self.stack_offset;
+
+        self.instructions
+            .push(EbpfInsn::mov64_reg(EbpfReg::R1, EbpfReg::R9));
+        self.instructions
+            .push(EbpfInsn::mov64_reg(EbpfReg::R2, EbpfReg::R10));
+        self.instructions
+            .push(EbpfInsn::add64_imm(EbpfReg::R2, value_offset as i32));
+        self.instructions.push(EbpfInsn::mov64_imm(
+            EbpfReg::R3,
+            PERF_EVENT_VALUE_SIZE as i32,
+        ));
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::PerfProgReadValue));
+        self.instructions.push(EbpfInsn::ldxdw(
+            dst,
+            EbpfReg::R10,
+            value_offset + member_offset,
+        ));
+
+        self.stack_offset += PERF_EVENT_VALUE_SIZE;
+        Ok(())
+    }
+
     pub(super) fn xdp_md_offsets() -> (i16, i16, i16, i16, i16, i16) {
         // struct xdp_md {
         //     __u32 data;

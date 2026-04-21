@@ -303,6 +303,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetAttachCookie)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_perf_prog_read_value"),
+        Some(BpfHelper::PerfProgReadValue)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -702,6 +706,18 @@ fn test_helper_signatures_tracing_context_helpers() {
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
+}
+
+#[test]
+fn test_helper_signature_perf_prog_read_value() {
+    let sig = HelperSignature::for_id(BpfHelper::PerfProgReadValue as u32)
+        .expect("expected bpf_perf_prog_read_value helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1164,6 +1180,28 @@ fn test_tracing_context_helper_contracts() {
         assert_eq!(ctx.fixed_size, None);
         assert_eq!(ctx.size_from_arg, None);
     }
+}
+
+#[test]
+fn test_perf_prog_read_value_helper_contract() {
+    let semantics = BpfHelper::PerfProgReadValue.semantics();
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let ctx = semantics.ptr_arg_rules[0];
+    assert_eq!(ctx.arg_idx, 0);
+    assert_eq!(ctx.op, "helper perf_prog_read_value ctx");
+    assert!(ctx.allowed.allow_kernel);
+    assert!(!ctx.allowed.allow_stack);
+    assert_eq!(ctx.size_from_arg, None);
+
+    let buf = semantics.ptr_arg_rules[1];
+    assert_eq!(buf.arg_idx, 1);
+    assert_eq!(buf.op, "helper perf_prog_read_value buf");
+    assert!(buf.allowed.allow_stack);
+    assert!(buf.allowed.allow_map);
+    assert!(!buf.allowed.allow_kernel);
+    assert_eq!(buf.size_from_arg, Some(2));
 }
 
 #[test]
