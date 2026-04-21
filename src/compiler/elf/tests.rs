@@ -90,6 +90,14 @@ fn test_xdp_section_name() {
         prog.section_name().expect("xdp section name should build"),
         "xdp"
     );
+
+    let frags = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo:frags", "test", vec![]);
+    assert_eq!(
+        frags
+            .section_name()
+            .expect("xdp.frags section name should build"),
+        "xdp.frags"
+    );
 }
 
 #[test]
@@ -99,11 +107,11 @@ fn test_ebpf_program_caches_typed_program_spec() {
 
     assert!(matches!(
         prog.parsed_program_spec(),
-        Some(ProgramSpec::Xdp { target }) if target.interface == "lo"
+        Some(ProgramSpec::Xdp { target }) if target.interface == "lo" && !target.frags
     ));
     assert!(matches!(
         section.parsed_program_spec(),
-        Some(ProgramSpec::Xdp { target }) if target.interface == "lo"
+        Some(ProgramSpec::Xdp { target }) if target.interface == "lo" && !target.frags
     ));
 }
 
@@ -792,7 +800,7 @@ fn test_probe_context_xdp_uses_typed_program_spec() {
 
     assert!(matches!(
         ctx.parsed_program_spec(),
-        Some(ProgramSpec::Xdp { target }) if target.interface == "lo"
+        Some(ProgramSpec::Xdp { target }) if target.interface == "lo" && !target.frags
     ));
 }
 

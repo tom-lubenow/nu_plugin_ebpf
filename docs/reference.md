@@ -231,7 +231,9 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 multiples of four, and a null `from` or `to` buffer is accepted only
 when the paired size is zero. `ctx.xdp_buff_len` exposes
 `bpf_xdp_get_buff_len` directly for XDP programs that need total
-multi-buffer packet size rather than the linear `ctx.packet_len`.
+multi-buffer packet size rather than the linear `ctx.packet_len`; attach
+as `xdp:IFACE:frags` when the program needs the kernel `xdp.frags`
+multi-buffer load flag.
 TC egress exposes skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields. `ctx.skb_ancestor_cgroup_id.N` exposes the

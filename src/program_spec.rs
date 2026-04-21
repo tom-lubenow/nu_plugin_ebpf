@@ -164,24 +164,45 @@ pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_n
 pub struct XdpTarget {
     /// Network interface name.
     pub interface: String,
+    /// Whether the program is multi-buffer capable (`xdp.frags` section).
+    pub frags: bool,
 }
 
 impl XdpTarget {
-    /// Parse an xdp target string of the form `interface`.
+    /// Parse an xdp target string of the form `interface` or `interface:frags`.
     pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
-        if target.is_empty() {
+        let (interface, frags) = match target.rsplit_once(':') {
+            Some((interface, "frags")) => (interface, true),
+            Some((_, mode)) => {
+                return Err(ProgramSpecParseError::new(format!(
+                    "Invalid xdp target mode: {mode}. Expected format: interface or interface:frags"
+                )));
+            }
+            None => (target, false),
+        };
+
+        if interface.is_empty() {
             return Err(ProgramSpecParseError::new(
                 "xdp interface target cannot be empty",
             ));
         }
 
         Ok(Self {
-            interface: target.to_string(),
+            interface: interface.to_string(),
+            frags,
         })
     }
 
     pub fn target_string(&self) -> String {
-        self.interface.clone()
+        if self.frags {
+            format!("{}:frags", self.interface)
+        } else {
+            self.interface.clone()
+        }
+    }
+
+    pub fn section_name(&self) -> &'static str {
+        if self.frags { "xdp.frags" } else { "xdp" }
     }
 }
 
@@ -1655,6 +1676,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockopt { target } => target.section_name().to_string(),
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
+            ProgramSpec::Xdp { target } => target.section_name().to_string(),
             ProgramSpec::StructOpsCallback { callback_name, .. } => match self.attach_shape() {
                 ProgramAttachShape::StructOpsCallback {
                     sleepable: true, ..
@@ -1893,6 +1915,7 @@ mod tests {
             xdp.xdp_target().map(|target| target.interface.as_str()),
             Some("lo")
         );
+        assert_eq!(xdp.xdp_target().map(|target| target.frags), Some(false));
         assert_eq!(
             perf_event.perf_event_target().map(|target| target.cpu),
             Some(Some(1))
@@ -1973,8 +1996,39 @@ mod tests {
     fn test_xdp_target_requires_non_empty_interface() {
         let target = XdpTarget::parse("lo").expect("xdp target should parse");
         assert_eq!(target.target_string(), "lo");
+        assert!(!target.frags);
+        assert_eq!(target.section_name(), "xdp");
+
+        let frags = XdpTarget::parse("lo:frags").expect("xdp frags target should parse");
+        assert_eq!(frags.interface, "lo");
+        assert!(frags.frags);
+        assert_eq!(frags.target_string(), "lo:frags");
+        assert_eq!(frags.section_name(), "xdp.frags");
 
         let err = XdpTarget::parse("").expect_err("empty xdp interface should be rejected");
         assert_eq!(err.to_string(), "xdp interface target cannot be empty");
+
+        let err = XdpTarget::parse("lo:native").expect_err("unknown xdp mode should be rejected");
+        assert_eq!(
+            err.to_string(),
+            "Invalid xdp target mode: native. Expected format: interface or interface:frags"
+        );
+    }
+
+    #[test]
+    fn test_xdp_frags_program_spec_uses_xdp_frags_section() {
+        let spec = ProgramSpec::parse("xdp:lo:frags").expect("xdp frags spec should parse");
+        assert_eq!(spec.to_string(), "xdp:lo:frags");
+        assert_eq!(spec.section_name(), "xdp.frags");
+
+        assert!(matches!(
+            spec,
+            ProgramSpec::Xdp {
+                target: XdpTarget {
+                    ref interface,
+                    frags: true
+                }
+            } if interface == "lo"
+        ));
     }
 }

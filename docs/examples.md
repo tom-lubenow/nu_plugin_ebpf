@@ -71,6 +71,9 @@ let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.netns_cookie 
 # Count loopback packets by packet length via XDP, then pass them through
 let id = ebpf attach 'xdp:lo' {|ctx| $ctx.packet_len | count; 'pass' }
 
+# Use xdp.frags for XDP programs that need multi-buffer packet support
+ebpf attach --dry-run 'xdp:lo:frags' {|ctx| $ctx.xdp_buff_len | count; 'pass' }
+
 # Dry-run an XDP redirect-map program shape with an explicit redirect-map family
 ebpf attach --dry-run 'xdp:lo' {|ctx| redirect-map demo_xsks $ctx.rx_queue_index --kind xskmap }
 

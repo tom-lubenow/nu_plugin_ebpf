@@ -184,6 +184,13 @@ fn test_parse_probe_spec_xdp() {
 }
 
 #[test]
+fn test_parse_probe_spec_xdp_frags() {
+    let (prog_type, target) = parse_probe_spec("xdp:lo:frags").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Xdp);
+    assert_eq!(target, "lo:frags");
+}
+
+#[test]
 fn test_parse_program_spec_xdp_is_structured() {
     let spec = parse_program_spec("xdp:lo").unwrap();
     assert_eq!(
@@ -191,10 +198,27 @@ fn test_parse_program_spec_xdp_is_structured() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                frags: false,
             },
         }
     );
     assert_eq!(spec.to_string(), "xdp:lo");
+}
+
+#[test]
+fn test_parse_program_spec_xdp_frags_is_structured() {
+    let spec = parse_program_spec("xdp:lo:frags").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Xdp {
+            target: XdpTarget {
+                interface: "lo".to_string(),
+                frags: true,
+            },
+        }
+    );
+    assert_eq!(spec.to_string(), "xdp:lo:frags");
+    assert_eq!(spec.section_name(), "xdp.frags");
 }
 
 #[test]
