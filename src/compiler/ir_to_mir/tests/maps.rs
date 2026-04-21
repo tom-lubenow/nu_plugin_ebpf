@@ -1303,6 +1303,36 @@ fn test_lower_map_push_respects_stack_kind() {
 }
 
 #[test]
+fn test_lower_map_push_respects_bloom_filter_kind() {
+    let hir = make_map_push_program(DeclId::new(42), 0, "bloom-filter");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bloom-filter map-push should lower");
+
+    let kind = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapPush { map, .. } if map.name == "recent_pids" => Some(map.kind),
+            _ => None,
+        })
+        .expect("expected generic map push");
+    assert_eq!(kind, MapKind::BloomFilter);
+}
+
+#[test]
 fn test_lower_map_push_registers_queue_value_schema() {
     let hir = make_map_push_program(DeclId::new(42), 0, "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -1386,6 +1416,53 @@ fn test_lower_map_peek_uses_prior_queue_schema() {
         ty,
         MirType::MapRef { val_ty, .. } if !matches!(val_ty.as_ref(), MirType::Unknown)
     )));
+}
+
+#[test]
+fn test_lower_map_peek_rejects_bloom_filter_kind() {
+    let hir = make_map_peek_program(Some(DeclId::new(41)), DeclId::new(42), "bloom-filter");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([
+        (DeclId::new(41), "map-push".to_string()),
+        (DeclId::new(42), "map-peek".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("first-class bloom-filter map-peek should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("map-peek requires --kind queue or --kind stack, got BloomFilter")
+    );
+}
+
+#[test]
+fn test_lower_map_pop_rejects_bloom_filter_kind() {
+    let hir = make_map_pop_program(None, DeclId::new(42), "bloom-filter");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-pop".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bloom-filter map-pop should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("map-pop requires --kind queue or --kind stack, got BloomFilter")
+    );
 }
 
 #[test]

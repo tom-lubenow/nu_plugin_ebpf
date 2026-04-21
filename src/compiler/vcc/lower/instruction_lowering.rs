@@ -422,6 +422,15 @@ impl<'a> VccLowerer<'a> {
                 });
             }
             MirInst::MapLookup { dst, map, key } => {
+                if matches!(map.kind, MapKind::BloomFilter) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map lookup is not supported for bloom-filter map '{}'",
+                            map.name
+                        ),
+                    ));
+                }
                 if !supports_generic_map_kind(map.kind) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
@@ -524,6 +533,15 @@ impl<'a> VccLowerer<'a> {
                 val,
                 flags,
             } => {
+                if matches!(map.kind, MapKind::BloomFilter) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map update is not supported for bloom-filter map '{}'; use map-push",
+                            map.name
+                        ),
+                    ));
+                }
                 if !supports_generic_map_kind(map.kind) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
@@ -546,6 +564,15 @@ impl<'a> VccLowerer<'a> {
                 self.verify_map_value(*val, out)?;
             }
             MirInst::MapDelete { map, key } => {
+                if matches!(map.kind, MapKind::BloomFilter) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map delete is not supported for bloom-filter map '{}'",
+                            map.name
+                        ),
+                    ));
+                }
                 if !supports_generic_map_kind(map.kind) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
@@ -576,11 +603,14 @@ impl<'a> VccLowerer<'a> {
                         ),
                     ));
                 }
-                if !matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+                if !matches!(
+                    map.kind,
+                    MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
+                ) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         format!(
-                            "map-push requires queue or stack map kind, got {:?} for '{}'",
+                            "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
                             map.kind, map.name
                         ),
                     ));

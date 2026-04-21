@@ -486,6 +486,22 @@ fn test_redirect_map_helper_uses_explicit_redirect_map_kind_family() {
 }
 
 #[test]
+fn test_queue_stack_helpers_use_expected_explicit_map_kind_families() {
+    assert_eq!(
+        BpfHelper::MapPushElem.helper_explicit_map_kind_family(0),
+        Some(HelperExplicitMapKindFamily::QueueStackBloom)
+    );
+    assert_eq!(
+        BpfHelper::MapPeekElem.helper_explicit_map_kind_family(0),
+        Some(HelperExplicitMapKindFamily::QueueStackBloom)
+    );
+    assert_eq!(
+        BpfHelper::MapPopElem.helper_explicit_map_kind_family(0),
+        Some(HelperExplicitMapKindFamily::QueueStack)
+    );
+}
+
+#[test]
 fn test_storage_helpers_use_fixed_local_storage_map_kinds() {
     for (helper, kind) in [
         (BpfHelper::SkStorageGet, MapKind::SkStorage),

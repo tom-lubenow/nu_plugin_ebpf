@@ -281,6 +281,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 | MapKind::PerfEventArray
                 | MapKind::Queue
                 | MapKind::Stack
+                | MapKind::BloomFilter
                 | MapKind::DevMap
                 | MapKind::DevMapHash
                 | MapKind::CpuMap
@@ -397,7 +398,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 };
                 self.register_generic_map_spec(map, key_size, Some(4))?;
             }
-            MapKind::Queue | MapKind::Stack => {
+            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter => {
                 let value_size = self
                     .generic_map_specs
                     .get(&map.name)
@@ -532,7 +533,10 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         let mut inferred_key_size = key_size.max(1) as u32;
-        if matches!(map.kind, MapKind::Queue | MapKind::Stack | MapKind::RingBuf) {
+        if matches!(
+            map.kind,
+            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter | MapKind::RingBuf
+        ) {
             inferred_key_size = 0;
         } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
             inferred_key_size = 4;
@@ -605,6 +609,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::PerfEventArray => BpfMapDef::perf_event_array(),
             MapKind::Queue => BpfMapDef::queue(spec.value_size, max_entries),
             MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
+            MapKind::BloomFilter => BpfMapDef::bloom_filter(spec.value_size, max_entries),
             MapKind::RingBuf => BpfMapDef::ring_buffer(256 * 1024),
             MapKind::StackTrace => BpfMapDef::stack_trace_map(),
             MapKind::DevMap => BpfMapDef::dev_map(max_entries),
@@ -630,6 +635,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         key: VReg,
         key_reg: EbpfReg,
     ) -> Result<(), CompileError> {
+        if matches!(map.kind, MapKind::BloomFilter) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map lookup is not supported for bloom-filter map '{}'",
+                map.name
+            )));
+        }
         let key_layout = self.map_operand_layout(key, "map key", 8)?;
         let key_size = match key_layout {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
@@ -657,6 +668,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         val_reg: EbpfReg,
         flags: u64,
     ) -> Result<(), CompileError> {
+        if matches!(map.kind, MapKind::BloomFilter) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map update is not supported for bloom-filter map '{}'; use map-push",
+                map.name
+            )));
+        }
         let key_layout = self.map_operand_layout(key, "map key", 8)?;
         let val_layout = self.map_operand_layout(val, "map value", 8)?;
         let key_size = match key_layout {
@@ -689,6 +706,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         key: VReg,
         key_reg: EbpfReg,
     ) -> Result<(), CompileError> {
+        if matches!(map.kind, MapKind::BloomFilter) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map delete is not supported for bloom-filter map '{}'",
+                map.name
+            )));
+        }
         if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map delete is not supported for array map kind {:?} ('{}')",
@@ -715,9 +738,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         val_reg: EbpfReg,
         flags: u64,
     ) -> Result<(), CompileError> {
-        if !matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+        if !matches!(
+            map.kind,
+            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
+        ) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-push requires queue or stack map kind, got {:?} for '{}'",
+                "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
                 map.kind, map.name
             )));
         }

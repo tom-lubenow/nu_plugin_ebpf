@@ -309,6 +309,7 @@ impl EbpfProgram {
                 x if x == BpfMapType::LruPerCpuHash as u32 => "LruPerCpuHash",
                 x if x == BpfMapType::LpmTrie as u32 => "LpmTrie",
                 x if x == BpfMapType::StackTrace as u32 => "StackTrace",
+                x if x == BpfMapType::BloomFilter as u32 => "BloomFilter",
                 x if x == BpfMapType::RingBuf as u32 => "RingBuf",
                 x if x == BpfMapType::SkStorage as u32 => "SkStorage",
                 x if x == BpfMapType::InodeStorage as u32 => "InodeStorage",

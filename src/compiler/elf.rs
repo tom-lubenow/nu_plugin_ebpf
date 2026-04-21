@@ -179,6 +179,7 @@ pub enum BpfMapType {
     RingBuf = 27,
     InodeStorage = 28,
     TaskStorage = 29,
+    BloomFilter = 30,
     CgrpStorage = 32,
 }
 
@@ -409,6 +410,18 @@ impl BpfMapDef {
     pub fn stack(value_size: u32, max_entries: u32) -> Self {
         Self {
             map_type: BpfMapType::Stack as u32,
+            key_size: 0,
+            value_size,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a generic bloom filter map definition.
+    pub fn bloom_filter(value_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::BloomFilter as u32,
             key_size: 0,
             value_size,
             max_entries,

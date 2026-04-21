@@ -553,6 +553,7 @@ fn test_bpf_map_type_constants_match_kernel_uapi() {
     assert_eq!(BpfMapType::RingBuf as u32, 27);
     assert_eq!(BpfMapType::InodeStorage as u32, 28);
     assert_eq!(BpfMapType::TaskStorage as u32, 29);
+    assert_eq!(BpfMapType::BloomFilter as u32, 30);
     assert_eq!(BpfMapType::CgrpStorage as u32, 32);
 }
 

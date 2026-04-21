@@ -541,9 +541,10 @@ impl BpfHelper {
     ) -> Option<HelperExplicitMapKindFamily> {
         match self.local_helper_map_arg_index() {
             Some(idx) if idx == arg_idx => match self {
-                Self::MapPushElem | Self::MapPopElem | Self::MapPeekElem => {
-                    Some(HelperExplicitMapKindFamily::QueueStack)
+                Self::MapPushElem | Self::MapPeekElem => {
+                    Some(HelperExplicitMapKindFamily::QueueStackBloom)
                 }
+                Self::MapPopElem => Some(HelperExplicitMapKindFamily::QueueStack),
                 Self::RedirectMap => Some(HelperExplicitMapKindFamily::RedirectMap),
                 _ => None,
             },
@@ -586,6 +587,7 @@ pub enum HelperArgKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelperExplicitMapKindFamily {
     QueueStack,
+    QueueStackBloom,
     RedirectMap,
 }
 

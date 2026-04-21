@@ -181,6 +181,7 @@ impl<'a> HirToMirLowering<'a> {
             "array" => Some(MapKind::Array),
             "queue" => Some(MapKind::Queue),
             "stack" => Some(MapKind::Stack),
+            "bloom-filter" | "bloom_filter" | "bloomfilter" => Some(MapKind::BloomFilter),
             "lpm-trie" | "lpm_trie" | "lpmtrie" => Some(MapKind::LpmTrie),
             "lru-hash" | "lru_hash" | "lruhash" => Some(MapKind::LruHash),
             "per-cpu-hash" | "percpu-hash" | "per_cpu_hash" => Some(MapKind::PerCpuHash),
@@ -267,6 +268,30 @@ impl<'a> HirToMirLowering<'a> {
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must be one of: queue, stack"
+            ))),
+        }
+    }
+
+    pub(super) fn required_queue_stack_bloom_map_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind queue, --kind stack, or --kind bloom-filter"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::Queue) => Ok(MapKind::Queue),
+            Some(MapKind::Stack) => Ok(MapKind::Stack),
+            Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind queue, --kind stack, or --kind bloom-filter, got {:?}",
+                other
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: queue, stack, bloom-filter"
             ))),
         }
     }

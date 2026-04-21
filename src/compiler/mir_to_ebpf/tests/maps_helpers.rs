@@ -2285,6 +2285,108 @@ fn test_compile_map_push_helper_with_loaded_queue_map_fd() {
 }
 
 #[test]
+fn test_compile_map_push_helper_with_loaded_bloom_filter_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let map = func.alloc_vreg();
+    let value = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_bloom".to_string(),
+            kind: MapKind::BloomFilter,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: value,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapPushElem as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(value),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("map_push helper with local bloom filter should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_bloom")
+        .expect("expected bloom filter map");
+    assert_eq!(map.def.map_type, BpfMapType::BloomFilter as u32);
+    assert_eq!(map.def.key_size, 0);
+    assert_eq!(map.def.value_size, 8);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_bloom"),
+        "expected bloom filter relocation"
+    );
+}
+
+#[test]
+fn test_compile_generic_map_push_accepts_bloom_filter_map() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: value,
+        src: MirValue::Const(42),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "demo_bloom".to_string(),
+            kind: MapKind::BloomFilter,
+        },
+        val: value,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("generic map-push should compile bloom-filter maps");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_bloom")
+        .expect("expected bloom filter map");
+    assert_eq!(map.def.map_type, BpfMapType::BloomFilter as u32);
+    assert_eq!(map.def.key_size, 0);
+    assert_eq!(map.def.value_size, 8);
+}
+
+#[test]
 fn test_compile_map_peek_helper_with_loaded_queue_map_fd() {
     use crate::compiler::elf::BpfMapType;
     use crate::compiler::mir::*;
@@ -2337,6 +2439,63 @@ fn test_compile_map_peek_helper_with_loaded_queue_map_fd() {
             .iter()
             .any(|reloc| reloc.symbol_name == "demo_queue"),
         "expected queue relocation"
+    );
+}
+
+#[test]
+fn test_compile_map_peek_helper_with_loaded_bloom_filter_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let map = func.alloc_vreg();
+    let value = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_bloom".to_string(),
+            kind: MapKind::BloomFilter,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: value,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapPeekElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(value)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("map_peek helper with local bloom filter should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_bloom")
+        .expect("expected bloom filter map");
+    assert_eq!(map.def.map_type, BpfMapType::BloomFilter as u32);
+    assert_eq!(map.def.key_size, 0);
+    assert_eq!(map.def.value_size, 8);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_bloom"),
+        "expected bloom filter relocation"
     );
 }
 

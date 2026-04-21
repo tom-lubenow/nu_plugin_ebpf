@@ -924,7 +924,7 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-push")?;
                 self.validate_generic_map_name(&map_name, "map-push")?;
-                let map_kind = self.required_queue_stack_map_kind_arg("map-push")?;
+                let map_kind = self.required_queue_stack_bloom_map_kind_arg("map-push")?;
                 let map_ref = MapRef {
                     name: map_name,
                     kind: map_kind,
@@ -1828,6 +1828,9 @@ impl<'a> HirToMirLowering<'a> {
                 Some(HelperExplicitMapKindFamily::QueueStack) => {
                     self.required_queue_stack_map_kind_arg("helper-call")?
                 }
+                Some(HelperExplicitMapKindFamily::QueueStackBloom) => {
+                    self.required_queue_stack_bloom_map_kind_arg("helper-call")?
+                }
                 Some(HelperExplicitMapKindFamily::RedirectMap) => {
                     self.required_redirect_map_kind_arg("helper-call")?
                 }
@@ -1876,7 +1879,10 @@ impl<'a> HirToMirLowering<'a> {
                     val_ty: Box::new(MirType::Unknown),
                 },
             );
-        } else if matches!(map_kind, MapKind::Queue | MapKind::Stack) {
+        } else if matches!(
+            map_kind,
+            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
+        ) {
             self.vreg_type_hints.insert(
                 map_vreg,
                 MirType::MapRef {

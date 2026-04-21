@@ -24,6 +24,7 @@ pub(super) fn supports_generic_map_kind(kind: MapKind) -> bool {
             | MapKind::LruPerCpuHash
             | MapKind::Queue
             | MapKind::Stack
+            | MapKind::BloomFilter
     )
 }
 
@@ -136,7 +137,10 @@ pub(super) fn register_generic_map_layout_spec(
     }
 
     let mut inferred_key_size = key_size.max(1) as u32;
-    if matches!(map.kind, MapKind::Queue | MapKind::Stack) {
+    if matches!(
+        map.kind,
+        MapKind::Queue | MapKind::Stack | MapKind::BloomFilter
+    ) {
         inferred_key_size = 0;
     } else if matches!(map.kind, MapKind::Array | MapKind::PerCpuArray) {
         inferred_key_size = 4;
@@ -200,6 +204,13 @@ pub(super) fn check_generic_map_layout_constraints(
         for inst in &block.instructions {
             match inst {
                 MirInst::MapLookup { dst, map, key } => {
+                    if matches!(map.kind, MapKind::BloomFilter) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "map lookup is not supported for bloom-filter map '{}'",
+                            map.name
+                        )));
+                        continue;
+                    }
                     check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(key_size) =
                         infer_map_operand_size(*key, "map key", types, &mut errors)
@@ -216,6 +227,13 @@ pub(super) fn check_generic_map_layout_constraints(
                     );
                 }
                 MirInst::MapUpdate { map, key, val, .. } => {
+                    if matches!(map.kind, MapKind::BloomFilter) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "map update is not supported for bloom-filter map '{}'; use map-push",
+                            map.name
+                        )));
+                        continue;
+                    }
                     check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(key_size) =
                         infer_map_operand_size(*key, "map key", types, &mut errors)
@@ -236,6 +254,13 @@ pub(super) fn check_generic_map_layout_constraints(
                     );
                 }
                 MirInst::MapDelete { map, key } => {
+                    if matches!(map.kind, MapKind::BloomFilter) {
+                        errors.push(VerifierTypeError::new(format!(
+                            "map delete is not supported for bloom-filter map '{}'",
+                            map.name
+                        )));
+                        continue;
+                    }
                     check_counter_map_kind(map, &mut counter_kinds, &mut errors);
                     let Some(key_size) =
                         infer_map_operand_size(*key, "map key", types, &mut errors)

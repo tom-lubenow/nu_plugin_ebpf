@@ -18,7 +18,7 @@ Last updated: 2026-04-20.
   - Added `MapLookup` / `MapUpdate` / `MapDelete` codegen for generic map ops, while preserving the specialized `count` lowering path.
   - Added generic map ELF emission + relocations from map-op usage (including key/value size inference and map-kind-aware defs for hash/array/per-cpu maps).
   - Expanded type/VCC checks to allow scalar or stack/map-pointer operands for generic map keys/values, with backend guards for unsupported map-kind helper usage.
-  - Recent progress: `map-put` / `map-push` now materialize metadata-built record values on demand and register their fixed layouts/semantics, so ordinary record builders can seed typed hash/queue/stack map flows without an intermediate local binding.
+  - Recent progress: `map-put` / `map-push` now materialize metadata-built record values on demand and register their fixed layouts/semantics, so ordinary record builders can seed typed hash/queue/stack/bloom-filter map flows without an intermediate local binding.
 
 - [x] Make map kind a first-class backend concern.
   - Counter/string-counter map emission now preserves inferred `MapKind` (hash vs per-cpu hash) and rejects invalid kind usage at codegen time.
@@ -231,6 +231,7 @@ Near-term priority order:
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.
+  - Recent progress: added `BPF_MAP_TYPE_BLOOM_FILTER` support through the existing typed `map-push` path and raw helper map-FD materialization, while rejecting unsupported first-class lookup/update/delete/peek/pop operations to match kernel bloom-filter semantics.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.

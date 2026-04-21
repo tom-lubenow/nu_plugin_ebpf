@@ -66,6 +66,7 @@ pub enum MapKind {
     PerfEventArray,
     Queue,
     Stack,
+    BloomFilter,
     RingBuf,
     StackTrace,
     DevMap,
