@@ -6202,6 +6202,42 @@ fn test_compile_kprobe_ctx_ancestor_cgroup_id_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_numa_node_id_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("numa_node_id")],
+        },
+        "kprobe ctx.numa_node_id count",
+    );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_function_ip_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("function_ip")],
+        },
+        "kprobe ctx.function_ip count",
+    );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_bpf_cookie_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("bpf_cookie")],
+        },
+        "kprobe ctx.bpf_cookie count",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_ctx_task_non_null_program() {
     let hir = make_ctx_path_non_null_program(CellPath {
         members: vec![string_member("task")],
@@ -6544,6 +6580,42 @@ fn test_compile_xdp_ctx_rx_queue_index_counter_program() {
 }
 
 #[test]
+fn test_compile_xdp_ctx_ifindex_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("ifindex")],
+        },
+        "xdp ctx.ifindex count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_egress_ifindex_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("egress_ifindex")],
+        },
+        "xdp ctx.egress_ifindex count",
+    );
+}
+
+#[test]
+fn test_compile_xdp_ctx_xdp_buffer_len_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![string_member("xdp_buffer_len")],
+        },
+        "xdp ctx.xdp_buffer_len count",
+    );
+}
+
+#[test]
 fn test_compile_xdp_ctx_len_alias_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Xdp,
@@ -6619,6 +6691,18 @@ fn test_compile_tc_ctx_protocol_alias_counter_program() {
             members: vec![string_member("protocol")],
         },
         "tc ctx.protocol count",
+    );
+}
+
+#[test]
+fn test_compile_tc_ctx_recalc_hash_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("recalc_hash")],
+        },
+        "tc ctx.recalc_hash count",
     );
 }
 

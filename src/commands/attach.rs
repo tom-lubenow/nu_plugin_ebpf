@@ -99,7 +99,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.gid }     - Get group ID
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.task }    - Get current task_struct pointer
+    {|ctx| $ctx.numa_node_id } - Get current NUMA node ID
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
+    {|ctx| $ctx.func_ip } - Get traced function/probe target address
+    {|ctx| $ctx.function_ip } - Alias for ctx.func_ip
+    {|ctx| $ctx.attach_cookie } - Get per-attachment BPF cookie
+    {|ctx| $ctx.bpf_cookie } - Alias for ctx.attach_cookie
     {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
 
   Packet-context fields:
@@ -135,6 +140,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the skb hash on skb-backed packet programs
+    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on tc, sk_skb, and sk_skb_parser
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
@@ -158,6 +165,8 @@ Context parameter syntax (recommended):
     XDP-only extras:
     {|ctx| $ctx.data_meta } - Get the XDP packet metadata pointer
     {|ctx| ($ctx.data_meta | get 0) } - Read the first metadata byte with an auto-generated `ctx.data` guard
+    {|ctx| $ctx.xdp_buff_len } - Get total XDP buffer length
+    {|ctx| $ctx.xdp_buffer_len } - Alias for ctx.xdp_buff_len
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
     Note: XDP closures can return action aliases like `pass`, `drop`,
