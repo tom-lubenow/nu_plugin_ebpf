@@ -3615,6 +3615,50 @@ fn test_probe_context_arg_count_field_surface_follows_program_model() {
 }
 
 #[test]
+fn test_probe_context_stack_fields_follow_helper_policy() {
+    for program_type in [
+        EbpfProgramType::Kprobe,
+        EbpfProgramType::Kretprobe,
+        EbpfProgramType::Uprobe,
+        EbpfProgramType::Uretprobe,
+        EbpfProgramType::PerfEvent,
+        EbpfProgramType::RawTracepoint,
+        EbpfProgramType::Tracepoint,
+        EbpfProgramType::Fentry,
+        EbpfProgramType::Fexit,
+        EbpfProgramType::TpBtf,
+    ] {
+        let target = if program_type == EbpfProgramType::PerfEvent {
+            "software:cpu-clock:period=100000"
+        } else {
+            "do_sys_openat2"
+        };
+        let ctx = ProbeContext::new(program_type, target);
+        for field in [CtxField::KStack, CtxField::UStack] {
+            assert!(
+                ctx.ctx_field_access_error(&field).is_none(),
+                "ctx.{} should be allowed on {program_type:?}",
+                field.display_name()
+            );
+        }
+    }
+
+    for program_type in [EbpfProgramType::Lsm, EbpfProgramType::Xdp] {
+        let ctx = ProbeContext::new(program_type, "do_sys_openat2");
+        for field in [CtxField::KStack, CtxField::UStack] {
+            let err = ctx
+                .ctx_field_access_error(&field)
+                .unwrap_or_else(|| panic!("expected ctx.{} rejection", field.display_name()));
+            assert!(err.contains(&format!(
+                "ctx.{} is not available on {} programs",
+                field.display_name(),
+                program_type.canonical_prefix()
+            )));
+        }
+    }
+}
+
+#[test]
 fn test_probe_context_rejects_tracepoint_field_on_kprobe() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
     let err = ctx

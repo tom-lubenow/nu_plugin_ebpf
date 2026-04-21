@@ -105,6 +105,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.function_ip } - Alias for ctx.func_ip
     {|ctx| $ctx.attach_cookie } - Get per-attachment BPF cookie
     {|ctx| $ctx.bpf_cookie } - Alias for ctx.attach_cookie
+    {|ctx| $ctx.kstack }  - Collect kernel stack trace ID
+    {|ctx| $ctx.ustack }  - Collect user stack trace ID
     {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
 
   Packet-context fields:

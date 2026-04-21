@@ -385,7 +385,7 @@ pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
     supports_rx_queue_index_ctx_field: false,
     supports_egress_ifindex_ctx_field: false,
     supports_xdp_md_ctx_fields: false,
-    supports_stack_ctx_fields: true,
+    supports_stack_ctx_fields: false,
     supports_tracepoint_fields: false,
     is_userspace: false,
 };

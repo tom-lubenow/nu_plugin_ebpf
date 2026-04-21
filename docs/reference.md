@@ -26,6 +26,8 @@ The closure receives a context parameter with these fields:
 | `jiffies` | Kernel jiffies counter | All |
 | `func_ip` | Address of the traced function/probe target (`bpf_get_func_ip`) | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
 | `attach_cookie` | Per-attachment cookie supplied at link/attach time (`bpf_get_attach_cookie`) | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
+| `kstack` | Kernel stack-trace ID collected through `bpf_get_stackid` and stored in the `kstacks` stack-trace map | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
+| `ustack` | User stack-trace ID collected through `bpf_get_stackid` and stored in the `ustacks` stack-trace map | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf |
 | `sample_period` | Sample period from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `addr` | Sampled address from `bpf_perf_event_data` | perf_event (x86_64 currently) |
 | `perf_counter` | Perf event counter value from `bpf_perf_prog_read_value` | perf_event |
@@ -430,7 +432,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `map-peek` | Peek a maybe-null value pointer from a named queue or stack map |
 | `map-pop` | Pop a maybe-null value pointer from a named queue or stack map |
 
-Modeled tracing/perf stack helpers are available through the helper escape hatch. `bpf_get_stackid` is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` is constrained to the same program families and accepts a stack/map buffer with a nonnegative size, including `0`.
+Stack trace ID collection should normally use first-class context fields: `$ctx.kstack` for kernel stacks and `$ctx.ustack` for user stacks. The backing `bpf_get_stackid` helper is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` remains available through `helper-call` for custom buffers, maps, and flags, and accepts a stack/map buffer with a nonnegative size, including `0`.
 Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.
 The perf-event-only `bpf_read_branch_records` helper is also modeled for branch-stack captures through `helper-call`, including its stack/map output buffer and zero-size query behavior.
 BTF-backed tracing argument count is available as `ctx.arg_count`; the lower-level `bpf_get_func_arg`, `bpf_get_func_ret`, and `bpf_get_func_arg_cnt` helpers are modeled for explicit `helper-call` use when fixed `ctx.argN` / `ctx.retval` projections are not the right fit.

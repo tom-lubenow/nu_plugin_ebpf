@@ -7,7 +7,9 @@ use crate::compiler::hir_to_mir::{
     lower_hir_to_mir_with_hints, lower_hir_to_mir_with_hints_and_maps,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::{AddressSpace, MapKind, MapRef, MirInst, StructField};
+use crate::compiler::mir::{
+    AddressSpace, KSTACK_MAP_NAME, MapKind, MapRef, MirInst, StructField, USTACK_MAP_NAME,
+};
 use crate::compiler::passes::{ListLowering, MirPass, optimize_with_ssa_hints};
 use crate::compiler::{
     BpfMapDef, CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
@@ -3856,6 +3858,45 @@ fn assert_ctx_path_count_program_compiles(
     );
 }
 
+fn assert_ctx_stack_count_program_compiles(field: &str, map_name: &str, context: &str) {
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![string_member(field)],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == map_name)
+        .unwrap_or_else(|| panic!("{context} should emit {map_name} stack map"));
+    assert_eq!(map.def, BpfMapDef::stack_trace_map());
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+}
+
 fn assert_guarded_sock_ops_ctx_path_count_program_compiles(
     callback_op: i64,
     counted_path: CellPath,
@@ -6370,6 +6411,16 @@ fn test_compile_kprobe_ctx_bpf_cookie_alias_counter_program() {
         },
         "kprobe ctx.bpf_cookie count",
     );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_kstack_counter_program() {
+    assert_ctx_stack_count_program_compiles("kstack", KSTACK_MAP_NAME, "kprobe ctx.kstack count");
+}
+
+#[test]
+fn test_compile_kprobe_ctx_ustack_counter_program() {
+    assert_ctx_stack_count_program_compiles("ustack", USTACK_MAP_NAME, "kprobe ctx.ustack count");
 }
 
 #[test]
