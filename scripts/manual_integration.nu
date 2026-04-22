@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 74
+const TOTAL_STEPS = 75
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -63,6 +63,10 @@ def current-nu-bin [] {
     $nu.current-exe
 }
 
+def command-exists [name: string] {
+    ((which $name | length) > 0)
+}
+
 def run-nu-with-plugin [plugin_bin: string, code: string] {
     run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code
 }
@@ -86,6 +90,10 @@ def trigger-cargo-read [repo_root: string] {
 
 def trigger-sh-true [] {
     ^sh -lc 'true' | ignore
+}
+
+def trigger-bash-read [] {
+    ^bash -lc 'read -t 0.01 value || true' out+err> /dev/null
 }
 
 def trigger-true [] {
@@ -1162,7 +1170,23 @@ step 73 "perf_event software cpu-clock sample_period counter" {
     } { trigger-cpu-work } "perf_event sample_period counter"
 }
 
-step 74 "verify no leaked probes" {
+step 74 "uprobe.multi bash read wildcard counters" {
+    if not ("/bin/bash" | path exists) {
+        print "Skipping uprobe.multi smoke: /bin/bash is not available"
+    } else if (command-exists "nm") and (((^nm -D /bin/bash | lines | where {|line| $line =~ ' read' } | length) == 0)) {
+        print "Skipping uprobe.multi smoke: /bin/bash has no exported read-related symbols"
+    } else {
+        count-at-least-one "uprobe.multi:/bin/bash:*read*" {|ctx|
+            $ctx.arg0 | count
+        } { trigger-bash-read } "uprobe.multi bash read counter"
+
+        count-at-least-one "uretprobe.multi:/bin/bash:*read*" {|ctx|
+            $ctx.retval | count
+        } { trigger-bash-read } "uretprobe.multi bash read counter"
+    }
+}
+
+step 75 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"

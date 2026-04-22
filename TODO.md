@@ -511,6 +511,7 @@ Near-term priority order:
   - Add automated tests that exercise compilation and loading across representative kernel versions/configs.
   - Include differential checks against verifier behavior and manual attach smoke tests.
   - Recent progress: added `scripts/manual_integration.nu` to run repeatable root-level attach/counters/read-str/list integration checks against the newest built plugin.
+  - Recent progress: manual integration coverage now includes live `uprobe.multi` and `uretprobe.multi` wildcard smoke checks against exported `/bin/bash` read-related symbols when available.
 
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.
