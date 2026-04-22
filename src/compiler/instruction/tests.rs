@@ -2652,6 +2652,24 @@ fn test_helper_signature_sk_storage_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    for helper in [
+        BpfHelper::SkStorageGet,
+        BpfHelper::TaskStorageGet,
+        BpfHelper::InodeStorageGet,
+        BpfHelper::CgrpStorageGet,
+    ] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(3),
+            Some((
+                0,
+                1,
+                "storage get helpers require arg3 flags to be 0 or BPF_LOCAL_STORAGE_GET_F_CREATE"
+            )),
+            "missing storage-get flag contract for {}",
+            helper.name()
+        );
+    }
 }
 
 #[test]

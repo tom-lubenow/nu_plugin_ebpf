@@ -936,6 +936,17 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
             )),
+            (
+                Self::SkStorageGet
+                | Self::TaskStorageGet
+                | Self::InodeStorageGet
+                | Self::CgrpStorageGet,
+                3,
+            ) => Some((
+                0,
+                1,
+                "storage get helpers require arg3 flags to be 0 or BPF_LOCAL_STORAGE_GET_F_CREATE",
+            )),
             _ => None,
         }
     }

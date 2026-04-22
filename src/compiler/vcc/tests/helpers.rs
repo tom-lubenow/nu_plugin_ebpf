@@ -9883,6 +9883,65 @@ fn test_verify_mir_helper_sk_storage_get_allows_null_init_value() {
 }
 
 #[test]
+fn test_verify_mir_helper_storage_get_rejects_invalid_flags() {
+    for (helper, object_ty) in [
+        (
+            BpfHelper::SkStorageGet,
+            MirType::named_kernel_struct_ptr("bpf_sock"),
+        ),
+        (
+            BpfHelper::TaskStorageGet,
+            MirType::named_kernel_struct_ptr("task_struct"),
+        ),
+        (
+            BpfHelper::InodeStorageGet,
+            MirType::named_kernel_struct_ptr("inode"),
+        ),
+        (
+            BpfHelper::CgrpStorageGet,
+            MirType::named_kernel_struct_ptr("cgroup"),
+        ),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let object = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::VReg(object),
+                    MirValue::Const(0),
+                    MirValue::Const(2),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(object, object_ty);
+        types.insert(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Map,
+            },
+        );
+
+        let err =
+            verify_mir(&func, &types).expect_err("expected storage_get flag validation error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("storage get helpers require arg3 flags")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_sk_storage_get_rejects_anonymous_kernel_pointer() {
     let (mut func, entry) = new_mir_function();
     let call = func.alloc_block();

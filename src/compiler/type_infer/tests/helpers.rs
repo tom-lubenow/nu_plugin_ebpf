@@ -6480,6 +6480,58 @@ fn test_infer_helper_sk_storage_get_returns_map_pointer() {
 }
 
 #[test]
+fn test_type_error_helper_storage_get_rejects_invalid_flags() {
+    for (helper, object_ty) in [
+        (
+            BpfHelper::SkStorageGet,
+            MirType::named_kernel_struct_ptr("bpf_sock"),
+        ),
+        (
+            BpfHelper::TaskStorageGet,
+            MirType::named_kernel_struct_ptr("task_struct"),
+        ),
+        (
+            BpfHelper::InodeStorageGet,
+            MirType::named_kernel_struct_ptr("inode"),
+        ),
+        (
+            BpfHelper::CgrpStorageGet,
+            MirType::named_kernel_struct_ptr("cgroup"),
+        ),
+    ] {
+        let mut func = make_test_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let object = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::VReg(object),
+                MirValue::Const(0),
+                MirValue::Const(2),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let hints = HashMap::from([(object, object_ty)]);
+        let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected storage_get flag validation error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("storage get helpers require arg3 flags")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_helper_sk_storage_get_rejects_anonymous_kernel_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
