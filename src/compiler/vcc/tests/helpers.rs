@@ -283,7 +283,7 @@ fn test_verify_mir_helper_snprintf_btf_accepts_stack_buffers() {
                 MirValue::Const(32),
                 MirValue::StackSlot(btf_ptr_slot),
                 MirValue::Const(16),
-                MirValue::Const(0),
+                MirValue::Const(15),
             ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -351,6 +351,36 @@ fn test_verify_mir_helper_snprintf_btf_rejects_bad_btf_ptr_size() {
     assert!(err.iter().any(|e| {
         e.message
             .contains("helper 'bpf_snprintf_btf' requires arg3 = 16")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_btf_rejects_bad_flags() {
+    let (mut func, entry) = new_mir_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SnprintfBtf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(16),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected snprintf_btf flags rejection");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits")
     }));
 }
 

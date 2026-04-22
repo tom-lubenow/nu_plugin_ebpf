@@ -582,7 +582,7 @@ fn test_infer_snprintf_btf_helper_accepts_stack_buffers() {
             MirValue::Const(32),
             MirValue::StackSlot(btf_ptr_slot),
             MirValue::Const(16),
-            MirValue::Const(0),
+            MirValue::Const(15),
         ],
     });
     block.terminator = MirInst::Return { val: None };
@@ -609,7 +609,7 @@ fn test_type_error_snprintf_btf_size_and_shape() {
             MirValue::Const(-1),
             MirValue::StackSlot(btf_ptr_slot),
             MirValue::Const(8),
-            MirValue::Const(0),
+            MirValue::Const(16),
         ],
     });
     block.terminator = MirInst::Return { val: None };
@@ -629,6 +629,10 @@ fn test_type_error_snprintf_btf_size_and_shape() {
     assert!(errs.iter().any(|e| {
         e.message
             .contains("helper 'bpf_snprintf_btf' requires arg3 = 16")
+    }));
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits")
     }));
 }
 

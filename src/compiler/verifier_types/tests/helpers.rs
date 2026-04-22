@@ -269,7 +269,7 @@ fn test_verify_mir_helper_snprintf_btf_accepts_stack_buffers() {
                 MirValue::Const(32),
                 MirValue::StackSlot(btf_ptr_slot),
                 MirValue::Const(16),
-                MirValue::Const(0),
+                MirValue::Const(15),
             ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -297,7 +297,7 @@ fn test_verify_mir_helper_snprintf_btf_size_and_shape() {
                 MirValue::Const(-1),
                 MirValue::StackSlot(btf_ptr_slot),
                 MirValue::Const(8),
-                MirValue::Const(0),
+                MirValue::Const(16),
             ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -320,6 +320,13 @@ fn test_verify_mir_helper_snprintf_btf_size_and_shape() {
         err.iter().any(|e| e
             .message
             .contains("helper 'bpf_snprintf_btf' requires arg3 = 16")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits")),
         "unexpected errors: {:?}",
         err
     );

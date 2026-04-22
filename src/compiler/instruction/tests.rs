@@ -2047,6 +2047,14 @@ fn test_snprintf_btf_helper_contract() {
         BpfHelper::SnprintfBtf.scalar_arg_const_requirement(),
         Some((3, 16, "helper 'bpf_snprintf_btf' requires arg3 = 16"))
     );
+    assert_eq!(
+        BpfHelper::SnprintfBtf.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            15,
+            "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits (0x0f)"
+        ))
+    );
 
     let semantics = BpfHelper::SnprintfBtf.semantics();
     assert!(semantics.positive_size_args.is_empty());

@@ -246,6 +246,12 @@ pub enum VccInst {
         expected: i64,
         message: String,
     },
+    AssertRange {
+        value: VccValue,
+        min: i64,
+        max: i64,
+        message: String,
+    },
     AssertConstEqIfConstEq {
         value: VccValue,
         expected: i64,

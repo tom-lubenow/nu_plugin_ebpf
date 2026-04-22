@@ -947,6 +947,50 @@ impl<'a> VccLowerer<'a> {
         Ok(())
     }
 
+    fn verify_helper_scalar_range(
+        &mut self,
+        helper_id: u32,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let Some((min_required, max_required, message)) =
+            helper.scalar_arg_range_requirement(arg_idx)
+        else {
+            return Ok(());
+        };
+        match value {
+            MirValue::Const(actual) => {
+                if *actual >= min_required && *actual <= max_required {
+                    Ok(())
+                } else {
+                    Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message,
+                    ))
+                }
+            }
+            MirValue::VReg(vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                out.push(VccInst::AssertRange {
+                    value: VccValue::Reg(VccReg(vreg.0)),
+                    min: min_required,
+                    max: max_required,
+                    message: message.to_string(),
+                });
+                Ok(())
+            }
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
     pub(super) fn verify_helper_semantics(
         &mut self,
         helper_id: u32,
@@ -967,6 +1011,7 @@ impl<'a> VccLowerer<'a> {
         }
         for (arg_idx, value) in args.iter().enumerate().take(5) {
             self.verify_helper_scalar_multiple_of(helper, arg_idx, value)?;
+            self.verify_helper_scalar_range(helper_id, helper, arg_idx, value, out)?;
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {

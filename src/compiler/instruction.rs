@@ -843,6 +843,20 @@ impl BpfHelper {
         }
     }
 
+    pub const fn scalar_arg_range_requirement(
+        self,
+        arg_idx: usize,
+    ) -> Option<(i64, i64, &'static str)> {
+        match (self, arg_idx) {
+            (Self::SnprintfBtf, 4) => Some((
+                0,
+                15,
+                "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits (0x0f)",
+            )),
+            _ => None,
+        }
+    }
+
     pub const fn scalar_arg_const_requirement(self) -> Option<(usize, i64, &'static str)> {
         match self {
             Self::PerfEventReadValue => Some((

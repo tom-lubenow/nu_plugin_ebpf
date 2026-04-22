@@ -156,6 +156,38 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertRange {
+                value,
+                min,
+                max,
+                message,
+            } => {
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                if let Some(range) = state.value_range(*value, ty)
+                    && (range.min < *min || range.max > *max)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertConstEqIfConstEq {
                 value,
                 expected,

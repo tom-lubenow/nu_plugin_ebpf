@@ -273,6 +273,26 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn validate_helper_scalar_range(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some((min_required, max_required, message)) =
+            helper.scalar_arg_range_requirement(arg_idx)
+        else {
+            return;
+        };
+        if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
+            && (min < min_required || max > max_required)
+        {
+            errors.push(TypeError::new(message));
+        }
+    }
+
     fn known_const_vreg(
         &self,
         vreg: VReg,
@@ -333,6 +353,7 @@ impl<'a> TypeInference<'a> {
         }
         for (arg_idx, value) in args.iter().enumerate().take(5) {
             self.validate_helper_scalar_multiple_of(helper, arg_idx, value, value_ranges, errors);
+            self.validate_helper_scalar_range(helper, arg_idx, value, value_ranges, errors);
         }
 
         for rule in semantics.ptr_arg_rules {

@@ -136,6 +136,24 @@ fn validate_helper_scalar_multiple_of(
     }
 }
 
+fn validate_helper_scalar_range(
+    helper: BpfHelper,
+    arg_idx: usize,
+    value: &MirValue,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some((min_required, max_required, message)) = helper.scalar_arg_range_requirement(arg_idx)
+    else {
+        return;
+    };
+    if let ValueRange::Known { min, max } = value_range(value, state)
+        && (min < min_required || max > max_required)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+}
+
 pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     helper_id: u32,
     arg_idx: usize,
@@ -300,6 +318,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     }
     for (arg_idx, value) in args.iter().enumerate().take(5) {
         validate_helper_scalar_multiple_of(helper, arg_idx, value, state, errors);
+        validate_helper_scalar_range(helper, arg_idx, value, state, errors);
     }
 
     for rule in semantics.ptr_arg_rules {
