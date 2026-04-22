@@ -182,6 +182,9 @@ let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect4' {|ctx| $ctx.sk.f
 # Inspect the last host-order IPv6 word on cgroup connect6 hooks
 let id = ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 'allow' }
 
+# Dry-run a cgroup UNIX socket-address hook; live attach is not implemented yet
+ebpf attach --dry-run 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix' {|ctx| $ctx.family | count; 'allow' }
+
 # Count socket-lookup hits by local destination port in the current netns
 let id = ebpf attach 'sk_lookup:/proc/self/ns/net' {|ctx| $ctx.local_port | count; 'pass' }
 

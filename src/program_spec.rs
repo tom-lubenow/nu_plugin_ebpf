@@ -841,7 +841,140 @@ pub struct CgroupSockAddrTarget {
     /// Filesystem path to the cgroup directory.
     pub cgroup_path: String,
     /// Attach kind.
-    pub attach_type: CgroupSockAddrAttachType,
+    pub attach_type: CgroupSockAddrAttachKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CgroupSockAddrAttachKind {
+    Bind4,
+    Bind6,
+    Connect4,
+    Connect6,
+    GetPeerName4,
+    GetPeerName6,
+    GetSockName4,
+    GetSockName6,
+    SendMsg4,
+    SendMsg6,
+    RecvMsg4,
+    RecvMsg6,
+    ConnectUnix,
+    GetPeerNameUnix,
+    GetSockNameUnix,
+    SendMsgUnix,
+    RecvMsgUnix,
+}
+
+impl CgroupSockAddrAttachKind {
+    fn parse(attach_kind: &str) -> Option<Self> {
+        Some(match attach_kind {
+            "bind4" => Self::Bind4,
+            "bind6" => Self::Bind6,
+            "connect4" => Self::Connect4,
+            "connect6" => Self::Connect6,
+            "getpeername4" => Self::GetPeerName4,
+            "getpeername6" => Self::GetPeerName6,
+            "getsockname4" => Self::GetSockName4,
+            "getsockname6" => Self::GetSockName6,
+            "sendmsg4" => Self::SendMsg4,
+            "sendmsg6" => Self::SendMsg6,
+            "recvmsg4" => Self::RecvMsg4,
+            "recvmsg6" => Self::RecvMsg6,
+            "connect_unix" => Self::ConnectUnix,
+            "getpeername_unix" => Self::GetPeerNameUnix,
+            "getsockname_unix" => Self::GetSockNameUnix,
+            "sendmsg_unix" => Self::SendMsgUnix,
+            "recvmsg_unix" => Self::RecvMsgUnix,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Bind4 => "bind4",
+            Self::Bind6 => "bind6",
+            Self::Connect4 => "connect4",
+            Self::Connect6 => "connect6",
+            Self::GetPeerName4 => "getpeername4",
+            Self::GetPeerName6 => "getpeername6",
+            Self::GetSockName4 => "getsockname4",
+            Self::GetSockName6 => "getsockname6",
+            Self::SendMsg4 => "sendmsg4",
+            Self::SendMsg6 => "sendmsg6",
+            Self::RecvMsg4 => "recvmsg4",
+            Self::RecvMsg6 => "recvmsg6",
+            Self::ConnectUnix => "connect_unix",
+            Self::GetPeerNameUnix => "getpeername_unix",
+            Self::GetSockNameUnix => "getsockname_unix",
+            Self::SendMsgUnix => "sendmsg_unix",
+            Self::RecvMsgUnix => "recvmsg_unix",
+        }
+    }
+
+    pub fn aya_attach_type(self) -> Option<CgroupSockAddrAttachType> {
+        Some(match self {
+            Self::Bind4 => CgroupSockAddrAttachType::Bind4,
+            Self::Bind6 => CgroupSockAddrAttachType::Bind6,
+            Self::Connect4 => CgroupSockAddrAttachType::Connect4,
+            Self::Connect6 => CgroupSockAddrAttachType::Connect6,
+            Self::GetPeerName4 => CgroupSockAddrAttachType::GetPeerName4,
+            Self::GetPeerName6 => CgroupSockAddrAttachType::GetPeerName6,
+            Self::GetSockName4 => CgroupSockAddrAttachType::GetSockName4,
+            Self::GetSockName6 => CgroupSockAddrAttachType::GetSockName6,
+            Self::SendMsg4 => CgroupSockAddrAttachType::UDPSendMsg4,
+            Self::SendMsg6 => CgroupSockAddrAttachType::UDPSendMsg6,
+            Self::RecvMsg4 => CgroupSockAddrAttachType::UDPRecvMsg4,
+            Self::RecvMsg6 => CgroupSockAddrAttachType::UDPRecvMsg6,
+            Self::ConnectUnix
+            | Self::GetPeerNameUnix
+            | Self::GetSockNameUnix
+            | Self::SendMsgUnix
+            | Self::RecvMsgUnix => return None,
+        })
+    }
+
+    pub(crate) fn address_family(self) -> ProgramAttachAddressFamily {
+        match self {
+            Self::Bind4
+            | Self::Connect4
+            | Self::GetPeerName4
+            | Self::GetSockName4
+            | Self::SendMsg4
+            | Self::RecvMsg4 => ProgramAttachAddressFamily::Ipv4,
+            Self::Bind6
+            | Self::Connect6
+            | Self::GetPeerName6
+            | Self::GetSockName6
+            | Self::SendMsg6
+            | Self::RecvMsg6 => ProgramAttachAddressFamily::Ipv6,
+            Self::ConnectUnix
+            | Self::GetPeerNameUnix
+            | Self::GetSockNameUnix
+            | Self::SendMsgUnix
+            | Self::RecvMsgUnix => ProgramAttachAddressFamily::Unix,
+        }
+    }
+
+    pub(crate) fn hook_kind(self) -> ProgramAttachSockAddrHook {
+        match self {
+            Self::Bind4 | Self::Bind6 => ProgramAttachSockAddrHook::Bind,
+            Self::Connect4 | Self::Connect6 | Self::ConnectUnix => {
+                ProgramAttachSockAddrHook::Connect
+            }
+            Self::GetPeerName4 | Self::GetPeerName6 | Self::GetPeerNameUnix => {
+                ProgramAttachSockAddrHook::GetPeerName
+            }
+            Self::GetSockName4 | Self::GetSockName6 | Self::GetSockNameUnix => {
+                ProgramAttachSockAddrHook::GetSockName
+            }
+            Self::SendMsg4 | Self::SendMsg6 | Self::SendMsgUnix => {
+                ProgramAttachSockAddrHook::SendMsg
+            }
+            Self::RecvMsg4 | Self::RecvMsg6 | Self::RecvMsgUnix => {
+                ProgramAttachSockAddrHook::RecvMsg
+            }
+        }
+    }
 }
 
 impl CgroupSockAddrTarget {
@@ -859,25 +992,11 @@ impl CgroupSockAddrTarget {
             ));
         }
 
-        let attach_type = match attach_kind {
-            "bind4" => CgroupSockAddrAttachType::Bind4,
-            "bind6" => CgroupSockAddrAttachType::Bind6,
-            "connect4" => CgroupSockAddrAttachType::Connect4,
-            "connect6" => CgroupSockAddrAttachType::Connect6,
-            "getpeername4" => CgroupSockAddrAttachType::GetPeerName4,
-            "getpeername6" => CgroupSockAddrAttachType::GetPeerName6,
-            "getsockname4" => CgroupSockAddrAttachType::GetSockName4,
-            "getsockname6" => CgroupSockAddrAttachType::GetSockName6,
-            "sendmsg4" => CgroupSockAddrAttachType::UDPSendMsg4,
-            "sendmsg6" => CgroupSockAddrAttachType::UDPSendMsg6,
-            "recvmsg4" => CgroupSockAddrAttachType::UDPRecvMsg4,
-            "recvmsg6" => CgroupSockAddrAttachType::UDPRecvMsg6,
-            _ => {
-                return Err(ProgramSpecParseError::new(format!(
-                    "Invalid cgroup_sock_addr attach kind: {attach_kind}. Expected one of bind4, bind6, connect4, connect6, getpeername4, getpeername6, getsockname4, getsockname6, sendmsg4, sendmsg6, recvmsg4, recvmsg6"
-                )));
-            }
-        };
+        let attach_type = CgroupSockAddrAttachKind::parse(attach_kind).ok_or_else(|| {
+            ProgramSpecParseError::new(format!(
+                "Invalid cgroup_sock_addr attach kind: {attach_kind}. Expected one of bind4, bind6, connect4, connect6, getpeername4, getpeername6, getsockname4, getsockname6, sendmsg4, sendmsg6, recvmsg4, recvmsg6, connect_unix, getpeername_unix, getsockname_unix, sendmsg_unix, recvmsg_unix"
+            ))
+        })?;
 
         Ok(Self {
             cgroup_path: cgroup_path.to_string(),
@@ -886,20 +1005,7 @@ impl CgroupSockAddrTarget {
     }
 
     pub fn attach_type_name(&self) -> &'static str {
-        match self.attach_type {
-            CgroupSockAddrAttachType::Bind4 => "bind4",
-            CgroupSockAddrAttachType::Bind6 => "bind6",
-            CgroupSockAddrAttachType::Connect4 => "connect4",
-            CgroupSockAddrAttachType::Connect6 => "connect6",
-            CgroupSockAddrAttachType::GetPeerName4 => "getpeername4",
-            CgroupSockAddrAttachType::GetPeerName6 => "getpeername6",
-            CgroupSockAddrAttachType::GetSockName4 => "getsockname4",
-            CgroupSockAddrAttachType::GetSockName6 => "getsockname6",
-            CgroupSockAddrAttachType::UDPSendMsg4 => "sendmsg4",
-            CgroupSockAddrAttachType::UDPSendMsg6 => "sendmsg6",
-            CgroupSockAddrAttachType::UDPRecvMsg4 => "recvmsg4",
-            CgroupSockAddrAttachType::UDPRecvMsg6 => "recvmsg6",
-        }
+        self.attach_type.name()
     }
 
     pub fn target_string(&self) -> String {
@@ -911,50 +1017,23 @@ impl CgroupSockAddrTarget {
     }
 
     pub fn is_ipv4(&self) -> bool {
-        matches!(
-            self.attach_type,
-            CgroupSockAddrAttachType::Bind4
-                | CgroupSockAddrAttachType::Connect4
-                | CgroupSockAddrAttachType::GetPeerName4
-                | CgroupSockAddrAttachType::GetSockName4
-                | CgroupSockAddrAttachType::UDPSendMsg4
-                | CgroupSockAddrAttachType::UDPRecvMsg4
-        )
+        self.attach_type.address_family() == ProgramAttachAddressFamily::Ipv4
     }
 
     pub fn is_ipv6(&self) -> bool {
-        matches!(
-            self.attach_type,
-            CgroupSockAddrAttachType::Bind6
-                | CgroupSockAddrAttachType::Connect6
-                | CgroupSockAddrAttachType::GetPeerName6
-                | CgroupSockAddrAttachType::GetSockName6
-                | CgroupSockAddrAttachType::UDPSendMsg6
-                | CgroupSockAddrAttachType::UDPRecvMsg6
-        )
+        self.attach_type.address_family() == ProgramAttachAddressFamily::Ipv6
+    }
+
+    pub fn is_unix(&self) -> bool {
+        self.attach_type.address_family() == ProgramAttachAddressFamily::Unix
+    }
+
+    pub fn aya_attach_type(&self) -> Option<CgroupSockAddrAttachType> {
+        self.attach_type.aya_attach_type()
     }
 
     pub(crate) fn hook_kind(&self) -> ProgramAttachSockAddrHook {
-        match self.attach_type {
-            CgroupSockAddrAttachType::Bind4 | CgroupSockAddrAttachType::Bind6 => {
-                ProgramAttachSockAddrHook::Bind
-            }
-            CgroupSockAddrAttachType::Connect4 | CgroupSockAddrAttachType::Connect6 => {
-                ProgramAttachSockAddrHook::Connect
-            }
-            CgroupSockAddrAttachType::GetPeerName4 | CgroupSockAddrAttachType::GetPeerName6 => {
-                ProgramAttachSockAddrHook::GetPeerName
-            }
-            CgroupSockAddrAttachType::GetSockName4 | CgroupSockAddrAttachType::GetSockName6 => {
-                ProgramAttachSockAddrHook::GetSockName
-            }
-            CgroupSockAddrAttachType::UDPSendMsg4 | CgroupSockAddrAttachType::UDPSendMsg6 => {
-                ProgramAttachSockAddrHook::SendMsg
-            }
-            CgroupSockAddrAttachType::UDPRecvMsg4 | CgroupSockAddrAttachType::UDPRecvMsg6 => {
-                ProgramAttachSockAddrHook::RecvMsg
-            }
-        }
+        self.attach_type.hook_kind()
     }
 
     pub fn supports_msg_source(&self) -> bool {
@@ -1801,6 +1880,13 @@ pub enum ProgramSpec {
 pub(crate) enum ProgramAttachAddressFamily {
     Ipv4,
     Ipv6,
+    Unix,
+}
+
+impl ProgramAttachAddressFamily {
+    pub(crate) fn is_inet(self) -> bool {
+        matches!(self, Self::Ipv4 | Self::Ipv6)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2483,11 +2569,7 @@ impl ProgramSpec {
                 get: target.is_get(),
             },
             ProgramSpec::CgroupSockAddr { target } => ProgramAttachShape::CgroupSockAddr {
-                family: if target.is_ipv4() {
-                    ProgramAttachAddressFamily::Ipv4
-                } else {
-                    ProgramAttachAddressFamily::Ipv6
-                },
+                family: target.attach_type.address_family(),
                 hook: target.hook_kind(),
             },
             ProgramSpec::StructOpsCallback {
@@ -2568,12 +2650,23 @@ mod tests {
             .expect("recvmsg4 target should parse");
         assert!(recvmsg4.is_ipv4());
         assert!(!recvmsg4.is_ipv6());
+        assert!(!recvmsg4.is_unix());
         assert!(!recvmsg4.supports_msg_source());
         assert!(!recvmsg4.is_connect());
         assert_eq!(recvmsg4.hook_kind(), ProgramAttachSockAddrHook::RecvMsg);
         assert!(!recvmsg4.hook_kind().is_sendmsg());
         assert!(recvmsg4.hook_kind().exposes_remote_tuple());
         assert!(!recvmsg4.hook_kind().exposes_local_ip_alias());
+
+        let connect_unix = CgroupSockAddrTarget::parse("/sys/fs/cgroup:connect_unix")
+            .expect("connect_unix target should parse");
+        assert!(!connect_unix.is_ipv4());
+        assert!(!connect_unix.is_ipv6());
+        assert!(connect_unix.is_unix());
+        assert!(connect_unix.aya_attach_type().is_none());
+        assert!(connect_unix.is_connect());
+        assert_eq!(connect_unix.hook_kind(), ProgramAttachSockAddrHook::Connect);
+        assert_eq!(connect_unix.section_name(), "cgroup/connect_unix");
     }
 
     #[test]
@@ -2611,6 +2704,11 @@ mod tests {
             "/sys/fs/cgroup:sendmsg6",
         )
         .expect("cgroup_sock_addr sendmsg6 target should parse");
+        let connect_unix = ProgramSpec::from_program_type_target(
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:connect_unix",
+        )
+        .expect("cgroup_sock_addr connect_unix target should parse");
         let sched_ext_select_cpu = ProgramSpec::StructOpsCallback {
             value_type_name: "sched_ext_ops".to_string(),
             callback_name: "select_cpu".to_string(),
@@ -2667,6 +2765,14 @@ mod tests {
                 ProgramAttachSockAddrHook::SendMsg
             ))
         );
+        assert_eq!(
+            connect_unix.attach_shape(),
+            ProgramAttachShape::CgroupSockAddr {
+                family: ProgramAttachAddressFamily::Unix,
+                hook: ProgramAttachSockAddrHook::Connect,
+            }
+        );
+        assert_eq!(connect_unix.section_name(), "cgroup/connect_unix");
         assert_eq!(
             sched_ext_select_cpu.attach_shape(),
             ProgramAttachShape::StructOpsCallback {

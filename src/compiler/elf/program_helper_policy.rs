@@ -495,11 +495,7 @@ const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] = &[
     BpfHelper::SkbCgroupId,
     BpfHelper::SkbAncestorCgroupId,
 ];
-const CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[
-    BpfHelper::Bind,
-    BpfHelper::GetSockOpt,
-    BpfHelper::SetSockOpt,
-];
+const CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bind];
 const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port"];
 const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4"];
 const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6"];
@@ -852,8 +848,8 @@ impl ProgramSpec {
             }
             _ if attach_shape
                 .cgroup_sock_addr()
-                .is_some_and(|(_, hook)| !hook.is_connect())
-                && helper_list_contains(CGROUP_SOCK_ADDR_CONNECT_ONLY_HELPERS, helper) =>
+                .is_some_and(|(family, hook)| !(hook.is_connect() && family.is_inet()))
+                && helper_list_contains(CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS, helper) =>
             {
                 Some(format!(
                     "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",

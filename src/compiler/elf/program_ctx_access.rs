@@ -11,6 +11,7 @@ enum ContextFieldAccessRequirement {
     CgroupSockPostBindIpv4Only,
     CgroupSockPostBindIpv6Only,
     CgroupSockoptGetOnly,
+    CgroupSockAddrInetOnly,
     CgroupSockAddrIpv4Only,
     CgroupSockAddrIpv6Only,
     CgroupSockAddrRemoteTupleOnly,
@@ -84,13 +85,22 @@ impl ContextFieldAccessRequirement {
                     "ctx.{field_name} is only available on cgroup_sockopt:get hooks"
                 )
             }),
+            Self::CgroupSockAddrInetOnly => {
+                attach_shape.cgroup_sock_addr().and_then(|(family, _)| {
+                    (!family.is_inet()).then(|| {
+                        format!(
+                            "ctx.{field_name} is only available on IPv4/IPv6 cgroup_sock_addr hooks (*4/*6)"
+                        )
+                    })
+                })
+            }
             Self::CgroupSockAddrIpv4Only => attach_shape.cgroup_sock_addr().and_then(|(family, _)| {
-                (family == ProgramAttachAddressFamily::Ipv6).then(|| {
+                (family != ProgramAttachAddressFamily::Ipv4).then(|| {
                     format!("ctx.{field_name} is only available on IPv4 cgroup_sock_addr hooks (*4)")
                 })
             }),
             Self::CgroupSockAddrIpv6Only => attach_shape.cgroup_sock_addr().and_then(|(family, _)| {
-                (family == ProgramAttachAddressFamily::Ipv4).then(|| {
+                (family != ProgramAttachAddressFamily::Ipv6).then(|| {
                     format!("ctx.{field_name} is only available on IPv6 cgroup_sock_addr hooks (*6)")
                 })
             }),
@@ -190,7 +200,7 @@ impl CgroupSockAddrTupleAliasSpec {
             && self.hooks.contains(&hook)
             && match self.family {
                 Some(required_family) => required_family == family,
-                None => true,
+                None => family.is_inet(),
             }
     }
 }
@@ -448,6 +458,11 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
         ContextFieldAccessRequirement::CgroupSockAddrIpv6Only,
     ),
     ContextFieldAccessSurfaceSpec::new(
+        CtxField::UserPort,
+        "user_port",
+        ContextFieldAccessRequirement::CgroupSockAddrInetOnly,
+    ),
+    ContextFieldAccessSurfaceSpec::new(
         CtxField::MsgSrcIp4,
         "msg_src_ip4",
         ContextFieldAccessRequirement::CgroupSockAddrIpv4Only,
@@ -475,7 +490,8 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
         CtxField::RemotePort,
         "remote_port",
         ContextFieldAccessRequirement::CgroupSockAddrRemoteTupleOnly,
-    ),
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrInetOnly),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::LocalIp4,
         "local_ip4",
@@ -492,7 +508,8 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
         CtxField::LocalPort,
         "local_port",
         ContextFieldAccessRequirement::CgroupSockAddrLocalTupleOnly,
-    ),
+    )
+    .with_secondary_requirement(ContextFieldAccessRequirement::CgroupSockAddrInetOnly),
 ];
 
 const TASK_CTX_FIELDS: &[CtxField] = &[

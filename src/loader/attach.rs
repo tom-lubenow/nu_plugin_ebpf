@@ -30,6 +30,13 @@ fn unsupported_live_attach_error(prog_type: crate::compiler::EbpfProgramType) ->
     ))
 }
 
+fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> LoadError {
+    LoadError::Attach(format!(
+        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; use --dry-run to compile",
+        target.attach_type_name()
+    ))
+}
+
 impl EbpfState {
     fn next_probe_id(&self) -> u32 {
         self.next_id.fetch_add(1, Ordering::SeqCst)
@@ -74,6 +81,25 @@ impl EbpfState {
             return Err(unsupported_live_attach_error(program.prog_type));
         }
 
+        let spec = program
+            .parsed_program_spec()
+            .cloned()
+            .or_else(|| {
+                ProgramSpec::from_program_type_target(program.prog_type, &program.target).ok()
+            })
+            .ok_or_else(|| {
+                LoadError::Load(format!(
+                    "Invalid {} target '{}'",
+                    program.prog_type.canonical_prefix(),
+                    program.target
+                ))
+            })?;
+        if let ProgramSpec::CgroupSockAddr { target } = &spec {
+            if target.is_unix() {
+                return Err(unsupported_cgroup_sock_addr_target_error(target));
+            }
+        }
+
         // Generate ELF
         let elf_bytes = object.to_elf()?;
 
@@ -112,20 +138,6 @@ impl EbpfState {
             .ok_or_else(|| LoadError::ProgramNotFound(program.name.clone()))?;
 
         let mut owned_socket = None;
-        let spec = program
-            .parsed_program_spec()
-            .cloned()
-            .or_else(|| {
-                ProgramSpec::from_program_type_target(program.prog_type, &program.target).ok()
-            })
-            .ok_or_else(|| {
-                LoadError::Load(format!(
-                    "Invalid {} target '{}'",
-                    program.prog_type.canonical_prefix(),
-                    program.target
-                ))
-            })?;
-
         // Attach based on program type
         match program.prog_type.attach_kind() {
             ProgramAttachKind::Kprobe | ProgramAttachKind::Kretprobe => {

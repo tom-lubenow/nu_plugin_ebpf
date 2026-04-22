@@ -1573,6 +1573,10 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
     let connect = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let connect_unix = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
     let bind = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4");
     let sockopt_get = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let sockopt_set = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
@@ -1610,6 +1614,23 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     assert!(connect.helper_call_error(BpfHelper::Bind).is_none());
     assert!(connect.helper_call_error(BpfHelper::GetSockOpt).is_none());
     assert!(connect.helper_call_error(BpfHelper::SetSockOpt).is_none());
+    assert_eq!(
+        connect_unix.helper_call_error(BpfHelper::Bind),
+        Some(
+            "helper 'bpf_bind' is only valid on cgroup_sock_addr connect4/connect6 hooks"
+                .to_string()
+        )
+    );
+    assert!(
+        connect_unix
+            .helper_call_error(BpfHelper::GetSockOpt)
+            .is_none()
+    );
+    assert!(
+        connect_unix
+            .helper_call_error(BpfHelper::SetSockOpt)
+            .is_none()
+    );
     assert!(
         sockopt_get
             .helper_call_error(BpfHelper::GetSockOpt)
@@ -1629,20 +1650,8 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
                 .to_string()
         )
     );
-    assert_eq!(
-        bind.helper_call_error(BpfHelper::GetSockOpt),
-        Some(
-            "helper 'bpf_getsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks"
-                .to_string()
-        )
-    );
-    assert_eq!(
-        bind.helper_call_error(BpfHelper::SetSockOpt),
-        Some(
-            "helper 'bpf_setsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks"
-                .to_string()
-        )
-    );
+    assert!(bind.helper_call_error(BpfHelper::GetSockOpt).is_none());
+    assert!(bind.helper_call_error(BpfHelper::SetSockOpt).is_none());
 }
 
 #[test]
@@ -4323,6 +4332,17 @@ fn test_cgroup_sock_addr_tuple_aliases_use_attach_shape() {
         recvmsg6.cgroup_sock_addr_tuple_alias_field(&CtxField::LocalIp6),
         None
     );
+
+    let connect_unix = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+        .expect("connect_unix spec");
+    assert_eq!(
+        connect_unix.cgroup_sock_addr_tuple_alias_field(&CtxField::RemotePort),
+        None
+    );
+    assert_eq!(
+        connect_unix.cgroup_sock_addr_tuple_alias_field(&CtxField::RemoteIp4),
+        None
+    );
 }
 
 #[test]
@@ -5331,6 +5351,40 @@ fn test_probe_context_allows_sock_addr_fields_on_cgroup_sock_addr() {
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemoteIp4).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::RemotePort).is_none());
+}
+
+#[test]
+fn test_probe_context_limits_sock_addr_unix_hooks_to_common_socket_fields() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::UserFamily).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Family).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::SockType).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::UserIp4)
+            .expect("expected unix hook rejection for ctx.user_ip4")
+            .contains("IPv4 cgroup_sock_addr hooks")
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::UserIp6)
+            .expect("expected unix hook rejection for ctx.user_ip6")
+            .contains("IPv6 cgroup_sock_addr hooks")
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::UserPort)
+            .expect("expected unix hook rejection for ctx.user_port")
+            .contains("IPv4/IPv6 cgroup_sock_addr hooks")
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::RemotePort)
+            .expect("expected unix hook rejection for ctx.remote_port")
+            .contains("IPv4/IPv6 cgroup_sock_addr hooks")
+    );
 }
 
 #[test]
@@ -6440,6 +6494,25 @@ fn test_probe_context_rejects_cgroup_sock_addr_user_family_store_target_as_read_
         .resolve_ctx_store_target("user_family", None)
         .expect_err("cgroup_sock_addr user_family store target should be rejected as read-only");
     assert!(err.contains("ctx.user_family is read-only"));
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sock_addr_unix_tuple_store_targets() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    assert!(
+        ctx.resolve_ctx_store_target("user_port", None)
+            .expect_err("cgroup_sock_addr unix user_port store target should be rejected")
+            .contains("IPv4/IPv6 cgroup_sock_addr hooks")
+    );
+    assert!(
+        ctx.resolve_ctx_store_target("remote_port", None)
+            .expect_err("cgroup_sock_addr unix remote_port store target should be rejected")
+            .contains("IPv4/IPv6 cgroup_sock_addr hooks")
+    );
 }
 
 #[test]

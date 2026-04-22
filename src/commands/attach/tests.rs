@@ -7447,6 +7447,18 @@ fn test_compile_cgroup_sock_addr_ctx_user_port_counter_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_addr_connect_unix_ctx_family_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+        CellPath {
+            members: vec![string_member("family")],
+        },
+        "cgroup_sock_addr:connect_unix ctx.family count",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_get_ctx_sockopt_retval_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::CgroupSockopt,

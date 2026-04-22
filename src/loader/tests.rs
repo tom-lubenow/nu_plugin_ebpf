@@ -6,7 +6,8 @@ use crate::compiler::{
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
-    CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, UprobeMultiTarget, XdpAttachMode, XdpTarget,
+    CgroupSockAddrAttachKind, CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, UprobeMultiTarget,
+    XdpAttachMode, XdpTarget,
 };
 use std::collections::HashMap;
 
@@ -909,11 +910,30 @@ fn test_parse_program_spec_cgroup_sock_addr_is_structured() {
         ProgramSpec::CgroupSockAddr {
             target: CgroupSockAddrTarget {
                 cgroup_path: "/sys/fs/cgroup".to_string(),
-                attach_type: aya::programs::CgroupSockAddrAttachType::Connect4,
+                attach_type: CgroupSockAddrAttachKind::Connect4,
             }
         }
     );
     assert_eq!(spec.to_string(), "cgroup_sock_addr:/sys/fs/cgroup:connect4");
+}
+
+#[test]
+fn test_parse_program_spec_cgroup_sock_addr_unix_is_structured() {
+    let spec = parse_program_spec("cgroup_sock_addr:/sys/fs/cgroup:connect_unix").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::CgroupSockAddr {
+            target: CgroupSockAddrTarget {
+                cgroup_path: "/sys/fs/cgroup".to_string(),
+                attach_type: CgroupSockAddrAttachKind::ConnectUnix,
+            }
+        }
+    );
+    assert_eq!(
+        spec.to_string(),
+        "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+    );
+    assert_eq!(spec.section_name(), "cgroup/connect_unix");
 }
 
 #[test]
@@ -1360,6 +1380,32 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "unexpected live-attach error for {label}: {err:?}"
         );
     }
+}
+
+#[test]
+fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
+    let state = EbpfState::new();
+    let object = EbpfProgram::from_bytecode(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+        "main",
+        vec![],
+    )
+    .into_object();
+
+    let err = state
+        .attach(&object)
+        .expect_err("cgroup_sock_addr unix hooks should reject live attach before ELF emission");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Attach(ref msg)
+                if msg.contains("live attach for cgroup_sock_addr connect_unix hooks is not supported by this loader yet")
+                    && msg.contains("use --dry-run to compile")
+        ),
+        "unexpected cgroup_sock_addr unix live-attach error: {err:?}"
+    );
 }
 
 #[test]

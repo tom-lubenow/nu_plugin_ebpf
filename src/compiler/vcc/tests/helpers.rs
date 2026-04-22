@@ -1288,7 +1288,7 @@ fn test_verify_mir_for_program_sysctl_helpers_reject_non_sysctl_programs() {
 }
 
 #[test]
-fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program_or_attach() {
+fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program() {
     for (helper, probe_ctx, expected) in [
         (
             BpfHelper::SetSockOpt,
@@ -1299,16 +1299,6 @@ fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program_or_attach(
             BpfHelper::GetSockOpt,
             ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
             "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
-        ),
-        (
-            BpfHelper::SetSockOpt,
-            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
-            "helper 'bpf_setsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks",
-        ),
-        (
-            BpfHelper::GetSockOpt,
-            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4"),
-            "helper 'bpf_getsockopt' is only valid on cgroup_sock_addr connect4/connect6 hooks",
         ),
     ] {
         let (mut func, entry) = new_mir_function();

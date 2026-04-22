@@ -169,10 +169,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.family }  - Get socket family on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_sock, cgroup_sock_addr connect4/getpeername4/sendmsg4/recvmsg4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_sock, cgroup_sock_addr connect6/getpeername6/sendmsg6/recvmsg6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on cgroup_sock, cgroup_sock_addr connect*/getpeername*/sendmsg*/recvmsg*, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on cgroup_sock, cgroup_sock_addr IPv4/IPv6 connect/getpeername/sendmsg/recvmsg hooks, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on cgroup_sock post_bind4, cgroup_sock_addr bind4/getsockname4/sendmsg4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on cgroup_sock post_bind6, cgroup_sock_addr bind6/getsockname6/sendmsg6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
-    {|ctx| $ctx.local_port } - Get the local port in host byte order on cgroup_sock post_bind4/post_bind6, cgroup_sock_addr bind*/getsockname*, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
+    {|ctx| $ctx.local_port } - Get the local port in host byte order on cgroup_sock post_bind4/post_bind6, cgroup_sock_addr IPv4/IPv6 bind/getsockname hooks, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
@@ -656,27 +656,33 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.user_family } - Get userspace-requested socket family
     {|ctx| $ctx.user_ip4 } - Get the IPv4 destination/source address in host byte order on *4 hooks
     {|ctx| $ctx.user_ip6 } - Get the IPv6 destination/source address as four host-order u32 words on *6 hooks
-    {|ctx| $ctx.user_port } - Get the requested port in host byte order
+    {|ctx| $ctx.user_port } - Get the requested port in host byte order on *4/*6 hooks
     {|ctx| $ctx.family }  - Get kernel socket family
     {|ctx| $ctx.sock_type } - Get socket type
     {|ctx| $ctx.protocol } - Get socket protocol
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on connect4/getpeername4/sendmsg4/recvmsg4
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on connect6/getpeername6/sendmsg6/recvmsg6
-    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on connect*/getpeername*/sendmsg*/recvmsg*
+    {|ctx| $ctx.remote_port } - Get the remote port in host byte order on IPv4/IPv6 connect/getpeername/sendmsg/recvmsg hooks
     {|ctx| $ctx.local_ip4 } - Get the local IPv4 address in host byte order on bind4/getsockname4/sendmsg4
     {|ctx| $ctx.local_ip6 } - Get the local IPv6 address as four host-order u32 words on bind6/getsockname6/sendmsg6
-    {|ctx| $ctx.local_port } - Get the local port in host byte order on bind*/getsockname*
+    {|ctx| $ctx.local_port } - Get the local port in host byte order on IPv4/IPv6 bind/getsockname hooks
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4
     {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6
     Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
-    raw `1`/`0` result codes. This initial slice still exposes IPv6
-    addresses as fixed arrays of four u32 words rather than a higher-level
-    address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
+    raw `1`/`0` result codes. UNIX socket-address hooks (`connect_unix`,
+    `sendmsg_unix`, `recvmsg_unix`, `getpeername_unix`, and
+    `getsockname_unix`) are compile/dry-run only and expose common socket
+    metadata such as `ctx.user_family`, `ctx.family`, `ctx.sock_type`,
+    `ctx.protocol`, and `ctx.sk`; they intentionally do not reinterpret
+    IPv4/IPv6 tuple aliases as UNIX path fields. This initial slice still
+    exposes IPv6 addresses as fixed arrays of four u32 words rather than a
+    higher-level address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
     `cgroup_sock`, `cgroup_sockopt`, `sock_ops`, `sk_lookup`, and `sk_msg`.
     Modeled socket helpers are available through the ordinary helper surface:
-    `bpf_bind`, `bpf_getsockopt`, and `bpf_setsockopt` on `connect4` /
-    `connect6`.
+    `bpf_bind` on inet `connect4` / `connect6` hooks, and
+    `bpf_getsockopt` / `bpf_setsockopt` across `cgroup_sock_addr` hooks
+    including UNIX hooks.
 
   sk_lookup fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -924,7 +930,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'kprobe.multi:vfs_*', 'kretprobe.multi:vfs_*', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'uprobe.multi:/usr/bin/app:main*', 'uretprobe.multi:/usr/bin/app:main*', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'kprobe.multi:vfs_*', 'kretprobe.multi:vfs_*', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'uprobe.multi:/usr/bin/app:main*', 'uretprobe.multi:/usr/bin/app:main*', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -1151,6 +1157,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'cgroup_sock_addr:/sys/fs/cgroup:connect6' {|ctx| ($ctx.user_ip6 | get 3) | count; 'allow' }",
                 description: "Count the last host-order IPv6 address word on cgroup connect6 hooks",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix' {|ctx| $ctx.family | count; 'allow' }",
+                description: "Compile a cgroup UNIX socket-address hook",
                 result: None,
             },
             Example {
