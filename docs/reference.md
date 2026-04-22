@@ -42,19 +42,19 @@ The closure receives a context parameter with these fields:
 | `vlan_tci` | skb VLAN TCI | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `cb` | skb control-block words as five host-order `u32` values | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tc_classid` | skb tc_classid | lwt_*, tc_action, tc |
+| `tc_classid` | skb tc_classid | tc_action, tc |
 | `cgroup_classid` | skb cgroup class ID from `bpf_get_cgroup_classid` | lwt_*, tc_action, tc egress |
 | `route_realm` | skb route realm from `bpf_get_route_realm` | lwt_*, tc_action, tc egress |
 | `csum_level` | skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`; returns a negative error if the kernel cannot query it | lwt_xmit, tc_action, tc, sk_skb, sk_skb_parser |
 | `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc_action, tc egress |
 | `skb_ancestor_cgroup_id.N` | skb ancestor cgroup ID at constant numeric level `N` from `bpf_skb_ancestor_cgroup_id` | tc_action, tc egress |
 | `napi_id` | skb napi_id | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `wire_len` | skb wire_len | lwt_*, tc_action, tc |
+| `wire_len` | skb wire_len | tc_action, tc |
 | `gso_segs` | skb GSO segment count | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `gso_size` | skb GSO segment size | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tstamp` | skb timestamp | lwt_*, tc_action, tc, cgroup_skb |
-| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | lwt_*, tc_action, tc |
-| `hwtstamp` | skb hardware timestamp | lwt_*, tc_action, tc, cgroup_skb |
+| `tstamp` | skb timestamp | tc_action, tc, cgroup_skb |
+| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | tc_action, tc |
+| `hwtstamp` | skb hardware timestamp | tc_action, tc, cgroup_skb |
 | `data` | Packet data pointer | xdp, flow_dissector, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `data_meta` | Packet metadata pointer | xdp, tc_action, tc |
 | `data_end` | Packet end pointer | xdp, flow_dissector, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
@@ -303,11 +303,11 @@ returning `0` when no socket is present. Common skb metadata includes `ctx.pkt_t
 Additional metadata is family-specific: `ctx.tc_classid`,
 `ctx.wire_len`, and `ctx.tstamp_type` are available on tc_action and
 tc; `ctx.tstamp` and `ctx.hwtstamp` are available on tc_action, tc,
-and cgroup_skb; `ctx.mark` is
-available on cgroup_sock `sock_create` / `sock_release`, socket_filter,
-tc_action, tc, and cgroup_skb; and `ctx.priority` is available on cgroup_sock
-`sock_create` / `sock_release` and across the skb-backed packet
-families. `cgroup_skb`, `sk_skb`, and `sk_skb_parser` also
+and cgroup_skb; `ctx.mark` is available on cgroup_sock `sock_create` /
+`sock_release`, socket_filter, lwt_*, tc_action, tc, and cgroup_skb;
+and `ctx.priority` is available on cgroup_sock `sock_create` /
+`sock_release` and across the skb-backed packet families. `cgroup_skb`,
+`sk_skb`, and `sk_skb_parser` also
 expose direct socket-common and tuple aliases (`ctx.family`,
 `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`,
 `ctx.local_ip6`, `ctx.local_port`) from the ambient `__sk_buff`
@@ -398,7 +398,7 @@ Tail calls are exposed as ordinary control flow with `tail-call MAP INDEX` or `I
 
 `netfilter` currently has compile/dry-run support for targets such as `netfilter:ipv4:pre_routing[:priority=N][:defrag]`. It emits a `netfilter` section and exposes the safe scalar `bpf_nf_ctx.state` fields `ctx.hook` and `ctx.pf` / `ctx.protocol_family`. BPF-link specs accept `ipv4` / `ipv6` families and `pre_routing`, `local_in`, `forward`, `local_out`, or `post_routing` hooks; `defrag` requires priority greater than `-400`. Return aliases are `"drop"` / `"deny"` for `0`, `"accept"` / `"allow"` / `"pass"` / `"ok"` for `1`, `"stolen"` for `2`, `"queue"` for `3`, and `"repeat"` for `4`. Live attach is intentionally rejected before Aya load until the loader has BPF-link netfilter attach support.
 
-`lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` currently have compile/dry-run support for descriptive targets such as `lwt_xmit:demo-route`. They emit their matching `lwt_*` sections and expose a conservative `__sk_buff` packet surface: `ctx.packet_len` / `ctx.len`, `ctx.data`, `ctx.data_end`, `ctx.eth_protocol` / `ctx.protocol`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.hash`, `ctx.hash_recalc`, `ctx.cgroup_classid`, and `ctx.route_realm`, plus the ordinary skb metadata fields shared by skb-backed contexts. `adjust-packet --pull LEN` is available across LWT programs for packet linearization. `lwt_xmit` additionally supports direct `ctx.data.*` packet stores, `redirect IFINDEX`, `adjust-packet --head|--tail DELTA`, `ctx.csum_level`, and the modeled skb packet-edit helper surface also available to `tc_action` / tc / `sk_skb` (`bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`, `bpf_csum_update`, and `bpf_set_hash_invalid`). Return aliases are `"ok"` / `"pass"` for `0`, `"drop"` for `2`, and `"redirect"` for `7`; `lwt_in` and `lwt_xmit` also accept `"reroute"` for `128`. Live attach is intentionally rejected before Aya load because this loader does not yet implement route LWT attachment and Aya does not parse these sections.
+`lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` currently have compile/dry-run support for descriptive targets such as `lwt_xmit:demo-route`. They emit their matching `lwt_*` sections and expose a conservative `__sk_buff` packet surface: `ctx.packet_len` / `ctx.len`, `ctx.data`, `ctx.data_end`, `ctx.eth_protocol` / `ctx.protocol`, `ctx.ingress_ifindex`, `ctx.ifindex`, `ctx.hash`, `ctx.hash_recalc`, `ctx.cgroup_classid`, `ctx.route_realm`, `ctx.mark`, `ctx.priority`, and fixed `ctx.cb.N`. Kernel-rejected LWT skb fields such as `ctx.tc_classid`, `ctx.wire_len`, `ctx.tstamp`, `ctx.tstamp_type`, and `ctx.hwtstamp` are intentionally not exposed. `adjust-packet --pull LEN` is available across LWT programs for packet linearization. `lwt_xmit` additionally supports direct `ctx.data.*` packet stores, `redirect IFINDEX`, `adjust-packet --head|--tail DELTA`, `ctx.csum_level`, and the modeled skb packet-edit helper surface also available to `tc_action` / tc / `sk_skb` (`bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`, `bpf_csum_update`, and `bpf_set_hash_invalid`). Return aliases are `"ok"` / `"pass"` for `0`, `"drop"` for `2`, and `"redirect"` for `7`; `lwt_in` and `lwt_xmit` also accept `"reroute"` for `128`. Live attach is intentionally rejected before Aya load because this loader does not yet implement route LWT attachment and Aya does not parse these sections.
 
 `sk_msg` currently attaches to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len` / `ctx.len` / `ctx.size`, `ctx.data`, `ctx.data_end`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`, plus a typed `ctx.sk` pointer for socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or `$ctx.sk.priority`. `ctx.data` / `ctx.data_end` use the same guarded packet access model as XDP and tc, so ordinary byte/scalar reads like `($ctx.data | get 0)` work, and direct scalar/header stores through `ctx.data.*` use the same guarded packet-store lowering as other writable packet contexts. The IPv4 address and remote port fields are normalized to host byte order, and the IPv6 fields are exposed as fixed arrays of four host-order `u32` words so ordinary Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`. `sk_msg` uses raw integer verdict codes; closures can return `"pass"` / `"drop"` instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also work. `adjust-message --apply BYTES`, `adjust-message --cork BYTES`, `adjust-message --pull START END [--flags N]`, `adjust-message --push START LEN [--flags N]`, and `adjust-message --pop START LEN [--flags N]` are the preferred first-class message-byte surfaces here because they select the corresponding `bpf_msg_*` helper automatically from the current program type. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_msg_redirect_map` or `bpf_msg_redirect_hash` automatically from the current program type. `adjust-message --pull` can invalidate previously loaded `ctx.data` / `ctx.data_end` pointers, so reload them after the helper before reading packet bytes again. Socket helper-backed projections are available through ordinary `ctx.sk.full.<field>`, `ctx.sk.listener.<field>`, and `ctx.sk.tcp.<field>` paths when the corresponding helper is valid.
 

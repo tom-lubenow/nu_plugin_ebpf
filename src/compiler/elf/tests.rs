@@ -5220,9 +5220,8 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected outside skb-backed contexts");
     assert!(
-        err.to_string().contains(
-            "ctx.tstamp is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
-        )
+        err.to_string()
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
 }
 
@@ -5233,9 +5232,8 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_socket_filter() {
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected outside tc");
     assert!(
-        err.to_string().contains(
-            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-        )
+        err.to_string()
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
 }
 
@@ -5539,13 +5537,13 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected cgroup_skb tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tc_classid is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected cgroup_skb wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.wire_len is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
@@ -5553,7 +5551,7 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected cgroup_skb tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tstamp_type is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
@@ -5863,34 +5861,30 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected socket_filter tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tc_classid is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected socket_filter wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.wire_len is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected socket_filter tstamp access error")
-            .contains(
-                "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-            )
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected socket_filter tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tstamp_type is only available on tc_action and tc programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected socket_filter hwtstamp access error")
-            .contains(
-                "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-            )
+            .contains("ctx.hwtstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Data)
@@ -6037,6 +6031,34 @@ fn test_probe_context_allows_lwt_skb_packet_fields_without_socket_fields() {
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SkbHash).is_none());
+    for (field, expected) in [
+        (
+            CtxField::TcClassid,
+            "ctx.tc_classid is only available on tc_action and tc programs",
+        ),
+        (
+            CtxField::WireLen,
+            "ctx.wire_len is only available on tc_action and tc programs",
+        ),
+        (
+            CtxField::Tstamp,
+            "ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs",
+        ),
+        (
+            CtxField::TstampType,
+            "ctx.tstamp_type is only available on tc_action and tc programs",
+        ),
+        (
+            CtxField::Hwtstamp,
+            "ctx.hwtstamp is only available on tc_action, tc, and cgroup_skb programs",
+        ),
+    ] {
+        assert!(
+            ctx.ctx_field_access_error(&field)
+                .unwrap_or_else(|| panic!("expected lwt access error for {field:?}"))
+                .contains(expected)
+        );
+    }
     assert!(
         ctx.ctx_field_access_error(&CtxField::Socket)
             .expect("expected lwt socket access error")
@@ -6303,34 +6325,30 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected sk_skb tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tc_classid is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected sk_skb wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.wire_len is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected sk_skb tstamp access error")
-            .contains(
-                "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-            )
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected sk_skb tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tstamp_type is only available on tc_action and tc programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected sk_skb hwtstamp access error")
-            .contains(
-                "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-            )
+            .contains("ctx.hwtstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -6376,34 +6394,30 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected sk_skb_parser tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tc_classid is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected sk_skb_parser wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.wire_len is only available on tc_action and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected sk_skb_parser tstamp access error")
-            .contains(
-                "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-            )
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected sk_skb_parser tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tstamp_type is only available on tc_action and tc programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected sk_skb_parser hwtstamp access error")
-            .contains(
-                "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
-            )
+            .contains("ctx.hwtstamp is only available on tc_action, tc, and cgroup_skb programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::TcIndex).is_none());

@@ -2392,9 +2392,8 @@ fn test_infer_socket_filter_tstamp_field_rejects() {
         .expect_err("expected socket_filter tstamp field to be rejected");
 
     assert!(err.iter().any(|e| {
-        e.message.contains(
-            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
-        )
+        e.message
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     }));
 }
 
@@ -2420,7 +2419,7 @@ fn test_infer_socket_filter_tstamp_type_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
+            .contains("ctx.tstamp_type is only available on tc_action and tc programs")
     }));
 }
 
@@ -2445,10 +2444,55 @@ fn test_infer_socket_filter_hwtstamp_field_rejects() {
         .expect_err("expected socket_filter hwtstamp field to be rejected");
 
     assert!(err.iter().any(|e| {
-        e.message.contains(
-            "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
-        )
+        e.message
+            .contains("ctx.hwtstamp is only available on tc_action, tc, and cgroup_skb programs")
     }));
+}
+
+#[test]
+fn test_infer_lwt_rejects_kernel_restricted_skb_metadata_fields() {
+    for (field, expected) in [
+        (
+            CtxField::TcClassid,
+            "ctx.tc_classid is only available on tc_action and tc programs",
+        ),
+        (
+            CtxField::WireLen,
+            "ctx.wire_len is only available on tc_action and tc programs",
+        ),
+        (
+            CtxField::Tstamp,
+            "ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs",
+        ),
+        (
+            CtxField::TstampType,
+            "ctx.tstamp_type is only available on tc_action and tc programs",
+        ),
+        (
+            CtxField::Hwtstamp,
+            "ctx.hwtstamp is only available on tc_action, tc, and cgroup_skb programs",
+        ),
+    ] {
+        let mut func = make_test_function();
+        let v0 = func.alloc_vreg();
+
+        func.block_mut(BlockId(0))
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: v0,
+                field,
+                slot: None,
+            });
+        func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+        let ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+        let mut ti = TypeInference::new(Some(ctx));
+        let err = ti
+            .infer(&func)
+            .expect_err("expected lwt restricted skb metadata field to be rejected");
+
+        assert!(err.iter().any(|e| e.message.contains(expected)));
+    }
 }
 
 #[test]
@@ -3222,9 +3266,8 @@ fn test_type_error_store_skb_tstamp_rejects_non_skb_context() {
         .infer(&func)
         .expect_err("skb tstamp store should be rejected outside skb-backed contexts");
     assert!(errs.iter().any(|e| {
-        e.message.contains(
-            "ctx.tstamp is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
-        )
+        e.message
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     }));
 }
 
@@ -3245,9 +3288,8 @@ fn test_type_error_store_skb_tstamp_rejects_socket_filter_context() {
         .infer(&func)
         .expect_err("skb tstamp store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
-        e.message.contains(
-            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
-        )
+        e.message
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     }));
 }
 

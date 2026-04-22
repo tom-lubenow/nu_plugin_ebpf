@@ -165,8 +165,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
-    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock sock_create/sock_release, socket_filter, tc_action, tc, and cgroup_skb programs
-    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock sock_create/sock_release, socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
+    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock sock_create/sock_release, socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs
+    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock sock_create/sock_release, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
     {|ctx| $ctx.family }  - Get socket family on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_sock, cgroup_sock_addr connect4/getpeername4/sendmsg4/recvmsg4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_sock, cgroup_sock_addr connect6/getpeername6/sendmsg6/recvmsg6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
@@ -755,6 +755,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc
     {|ctx| $ctx.cgroup_classid } - Get skb cgroup classid
     {|ctx| $ctx.route_realm } - Get skb route realm
+    {|ctx| $ctx.mark } - Get or assign skb mark
+    {|ctx| $ctx.priority } - Get or assign skb priority
+    {|ctx| $ctx.cb.0 } - Get or assign a fixed skb control-block word
+    Kernel-rejected LWT skb metadata fields such as `tc_classid`,
+    `wire_len`, `tstamp`, `tstamp_type`, and `hwtstamp` are intentionally
+    unavailable.
     Note: `lwt_in:demo-route`, `lwt_out:demo-route`,
     `lwt_xmit:demo-route`, and `lwt_seg6local:demo-route` emit
     `lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` sections.

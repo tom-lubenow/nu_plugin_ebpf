@@ -1007,6 +1007,28 @@ fn test_verify_mir_for_probe_context_accepts_skb_priority_store_on_sk_skb_parser
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_rejects_lwt_restricted_skb_metadata_load() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst,
+            field: CtxField::Tstamp,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect_err("expected lwt tstamp read to be rejected");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_accepts_guarded_sockopt_optval_byte_store() {
     let (func, types) = make_sockopt_optval_store_function(true);
     verify_mir(&func, &types).expect("expected guarded sockopt optval store to verify");
@@ -1060,9 +1082,8 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_non_skb_program
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect_err("expected skb tstamp store to be rejected outside skb-backed programs");
     assert!(err.iter().any(|e| {
-        e.message.contains(
-            "ctx.tstamp is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
-        )
+        e.message
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     }));
 }
 
@@ -1082,9 +1103,8 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_socket_filter()
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect_err("expected skb tstamp store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
-        e.message.contains(
-            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
-        )
+        e.message
+            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
     }));
 }
 
