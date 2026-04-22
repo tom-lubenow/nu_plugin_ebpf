@@ -717,9 +717,8 @@ Context parameter syntax (recommended):
     `assign-socket` remains available when explicit flags are needed.
 
   flow_dissector fields:
-    {|ctx| $ctx.packet_len } - Get packet length from __sk_buff.len
-    {|ctx| $ctx.eth_protocol } - Get skb protocol / ethertype in host byte order
-    {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol
+    {|ctx| $ctx.data } - Get packet data pointer
+    {|ctx| $ctx.data_end } - Get packet end pointer
     {|ctx| $ctx.flow_keys.nhoff } - Project the flow dissector keys pointer
     {|ctx| $ctx.flow_keys.ip_proto } - Get the dissected IP protocol byte
     {|ctx| $ctx.flow_keys.sport } - Get the dissected source port

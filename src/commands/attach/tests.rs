@@ -7591,21 +7591,15 @@ fn test_compile_sk_lookup_ctx_local_port_counter_program() {
 }
 
 #[test]
-fn test_compile_flow_dissector_ctx_scalar_counter_programs() {
-    for (field, context) in [
-        ("packet_len", "flow_dissector ctx.packet_len count"),
-        ("eth_protocol", "flow_dissector ctx.eth_protocol count"),
-        ("protocol", "flow_dissector ctx.protocol count"),
-    ] {
-        assert_ctx_path_count_program_compiles(
-            EbpfProgramType::FlowDissector,
-            "/proc/self/ns/net",
-            CellPath {
-                members: vec![string_member(field)],
-            },
-            context,
-        );
-    }
+fn test_compile_flow_dissector_ctx_packet_byte_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::FlowDissector,
+        "/proc/self/ns/net",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        "flow_dissector ctx.data[0] count",
+    );
 }
 
 #[test]

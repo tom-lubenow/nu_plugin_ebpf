@@ -209,7 +209,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         data_meta: None,
         socket_family: None,
         sock_type: None,
-        protocol: Some(SocketContextLayout::SkBuff),
+        protocol: None,
         socket_ref: None,
         ingress_ifindex: None,
         sock_mark_priority: None,

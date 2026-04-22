@@ -1063,7 +1063,6 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
-    EbpfProgramType::FlowDissector,
     EbpfProgramType::SocketFilter,
     EbpfProgramType::LwtIn,
     EbpfProgramType::LwtOut,
@@ -1149,7 +1148,6 @@ const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const ETH_PROTOCOL_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
-    EbpfProgramType::FlowDissector,
     EbpfProgramType::LwtIn,
     EbpfProgramType::LwtOut,
     EbpfProgramType::LwtXmit,

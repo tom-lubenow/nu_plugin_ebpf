@@ -849,7 +849,7 @@ fn test_program_type_socket_layouts_follow_program_model() {
     );
     assert_eq!(
         EbpfProgramType::FlowDissector.protocol_context_layout(),
-        Some(SocketContextLayout::SkBuff)
+        None
     );
     assert_eq!(
         EbpfProgramType::FlowDissector.socket_tuple_context_layout(),
@@ -5980,12 +5980,26 @@ fn test_probe_context_allows_sk_reuseport_fields() {
 fn test_probe_context_allows_flow_dissector_fields() {
     let ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
 
-    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
-    assert!(ctx.ctx_field_access_error(&CtxField::EthProtocol).is_none());
-    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::FlowKeys).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::PacketLen)
+            .expect("expected flow_dissector packet_len access error")
+            .contains("ctx.packet_len is not available on flow_dissector programs")
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::EthProtocol)
+            .expect("expected flow_dissector eth_protocol access error")
+            .contains("ctx.eth_protocol is not available on flow_dissector programs")
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::Protocol)
+            .expect("expected flow_dissector protocol access error")
+            .contains(
+                "ctx.protocol is only available on skb-backed packet, lwt_*, tc_action, cgroup_sock, cgroup_sock_addr, sk_lookup, and sk_reuseport programs",
+            )
+    );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Socket)
             .expect("expected flow_dissector sk access error")
