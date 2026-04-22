@@ -1389,8 +1389,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "uretprobe.multi",
         ),
         (EbpfProgramType::LsmCgroup, "socket_bind", "lsm_cgroup"),
-        (EbpfProgramType::Ksyscall, "nanosleep", "ksyscall"),
-        (EbpfProgramType::KretSyscall, "nanosleep", "kretsyscall"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
         (
             EbpfProgramType::FlowDissector,

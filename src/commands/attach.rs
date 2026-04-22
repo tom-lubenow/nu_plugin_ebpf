@@ -54,9 +54,8 @@ it to the specified probe point. The closure runs in the kernel whenever
 the probe point is hit.
 
 Supported attach types:
-  - kprobe, kretprobe
+  - kprobe, kretprobe, ksyscall, kretsyscall
   - kprobe.multi, kretprobe.multi (dry-run compile support; live attach is not implemented yet)
-  - ksyscall, kretsyscall (dry-run compile support; live attach is not implemented yet)
   - fentry, fexit, tp_btf
   - fmod_ret / fmod_ret.s (dry-run compile support; live attach is not implemented yet)
   - tracepoint, raw_tracepoint

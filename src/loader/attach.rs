@@ -1,5 +1,6 @@
 use super::*;
 use aya::programs::perf_event::perf_hw_id;
+use std::io::BufRead as _;
 
 fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
     matches!(
@@ -7,8 +8,6 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
         ProgramAttachKind::RawTracepointWritable
             | ProgramAttachKind::KprobeMulti
             | ProgramAttachKind::KretprobeMulti
-            | ProgramAttachKind::Ksyscall
-            | ProgramAttachKind::KretSyscall
             | ProgramAttachKind::FmodRet
             | ProgramAttachKind::UprobeMulti
             | ProgramAttachKind::UretprobeMulti
@@ -38,14 +37,95 @@ fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> L
     ))
 }
 
+const SYSCALL_SYMBOL_PREFIXES: &[&str] = &[
+    "sys_",
+    "__x64_sys_",
+    "__x32_compat_sys_",
+    "__ia32_compat_sys_",
+    "__arm64_sys_",
+    "__s390x_sys_",
+    "__s390_sys_",
+];
+
+fn syscall_probe_candidate_names(syscall: &str) -> Vec<String> {
+    let mut candidates = vec![syscall.to_string()];
+    let already_prefixed = SYSCALL_SYMBOL_PREFIXES
+        .iter()
+        .any(|prefix| syscall.starts_with(prefix));
+
+    if !already_prefixed {
+        candidates.extend(
+            SYSCALL_SYMBOL_PREFIXES
+                .iter()
+                .map(|prefix| format!("{prefix}{syscall}")),
+        );
+    }
+
+    candidates
+}
+
+fn syscall_probe_symbols_from_names(syscall: &str, symbols: &HashSet<String>) -> Vec<String> {
+    syscall_probe_candidate_names(syscall)
+        .into_iter()
+        .filter(|candidate| symbols.contains(candidate))
+        .collect()
+}
+
+fn read_kernel_symbol_names() -> Result<HashSet<String>, LoadError> {
+    let file = std::fs::File::open("/proc/kallsyms").map_err(|e| {
+        LoadError::Attach(format!(
+            "Failed to open /proc/kallsyms for syscall probe resolution: {e}"
+        ))
+    })?;
+    let reader = std::io::BufReader::new(file);
+    let mut symbols = HashSet::new();
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| {
+            LoadError::Attach(format!(
+                "Failed to read /proc/kallsyms for syscall probe resolution: {e}"
+            ))
+        })?;
+        if let Some(name) = line.split_whitespace().nth(2) {
+            symbols.insert(name.to_string());
+        }
+    }
+
+    Ok(symbols)
+}
+
+fn resolve_syscall_probe_symbols(syscall: &str) -> Result<Vec<String>, LoadError> {
+    let symbols = read_kernel_symbol_names()?;
+    let candidates = syscall_probe_symbols_from_names(syscall, &symbols);
+
+    if candidates.is_empty() {
+        return Err(LoadError::Attach(format!(
+            "Failed to resolve syscall probe target '{syscall}' in /proc/kallsyms; tried {}",
+            syscall_probe_candidate_names(syscall).join(", ")
+        )));
+    }
+
+    Ok(candidates)
+}
+
 fn aya_load_compatible_object(object: &EbpfObject) -> EbpfObject {
     let mut object = object.clone();
 
     for program in &mut object.programs {
-        if program.prog_type == crate::compiler::EbpfProgramType::Tcx {
-            // Aya 0.13 loads TCX programs through the SCHED_CLS classifier parser.
-            // Preserve the public tcx/* model, but feed Aya a section it recognizes.
-            program.section_name_override = Some("classifier".to_string());
+        match program.prog_type {
+            crate::compiler::EbpfProgramType::Tcx => {
+                // Aya 0.13 loads TCX programs through the SCHED_CLS classifier parser.
+                // Preserve the public tcx/* model, but feed Aya a section it recognizes.
+                program.section_name_override = Some("classifier".to_string());
+            }
+            crate::compiler::EbpfProgramType::Ksyscall => {
+                // Aya's parser has kprobe/kretprobe sections but not libbpf's syscall aliases.
+                program.section_name_override = Some("kprobe".to_string());
+            }
+            crate::compiler::EbpfProgramType::KretSyscall => {
+                program.section_name_override = Some("kretprobe".to_string());
+            }
+            _ => {}
         }
     }
 
@@ -114,6 +194,12 @@ impl EbpfState {
                 return Err(unsupported_cgroup_sock_addr_target_error(target));
             }
         }
+        let syscall_probe_symbols = match &spec {
+            ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
+                Some(resolve_syscall_probe_symbols(syscall)?)
+            }
+            _ => None,
+        };
 
         // Generate ELF
         let load_object = aya_load_compatible_object(object);
@@ -175,6 +261,31 @@ impl EbpfState {
                         program.prog_type.canonical_prefix()
                     ))
                 })?;
+            }
+            ProgramAttachKind::Ksyscall | ProgramAttachKind::KretSyscall => {
+                let symbols = syscall_probe_symbols.as_ref().unwrap_or_else(|| {
+                    unreachable!("syscall attach kind must resolve syscall symbols")
+                });
+                let kprobe: &mut KProbe = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to convert to {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                kprobe.load().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to load {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                for symbol in symbols {
+                    kprobe.attach(symbol, 0).map_err(|e| {
+                        LoadError::Attach(format!(
+                            "Failed to attach {} to syscall symbol {symbol}: {e}",
+                            program.prog_type.canonical_prefix()
+                        ))
+                    })?;
+                }
             }
             ProgramAttachKind::Fentry => {
                 let btf = Btf::from_sys_fs().map_err(|e| {
@@ -863,8 +974,6 @@ impl EbpfState {
             ProgramAttachKind::RawTracepointWritable
             | ProgramAttachKind::KprobeMulti
             | ProgramAttachKind::KretprobeMulti
-            | ProgramAttachKind::Ksyscall
-            | ProgramAttachKind::KretSyscall
             | ProgramAttachKind::FmodRet
             | ProgramAttachKind::UprobeMulti
             | ProgramAttachKind::UretprobeMulti
@@ -1011,6 +1120,7 @@ impl EbpfState {
 mod tests {
     use super::*;
     use aya_obj::Object as AyaObject;
+    use std::collections::HashSet;
 
     use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
     use crate::compiler::{EbpfProgram, EbpfProgramType};
@@ -1057,5 +1167,69 @@ mod tests {
             .expect("loader-compatible object should emit");
         let parsed = AyaObject::parse(&elf).expect("Aya should parse rewritten TCX object");
         assert!(parsed.programs.contains_key("main"));
+    }
+
+    #[test]
+    fn test_aya_load_compatible_object_rewrites_syscall_sections() {
+        for (prog_type, expected_public, expected_loader) in [
+            (EbpfProgramType::Ksyscall, "ksyscall/nanosleep", "kprobe"),
+            (
+                EbpfProgramType::KretSyscall,
+                "kretsyscall/nanosleep",
+                "kretprobe",
+            ),
+        ] {
+            let mut builder = EbpfBuilder::new();
+            builder
+                .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+                .push(EbpfInsn::exit());
+            let object = EbpfProgram::new(prog_type, "nanosleep", "main", builder).into_object();
+
+            assert_eq!(
+                object
+                    .primary_program()
+                    .expect("object should have a primary program")
+                    .section_name()
+                    .expect("syscall section should resolve"),
+                expected_public
+            );
+
+            let load_object = aya_load_compatible_object(&object);
+            assert_eq!(
+                load_object
+                    .primary_program()
+                    .expect("load object should have a primary program")
+                    .section_name()
+                    .expect("loader section should resolve"),
+                expected_loader
+            );
+
+            let elf = load_object
+                .to_elf()
+                .expect("loader-compatible object should emit");
+            let parsed = AyaObject::parse(&elf).expect("Aya should parse rewritten syscall object");
+            assert!(parsed.programs.contains_key("main"));
+        }
+    }
+
+    #[test]
+    fn test_syscall_probe_symbols_from_names_handles_abi_wrappers() {
+        let symbols = HashSet::from([
+            "__x64_sys_openat".to_string(),
+            "__ia32_compat_sys_openat".to_string(),
+            "__x64_sys_close".to_string(),
+        ]);
+
+        assert_eq!(
+            syscall_probe_symbols_from_names("openat", &symbols),
+            vec![
+                "__x64_sys_openat".to_string(),
+                "__ia32_compat_sys_openat".to_string()
+            ]
+        );
+        assert_eq!(
+            syscall_probe_symbols_from_names("__x64_sys_close", &symbols),
+            vec!["__x64_sys_close".to_string()]
+        );
     }
 }
