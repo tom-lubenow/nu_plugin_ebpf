@@ -224,6 +224,14 @@ pub enum BpfHelper {
     SkbSetTunnelOpt = 30,
     /// long bpf_fib_lookup(ctx, params, plen, flags)
     FibLookup = 69,
+    /// long bpf_lwt_push_encap(skb, type, hdr, len)
+    LwtPushEncap = 73,
+    /// long bpf_lwt_seg6_store_bytes(skb, offset, from, len)
+    LwtSeg6StoreBytes = 74,
+    /// long bpf_lwt_seg6_adjust_srh(skb, offset, delta)
+    LwtSeg6AdjustSrh = 75,
+    /// long bpf_lwt_seg6_action(skb, action, param, param_len)
+    LwtSeg6Action = 76,
     /// long bpf_skb_load_bytes_relative(skb, offset, to, len, start_header)
     SkbLoadBytesRelative = 68,
     /// struct bpf_sock *bpf_sk_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
@@ -436,6 +444,10 @@ impl BpfHelper {
             BpfHelper::SkbGetTunnelOpt => "bpf_skb_get_tunnel_opt",
             BpfHelper::SkbSetTunnelOpt => "bpf_skb_set_tunnel_opt",
             BpfHelper::FibLookup => "bpf_fib_lookup",
+            BpfHelper::LwtPushEncap => "bpf_lwt_push_encap",
+            BpfHelper::LwtSeg6StoreBytes => "bpf_lwt_seg6_store_bytes",
+            BpfHelper::LwtSeg6AdjustSrh => "bpf_lwt_seg6_adjust_srh",
+            BpfHelper::LwtSeg6Action => "bpf_lwt_seg6_action",
             BpfHelper::SkbLoadBytesRelative => "bpf_skb_load_bytes_relative",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
             BpfHelper::SkLookupUdp => "bpf_sk_lookup_udp",
@@ -593,6 +605,10 @@ impl BpfHelper {
             "skb_get_tunnel_opt" => Some(Self::SkbGetTunnelOpt),
             "skb_set_tunnel_opt" => Some(Self::SkbSetTunnelOpt),
             "fib_lookup" => Some(Self::FibLookup),
+            "lwt_push_encap" => Some(Self::LwtPushEncap),
+            "lwt_seg6_store_bytes" => Some(Self::LwtSeg6StoreBytes),
+            "lwt_seg6_adjust_srh" => Some(Self::LwtSeg6AdjustSrh),
+            "lwt_seg6_action" => Some(Self::LwtSeg6Action),
             "skb_load_bytes_relative" => Some(Self::SkbLoadBytesRelative),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
             "sk_lookup_udp" => Some(Self::SkLookupUdp),
@@ -782,6 +798,10 @@ impl BpfHelper {
                 | Self::SkbPullData
                 | Self::SkbChangeHead
                 | Self::SkbChangeProto
+                | Self::LwtPushEncap
+                | Self::LwtSeg6Action
+                | Self::LwtSeg6AdjustSrh
+                | Self::LwtSeg6StoreBytes
                 | Self::SkbVlanPush
                 | Self::SkbVlanPop
                 | Self::XdpAdjustHead

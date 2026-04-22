@@ -91,6 +91,10 @@ impl BpfHelper {
             29 => Some(Self::SkbGetTunnelOpt),
             30 => Some(Self::SkbSetTunnelOpt),
             69 => Some(Self::FibLookup),
+            73 => Some(Self::LwtPushEncap),
+            74 => Some(Self::LwtSeg6StoreBytes),
+            75 => Some(Self::LwtSeg6AdjustSrh),
+            76 => Some(Self::LwtSeg6Action),
             31 => Some(Self::SkbChangeProto),
             32 => Some(Self::SkbChangeType),
             84 => Some(Self::SkLookupTcp),
@@ -590,6 +594,20 @@ impl BpfHelper {
                 min_args: 4,
                 max_args: 4,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::LwtPushEncap | BpfHelper::LwtSeg6StoreBytes | BpfHelper::LwtSeg6Action => {
+                HelperSignature {
+                    min_args: 4,
+                    max_args: 4,
+                    arg_kinds: [P, S, P, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
+            BpfHelper::LwtSeg6AdjustSrh => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::CheckMtu => HelperSignature {

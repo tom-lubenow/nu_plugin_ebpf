@@ -5897,6 +5897,147 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_small_buffer() {
     );
 }
 
+fn make_lwt_buffer_vcc_call(
+    helper: BpfHelper,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buffer = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(buffer),
+                MirValue::Const(size),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+fn make_lwt_seg6_adjust_srh_vcc_call() -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::LwtSeg6AdjustSrh as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(4)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_push_encap_accepts_lwt_in_and_xmit_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::LwtIn, "demo-route"),
+        ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+    ] {
+        let (func, types) = make_lwt_buffer_vcc_call(BpfHelper::LwtPushEncap, 16, 16);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected bpf_lwt_push_encap helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_push_encap_rejects_non_lwt_in_xmit_program() {
+    let (func, types) = make_lwt_buffer_vcc_call(BpfHelper::LwtPushEncap, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_lwt_push_encap to be rejected outside lwt_in/xmit");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_lwt_push_encap' is only valid in lwt_in and lwt_xmit programs"))
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_seg6_helpers_accept_lwt_seg6local_programs() {
+    for (func, types) in [
+        make_lwt_buffer_vcc_call(BpfHelper::LwtSeg6StoreBytes, 16, 16),
+        make_lwt_buffer_vcc_call(BpfHelper::LwtSeg6Action, 16, 16),
+        make_lwt_seg6_adjust_srh_vcc_call(),
+    ] {
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected lwt seg6 helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_seg6_helpers_reject_non_lwt_seg6local_program() {
+    let (func, types) = make_lwt_buffer_vcc_call(BpfHelper::LwtSeg6Action, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_lwt_seg6_action to be rejected outside lwt_seg6local");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_lwt_seg6_action' is only valid in lwt_seg6local programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_buffer_helper_rejects_small_buffer() {
+    let (func, types) = make_lwt_buffer_vcc_call(BpfHelper::LwtSeg6StoreBytes, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected lwt helper buffer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_pull_data_invalidates_prior_packet_pointers() {
     let (mut func, entry) = new_mir_function();

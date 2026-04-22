@@ -2398,6 +2398,36 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::LwtIn.helper_call_error(BpfHelper::LwtPushEncap),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::LwtPushEncap),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::LwtPushEncap),
+        Some(
+            "helper 'bpf_lwt_push_encap' is only valid in lwt_in and lwt_xmit programs".to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::LwtSeg6Local.helper_call_error(BpfHelper::LwtSeg6StoreBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtSeg6Local.helper_call_error(BpfHelper::LwtSeg6AdjustSrh),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtSeg6Local.helper_call_error(BpfHelper::LwtSeg6Action),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::LwtSeg6Action),
+        Some("helper 'bpf_lwt_seg6_action' is only valid in lwt_seg6local programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbStoreBytes),
         Some(
             "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"

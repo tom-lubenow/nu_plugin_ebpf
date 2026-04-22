@@ -1571,6 +1571,128 @@ fn test_type_error_skb_get_xfrm_state_helper_rejects_small_buffer() {
     );
 }
 
+fn make_lwt_buffer_helper_call(
+    helper: BpfHelper,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buffer = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buffer),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+fn make_lwt_seg6_adjust_srh_call() -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::LwtSeg6AdjustSrh as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(4)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_lwt_push_encap_helper_in_lwt_in_and_xmit_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::LwtIn, "demo-route"),
+        ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+    ] {
+        let (func, dst) = make_lwt_buffer_helper_call(BpfHelper::LwtPushEncap, 16, 16);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected bpf_lwt_push_encap helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_lwt_push_encap_helper_rejects_non_lwt_in_xmit_program() {
+    let (func, _) = make_lwt_buffer_helper_call(BpfHelper::LwtPushEncap, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_lwt_push_encap to be rejected outside lwt_in/xmit");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_lwt_push_encap' is only valid in lwt_in and lwt_xmit programs"))
+    );
+}
+
+#[test]
+fn test_infer_lwt_seg6_helpers_in_lwt_seg6local_programs() {
+    for (func, dst) in [
+        make_lwt_buffer_helper_call(BpfHelper::LwtSeg6StoreBytes, 16, 16),
+        make_lwt_buffer_helper_call(BpfHelper::LwtSeg6Action, 16, 16),
+        make_lwt_seg6_adjust_srh_call(),
+    ] {
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti.infer(&func).expect("expected lwt seg6 helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_lwt_seg6_helpers_reject_non_lwt_seg6local_program() {
+    let (func, _) = make_lwt_buffer_helper_call(BpfHelper::LwtSeg6Action, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_lwt_seg6_action to be rejected outside lwt_seg6local");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_lwt_seg6_action' is only valid in lwt_seg6local programs")
+    }));
+}
+
+#[test]
+fn test_type_error_lwt_buffer_helper_rejects_small_buffer() {
+    let (func, _) = make_lwt_buffer_helper_call(BpfHelper::LwtSeg6StoreBytes, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected lwt helper buffer bounds error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper lwt buffer requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [

@@ -155,6 +155,29 @@ impl BpfHelper {
                 size_from_arg: Some(3),
             },
         ];
+        const LWT_BUFFER_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper lwt skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper lwt buffer",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
+        const LWT_CTX_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper lwt skb",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1372,6 +1395,18 @@ impl BpfHelper {
             BpfHelper::SkbGetXfrmState => HelperSemantics {
                 ptr_arg_rules: SKB_XFRM_STATE_RULES,
                 positive_size_args: &[3],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::LwtPushEncap | BpfHelper::LwtSeg6StoreBytes | BpfHelper::LwtSeg6Action => {
+                HelperSemantics {
+                    ptr_arg_rules: LWT_BUFFER_RULES,
+                    positive_size_args: &[3],
+                    ringbuf_record_arg0: false,
+                }
+            }
+            BpfHelper::LwtSeg6AdjustSrh => HelperSemantics {
+                ptr_arg_rules: LWT_CTX_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::L3CsumReplace

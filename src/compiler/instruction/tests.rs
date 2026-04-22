@@ -219,6 +219,22 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::FibLookup)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_lwt_push_encap"),
+        Some(BpfHelper::LwtPushEncap)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_lwt_seg6_store_bytes"),
+        Some(BpfHelper::LwtSeg6StoreBytes)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_lwt_seg6_adjust_srh"),
+        Some(BpfHelper::LwtSeg6AdjustSrh)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("lwt_seg6_action"),
+        Some(BpfHelper::LwtSeg6Action)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -1134,6 +1150,31 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    for helper in [
+        BpfHelper::LwtPushEncap,
+        BpfHelper::LwtSeg6StoreBytes,
+        BpfHelper::LwtSeg6Action,
+    ] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected lwt buffer helper signature");
+        assert_eq!(sig.min_args, 4);
+        assert_eq!(sig.max_args, 4);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    let sig = HelperSignature::for_id(BpfHelper::LwtSeg6AdjustSrh as u32)
+        .expect("expected bpf_lwt_seg6_adjust_srh helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     let sig = HelperSignature::for_id(BpfHelper::SkbGetXfrmState as u32)
         .expect("expected bpf_skb_get_xfrm_state helper signature");
     assert_eq!(sig.min_args, 5);
@@ -1275,6 +1316,10 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::SkbPullData,
         BpfHelper::SkbChangeHead,
         BpfHelper::SkbChangeProto,
+        BpfHelper::LwtPushEncap,
+        BpfHelper::LwtSeg6Action,
+        BpfHelper::LwtSeg6AdjustSrh,
+        BpfHelper::LwtSeg6StoreBytes,
         BpfHelper::SkbVlanPush,
         BpfHelper::SkbVlanPop,
         BpfHelper::XdpAdjustHead,
@@ -1440,6 +1485,53 @@ fn test_skb_get_xfrm_state_helper_contract() {
     assert!(!xfrm_state.allowed.allow_user);
     assert_eq!(xfrm_state.fixed_size, None);
     assert_eq!(xfrm_state.size_from_arg, Some(3));
+}
+
+#[test]
+fn test_lwt_helpers_contract() {
+    for helper in [
+        BpfHelper::LwtPushEncap,
+        BpfHelper::LwtSeg6StoreBytes,
+        BpfHelper::LwtSeg6Action,
+    ] {
+        let semantics = helper.semantics();
+        assert_eq!(semantics.positive_size_args, &[3]);
+        assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+        let skb = semantics.ptr_arg_rules[0];
+        assert_eq!(skb.arg_idx, 0);
+        assert_eq!(skb.op, "helper lwt skb");
+        assert!(skb.allowed.allow_kernel);
+        assert!(!skb.allowed.allow_stack);
+        assert!(!skb.allowed.allow_map);
+        assert!(!skb.allowed.allow_user);
+        assert_eq!(skb.fixed_size, None);
+        assert_eq!(skb.size_from_arg, None);
+
+        let buffer = semantics.ptr_arg_rules[1];
+        assert_eq!(buffer.arg_idx, 2);
+        assert_eq!(buffer.op, "helper lwt buffer");
+        assert!(buffer.allowed.allow_stack);
+        assert!(buffer.allowed.allow_map);
+        assert!(!buffer.allowed.allow_kernel);
+        assert!(!buffer.allowed.allow_user);
+        assert_eq!(buffer.fixed_size, None);
+        assert_eq!(buffer.size_from_arg, Some(3));
+    }
+
+    let semantics = BpfHelper::LwtSeg6AdjustSrh.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let skb = semantics.ptr_arg_rules[0];
+    assert_eq!(skb.arg_idx, 0);
+    assert_eq!(skb.op, "helper lwt skb");
+    assert!(skb.allowed.allow_kernel);
+    assert!(!skb.allowed.allow_stack);
+    assert!(!skb.allowed.allow_map);
+    assert!(!skb.allowed.allow_user);
+    assert_eq!(skb.fixed_size, None);
+    assert_eq!(skb.size_from_arg, None);
 }
 
 #[test]
