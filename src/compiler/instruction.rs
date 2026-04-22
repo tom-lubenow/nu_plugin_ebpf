@@ -332,6 +332,8 @@ pub enum BpfHelper {
     SkcToTcpRequestSock = 139,
     /// struct udp6_sock *bpf_skc_to_udp6_sock(sk)
     SkcToUdp6Sock = 140,
+    /// long bpf_get_task_stack(task, buf, size, flags)
+    GetTaskStack = 141,
     /// struct unix_sock *bpf_skc_to_unix_sock(sk)
     SkcToUnixSock = 178,
     /// void *bpf_inode_storage_get(map, inode, value, flags)
@@ -516,6 +518,7 @@ impl BpfHelper {
             BpfHelper::SkcToTcpTimewaitSock => "bpf_skc_to_tcp_timewait_sock",
             BpfHelper::SkcToTcpRequestSock => "bpf_skc_to_tcp_request_sock",
             BpfHelper::SkcToUdp6Sock => "bpf_skc_to_udp6_sock",
+            BpfHelper::GetTaskStack => "bpf_get_task_stack",
             BpfHelper::SkcToUnixSock => "bpf_skc_to_unix_sock",
             BpfHelper::InodeStorageGet => "bpf_inode_storage_get",
             BpfHelper::InodeStorageDelete => "bpf_inode_storage_delete",
@@ -686,6 +689,7 @@ impl BpfHelper {
             "skc_to_tcp_timewait_sock" => Some(Self::SkcToTcpTimewaitSock),
             "skc_to_tcp_request_sock" => Some(Self::SkcToTcpRequestSock),
             "skc_to_udp6_sock" => Some(Self::SkcToUdp6Sock),
+            "get_task_stack" => Some(Self::GetTaskStack),
             "skc_to_unix_sock" => Some(Self::SkcToUnixSock),
             "inode_storage_get" => Some(Self::InodeStorageGet),
             "inode_storage_delete" => Some(Self::InodeStorageDelete),
@@ -715,6 +719,7 @@ impl BpfHelper {
             (Self::CsumDiff, 2) => Some(3),
             (Self::ReadBranchRecords, 1) => Some(2),
             (Self::GetBranchSnapshot, 0) => Some(1),
+            (Self::GetTaskStack, 1) => Some(2),
             _ => None,
         }
     }
@@ -739,6 +744,7 @@ impl BpfHelper {
     pub const fn scalar_arg_nonnegative_requirement(self, arg_idx: usize) -> Option<&'static str> {
         match (self, arg_idx) {
             (Self::GetStack, 2) => Some("helper 'bpf_get_stack' requires arg2 to be >= 0"),
+            (Self::GetTaskStack, 2) => Some("helper 'bpf_get_task_stack' requires arg2 to be >= 0"),
             _ => None,
         }
     }

@@ -144,6 +144,7 @@ impl BpfHelper {
             138 => Some(Self::SkcToTcpTimewaitSock),
             139 => Some(Self::SkcToTcpRequestSock),
             140 => Some(Self::SkcToUdp6Sock),
+            141 => Some(Self::GetTaskStack),
             145 => Some(Self::InodeStorageGet),
             146 => Some(Self::InodeStorageDelete),
             156 => Some(Self::TaskStorageGet),
@@ -755,6 +756,12 @@ impl BpfHelper {
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::GetTaskStack => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::GetFuncArg => HelperSignature {
                 min_args: 3,

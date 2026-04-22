@@ -423,6 +423,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetBranchSnapshot)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_task_stack"),
+        Some(BpfHelper::GetTaskStack)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -1803,6 +1807,18 @@ fn test_get_branch_snapshot_zero_size_and_flag_contract() {
 }
 
 #[test]
+fn test_get_task_stack_buffer_contract() {
+    assert_eq!(
+        BpfHelper::GetTaskStack.zero_size_pointer_arg_size_arg(1),
+        Some(2)
+    );
+    assert_eq!(
+        BpfHelper::GetTaskStack.scalar_arg_nonnegative_requirement(2),
+        Some("helper 'bpf_get_task_stack' requires arg2 to be >= 0")
+    );
+}
+
+#[test]
 fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
@@ -1971,6 +1987,28 @@ fn test_get_branch_snapshot_helper_contract() {
     assert!(!entries.allowed.allow_kernel);
     assert!(!entries.allowed.allow_user);
     assert_eq!(entries.size_from_arg, Some(1));
+}
+
+#[test]
+fn test_get_task_stack_helper_contract() {
+    let semantics = BpfHelper::GetTaskStack.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let task = semantics.ptr_arg_rules[0];
+    assert_eq!(task.arg_idx, 0);
+    assert_eq!(task.op, "helper get_task_stack task");
+    assert!(task.allowed.allow_kernel);
+    assert!(!task.allowed.allow_stack);
+    assert_eq!(task.size_from_arg, None);
+
+    let buf = semantics.ptr_arg_rules[1];
+    assert_eq!(buf.arg_idx, 1);
+    assert_eq!(buf.op, "helper get_task_stack buf");
+    assert!(buf.allowed.allow_stack);
+    assert!(buf.allowed.allow_map);
+    assert!(!buf.allowed.allow_kernel);
+    assert_eq!(buf.size_from_arg, Some(2));
 }
 
 #[test]
@@ -2213,6 +2251,16 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
 
+    let sig = HelperSignature::for_id(BpfHelper::GetTaskStack as u32)
+        .expect("expected bpf_get_task_stack helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     let sig = HelperSignature::for_id(BpfHelper::GetListenerSock as u32)
         .expect("expected bpf_get_listener_sock helper signature");
     assert_eq!(sig.min_args, 1);
@@ -2317,6 +2365,10 @@ fn test_helper_ref_kind_mappings() {
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::TaskPtRegs, 0),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::GetTaskStack, 0),
         Some(KfuncRefKind::Task)
     );
     assert_eq!(helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 1), None);

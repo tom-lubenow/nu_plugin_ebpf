@@ -1185,6 +1185,22 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const GET_TASK_STACK_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper get_task_stack task",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper get_task_stack buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
 
         const GET_FUNC_ARG_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1924,6 +1940,11 @@ impl BpfHelper {
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
                 ptr_arg_rules: TASK_PT_REGS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetTaskStack => HelperSemantics {
+                ptr_arg_rules: GET_TASK_STACK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

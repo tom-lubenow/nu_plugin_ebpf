@@ -4912,6 +4912,79 @@ fn test_verify_mir_helper_task_pt_regs_accepts_current_task_without_null_check()
     }
 }
 
+fn make_get_task_stack_verify_call(
+    size: i64,
+    buf_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetTaskStack as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(size),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_get_task_stack_accepts_current_task() {
+    let (func, types) = make_get_task_stack_verify_call(24, 24);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected bpf_get_task_stack helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_get_task_stack_rejects_small_buffer() {
+    let (func, types) = make_get_task_stack_verify_call(24, 8);
+    let err = verify_mir(&func, &types).expect_err("expected get_task_stack bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper get_task_stack buf out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_get_task_stack_rejects_negative_size() {
+    let (func, types) = make_get_task_stack_verify_call(-1, 8);
+    let err = verify_mir(&func, &types).expect_err("expected get_task_stack size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 141 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_helper_task_pt_regs_rejects_anonymous_kernel_pointer() {
     let mut func = MirFunction::new();

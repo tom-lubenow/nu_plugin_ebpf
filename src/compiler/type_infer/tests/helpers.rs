@@ -6844,6 +6844,72 @@ fn test_infer_helper_task_pt_regs_returns_kernel_pointer() {
     }
 }
 
+fn make_get_task_stack_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: task,
+        helper: BpfHelper::GetCurrentTaskBtf as u32,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetTaskStack as u32,
+        args: vec![
+            MirValue::VReg(task),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_helper_get_task_stack_returns_i64() {
+    let (func, dst) = make_get_task_stack_call(24, 24);
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_task_stack helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_task_stack_rejects_small_buffer() {
+    let (func, _) = make_get_task_stack_call(24, 8);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_task_stack buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper get_task_stack buf requires 24 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_task_stack_rejects_negative_size() {
+    let (func, _) = make_get_task_stack_call(-1, 8);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_task_stack negative-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 141 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_helper_sk_fullsock_rejects_non_kernel_pointer() {
     let mut func = make_test_function();
