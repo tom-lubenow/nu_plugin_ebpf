@@ -1672,7 +1672,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::Redirect),
-        Some("helper 'bpf_redirect' is only valid in xdp and tc programs".to_string())
+        Some("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectMap),
@@ -1805,21 +1805,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbStoreBytes),
         Some(
-            "helper 'bpf_skb_store_bytes' is only valid in tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CloneRedirect),
         Some(
-            "helper 'bpf_clone_redirect' is only valid in tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_clone_redirect' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::L3CsumReplace),
         Some(
-            "helper 'bpf_l3_csum_replace' is only valid in tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_l3_csum_replace' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -2216,6 +2216,37 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::Redirect),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::SkbStoreBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::SkbChangeHead),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::SkbChangeTail),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::CloneRedirect),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::CsumLevel),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbStoreBytes),
+        Some(
+            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::GetHashRecalc),
         None
     );
@@ -2461,6 +2492,10 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        EbpfProgramType::LwtXmit.packet_redirect_helper(),
+        Some(BpfHelper::Redirect)
+    ));
+    assert!(matches!(
         EbpfProgramType::Tc.packet_redirect_peer_helper(),
         Some(BpfHelper::RedirectPeer)
     ));
@@ -2469,6 +2504,7 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
         Some(BpfHelper::RedirectNeigh)
     ));
     assert!(EbpfProgramType::Xdp.packet_redirect_peer_helper().is_none());
+    assert!(EbpfProgramType::LwtOut.packet_redirect_helper().is_none());
     assert!(EbpfProgramType::Fentry.packet_redirect_helper().is_none());
 }
 
@@ -2491,6 +2527,14 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
         Some(BpfHelper::SkbChangeTail)
     ));
     assert!(matches!(
+        EbpfProgramType::LwtXmit.packet_adjust_helper(PacketAdjustMode::Head),
+        Some(BpfHelper::SkbChangeHead)
+    ));
+    assert!(matches!(
+        EbpfProgramType::LwtXmit.packet_adjust_helper(PacketAdjustMode::Tail),
+        Some(BpfHelper::SkbChangeTail)
+    ));
+    assert!(matches!(
         EbpfProgramType::SkSkb.packet_adjust_helper(PacketAdjustMode::Pull),
         Some(BpfHelper::SkbPullData)
     ));
@@ -2505,6 +2549,11 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
     assert!(
         EbpfProgramType::Tc
             .packet_adjust_helper(PacketAdjustMode::Meta)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::LwtOut
+            .packet_adjust_helper(PacketAdjustMode::Head)
             .is_none()
     );
     assert!(
@@ -5224,6 +5273,7 @@ fn test_probe_context_allows_lwt_helper_backed_ctx_fields() {
 #[test]
 fn test_probe_context_allows_csum_level_on_supported_skb_helper_programs() {
     for ctx in [
+        ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
         ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
         ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
         ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
@@ -5242,9 +5292,9 @@ fn test_probe_context_rejects_csum_level_on_unsupported_skb_program() {
     let err = ctx
         .ctx_field_access_error(&CtxField::CsumLevel)
         .expect("expected unsupported csum_level access error");
-    assert!(
-        err.contains("ctx.csum_level is only available on tc, sk_skb, and sk_skb_parser programs")
-    );
+    assert!(err.contains(
+        "ctx.csum_level is only available on lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+    ));
 
     let err = ctx
         .ctx_field_access_error(&CtxField::HashRecalc)

@@ -1202,7 +1202,7 @@ fn test_verify_mir_for_program_redirect_rejects_non_packet_programs() {
         .expect_err("expected redirect helper program-surface error");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect' is only valid in xdp and tc programs")
+            .contains("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs")
     }));
 }
 
@@ -2420,6 +2420,17 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
             BpfHelper::GetHashRecalc | BpfHelper::SkbPullData => {
                 "is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
             }
+            BpfHelper::SkbStoreBytes
+            | BpfHelper::L3CsumReplace
+            | BpfHelper::L4CsumReplace
+            | BpfHelper::CloneRedirect
+            | BpfHelper::SkbChangeTail
+            | BpfHelper::CsumUpdate
+            | BpfHelper::CsumLevel
+            | BpfHelper::SetHashInvalid
+            | BpfHelper::SkbChangeHead => {
+                "is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            }
             _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
         };
         assert!(err.iter().any(|e| { e.message.contains(expected) }));
@@ -2427,14 +2438,60 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_lwt_skb_hash_and_pull_helpers() {
-    for (helper, args) in [
-        (BpfHelper::GetHashRecalc, vec![]),
-        (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
+fn test_verify_mir_for_probe_context_lwt_skb_helpers() {
+    for (probe_ctx, helper, args) in [
+        (
+            ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+            BpfHelper::GetHashRecalc,
+            vec![],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+            BpfHelper::SkbPullData,
+            vec![MirValue::Const(64)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::SkbStoreBytes,
+            vec![
+                MirValue::Const(0),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::CloneRedirect,
+            vec![MirValue::Const(1), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::SetHashInvalid,
+            vec![],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::CsumLevel,
+            vec![MirValue::Const(0)],
+        ),
     ] {
         let (mut func, entry) = new_mir_function();
+        let buf_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
+        let args = args
+            .into_iter()
+            .map(|arg| match arg {
+                MirValue::StackSlot(StackSlotId(0)) => MirValue::StackSlot(buf_slot),
+                other => other,
+            })
+            .collect::<Vec<_>>();
 
         func.block_mut(entry)
             .instructions
@@ -2464,9 +2521,8 @@ fn test_verify_mir_for_probe_context_lwt_skb_hash_and_pull_helpers() {
         );
         types.insert(dst, MirType::I64);
 
-        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected lwt skb hash/pull helper to verify");
+            .expect("expected lwt skb helper to verify");
     }
 }
 

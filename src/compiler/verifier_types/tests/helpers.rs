@@ -1274,7 +1274,7 @@ fn test_verify_mir_for_program_redirect_rejects_non_packet_programs() {
         .expect_err("expected redirect helper program-surface error");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect' is only valid in xdp and tc programs")
+            .contains("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs")
     }));
 }
 
@@ -2152,6 +2152,17 @@ fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs()
             BpfHelper::GetHashRecalc | BpfHelper::SkbPullData => {
                 "is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
             }
+            BpfHelper::SkbStoreBytes
+            | BpfHelper::L3CsumReplace
+            | BpfHelper::L4CsumReplace
+            | BpfHelper::CloneRedirect
+            | BpfHelper::SkbChangeTail
+            | BpfHelper::CsumUpdate
+            | BpfHelper::CsumLevel
+            | BpfHelper::SetHashInvalid
+            | BpfHelper::SkbChangeHead => {
+                "is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            }
             _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
         };
         assert!(err.iter().any(|e| { e.message.contains(expected) }));
@@ -2159,17 +2170,55 @@ fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs()
 }
 
 #[test]
-fn test_verify_mir_for_program_lwt_skb_hash_and_pull_helpers() {
-    for (helper, args) in [
-        (BpfHelper::GetHashRecalc, vec![]),
-        (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
+fn test_verify_mir_for_program_lwt_skb_helpers() {
+    for (program_type, helper, args) in [
+        (EbpfProgramType::LwtOut, BpfHelper::GetHashRecalc, vec![]),
+        (
+            EbpfProgramType::LwtOut,
+            BpfHelper::SkbPullData,
+            vec![MirValue::Const(64)],
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            BpfHelper::SkbStoreBytes,
+            vec![
+                MirValue::Const(0),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ],
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            BpfHelper::CloneRedirect,
+            vec![MirValue::Const(1), MirValue::Const(0)],
+        ),
+        (EbpfProgramType::LwtXmit, BpfHelper::SetHashInvalid, vec![]),
+        (
+            EbpfProgramType::LwtXmit,
+            BpfHelper::CsumLevel,
+            vec![MirValue::Const(0)],
+        ),
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
         func.entry = entry;
 
+        let buf_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
+        let args = args
+            .into_iter()
+            .map(|arg| match arg {
+                MirValue::StackSlot(StackSlotId(0)) => MirValue::StackSlot(buf_slot),
+                other => other,
+            })
+            .collect::<Vec<_>>();
         func.block_mut(entry)
             .instructions
             .push(MirInst::LoadCtxField {
@@ -2198,8 +2247,8 @@ fn test_verify_mir_for_program_lwt_skb_hash_and_pull_helpers() {
         );
         types.insert(dst, MirType::I64);
 
-        verify_mir_for_program(&func, &types, EbpfProgramType::LwtOut.info())
-            .expect("expected lwt skb hash/pull helper to verify");
+        verify_mir_for_program(&func, &types, program_type.info())
+            .expect("expected lwt skb helper to verify");
     }
 }
 

@@ -22,8 +22,10 @@ enum HelperProgramSurfaceFamily {
     Xdp,
     TcSkSkb,
     TcSkSkbLwt,
+    TcSkSkbLwtXmit,
     XdpTc,
     XdpTcLwt,
+    XdpTcLwtXmit,
     Tc,
     TcLwt,
     SkbLoadBytes,
@@ -99,6 +101,16 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         label: "lwt_*, tc, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcSkSkbLwtXmit,
+        program_types: &[
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::Tc,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "lwt_xmit, tc, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::XdpTc,
         program_types: &[EbpfProgramType::Xdp, EbpfProgramType::Tc],
         label: "xdp and tc",
@@ -114,6 +126,15 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtSeg6Local,
         ],
         label: "xdp, tc, and lwt_*",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::XdpTcLwtXmit,
+        program_types: &[
+            EbpfProgramType::Xdp,
+            EbpfProgramType::Tc,
+            EbpfProgramType::LwtXmit,
+        ],
+        label: "xdp, tc, and lwt_xmit",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Tc,
@@ -601,6 +622,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::RedirectMap => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Xdp,
         },
+        BpfHelper::SetHash
+        | BpfHelper::SkbVlanPush
+        | BpfHelper::SkbVlanPop
+        | BpfHelper::SkbAdjustRoom => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TcSkSkb,
+        },
         BpfHelper::SkbChangeTail
         | BpfHelper::SkbStoreBytes
         | BpfHelper::L3CsumReplace
@@ -609,12 +636,8 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::CsumUpdate
         | BpfHelper::CsumLevel
         | BpfHelper::SetHashInvalid
-        | BpfHelper::SetHash
-        | BpfHelper::SkbChangeHead
-        | BpfHelper::SkbVlanPush
-        | BpfHelper::SkbVlanPop
-        | BpfHelper::SkbAdjustRoom => HelperProgramSurfaceSpec {
-            family: HelperProgramSurfaceFamily::TcSkSkb,
+        | BpfHelper::SkbChangeHead => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TcSkSkbLwtXmit,
         },
         BpfHelper::GetHashRecalc | BpfHelper::SkbPullData => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcSkSkbLwt,
@@ -629,7 +652,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
             family: HelperProgramSurfaceFamily::XdpTcLwt,
         },
         BpfHelper::Redirect => HelperProgramSurfaceSpec {
-            family: HelperProgramSurfaceFamily::XdpTc,
+            family: HelperProgramSurfaceFamily::XdpTcLwtXmit,
         },
         BpfHelper::RedirectPeer
         | BpfHelper::RedirectNeigh
@@ -809,7 +832,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn packet_redirect_helper(&self) -> Option<BpfHelper> {
-        if HelperProgramSurfaceFamily::XdpTc.allows(*self) {
+        if HelperProgramSurfaceFamily::XdpTcLwtXmit.allows(*self) {
             Some(BpfHelper::Redirect)
         } else {
             None
@@ -829,7 +852,7 @@ impl EbpfProgramType {
             PacketAdjustMode::Head => {
                 if HelperProgramSurfaceFamily::Xdp.allows(*self) {
                     Some(BpfHelper::XdpAdjustHead)
-                } else if HelperProgramSurfaceFamily::TcSkSkb.allows(*self) {
+                } else if HelperProgramSurfaceFamily::TcSkSkbLwtXmit.allows(*self) {
                     Some(BpfHelper::SkbChangeHead)
                 } else {
                     None
@@ -841,7 +864,7 @@ impl EbpfProgramType {
             PacketAdjustMode::Tail => {
                 if HelperProgramSurfaceFamily::Xdp.allows(*self) {
                     Some(BpfHelper::XdpAdjustTail)
-                } else if HelperProgramSurfaceFamily::TcSkSkb.allows(*self) {
+                } else if HelperProgramSurfaceFamily::TcSkSkbLwtXmit.allows(*self) {
                     Some(BpfHelper::SkbChangeTail)
                 } else {
                     None

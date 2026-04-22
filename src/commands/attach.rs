@@ -142,8 +142,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array on skb-backed packet programs
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid on tc_action and tc programs
-    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on tc egress
-    {|ctx| $ctx.route_realm } - Get skb route realm on tc egress
+    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on lwt_* and tc egress
+    {|ctx| $ctx.route_realm } - Get skb route realm on lwt_* and tc egress
+    {|ctx| $ctx.csum_level } - Query skb checksum level on lwt_xmit, tc, sk_skb, and sk_skb_parser
     {|ctx| $ctx.skb_cgroup_id } - Get skb cgroup ID on tc egress
     {|ctx| $ctx.skb_ancestor_cgroup_id.0 } - Get skb ancestor cgroup ID on tc egress at constant level 0
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
@@ -758,7 +759,9 @@ Context parameter syntax (recommended):
     Return aliases are `ok` / `pass` for `0`, `drop` for `2`, and
     `redirect` for `7`; `lwt_in` and `lwt_xmit` also accept `reroute`
     for `128`. `adjust-packet --pull LEN` is available for LWT packet
-    linearization.
+    linearization. `lwt_xmit` also supports `redirect IFINDEX` and
+    `adjust-packet --head|--tail DELTA` for the modeled xmit-only skb
+    helper surface.
 
   sk_reuseport fields:
     {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len

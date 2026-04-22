@@ -650,10 +650,10 @@ fn test_type_error_redirect_helper_rejects_non_packet_programs() {
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
         .infer(&func)
-        .expect_err("expected bpf_redirect to be rejected on non-xdp/tc programs");
+        .expect_err("expected bpf_redirect to be rejected on unsupported programs");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect' is only valid in xdp and tc programs")
+            .contains("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs")
     }));
 }
 
@@ -810,6 +810,12 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
             BpfHelper::SkbPullData => {
                 "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
             }
+            BpfHelper::SkbChangeTail
+            | BpfHelper::CloneRedirect
+            | BpfHelper::SkbChangeHead
+            | BpfHelper::CsumLevel => {
+                "is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            }
             _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
         };
         assert!(errs.iter().any(|e| { e.message.contains(expected) }));
@@ -869,7 +875,22 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             vec![MirValue::Const(14), MirValue::Const(0)],
         ),
         (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+            BpfHelper::SkbChangeTail,
+            vec![MirValue::Const(64), MirValue::Const(0)],
+        ),
+        (
             ProbeContext::new(EbpfProgramType::Tc, "lo:egress"),
+            BpfHelper::CloneRedirect,
+            vec![MirValue::Const(1), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
             BpfHelper::CloneRedirect,
             vec![MirValue::Const(1), MirValue::Const(0)],
         ),
@@ -890,6 +911,11 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
         ),
         (
             ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::CsumLevel,
+            vec![MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
             BpfHelper::CsumLevel,
             vec![MirValue::Const(0)],
         ),

@@ -906,6 +906,7 @@ struct BaseContextFieldAccessProgramSurfaceSpec {
 }
 
 const SKB_CHECKSUM_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::LwtXmit,
     EbpfProgramType::Tc,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -1422,7 +1423,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SkbChecksumHelperFields => format!(
-                "ctx.{} is only available on tc, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on lwt_xmit, tc, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::SkbHashHelperFields => format!(
