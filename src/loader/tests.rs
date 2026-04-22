@@ -6,7 +6,7 @@ use crate::compiler::{
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
-    CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, XdpAttachMode, XdpTarget,
+    CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, UprobeMultiTarget, XdpAttachMode, XdpTarget,
 };
 use std::collections::HashMap;
 
@@ -113,6 +113,50 @@ fn test_parse_program_spec_sleepable_uprobes() {
     assert_eq!(spec.target_string(), "/lib/libc.so.6:malloc");
     assert_eq!(spec.section_name(), "uretprobe.s//lib/libc.so.6:malloc");
     assert_eq!(spec.to_string(), "uretprobe.s:/lib/libc.so.6:malloc");
+}
+
+#[test]
+fn test_parse_program_spec_uprobe_multi_sections() {
+    let (prog_type, target) = parse_probe_spec("uprobe.multi:/bin/bash:read*").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::UprobeMulti);
+    assert_eq!(target, "/bin/bash:read*");
+
+    let spec = parse_program_spec("uprobe.multi:/bin/bash:read*").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::UprobeMulti {
+            target: UprobeMultiTarget {
+                binary_path: "/bin/bash".to_string(),
+                function_pattern: "read*".to_string(),
+            },
+            sleepable: false,
+        }
+    );
+    assert_eq!(spec.section_name(), "uprobe.multi//bin/bash:read*");
+
+    let spec = parse_program_spec("uprobe.multi.s:/bin/bash:read*").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::UprobeMulti);
+    assert_eq!(spec.section_name(), "uprobe.multi.s//bin/bash:read*");
+    assert_eq!(spec.to_string(), "uprobe.multi.s:/bin/bash:read*");
+
+    let (prog_type, target) = parse_probe_spec("uretprobe.multi:/bin/bash:read*").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::UretprobeMulti);
+    assert_eq!(target, "/bin/bash:read*");
+
+    let spec = parse_program_spec("uretprobe.multi.s:/bin/bash:read*").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::UretprobeMulti);
+    assert_eq!(spec.section_name(), "uretprobe.multi.s//bin/bash:read*");
+    assert_eq!(spec.to_string(), "uretprobe.multi.s:/bin/bash:read*");
+}
+
+#[test]
+fn test_parse_program_spec_rejects_invalid_uprobe_multi_target() {
+    let err = parse_program_spec("uprobe.multi:/bin/bash")
+        .expect_err("expected missing uprobe.multi function pattern to fail");
+    assert!(
+        matches!(err, LoadError::Load(ref msg) if msg.contains("Invalid uprobe.multi target")),
+        "unexpected uprobe.multi validation error: {err:?}"
+    );
 }
 
 #[test]
@@ -1253,6 +1297,16 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
         (EbpfProgramType::KprobeMulti, "vfs_*", "kprobe.multi"),
         (EbpfProgramType::KretprobeMulti, "vfs_*", "kretprobe.multi"),
+        (
+            EbpfProgramType::UprobeMulti,
+            "/bin/bash:read*",
+            "uprobe.multi",
+        ),
+        (
+            EbpfProgramType::UretprobeMulti,
+            "/bin/bash:read*",
+            "uretprobe.multi",
+        ),
         (EbpfProgramType::Ksyscall, "nanosleep", "ksyscall"),
         (EbpfProgramType::KretSyscall, "nanosleep", "kretsyscall"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),

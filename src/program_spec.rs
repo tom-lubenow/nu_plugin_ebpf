@@ -109,6 +109,47 @@ impl UprobeTarget {
     }
 }
 
+/// Parsed uprobe.multi/uretprobe.multi target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UprobeMultiTarget {
+    /// Path to the binary or library.
+    pub binary_path: String,
+    /// Function name or wildcard pattern matched by the loader.
+    pub function_pattern: String,
+}
+
+impl UprobeMultiTarget {
+    /// Parse a uprobe.multi target string.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        let (binary_path, function_pattern) = target.split_once(':').ok_or_else(|| {
+            ProgramSpecParseError::new(format!(
+                "Invalid uprobe.multi target: {target}. Expected format: /path/to/binary:function_pattern"
+            ))
+        })?;
+
+        if binary_path.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "uprobe.multi binary path cannot be empty",
+            ));
+        }
+        if function_pattern.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "uprobe.multi function pattern cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            binary_path: binary_path.to_string(),
+            function_pattern: function_pattern.to_string(),
+        })
+    }
+
+    /// Render this parsed target back into canonical target syntax.
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.binary_path, self.function_pattern)
+    }
+}
+
 fn parse_offset(s: &str) -> Result<u64, ProgramSpecParseError> {
     if s.starts_with("0x") || s.starts_with("0X") {
         u64::from_str_radix(&s[2..], 16)
@@ -1664,6 +1705,14 @@ pub enum ProgramSpec {
         target: UprobeTarget,
         sleepable: bool,
     },
+    UprobeMulti {
+        target: UprobeMultiTarget,
+        sleepable: bool,
+    },
+    UretprobeMulti {
+        target: UprobeMultiTarget,
+        sleepable: bool,
+    },
     Xdp {
         target: XdpTarget,
     },
@@ -1911,7 +1960,14 @@ impl ProgramSpec {
             target,
             matches!(
                 prefix,
-                "fentry.s" | "fexit.s" | "fmod_ret.s" | "lsm.s" | "uprobe.s" | "uretprobe.s"
+                "fentry.s"
+                    | "fexit.s"
+                    | "fmod_ret.s"
+                    | "lsm.s"
+                    | "uprobe.s"
+                    | "uretprobe.s"
+                    | "uprobe.multi.s"
+                    | "uretprobe.multi.s"
             ),
         )
     }
@@ -1995,6 +2051,14 @@ impl ProgramSpec {
             }),
             EbpfProgramType::Uretprobe => Ok(ProgramSpec::Uretprobe {
                 target: UprobeTarget::parse(target)?,
+                sleepable,
+            }),
+            EbpfProgramType::UprobeMulti => Ok(ProgramSpec::UprobeMulti {
+                target: UprobeMultiTarget::parse(target)?,
+                sleepable,
+            }),
+            EbpfProgramType::UretprobeMulti => Ok(ProgramSpec::UretprobeMulti {
+                target: UprobeMultiTarget::parse(target)?,
                 sleepable,
             }),
             EbpfProgramType::Xdp => Ok(ProgramSpec::Xdp {
@@ -2095,6 +2159,8 @@ impl ProgramSpec {
             ProgramSpec::RawTracepointWritable { .. } => EbpfProgramType::RawTracepointWritable,
             ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
             ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
+            ProgramSpec::UprobeMulti { .. } => EbpfProgramType::UprobeMulti,
+            ProgramSpec::UretprobeMulti { .. } => EbpfProgramType::UretprobeMulti,
             ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
             ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
             ProgramSpec::SocketFilter { .. } => EbpfProgramType::SocketFilter,
@@ -2148,6 +2214,8 @@ impl ProgramSpec {
             ProgramSpec::Uprobe { target, .. } | ProgramSpec::Uretprobe { target, .. } => {
                 target.target_string()
             }
+            ProgramSpec::UprobeMulti { target, .. }
+            | ProgramSpec::UretprobeMulti { target, .. } => target.target_string(),
             ProgramSpec::Xdp { target } => target.target_string(),
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::SocketFilter { target } => target.target_string(),
@@ -2189,6 +2257,15 @@ impl ProgramSpec {
             ProgramSpec::Uprobe { target, .. } | ProgramSpec::Uretprobe { target, .. } => {
                 Some(target)
             }
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uprobe_multi_target(&self) -> Option<&UprobeMultiTarget> {
+        match self {
+            ProgramSpec::UprobeMulti { target, .. }
+            | ProgramSpec::UretprobeMulti { target, .. } => Some(target),
             _ => None,
         }
     }
@@ -2340,6 +2417,14 @@ impl ProgramSpec {
                 target,
                 sleepable: true,
             } => format!("uretprobe.s/{}", target.target_string()),
+            ProgramSpec::UprobeMulti {
+                target,
+                sleepable: true,
+            } => format!("uprobe.multi.s/{}", target.target_string()),
+            ProgramSpec::UretprobeMulti {
+                target,
+                sleepable: true,
+            } => format!("uretprobe.multi.s/{}", target.target_string()),
             ProgramSpec::CgroupSkb { target } => target.section_name(),
             ProgramSpec::CgroupSock { target } => target.section_name(),
             ProgramSpec::CgroupSysctl { target } => target.section_name().to_string(),
@@ -2430,6 +2515,12 @@ impl fmt::Display for ProgramSpec {
             ProgramSpec::Uretprobe {
                 sleepable: true, ..
             } => "uretprobe.s",
+            ProgramSpec::UprobeMulti {
+                sleepable: true, ..
+            } => "uprobe.multi.s",
+            ProgramSpec::UretprobeMulti {
+                sleepable: true, ..
+            } => "uretprobe.multi.s",
             _ => self.program_type().canonical_prefix(),
         };
         write!(f, "{}:{}", prefix, self.target_string())
@@ -2620,6 +2711,14 @@ mod tests {
             .expect("sleepable uprobe spec should parse");
         let sleepable_uretprobe = ProgramSpec::parse("uretprobe.s:/lib/libc.so.6:malloc")
             .expect("sleepable uretprobe spec should parse");
+        let uprobe_multi = ProgramSpec::parse("uprobe.multi:/bin/bash:read*")
+            .expect("uprobe.multi spec should parse");
+        let sleepable_uprobe_multi = ProgramSpec::parse("uprobe.multi.s:/bin/bash:read*")
+            .expect("sleepable uprobe.multi spec should parse");
+        let uretprobe_multi = ProgramSpec::parse("uretprobe.multi:/bin/bash:read*")
+            .expect("uretprobe.multi spec should parse");
+        let sleepable_uretprobe_multi = ProgramSpec::parse("uretprobe.multi.s:/bin/bash:read*")
+            .expect("sleepable uretprobe.multi spec should parse");
         let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
         let perf_event = ProgramSpec::parse("perf_event:software:cpu-clock:cpu=1")
             .expect("perf_event spec should parse");
@@ -2711,6 +2810,45 @@ mod tests {
         assert_eq!(
             sleepable_uretprobe.to_string(),
             "uretprobe.s:/lib/libc.so.6:malloc"
+        );
+        assert_eq!(uprobe_multi.program_type(), EbpfProgramType::UprobeMulti);
+        assert_eq!(
+            uprobe_multi
+                .uprobe_multi_target()
+                .map(|target| target.function_pattern.as_str()),
+            Some("read*")
+        );
+        assert_eq!(uprobe_multi.section_name(), "uprobe.multi//bin/bash:read*");
+        assert_eq!(uprobe_multi.to_string(), "uprobe.multi:/bin/bash:read*");
+        assert_eq!(
+            sleepable_uprobe_multi.section_name(),
+            "uprobe.multi.s//bin/bash:read*"
+        );
+        assert_eq!(
+            sleepable_uprobe_multi.to_string(),
+            "uprobe.multi.s:/bin/bash:read*"
+        );
+        assert_eq!(
+            uretprobe_multi.program_type(),
+            EbpfProgramType::UretprobeMulti
+        );
+        assert_eq!(
+            uretprobe_multi
+                .uprobe_multi_target()
+                .map(|target| target.binary_path.as_str()),
+            Some("/bin/bash")
+        );
+        assert_eq!(
+            uretprobe_multi.section_name(),
+            "uretprobe.multi//bin/bash:read*"
+        );
+        assert_eq!(
+            sleepable_uretprobe_multi.section_name(),
+            "uretprobe.multi.s//bin/bash:read*"
+        );
+        assert_eq!(
+            sleepable_uretprobe_multi.to_string(),
+            "uretprobe.multi.s:/bin/bash:read*"
         );
         assert_eq!(
             xdp.xdp_target().map(|target| target.interface.as_str()),

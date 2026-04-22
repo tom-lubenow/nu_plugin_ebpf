@@ -61,6 +61,8 @@ pub(super) const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw
 pub(super) const RAW_TRACEPOINT_WRITABLE_SPEC_ALIASES: &[&str] = &["raw_tracepoint.w", "raw_tp.w"];
 pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe", "uprobe.s"];
 pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe", "uretprobe.s"];
+pub(super) const UPROBE_MULTI_SPEC_ALIASES: &[&str] = &["uprobe.multi", "uprobe.multi.s"];
+pub(super) const URETPROBE_MULTI_SPEC_ALIASES: &[&str] = &["uretprobe.multi", "uretprobe.multi.s"];
 pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
 pub(super) const EXTENSION_SPEC_ALIASES: &[&str] = &["freplace", "extension", "ext"];
 pub(super) const SYSCALL_SPEC_ALIASES: &[&str] = &["syscall"];
@@ -348,6 +350,38 @@ pub(super) const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     context_family: ProgramContextFamily::Probe,
     attach_kind: ProgramAttachKind::Uretprobe,
     target_kind: ProgramTargetKind::UserFunction,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::PtRegs,
+};
+
+pub(super) const UPROBE_MULTI_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::UprobeMulti,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
+    canonical_prefix: "uprobe.multi",
+    spec_aliases: UPROBE_MULTI_SPEC_ALIASES,
+    section_prefix: "uprobe.multi",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::UprobeMulti,
+    target_kind: ProgramTargetKind::UserFunctionPattern,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::PtRegs,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const URETPROBE_MULTI_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::UretprobeMulti,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
+    canonical_prefix: "uretprobe.multi",
+    spec_aliases: URETPROBE_MULTI_SPEC_ALIASES,
+    section_prefix: "uretprobe.multi",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::UretprobeMulti,
+    target_kind: ProgramTargetKind::UserFunctionPattern,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
@@ -830,6 +864,8 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::RawTracepointWritable,
     EbpfProgramType::Uprobe,
     EbpfProgramType::Uretprobe,
+    EbpfProgramType::UprobeMulti,
+    EbpfProgramType::UretprobeMulti,
     EbpfProgramType::Lsm,
     EbpfProgramType::Extension,
     EbpfProgramType::Syscall,
@@ -889,6 +925,10 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "uprobe.s",
     "uretprobe",
     "uretprobe.s",
+    "uprobe.multi",
+    "uprobe.multi.s",
+    "uretprobe.multi",
+    "uretprobe.multi.s",
     "perf_event",
     "xdp",
     "socket_filter",

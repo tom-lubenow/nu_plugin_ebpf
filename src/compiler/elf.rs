@@ -822,6 +822,10 @@ pub enum EbpfProgramType {
     Uprobe,
     /// User-space return probe (uretprobe)
     Uretprobe,
+    /// User-space multi-probe (`uprobe.multi`)
+    UprobeMulti,
+    /// User-space multi-return probe (`uretprobe.multi`)
+    UretprobeMulti,
     /// Linux security module hook program
     Lsm,
     /// Extension program replacing a global function in another loaded BPF program (`freplace`)
@@ -934,6 +938,8 @@ impl EbpfProgramType {
             EbpfProgramType::RawTracepointWritable => &RAW_TRACEPOINT_WRITABLE_INFO,
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
+            EbpfProgramType::UprobeMulti => &UPROBE_MULTI_INFO,
+            EbpfProgramType::UretprobeMulti => &URETPROBE_MULTI_INFO,
             EbpfProgramType::Lsm => &LSM_INFO,
             EbpfProgramType::Extension => &EXTENSION_INFO,
             EbpfProgramType::Syscall => &SYSCALL_INFO,
@@ -1100,6 +1106,8 @@ pub enum ProgramAttachKind {
     RawTracepointWritable,
     Uprobe,
     Uretprobe,
+    UprobeMulti,
+    UretprobeMulti,
     Lsm,
     Extension,
     Syscall,
@@ -1139,6 +1147,7 @@ pub enum ProgramTargetKind {
     Tracepoint,
     RawTracepoint,
     UserFunction,
+    UserFunctionPattern,
     NetworkInterface,
     PerfEventTarget,
     SocketFilterTarget,
@@ -1160,7 +1169,7 @@ pub enum ProgramTargetKind {
 
 impl ProgramTargetKind {
     pub fn is_userspace_function(self) -> bool {
-        matches!(self, Self::UserFunction)
+        matches!(self, Self::UserFunction | Self::UserFunctionPattern)
     }
 
     pub fn is_tracepoint(self) -> bool {

@@ -10,6 +10,8 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
             | ProgramAttachKind::Ksyscall
             | ProgramAttachKind::KretSyscall
             | ProgramAttachKind::FmodRet
+            | ProgramAttachKind::UprobeMulti
+            | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector
@@ -817,6 +819,8 @@ impl EbpfState {
             | ProgramAttachKind::Ksyscall
             | ProgramAttachKind::KretSyscall
             | ProgramAttachKind::FmodRet
+            | ProgramAttachKind::UprobeMulti
+            | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector

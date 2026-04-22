@@ -6659,6 +6659,46 @@ fn test_compile_sleepable_uprobe_ctx_pid_program() {
 }
 
 #[test]
+fn test_compile_uprobe_multi_full_spec_ctx_pid_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("pid")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::UprobeMulti, "uprobe.multi:/bin/true:main*");
+    assert_eq!(probe_ctx.target(), "/bin/true:main*");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("uprobe.multi ctx.pid should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("uprobe.multi ctx.pid should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_sleepable_uprobe_multi_ctx_pid_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::UprobeMulti,
+        "uprobe.multi.s:/bin/true:main*",
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        "sleepable uprobe.multi ctx.pid count",
+    );
+}
+
+#[test]
 fn test_compile_sleepable_uretprobe_ctx_retval_program() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("retval")],
@@ -6681,6 +6721,37 @@ fn test_compile_sleepable_uretprobe_ctx_retval_program() {
         Some(&lowering.type_hints),
     )
     .expect("sleepable uretprobe ctx.retval should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_uretprobe_multi_full_spec_ctx_retval_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval")],
+    });
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::UretprobeMulti,
+        "uretprobe.multi:/bin/true:main*",
+    );
+    assert_eq!(probe_ctx.target(), "/bin/true:main*");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("uretprobe.multi ctx.retval should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("uretprobe.multi ctx.retval should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }

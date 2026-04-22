@@ -50,6 +50,50 @@ fn test_kprobe_multi_section_names() {
 }
 
 #[test]
+fn test_uprobe_multi_section_names() {
+    let entry = EbpfProgram::from_bytecode(
+        EbpfProgramType::UprobeMulti,
+        "/bin/bash:read*",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        entry
+            .section_name()
+            .expect("uprobe.multi section name should build"),
+        "uprobe.multi//bin/bash:read*"
+    );
+
+    let exit = EbpfProgram::from_bytecode(
+        EbpfProgramType::UretprobeMulti,
+        "/bin/bash:read*",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        exit.section_name()
+            .expect("uretprobe.multi section name should build"),
+        "uretprobe.multi//bin/bash:read*"
+    );
+
+    let spec = ProgramSpec::parse("uprobe.multi.s:/bin/bash:read*")
+        .expect("sleepable uprobe.multi spec should parse");
+    let sleepable = EbpfProgram::from_bytecode(
+        EbpfProgramType::UprobeMulti,
+        "/bin/bash:read*",
+        "test",
+        vec![],
+    )
+    .with_program_spec(spec);
+    assert_eq!(
+        sleepable
+            .section_name()
+            .expect("sleepable uprobe.multi section name should build"),
+        "uprobe.multi.s//bin/bash:read*"
+    );
+}
+
+#[test]
 fn test_kernel_syscall_probe_section_names() {
     let entry = EbpfProgram::from_bytecode(EbpfProgramType::Ksyscall, "nanosleep", "test", vec![]);
     assert_eq!(
@@ -389,6 +433,29 @@ fn test_program_type_metadata_for_kprobe_multi() {
 }
 
 #[test]
+fn test_program_type_metadata_for_uprobe_multi() {
+    let entry = EbpfProgramType::UprobeMulti.info();
+    assert_eq!(entry.canonical_prefix, "uprobe.multi");
+    assert_eq!(entry.kernel_prog_type, "BPF_PROG_TYPE_KPROBE");
+    assert_eq!(entry.attach_kind, ProgramAttachKind::UprobeMulti);
+    assert_eq!(entry.target_kind, ProgramTargetKind::UserFunctionPattern);
+    assert_eq!(entry.kernel_target_validation, None);
+    assert_eq!(entry.arg_access, ProgramValueAccess::PtRegs);
+    assert_eq!(entry.retval_access, ProgramValueAccess::None);
+    assert!(EbpfProgramType::UprobeMulti.is_userspace());
+
+    let ret = EbpfProgramType::UretprobeMulti.info();
+    assert_eq!(ret.canonical_prefix, "uretprobe.multi");
+    assert_eq!(ret.kernel_prog_type, "BPF_PROG_TYPE_KPROBE");
+    assert_eq!(ret.attach_kind, ProgramAttachKind::UretprobeMulti);
+    assert_eq!(ret.target_kind, ProgramTargetKind::UserFunctionPattern);
+    assert_eq!(ret.kernel_target_validation, None);
+    assert_eq!(ret.arg_access, ProgramValueAccess::None);
+    assert_eq!(ret.retval_access, ProgramValueAccess::PtRegs);
+    assert!(EbpfProgramType::UretprobeMulti.is_userspace());
+}
+
+#[test]
 fn test_program_type_metadata_for_kernel_syscall_probes() {
     let entry = EbpfProgramType::Ksyscall.info();
     assert_eq!(entry.canonical_prefix, "ksyscall");
@@ -416,6 +483,7 @@ fn test_program_type_metadata_for_kernel_syscall_probes() {
 #[test]
 fn test_program_target_kind_predicates_follow_model() {
     assert!(ProgramTargetKind::UserFunction.is_userspace_function());
+    assert!(ProgramTargetKind::UserFunctionPattern.is_userspace_function());
     assert!(!ProgramTargetKind::KernelFunction.is_userspace_function());
     assert!(!ProgramTargetKind::KernelFunctionPattern.is_userspace_function());
     assert!(!ProgramTargetKind::KernelSyscall.is_userspace_function());
@@ -1582,7 +1650,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
         Some(
-            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
                 .to_string()
         )
     );
@@ -1615,35 +1683,35 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStackId),
         Some(
-            "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+            "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStack),
         Some(
-            "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+            "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncIp),
         Some(
-            "helper 'bpf_get_func_ip' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+            "helper 'bpf_get_func_ip' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetAttachCookie),
         Some(
-            "helper 'bpf_get_attach_cookie' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+            "helper 'bpf_get_attach_cookie' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::ProbeRead),
         Some(
-            "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+            "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
@@ -1845,35 +1913,35 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
         Some(
-            "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+            "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageDelete),
         Some(
-            "helper 'bpf_task_storage_delete' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+            "helper 'bpf_task_storage_delete' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCurrentTaskBtf),
         Some(
-            "helper 'bpf_get_current_task_btf' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+            "helper 'bpf_get_current_task_btf' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCurrentTask),
         Some(
-            "helper 'bpf_get_current_task' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+            "helper 'bpf_get_current_task' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskPtRegs),
         Some(
-            "helper 'bpf_task_pt_regs' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+            "helper 'bpf_task_pt_regs' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
@@ -2450,6 +2518,8 @@ fn test_tracing_helper_ctx_field_surface_follows_program_model() {
         (EbpfProgramType::KretSyscall, "nanosleep"),
         (EbpfProgramType::Uprobe, "/bin/true:main"),
         (EbpfProgramType::Uretprobe, "/bin/true:main"),
+        (EbpfProgramType::UprobeMulti, "/bin/true:main*"),
+        (EbpfProgramType::UretprobeMulti, "/bin/true:main*"),
         (
             EbpfProgramType::PerfEvent,
             "software:cpu-clock:period=100000",

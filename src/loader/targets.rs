@@ -265,7 +265,10 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 Ok(())
             }
         }
-        ProgramSpec::Uprobe { .. } | ProgramSpec::Uretprobe { .. } => Ok(()),
+        ProgramSpec::Uprobe { .. }
+        | ProgramSpec::Uretprobe { .. }
+        | ProgramSpec::UprobeMulti { .. }
+        | ProgramSpec::UretprobeMulti { .. } => Ok(()),
         ProgramSpec::Xdp { target } => validate_network_interface_target(&target.interface),
         ProgramSpec::PerfEvent { target } => {
             if let Some(cpu) = target.cpu {
@@ -375,6 +378,10 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uprobe.s:/path/to/binary:function_name`
 /// - `uretprobe:/path/to/binary:function_name`
 /// - `uretprobe.s:/path/to/binary:function_name`
+/// - `uprobe.multi:/path/to/binary:function_pattern`
+/// - `uprobe.multi.s:/path/to/binary:function_pattern`
+/// - `uretprobe.multi:/path/to/binary:function_pattern`
+/// - `uretprobe.multi.s:/path/to/binary:function_pattern`
 /// - `xdp:interface`, `xdp:interface:frags`, or `xdp:interface:drv:frags`
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `socket_filter:udp4:127.0.0.1:31337`
