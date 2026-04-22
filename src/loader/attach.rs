@@ -10,6 +10,7 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
             | ProgramAttachKind::FlowDissector
             | ProgramAttachKind::Netfilter
             | ProgramAttachKind::Lwt
+            | ProgramAttachKind::Extension
     )
 }
 
@@ -809,7 +810,8 @@ impl EbpfState {
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector
             | ProgramAttachKind::Netfilter
-            | ProgramAttachKind::Lwt => {
+            | ProgramAttachKind::Lwt
+            | ProgramAttachKind::Extension => {
                 return Err(unsupported_live_attach_error(program.prog_type));
             }
             ProgramAttachKind::StructOps => {

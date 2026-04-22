@@ -191,6 +191,18 @@ fn test_parse_probe_spec_raw_tracepoint_writable_alias() {
 }
 
 #[test]
+fn test_parse_program_spec_extension_is_structured() {
+    let (prog_type, target) = parse_probe_spec("extension:replace_me").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Extension);
+    assert_eq!(target, "replace_me");
+
+    let spec = parse_program_spec("freplace:replace_me").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::Extension);
+    assert_eq!(spec.target_string(), "replace_me");
+    assert_eq!(spec.section_name(), "freplace/replace_me");
+}
+
+#[test]
 fn test_parse_probe_spec_xdp() {
     let (prog_type, target) = parse_probe_spec("xdp:lo").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Xdp);
@@ -1130,6 +1142,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         (EbpfProgramType::LwtOut, "demo-route", "lwt_out"),
         (EbpfProgramType::LwtXmit, "demo-route", "lwt_xmit"),
         (EbpfProgramType::LwtSeg6Local, "demo-route", "lwt_seg6local"),
+        (EbpfProgramType::Extension, "replace_me", "freplace"),
     ] {
         let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();
         let err = state

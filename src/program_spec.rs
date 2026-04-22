@@ -347,6 +347,32 @@ impl TcActionTarget {
     }
 }
 
+/// Parsed freplace/extension target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionTarget {
+    /// Global function name in the target BPF program to replace.
+    pub function: String,
+}
+
+impl ExtensionTarget {
+    /// Parse an extension target function name.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "freplace target function cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            function: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.function.clone()
+    }
+}
+
 /// Parsed cgroup_skb target information.
 #[derive(Debug, Clone)]
 pub struct CgroupSkbTarget {
@@ -1572,6 +1598,9 @@ pub enum ProgramSpec {
         hook: String,
         sleepable: bool,
     },
+    Extension {
+        target: ExtensionTarget,
+    },
     Tracepoint {
         category: String,
         name: String,
@@ -1871,6 +1900,9 @@ impl ProgramSpec {
                 hook: target.to_string(),
                 sleepable,
             }),
+            EbpfProgramType::Extension => Ok(ProgramSpec::Extension {
+                target: ExtensionTarget::parse(target)?,
+            }),
             EbpfProgramType::Tracepoint => {
                 let (category, name) = target.split_once('/').ok_or_else(|| {
                     ProgramSpecParseError::new(format!(
@@ -1980,6 +2012,7 @@ impl ProgramSpec {
             ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
             ProgramSpec::TpBtf { .. } => EbpfProgramType::TpBtf,
             ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
+            ProgramSpec::Extension { .. } => EbpfProgramType::Extension,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
             ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
             ProgramSpec::RawTracepointWritable { .. } => EbpfProgramType::RawTracepointWritable,
@@ -2023,6 +2056,7 @@ impl ProgramSpec {
             | ProgramSpec::Fexit { function, .. } => function.clone(),
             ProgramSpec::TpBtf { name } => name.clone(),
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
+            ProgramSpec::Extension { target } => target.target_string(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
             ProgramSpec::RawTracepointWritable { name } => name.clone(),
@@ -2475,6 +2509,8 @@ mod tests {
             .expect("netfilter spec should parse");
         let lwt_xmit =
             ProgramSpec::parse("lwt_xmit:demo-route").expect("lwt_xmit spec should parse");
+        let extension =
+            ProgramSpec::parse("freplace:replace_me").expect("freplace spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
@@ -2562,6 +2598,9 @@ mod tests {
             Some("demo-route")
         );
         assert_eq!(lwt_xmit.section_name(), "lwt_xmit");
+        assert_eq!(extension.program_type(), EbpfProgramType::Extension);
+        assert_eq!(extension.target_string(), "replace_me");
+        assert_eq!(extension.section_name(), "freplace/replace_me");
         assert_eq!(
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),
@@ -2631,6 +2670,15 @@ mod tests {
 
         let err = TcActionTarget::parse("").expect_err("empty tc_action label should be rejected");
         assert_eq!(err.to_string(), "tc_action target label cannot be empty");
+    }
+
+    #[test]
+    fn test_extension_target_requires_non_empty_function() {
+        let target = ExtensionTarget::parse("replace_me").expect("freplace target should parse");
+        assert_eq!(target.target_string(), "replace_me");
+
+        let err = ExtensionTarget::parse("").expect_err("empty freplace target should be rejected");
+        assert_eq!(err.to_string(), "freplace target function cannot be empty");
     }
 
     #[test]

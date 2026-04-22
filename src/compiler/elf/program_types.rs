@@ -19,6 +19,7 @@ pub enum ProgramContextFamily {
     CgroupDevice,
     LircMode2,
     StructOps,
+    Extension,
 }
 
 impl ProgramContextFamily {
@@ -54,6 +55,7 @@ pub(super) const RAW_TRACEPOINT_WRITABLE_SPEC_ALIASES: &[&str] = &["raw_tracepoi
 pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
+pub(super) const EXTENSION_SPEC_ALIASES: &[&str] = &["freplace", "extension", "ext"];
 pub(super) const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 pub(super) const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 pub(super) const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
@@ -266,6 +268,23 @@ pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
     kernel_target_validation: Some(KernelTargetValidationKind::LsmHook),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const EXTENSION_CAPABILITIES: &[ProgramCapability] = &[];
+
+pub(super) const EXTENSION_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Extension,
+    canonical_prefix: "freplace",
+    spec_aliases: EXTENSION_SPEC_ALIASES,
+    section_prefix: "freplace",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Extension,
+    attach_kind: ProgramAttachKind::Extension,
+    target_kind: ProgramTargetKind::ExtensionFunction,
+    kernel_target_validation: None,
+    supported_capabilities: EXTENSION_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
 
@@ -664,6 +683,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::Uprobe,
     EbpfProgramType::Uretprobe,
     EbpfProgramType::Lsm,
+    EbpfProgramType::Extension,
     EbpfProgramType::Xdp,
     EbpfProgramType::PerfEvent,
     EbpfProgramType::SocketFilter,
@@ -701,6 +721,9 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "tp_btf",
     "lsm",
     "lsm.s",
+    "freplace",
+    "extension",
+    "ext",
     "tracepoint",
     "raw_tracepoint",
     "raw_tp",

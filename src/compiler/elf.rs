@@ -814,6 +814,8 @@ pub enum EbpfProgramType {
     Uretprobe,
     /// Linux security module hook program
     Lsm,
+    /// Extension program replacing a global function in another loaded BPF program (`freplace`)
+    Extension,
     /// XDP program attached to a network interface
     Xdp,
     /// Perf event program attached to software or hardware perf counters
@@ -913,6 +915,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
             EbpfProgramType::Lsm => &LSM_INFO,
+            EbpfProgramType::Extension => &EXTENSION_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
             EbpfProgramType::SocketFilter => &SOCKET_FILTER_INFO,
@@ -1067,6 +1070,7 @@ pub enum ProgramAttachKind {
     Uprobe,
     Uretprobe,
     Lsm,
+    Extension,
     Xdp,
     PerfEvent,
     SocketFilter,
@@ -1096,6 +1100,7 @@ pub enum ProgramTargetKind {
     KernelFunction,
     BtfTracepoint,
     LsmHook,
+    ExtensionFunction,
     Tracepoint,
     RawTracepoint,
     UserFunction,

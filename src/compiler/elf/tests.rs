@@ -214,6 +214,16 @@ fn test_struct_ops_section_name() {
 }
 
 #[test]
+fn test_extension_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Extension, "replace_me", "test", vec![]);
+    assert_eq!(
+        prog.section_name()
+            .expect("freplace section name should build"),
+        "freplace/replace_me"
+    );
+}
+
+#[test]
 fn test_program_type_metadata_for_fexit() {
     let info = EbpfProgramType::Fexit.info();
     assert_eq!(info.canonical_prefix, "fexit");
@@ -752,6 +762,20 @@ fn test_program_type_metadata_for_lwt() {
                 .contains(&ProgramCapability::Counters)
         );
     }
+}
+
+#[test]
+fn test_program_type_metadata_for_extension() {
+    let info = EbpfProgramType::Extension.info();
+    assert_eq!(info.canonical_prefix, "freplace");
+    assert_eq!(info.section_prefix, "freplace");
+    assert_eq!(info.attach_kind, ProgramAttachKind::Extension);
+    assert_eq!(info.target_kind, ProgramTargetKind::ExtensionFunction);
+    assert_eq!(info.context_family, ProgramContextFamily::Extension);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(!EbpfProgramType::Extension.supports_capability(ProgramCapability::Counters));
+    assert!(!EbpfProgramType::Extension.supports_capability(ProgramCapability::HelperCalls));
 }
 
 #[test]
@@ -2368,6 +2392,14 @@ fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("struct_ops"),
         Some(EbpfProgramType::StructOps)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("freplace"),
+        Some(EbpfProgramType::Extension)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("extension"),
+        Some(EbpfProgramType::Extension)
     );
     assert_eq!(
         EbpfProgramType::from_spec_prefix("sock_ops"),

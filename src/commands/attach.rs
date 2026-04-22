@@ -60,6 +60,7 @@ Supported attach types:
   - raw_tracepoint.w / raw_tp.w (dry-run compile support; live attach is not implemented yet)
   - uprobe, uretprobe
   - lsm
+  - freplace / extension (dry-run compile support; live attach is not implemented yet)
   - perf_event
   - socket_filter
   - xdp, tc
@@ -262,6 +263,11 @@ Context parameter syntax (recommended):
     now. It emits an `action` section, uses the label only as metadata,
     exposes the TC-style read-only skb context surface, and rejects live
     attach until the loader has an explicit tc-action attach path.
+    `freplace:FUNCTION` (aliases `extension:FUNCTION` and `ext:FUNCTION`)
+    emits a `freplace/FUNCTION` extension section for replacing a global
+    function in another loaded BPF program. It is compile/dry-run only;
+    target program FD/BTF compatibility and live attach are not modeled yet,
+    so no target-function argument context is exposed.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event
@@ -899,7 +905,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'raw_tracepoint.w:sys_enter', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -945,6 +951,9 @@ Requirements:
             "raw_tracepoint.w",
             "raw_tp",
             "raw_tp.w",
+            "freplace",
+            "extension",
+            "ext",
             "uprobe",
             "uretprobe",
             "userspace",
@@ -1132,6 +1141,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'lwt_xmit:demo-route' {|ctx| $ctx.hash | count; 'reroute' }",
                 description: "Compile an LWT transmit program that counts skb hashes and requests reroute",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'freplace:replace_me' {|| 0 }",
+                description: "Compile a freplace extension section without live-loading it",
                 result: None,
             },
             Example {

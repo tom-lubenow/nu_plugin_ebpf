@@ -163,6 +163,13 @@ section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,
 sleepable forms preserve the `.s` section prefix in dry-run ELF output
 and loader attach.
 
+`freplace:FUNCTION` (aliases `extension:FUNCTION` and `ext:FUNCTION`)
+emits a `freplace/FUNCTION` extension section for replacing a global
+function in another loaded BPF program. This is compile/dry-run only for
+now: live loading requires a target program FD and BTF-compatible target
+function at load time, so the current model intentionally exposes no
+target-function argument context.
+
 `xdp`, `tc_action`, `tc`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
 packet pointers `ctx.data` / `ctx.data_end`. `sk_msg`, `sk_skb`, and

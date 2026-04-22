@@ -2963,6 +2963,27 @@ fn make_ctx_path_store_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_int_return_program(value: i64) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(value),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data()],
+        ast: vec![None],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_intrinsic_call_return_program(
     decl_id: DeclId,
     positional: Vec<HirLiteral>,
@@ -6525,6 +6546,18 @@ fn test_compile_raw_tracepoint_writable_ctx_arg_program() {
     .expect("writable raw tracepoint ctx.arg0 should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_extension_return_program() {
+    let hir = make_int_return_program(0);
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Extension,
+        "replace_me",
+        &HashMap::new(),
+        "freplace return 0",
+    );
 }
 
 #[test]
