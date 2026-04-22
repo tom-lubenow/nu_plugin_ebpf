@@ -1,6 +1,25 @@
 use super::*;
 use aya::programs::perf_event::perf_hw_id;
 
+fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
+    matches!(
+        kind,
+        ProgramAttachKind::RawTracepointWritable
+            | ProgramAttachKind::TcAction
+            | ProgramAttachKind::SkReuseport
+            | ProgramAttachKind::FlowDissector
+            | ProgramAttachKind::Netfilter
+            | ProgramAttachKind::Lwt
+    )
+}
+
+fn unsupported_live_attach_error(prog_type: crate::compiler::EbpfProgramType) -> LoadError {
+    LoadError::Attach(format!(
+        "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
+        prog_type.canonical_prefix()
+    ))
+}
+
 impl EbpfState {
     fn next_probe_id(&self) -> u32 {
         self.next_id.fetch_add(1, Ordering::SeqCst)
@@ -41,19 +60,8 @@ impl EbpfState {
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
         let program = object.primary_program().map_err(LoadError::from)?;
-        if matches!(
-            program.prog_type.attach_kind(),
-            ProgramAttachKind::SkReuseport
-                | ProgramAttachKind::FlowDissector
-                | ProgramAttachKind::Netfilter
-                | ProgramAttachKind::Lwt
-                | ProgramAttachKind::RawTracepointWritable
-                | ProgramAttachKind::TcAction
-        ) {
-            return Err(LoadError::Attach(format!(
-                "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
-                program.prog_type.canonical_prefix()
-            )));
+        if loader_compile_only_attach_kind(program.prog_type.attach_kind()) {
+            return Err(unsupported_live_attach_error(program.prog_type));
         }
 
         // Generate ELF
@@ -198,12 +206,6 @@ impl EbpfState {
                 raw_tp.attach(&program.target).map_err(|e| {
                     LoadError::Attach(format!("Failed to attach raw_tracepoint: {e}"))
                 })?;
-            }
-            ProgramAttachKind::RawTracepointWritable => {
-                return Err(LoadError::Attach(
-                    "live attach for raw_tracepoint.w programs is not supported by this loader yet; use --dry-run to compile"
-                        .to_string(),
-                ));
             }
             ProgramAttachKind::Uprobe | ProgramAttachKind::Uretprobe => {
                 let target = spec.uprobe_target().unwrap_or_else(|| {
@@ -652,12 +654,6 @@ impl EbpfState {
                     .attach(&target.interface, target.attach_type)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
             }
-            ProgramAttachKind::TcAction => {
-                return Err(LoadError::Attach(
-                    "live attach for tc_action programs is not supported by this loader yet; use --dry-run to compile"
-                        .to_string(),
-                ));
-            }
             ProgramAttachKind::CgroupSkb => {
                 let target = spec.cgroup_skb_target().unwrap_or_else(|| {
                     unreachable!("cgroup_skb attach kind must use cgroup_skb program spec")
@@ -808,29 +804,13 @@ impl EbpfState {
                 lirc.attach(&device)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach lirc_mode2: {e}")))?;
             }
-            ProgramAttachKind::SkReuseport => {
-                return Err(LoadError::Attach(
-                    "live attach for sk_reuseport programs is not supported by this loader yet; use --dry-run to compile"
-                        .to_string(),
-                ));
-            }
-            ProgramAttachKind::FlowDissector => {
-                return Err(LoadError::Attach(
-                    "live attach for flow_dissector programs is not supported by this loader yet; use --dry-run to compile"
-                        .to_string(),
-                ));
-            }
-            ProgramAttachKind::Netfilter => {
-                return Err(LoadError::Attach(
-                    "live attach for netfilter programs is not supported by this loader yet; use --dry-run to compile"
-                        .to_string(),
-                ));
-            }
-            ProgramAttachKind::Lwt => {
-                return Err(LoadError::Attach(
-                    "live attach for lwt programs is not supported by this loader yet; use --dry-run to compile"
-                        .to_string(),
-                ));
+            ProgramAttachKind::RawTracepointWritable
+            | ProgramAttachKind::TcAction
+            | ProgramAttachKind::SkReuseport
+            | ProgramAttachKind::FlowDissector
+            | ProgramAttachKind::Netfilter
+            | ProgramAttachKind::Lwt => {
+                return Err(unsupported_live_attach_error(program.prog_type));
             }
             ProgramAttachKind::StructOps => {
                 return Err(LoadError::Load(

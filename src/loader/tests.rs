@@ -2,8 +2,7 @@ use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
     CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgram, EbpfProgramType, MapRef,
-    MirType,
-    ir_to_mir::AnnotatedValueSemantics,
+    MirType, ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1130,11 +1129,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         (EbpfProgramType::LwtIn, "demo-route", "lwt_in"),
         (EbpfProgramType::LwtOut, "demo-route", "lwt_out"),
         (EbpfProgramType::LwtXmit, "demo-route", "lwt_xmit"),
-        (
-            EbpfProgramType::LwtSeg6Local,
-            "demo-route",
-            "lwt_seg6local",
-        ),
+        (EbpfProgramType::LwtSeg6Local, "demo-route", "lwt_seg6local"),
     ] {
         let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();
         let err = state
