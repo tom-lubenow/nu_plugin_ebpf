@@ -5597,6 +5597,105 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helper_rejects_small_buffer() {
     );
 }
 
+fn make_skb_get_xfrm_state_verify_call(
+    flags: i64,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let xfrm_state = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbGetXfrmState as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(xfrm_state),
+                MirValue::Const(size),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_accepts_tc_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+    ] {
+        let (func, types) = make_skb_get_xfrm_state_verify_call(0, 16, 16);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected bpf_skb_get_xfrm_state helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_non_tc_program() {
+    let (func, types) = make_skb_get_xfrm_state_verify_call(0, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state to be rejected outside tc");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_xfrm_state' is only valid in tc_action and tc programs"
+        ))
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_requires_zero_flags() {
+    let (func, types) = make_skb_get_xfrm_state_verify_call(1, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state flags to require zero");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_get_xfrm_state' requires arg4 = 0")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_small_buffer() {
+    let (func, types) = make_skb_get_xfrm_state_verify_call(0, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state buffer bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper skb_get_xfrm_state xfrm_state out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_pull_data_invalidates_prior_packet_pointers() {
     let mut func = MirFunction::new();

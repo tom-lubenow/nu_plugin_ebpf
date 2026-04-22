@@ -244,6 +244,8 @@ pub enum BpfHelper {
     MsgPopData = 91,
     /// long bpf_xdp_adjust_tail(xdp_md, delta)
     XdpAdjustTail = 65,
+    /// long bpf_skb_get_xfrm_state(skb, index, xfrm_state, size, flags)
+    SkbGetXfrmState = 66,
     /// u64 bpf_xdp_get_buff_len(xdp_md)
     XdpGetBuffLen = 188,
     /// long bpf_xdp_load_bytes(xdp_md, offset, buf, len)
@@ -444,6 +446,7 @@ impl BpfHelper {
             BpfHelper::MsgPushData => "bpf_msg_push_data",
             BpfHelper::MsgPopData => "bpf_msg_pop_data",
             BpfHelper::XdpAdjustTail => "bpf_xdp_adjust_tail",
+            BpfHelper::SkbGetXfrmState => "bpf_skb_get_xfrm_state",
             BpfHelper::XdpGetBuffLen => "bpf_xdp_get_buff_len",
             BpfHelper::XdpLoadBytes => "bpf_xdp_load_bytes",
             BpfHelper::XdpStoreBytes => "bpf_xdp_store_bytes",
@@ -600,6 +603,7 @@ impl BpfHelper {
             "msg_push_data" => Some(Self::MsgPushData),
             "msg_pop_data" => Some(Self::MsgPopData),
             "xdp_adjust_tail" => Some(Self::XdpAdjustTail),
+            "skb_get_xfrm_state" => Some(Self::SkbGetXfrmState),
             "xdp_get_buff_len" => Some(Self::XdpGetBuffLen),
             "xdp_load_bytes" => Some(Self::XdpLoadBytes),
             "xdp_store_bytes" => Some(Self::XdpStoreBytes),

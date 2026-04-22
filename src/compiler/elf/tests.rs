@@ -2214,6 +2214,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbGetXfrmState),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbGetTunnelKey),
         None
     );
@@ -2337,6 +2341,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbChangeType),
         Some("helper 'bpf_skb_change_type' is only valid in tc_action and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbGetXfrmState),
+        Some(
+            "helper 'bpf_skb_get_xfrm_state' is only valid in tc_action and tc programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbGetTunnelKey),
@@ -2540,6 +2551,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::RedirectNeigh,
         BpfHelper::SkbChangeProto,
         BpfHelper::SkbChangeType,
+        BpfHelper::SkbGetXfrmState,
         BpfHelper::SkbGetTunnelKey,
         BpfHelper::SkbSetTunnelKey,
         BpfHelper::SkbGetTunnelOpt,

@@ -139,6 +139,22 @@ impl BpfHelper {
                 size_from_arg: Some(2),
             },
         ];
+        const SKB_XFRM_STATE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper skb_get_xfrm_state skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper skb_get_xfrm_state xfrm_state",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1351,6 +1367,11 @@ impl BpfHelper {
             | BpfHelper::SkbSetTunnelOpt => HelperSemantics {
                 ptr_arg_rules: SKB_TUNNEL_RULES,
                 positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbGetXfrmState => HelperSemantics {
+                ptr_arg_rules: SKB_XFRM_STATE_RULES,
+                positive_size_args: &[3],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::L3CsumReplace

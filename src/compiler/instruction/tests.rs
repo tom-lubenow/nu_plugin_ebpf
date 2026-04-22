@@ -251,6 +251,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MsgPopData)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_get_xfrm_state"),
+        Some(BpfHelper::SkbGetXfrmState)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_xdp_get_buff_len"),
         Some(BpfHelper::XdpGetBuffLen)
     ));
@@ -1130,6 +1134,17 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    let sig = HelperSignature::for_id(BpfHelper::SkbGetXfrmState as u32)
+        .expect("expected bpf_skb_get_xfrm_state helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     for helper in [BpfHelper::SkbGetTunnelKey, BpfHelper::SkbSetTunnelKey] {
         let sig =
             HelperSignature::for_id(helper as u32).expect("expected skb tunnel key signature");
@@ -1288,6 +1303,7 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::SkbSetTunnelKey,
         BpfHelper::SkbGetTunnelOpt,
         BpfHelper::SkbSetTunnelOpt,
+        BpfHelper::SkbGetXfrmState,
     ] {
         assert!(
             !helper.invalidates_packet_pointers(),
@@ -1323,6 +1339,10 @@ fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(
         BpfHelper::SkbSetTunnelKey.zero_scalar_arg_requirement(),
         None
+    );
+    assert_eq!(
+        BpfHelper::SkbGetXfrmState.zero_scalar_arg_requirement(),
+        Some((4, "helper 'bpf_skb_get_xfrm_state' requires arg4 = 0"))
     );
     assert_eq!(
         BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement_when_arg_zero(),
@@ -1393,6 +1413,33 @@ fn test_skb_tunnel_helpers_contract() {
         assert_eq!(buffer.fixed_size, None);
         assert_eq!(buffer.size_from_arg, Some(2));
     }
+}
+
+#[test]
+fn test_skb_get_xfrm_state_helper_contract() {
+    let semantics = BpfHelper::SkbGetXfrmState.semantics();
+    assert_eq!(semantics.positive_size_args, &[3]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let skb = semantics.ptr_arg_rules[0];
+    assert_eq!(skb.arg_idx, 0);
+    assert_eq!(skb.op, "helper skb_get_xfrm_state skb");
+    assert!(skb.allowed.allow_kernel);
+    assert!(!skb.allowed.allow_stack);
+    assert!(!skb.allowed.allow_map);
+    assert!(!skb.allowed.allow_user);
+    assert_eq!(skb.fixed_size, None);
+    assert_eq!(skb.size_from_arg, None);
+
+    let xfrm_state = semantics.ptr_arg_rules[1];
+    assert_eq!(xfrm_state.arg_idx, 2);
+    assert_eq!(xfrm_state.op, "helper skb_get_xfrm_state xfrm_state");
+    assert!(xfrm_state.allowed.allow_stack);
+    assert!(xfrm_state.allowed.allow_map);
+    assert!(!xfrm_state.allowed.allow_kernel);
+    assert!(!xfrm_state.allowed.allow_user);
+    assert_eq!(xfrm_state.fixed_size, None);
+    assert_eq!(xfrm_state.size_from_arg, Some(3));
 }
 
 #[test]

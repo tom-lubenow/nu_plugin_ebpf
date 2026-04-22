@@ -296,7 +296,11 @@ the skb tunnel metadata helpers:
 `helper-call "bpf_skb_set_tunnel_opt" $ctx OPT_PTR SIZE`. `KEY_PTR` and
 `OPT_PTR` must be stack/map-backed buffers whose accessible size covers
 `SIZE`; detailed tunnel-key struct sizes and flag masks remain
-kernel-enforced.
+kernel-enforced. `tc_action` and TC also model
+`helper-call "bpf_skb_get_xfrm_state" $ctx INDEX XFRM_STATE_PTR SIZE 0`;
+`XFRM_STATE_PTR` must be a stack/map-backed output buffer whose
+accessible size covers `SIZE`, and the final reserved flags argument
+must be zero.
 `tc_action` and TC egress expose skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields; LWT programs expose `ctx.cgroup_classid` and

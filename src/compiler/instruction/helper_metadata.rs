@@ -102,6 +102,7 @@ impl BpfHelper {
             90 => Some(Self::MsgPushData),
             91 => Some(Self::MsgPopData),
             65 => Some(Self::XdpAdjustTail),
+            66 => Some(Self::SkbGetXfrmState),
             188 => Some(Self::XdpGetBuffLen),
             189 => Some(Self::XdpLoadBytes),
             190 => Some(Self::XdpStoreBytes),
@@ -373,6 +374,12 @@ impl BpfHelper {
             BpfHelper::XdpLoadBytes | BpfHelper::XdpStoreBytes => HelperSignature {
                 min_args: 4,
                 max_args: 4,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SkbGetXfrmState => HelperSignature {
+                min_args: 5,
+                max_args: 5,
                 arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -776,6 +783,9 @@ impl BpfHelper {
             }
             BpfHelper::RedirectNeigh => Some((3, "helper 'bpf_redirect_neigh' requires arg3 = 0")),
             BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
+            BpfHelper::SkbGetXfrmState => {
+                Some((4, "helper 'bpf_skb_get_xfrm_state' requires arg4 = 0"))
+            }
             BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),
             BpfHelper::ReserveHdrOpt => Some((2, "helper 'bpf_reserve_hdr_opt' requires arg2 = 0")),
             _ => None,

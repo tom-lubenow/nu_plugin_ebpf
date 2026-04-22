@@ -705,6 +705,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkbChangeProto
         | BpfHelper::SkbChangeType
         | BpfHelper::SkbSetTstamp
+        | BpfHelper::SkbGetXfrmState
         | BpfHelper::SkbCgroupId
         | BpfHelper::SkbAncestorCgroupId => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Tc,

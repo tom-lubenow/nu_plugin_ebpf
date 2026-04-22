@@ -1484,6 +1484,93 @@ fn test_type_error_skb_tunnel_helper_rejects_small_buffer() {
     );
 }
 
+fn make_skb_get_xfrm_state_call(flags: i64, size: i64, buffer_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let xfrm_state = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbGetXfrmState as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(xfrm_state),
+            MirValue::Const(size),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_skb_get_xfrm_state_helper_in_tc_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+    ] {
+        let (func, dst) = make_skb_get_xfrm_state_call(0, 16, 16);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected bpf_skb_get_xfrm_state helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_skb_get_xfrm_state_helper_rejects_non_tc_program() {
+    let (func, _) = make_skb_get_xfrm_state_call(0, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_get_xfrm_state to be rejected outside tc");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_xfrm_state' is only valid in tc_action and tc programs"
+        ))
+    );
+}
+
+#[test]
+fn test_type_error_skb_get_xfrm_state_helper_requires_zero_flags() {
+    let (func, _) = make_skb_get_xfrm_state_call(1, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_get_xfrm_state flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_get_xfrm_state' requires arg4 = 0")
+    }));
+}
+
+#[test]
+fn test_type_error_skb_get_xfrm_state_helper_rejects_small_buffer() {
+    let (func, _) = make_skb_get_xfrm_state_call(0, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_get_xfrm_state buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper skb_get_xfrm_state xfrm_state requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [
