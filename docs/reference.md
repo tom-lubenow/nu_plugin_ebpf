@@ -245,10 +245,10 @@ skb relayout/edit helpers, cgroup-array membership, and helper-backed
 skb metadata fields; live attach is intentionally rejected until the
 loader grows an explicit tc-action attach path.
 `tcx:IFACE:ingress|egress` emits `tcx/ingress` or `tcx/egress` sections
-using the same SCHED_CLS skb context family as TC. It is compile/dry-run
-only for now; live attach is rejected until the loader has an explicit
-TCX attach path. Return aliases are `"next"` for `-1`, `"pass"` / `"ok"`
-for `0`, `"drop"` for `2`, and `"redirect"` for `7`.
+using the same SCHED_CLS skb context family as TC and live-attaches
+through a TCX BPF link on kernels that support TCX. Return aliases are
+`"next"` for `-1`, `"pass"` / `"ok"` for `0`, `"drop"` for `2`, and
+`"redirect"` for `7`.
 `netkit:IFACE:primary|peer` emits `netkit/primary` or `netkit/peer`
 sections using the same SCHED_CLS skb context family. It is compile/dry-run
 only for now; live attach is rejected until the loader has an explicit

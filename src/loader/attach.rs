@@ -13,7 +13,6 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
             | ProgramAttachKind::UprobeMulti
             | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::LsmCgroup
-            | ProgramAttachKind::Tcx
             | ProgramAttachKind::Netkit
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
@@ -678,6 +677,24 @@ impl EbpfState {
                     .attach(&target.interface, target.attach_type)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
             }
+            ProgramAttachKind::Tcx => {
+                let target = spec
+                    .tc_target()
+                    .unwrap_or_else(|| unreachable!("tcx attach kind must use tcx program spec"));
+                let classifier: &mut SchedClassifier = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!("Failed to convert to SchedClassifier: {e}"))
+                })?;
+                classifier
+                    .load()
+                    .map_err(|e| LoadError::Load(format!("Failed to load tcx classifier: {e}")))?;
+                classifier
+                    .attach_with_options(
+                        &target.interface,
+                        target.attach_type,
+                        TcAttachOptions::TcxOrder(LinkOrder::default()),
+                    )
+                    .map_err(|e| LoadError::Attach(format!("Failed to attach tcx: {e}")))?;
+            }
             ProgramAttachKind::CgroupSkb => {
                 let target = spec.cgroup_skb_target().unwrap_or_else(|| {
                     unreachable!("cgroup_skb attach kind must use cgroup_skb program spec")
@@ -837,7 +854,6 @@ impl EbpfState {
             | ProgramAttachKind::UprobeMulti
             | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::LsmCgroup
-            | ProgramAttachKind::Tcx
             | ProgramAttachKind::Netkit
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport

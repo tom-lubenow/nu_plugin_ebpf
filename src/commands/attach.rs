@@ -69,8 +69,8 @@ Supported attach types:
   - syscall (dry-run compile support; live attach is not implemented yet)
   - perf_event
   - socket_filter
-  - xdp, tc
-  - tc_action, tcx, netkit (dry-run compile support; live attach is not implemented yet)
+  - xdp, tc, tcx
+  - tc_action, netkit (dry-run compile support; live attach is not implemented yet)
   - cgroup_skb
   - cgroup_device
   - cgroup_sock
@@ -282,9 +282,9 @@ Context parameter syntax (recommended):
     exposes the TC-style skb context plus the modeled TC cls_act packet
     helper surface, and rejects live attach until the loader has an
     explicit tc-action attach path.
-    `tcx:IFACE:ingress|egress` is compile/dry-run only for now. It emits
-    `tcx/ingress` or `tcx/egress`, reuses the TC skb context surface, and
-    rejects live attach until the loader has an explicit TCX attach path.
+    `tcx:IFACE:ingress|egress` emits `tcx/ingress` or `tcx/egress`,
+    reuses the TC skb context surface, and live-attaches through a TCX
+    BPF link on kernels that support TCX.
     `netkit:IFACE:primary|peer` is compile/dry-run only for now. It emits
     `netkit/primary` or `netkit/peer`, reuses the SCHED_CLS skb context
     surface and TCX-style return aliases, and rejects live attach until the

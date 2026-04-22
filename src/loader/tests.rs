@@ -1374,7 +1374,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "raw_tracepoint.w",
         ),
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
-        (EbpfProgramType::Tcx, "lo:ingress", "tcx"),
         (EbpfProgramType::Netkit, "lo:primary", "netkit"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
         (EbpfProgramType::KprobeMulti, "vfs_*", "kprobe.multi"),
