@@ -187,6 +187,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::CsumLevel)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_change_proto"),
+        Some(BpfHelper::SkbChangeProto)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_change_type"),
+        Some(BpfHelper::SkbChangeType)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_csum_diff"),
         Some(BpfHelper::CsumDiff)
     ));
@@ -997,6 +1005,7 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     for helper in [
         BpfHelper::SkbChangeTail,
         BpfHelper::SkbChangeHead,
+        BpfHelper::SkbChangeProto,
         BpfHelper::CloneRedirect,
         BpfHelper::SkbVlanPush,
     ] {
@@ -1029,6 +1038,7 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
         BpfHelper::SetHash,
         BpfHelper::CsumUpdate,
         BpfHelper::CsumLevel,
+        BpfHelper::SkbChangeType,
     ] {
         let sig =
             HelperSignature::for_id(helper as u32).expect("expected two-arg skb helper signature");
@@ -1196,6 +1206,7 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::CloneRedirect,
         BpfHelper::SkbPullData,
         BpfHelper::SkbChangeHead,
+        BpfHelper::SkbChangeProto,
         BpfHelper::SkbVlanPush,
         BpfHelper::SkbVlanPop,
         BpfHelper::XdpAdjustHead,
@@ -1219,6 +1230,7 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::SetHash,
         BpfHelper::CsumLevel,
         BpfHelper::SkbEcnSetCe,
+        BpfHelper::SkbChangeType,
     ] {
         assert!(
             !helper.invalidates_packet_pointers(),
@@ -1238,9 +1250,14 @@ fn test_helpers_with_reserved_zero_flags() {
         BpfHelper::SkbChangeHead.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_skb_change_head' requires arg2 = 0"))
     );
+    assert_eq!(
+        BpfHelper::SkbChangeProto.zero_scalar_arg_requirement(),
+        Some((2, "helper 'bpf_skb_change_proto' requires arg2 = 0"))
+    );
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);
+    assert_eq!(BpfHelper::SkbChangeType.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::CheckMtu.zero_scalar_arg_requirement(), None);
     assert_eq!(
         BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement_when_arg_zero(),

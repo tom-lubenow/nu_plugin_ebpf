@@ -130,6 +130,7 @@ Last updated: 2026-04-22.
   - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser helper surface.
   - Ordinary skb checksum context access now exposes the read-only `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)` form as `ctx.csum_level` on lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser programs.
   - Typed helper skb ECN coverage now includes `bpf_skb_ecn_set_ce` on TC/tc_action/cgroup_skb, with shared skb-context pointer checks and program-surface policy.
+  - Typed helper TC packet-shape coverage now includes `bpf_skb_change_proto` and `bpf_skb_change_type`, including zero reserved flags for `change_proto` and packet-pointer invalidation for protocol changes.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC/LWT helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.
   - Typed helper MTU-check coverage now includes `bpf_check_mtu` on XDP/tc_action/TC, with kernel-context and stack/map-backed `u32 mtu_len` pointer checks plus XDP zero-flags policy.
   - Typed helper time coverage now includes the remaining base no-arg scalar clocks/counters: `bpf_jiffies64`, `bpf_ktime_get_coarse_ns`, and `bpf_ktime_get_tai_ns`.

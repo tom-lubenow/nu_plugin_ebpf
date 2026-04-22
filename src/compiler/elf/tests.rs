@@ -2198,6 +2198,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbChangeProto),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::SkbChangeType),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbEcnSetCe),
         None
     );
@@ -2295,6 +2303,16 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
             "helper 'bpf_skb_ecn_set_ce' is only valid in tc_action, tc, and cgroup_skb programs"
                 .to_string()
         )
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbChangeProto),
+        Some(
+            "helper 'bpf_skb_change_proto' is only valid in tc_action and tc programs".to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbChangeType),
+        Some("helper 'bpf_skb_change_type' is only valid in tc_action and tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),
@@ -2476,6 +2494,8 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::Redirect,
         BpfHelper::RedirectPeer,
         BpfHelper::RedirectNeigh,
+        BpfHelper::SkbChangeProto,
+        BpfHelper::SkbChangeType,
         BpfHelper::SkbSetTstamp,
         BpfHelper::CheckMtu,
         BpfHelper::SkbPullData,

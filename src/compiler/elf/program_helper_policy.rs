@@ -692,6 +692,8 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         },
         BpfHelper::RedirectPeer
         | BpfHelper::RedirectNeigh
+        | BpfHelper::SkbChangeProto
+        | BpfHelper::SkbChangeType
         | BpfHelper::SkbSetTstamp
         | BpfHelper::SkbCgroupId
         | BpfHelper::SkbAncestorCgroupId => HelperProgramSurfaceSpec {

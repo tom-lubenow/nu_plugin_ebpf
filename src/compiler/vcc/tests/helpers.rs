@@ -2604,6 +2604,129 @@ fn test_verify_mir_for_probe_context_skb_ecn_set_ce_rejects_non_tc_cgroup_skb_pr
     )));
 }
 
+fn make_skb_change_proto_vcc_call(flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbChangeProto as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0x86dd),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+fn make_skb_change_type_vcc_call() -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbChangeType as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_proto_and_type_accept_tc_programs() {
+    for (func, types) in [
+        make_skb_change_proto_vcc_call(0),
+        make_skb_change_type_vcc_call(),
+    ] {
+        for probe_ctx in [
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+            ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+        ] {
+            verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .expect("expected skb change helper to verify");
+        }
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_proto_and_type_reject_non_tc_programs() {
+    let proto = make_skb_change_proto_vcc_call(0);
+    let ty = make_skb_change_type_vcc_call();
+    for (func, types, expected) in [
+        (
+            proto.0,
+            proto.1,
+            "helper 'bpf_skb_change_proto' is only valid in tc_action and tc programs",
+        ),
+        (
+            ty.0,
+            ty.1,
+            "helper 'bpf_skb_change_type' is only valid in tc_action and tc programs",
+        ),
+    ] {
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb change helper to be rejected outside tc");
+        assert!(err.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_proto_requires_zero_flags() {
+    let (func, types) = make_skb_change_proto_vcc_call(1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_change_proto flags to require zero");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_change_proto' requires arg2 = 0")
+    }));
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_store_bytes_accepts_in_bounds_source_buffer() {
     let (mut func, entry) = new_mir_function();

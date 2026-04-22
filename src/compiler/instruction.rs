@@ -78,6 +78,10 @@ pub enum BpfHelper {
     L3CsumReplace = 10,
     /// long bpf_l4_csum_replace(skb, offset, from, to, flags)
     L4CsumReplace = 11,
+    /// long bpf_skb_change_proto(skb, proto, flags)
+    SkbChangeProto = 31,
+    /// long bpf_skb_change_type(skb, type)
+    SkbChangeType = 32,
     /// long bpf_skb_under_cgroup(skb, cgroup_array_map, index)
     SkbUnderCgroup = 33,
     /// long bpf_skb_change_tail(skb, len, flags)
@@ -347,6 +351,8 @@ impl BpfHelper {
             BpfHelper::SkbStoreBytes => "bpf_skb_store_bytes",
             BpfHelper::L3CsumReplace => "bpf_l3_csum_replace",
             BpfHelper::L4CsumReplace => "bpf_l4_csum_replace",
+            BpfHelper::SkbChangeProto => "bpf_skb_change_proto",
+            BpfHelper::SkbChangeType => "bpf_skb_change_type",
             BpfHelper::SkbUnderCgroup => "bpf_skb_under_cgroup",
             BpfHelper::SkbChangeTail => "bpf_skb_change_tail",
             BpfHelper::CurrentTaskUnderCgroup => "bpf_current_task_under_cgroup",
@@ -496,6 +502,8 @@ impl BpfHelper {
             "skb_store_bytes" => Some(Self::SkbStoreBytes),
             "l3_csum_replace" => Some(Self::L3CsumReplace),
             "l4_csum_replace" => Some(Self::L4CsumReplace),
+            "skb_change_proto" => Some(Self::SkbChangeProto),
+            "skb_change_type" => Some(Self::SkbChangeType),
             "skb_under_cgroup" => Some(Self::SkbUnderCgroup),
             "skb_change_tail" => Some(Self::SkbChangeTail),
             "current_task_under_cgroup" => Some(Self::CurrentTaskUnderCgroup),
@@ -749,6 +757,7 @@ impl BpfHelper {
                 | Self::CloneRedirect
                 | Self::SkbPullData
                 | Self::SkbChangeHead
+                | Self::SkbChangeProto
                 | Self::SkbVlanPush
                 | Self::SkbVlanPop
                 | Self::XdpAdjustHead

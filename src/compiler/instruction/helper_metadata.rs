@@ -86,6 +86,8 @@ impl BpfHelper {
             27 => Some(Self::GetStackId),
             67 => Some(Self::GetStack),
             28 => Some(Self::CsumDiff),
+            31 => Some(Self::SkbChangeProto),
+            32 => Some(Self::SkbChangeType),
             84 => Some(Self::SkLookupTcp),
             85 => Some(Self::SkLookupUdp),
             86 => Some(Self::SkRelease),
@@ -231,9 +233,17 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::SkbChangeTail | BpfHelper::SkbChangeHead => HelperSignature {
-                min_args: 3,
-                max_args: 3,
+            BpfHelper::SkbChangeTail | BpfHelper::SkbChangeHead | BpfHelper::SkbChangeProto => {
+                HelperSignature {
+                    min_args: 3,
+                    max_args: 3,
+                    arg_kinds: [P, S, S, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
+            BpfHelper::SkbChangeType => HelperSignature {
+                min_args: 2,
+                max_args: 2,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
@@ -738,6 +748,9 @@ impl BpfHelper {
         match self {
             BpfHelper::SkbChangeTail => Some((2, "helper 'bpf_skb_change_tail' requires arg2 = 0")),
             BpfHelper::SkbChangeHead => Some((2, "helper 'bpf_skb_change_head' requires arg2 = 0")),
+            BpfHelper::SkbChangeProto => {
+                Some((2, "helper 'bpf_skb_change_proto' requires arg2 = 0"))
+            }
             BpfHelper::RedirectNeigh => Some((3, "helper 'bpf_redirect_neigh' requires arg3 = 0")),
             BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
             BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),

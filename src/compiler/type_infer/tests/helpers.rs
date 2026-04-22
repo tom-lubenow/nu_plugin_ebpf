@@ -1035,6 +1035,99 @@ fn test_type_error_skb_ecn_set_ce_helper_rejects_non_tc_cgroup_skb_program() {
     )));
 }
 
+fn make_skb_change_proto_call(flags: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbChangeProto as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0x86dd),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+fn make_skb_change_type_call() -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbChangeType as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_skb_change_proto_and_type_helpers_in_tc_programs() {
+    for (func, dst) in [make_skb_change_proto_call(0), make_skb_change_type_call()] {
+        for probe_ctx in [
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+            ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+        ] {
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let types = ti
+                .infer(&func)
+                .expect("expected skb change helper to infer");
+            assert_eq!(types.get(&dst), Some(&MirType::I64));
+        }
+    }
+}
+
+#[test]
+fn test_type_error_skb_change_proto_and_type_helpers_reject_non_tc_programs() {
+    for (func, expected) in [
+        (
+            make_skb_change_proto_call(0).0,
+            "helper 'bpf_skb_change_proto' is only valid in tc_action and tc programs",
+        ),
+        (
+            make_skb_change_type_call().0,
+            "helper 'bpf_skb_change_type' is only valid in tc_action and tc programs",
+        ),
+    ] {
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb change helper to be rejected outside tc");
+        assert!(errs.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_type_error_skb_change_proto_helper_requires_zero_flags() {
+    let (func, _) = make_skb_change_proto_call(1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_change_proto flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_change_proto' requires arg2 = 0")
+    }));
+}
+
 #[test]
 fn test_type_error_skb_set_tstamp_helper_rejects_non_tc_program() {
     let mut func = make_test_function();

@@ -340,7 +340,11 @@ When the timestamp type must also change, `tc_action` and `tc` model
 current kernel UAPI uses `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
 `BPF_SKB_TSTAMP_DELIVERY_MONO`. `tc_action`, TC, and `cgroup_skb` also
 model `helper-call "bpf_skb_ecn_set_ce" $ctx` for setting IPv4/IPv6 ECN
-CE when the packet is ECN-capable. The initial `socket_filter` surface
+CE when the packet is ECN-capable. `tc_action` and TC model
+`helper-call "bpf_skb_change_proto" $ctx PROTO 0` and
+`helper-call "bpf_skb_change_type" $ctx TYPE`; protocol changes can resize
+the skb, so packet pointers must be reloaded and re-guarded afterward.
+The initial `socket_filter` surface
 uses targets like `socket_filter:udp4:127.0.0.1:31337`,
 `socket_filter:udp6:[::1]:31337`, `socket_filter:tcp4:127.0.0.1:31337`,
 and `socket_filter:tcp6:[::1]:31337`, which create and keep open a

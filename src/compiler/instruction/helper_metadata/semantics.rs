@@ -1324,6 +1324,8 @@ impl BpfHelper {
             | BpfHelper::CloneRedirect
             | BpfHelper::SkbPullData
             | BpfHelper::SkbChangeHead
+            | BpfHelper::SkbChangeProto
+            | BpfHelper::SkbChangeType
             | BpfHelper::SkbVlanPush
             | BpfHelper::SkbVlanPop
             | BpfHelper::SkbAdjustRoom
