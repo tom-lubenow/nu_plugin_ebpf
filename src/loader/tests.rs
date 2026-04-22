@@ -1376,8 +1376,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
         (EbpfProgramType::Netkit, "lo:primary", "netkit"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
-        (EbpfProgramType::KprobeMulti, "vfs_*", "kprobe.multi"),
-        (EbpfProgramType::KretprobeMulti, "vfs_*", "kretprobe.multi"),
         (
             EbpfProgramType::UprobeMulti,
             "/bin/bash:read*",

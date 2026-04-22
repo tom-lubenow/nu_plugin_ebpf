@@ -6,8 +6,6 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
     matches!(
         kind,
         ProgramAttachKind::RawTracepointWritable
-            | ProgramAttachKind::KprobeMulti
-            | ProgramAttachKind::KretprobeMulti
             | ProgramAttachKind::FmodRet
             | ProgramAttachKind::UprobeMulti
             | ProgramAttachKind::UretprobeMulti
@@ -46,6 +44,7 @@ const SYSCALL_SYMBOL_PREFIXES: &[&str] = &[
     "__s390x_sys_",
     "__s390_sys_",
 ];
+const MAX_EMULATED_KPROBE_MULTI_ATTACHES: usize = 1024;
 
 fn syscall_probe_candidate_names(syscall: &str) -> Vec<String> {
     let mut candidates = vec![syscall.to_string()];
@@ -108,6 +107,67 @@ fn resolve_syscall_probe_symbols(syscall: &str) -> Result<Vec<String>, LoadError
     Ok(candidates)
 }
 
+fn wildcard_pattern_matches(pattern: &str, name: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let name = name.as_bytes();
+    let (mut p, mut n) = (0, 0);
+    let mut star = None;
+    let mut star_name = 0;
+
+    while n < name.len() {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p] == name[n]) {
+            p += 1;
+            n += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            star = Some(p);
+            p += 1;
+            star_name = n;
+        } else if let Some(star_pos) = star {
+            p = star_pos + 1;
+            star_name += 1;
+            n = star_name;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+
+    p == pattern.len()
+}
+
+fn kprobe_multi_symbols_from_names(pattern: &str, symbols: &HashSet<String>) -> Vec<String> {
+    let mut matches: Vec<String> = symbols
+        .iter()
+        .filter(|symbol| wildcard_pattern_matches(pattern, symbol))
+        .cloned()
+        .collect();
+    matches.sort();
+    matches
+}
+
+fn resolve_kprobe_multi_symbols(pattern: &str) -> Result<Vec<String>, LoadError> {
+    let symbols = read_kernel_symbol_names()?;
+    let matches = kprobe_multi_symbols_from_names(pattern, &symbols);
+
+    if matches.is_empty() {
+        return Err(LoadError::Attach(format!(
+            "Failed to resolve kprobe.multi pattern '{pattern}' in /proc/kallsyms"
+        )));
+    }
+    if matches.len() > MAX_EMULATED_KPROBE_MULTI_ATTACHES {
+        return Err(LoadError::Attach(format!(
+            "kprobe.multi pattern '{pattern}' resolved to {} symbols, above this loader's safety cap of {}; refine the pattern or use --dry-run to compile",
+            matches.len(),
+            MAX_EMULATED_KPROBE_MULTI_ATTACHES
+        )));
+    }
+
+    Ok(matches)
+}
+
 fn aya_load_compatible_object(object: &EbpfObject) -> EbpfObject {
     let mut object = object.clone();
 
@@ -123,6 +183,13 @@ fn aya_load_compatible_object(object: &EbpfObject) -> EbpfObject {
                 program.section_name_override = Some("kprobe".to_string());
             }
             crate::compiler::EbpfProgramType::KretSyscall => {
+                program.section_name_override = Some("kretprobe".to_string());
+            }
+            crate::compiler::EbpfProgramType::KprobeMulti => {
+                // Aya 0.13 has no native kprobe.multi parser; live attach emulates it.
+                program.section_name_override = Some("kprobe".to_string());
+            }
+            crate::compiler::EbpfProgramType::KretprobeMulti => {
                 program.section_name_override = Some("kretprobe".to_string());
             }
             _ => {}
@@ -200,6 +267,12 @@ impl EbpfState {
             }
             _ => None,
         };
+        let kprobe_multi_symbols = match &spec {
+            ProgramSpec::KprobeMulti { pattern } | ProgramSpec::KretprobeMulti { pattern } => {
+                Some(resolve_kprobe_multi_symbols(pattern)?)
+            }
+            _ => None,
+        };
 
         // Generate ELF
         let load_object = aya_load_compatible_object(object);
@@ -261,6 +334,31 @@ impl EbpfState {
                         program.prog_type.canonical_prefix()
                     ))
                 })?;
+            }
+            ProgramAttachKind::KprobeMulti | ProgramAttachKind::KretprobeMulti => {
+                let symbols = kprobe_multi_symbols.as_ref().unwrap_or_else(|| {
+                    unreachable!("kprobe.multi attach kind must resolve target symbols")
+                });
+                let kprobe: &mut KProbe = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to convert to {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                kprobe.load().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to load {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                for symbol in symbols {
+                    kprobe.attach(symbol, 0).map_err(|e| {
+                        LoadError::Attach(format!(
+                            "Failed to attach {} to symbol {symbol}: {e}",
+                            program.prog_type.canonical_prefix()
+                        ))
+                    })?;
+                }
             }
             ProgramAttachKind::Ksyscall | ProgramAttachKind::KretSyscall => {
                 let symbols = syscall_probe_symbols.as_ref().unwrap_or_else(|| {
@@ -972,8 +1070,6 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach lirc_mode2: {e}")))?;
             }
             ProgramAttachKind::RawTracepointWritable
-            | ProgramAttachKind::KprobeMulti
-            | ProgramAttachKind::KretprobeMulti
             | ProgramAttachKind::FmodRet
             | ProgramAttachKind::UprobeMulti
             | ProgramAttachKind::UretprobeMulti
@@ -1213,6 +1309,50 @@ mod tests {
     }
 
     #[test]
+    fn test_aya_load_compatible_object_rewrites_kprobe_multi_sections() {
+        for (prog_type, expected_public, expected_loader) in [
+            (EbpfProgramType::KprobeMulti, "kprobe.multi/vfs_*", "kprobe"),
+            (
+                EbpfProgramType::KretprobeMulti,
+                "kretprobe.multi/vfs_*",
+                "kretprobe",
+            ),
+        ] {
+            let mut builder = EbpfBuilder::new();
+            builder
+                .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+                .push(EbpfInsn::exit());
+            let object = EbpfProgram::new(prog_type, "vfs_*", "main", builder).into_object();
+
+            assert_eq!(
+                object
+                    .primary_program()
+                    .expect("object should have a primary program")
+                    .section_name()
+                    .expect("multi-probe section should resolve"),
+                expected_public
+            );
+
+            let load_object = aya_load_compatible_object(&object);
+            assert_eq!(
+                load_object
+                    .primary_program()
+                    .expect("load object should have a primary program")
+                    .section_name()
+                    .expect("loader section should resolve"),
+                expected_loader
+            );
+
+            let elf = load_object
+                .to_elf()
+                .expect("loader-compatible object should emit");
+            let parsed =
+                AyaObject::parse(&elf).expect("Aya should parse rewritten multi-probe object");
+            assert!(parsed.programs.contains_key("main"));
+        }
+    }
+
+    #[test]
     fn test_syscall_probe_symbols_from_names_handles_abi_wrappers() {
         let symbols = HashSet::from([
             "__x64_sys_openat".to_string(),
@@ -1231,5 +1371,29 @@ mod tests {
             syscall_probe_symbols_from_names("__x64_sys_close", &symbols),
             vec!["__x64_sys_close".to_string()]
         );
+    }
+
+    #[test]
+    fn test_kprobe_multi_symbols_from_names_matches_wildcards() {
+        let symbols = HashSet::from([
+            "vfs_read".to_string(),
+            "vfs_write".to_string(),
+            "vfs_statx".to_string(),
+            "xfs_read".to_string(),
+        ]);
+
+        assert_eq!(
+            kprobe_multi_symbols_from_names("vfs_*", &symbols),
+            vec![
+                "vfs_read".to_string(),
+                "vfs_statx".to_string(),
+                "vfs_write".to_string()
+            ]
+        );
+        assert_eq!(
+            kprobe_multi_symbols_from_names("vfs_?ead", &symbols),
+            vec!["vfs_read".to_string()]
+        );
+        assert!(kprobe_multi_symbols_from_names("tcp_*", &symbols).is_empty());
     }
 }
