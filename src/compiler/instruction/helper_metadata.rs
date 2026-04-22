@@ -76,6 +76,7 @@ impl BpfHelper {
             119 => Some(Self::ReadBranchRecords),
             125 => Some(Self::KtimeGetBootNs),
             160 => Some(Self::KtimeGetCoarseNs),
+            163 => Some(Self::CheckMtu),
             173 => Some(Self::GetFuncIp),
             174 => Some(Self::GetAttachCookie),
             142 => Some(Self::LoadHdrOpt),
@@ -543,6 +544,12 @@ impl BpfHelper {
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::CsumDiff => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::CheckMtu => HelperSignature {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, P, S, S],

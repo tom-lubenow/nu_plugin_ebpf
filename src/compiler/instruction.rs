@@ -182,6 +182,8 @@ pub enum BpfHelper {
     KtimeGetBootNs = 125,
     /// u64 bpf_ktime_get_coarse_ns(void)
     KtimeGetCoarseNs = 160,
+    /// long bpf_check_mtu(ctx, ifindex, mtu_len, len_diff, flags)
+    CheckMtu = 163,
     /// u64 bpf_ktime_get_tai_ns(void)
     KtimeGetTaiNs = 208,
     /// u64 bpf_jiffies64(void)
@@ -395,6 +397,7 @@ impl BpfHelper {
             BpfHelper::SkSelectReuseport => "bpf_sk_select_reuseport",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
             BpfHelper::KtimeGetCoarseNs => "bpf_ktime_get_coarse_ns",
+            BpfHelper::CheckMtu => "bpf_check_mtu",
             BpfHelper::KtimeGetTaiNs => "bpf_ktime_get_tai_ns",
             BpfHelper::Jiffies64 => "bpf_jiffies64",
             BpfHelper::ReadBranchRecords => "bpf_read_branch_records",
@@ -542,6 +545,7 @@ impl BpfHelper {
             "sk_select_reuseport" => Some(Self::SkSelectReuseport),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
             "ktime_get_coarse_ns" => Some(Self::KtimeGetCoarseNs),
+            "check_mtu" => Some(Self::CheckMtu),
             "ktime_get_tai_ns" => Some(Self::KtimeGetTaiNs),
             "jiffies64" => Some(Self::Jiffies64),
             "read_branch_records" => Some(Self::ReadBranchRecords),

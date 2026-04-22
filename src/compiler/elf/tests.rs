@@ -2186,6 +2186,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::CheckMtu),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::CheckMtu),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::CheckMtu),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbUnderCgroup),
         None
     );
@@ -2264,6 +2276,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbSetTstamp),
         Some("helper 'bpf_skb_set_tstamp' is only valid in tc_action and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::CheckMtu),
+        Some("helper 'bpf_check_mtu' is only valid in xdp, tc_action, and tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),
@@ -2446,6 +2462,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::RedirectPeer,
         BpfHelper::RedirectNeigh,
         BpfHelper::SkbSetTstamp,
+        BpfHelper::CheckMtu,
         BpfHelper::SkbPullData,
         BpfHelper::SkbStoreBytes,
         BpfHelper::SkbChangeHead,
@@ -2771,6 +2788,17 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
         Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_zero_arg_requirement(BpfHelper::CheckMtu),
+        Some((
+            4,
+            "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs"
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_zero_arg_requirement(BpfHelper::CheckMtu),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::SkLookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
         None
     );
@@ -2929,6 +2957,14 @@ fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
         tc.helper_zero_arg_requirement(BpfHelper::SkAssign),
         Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
     );
+    assert_eq!(
+        xdp.helper_zero_arg_requirement(BpfHelper::CheckMtu),
+        Some((
+            4,
+            "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs"
+        ))
+    );
+    assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::CheckMtu), None);
     assert_eq!(
         sk_lookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
         None

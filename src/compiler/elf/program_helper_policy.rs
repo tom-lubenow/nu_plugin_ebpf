@@ -627,6 +627,12 @@ const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
         arg_idx: 2,
         error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs",
     },
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::CheckMtu,
+        program_type: EbpfProgramType::Xdp,
+        arg_idx: 4,
+        error_message: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs",
+    },
 ];
 
 fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurfaceSpec> {
@@ -677,6 +683,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         },
         BpfHelper::CsumDiff => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTcLwt,
+        },
+        BpfHelper::CheckMtu => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::XdpTc,
         },
         BpfHelper::Redirect => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTcLwtXmit,

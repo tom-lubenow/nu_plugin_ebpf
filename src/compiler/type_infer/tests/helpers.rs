@@ -1090,6 +1090,93 @@ fn test_infer_skb_set_tstamp_helper_in_tc_program() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_check_mtu_call(flags: i64, mtu_len_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let mtu_len = func.alloc_stack_slot(mtu_len_size, mtu_len_size, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CheckMtu as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(mtu_len),
+            MirValue::Const(0),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_check_mtu_helper_in_xdp_and_tc_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+    ] {
+        let (func, dst) = make_check_mtu_call(0, 4);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected bpf_check_mtu helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_rejects_non_xdp_tc_program() {
+    let (func, _) = make_check_mtu_call(0, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu to be rejected outside xdp/tc");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_check_mtu' is only valid in xdp, tc_action, and tc programs")
+    }));
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_requires_zero_flags_in_xdp() {
+    let (func, _) = make_check_mtu_call(1, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected xdp bpf_check_mtu flags to require zero");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs")
+    }));
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_requires_four_byte_mtu_len_pointer() {
+    let (func, _) = make_check_mtu_call(0, 2);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu mtu_len pointer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper check_mtu mtu_len requires 4 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [

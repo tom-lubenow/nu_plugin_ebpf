@@ -5346,6 +5346,100 @@ fn test_verify_mir_for_probe_context_skb_set_tstamp_accepts_tc_program() {
         .expect("expected tc_action bpf_skb_set_tstamp helper to verify");
 }
 
+fn make_check_mtu_vcc_call(
+    flags: i64,
+    mtu_len_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let mtu_len = func.alloc_stack_slot(mtu_len_size, mtu_len_size, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CheckMtu as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(mtu_len),
+                MirValue::Const(0),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_accepts_xdp_and_tc_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+    ] {
+        let (func, types) = make_check_mtu_vcc_call(0, 4);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected bpf_check_mtu helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_rejects_non_xdp_tc_program() {
+    let (func, types) = make_check_mtu_vcc_call(0, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_check_mtu to be rejected outside xdp/tc");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_check_mtu' is only valid in xdp, tc_action, and tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_requires_zero_flags_in_xdp() {
+    let (func, types) = make_check_mtu_vcc_call(1, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected xdp bpf_check_mtu flags to require zero");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_requires_four_byte_mtu_len_pointer() {
+    let (func, types) = make_check_mtu_vcc_call(0, 2);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_check_mtu mtu_len pointer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_pull_data_invalidates_prior_packet_pointers() {
     let (mut func, entry) = new_mir_function();

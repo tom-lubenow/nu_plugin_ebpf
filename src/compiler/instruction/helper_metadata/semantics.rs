@@ -91,6 +91,22 @@ impl BpfHelper {
                 size_from_arg: Some(3),
             },
         ];
+        const CHECK_MTU_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper check_mtu ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper check_mtu mtu_len",
+                allowed: STACK_MAP,
+                fixed_size: Some(4),
+                size_from_arg: None,
+            },
+        ];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1284,6 +1300,11 @@ impl BpfHelper {
             },
             BpfHelper::CsumDiff => HelperSemantics {
                 ptr_arg_rules: CSUM_DIFF_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::CheckMtu => HelperSemantics {
+                ptr_arg_rules: CHECK_MTU_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

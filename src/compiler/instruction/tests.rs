@@ -203,6 +203,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbSetTstamp)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_check_mtu"),
+        Some(BpfHelper::CheckMtu)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("check_mtu"),
+        Some(BpfHelper::CheckMtu)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_msg_push_data"),
         Some(BpfHelper::MsgPushData)
     ));
@@ -1073,6 +1081,17 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::CheckMtu as u32)
+        .expect("expected bpf_check_mtu helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1213,6 +1232,7 @@ fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);
+    assert_eq!(BpfHelper::CheckMtu.zero_scalar_arg_requirement(), None);
     assert_eq!(
         BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement_when_arg_zero(),
         Some((
@@ -1221,6 +1241,33 @@ fn test_helpers_with_reserved_zero_flags() {
             "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
         ))
     );
+}
+
+#[test]
+fn test_check_mtu_helper_contract() {
+    let semantics = BpfHelper::CheckMtu.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let ctx = semantics.ptr_arg_rules[0];
+    assert_eq!(ctx.arg_idx, 0);
+    assert_eq!(ctx.op, "helper check_mtu ctx");
+    assert!(ctx.allowed.allow_kernel);
+    assert!(!ctx.allowed.allow_stack);
+    assert!(!ctx.allowed.allow_map);
+    assert!(!ctx.allowed.allow_user);
+    assert_eq!(ctx.fixed_size, None);
+    assert_eq!(ctx.size_from_arg, None);
+
+    let mtu_len = semantics.ptr_arg_rules[1];
+    assert_eq!(mtu_len.arg_idx, 2);
+    assert_eq!(mtu_len.op, "helper check_mtu mtu_len");
+    assert!(mtu_len.allowed.allow_stack);
+    assert!(mtu_len.allowed.allow_map);
+    assert!(!mtu_len.allowed.allow_kernel);
+    assert!(!mtu_len.allowed.allow_user);
+    assert_eq!(mtu_len.fixed_size, Some(4));
+    assert_eq!(mtu_len.size_from_arg, None);
 }
 
 #[test]

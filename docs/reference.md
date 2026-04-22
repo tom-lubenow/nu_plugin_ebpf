@@ -280,7 +280,11 @@ model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
 multiples of four, and a null `from` or `to` buffer is accepted only
 when the paired size is zero. `ctx.xdp_buff_len` exposes
 `bpf_xdp_get_buff_len` directly for XDP programs that need total
-multi-buffer packet size rather than the linear `ctx.packet_len`.
+multi-buffer packet size rather than the linear `ctx.packet_len`. XDP,
+tc_action, and TC also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;
+`MTU_LEN_PTR` must be a stack/map-backed `u32` pointer, and XDP requires
+`FLAGS = 0`. TC flag combinations that depend on runtime `mtu_len` /
+`len_diff` values remain kernel-enforced.
 `tc_action` and TC egress expose skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields; LWT programs expose `ctx.cgroup_classid` and

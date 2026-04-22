@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-21.
+Last updated: 2026-04-22.
 
 ## Current compiler gaps
 
@@ -130,6 +130,7 @@ Last updated: 2026-04-21.
   - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser helper surface.
   - Ordinary skb checksum context access now exposes the read-only `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)` form as `ctx.csum_level` on lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser programs.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC/LWT helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.
+  - Typed helper MTU-check coverage now includes `bpf_check_mtu` on XDP/tc_action/TC, with kernel-context and stack/map-backed `u32 mtu_len` pointer checks plus XDP zero-flags policy.
   - Typed helper time coverage now includes the remaining base no-arg scalar clocks/counters: `bpf_jiffies64`, `bpf_ktime_get_coarse_ns`, and `bpf_ktime_get_tai_ns`.
   - Ordinary context access now exposes those time/counter helpers without raw helper spelling as `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
   - Attach-flow compile fixtures now cover those ordinary time/counter fields plus the `ctx.numa_node` alias through the public context path.
