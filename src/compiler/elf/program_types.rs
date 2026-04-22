@@ -461,7 +461,7 @@ pub(super) const EXTENSION_INFO: ProgramTypeInfo = ProgramTypeInfo {
     retval_access: ProgramValueAccess::None,
 };
 
-pub(super) const SYSCALL_CAPABILITIES: &[ProgramCapability] = &[];
+pub(super) const SYSCALL_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::HelperCalls];
 
 pub(super) const SYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Syscall,

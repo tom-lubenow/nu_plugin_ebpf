@@ -289,6 +289,175 @@ fn test_infer_helper_ctx_argument_from_context_pointer_copy() {
 }
 
 #[test]
+fn test_infer_syscall_helpers_in_syscall_program() {
+    let mut func = make_test_function();
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sys_bpf = func.alloc_vreg();
+    let btf_find = func.alloc_vreg();
+    let sys_close = func.alloc_vreg();
+    let kallsyms = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: sys_bpf,
+        helper: BpfHelper::SysBpf as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::StackSlot(attr_slot),
+            MirValue::Const(16),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: btf_find,
+        helper: BpfHelper::BtfFindByNameKind as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(16),
+            MirValue::Const(1),
+            MirValue::Const(0),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: sys_close,
+        helper: BpfHelper::SysClose as u32,
+        args: vec![MirValue::Const(3)],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: kallsyms,
+        helper: BpfHelper::KallsymsLookupName as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+            MirValue::StackSlot(res_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected modeled syscall helpers to infer on syscall programs");
+    assert_eq!(types.get(&sys_bpf), Some(&MirType::I64));
+    assert_eq!(types.get(&btf_find), Some(&MirType::I64));
+    assert_eq!(types.get(&sys_close), Some(&MirType::I64));
+    assert_eq!(types.get(&kallsyms), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_syscall_helper_rejects_non_syscall_program() {
+    let mut func = make_test_function();
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SysBpf as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::StackSlot(attr_slot),
+            MirValue::Const(16),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_bpf");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_sys_bpf to be rejected outside syscall programs");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sys_bpf' is only valid in syscall programs")
+    }));
+}
+
+#[test]
+fn test_type_error_syscall_program_rejects_unmodeled_helper() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetCurrentPidTgid as u32,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected unmodeled syscall helper to be rejected");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_current_pid_tgid' is not modeled for syscall programs")
+    }));
+}
+
+#[test]
+fn test_type_error_syscall_helpers_enforce_size_and_flags() {
+    let mut func = make_test_function();
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sys_bpf = func.alloc_vreg();
+    let btf_find = func.alloc_vreg();
+    let kallsyms = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: sys_bpf,
+        helper: BpfHelper::SysBpf as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::StackSlot(attr_slot),
+            MirValue::Const(0),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: btf_find,
+        helper: BpfHelper::BtfFindByNameKind as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(16),
+            MirValue::Const(1),
+            MirValue::Const(1),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: kallsyms,
+        helper: BpfHelper::KallsymsLookupName as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(16),
+            MirValue::Const(1),
+            MirValue::StackSlot(res_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected syscall helper shape errors");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 166 arg2 must be > 0"))
+    );
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_btf_find_by_name_kind' requires arg3 = 0")
+    }));
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_kallsyms_lookup_name' requires arg2 = 0")
+    }));
+}
+
+#[test]
 fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

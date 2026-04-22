@@ -374,8 +374,16 @@ pub enum BpfHelper {
     CgrpStorageDelete = 211,
     /// struct socket *bpf_sock_from_file(file)
     SockFromFile = 162,
+    /// long bpf_sys_bpf(cmd, attr, attr_size)
+    SysBpf = 166,
+    /// long bpf_btf_find_by_name_kind(name, name_sz, kind, flags)
+    BtfFindByNameKind = 167,
+    /// long bpf_sys_close(fd)
+    SysClose = 168,
     /// struct pt_regs *bpf_task_pt_regs(task)
     TaskPtRegs = 175,
+    /// long bpf_kallsyms_lookup_name(name, name_sz, flags, res)
+    KallsymsLookupName = 179,
     /// long bpf_get_func_arg(ctx, n, value)
     GetFuncArg = 183,
     /// long bpf_get_func_ret(ctx, value)
@@ -567,7 +575,11 @@ impl BpfHelper {
             BpfHelper::CgrpStorageGet => "bpf_cgrp_storage_get",
             BpfHelper::CgrpStorageDelete => "bpf_cgrp_storage_delete",
             BpfHelper::SockFromFile => "bpf_sock_from_file",
+            BpfHelper::SysBpf => "bpf_sys_bpf",
+            BpfHelper::BtfFindByNameKind => "bpf_btf_find_by_name_kind",
+            BpfHelper::SysClose => "bpf_sys_close",
             BpfHelper::TaskPtRegs => "bpf_task_pt_regs",
+            BpfHelper::KallsymsLookupName => "bpf_kallsyms_lookup_name",
             BpfHelper::GetFuncArg => "bpf_get_func_arg",
             BpfHelper::GetFuncRet => "bpf_get_func_ret",
             BpfHelper::GetFuncArgCnt => "bpf_get_func_arg_cnt",
@@ -752,7 +764,11 @@ impl BpfHelper {
             "cgrp_storage_get" | "cgroup_storage_get" => Some(Self::CgrpStorageGet),
             "cgrp_storage_delete" | "cgroup_storage_delete" => Some(Self::CgrpStorageDelete),
             "sock_from_file" => Some(Self::SockFromFile),
+            "sys_bpf" => Some(Self::SysBpf),
+            "btf_find_by_name_kind" => Some(Self::BtfFindByNameKind),
+            "sys_close" => Some(Self::SysClose),
             "task_pt_regs" => Some(Self::TaskPtRegs),
+            "kallsyms_lookup_name" => Some(Self::KallsymsLookupName),
             "get_func_arg" => Some(Self::GetFuncArg),
             "get_func_ret" => Some(Self::GetFuncRet),
             "get_func_arg_cnt" => Some(Self::GetFuncArgCnt),

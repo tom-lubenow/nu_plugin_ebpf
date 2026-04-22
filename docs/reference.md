@@ -184,8 +184,11 @@ target-function argument context.
 `syscall:LABEL` emits a `syscall` section for `BPF_PROG_TYPE_SYSCALL`.
 Local kernel headers describe this as a program type that can execute
 syscalls through dedicated helpers. Because that is a high-risk surface,
-the current model is compile/dry-run only and intentionally exposes no
-context or syscall-helper surface.
+the current model is compile/dry-run only and exposes no context. The
+only modeled helper surface is explicit `helper-call` access to the
+syscall-program helpers `bpf_sys_bpf`, `bpf_btf_find_by_name_kind`,
+`bpf_sys_close`, and `bpf_kallsyms_lookup_name`; other raw helpers are
+rejected on `syscall:*` until they have an explicit policy.
 
 `xdp`, `tc_action`, `tc`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
@@ -525,6 +528,7 @@ Signal helpers are modeled as explicit escape hatches too: `helper-call "bpf_sen
 Userspace memory copy helpers are modeled for explicit `helper-call` use: `bpf_copy_from_user` requires a stack/map destination buffer and a typed userspace source pointer, while `bpf_copy_from_user_task` also requires a `task_struct *` argument such as `ctx.task` and reserved flags `0`. Their destination size may be `0`, but nonzero sizes must fit the output buffer. `bpf_probe_write_user` is also modeled for tracing/LSM/perf escape-hatch use with a typed userspace destination pointer, stack/map source buffer, and positive size. It remains a hazardous debugging-only kernel helper; lockdown, capability, and user-context restrictions are still enforced by the kernel at load/attach/runtime.
 Kprobe error injection is modeled through `helper-call "bpf_override_return" CTX RC` on entry kprobe-style surfaces (`kprobe`, `kprobe.multi`, and `ksyscall`). The compiler checks the raw context pointer shape, but the kernel still enforces `CONFIG_BPF_KPROBE_OVERRIDE`, GPL/license constraints, and the target function's `ALLOW_ERROR_INJECTION` eligibility.
 TCP congestion-control struct_ops callbacks can use `helper-call "bpf_tcp_send_ack" TP RCV_NXT`, where `TP` must be a typed socket/TCP kernel pointer such as `struct tcp_sock *`. The generic program-type policy treats this as a `struct_ops` helper, and full `ProgramSpec` contexts further narrow it to `tcp_congestion_ops` callbacks; callback-specific availability remains kernel-enforced.
+Syscall programs can use the modeled syscall helper escape hatches `helper-call "bpf_sys_bpf" CMD ATTR ATTR_SIZE`, `helper-call "bpf_btf_find_by_name_kind" NAME NAME_SIZE KIND 0`, `helper-call "bpf_sys_close" FD`, and `helper-call "bpf_kallsyms_lookup_name" NAME NAME_SIZE 0 RES`. `ATTR`, `NAME`, and `RES` must be stack/map-backed buffers with positive modeled sizes where applicable, and `RES` must cover an 8-byte `u64`. Live attach for `syscall:*` remains unsupported.
 Path formatting through `helper-call "bpf_d_path" PATH BUF SIZE` is modeled for kernel `struct path *` inputs and stack/map output buffers. The compiler checks pointer spaces and nonnegative buffer sizes, including zero-size/null-buffer queries; the kernel still enforces the attach-target allowlist for this helper.
 LSM binary-parameter options can be set through `helper-call "bpf_bprm_opts_set" BPRM FLAGS` on LSM programs. `BPRM` must be a kernel `linux_binprm *` such as the argument exposed by `lsm:bprm_check_security`; unsupported flag bits are still rejected by the kernel.
 IMA hash helpers are modeled on the LSM helper surface: `helper-call "bpf_ima_inode_hash" INODE DST SIZE` accepts a kernel `inode *`, and `helper-call "bpf_ima_file_hash" FILE DST SIZE` accepts a kernel `file *`. `DST` must be a stack/map output buffer and `SIZE` must be positive; kernel sleepable-hook restrictions remain kernel-enforced.

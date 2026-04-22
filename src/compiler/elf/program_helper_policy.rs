@@ -66,6 +66,7 @@ enum HelperProgramSurfaceFamily {
     CgroupRetval,
     SockOps,
     CgroupSysctl,
+    Syscall,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -611,6 +612,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[EbpfProgramType::CgroupSysctl],
         label: "cgroup_sysctl",
     },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Syscall,
+        program_types: &[EbpfProgramType::Syscall],
+        label: "syscall",
+    },
 ];
 
 impl HelperProgramSurfaceFamily {
@@ -664,6 +670,12 @@ const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] = &[
 ];
 const CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bind];
 const CGROUP_RETVAL_HELPERS: &[BpfHelper] = &[BpfHelper::GetRetval, BpfHelper::SetRetval];
+const SYSCALL_MODELED_HELPERS: &[BpfHelper] = &[
+    BpfHelper::SysBpf,
+    BpfHelper::BtfFindByNameKind,
+    BpfHelper::SysClose,
+    BpfHelper::KallsymsLookupName,
+];
 const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port"];
 const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4"];
 const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6"];
@@ -910,12 +922,26 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SysctlSetNewValue => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::CgroupSysctl,
         },
+        BpfHelper::SysBpf
+        | BpfHelper::BtfFindByNameKind
+        | BpfHelper::SysClose
+        | BpfHelper::KallsymsLookupName => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::Syscall,
+        },
         _ => return None,
     })
 }
 
 impl EbpfProgramType {
     pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
+        if *self == EbpfProgramType::Syscall
+            && !helper_list_contains(SYSCALL_MODELED_HELPERS, helper)
+        {
+            return Some(format!(
+                "helper '{}' is not modeled for syscall programs",
+                helper.name()
+            ));
+        }
         helper_program_surface_spec(helper)
             .filter(|spec| !spec.allows(*self))
             .map(|spec| spec.error(helper))

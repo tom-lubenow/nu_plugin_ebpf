@@ -283,6 +283,22 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::TcpSendAck)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_sys_bpf"),
+        Some(BpfHelper::SysBpf)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("btf_find_by_name_kind"),
+        Some(BpfHelper::BtfFindByNameKind)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_sys_close"),
+        Some(BpfHelper::SysClose)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_kallsyms_lookup_name"),
+        Some(BpfHelper::KallsymsLookupName)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("copy_from_user_task"),
         Some(BpfHelper::CopyFromUserTask)
     ));
@@ -2622,6 +2638,88 @@ fn test_tcp_send_ack_helper_contract() {
     assert!(!tp.allowed.allow_stack);
     assert!(!tp.allowed.allow_map);
     assert!(!tp.allowed.allow_user);
+}
+
+#[test]
+fn test_helper_signature_syscall_helpers() {
+    let sys_bpf = HelperSignature::for_id(BpfHelper::SysBpf as u32)
+        .expect("expected bpf_sys_bpf helper signature");
+    assert_eq!(sys_bpf.min_args, 3);
+    assert_eq!(sys_bpf.max_args, 3);
+    assert_eq!(sys_bpf.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sys_bpf.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sys_bpf.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sys_bpf.ret_kind, HelperRetKind::Scalar);
+
+    let btf_find = HelperSignature::for_id(BpfHelper::BtfFindByNameKind as u32)
+        .expect("expected bpf_btf_find_by_name_kind helper signature");
+    assert_eq!(btf_find.min_args, 4);
+    assert_eq!(btf_find.max_args, 4);
+    assert_eq!(btf_find.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(btf_find.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(btf_find.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(btf_find.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(btf_find.ret_kind, HelperRetKind::Scalar);
+
+    let sys_close = HelperSignature::for_id(BpfHelper::SysClose as u32)
+        .expect("expected bpf_sys_close helper signature");
+    assert_eq!(sys_close.min_args, 1);
+    assert_eq!(sys_close.max_args, 1);
+    assert_eq!(sys_close.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sys_close.ret_kind, HelperRetKind::Scalar);
+
+    let kallsyms = HelperSignature::for_id(BpfHelper::KallsymsLookupName as u32)
+        .expect("expected bpf_kallsyms_lookup_name helper signature");
+    assert_eq!(kallsyms.min_args, 4);
+    assert_eq!(kallsyms.max_args, 4);
+    assert_eq!(kallsyms.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(kallsyms.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(kallsyms.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(kallsyms.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(kallsyms.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_syscall_helper_contracts() {
+    let sys_bpf = BpfHelper::SysBpf.semantics();
+    assert_eq!(sys_bpf.positive_size_args, &[2]);
+    assert_eq!(sys_bpf.ptr_arg_rules.len(), 1);
+    assert_eq!(sys_bpf.ptr_arg_rules[0].arg_idx, 1);
+    assert_eq!(sys_bpf.ptr_arg_rules[0].op, "helper sys_bpf attr");
+    assert!(sys_bpf.ptr_arg_rules[0].allowed.allow_stack);
+    assert!(sys_bpf.ptr_arg_rules[0].allowed.allow_map);
+    assert_eq!(sys_bpf.ptr_arg_rules[0].size_from_arg, Some(2));
+
+    let btf_find = BpfHelper::BtfFindByNameKind.semantics();
+    assert_eq!(btf_find.positive_size_args, &[1]);
+    assert_eq!(btf_find.ptr_arg_rules.len(), 1);
+    assert_eq!(
+        btf_find.ptr_arg_rules[0].op,
+        "helper btf_find_by_name_kind name"
+    );
+    assert_eq!(btf_find.ptr_arg_rules[0].size_from_arg, Some(1));
+    assert_eq!(
+        BpfHelper::BtfFindByNameKind.zero_scalar_arg_requirement(),
+        Some((3, "helper 'bpf_btf_find_by_name_kind' requires arg3 = 0"))
+    );
+
+    let kallsyms = BpfHelper::KallsymsLookupName.semantics();
+    assert_eq!(kallsyms.positive_size_args, &[1]);
+    assert_eq!(kallsyms.ptr_arg_rules.len(), 2);
+    assert_eq!(
+        kallsyms.ptr_arg_rules[0].op,
+        "helper kallsyms_lookup_name name"
+    );
+    assert_eq!(kallsyms.ptr_arg_rules[0].size_from_arg, Some(1));
+    assert_eq!(
+        kallsyms.ptr_arg_rules[1].op,
+        "helper kallsyms_lookup_name res"
+    );
+    assert_eq!(kallsyms.ptr_arg_rules[1].fixed_size, Some(8));
+    assert_eq!(
+        BpfHelper::KallsymsLookupName.zero_scalar_arg_requirement(),
+        Some((2, "helper 'bpf_kallsyms_lookup_name' requires arg2 = 0"))
+    );
 }
 
 #[test]

@@ -31,6 +31,170 @@ fn test_helper_pointer_arg_required() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_syscall_helpers_accept_syscall_program() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sys_bpf = func.alloc_vreg();
+    let btf_find = func.alloc_vreg();
+    let sys_close = func.alloc_vreg();
+    let kallsyms = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sys_bpf,
+            helper: BpfHelper::SysBpf as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::StackSlot(attr_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: btf_find,
+            helper: BpfHelper::BtfFindByNameKind as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(16),
+                MirValue::Const(1),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sys_close,
+            helper: BpfHelper::SysClose as u32,
+            args: vec![MirValue::Const(3)],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: kallsyms,
+            helper: BpfHelper::KallsymsLookupName as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::StackSlot(res_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (sys_bpf, MirType::I64),
+        (btf_find, MirType::I64),
+        (sys_close, MirType::I64),
+        (kallsyms, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected modeled syscall helpers to verify on syscall programs");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_syscall_program_rejects_unmodeled_helper() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetCurrentPidTgid as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected unmodeled syscall helper to be rejected");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_current_pid_tgid' is not modeled for syscall programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_syscall_helpers_enforce_size_and_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sys_bpf = func.alloc_vreg();
+    let btf_find = func.alloc_vreg();
+    let kallsyms = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sys_bpf,
+            helper: BpfHelper::SysBpf as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::StackSlot(attr_slot),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: btf_find,
+            helper: BpfHelper::BtfFindByNameKind as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(16),
+                MirValue::Const(1),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: kallsyms,
+            helper: BpfHelper::KallsymsLookupName as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(16),
+                MirValue::Const(1),
+                MirValue::StackSlot(res_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (sys_bpf, MirType::I64),
+        (btf_find, MirType::I64),
+        (kallsyms, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected syscall helper shape errors");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 166 arg2 must be > 0"))
+    );
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_btf_find_by_name_kind' requires arg3 = 0")
+    }));
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_kallsyms_lookup_name' requires arg2 = 0")
+    }));
+}
+
+#[test]
 fn test_unknown_helper_rejects_more_than_five_args() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

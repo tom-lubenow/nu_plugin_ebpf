@@ -1070,7 +1070,7 @@ fn test_program_type_metadata_for_syscall() {
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(!EbpfProgramType::Syscall.supports_capability(ProgramCapability::Counters));
-    assert!(!EbpfProgramType::Syscall.supports_capability(ProgramCapability::HelperCalls));
+    assert!(EbpfProgramType::Syscall.supports_capability(ProgramCapability::HelperCalls));
 }
 
 #[test]
@@ -2119,6 +2119,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SysBpf),
+        Some("helper 'bpf_sys_bpf' is only valid in syscall programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Syscall.helper_call_error(BpfHelper::GetCurrentPidTgid),
+        Some("helper 'bpf_get_current_pid_tgid' is not modeled for syscall programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
         Some(
             "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
@@ -2682,6 +2690,19 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         EbpfProgramType::StructOps.helper_call_error(BpfHelper::TcpSendAck),
         None
     );
+    for helper in [
+        BpfHelper::SysBpf,
+        BpfHelper::BtfFindByNameKind,
+        BpfHelper::SysClose,
+        BpfHelper::KallsymsLookupName,
+    ] {
+        assert_eq!(
+            EbpfProgramType::Syscall.helper_call_error(helper),
+            None,
+            "syscall should allow helper {}",
+            helper.name()
+        );
+    }
     assert_eq!(
         EbpfProgramType::Kretprobe.helper_call_error(BpfHelper::TaskStorageGet),
         None

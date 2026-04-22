@@ -286,8 +286,8 @@ Context parameter syntax (recommended):
     so no target-function argument context is exposed.
     `syscall:LABEL` emits a `syscall` section for `BPF_PROG_TYPE_SYSCALL`.
     This program type can execute syscalls through dedicated helpers, so the
-    current model is deliberately compile/dry-run only and exposes no context
-    or syscall-helper surface yet.
+    current model is deliberately compile/dry-run only and exposes no context.
+    Raw helper calls are limited to explicitly modeled syscall-program helpers.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

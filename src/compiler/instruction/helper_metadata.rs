@@ -163,7 +163,11 @@ impl BpfHelper {
             159 => Some(Self::BprmOptsSet),
             161 => Some(Self::ImaInodeHash),
             162 => Some(Self::SockFromFile),
+            166 => Some(Self::SysBpf),
+            167 => Some(Self::BtfFindByNameKind),
+            168 => Some(Self::SysClose),
             175 => Some(Self::TaskPtRegs),
+            179 => Some(Self::KallsymsLookupName),
             183 => Some(Self::GetFuncArg),
             184 => Some(Self::GetFuncRet),
             185 => Some(Self::GetFuncArgCnt),
@@ -827,6 +831,30 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
             },
+            BpfHelper::SysBpf => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [S, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::BtfFindByNameKind => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SysClose => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::KallsymsLookupName => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::TaskPtRegs => HelperSignature {
                 min_args: 1,
                 max_args: 1,
@@ -938,6 +966,12 @@ impl BpfHelper {
             }
             BpfHelper::CopyFromUserTask => {
                 Some((4, "helper 'bpf_copy_from_user_task' requires arg4 = 0"))
+            }
+            BpfHelper::BtfFindByNameKind => {
+                Some((3, "helper 'bpf_btf_find_by_name_kind' requires arg3 = 0"))
+            }
+            BpfHelper::KallsymsLookupName => {
+                Some((2, "helper 'bpf_kallsyms_lookup_name' requires arg2 = 0"))
             }
             BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),
             BpfHelper::ReserveHdrOpt => Some((2, "helper 'bpf_reserve_hdr_opt' requires arg2 = 0")),

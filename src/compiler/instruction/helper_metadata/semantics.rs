@@ -1252,6 +1252,39 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const SYS_BPF_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 1,
+            op: "helper sys_bpf attr",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(2),
+        }];
+
+        const BTF_FIND_BY_NAME_KIND_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper btf_find_by_name_kind name",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        }];
+
+        const KALLSYMS_LOOKUP_NAME_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper kallsyms_lookup_name name",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper kallsyms_lookup_name res",
+                allowed: STACK_MAP,
+                fixed_size: Some(8),
+                size_from_arg: None,
+            },
+        ];
+
         const TASK_PT_REGS_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper task_pt_regs task",
@@ -2095,6 +2128,21 @@ impl BpfHelper {
             BpfHelper::SockFromFile => HelperSemantics {
                 ptr_arg_rules: SOCK_FROM_FILE_RULES,
                 positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SysBpf => HelperSemantics {
+                ptr_arg_rules: SYS_BPF_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::BtfFindByNameKind => HelperSemantics {
+                ptr_arg_rules: BTF_FIND_BY_NAME_KIND_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::KallsymsLookupName => HelperSemantics {
+                ptr_arg_rules: KALLSYMS_LOOKUP_NAME_RULES,
+                positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
