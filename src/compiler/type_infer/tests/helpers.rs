@@ -3064,7 +3064,11 @@ fn test_infer_redirect_map_helper_in_xdp_programs() {
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::RedirectMap as u32,
-        args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::Const(7),
+            MirValue::Const(0x1b),
+        ],
     });
     block.terminator = MirInst::Return { val: None };
 
@@ -3075,6 +3079,37 @@ fn test_infer_redirect_map_helper_in_xdp_programs() {
         .expect("expected redirect_map helper to infer in xdp");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
     assert!(matches!(types.get(&map), Some(MirType::MapRef { .. })));
+}
+
+#[test]
+fn test_type_error_redirect_map_helper_rejects_invalid_flags() {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMapHash,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectMap as u32,
+        args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(4)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected redirect_map helper invalid flags error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_map' requires arg2 flags")
+    }));
 }
 
 #[test]

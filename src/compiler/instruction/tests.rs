@@ -849,6 +849,13 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(redirect_map_sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::RedirectMap.scalar_arg_bitmask_requirement(2),
+        Some((
+            0x1b,
+            "helper 'bpf_redirect_map' requires arg2 flags to contain only fallback return-code bits plus BPF_F_BROADCAST/BPF_F_EXCLUDE_INGRESS (0x1b)"
+        ))
+    );
 
     let sk_redirect_map_sig = HelperSignature::for_id(BpfHelper::SkRedirectMap as u32)
         .expect("expected bpf_sk_redirect_map helper signature");
@@ -859,6 +866,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(sk_redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sk_redirect_map_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sk_redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkRedirectMap.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            1,
+            "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)"
+        ))
+    );
 
     let sock_map_update_sig = HelperSignature::for_id(BpfHelper::SockMapUpdate as u32)
         .expect("expected bpf_sock_map_update helper signature");
@@ -879,6 +894,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(msg_redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(msg_redirect_map_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(msg_redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::MsgRedirectMap.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            1,
+            "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)"
+        ))
+    );
 
     let sock_hash_update_sig = HelperSignature::for_id(BpfHelper::SockHashUpdate as u32)
         .expect("expected bpf_sock_hash_update helper signature");
@@ -899,6 +922,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(msg_redirect_hash_sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(msg_redirect_hash_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(msg_redirect_hash_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::MsgRedirectHash.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            1,
+            "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)"
+        ))
+    );
 
     let sk_redirect_hash_sig = HelperSignature::for_id(BpfHelper::SkRedirectHash as u32)
         .expect("expected bpf_sk_redirect_hash helper signature");
@@ -909,6 +940,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(sk_redirect_hash_sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sk_redirect_hash_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sk_redirect_hash_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkRedirectHash.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            1,
+            "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)"
+        ))
+    );
 
     let sk_select_reuseport_sig = HelperSignature::for_id(BpfHelper::SkSelectReuseport as u32)
         .expect("expected bpf_sk_select_reuseport helper signature");
@@ -1454,6 +1493,14 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
         assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
+    assert_eq!(
+        BpfHelper::CloneRedirect.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            1,
+            "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::SkbPullData as u32)
         .expect("expected bpf_skb_pull_data helper signature");
@@ -1639,6 +1686,14 @@ fn test_helper_signature_redirect() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::Redirect.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            1,
+            "helper 'bpf_redirect' requires arg1 flags to contain only BPF_F_INGRESS (0x01)"
+        ))
+    );
 }
 
 #[test]

@@ -11335,7 +11335,7 @@ fn test_compile_socket_redirect_kind_programs() {
             HirLiteral::String(b"peer-a".to_vec()),
             MapKind::SockHash,
             BpfHelper::MsgRedirectHash,
-            2,
+            1,
         ),
         (
             "sk_skb sockmap",
@@ -11357,7 +11357,7 @@ fn test_compile_socket_redirect_kind_programs() {
             HirLiteral::String(b"peer-b".to_vec()),
             MapKind::SockHash,
             BpfHelper::SkRedirectHash,
-            3,
+            1,
         ),
         (
             "sk_skb_parser sockmap",
@@ -11379,7 +11379,7 @@ fn test_compile_socket_redirect_kind_programs() {
             HirLiteral::String(b"peer-c".to_vec()),
             MapKind::SockHash,
             BpfHelper::SkRedirectHash,
-            4,
+            1,
         ),
         (
             "sk_reuseport reuseport-sockarray",

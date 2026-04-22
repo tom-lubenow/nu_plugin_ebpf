@@ -949,6 +949,27 @@ impl BpfHelper {
                 3,
                 "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)",
             )),
+            (Self::Redirect, 1) => Some((
+                0,
+                1,
+                "helper 'bpf_redirect' requires arg1 flags to contain only BPF_F_INGRESS (0x01)",
+            )),
+            (Self::CloneRedirect, 2) => Some((
+                0,
+                1,
+                "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)",
+            )),
+            (
+                Self::SkRedirectMap
+                | Self::MsgRedirectMap
+                | Self::SkRedirectHash
+                | Self::MsgRedirectHash,
+                3,
+            ) => Some((
+                0,
+                1,
+                "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)",
+            )),
             (Self::SkAssign, 2) => Some((
                 0,
                 3,
@@ -996,6 +1017,10 @@ impl BpfHelper {
             (Self::GetStack | Self::GetTaskStack, 3) => Some((
                 0x09ff,
                 "stack-copy helpers require flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_USER_BUILD_ID bits (0x09ff)",
+            )),
+            (Self::RedirectMap, 2) => Some((
+                0x1b,
+                "helper 'bpf_redirect_map' requires arg2 flags to contain only fallback return-code bits plus BPF_F_BROADCAST/BPF_F_EXCLUDE_INGRESS (0x1b)",
             )),
             _ => None,
         }

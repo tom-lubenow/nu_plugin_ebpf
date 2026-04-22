@@ -2605,7 +2605,11 @@ fn test_verify_mir_for_program_redirect_map_helper_accepts_xdp() {
         .push(MirInst::CallHelper {
             dst,
             helper: BpfHelper::RedirectMap as u32,
-            args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(0)],
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::Const(7),
+                MirValue::Const(0x1b),
+            ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -2621,6 +2625,46 @@ fn test_verify_mir_for_program_redirect_map_helper_accepts_xdp() {
 
     verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect("expected redirect_map helper in xdp program");
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_map_helper_rejects_invalid_flags() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_redirect_map".to_string(),
+            kind: MapKind::DevMapHash,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectMap as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(7), MirValue::Const(4)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected redirect_map helper invalid flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_redirect_map' requires arg2 flags")
+    }));
 }
 
 #[test]
