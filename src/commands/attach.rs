@@ -55,6 +55,7 @@ the probe point is hit.
 
 Supported attach types:
   - kprobe, kretprobe
+  - ksyscall, kretsyscall (dry-run compile support; live attach is not implemented yet)
   - fentry, fexit, tp_btf
   - fmod_ret / fmod_ret.s (dry-run compile support; live attach is not implemented yet)
   - tracepoint, raw_tracepoint
@@ -755,10 +756,12 @@ Context parameter syntax (recommended):
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
     {|ctx| $ctx.arg1 }    - Get function argument 1
-    {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit/fmod_ret)
+    {|ctx| $ctx.retval }  - Get return value (kretprobe/kretsyscall/uretprobe/fexit/fmod_ret)
 
-    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. raw_tracepoint and
-    raw_tracepoint.w expose raw positional ctx.argN slots. fentry/fexit/fmod_ret/tp_btf/lsm/struct_ops use
+    Note: kprobe/ksyscall/uprobe expose pt_regs-style ctx.arg0-5.
+    kretprobe/kretsyscall/uretprobe expose pt_regs-style ctx.retval.
+    raw_tracepoint and raw_tracepoint.w expose raw positional ctx.argN slots.
+    fentry/fexit/fmod_ret/tp_btf/lsm/struct_ops use
     kernel BTF, and those kernel-BTF-backed contexts also expose named
     parameter aliases through ctx.arg.<name> when names are available.
     Scalar/pointer trampoline args and returns work directly. By-value
@@ -911,7 +914,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -949,6 +952,8 @@ Requirements:
             "trace",
             "probe",
             "kprobe",
+            "ksyscall",
+            "kretsyscall",
             "fentry",
             "fexit",
             "tp_btf",

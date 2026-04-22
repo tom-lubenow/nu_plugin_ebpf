@@ -147,6 +147,27 @@ fn test_parse_probe_spec_fmod_ret() {
 }
 
 #[test]
+fn test_parse_probe_spec_kernel_syscall_probes() {
+    let (prog_type, target) = parse_probe_spec("ksyscall:nanosleep").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Ksyscall);
+    assert_eq!(target, "nanosleep");
+
+    let spec = parse_program_spec("ksyscall:nanosleep").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::Ksyscall);
+    assert_eq!(spec.target_string(), "nanosleep");
+    assert_eq!(spec.section_name(), "ksyscall/nanosleep");
+
+    let (prog_type, target) = parse_probe_spec("kretsyscall:nanosleep").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::KretSyscall);
+    assert_eq!(target, "nanosleep");
+
+    let spec = parse_program_spec("kretsyscall:nanosleep").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::KretSyscall);
+    assert_eq!(spec.target_string(), "nanosleep");
+    assert_eq!(spec.section_name(), "kretsyscall/nanosleep");
+}
+
+#[test]
 fn test_parse_probe_spec_tp_btf() {
     let result = parse_probe_spec("tp_btf:sys_enter");
 
@@ -1166,6 +1187,8 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         ),
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
+        (EbpfProgramType::Ksyscall, "nanosleep", "ksyscall"),
+        (EbpfProgramType::KretSyscall, "nanosleep", "kretsyscall"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
         (
             EbpfProgramType::FlowDissector,

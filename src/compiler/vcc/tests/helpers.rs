@@ -1868,7 +1868,7 @@ fn test_verify_mir_for_program_perf_event_output_helper_rejects_lsm() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Lsm.info())
         .expect_err("expected perf_event_output helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
     )));
 }
 
@@ -1916,7 +1916,7 @@ fn test_verify_mir_for_program_get_stackid_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected get_stackid helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -1955,7 +1955,7 @@ fn test_verify_mir_for_program_get_stack_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected get_stack helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -2212,7 +2212,7 @@ fn test_verify_mir_for_program_probe_read_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected probe_read helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -4258,7 +4258,7 @@ fn test_verify_mir_for_probe_context_task_storage_get_rejects_xdp() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected task_storage_get xdp program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
     )));
 }
 

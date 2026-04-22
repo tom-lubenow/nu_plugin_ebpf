@@ -1821,7 +1821,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                             ))
                         })?;
                         let offset = offsets.arg_offsets[n];
-                        // R9 contains the saved pt_regs context pointer for kprobe/uprobe paths.
+                        // R9 contains the saved pt_regs context pointer for pt_regs-backed paths.
                         self.instructions
                             .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
                     }

@@ -212,7 +212,7 @@ pub struct KernelBtf {
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
     /// Cached raw BTF declared sizes for aggregate type IDs.
     raw_type_size_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
-    /// Cached per-function trampoline layouts for fentry/fexit/tp_btf style programs.
+    /// Cached per-function trampoline layouts for BTF-backed tracing programs.
     trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
     /// Cached per-callback trampoline layouts for struct_ops callbacks.
     struct_ops_layout_cache:

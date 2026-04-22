@@ -6537,6 +6537,60 @@ fn test_compile_fmod_ret_ctx_retval_program() {
 }
 
 #[test]
+fn test_compile_ksyscall_ctx_arg_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Ksyscall, "nanosleep");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("ksyscall ctx.arg0 should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("ksyscall ctx.arg0 should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kretsyscall_ctx_retval_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::KretSyscall, "nanosleep");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kretsyscall ctx.retval should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("kretsyscall ctx.retval should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_fexit_projected_ctx_retval_program() {
     let Some((function_name, field_name)) = find_fexit_ret_projection_candidate() else {
         return;

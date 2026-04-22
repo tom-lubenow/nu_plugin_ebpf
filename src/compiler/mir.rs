@@ -938,7 +938,7 @@ pub enum CtxField {
     Arg(u8),
     /// Number of argument registers available to BTF-backed tracing programs
     ArgCount,
-    /// Return value (kretprobe/uretprobe)
+    /// Return value (return probes and BTF-backed trampolines)
     RetVal,
     /// Kernel stack ID
     KStack,

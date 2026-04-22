@@ -188,6 +188,15 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             }
             Ok(())
         }
+        ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
+            if syscall.is_empty() {
+                Err(LoadError::Load(
+                    "syscall probe target cannot be empty".to_string(),
+                ))
+            } else {
+                Ok(())
+            }
+        }
         ProgramSpec::Lsm { hook, .. } => {
             if hook.is_empty() {
                 return Err(LoadError::Load(
@@ -328,6 +337,8 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// Supported formats:
 /// - `kprobe:function_name`
 /// - `kretprobe:function_name`
+/// - `ksyscall:syscall_name`
+/// - `kretsyscall:syscall_name`
 /// - `fentry:function_name`
 /// - `fexit:function_name`
 /// - `fmod_ret:function_name`

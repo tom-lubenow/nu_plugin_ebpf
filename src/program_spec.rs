@@ -1609,6 +1609,12 @@ pub enum ProgramSpec {
     Kretprobe {
         function: String,
     },
+    Ksyscall {
+        syscall: String,
+    },
+    KretSyscall {
+        syscall: String,
+    },
     Fentry {
         function: String,
         sleepable: bool,
@@ -1918,6 +1924,12 @@ impl ProgramSpec {
             EbpfProgramType::Kretprobe => Ok(ProgramSpec::Kretprobe {
                 function: target.to_string(),
             }),
+            EbpfProgramType::Ksyscall => Ok(ProgramSpec::Ksyscall {
+                syscall: target.to_string(),
+            }),
+            EbpfProgramType::KretSyscall => Ok(ProgramSpec::KretSyscall {
+                syscall: target.to_string(),
+            }),
             EbpfProgramType::Fentry => Ok(ProgramSpec::Fentry {
                 function: target.to_string(),
                 sleepable,
@@ -2048,6 +2060,8 @@ impl ProgramSpec {
         match self {
             ProgramSpec::Kprobe { .. } => EbpfProgramType::Kprobe,
             ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
+            ProgramSpec::Ksyscall { .. } => EbpfProgramType::Ksyscall,
+            ProgramSpec::KretSyscall { .. } => EbpfProgramType::KretSyscall,
             ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
             ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
             ProgramSpec::FmodRet { .. } => EbpfProgramType::FmodRet,
@@ -2097,6 +2111,9 @@ impl ProgramSpec {
             | ProgramSpec::Fentry { function, .. }
             | ProgramSpec::Fexit { function, .. }
             | ProgramSpec::FmodRet { function, .. } => function.clone(),
+            ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
+                syscall.clone()
+            }
             ProgramSpec::TpBtf { name } => name.clone(),
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
             ProgramSpec::Extension { target } => target.target_string(),
@@ -2543,6 +2560,10 @@ mod tests {
             .expect("tracepoint spec should parse");
         let raw_tracepoint_writable = ProgramSpec::parse("raw_tracepoint.w:sys_enter")
             .expect("writable raw tracepoint spec should parse");
+        let ksyscall =
+            ProgramSpec::parse("ksyscall:nanosleep").expect("ksyscall spec should parse");
+        let kretsyscall =
+            ProgramSpec::parse("kretsyscall:nanosleep").expect("kretsyscall spec should parse");
         let fmod_ret = ProgramSpec::parse("fmod_ret:bpf_modify_return_test")
             .expect("fmod_ret spec should parse");
         let sleepable_fmod_ret = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test")
@@ -2592,6 +2613,12 @@ mod tests {
             raw_tracepoint_writable.section_name(),
             "raw_tracepoint.w/sys_enter"
         );
+        assert_eq!(ksyscall.program_type(), EbpfProgramType::Ksyscall);
+        assert_eq!(ksyscall.target_string(), "nanosleep");
+        assert_eq!(ksyscall.section_name(), "ksyscall/nanosleep");
+        assert_eq!(kretsyscall.program_type(), EbpfProgramType::KretSyscall);
+        assert_eq!(kretsyscall.target_string(), "nanosleep");
+        assert_eq!(kretsyscall.section_name(), "kretsyscall/nanosleep");
         assert_eq!(fmod_ret.program_type(), EbpfProgramType::FmodRet);
         assert_eq!(fmod_ret.target_string(), "bpf_modify_return_test");
         assert_eq!(fmod_ret.section_name(), "fmod_ret/bpf_modify_return_test");

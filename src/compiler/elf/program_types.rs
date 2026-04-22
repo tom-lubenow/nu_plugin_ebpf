@@ -48,6 +48,8 @@ pub struct ProgramTypeInfo {
 
 pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
 pub(super) const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
+pub(super) const KSYSCALL_SPEC_ALIASES: &[&str] = &["ksyscall"];
+pub(super) const KRET_SYSCALL_SPEC_ALIASES: &[&str] = &["kretsyscall"];
 pub(super) const FENTRY_SPEC_ALIASES: &[&str] = &["fentry", "fentry.s"];
 pub(super) const FEXIT_SPEC_ALIASES: &[&str] = &["fexit", "fexit.s"];
 pub(super) const FMOD_RET_SPEC_ALIASES: &[&str] = &["fmod_ret", "fmod_ret.s"];
@@ -137,6 +139,38 @@ pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Kretprobe,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::PtRegs,
+};
+
+pub(super) const KSYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Ksyscall,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
+    canonical_prefix: "ksyscall",
+    spec_aliases: KSYSCALL_SPEC_ALIASES,
+    section_prefix: "ksyscall",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::Ksyscall,
+    target_kind: ProgramTargetKind::KernelSyscall,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::PtRegs,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const KRET_SYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::KretSyscall,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
+    canonical_prefix: "kretsyscall",
+    spec_aliases: KRET_SYSCALL_SPEC_ALIASES,
+    section_prefix: "kretsyscall",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::KretSyscall,
+    target_kind: ProgramTargetKind::KernelSyscall,
+    kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
@@ -749,6 +783,8 @@ pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
 pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::Kprobe,
     EbpfProgramType::Kretprobe,
+    EbpfProgramType::Ksyscall,
+    EbpfProgramType::KretSyscall,
     EbpfProgramType::Fentry,
     EbpfProgramType::Fexit,
     EbpfProgramType::FmodRet,
@@ -791,6 +827,8 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
 pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kprobe",
     "kretprobe",
+    "ksyscall",
+    "kretsyscall",
     "fentry",
     "fentry.s",
     "fexit",

@@ -1800,7 +1800,7 @@ fn test_type_error_perf_event_output_helper_rejects_lsm_program() {
         .infer(&func)
         .expect_err("expected bpf_perf_event_output to be rejected on lsm");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
     )));
 }
 
@@ -1836,7 +1836,7 @@ fn test_type_error_get_stackid_helper_rejects_xdp_program() {
         .infer(&func)
         .expect_err("expected bpf_get_stackid to be rejected on xdp");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -1976,7 +1976,7 @@ fn test_type_error_get_stack_helper_rejects_xdp_program() {
         .infer(&func)
         .expect_err("expected bpf_get_stack to be rejected on xdp");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -2009,7 +2009,7 @@ fn test_type_error_probe_read_helper_rejects_xdp_program() {
         .infer(&func)
         .expect_err("expected bpf_probe_read to be rejected on xdp");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -2982,7 +2982,7 @@ fn test_type_error_task_storage_get_helper_rejects_xdp_program() {
         .infer(&func)
         .expect_err("expected bpf_task_storage_get to be rejected on xdp");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
     )));
 }
 

@@ -122,6 +122,8 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::CgroupSysctl,
             EbpfProgramType::Kprobe,
             EbpfProgramType::Kretprobe,
+            EbpfProgramType::Ksyscall,
+            EbpfProgramType::KretSyscall,
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
             EbpfProgramType::PerfEvent,
@@ -141,7 +143,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SockOps,
             EbpfProgramType::Xdp,
         ],
-        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
+        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::PerfEvent,
@@ -153,6 +155,8 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[
             EbpfProgramType::Kprobe,
             EbpfProgramType::Kretprobe,
+            EbpfProgramType::Ksyscall,
+            EbpfProgramType::KretSyscall,
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
             EbpfProgramType::PerfEvent,
@@ -164,13 +168,15 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
         ],
-        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
+        label: "kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::LegacyProbeRead,
         program_types: &[
             EbpfProgramType::Kprobe,
             EbpfProgramType::Kretprobe,
+            EbpfProgramType::Ksyscall,
+            EbpfProgramType::KretSyscall,
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
             EbpfProgramType::Lsm,
@@ -183,7 +189,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
         ],
-        label: "kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
+        label: "kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketCookie,
@@ -309,6 +315,8 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[
             EbpfProgramType::Kprobe,
             EbpfProgramType::Kretprobe,
+            EbpfProgramType::Ksyscall,
+            EbpfProgramType::KretSyscall,
             EbpfProgramType::Uprobe,
             EbpfProgramType::Uretprobe,
             EbpfProgramType::PerfEvent,
@@ -321,7 +329,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::TpBtf,
             EbpfProgramType::Lsm,
         ],
-        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm",
+        label: "kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Lsm,
