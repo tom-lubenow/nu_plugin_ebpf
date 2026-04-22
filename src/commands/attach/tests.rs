@@ -7853,6 +7853,60 @@ fn test_compile_lwt_ctx_scalar_counter_programs() {
             "ifindex",
             "lwt_seg6local ctx.ifindex count",
         ),
+        (
+            EbpfProgramType::LwtIn,
+            "demo-route",
+            "len",
+            "lwt_in ctx.len count",
+        ),
+        (
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            "protocol",
+            "lwt_out ctx.protocol count",
+        ),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            "ingress_ifindex",
+            "lwt_seg6local ctx.ingress_ifindex count",
+        ),
+        (
+            EbpfProgramType::LwtIn,
+            "demo-route",
+            "cgroup_classid",
+            "lwt_in ctx.cgroup_classid count",
+        ),
+        (
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            "route_realm",
+            "lwt_out ctx.route_realm count",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            "hash_recalc",
+            "lwt_xmit ctx.hash_recalc count",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            "csum_level",
+            "lwt_xmit ctx.csum_level count",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            "mark",
+            "lwt_xmit ctx.mark count",
+        ),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            "priority",
+            "lwt_seg6local ctx.priority count",
+        ),
     ] {
         assert_ctx_path_count_program_compiles(
             program_type,
@@ -7860,6 +7914,29 @@ fn test_compile_lwt_ctx_scalar_counter_programs() {
             CellPath {
                 members: vec![string_member(field)],
             },
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_lwt_ctx_packet_and_cb_counter_programs() {
+    for (program_type, members, context) in [
+        (
+            EbpfProgramType::LwtIn,
+            vec![string_member("data"), int_member(0)],
+            "lwt_in ctx.data[0] count",
+        ),
+        (
+            EbpfProgramType::LwtOut,
+            vec![string_member("cb"), int_member(0)],
+            "lwt_out ctx.cb[0] count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            program_type,
+            "demo-route",
+            CellPath { members },
             context,
         );
     }
