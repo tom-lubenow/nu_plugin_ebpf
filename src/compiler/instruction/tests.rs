@@ -271,6 +271,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SendSignalThread)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_copy_from_user"),
+        Some(BpfHelper::CopyFromUser)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("copy_from_user_task"),
+        Some(BpfHelper::CopyFromUserTask)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -467,6 +475,7 @@ fn test_helper_signature_probe_read_helpers() {
         (BpfHelper::ProbeReadStr, "bpf_probe_read_str"),
         (BpfHelper::ProbeReadUser, "bpf_probe_read_user"),
         (BpfHelper::ProbeReadKernel, "bpf_probe_read_kernel"),
+        (BpfHelper::CopyFromUser, "bpf_copy_from_user"),
         (BpfHelper::ProbeReadUserStr, "bpf_probe_read_user_str"),
         (BpfHelper::ProbeReadKernelStr, "bpf_probe_read_kernel_str"),
     ];
@@ -481,6 +490,20 @@ fn test_helper_signature_probe_read_helpers() {
         assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
+}
+
+#[test]
+fn test_helper_signature_copy_from_user_task() {
+    let sig = HelperSignature::for_id(BpfHelper::CopyFromUserTask as u32)
+        .expect("expected bpf_copy_from_user_task helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1839,6 +1862,30 @@ fn test_get_task_stack_buffer_contract() {
 }
 
 #[test]
+fn test_copy_from_user_buffer_contracts() {
+    assert_eq!(
+        BpfHelper::CopyFromUser.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::CopyFromUser.scalar_arg_nonnegative_requirement(1),
+        Some("helper 'bpf_copy_from_user' requires arg1 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::CopyFromUserTask.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::CopyFromUserTask.scalar_arg_nonnegative_requirement(1),
+        Some("helper 'bpf_copy_from_user_task' requires arg1 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::CopyFromUserTask.zero_scalar_arg_requirement(),
+        Some((4, "helper 'bpf_copy_from_user_task' requires arg4 = 0"))
+    );
+}
+
+#[test]
 fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
@@ -2029,6 +2076,46 @@ fn test_get_task_stack_helper_contract() {
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);
     assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_copy_from_user_helper_contracts() {
+    let semantics = BpfHelper::CopyFromUser.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let dst = semantics.ptr_arg_rules[0];
+    assert_eq!(dst.arg_idx, 0);
+    assert_eq!(dst.op, "helper copy_from_user dst");
+    assert!(dst.allowed.allow_stack);
+    assert!(dst.allowed.allow_map);
+    assert!(!dst.allowed.allow_user);
+    assert_eq!(dst.size_from_arg, Some(1));
+
+    let src = semantics.ptr_arg_rules[1];
+    assert_eq!(src.arg_idx, 2);
+    assert_eq!(src.op, "helper copy_from_user src");
+    assert!(src.allowed.allow_user);
+    assert!(!src.allowed.allow_stack);
+    assert!(!src.allowed.allow_kernel);
+    assert_eq!(src.size_from_arg, Some(1));
+
+    let task_semantics = BpfHelper::CopyFromUserTask.semantics();
+    assert!(task_semantics.positive_size_args.is_empty());
+    assert_eq!(task_semantics.ptr_arg_rules.len(), 3);
+
+    let task_src = task_semantics.ptr_arg_rules[1];
+    assert_eq!(task_src.arg_idx, 2);
+    assert_eq!(task_src.op, "helper copy_from_user_task src");
+    assert!(task_src.allowed.allow_user);
+    assert!(!task_src.allowed.allow_stack);
+
+    let task = task_semantics.ptr_arg_rules[2];
+    assert_eq!(task.arg_idx, 3);
+    assert_eq!(task.op, "helper copy_from_user_task task");
+    assert!(task.allowed.allow_kernel);
+    assert!(!task.allowed.allow_user);
+    assert_eq!(task.size_from_arg, None);
 }
 
 #[test]
@@ -2389,6 +2476,10 @@ fn test_helper_ref_kind_mappings() {
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::GetTaskStack, 0),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::CopyFromUserTask, 3),
         Some(KfuncRefKind::Task)
     );
     assert_eq!(helper_pointer_arg_ref_kind(BpfHelper::SkRelease, 1), None);

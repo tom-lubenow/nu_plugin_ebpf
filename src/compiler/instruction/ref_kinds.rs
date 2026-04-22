@@ -703,7 +703,8 @@ pub const fn helper_pointer_arg_ref_kind(
             Some(KfuncRefKind::Socket)
         }
         (BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete, 1)
-        | (BpfHelper::TaskPtRegs | BpfHelper::GetTaskStack, 0) => Some(KfuncRefKind::Task),
+        | (BpfHelper::TaskPtRegs | BpfHelper::GetTaskStack, 0)
+        | (BpfHelper::CopyFromUserTask, 3) => Some(KfuncRefKind::Task),
         (BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete, 1) => {
             Some(KfuncRefKind::Inode)
         }

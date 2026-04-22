@@ -670,6 +670,47 @@ impl BpfHelper {
             },
         ];
 
+        const COPY_FROM_USER_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper copy_from_user dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper copy_from_user src",
+                allowed: USER,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+        ];
+
+        const COPY_FROM_USER_TASK_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper copy_from_user_task dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper copy_from_user_task src",
+                allowed: USER,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper copy_from_user_task task",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         const RINGBUF_RESERVE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper ringbuf_reserve map",
@@ -1779,6 +1820,16 @@ impl BpfHelper {
             BpfHelper::ProbeReadUser | BpfHelper::ProbeReadUserStr => HelperSemantics {
                 ptr_arg_rules: PROBE_READ_USER_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::CopyFromUser => HelperSemantics {
+                ptr_arg_rules: COPY_FROM_USER_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::CopyFromUserTask => HelperSemantics {
+                ptr_arg_rules: COPY_FROM_USER_TASK_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::RingbufReserve => HelperSemantics {

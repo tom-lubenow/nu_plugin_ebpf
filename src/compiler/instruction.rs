@@ -66,6 +66,8 @@ pub enum BpfHelper {
     ProbeReadUser = 112,
     /// long bpf_probe_read_kernel(dst, size, unsafe_ptr)
     ProbeReadKernel = 113,
+    /// long bpf_copy_from_user(dst, size, user_ptr)
+    CopyFromUser = 148,
     /// u64 bpf_ktime_get_ns(void)
     KtimeGetNs = 5,
     /// int bpf_trace_printk(fmt, fmt_size, ...)
@@ -164,6 +166,8 @@ pub enum BpfHelper {
     SkbAdjustRoom = 50,
     /// long bpf_skb_set_tstamp(skb, tstamp, tstamp_type)
     SkbSetTstamp = 192,
+    /// long bpf_copy_from_user_task(dst, size, user_ptr, task, flags)
+    CopyFromUserTask = 191,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
     SetSockOpt = 49,
     /// long bpf_sk_redirect_map(skb, map, key, flags)
@@ -389,6 +393,7 @@ impl BpfHelper {
             BpfHelper::ProbeReadStr => "bpf_probe_read_str",
             BpfHelper::ProbeReadUser => "bpf_probe_read_user",
             BpfHelper::ProbeReadKernel => "bpf_probe_read_kernel",
+            BpfHelper::CopyFromUser => "bpf_copy_from_user",
             BpfHelper::KtimeGetNs => "bpf_ktime_get_ns",
             BpfHelper::TracePrintk => "bpf_trace_printk",
             BpfHelper::GetPrandomU32 => "bpf_get_prandom_u32",
@@ -438,6 +443,7 @@ impl BpfHelper {
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SkbAdjustRoom => "bpf_skb_adjust_room",
             BpfHelper::SkbSetTstamp => "bpf_skb_set_tstamp",
+            BpfHelper::CopyFromUserTask => "bpf_copy_from_user_task",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
@@ -562,6 +568,7 @@ impl BpfHelper {
             "probe_read_str" => Some(Self::ProbeReadStr),
             "probe_read_user" => Some(Self::ProbeReadUser),
             "probe_read_kernel" => Some(Self::ProbeReadKernel),
+            "copy_from_user" => Some(Self::CopyFromUser),
             "ktime_get_ns" => Some(Self::KtimeGetNs),
             "trace_printk" => Some(Self::TracePrintk),
             "get_prandom_u32" => Some(Self::GetPrandomU32),
@@ -611,6 +618,7 @@ impl BpfHelper {
             "get_socket_uid" => Some(Self::GetSocketUid),
             "skb_adjust_room" => Some(Self::SkbAdjustRoom),
             "skb_set_tstamp" => Some(Self::SkbSetTstamp),
+            "copy_from_user_task" => Some(Self::CopyFromUserTask),
             "setsockopt" => Some(Self::SetSockOpt),
             "sk_redirect_map" => Some(Self::SkRedirectMap),
             "sock_map_update" => Some(Self::SockMapUpdate),
@@ -728,6 +736,7 @@ impl BpfHelper {
             (Self::ReadBranchRecords, 1) => Some(2),
             (Self::GetBranchSnapshot, 0) => Some(1),
             (Self::GetTaskStack, 1) => Some(2),
+            (Self::CopyFromUser | Self::CopyFromUserTask, 0) => Some(1),
             _ => None,
         }
     }
@@ -753,6 +762,10 @@ impl BpfHelper {
         match (self, arg_idx) {
             (Self::GetStack, 2) => Some("helper 'bpf_get_stack' requires arg2 to be >= 0"),
             (Self::GetTaskStack, 2) => Some("helper 'bpf_get_task_stack' requires arg2 to be >= 0"),
+            (Self::CopyFromUser, 1) => Some("helper 'bpf_copy_from_user' requires arg1 to be >= 0"),
+            (Self::CopyFromUserTask, 1) => {
+                Some("helper 'bpf_copy_from_user_task' requires arg1 to be >= 0")
+            }
             _ => None,
         }
     }

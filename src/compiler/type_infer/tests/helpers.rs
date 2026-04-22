@@ -6929,6 +6929,153 @@ fn test_type_error_get_task_stack_rejects_negative_size() {
     );
 }
 
+fn make_copy_from_user_call(size: i64, buf_size: usize, with_task: bool) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let task = with_task.then(|| func.alloc_vreg());
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: src,
+        field: CtxField::Arg(0),
+        slot: None,
+    });
+
+    if let Some(task) = task {
+        block.instructions.push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CopyFromUserTask as u32,
+            args: vec![
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(size),
+                MirValue::VReg(src),
+                MirValue::VReg(task),
+                MirValue::Const(0),
+            ],
+        });
+    } else {
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CopyFromUser as u32,
+            args: vec![
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(size),
+                MirValue::VReg(src),
+            ],
+        });
+    }
+
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_helper_copy_from_user_returns_i64() {
+    let (func, dst) = make_copy_from_user_call(16, 16, false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_copy_from_user helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_helper_copy_from_user_task_returns_i64() {
+    let (func, dst) = make_copy_from_user_call(16, 16, true);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_copy_from_user_task helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_copy_from_user_rejects_small_buffer() {
+    let (func, _) = make_copy_from_user_call(16, 8, false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_copy_from_user buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper copy_from_user dst requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_copy_from_user_task_rejects_nonzero_flags() {
+    let (mut func, _) = make_copy_from_user_call(16, 16, true);
+    let block = func.block_mut(BlockId(0));
+    let call = block
+        .instructions
+        .iter_mut()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. }
+                if *helper == BpfHelper::CopyFromUserTask as u32 =>
+            {
+                Some(args)
+            }
+            _ => None,
+        })
+        .expect("expected copy_from_user_task call");
+    call[4] = MirValue::Const(1);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_copy_from_user_task flags error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_copy_from_user_task' requires arg4 = 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_copy_from_user_rejects_stack_src() {
+    let mut func = make_test_function();
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CopyFromUser as u32,
+        args: vec![
+            MirValue::StackSlot(dst_slot),
+            MirValue::Const(8),
+            MirValue::StackSlot(src_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copy_from_user source pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper copy_from_user src expects pointer in [User]")
+    }));
+}
+
 #[test]
 fn test_type_error_helper_sk_fullsock_rejects_non_kernel_pointer() {
     let mut func = make_test_function();

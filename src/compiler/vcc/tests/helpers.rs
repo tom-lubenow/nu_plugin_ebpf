@@ -12449,6 +12449,238 @@ fn test_verify_mir_helper_get_task_stack_rejects_negative_size() {
     );
 }
 
+fn make_copy_from_user_vcc_call(
+    size: i64,
+    buf_size: usize,
+    with_task: bool,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let call_block = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let src = func.alloc_vreg();
+    let src_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let task = with_task.then(|| func.alloc_vreg());
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    if let Some(task) = task {
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: task,
+                helper: BpfHelper::GetCurrentTaskBtf as u32,
+                args: vec![],
+            });
+    }
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: src_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(src),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: src_non_null,
+        if_true: call_block,
+        if_false: done,
+    };
+
+    let args = if let Some(task) = task {
+        vec![
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+            MirValue::VReg(src),
+            MirValue::VReg(task),
+            MirValue::Const(flags),
+        ]
+    } else {
+        vec![
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+            MirValue::VReg(src),
+        ]
+    };
+    func.block_mut(call_block)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: if with_task {
+                BpfHelper::CopyFromUserTask as u32
+            } else {
+                BpfHelper::CopyFromUser as u32
+            },
+            args,
+        });
+    func.block_mut(call_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(src_non_null, MirType::Bool);
+    if let Some(task) = task {
+        types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    }
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_accepts_user_src() {
+    let (func, types) = make_copy_from_user_vcc_call(16, 16, false, 0);
+    verify_mir(&func, &types).expect("expected bpf_copy_from_user helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_task_accepts_task_arg() {
+    let (func, types) = make_copy_from_user_vcc_call(16, 16, true, 0);
+    verify_mir(&func, &types).expect("expected bpf_copy_from_user_task helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
+    let (func, types) = make_copy_from_user_vcc_call(16, 8, false, 0);
+    let err = verify_mir(&func, &types).expect_err("expected copy_from_user bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper copy_from_user dst out of bounds")
+            || e.message.contains("pointer access out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_task_rejects_nonzero_flags() {
+    let (func, types) = make_copy_from_user_vcc_call(16, 16, true, 1);
+    let err = verify_mir(&func, &types).expect_err("expected copy_from_user_task flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_copy_from_user_task' requires arg4 = 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_task_rejects_cgroup_task_argument() {
+    let (mut func, entry) = new_mir_function();
+    let cgroup_guard = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let id = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let src_non_null = func.alloc_vreg();
+    let cgroup = func.alloc_vreg();
+    let cgroup_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let cleanup_ret = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: cgroup,
+        kfunc: "bpf_cgroup_from_id".to_string(),
+        btf_id: None,
+        args: vec![id],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: src_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(src),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: src_non_null,
+        if_true: cgroup_guard,
+        if_false: done,
+    };
+
+    func.block_mut(cgroup_guard)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: cgroup_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(cgroup),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(cgroup_guard).terminator = MirInst::Branch {
+        cond: cgroup_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CopyFromUserTask as u32,
+        args: vec![
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+            MirValue::VReg(src),
+            MirValue::VReg(cgroup),
+            MirValue::Const(0),
+        ],
+    });
+    func.block_mut(call).instructions.push(MirInst::CallKfunc {
+        dst: cleanup_ret,
+        kfunc: "bpf_cgroup_release".to_string(),
+        btf_id: None,
+        args: vec![cgroup],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(id, MirType::I64);
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(src_non_null, MirType::Bool);
+    types.insert(
+        cgroup,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cgroup_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+    types.insert(cleanup_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected copy_from_user_task ref error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 191 arg3 expects task reference, got cgroup reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_helper_task_pt_regs_rejects_anonymous_kernel_pointer() {
     let (mut func, entry) = new_mir_function();

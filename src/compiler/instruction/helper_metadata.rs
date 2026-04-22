@@ -149,6 +149,7 @@ impl BpfHelper {
             141 => Some(Self::GetTaskStack),
             145 => Some(Self::InodeStorageGet),
             146 => Some(Self::InodeStorageDelete),
+            148 => Some(Self::CopyFromUser),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
             158 => Some(Self::GetCurrentTaskBtf),
@@ -159,6 +160,7 @@ impl BpfHelper {
             185 => Some(Self::GetFuncArgCnt),
             178 => Some(Self::SkcToUnixSock),
             208 => Some(Self::KtimeGetTaiNs),
+            191 => Some(Self::CopyFromUserTask),
             210 => Some(Self::CgrpStorageGet),
             211 => Some(Self::CgrpStorageDelete),
             114 => Some(Self::ProbeReadUserStr),
@@ -340,10 +342,17 @@ impl BpfHelper {
             BpfHelper::ProbeRead
             | BpfHelper::ProbeReadStr
             | BpfHelper::ProbeReadUser
-            | BpfHelper::ProbeReadKernel => HelperSignature {
+            | BpfHelper::ProbeReadKernel
+            | BpfHelper::CopyFromUser => HelperSignature {
                 min_args: 3,
                 max_args: 3,
                 arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::CopyFromUserTask => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, P, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::KtimeGetNs
@@ -867,6 +876,9 @@ impl BpfHelper {
             }
             BpfHelper::GetBranchSnapshot => {
                 Some((2, "helper 'bpf_get_branch_snapshot' requires arg2 = 0"))
+            }
+            BpfHelper::CopyFromUserTask => {
+                Some((4, "helper 'bpf_copy_from_user_task' requires arg4 = 0"))
             }
             BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),
             BpfHelper::ReserveHdrOpt => Some((2, "helper 'bpf_reserve_hdr_opt' requires arg2 = 0")),
