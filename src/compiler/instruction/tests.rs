@@ -443,6 +443,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetTaskStack)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_d_path"),
+        Some(BpfHelper::DPath)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -1063,6 +1067,18 @@ fn test_helper_signature_get_branch_snapshot() {
     assert_eq!(sig.max_args, 3);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_d_path() {
+    let sig =
+        HelperSignature::for_id(BpfHelper::DPath as u32).expect("expected bpf_d_path signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
@@ -1886,6 +1902,15 @@ fn test_copy_from_user_buffer_contracts() {
 }
 
 #[test]
+fn test_d_path_buffer_contract() {
+    assert_eq!(BpfHelper::DPath.zero_size_pointer_arg_size_arg(1), Some(2));
+    assert_eq!(
+        BpfHelper::DPath.scalar_arg_nonnegative_requirement(2),
+        Some("helper 'bpf_d_path' requires arg2 to be >= 0")
+    );
+}
+
+#[test]
 fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
@@ -2116,6 +2141,28 @@ fn test_copy_from_user_helper_contracts() {
     assert!(task.allowed.allow_kernel);
     assert!(!task.allowed.allow_user);
     assert_eq!(task.size_from_arg, None);
+}
+
+#[test]
+fn test_d_path_helper_contract() {
+    let semantics = BpfHelper::DPath.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let path = semantics.ptr_arg_rules[0];
+    assert_eq!(path.arg_idx, 0);
+    assert_eq!(path.op, "helper d_path path");
+    assert!(path.allowed.allow_kernel);
+    assert!(!path.allowed.allow_stack);
+    assert_eq!(path.size_from_arg, None);
+
+    let buf = semantics.ptr_arg_rules[1];
+    assert_eq!(buf.arg_idx, 1);
+    assert_eq!(buf.op, "helper d_path buf");
+    assert!(buf.allowed.allow_stack);
+    assert!(buf.allowed.allow_map);
+    assert!(!buf.allowed.allow_kernel);
+    assert_eq!(buf.size_from_arg, Some(2));
 }
 
 #[test]

@@ -884,6 +884,22 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: Some(1),
         }];
+        const D_PATH_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper d_path path",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper d_path buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
 
         const GET_STACKID_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1889,6 +1905,11 @@ impl BpfHelper {
             },
             BpfHelper::GetBranchSnapshot => HelperSemantics {
                 ptr_arg_rules: GET_BRANCH_SNAPSHOT_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::DPath => HelperSemantics {
+                ptr_arg_rules: D_PATH_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

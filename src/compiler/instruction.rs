@@ -230,6 +230,8 @@ pub enum BpfHelper {
     GetStackId = 27,
     /// long bpf_get_stack(ctx, buf, size, flags)
     GetStack = 67,
+    /// long bpf_d_path(path, buf, size)
+    DPath = 147,
     /// s64 bpf_csum_diff(from, from_size, to, to_size, seed)
     CsumDiff = 28,
     /// long bpf_skb_get_tunnel_opt(skb, opt, size)
@@ -475,6 +477,7 @@ impl BpfHelper {
             BpfHelper::SkbLoadBytes => "bpf_skb_load_bytes",
             BpfHelper::GetStackId => "bpf_get_stackid",
             BpfHelper::GetStack => "bpf_get_stack",
+            BpfHelper::DPath => "bpf_d_path",
             BpfHelper::CsumDiff => "bpf_csum_diff",
             BpfHelper::SkbGetTunnelOpt => "bpf_skb_get_tunnel_opt",
             BpfHelper::SkbSetTunnelOpt => "bpf_skb_set_tunnel_opt",
@@ -650,6 +653,7 @@ impl BpfHelper {
             "skb_load_bytes" => Some(Self::SkbLoadBytes),
             "get_stackid" => Some(Self::GetStackId),
             "get_stack" => Some(Self::GetStack),
+            "d_path" => Some(Self::DPath),
             "csum_diff" => Some(Self::CsumDiff),
             "skb_get_tunnel_opt" => Some(Self::SkbGetTunnelOpt),
             "skb_set_tunnel_opt" => Some(Self::SkbSetTunnelOpt),
@@ -737,6 +741,7 @@ impl BpfHelper {
             (Self::GetBranchSnapshot, 0) => Some(1),
             (Self::GetTaskStack, 1) => Some(2),
             (Self::CopyFromUser | Self::CopyFromUserTask, 0) => Some(1),
+            (Self::DPath, 1) => Some(2),
             _ => None,
         }
     }
@@ -762,6 +767,7 @@ impl BpfHelper {
         match (self, arg_idx) {
             (Self::GetStack, 2) => Some("helper 'bpf_get_stack' requires arg2 to be >= 0"),
             (Self::GetTaskStack, 2) => Some("helper 'bpf_get_task_stack' requires arg2 to be >= 0"),
+            (Self::DPath, 2) => Some("helper 'bpf_d_path' requires arg2 to be >= 0"),
             (Self::CopyFromUser, 1) => Some("helper 'bpf_copy_from_user' requires arg1 to be >= 0"),
             (Self::CopyFromUserTask, 1) => {
                 Some("helper 'bpf_copy_from_user_task' requires arg1 to be >= 0")

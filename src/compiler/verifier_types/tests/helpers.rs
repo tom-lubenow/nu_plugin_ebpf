@@ -5008,6 +5008,122 @@ fn test_verify_mir_helper_get_task_stack_rejects_negative_size() {
     );
 }
 
+fn make_d_path_verify_call(size: i64, buf_size: usize) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let path = func.alloc_vreg();
+    let path_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: path_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(path),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: path_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::DPath as u32,
+        args: vec![
+            MirValue::VReg(path),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        path,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(path_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_d_path_accepts_kernel_path() {
+    let (func, types) = make_d_path_verify_call(16, 16);
+    verify_mir(&func, &types).expect("expected bpf_d_path helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_d_path_rejects_small_buffer() {
+    let (func, types) = make_d_path_verify_call(16, 8);
+    let err = verify_mir(&func, &types).expect_err("expected d_path bounds error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper d_path buf out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_d_path_rejects_negative_size() {
+    let (func, types) = make_d_path_verify_call(-1, 8);
+    let err = verify_mir(&func, &types).expect_err("expected d_path size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 147 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_d_path_rejects_stack_path() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let path_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::DPath as u32,
+            args: vec![
+                MirValue::StackSlot(path_slot),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected d_path path-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper d_path path expects pointer in [Kernel]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_copy_from_user_verify_call(
     size: i64,
     buf_size: usize,

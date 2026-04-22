@@ -149,6 +149,7 @@ impl BpfHelper {
             141 => Some(Self::GetTaskStack),
             145 => Some(Self::InodeStorageGet),
             146 => Some(Self::InodeStorageDelete),
+            147 => Some(Self::DPath),
             148 => Some(Self::CopyFromUser),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
@@ -496,6 +497,12 @@ impl BpfHelper {
             BpfHelper::ReadBranchRecords => HelperSignature {
                 min_args: 4,
                 max_args: 4,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::DPath => HelperSignature {
+                min_args: 3,
+                max_args: 3,
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },

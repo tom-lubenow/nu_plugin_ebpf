@@ -6929,6 +6929,104 @@ fn test_type_error_get_task_stack_rejects_negative_size() {
     );
 }
 
+fn make_d_path_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let path = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: path,
+        field: CtxField::Arg(0),
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::DPath as u32,
+        args: vec![
+            MirValue::VReg(path),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    (func, dst)
+}
+
+#[test]
+fn test_infer_helper_d_path_returns_i64() {
+    let (func, dst) = make_d_path_call(16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "vfs_truncate");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_d_path helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_d_path_rejects_small_buffer() {
+    let (func, _) = make_d_path_call(16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "vfs_truncate");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_d_path buffer bounds error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper d_path buf requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_d_path_rejects_negative_size() {
+    let (func, _) = make_d_path_call(-1, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "vfs_truncate");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_d_path negative-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 147 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_d_path_rejects_stack_path() {
+    let mut func = make_test_function();
+    let path_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::DPath as u32,
+        args: vec![
+            MirValue::StackSlot(path_slot),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_d_path path pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper d_path path expects pointer in [Kernel]")
+    }));
+}
+
 fn make_copy_from_user_call(size: i64, buf_size: usize, with_task: bool) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let src = func.alloc_vreg();
