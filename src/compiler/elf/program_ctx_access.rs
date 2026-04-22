@@ -589,8 +589,12 @@ const SKB_CTX_FIELDS: &[CtxField] = &[
 ];
 const REUSEPORT_CTX_FIELDS: &[CtxField] = &[CtxField::BindInany, CtxField::MigratingSocket];
 const FLOW_DISSECTOR_CTX_FIELDS: &[CtxField] = &[CtxField::FlowKeys];
-const NETFILTER_CTX_FIELDS: &[CtxField] =
-    &[CtxField::NetfilterHook, CtxField::NetfilterProtocolFamily];
+const NETFILTER_CTX_FIELDS: &[CtxField] = &[
+    CtxField::NetfilterState,
+    CtxField::NetfilterSkb,
+    CtxField::NetfilterHook,
+    CtxField::NetfilterProtocolFamily,
+];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
     CtxField::RemoteIp6,

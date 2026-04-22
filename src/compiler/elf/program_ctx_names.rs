@@ -42,6 +42,9 @@ const CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
     &[("retval", CtxField::SockoptRetval)];
 const NETFILTER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
+    ("state", CtxField::NetfilterState),
+    ("nf_state", CtxField::NetfilterState),
+    ("skb", CtxField::NetfilterSkb),
     ("hook", CtxField::NetfilterHook),
     ("pf", CtxField::NetfilterProtocolFamily),
     ("protocol_family", CtxField::NetfilterProtocolFamily),

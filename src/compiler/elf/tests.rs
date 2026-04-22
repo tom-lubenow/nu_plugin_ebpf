@@ -1526,6 +1526,8 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(
         !EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::MigratingSocket)
     );
+    assert!(EbpfProgramType::Netfilter.ctx_field_pointer_is_non_null(&CtxField::NetfilterState));
+    assert!(EbpfProgramType::Netfilter.ctx_field_pointer_is_non_null(&CtxField::NetfilterSkb));
 
     let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
     assert!(kprobe.ctx_field_pointer_is_non_null(&CtxField::Task));
@@ -1544,6 +1546,17 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
     let task_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::Task)
         .expect("expected ctx.task type spec");
     assert_eq!(task_spec.kernel_btf_runtime_type_name, Some("task_struct"));
+
+    let nf_state_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterState)
+        .expect("expected ctx.state type spec");
+    assert_eq!(
+        nf_state_spec.kernel_btf_runtime_type_name,
+        Some("nf_hook_state")
+    );
+
+    let nf_skb_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterSkb)
+        .expect("expected ctx.skb type spec");
+    assert_eq!(nf_skb_spec.kernel_btf_runtime_type_name, Some("sk_buff"));
 
     let pid_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::Pid)
         .expect("expected ctx.pid type spec");
@@ -4487,6 +4500,24 @@ fn test_program_type_resolves_program_specific_context_aliases() {
             .expect("kretprobe retval should keep return-probe meaning"),
         CtxField::RetVal
     );
+    assert_eq!(
+        EbpfProgramType::Netfilter
+            .resolve_ctx_field_name("state")
+            .expect("netfilter state alias should resolve"),
+        CtxField::NetfilterState
+    );
+    assert_eq!(
+        EbpfProgramType::Netfilter
+            .resolve_ctx_field_name("nf_state")
+            .expect("netfilter nf_state alias should resolve"),
+        CtxField::NetfilterState
+    );
+    assert_eq!(
+        EbpfProgramType::Netfilter
+            .resolve_ctx_field_name("skb")
+            .expect("netfilter skb alias should resolve"),
+        CtxField::NetfilterSkb
+    );
 }
 
 #[test]
@@ -6024,6 +6055,14 @@ fn test_probe_context_allows_netfilter_fields() {
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::NetfilterProtocolFamily)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::NetfilterState)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::NetfilterSkb)
             .is_none()
     );
     assert!(

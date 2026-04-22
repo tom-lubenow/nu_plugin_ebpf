@@ -730,6 +730,8 @@ Context parameter syntax (recommended):
     `0`, `drop` for `2`, and `continue` / `fallback` for `129`.
 
   netfilter fields:
+    {|ctx| $ctx.state.hook } - Project the trusted nf_hook_state pointer
+    {|ctx| $ctx.skb.len } - Project the trusted sk_buff pointer
     {|ctx| $ctx.hook } - Get nf_hook_state hook number
     {|ctx| $ctx.pf } - Get nf_hook_state protocol family
     {|ctx| $ctx.protocol_family } - Alias for ctx.pf

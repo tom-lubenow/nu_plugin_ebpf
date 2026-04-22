@@ -625,6 +625,16 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             }))
             .non_null_pointer()
         }
+        CtxField::NetfilterState => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("nf_hook_state"))
+                .with_kernel_btf_runtime_type("nf_hook_state"),
+        )
+        .non_null_pointer(),
+        CtxField::NetfilterSkb => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("sk_buff"))
+                .with_kernel_btf_runtime_type("sk_buff"),
+        )
+        .non_null_pointer(),
         CtxField::NetfilterHook | CtxField::NetfilterProtocolFamily => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U8))
         }

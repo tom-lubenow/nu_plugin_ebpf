@@ -7633,6 +7633,39 @@ fn test_compile_netfilter_ctx_scalar_counter_programs() {
 }
 
 #[test]
+fn test_compile_netfilter_ctx_typed_pointer_counter_programs() {
+    for (members, context) in [
+        (
+            vec![string_member("state"), string_member("hook")],
+            "netfilter ctx.state.hook count",
+        ),
+        (
+            vec![string_member("nf_state"), string_member("pf")],
+            "netfilter ctx.nf_state.pf count",
+        ),
+        (
+            vec![
+                string_member("nf_state"),
+                string_member("in"),
+                string_member("ifindex"),
+            ],
+            "netfilter ctx.nf_state.in.ifindex count",
+        ),
+        (
+            vec![string_member("skb"), string_member("len")],
+            "netfilter ctx.skb.len count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            CellPath { members },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_lwt_ctx_scalar_counter_programs() {
     for (program_type, target, field, context) in [
         (

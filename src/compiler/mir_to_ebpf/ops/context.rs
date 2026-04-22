@@ -436,6 +436,14 @@ impl<'a> MirToEbpfCompiler<'a> {
         (192, 200)
     }
 
+    pub(super) fn bpf_nf_ctx_offsets() -> (i16, i16) {
+        // struct bpf_nf_ctx {
+        //     const struct nf_hook_state *state;
+        //     struct sk_buff *skb;
+        // };
+        (0, 8)
+    }
+
     pub(super) fn compile_ctx_u32_array_to_stack(
         &mut self,
         dst: EbpfReg,
