@@ -38,6 +38,20 @@ fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> L
     ))
 }
 
+fn aya_load_compatible_object(object: &EbpfObject) -> EbpfObject {
+    let mut object = object.clone();
+
+    for program in &mut object.programs {
+        if program.prog_type == crate::compiler::EbpfProgramType::Tcx {
+            // Aya 0.13 loads TCX programs through the SCHED_CLS classifier parser.
+            // Preserve the public tcx/* model, but feed Aya a section it recognizes.
+            program.section_name_override = Some("classifier".to_string());
+        }
+    }
+
+    object
+}
+
 impl EbpfState {
     fn next_probe_id(&self) -> u32 {
         self.next_id.fetch_add(1, Ordering::SeqCst)
@@ -102,7 +116,8 @@ impl EbpfState {
         }
 
         // Generate ELF
-        let elf_bytes = object.to_elf()?;
+        let load_object = aya_load_compatible_object(object);
+        let elf_bytes = load_object.to_elf()?;
 
         // Load with Aya using EbpfLoader for optional map pinning
         let mut ebpf = if let Some(group) = pin_group {
@@ -989,5 +1004,58 @@ impl EbpfState {
             .insert(id, active_probe);
 
         Ok(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aya_obj::Object as AyaObject;
+
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+    use crate::compiler::{EbpfProgram, EbpfProgramType};
+
+    #[test]
+    fn test_aya_load_compatible_object_rewrites_tcx_section() {
+        let mut builder = EbpfBuilder::new();
+        builder
+            .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+            .push(EbpfInsn::exit());
+        let object =
+            EbpfProgram::new(EbpfProgramType::Tcx, "lo:ingress", "main", builder).into_object();
+
+        assert_eq!(
+            object
+                .primary_program()
+                .expect("object should have a primary program")
+                .section_name()
+                .expect("tcx section should resolve"),
+            "tcx/ingress"
+        );
+
+        let load_object = aya_load_compatible_object(&object);
+
+        assert_eq!(
+            object
+                .primary_program()
+                .expect("original object should remain unchanged")
+                .section_name()
+                .expect("tcx section should resolve"),
+            "tcx/ingress"
+        );
+        assert_eq!(
+            load_object
+                .primary_program()
+                .expect("load object should have a primary program")
+                .section_name()
+                .expect("loader section should resolve"),
+            "classifier"
+        );
+
+        let elf = load_object
+            .to_elf()
+            .expect("loader-compatible object should emit");
+        let parsed = AyaObject::parse(&elf).expect("Aya should parse rewritten TCX object");
+        assert!(parsed.programs.contains_key("main"));
     }
 }
