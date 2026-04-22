@@ -1313,6 +1313,7 @@ impl BpfHelper {
             | BpfHelper::GetHashRecalc
             | BpfHelper::CsumUpdate
             | BpfHelper::CsumLevel
+            | BpfHelper::SkbEcnSetCe
             | BpfHelper::SetHashInvalid
             | BpfHelper::SetHash => HelperSemantics {
                 ptr_arg_rules: SKB_MUTATE_RULES,

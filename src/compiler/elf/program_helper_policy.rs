@@ -758,9 +758,11 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::SkAssign => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcSkLookup,
         },
-        BpfHelper::GetListenerSock | BpfHelper::SkFullsock => HelperProgramSurfaceSpec {
-            family: HelperProgramSurfaceFamily::TcCgroupSkb,
-        },
+        BpfHelper::SkbEcnSetCe | BpfHelper::GetListenerSock | BpfHelper::SkFullsock => {
+            HelperProgramSurfaceSpec {
+                family: HelperProgramSurfaceFamily::TcCgroupSkb,
+            }
+        }
         BpfHelper::TcpSock => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcpSock,
         },

@@ -2546,6 +2546,64 @@ fn test_verify_mir_for_probe_context_lwt_skb_helpers() {
     }
 }
 
+fn make_skb_ecn_set_ce_vcc_call() -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbEcnSetCe as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_ecn_set_ce_accepts_tc_and_cgroup_skb_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+        ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup"),
+    ] {
+        let (func, types) = make_skb_ecn_set_ce_vcc_call();
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected bpf_skb_ecn_set_ce helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_ecn_set_ce_rejects_non_tc_cgroup_skb_program() {
+    let (func, types) = make_skb_ecn_set_ce_vcc_call();
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_ecn_set_ce to be rejected outside tc/cgroup_skb");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_skb_ecn_set_ce' is only valid in tc_action, tc, and cgroup_skb programs"
+    )));
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_store_bytes_accepts_in_bounds_source_buffer() {
     let (mut func, entry) = new_mir_function();

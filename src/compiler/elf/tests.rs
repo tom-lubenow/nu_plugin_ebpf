@@ -2194,6 +2194,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbEcnSetCe),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbEcnSetCe),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::TcAction.helper_call_error(BpfHelper::CheckMtu),
         None
     );
@@ -2280,6 +2288,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::CheckMtu),
         Some("helper 'bpf_check_mtu' is only valid in xdp, tc_action, and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbEcnSetCe),
+        Some(
+            "helper 'bpf_skb_ecn_set_ce' is only valid in tc_action, tc, and cgroup_skb programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),
@@ -2482,6 +2497,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::SkAssign,
         BpfHelper::GetListenerSock,
         BpfHelper::SkFullsock,
+        BpfHelper::SkbEcnSetCe,
         BpfHelper::TcpSock,
         BpfHelper::SkcToTcpSock,
         BpfHelper::SkStorageGet,

@@ -103,6 +103,7 @@ impl BpfHelper {
             92 => Some(Self::RcPointerRel),
             95 => Some(Self::SkFullsock),
             96 => Some(Self::TcpSock),
+            97 => Some(Self::SkbEcnSetCe),
             98 => Some(Self::GetListenerSock),
             99 => Some(Self::SkcLookupTcp),
             100 => Some(Self::TcpCheckSyncookie),
@@ -519,12 +520,14 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => HelperSignature {
-                min_args: 1,
-                max_args: 1,
-                arg_kinds: [P, S, S, S, S],
-                ret_kind: HelperRetKind::Scalar,
-            },
+            BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm | BpfHelper::SkbEcnSetCe => {
+                HelperSignature {
+                    min_args: 1,
+                    max_args: 1,
+                    arg_kinds: [P, S, S, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
             BpfHelper::PerfEventOutput => HelperSignature {
                 min_args: 5,
                 max_args: 5,

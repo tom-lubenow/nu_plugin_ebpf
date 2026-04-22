@@ -987,6 +987,54 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
     }
 }
 
+fn make_skb_ecn_set_ce_call() -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbEcnSetCe as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_skb_ecn_set_ce_helper_in_tc_and_cgroup_skb_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+        ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup"),
+    ] {
+        let (func, dst) = make_skb_ecn_set_ce_call();
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected bpf_skb_ecn_set_ce helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_skb_ecn_set_ce_helper_rejects_non_tc_cgroup_skb_program() {
+    let (func, _) = make_skb_ecn_set_ce_call();
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_ecn_set_ce to be rejected outside tc/cgroup_skb");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_skb_ecn_set_ce' is only valid in tc_action, tc, and cgroup_skb programs"
+    )));
+}
+
 #[test]
 fn test_type_error_skb_set_tstamp_helper_rejects_non_tc_program() {
     let mut func = make_test_function();

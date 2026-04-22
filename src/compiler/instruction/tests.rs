@@ -203,6 +203,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbSetTstamp)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_ecn_set_ce"),
+        Some(BpfHelper::SkbEcnSetCe)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_check_mtu"),
         Some(BpfHelper::CheckMtu)
     ));
@@ -974,7 +978,11 @@ fn test_helper_signatures_sk_cgroup_helpers() {
 
 #[test]
 fn test_helper_signatures_tc_egress_skb_metadata_helpers() {
-    for helper in [BpfHelper::GetCgroupClassid, BpfHelper::GetRouteRealm] {
+    for helper in [
+        BpfHelper::GetCgroupClassid,
+        BpfHelper::GetRouteRealm,
+        BpfHelper::SkbEcnSetCe,
+    ] {
         let sig =
             HelperSignature::for_id(helper as u32).expect("expected skb metadata helper signature");
         assert_eq!(sig.min_args, 1);
@@ -1210,6 +1218,7 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::MsgPopData,
         BpfHelper::SetHash,
         BpfHelper::CsumLevel,
+        BpfHelper::SkbEcnSetCe,
     ] {
         assert!(
             !helper.invalidates_packet_pointers(),

@@ -338,7 +338,9 @@ skb-backed metadata fields remain read-only on the remaining hooks.
 When the timestamp type must also change, `tc_action` and `tc` model
 `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`; the
 current kernel UAPI uses `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
-`BPF_SKB_TSTAMP_DELIVERY_MONO`. The initial `socket_filter` surface
+`BPF_SKB_TSTAMP_DELIVERY_MONO`. `tc_action`, TC, and `cgroup_skb` also
+model `helper-call "bpf_skb_ecn_set_ce" $ctx` for setting IPv4/IPv6 ECN
+CE when the packet is ECN-capable. The initial `socket_filter` surface
 uses targets like `socket_filter:udp4:127.0.0.1:31337`,
 `socket_filter:udp6:[::1]:31337`, `socket_filter:tcp4:127.0.0.1:31337`,
 and `socket_filter:tcp6:[::1]:31337`, which create and keep open a

@@ -246,6 +246,8 @@ pub enum BpfHelper {
     RcPointerRel = 92,
     /// struct bpf_tcp_sock *bpf_tcp_sock(sk)
     TcpSock = 96,
+    /// long bpf_skb_ecn_set_ce(skb)
+    SkbEcnSetCe = 97,
     /// struct bpf_sock *bpf_get_listener_sock(sk)
     GetListenerSock = 98,
     /// struct bpf_sock *bpf_skc_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
@@ -429,6 +431,7 @@ impl BpfHelper {
             BpfHelper::RcPointerRel => "bpf_rc_pointer_rel",
             BpfHelper::SkFullsock => "bpf_sk_fullsock",
             BpfHelper::TcpSock => "bpf_tcp_sock",
+            BpfHelper::SkbEcnSetCe => "bpf_skb_ecn_set_ce",
             BpfHelper::GetListenerSock => "bpf_get_listener_sock",
             BpfHelper::SkcLookupTcp => "bpf_skc_lookup_tcp",
             BpfHelper::TcpCheckSyncookie => "bpf_tcp_check_syncookie",
@@ -577,6 +580,7 @@ impl BpfHelper {
             "rc_pointer_rel" => Some(Self::RcPointerRel),
             "sk_fullsock" => Some(Self::SkFullsock),
             "tcp_sock" => Some(Self::TcpSock),
+            "skb_ecn_set_ce" => Some(Self::SkbEcnSetCe),
             "get_listener_sock" => Some(Self::GetListenerSock),
             "skc_lookup_tcp" => Some(Self::SkcLookupTcp),
             "tcp_check_syncookie" => Some(Self::TcpCheckSyncookie),
