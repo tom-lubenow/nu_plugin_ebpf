@@ -11035,6 +11035,58 @@ fn test_compile_tc_action_adjust_packet_head_program() {
 }
 
 #[test]
+fn test_compile_netkit_adjust_packet_head_program() {
+    let hir = make_intrinsic_call_return_program(
+        DeclId::new(42),
+        vec![HirLiteral::Int(8)],
+        vec![],
+        vec![b"head".to_vec()],
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
+    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("netkit adjust-packet --head should lower through attach flow");
+
+    let block = lowering.program.main.block(lowering.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbChangeHead as u32
+            && args.len() == 3
+            && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
+    )));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("netkit adjust-packet --head should compile through attach flow");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_tc_redirect_peer_program() {
     let hir = make_intrinsic_call_return_program(
         DeclId::new(42),
@@ -11186,6 +11238,58 @@ fn test_compile_tc_action_redirect_program() {
         Some(&lowering.type_hints),
     )
     .expect("tc_action redirect should compile through attach flow");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_netkit_redirect_program() {
+    let hir = make_intrinsic_call_return_program(
+        DeclId::new(42),
+        vec![HirLiteral::Int(9)],
+        vec![],
+        vec![],
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("netkit redirect should lower through attach flow");
+
+    let block = lowering.program.main.block(lowering.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::Redirect as u32
+            && args.len() == 2
+            && matches!(args.get(1), Some(crate::compiler::mir::MirValue::Const(0)))
+    )));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("netkit redirect should compile through attach flow");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
