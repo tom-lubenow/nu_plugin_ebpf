@@ -16,6 +16,42 @@ const SCHED_EXT_SELECT_CPU_OR_ENQUEUE_KFUNCS: &[&str] =
 const SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS: &[&str] =
     &["scx_bpf_dsq_insert", "scx_bpf_dsq_insert_vtime"];
 
+#[derive(Debug, Clone, Copy)]
+struct ProgramSpecificKfuncPolicy {
+    program_type: EbpfProgramType,
+    label: &'static str,
+    modeled_kfuncs: &'static [&'static str],
+}
+
+const PROGRAM_SPECIFIC_KFUNC_POLICIES: &[ProgramSpecificKfuncPolicy] = &[
+    ProgramSpecificKfuncPolicy {
+        program_type: EbpfProgramType::SockOps,
+        label: "sock_ops",
+        modeled_kfuncs: &["bpf_sock_ops_enable_tx_tstamp"],
+    },
+    ProgramSpecificKfuncPolicy {
+        program_type: EbpfProgramType::CgroupSockAddr,
+        label: "cgroup_sock_addr",
+        modeled_kfuncs: &["bpf_sock_addr_set_sun_path"],
+    },
+];
+
+fn program_specific_kfunc_policy(
+    program_type: EbpfProgramType,
+) -> Option<ProgramSpecificKfuncPolicy> {
+    PROGRAM_SPECIFIC_KFUNC_POLICIES
+        .iter()
+        .copied()
+        .find(|policy| policy.program_type == program_type)
+}
+
+fn modeled_kfunc_policy(kfunc: &str) -> Option<ProgramSpecificKfuncPolicy> {
+    PROGRAM_SPECIFIC_KFUNC_POLICIES
+        .iter()
+        .copied()
+        .find(|policy| policy.modeled_kfuncs.contains(&kfunc))
+}
+
 fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
     match callbacks {
         [] => String::new(),
@@ -48,38 +84,23 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
 
 impl ProgramSpec {
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
-        if kfunc == "bpf_sock_ops_enable_tx_tstamp"
-            && self.program_type() != EbpfProgramType::SockOps
-        {
-            return Some(
-                "kfunc 'bpf_sock_ops_enable_tx_tstamp' is only valid in sock_ops programs"
-                    .to_string(),
-            );
+        let program_policy = program_specific_kfunc_policy(self.program_type());
+        if let Some(policy) = modeled_kfunc_policy(kfunc) {
+            if self.program_type() != policy.program_type {
+                return Some(format!(
+                    "kfunc '{}' is only valid in {} programs",
+                    kfunc, policy.label
+                ));
+            }
         }
-        if self.program_type() == EbpfProgramType::SockOps
-            && kfunc != "bpf_sock_ops_enable_tx_tstamp"
-        {
-            return Some(format!(
-                "kfunc '{}' is not modeled for sock_ops programs",
-                kfunc
-            ));
-        }
-
-        if kfunc == "bpf_sock_addr_set_sun_path"
-            && self.program_type() != EbpfProgramType::CgroupSockAddr
-        {
-            return Some(
-                "kfunc 'bpf_sock_addr_set_sun_path' is only valid in cgroup_sock_addr programs"
-                    .to_string(),
-            );
-        }
-        if self.program_type() == EbpfProgramType::CgroupSockAddr
-            && kfunc != "bpf_sock_addr_set_sun_path"
-        {
-            return Some(format!(
-                "kfunc '{}' is not modeled for cgroup_sock_addr programs",
-                kfunc
-            ));
+        if let Some(policy) = program_policy {
+            if !policy.modeled_kfuncs.contains(&kfunc) {
+                return Some(format!(
+                    "kfunc '{}' is not modeled for {} programs",
+                    kfunc, policy.label
+                ));
+            }
+            return None;
         }
 
         let Some((StructOpsFamily::SchedExt, sleepable)) =
@@ -209,5 +230,23 @@ mod tests {
             sock_ops.kfunc_call_error("bpf_task_from_pid"),
             Some("kfunc 'bpf_task_from_pid' is not modeled for sock_ops programs".to_string())
         );
+    }
+
+    #[test]
+    fn test_program_specific_kfunc_policy_is_table_driven() {
+        assert_eq!(
+            modeled_kfunc_policy("bpf_sock_ops_enable_tx_tstamp").map(|policy| policy.program_type),
+            Some(EbpfProgramType::SockOps)
+        );
+        assert_eq!(
+            modeled_kfunc_policy("bpf_sock_addr_set_sun_path").map(|policy| policy.program_type),
+            Some(EbpfProgramType::CgroupSockAddr)
+        );
+        assert_eq!(
+            program_specific_kfunc_policy(EbpfProgramType::SockOps)
+                .map(|policy| policy.modeled_kfuncs),
+            Some(&["bpf_sock_ops_enable_tx_tstamp"][..])
+        );
+        assert!(program_specific_kfunc_policy(EbpfProgramType::Xdp).is_none());
     }
 }
