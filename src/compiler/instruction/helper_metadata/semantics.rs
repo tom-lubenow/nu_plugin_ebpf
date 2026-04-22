@@ -734,6 +734,29 @@ impl BpfHelper {
                 size_from_arg: Some(4),
             },
         ];
+        const PACKET_OUTPUT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper packet_output ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper packet_output map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper packet_output data",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
         const PERF_PROG_READ_VALUE_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1704,6 +1727,11 @@ impl BpfHelper {
             },
             BpfHelper::PerfEventOutput => HelperSemantics {
                 ptr_arg_rules: PERF_EVENT_OUTPUT_RULES,
+                positive_size_args: &[4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbOutput | BpfHelper::XdpOutput => HelperSemantics {
+                ptr_arg_rules: PACKET_OUTPUT_RULES,
                 positive_size_args: &[4],
                 ringbuf_record_arg0: false,
             },

@@ -2540,6 +2540,92 @@ fn test_infer_perf_event_output_helper_accepts_lwt_program() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_packet_output_call(helper: BpfHelper, size: i64, data_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(data_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_packet_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(0),
+            MirValue::StackSlot(data_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_packet_output_helpers_in_tracing_programs() {
+    for (helper, probe_ctx) in [
+        (
+            BpfHelper::SkbOutput,
+            ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+        ),
+        (
+            BpfHelper::XdpOutput,
+            ProbeContext::new(EbpfProgramType::Tracepoint, "net:netif_receive_skb"),
+        ),
+    ] {
+        let (func, dst) = make_packet_output_call(helper, 8, 8);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected packet output helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_packet_output_helper_rejects_packet_program() {
+    let (func, _) = make_packet_output_call(BpfHelper::XdpOutput, 8, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_xdp_output to be rejected in xdp program");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_xdp_output' is only valid in kprobe")
+    }));
+}
+
+#[test]
+fn test_type_error_packet_output_helper_rejects_small_data_buffer() {
+    let (func, _) = make_packet_output_call(BpfHelper::SkbOutput, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_output data bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper packet_output data requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_get_stackid_helper_rejects_xdp_program() {
     let mut func = make_test_function();

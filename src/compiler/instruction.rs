@@ -292,6 +292,10 @@ pub enum BpfHelper {
     SkStorageDelete = 108,
     /// s64 bpf_tcp_gen_syncookie(sk, iph, iph_len, th, th_len)
     TcpGenSyncookie = 110,
+    /// long bpf_skb_output(ctx, map, flags, data, size)
+    SkbOutput = 111,
+    /// long bpf_xdp_output(ctx, map, flags, data, size)
+    XdpOutput = 121,
     /// long bpf_sk_assign(ctx, sk, flags)
     SkAssign = 124,
     /// u64 bpf_sk_cgroup_id(sk)
@@ -478,6 +482,8 @@ impl BpfHelper {
             BpfHelper::SkStorageGet => "bpf_sk_storage_get",
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
+            BpfHelper::SkbOutput => "bpf_skb_output",
+            BpfHelper::XdpOutput => "bpf_xdp_output",
             BpfHelper::SkAssign => "bpf_sk_assign",
             BpfHelper::SkCgroupId => "bpf_sk_cgroup_id",
             BpfHelper::SkAncestorCgroupId => "bpf_sk_ancestor_cgroup_id",
@@ -639,6 +645,8 @@ impl BpfHelper {
             "sk_storage_get" => Some(Self::SkStorageGet),
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),
+            "skb_output" => Some(Self::SkbOutput),
+            "xdp_output" => Some(Self::XdpOutput),
             "sk_assign" => Some(Self::SkAssign),
             "sk_cgroup_id" => Some(Self::SkCgroupId),
             "sk_ancestor_cgroup_id" => Some(Self::SkAncestorCgroupId),
@@ -709,7 +717,9 @@ impl BpfHelper {
     pub const fn helper_map_arg_kind(self, arg_idx: usize) -> Option<MapKind> {
         match (self, arg_idx) {
             (Self::TailCall, 1) => Some(MapKind::ProgArray),
-            (Self::PerfEventOutput, 1) => Some(MapKind::PerfEventArray),
+            (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 1) => {
+                Some(MapKind::PerfEventArray)
+            }
             (Self::GetStackId, 1) => Some(MapKind::StackTrace),
             (Self::SkbUnderCgroup, 1) | (Self::CurrentTaskUnderCgroup, 0) => {
                 Some(MapKind::CgroupArray)
@@ -734,9 +744,12 @@ impl BpfHelper {
 
     pub const fn local_helper_map_arg_index(self) -> Option<usize> {
         match self {
-            Self::TailCall | Self::PerfEventOutput | Self::GetStackId | Self::SkbUnderCgroup => {
-                Some(1)
-            }
+            Self::TailCall
+            | Self::PerfEventOutput
+            | Self::GetStackId
+            | Self::SkbUnderCgroup
+            | Self::SkbOutput
+            | Self::XdpOutput => Some(1),
             Self::CurrentTaskUnderCgroup => Some(0),
             Self::RingbufOutput
             | Self::RingbufReserve

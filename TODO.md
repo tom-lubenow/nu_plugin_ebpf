@@ -136,6 +136,7 @@ Last updated: 2026-04-22.
   - Typed skb tunnel metadata helper coverage now includes `bpf_skb_get_tunnel_key`, `bpf_skb_set_tunnel_key`, `bpf_skb_get_tunnel_opt`, and `bpf_skb_set_tunnel_opt` on tc_action/TC/lwt_xmit, with stack/map buffer bounds driven by the helper size argument.
   - Typed skb XFRM metadata helper coverage now includes `bpf_skb_get_xfrm_state` on tc_action/TC, with zero reserved flags and stack/map output-buffer bounds driven by the helper size argument.
   - Typed LWT helper coverage now includes `bpf_lwt_push_encap` on lwt_in/lwt_xmit plus `bpf_lwt_seg6_store_bytes`, `bpf_lwt_seg6_adjust_srh`, and `bpf_lwt_seg6_action` on lwt_seg6local, including packet-pointer invalidation and stack/map buffer bounds for buffer-taking forms.
+  - Typed tracing packet-output coverage now includes `bpf_skb_output` and `bpf_xdp_output` on tracing/perf-style program surfaces, with fixed perf-event-array map args and stack/map data-buffer bounds driven by the helper size argument.
   - Typed helper MTU-check coverage now includes `bpf_check_mtu` on XDP/tc_action/TC, with kernel-context and stack/map-backed `u32 mtu_len` pointer checks plus XDP zero-flags policy.
   - Typed helper time coverage now includes the remaining base no-arg scalar clocks/counters: `bpf_jiffies64`, `bpf_ktime_get_coarse_ns`, and `bpf_ktime_get_tai_ns`.
   - Ordinary context access now exposes those time/counter helpers without raw helper spelling as `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.

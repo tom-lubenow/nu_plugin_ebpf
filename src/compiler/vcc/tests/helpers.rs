@@ -1993,6 +1993,109 @@ fn test_verify_mir_for_probe_context_perf_event_output_helper_accepts_lwt() {
         .expect("expected perf_event_output helper in lwt_out program");
 }
 
+fn make_packet_output_vcc_call(
+    helper: BpfHelper,
+    size: i64,
+    data_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(data_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_packet_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(size),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U32),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_output_helpers_accept_tracing_programs() {
+    for (helper, probe_ctx) in [
+        (
+            BpfHelper::SkbOutput,
+            ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+        ),
+        (
+            BpfHelper::XdpOutput,
+            ProbeContext::new(EbpfProgramType::Tracepoint, "net:netif_receive_skb"),
+        ),
+    ] {
+        let (func, types) = make_packet_output_vcc_call(helper, 8, 8);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected packet output helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_output_helper_rejects_packet_program() {
+    let (func, types) = make_packet_output_vcc_call(BpfHelper::XdpOutput, 8, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_xdp_output to be rejected in xdp program");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_xdp_output' is only valid in kprobe")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_output_helper_rejects_small_data_buffer() {
+    let (func, types) = make_packet_output_vcc_call(BpfHelper::SkbOutput, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_output data bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_program_get_stackid_helper_rejects_xdp() {
     let (mut func, entry) = new_mir_function();

@@ -520,6 +520,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 Stack trace ID collection should normally use first-class context fields: `$ctx.kstack` for kernel stacks and `$ctx.ustack` for user stacks. The backing `bpf_get_stackid` helper is constrained to tracing/perf-style program families and stack-trace maps; `bpf_get_stack` remains available through `helper-call` for custom buffers, maps, and flags, and accepts a stack/map buffer with a nonnegative size, including `0`.
 Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.
 The perf-event-only `bpf_read_branch_records` helper is also modeled for branch-stack captures through `helper-call`, including its stack/map output buffer and zero-size query behavior.
+BPF packet-output helpers `bpf_skb_output` and `bpf_xdp_output` are modeled for tracing/perf-style programs that receive typed `sk_buff` / `xdp_buff` context pointers; they use perf-event-array maps and stack/map data buffers sized by the helper `size` argument, and are not treated as ordinary XDP/TC packet-program helpers.
 BTF-backed tracing argument count is available as `ctx.arg_count`; the lower-level `bpf_get_func_arg`, `bpf_get_func_ret`, and `bpf_get_func_arg_cnt` helpers are modeled for explicit `helper-call` use when fixed `ctx.argN` / `ctx.retval` projections are not the right fit.
 
 ## Discovering Tracepoints

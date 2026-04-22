@@ -2150,6 +2150,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Fentry.helper_call_error(BpfHelper::SkbOutput),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint.helper_call_error(BpfHelper::XdpOutput),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::XdpOutput),
+        Some(
+            "helper 'bpf_xdp_output' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::ProbeRead),
         None
     );

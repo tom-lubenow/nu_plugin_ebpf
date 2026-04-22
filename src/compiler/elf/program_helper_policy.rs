@@ -750,7 +750,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::GetStackId
         | BpfHelper::GetStack
         | BpfHelper::GetFuncIp
-        | BpfHelper::GetAttachCookie => HelperProgramSurfaceSpec {
+        | BpfHelper::GetAttachCookie
+        | BpfHelper::SkbOutput
+        | BpfHelper::XdpOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::GetStackId,
         },
         BpfHelper::ProbeRead => HelperProgramSurfaceSpec {
