@@ -4551,6 +4551,56 @@ fn test_infer_sk_lookup_tcp_helper_in_xdp_program() {
     }
 }
 
+fn make_socket_lookup_call(helper: BpfHelper, flags: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(tuple_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_type_error_socket_lookup_helpers_reject_nonzero_flags() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        let (func, _) = make_socket_lookup_call(helper, 1);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected socket lookup flags error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("socket lookup helpers require arg4 flags = 0")),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            errs
+        );
+    }
+}
+
 #[test]
 fn test_type_error_sk_assign_helper_rejects_tc_egress() {
     let mut func = make_test_function();

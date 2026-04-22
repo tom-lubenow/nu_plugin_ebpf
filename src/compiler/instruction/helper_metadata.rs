@@ -971,6 +971,9 @@ impl BpfHelper {
                 Some((2, "helper 'bpf_skb_change_proto' requires arg2 = 0"))
             }
             BpfHelper::MsgPullData => Some((3, "helper 'bpf_msg_pull_data' requires arg3 = 0")),
+            BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
+                Some((4, "socket lookup helpers require arg4 flags = 0"))
+            }
             BpfHelper::RedirectNeigh => Some((3, "helper 'bpf_redirect_neigh' requires arg3 = 0")),
             BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
             BpfHelper::SkbGetXfrmState => {

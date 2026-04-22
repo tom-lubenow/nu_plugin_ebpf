@@ -4740,6 +4740,74 @@ fn test_verify_mir_for_probe_context_sk_lookup_tcp_accepts_xdp() {
         .expect("expected sk_lookup_tcp xdp context to verify");
 }
 
+fn make_socket_lookup_verify_call(
+    helper: BpfHelper,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_socket_lookup_helpers_reject_nonzero_flags() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        let (func, types) = make_socket_lookup_verify_call(helper, 1);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected socket lookup flags error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("socket lookup helpers require arg4 flags = 0")),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            err
+        );
+    }
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_sk_assign_rejects_tc_egress() {
     let mut func = MirFunction::new();

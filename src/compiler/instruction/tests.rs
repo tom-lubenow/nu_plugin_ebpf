@@ -2884,6 +2884,17 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
 
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        assert_eq!(
+            helper.zero_scalar_arg_requirement(),
+            Some((4, "socket lookup helpers require arg4 flags = 0"))
+        );
+    }
+
     let sig = HelperSignature::for_id(BpfHelper::TcpCheckSyncookie as u32)
         .expect("expected bpf_tcp_check_syncookie helper signature");
     assert_eq!(sig.min_args, 5);
