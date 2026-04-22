@@ -87,6 +87,7 @@ Last updated: 2026-04-21.
   - Typed kfunc coverage now includes `bpf_preempt_disable` / `bpf_preempt_enable`, with verifier_types and VCC parity checks for balanced usage across CFG joins and at function exit.
   - Typed kfunc coverage now includes `bpf_local_irq_save` / `bpf_local_irq_restore`, with verifier_types and VCC compile-time parity checks for balanced usage across CFG joins and at function exit.
   - Shared helper program-surface policy now also rejects invalid `bpf_perf_event_output`, `bpf_get_stackid`, and legacy `bpf_probe_read` usage before kernel load, with matching ELF/type-infer/verifier_types/VCC regression coverage.
+  - Recent progress: `bpf_perf_event_output` helper policy now also covers the upstream `lwt_*` program surface.
   - Verifier/VCC now require stack-slot-backed pointers for `bpf_local_irq_save` / `bpf_local_irq_restore` arguments, rejecting context-derived pseudo-stack pointers before kernel load.
   - Typed kfunc coverage now includes `bpf_map_sum_elem_count` with kernel-pointer map-argument checks across type inference, verifier_types, and VCC.
   - Typed kfunc coverage now includes container traversal primitives (`bpf_list_front` / `bpf_list_back` / `bpf_rbtree_root` / `bpf_rbtree_left` / `bpf_rbtree_right`) with shared kernel-pointer argument checks.
