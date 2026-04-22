@@ -1,5 +1,7 @@
 use super::*;
-use crate::compiler::instruction::scalar_range_contains_only_allowed_values;
+use crate::compiler::instruction::{
+    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
+};
 
 impl VccVerifier {
     pub(super) fn verify_inst(&mut self, inst: &VccInst, state: &mut VccState) {
@@ -213,6 +215,37 @@ impl VccVerifier {
                 }
                 if let Some(range) = state.value_range(*value, ty)
                     && !scalar_range_contains_only_allowed_values(range.min, range.max, allowed)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
+            VccInst::AssertBitmask {
+                value,
+                mask,
+                message,
+            } => {
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                if let Some(range) = state.value_range(*value, ty)
+                    && !scalar_range_contains_only_bitmask(range.min, range.max, *mask)
                 {
                     self.errors.push(VccError::new(
                         VccErrorKind::UnsupportedInstruction,

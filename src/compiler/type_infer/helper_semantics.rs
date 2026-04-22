@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     KfuncRefKind, helper_pointer_arg_ref_kind, scalar_range_contains_only_allowed_values,
+    scalar_range_contains_only_bitmask,
 };
 use crate::kernel_btf::KernelBtf;
 
@@ -314,6 +315,24 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn validate_helper_scalar_bitmask(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some((mask, message)) = helper.scalar_arg_bitmask_requirement(arg_idx) else {
+            return;
+        };
+        if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
+            && !scalar_range_contains_only_bitmask(min, max, mask)
+        {
+            errors.push(TypeError::new(message));
+        }
+    }
+
     fn known_const_vreg(
         &self,
         vreg: VReg,
@@ -382,6 +401,7 @@ impl<'a> TypeInference<'a> {
                 value_ranges,
                 errors,
             );
+            self.validate_helper_scalar_bitmask(helper, arg_idx, value, value_ranges, errors);
         }
 
         for rule in semantics.ptr_arg_rules {

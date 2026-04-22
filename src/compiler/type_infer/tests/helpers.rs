@@ -3514,7 +3514,7 @@ fn test_infer_get_stack_helper_allows_zero_size_buffer_in_kprobe() {
             MirValue::VReg(ctx),
             MirValue::StackSlot(buf_slot),
             MirValue::Const(0),
-            MirValue::Const(0),
+            MirValue::Const(0x09ff),
         ],
     });
     block.terminator = MirInst::Return { val: None };
@@ -3525,6 +3525,43 @@ fn test_infer_get_stack_helper_allows_zero_size_buffer_in_kprobe() {
         .infer(&func)
         .expect("expected bpf_get_stack zero-size buffer to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_stack_helper_rejects_invalid_flags() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(0),
+            MirValue::Const(0x0200),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stack invalid flags error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("stack-copy helpers require flags")),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

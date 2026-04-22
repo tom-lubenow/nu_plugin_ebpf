@@ -37,6 +37,32 @@ pub(crate) fn scalar_range_contains_only_allowed_values(
     }
 }
 
+pub(crate) fn scalar_range_contains_only_bitmask(min: i64, max: i64, mask: i64) -> bool {
+    if min > max || min < 0 || mask < 0 {
+        return false;
+    }
+    if let Some(next) = mask.checked_add(1)
+        && mask & next == 0
+    {
+        return max <= mask;
+    }
+    let range_len = i128::from(max) - i128::from(min) + 1;
+    if range_len > 4096 {
+        return false;
+    }
+
+    let mut value = min;
+    loop {
+        if value & !mask != 0 {
+            return false;
+        }
+        if value == max {
+            return true;
+        }
+        value += 1;
+    }
+}
+
 /// eBPF register identifiers (r0-r10)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -951,6 +977,23 @@ impl BpfHelper {
                 0,
                 1,
                 "storage get helpers require arg3 flags to be 0 or BPF_LOCAL_STORAGE_GET_F_CREATE",
+            )),
+            _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_bitmask_requirement(
+        self,
+        arg_idx: usize,
+    ) -> Option<(i64, &'static str)> {
+        match (self, arg_idx) {
+            (Self::GetStackId, 2) => Some((
+                0x07ff,
+                "helper 'bpf_get_stackid' requires arg2 flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_FAST_STACK_CMP/BPF_F_REUSE_STACKID bits (0x07ff)",
+            )),
+            (Self::GetStack | Self::GetTaskStack, 3) => Some((
+                0x09ff,
+                "stack-copy helpers require flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_USER_BUILD_ID bits (0x09ff)",
             )),
             _ => None,
         }

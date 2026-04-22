@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     KfuncRefKind, helper_pointer_arg_ref_kind, scalar_range_contains_only_allowed_values,
+    scalar_range_contains_only_bitmask,
 };
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
@@ -174,6 +175,23 @@ fn validate_helper_scalar_allowed_values(
     }
 }
 
+fn validate_helper_scalar_bitmask(
+    helper: BpfHelper,
+    arg_idx: usize,
+    value: &MirValue,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some((mask, message)) = helper.scalar_arg_bitmask_requirement(arg_idx) else {
+        return;
+    };
+    if let ValueRange::Known { min, max } = value_range(value, state)
+        && !scalar_range_contains_only_bitmask(min, max, mask)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+}
+
 pub(in crate::compiler::verifier_types) fn check_helper_ptr_arg_value(
     helper_id: u32,
     arg_idx: usize,
@@ -340,6 +358,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         validate_helper_scalar_multiple_of(helper, arg_idx, value, state, errors);
         validate_helper_scalar_range(helper, arg_idx, value, state, errors);
         validate_helper_scalar_allowed_values(helper, arg_idx, value, state, errors);
+        validate_helper_scalar_bitmask(helper, arg_idx, value, state, errors);
     }
 
     for rule in semantics.ptr_arg_rules {

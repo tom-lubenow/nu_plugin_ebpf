@@ -257,6 +257,11 @@ pub enum VccInst {
         allowed: Vec<i64>,
         message: String,
     },
+    AssertBitmask {
+        value: VccValue,
+        mask: i64,
+        message: String,
+    },
     AssertConstEqIfConstEq {
         value: VccValue,
         expected: i64,

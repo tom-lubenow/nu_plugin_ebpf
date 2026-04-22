@@ -2217,6 +2217,30 @@ fn test_helper_get_stack_buffer_contract() {
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
         Some("helper 'bpf_get_stack' requires arg2 to be >= 0")
     );
+    assert_eq!(
+        BpfHelper::GetStackId.scalar_arg_bitmask_requirement(2),
+        Some((
+            0x07ff,
+            "helper 'bpf_get_stackid' requires arg2 flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_FAST_STACK_CMP/BPF_F_REUSE_STACKID bits (0x07ff)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::GetStack.scalar_arg_bitmask_requirement(3),
+        Some((
+            0x09ff,
+            "stack-copy helpers require flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_USER_BUILD_ID bits (0x09ff)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::GetTaskStack.scalar_arg_bitmask_requirement(3),
+        Some((
+            0x09ff,
+            "stack-copy helpers require flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_USER_BUILD_ID bits (0x09ff)"
+        ))
+    );
+    assert!(scalar_range_contains_only_bitmask(0, 0x07ff, 0x07ff));
+    assert!(!scalar_range_contains_only_bitmask(0, 0x09ff, 0x09ff));
+    assert!(scalar_range_contains_only_bitmask(0x08ff, 0x09ff, 0x09ff));
 
     let semantics = BpfHelper::GetStack.semantics();
     assert!(semantics.positive_size_args.is_empty());
