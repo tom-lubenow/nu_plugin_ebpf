@@ -7225,6 +7225,24 @@ fn test_compile_flow_dissector_ctx_flow_keys_counter_program() {
 }
 
 #[test]
+fn test_compile_netfilter_ctx_scalar_counter_programs() {
+    for (field, context) in [
+        ("hook", "netfilter ctx.hook count"),
+        ("pf", "netfilter ctx.pf count"),
+        ("protocol_family", "netfilter ctx.protocol_family count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_sk_reuseport_ctx_scalar_counter_programs() {
     for (field, context) in [
         ("packet_len", "sk_reuseport ctx.packet_len count"),

@@ -43,7 +43,9 @@ impl EbpfState {
         let program = object.primary_program().map_err(LoadError::from)?;
         if matches!(
             program.prog_type.attach_kind(),
-            ProgramAttachKind::SkReuseport | ProgramAttachKind::FlowDissector
+            ProgramAttachKind::SkReuseport
+                | ProgramAttachKind::FlowDissector
+                | ProgramAttachKind::Netfilter
         ) {
             return Err(LoadError::Attach(format!(
                 "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
@@ -800,6 +802,12 @@ impl EbpfState {
             ProgramAttachKind::FlowDissector => {
                 return Err(LoadError::Attach(
                     "live attach for flow_dissector programs is not supported by this loader yet; use --dry-run to compile"
+                        .to_string(),
+                ));
+            }
+            ProgramAttachKind::Netfilter => {
+                return Err(LoadError::Attach(
+                    "live attach for netfilter programs is not supported by this loader yet; use --dry-run to compile"
                         .to_string(),
                 ));
             }

@@ -26,6 +26,7 @@ const SK_MSG_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::S
 const CGROUP_SYSCTL_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupSysctl];
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::CgroupSockopt];
+const NETFILTER_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Netfilter];
 const TRACEPOINT_PRESERVE_BUILTIN_CTX_FIELD_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::Tracepoint];
 
@@ -40,6 +41,11 @@ const CGROUP_SYSCTL_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
 ];
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] =
     &[("retval", CtxField::SockoptRetval)];
+const NETFILTER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
+    ("hook", CtxField::NetfilterHook),
+    ("pf", CtxField::NetfilterProtocolFamily),
+    ("protocol_family", CtxField::NetfilterProtocolFamily),
+];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
         program_types: XDP_CTX_FIELD_ALIAS_PROGRAMS,
@@ -60,6 +66,10 @@ const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
         program_types: CGROUP_SOCKOPT_CTX_FIELD_ALIAS_PROGRAMS,
         entries: CGROUP_SOCKOPT_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    CtxFieldAliasSurface {
+        program_types: NETFILTER_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: NETFILTER_CTX_FIELD_ALIAS_ENTRIES,
     },
 ];
 const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
@@ -139,6 +149,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("ip_protocol", CtxField::Protocol),
     ("sk", CtxField::Socket),
     ("flow_keys", CtxField::FlowKeys),
+    ("netfilter_hook", CtxField::NetfilterHook),
+    ("netfilter_pf", CtxField::NetfilterProtocolFamily),
     ("bind_inany", CtxField::BindInany),
     ("migrating_sk", CtxField::MigratingSocket),
     ("migrating_socket", CtxField::MigratingSocket),

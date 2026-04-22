@@ -170,6 +170,45 @@ const FLOW_DISSECTOR_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
     },
 ];
 
+const NETFILTER_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
+    ReturnActionAliasEntry {
+        alias: "deny",
+        value: ProgramReturnAlias::Const(0),
+    },
+    ReturnActionAliasEntry {
+        alias: "drop",
+        value: ProgramReturnAlias::Const(0),
+    },
+    ReturnActionAliasEntry {
+        alias: "accept",
+        value: ProgramReturnAlias::Const(1),
+    },
+    ReturnActionAliasEntry {
+        alias: "allow",
+        value: ProgramReturnAlias::Const(1),
+    },
+    ReturnActionAliasEntry {
+        alias: "pass",
+        value: ProgramReturnAlias::Const(1),
+    },
+    ReturnActionAliasEntry {
+        alias: "ok",
+        value: ProgramReturnAlias::Const(1),
+    },
+    ReturnActionAliasEntry {
+        alias: "stolen",
+        value: ProgramReturnAlias::Const(2),
+    },
+    ReturnActionAliasEntry {
+        alias: "queue",
+        value: ProgramReturnAlias::Const(3),
+    },
+    ReturnActionAliasEntry {
+        alias: "repeat",
+        value: ProgramReturnAlias::Const(4),
+    },
+];
+
 const XDP_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
 
 const SOCKET_FILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SocketFilter];
@@ -177,6 +216,8 @@ const SOCKET_FILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramTyp
 const TC_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
 
 const FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
+
+const NETFILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Netfilter];
 
 const ALLOW_DENY_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::CgroupSkb,
@@ -207,6 +248,10 @@ const RETURN_ACTION_ALIAS_SURFACES: &[ReturnActionAliasSurface] = &[
     ReturnActionAliasSurface {
         program_types: FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS,
         entries: FLOW_DISSECTOR_RETURN_ALIAS_ENTRIES,
+    },
+    ReturnActionAliasSurface {
+        program_types: NETFILTER_RETURN_ALIAS_PROGRAMS,
+        entries: NETFILTER_RETURN_ALIAS_ENTRIES,
     },
     ReturnActionAliasSurface {
         program_types: ALLOW_DENY_RETURN_ALIAS_PROGRAMS,

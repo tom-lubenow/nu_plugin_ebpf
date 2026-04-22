@@ -978,6 +978,149 @@ impl FlowDissectorTarget {
     }
 }
 
+/// Netfilter protocol families supported by BPF netfilter links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetfilterProtocolFamily {
+    Ipv4,
+    Ipv6,
+}
+
+impl NetfilterProtocolFamily {
+    pub fn target_name(self) -> &'static str {
+        match self {
+            Self::Ipv4 => "ipv4",
+            Self::Ipv6 => "ipv6",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "ip" | "ipv4" => Some(Self::Ipv4),
+            "ip6" | "ipv6" => Some(Self::Ipv6),
+            _ => None,
+        }
+    }
+}
+
+/// Netfilter hook numbers supported by BPF netfilter links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetfilterHook {
+    PreRouting,
+    LocalIn,
+    Forward,
+    LocalOut,
+    PostRouting,
+}
+
+impl NetfilterHook {
+    pub fn target_name(self) -> &'static str {
+        match self {
+            Self::PreRouting => "pre_routing",
+            Self::LocalIn => "local_in",
+            Self::Forward => "forward",
+            Self::LocalOut => "local_out",
+            Self::PostRouting => "post_routing",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "prerouting" | "pre_routing" => Some(Self::PreRouting),
+            "localin" | "local_in" => Some(Self::LocalIn),
+            "forward" => Some(Self::Forward),
+            "localout" | "local_out" => Some(Self::LocalOut),
+            "postrouting" | "post_routing" => Some(Self::PostRouting),
+            _ => None,
+        }
+    }
+}
+
+/// Parsed netfilter target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetfilterTarget {
+    /// Protocol family passed to BPF link netfilter attach.
+    pub family: NetfilterProtocolFamily,
+    /// Netfilter hook number passed to BPF link netfilter attach.
+    pub hook: NetfilterHook,
+    /// Hook priority. Defaults to `0`.
+    pub priority: i32,
+    /// Request kernel IP defragmentation before the BPF hook.
+    pub defrag: bool,
+}
+
+impl NetfilterTarget {
+    /// Parse `family:hook[:priority=N][:defrag]`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        let mut parts = target.split(':');
+        let family_part = parts.next().unwrap_or_default();
+        let hook_part = parts.next().unwrap_or_default();
+
+        let family = NetfilterProtocolFamily::parse(family_part).ok_or_else(|| {
+            ProgramSpecParseError::new(format!(
+                "Invalid netfilter family: {family_part}. Expected ipv4 or ipv6"
+            ))
+        })?;
+        let hook = NetfilterHook::parse(hook_part).ok_or_else(|| {
+            ProgramSpecParseError::new(format!(
+                "Invalid netfilter hook: {hook_part}. Expected pre_routing, local_in, forward, local_out, or post_routing"
+            ))
+        })?;
+
+        let mut priority = 0;
+        let mut defrag = false;
+        for option in parts {
+            if option == "defrag" {
+                defrag = true;
+                continue;
+            }
+            if let Some(value) = option.strip_prefix("priority=") {
+                priority = value.parse().map_err(|_| {
+                    ProgramSpecParseError::new(format!(
+                        "Invalid netfilter priority: {value}. Expected a signed integer"
+                    ))
+                })?;
+                continue;
+            }
+            if let Some(value) = option.strip_prefix("prio=") {
+                priority = value.parse().map_err(|_| {
+                    ProgramSpecParseError::new(format!(
+                        "Invalid netfilter priority: {value}. Expected a signed integer"
+                    ))
+                })?;
+                continue;
+            }
+
+            return Err(ProgramSpecParseError::new(format!(
+                "Unrecognized netfilter option: {option}. Expected priority=N, prio=N, or defrag"
+            )));
+        }
+
+        if defrag && priority <= -400 {
+            return Err(ProgramSpecParseError::new(
+                "Invalid netfilter target: defrag requires priority greater than -400",
+            ));
+        }
+
+        Ok(Self {
+            family,
+            hook,
+            priority,
+            defrag,
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        let mut target = format!("{}:{}", self.family.target_name(), self.hook.target_name());
+        if self.priority != 0 {
+            target.push_str(&format!(":priority={}", self.priority));
+        }
+        if self.defrag {
+            target.push_str(":defrag");
+        }
+        target
+    }
+}
+
 /// Supported sk_reuseport section modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkReuseportMode {
@@ -1405,6 +1548,9 @@ pub enum ProgramSpec {
     FlowDissector {
         target: FlowDissectorTarget,
     },
+    Netfilter {
+        target: NetfilterTarget,
+    },
     SkReuseport {
         target: SkReuseportTarget,
     },
@@ -1690,6 +1836,9 @@ impl ProgramSpec {
             EbpfProgramType::FlowDissector => Ok(ProgramSpec::FlowDissector {
                 target: FlowDissectorTarget::parse(target)?,
             }),
+            EbpfProgramType::Netfilter => Ok(ProgramSpec::Netfilter {
+                target: NetfilterTarget::parse(target)?,
+            }),
             EbpfProgramType::SkReuseport => Ok(ProgramSpec::SkReuseport {
                 target: SkReuseportTarget::parse(target)?,
             }),
@@ -1752,6 +1901,7 @@ impl ProgramSpec {
             ProgramSpec::SocketFilter { .. } => EbpfProgramType::SocketFilter,
             ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
             ProgramSpec::FlowDissector { .. } => EbpfProgramType::FlowDissector,
+            ProgramSpec::Netfilter { .. } => EbpfProgramType::Netfilter,
             ProgramSpec::SkReuseport { .. } => EbpfProgramType::SkReuseport,
             ProgramSpec::SkMsg { .. } => EbpfProgramType::SkMsg,
             ProgramSpec::SkSkb { .. } => EbpfProgramType::SkSkb,
@@ -1789,6 +1939,7 @@ impl ProgramSpec {
             ProgramSpec::SocketFilter { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
             ProgramSpec::FlowDissector { target } => target.target_string(),
+            ProgramSpec::Netfilter { target } => target.target_string(),
             ProgramSpec::SkReuseport { target } => target.target_string(),
             ProgramSpec::SkMsg { target } => target.target_string(),
             ProgramSpec::SkSkb { target } => target.target_string(),
@@ -1845,6 +1996,14 @@ impl ProgramSpec {
     pub(crate) fn sk_lookup_target(&self) -> Option<&SkLookupTarget> {
         match self {
             ProgramSpec::SkLookup { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn netfilter_target(&self) -> Option<&NetfilterTarget> {
+        match self {
+            ProgramSpec::Netfilter { target } => Some(target),
             _ => None,
         }
     }
@@ -2199,6 +2358,8 @@ mod tests {
             ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("sk_lookup spec should parse");
         let flow_dissector = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
             .expect("flow_dissector spec should parse");
+        let netfilter = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
+            .expect("netfilter spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
@@ -2257,6 +2418,23 @@ mod tests {
             Some("/proc/self/ns/net")
         );
         assert_eq!(flow_dissector.section_name(), "flow_dissector");
+        assert_eq!(
+            netfilter.netfilter_target().map(|target| target.family),
+            Some(NetfilterProtocolFamily::Ipv4)
+        );
+        assert_eq!(
+            netfilter.netfilter_target().map(|target| target.hook),
+            Some(NetfilterHook::PreRouting)
+        );
+        assert_eq!(
+            netfilter.netfilter_target().map(|target| target.priority),
+            Some(-100)
+        );
+        assert_eq!(
+            netfilter.netfilter_target().map(|target| target.defrag),
+            Some(true)
+        );
+        assert_eq!(netfilter.section_name(), "netfilter");
         assert_eq!(
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),
@@ -2361,6 +2539,46 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Invalid xdp target option: wat. Expected format: interface[:skb|drv|hw][:frags]"
+        );
+    }
+
+    #[test]
+    fn test_netfilter_target_parses_and_validates_supported_bpf_shape() {
+        let target =
+            NetfilterTarget::parse("ipv4:pre_routing:prio=-200:defrag").expect("target parses");
+        assert_eq!(target.family, NetfilterProtocolFamily::Ipv4);
+        assert_eq!(target.hook, NetfilterHook::PreRouting);
+        assert_eq!(target.priority, -200);
+        assert!(target.defrag);
+        assert_eq!(
+            target.target_string(),
+            "ipv4:pre_routing:priority=-200:defrag"
+        );
+
+        let ipv6 = NetfilterTarget::parse("ip6:localin").expect("ipv6 target parses");
+        assert_eq!(ipv6.family, NetfilterProtocolFamily::Ipv6);
+        assert_eq!(ipv6.hook, NetfilterHook::LocalIn);
+        assert_eq!(ipv6.target_string(), "ipv6:local_in");
+
+        let err = NetfilterTarget::parse("inet:pre_routing")
+            .expect_err("unsupported BPF netfilter family should be rejected");
+        assert_eq!(
+            err.to_string(),
+            "Invalid netfilter family: inet. Expected ipv4 or ipv6"
+        );
+
+        let err =
+            NetfilterTarget::parse("ipv4:ingress").expect_err("unsupported hook should reject");
+        assert_eq!(
+            err.to_string(),
+            "Invalid netfilter hook: ingress. Expected pre_routing, local_in, forward, local_out, or post_routing"
+        );
+
+        let err = NetfilterTarget::parse("ipv4:pre_routing:priority=-400:defrag")
+            .expect_err("defrag before conntrack defrag should reject");
+        assert_eq!(
+            err.to_string(),
+            "Invalid netfilter target: defrag requires priority greater than -400"
         );
     }
 

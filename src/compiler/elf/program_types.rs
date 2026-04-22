@@ -8,6 +8,7 @@ pub enum ProgramContextFamily {
     SkBuffPacket,
     SkLookup,
     FlowDissector,
+    Netfilter,
     SkReuseport,
     SkMsg,
     SockOps,
@@ -58,6 +59,7 @@ pub(super) const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_
 pub(super) const CGROUP_DEVICE_SPEC_ALIASES: &[&str] = &["cgroup_device"];
 pub(super) const SK_LOOKUP_SPEC_ALIASES: &[&str] = &["sk_lookup"];
 pub(super) const FLOW_DISSECTOR_SPEC_ALIASES: &[&str] = &["flow_dissector"];
+pub(super) const NETFILTER_SPEC_ALIASES: &[&str] = &["netfilter"];
 pub(super) const SK_REUSEPORT_SPEC_ALIASES: &[&str] = &["sk_reuseport"];
 pub(super) const SK_MSG_SPEC_ALIASES: &[&str] = &["sk_msg"];
 pub(super) const SK_SKB_SPEC_ALIASES: &[&str] = &["sk_skb"];
@@ -336,6 +338,21 @@ pub(super) const FLOW_DISSECTOR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     retval_access: ProgramValueAccess::None,
 };
 
+pub(super) const NETFILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Netfilter,
+    canonical_prefix: "netfilter",
+    spec_aliases: NETFILTER_SPEC_ALIASES,
+    section_prefix: "netfilter",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::Netfilter,
+    attach_kind: ProgramAttachKind::Netfilter,
+    target_kind: ProgramTargetKind::NetfilterHook,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
 pub(super) const SK_REUSEPORT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkReuseport,
     canonical_prefix: "sk_reuseport",
@@ -556,6 +573,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::CgroupDevice,
     EbpfProgramType::SkLookup,
     EbpfProgramType::FlowDissector,
+    EbpfProgramType::Netfilter,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -593,6 +611,7 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "cgroup_device",
     "sk_lookup",
     "flow_dissector",
+    "netfilter",
     "sk_reuseport",
     "sk_msg",
     "sk_skb",

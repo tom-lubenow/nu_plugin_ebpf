@@ -726,6 +726,31 @@ fn test_parse_program_spec_flow_dissector_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_netfilter_is_structured() {
+    let spec = parse_program_spec("netfilter:ipv4:pre_routing:priority=-100:defrag").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Netfilter {
+            target: NetfilterTarget {
+                family: NetfilterProtocolFamily::Ipv4,
+                hook: NetfilterHook::PreRouting,
+                priority: -100,
+                defrag: true,
+            }
+        }
+    );
+    assert_eq!(
+        spec.to_string(),
+        "netfilter:ipv4:pre_routing:priority=-100:defrag"
+    );
+    assert_eq!(spec.section_name(), "netfilter");
+
+    let ipv6 = parse_program_spec("netfilter:ip6:localin").unwrap();
+    assert_eq!(ipv6.to_string(), "netfilter:ipv6:local_in");
+    assert_eq!(ipv6.section_name(), "netfilter");
+}
+
+#[test]
 fn test_parse_program_spec_sk_reuseport_sections_are_structured() {
     let select = parse_program_spec("sk_reuseport:select").unwrap();
     assert_eq!(

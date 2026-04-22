@@ -240,6 +240,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             "flow_dissector target must be a network namespace file, not a directory",
             &target.netns_path,
         ),
+        ProgramSpec::Netfilter { .. } => Ok(()),
         ProgramSpec::SkReuseport { .. } => Ok(()),
         ProgramSpec::SkMsg { .. } | ProgramSpec::SkSkb { .. } | ProgramSpec::SkSkbParser { .. } => {
             let map_path = spec.pinned_map_path().unwrap_or_else(|| {

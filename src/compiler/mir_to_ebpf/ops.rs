@@ -1118,6 +1118,18 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
+            CtxField::NetfilterHook | CtxField::NetfilterProtocolFamily => {
+                let state_offset = 0;
+                let field_offset = match field {
+                    CtxField::NetfilterHook => 0,
+                    CtxField::NetfilterProtocolFamily => 1,
+                    _ => unreachable!("matched netfilter context field"),
+                };
+                self.instructions
+                    .push(EbpfInsn::ldxdw(EbpfReg::R0, EbpfReg::R9, state_offset));
+                self.instructions
+                    .push(EbpfInsn::ldxb(dst, EbpfReg::R0, field_offset));
+            }
             CtxField::BindInany => {
                 let offset = Self::sk_reuseport_md_offsets().5;
                 self.instructions

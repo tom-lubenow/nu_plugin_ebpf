@@ -792,6 +792,10 @@ pub enum CtxField {
     Socket,
     /// __sk_buff::flow_keys pointer on flow_dissector programs
     FlowKeys,
+    /// bpf_nf_ctx::state->hook
+    NetfilterHook,
+    /// bpf_nf_ctx::state->pf
+    NetfilterProtocolFamily,
     /// sk_reuseport_md::bind_inany
     BindInany,
     /// sk_reuseport_md::migrating_sk
@@ -1009,6 +1013,8 @@ impl CtxField {
             CtxField::Protocol => "protocol".to_string(),
             CtxField::Socket => "sk".to_string(),
             CtxField::FlowKeys => "flow_keys".to_string(),
+            CtxField::NetfilterHook => "hook".to_string(),
+            CtxField::NetfilterProtocolFamily => "pf".to_string(),
             CtxField::BindInany => "bind_inany".to_string(),
             CtxField::MigratingSocket => "migrating_sk".to_string(),
             CtxField::BoundDevIf => "bound_dev_if".to_string(),

@@ -70,6 +70,7 @@ Supported attach types:
   - sk_skb
   - sk_skb_parser
   - flow_dissector (dry-run compile support; live attach is not implemented yet)
+  - netfilter (dry-run compile support; live attach is not implemented yet)
   - sk_reuseport (dry-run compile support; live attach is not implemented yet)
   - cgroup_sysctl
   - cgroup_sockopt
@@ -689,6 +690,21 @@ Context parameter syntax (recommended):
     the unsupported object section. Return aliases are `ok` / `parsed` for
     `0`, `drop` for `2`, and `continue` / `fallback` for `129`.
 
+  netfilter fields:
+    {|ctx| $ctx.hook } - Get nf_hook_state hook number
+    {|ctx| $ctx.pf } - Get nf_hook_state protocol family
+    {|ctx| $ctx.protocol_family } - Alias for ctx.pf
+    Note: `netfilter:ipv4:pre_routing[:priority=N][:defrag]` emits a
+    `netfilter` section. Netfilter BPF-link specs accept `ipv4` / `ipv6`
+    families and the hook names `pre_routing`, `local_in`, `forward`,
+    `local_out`, and `post_routing`. `defrag` requires priority greater
+    than `-400`. Current loader support is compile/dry-run only, so live
+    attach returns a clear unsupported error until BPF-link netfilter
+    attach is implemented.
+    Return aliases are `drop` / `deny` for `0`, `accept` / `allow` /
+    `pass` / `ok` for `1`, `stolen` for `2`, `queue` for `3`, and
+    `repeat` for `4`.
+
   sk_reuseport fields:
     {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len
     {|ctx| $ctx.eth_protocol } - Get Ethernet protocol in host byte order
@@ -861,7 +877,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -918,6 +934,7 @@ Requirements:
             "sk_skb",
             "sk_skb_parser",
             "flow_dissector",
+            "netfilter",
             "sk_reuseport",
             "cgroup_sysctl",
             "cgroup_sockopt",
@@ -1063,6 +1080,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'flow_dissector:/proc/self/ns/net' {|ctx| $ctx.flow_keys.ip_proto | count; 'ok' }",
                 description: "Compile a flow dissector that counts dissected IP protocol values",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'netfilter:ipv4:pre_routing:priority=-100:defrag' {|ctx| $ctx.hook | count; 'accept' }",
+                description: "Compile a netfilter hook that counts hook numbers and accepts packets",
                 result: None,
             },
             Example {

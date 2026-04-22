@@ -376,6 +376,14 @@ fn test_program_type_return_action_aliases_cover_const_families() {
         Some(ProgramReturnAlias::Const(0))
     );
     assert_eq!(
+        EbpfProgramType::Netfilter.return_action_alias("accept"),
+        Some(ProgramReturnAlias::Const(1))
+    );
+    assert_eq!(
+        EbpfProgramType::Netfilter.return_action_alias("queue"),
+        Some(ProgramReturnAlias::Const(3))
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSock.return_action_alias("reject"),
         Some(ProgramReturnAlias::Const(0))
     );
@@ -663,6 +671,22 @@ fn test_program_type_metadata_for_flow_dissector() {
     assert_eq!(info.attach_kind, ProgramAttachKind::FlowDissector);
     assert_eq!(info.target_kind, ProgramTargetKind::NetworkNamespacePath);
     assert_eq!(info.context_family, ProgramContextFamily::FlowDissector);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(
+        info.supported_capabilities
+            .contains(&ProgramCapability::Counters)
+    );
+}
+
+#[test]
+fn test_program_type_metadata_for_netfilter() {
+    let info = EbpfProgramType::Netfilter.info();
+    assert_eq!(info.canonical_prefix, "netfilter");
+    assert_eq!(info.section_prefix, "netfilter");
+    assert_eq!(info.attach_kind, ProgramAttachKind::Netfilter);
+    assert_eq!(info.target_kind, ProgramTargetKind::NetfilterHook);
+    assert_eq!(info.context_family, ProgramContextFamily::Netfilter);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(
@@ -4982,6 +5006,30 @@ fn test_probe_context_allows_flow_dissector_fields() {
         ctx.ctx_field_access_error(&CtxField::SkbHash)
             .expect("expected flow_dissector hash access error")
             .contains("ctx.hash is not available on flow_dissector programs")
+    );
+}
+
+#[test]
+fn test_probe_context_allows_netfilter_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
+
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::NetfilterHook)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::NetfilterProtocolFamily)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::FlowKeys)
+            .expect("expected flow_keys access error")
+            .contains("ctx.flow_keys is only available on flow_dissector programs")
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::PacketLen)
+            .expect("expected packet_len access error")
+            .contains("ctx.packet_len is only available on packet-context programs")
     );
 }
 

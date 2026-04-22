@@ -625,6 +625,9 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             }))
             .non_null_pointer()
         }
+        CtxField::NetfilterHook | CtxField::NetfilterProtocolFamily => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U8))
+        }
         CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
             BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),

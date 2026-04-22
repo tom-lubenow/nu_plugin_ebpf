@@ -824,6 +824,8 @@ pub enum EbpfProgramType {
     SkLookup,
     /// Flow dissector program attached to a network namespace
     FlowDissector,
+    /// Netfilter hook program attached to a network namespace netfilter hook
+    Netfilter,
     /// Socket reuseport selector/migration program
     SkReuseport,
     /// Socket message verdict program attached to a pinned sockmap or sockhash
@@ -904,6 +906,7 @@ impl EbpfProgramType {
             EbpfProgramType::CgroupDevice => &CGROUP_DEVICE_INFO,
             EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
             EbpfProgramType::FlowDissector => &FLOW_DISSECTOR_INFO,
+            EbpfProgramType::Netfilter => &NETFILTER_INFO,
             EbpfProgramType::SkReuseport => &SK_REUSEPORT_INFO,
             EbpfProgramType::SkMsg => &SK_MSG_INFO,
             EbpfProgramType::SkSkb => &SK_SKB_INFO,
@@ -1051,6 +1054,7 @@ pub enum ProgramAttachKind {
     CgroupDevice,
     SkLookup,
     FlowDissector,
+    Netfilter,
     SkReuseport,
     SkMsg,
     SkSkb,
@@ -1078,6 +1082,7 @@ pub enum ProgramTargetKind {
     PerfEventTarget,
     SocketFilterTarget,
     NetworkNamespacePath,
+    NetfilterHook,
     SocketReuseportMode,
     PinnedSockMapPath,
     TrafficControlInterface,
