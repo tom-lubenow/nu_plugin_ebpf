@@ -220,7 +220,7 @@ impl ContextWriteAvailability {
             }),
             Self::CgroupSkbEgressOnly => attach_shape.is_cgroup_skb_ingress().then(|| {
                 format!(
-                    "ctx.{field_name} is only writable on tc and cgroup_skb:egress programs"
+                    "ctx.{field_name} is only writable on tc_action, tc, and cgroup_skb:egress programs"
                 )
             }),
         }
@@ -338,6 +338,11 @@ const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         "mark",
         CtxField::SockMark,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbMark),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "queue_mapping",
+        CtxField::QueueMapping,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbQueueMapping),
     ),
     ContextWriteSurfaceSpec::store_field(
         "priority",
@@ -549,6 +554,10 @@ const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
         surfaces: TC_CTX_WRITE_SURFACES,
     },
     ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::TcAction,
+        surfaces: TC_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::SkSkb,
         surfaces: SK_SKB_CTX_WRITE_SURFACES,
     },
@@ -613,6 +622,7 @@ impl CtxStoreTarget {
             | CtxStoreTarget::CgroupSockMark
             | CtxStoreTarget::CgroupSockPriority => None,
             CtxStoreTarget::SkbMark => Some(CtxField::SockMark),
+            CtxStoreTarget::SkbQueueMapping => Some(CtxField::QueueMapping),
             CtxStoreTarget::SkbPriority => Some(CtxField::SockPriority),
             CtxStoreTarget::SkbTcIndex => Some(CtxField::TcIndex),
             CtxStoreTarget::SkbCbWord(_) => Some(CtxField::SkbCb),

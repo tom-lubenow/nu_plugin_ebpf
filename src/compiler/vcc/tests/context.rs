@@ -898,6 +898,23 @@ fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_tc() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_queue_mapping_store_on_tc_action() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbQueueMapping,
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb queue_mapping store to be accepted on tc_action");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_cgroup_skb() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)
@@ -1063,8 +1080,9 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_cgroup_skb_ingr
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect_err("expected skb tstamp store to be rejected on cgroup_skb ingress");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+        e.message.contains(
+            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs",
+        )
     }));
 }
 
@@ -1085,7 +1103,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_mark_store_on_socket_filter() {
         .expect_err("expected skb mark store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.mark is only writable on tc and cgroup_skb programs")
+            .contains("ctx.mark is only writable on tc_action, tc, and cgroup_skb programs")
     }));
 }
 
@@ -1126,8 +1144,9 @@ fn test_verify_mir_for_probe_context_rejects_skb_tc_index_store_on_socket_filter
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect_err("expected skb tc_index store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.tc_index is only writable on tc, sk_skb, and sk_skb_parser programs")
+        e.message.contains(
+            "ctx.tc_index is only writable on tc_action, tc, sk_skb, and sk_skb_parser programs",
+        )
     }));
 }
 

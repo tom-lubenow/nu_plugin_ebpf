@@ -4991,6 +4991,14 @@ fn test_probe_context_resolves_socket_assignment_write_target() {
             .expect("tc ingress ctx.sk write target should resolve"),
         CtxWriteTarget::AssignSocket
     );
+
+    let tc_action = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    assert_eq!(
+        tc_action
+            .resolve_ctx_write_target("sk", None)
+            .expect("tc_action ctx.sk write target should resolve"),
+        CtxWriteTarget::AssignSocket
+    );
 }
 
 #[test]
@@ -5040,6 +5048,53 @@ fn test_probe_context_resolves_skb_mark_store_target_on_tc() {
     );
     assert!(
         ctx.validate_ctx_store_target(&CtxStoreTarget::SkbMark)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_resolves_skb_queue_mapping_store_target_on_tc() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert_eq!(
+        ctx.resolve_ctx_store_target("queue_mapping", None)
+            .expect("tc queue_mapping target should resolve"),
+        CtxStoreTarget::SkbQueueMapping
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbQueueMapping)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_probe_context_resolves_tc_action_skb_metadata_store_targets() {
+    let ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    for (field, target) in [
+        ("mark", CtxStoreTarget::SkbMark),
+        ("queue_mapping", CtxStoreTarget::SkbQueueMapping),
+        ("priority", CtxStoreTarget::SkbPriority),
+        ("tc_index", CtxStoreTarget::SkbTcIndex),
+        ("tc_classid", CtxStoreTarget::SkbTcClassid),
+        ("tstamp", CtxStoreTarget::SkbTstamp),
+    ] {
+        assert_eq!(
+            ctx.resolve_ctx_store_target(field, None)
+                .unwrap_or_else(|err| panic!("tc_action ctx.{field} target should resolve: {err}")),
+            target
+        );
+        assert!(
+            ctx.validate_ctx_store_target(&target).is_ok(),
+            "tc_action ctx.{field} target should validate"
+        );
+    }
+
+    assert_eq!(
+        ctx.resolve_ctx_store_target("cb", Some(2))
+            .expect("tc_action cb target should resolve"),
+        CtxStoreTarget::SkbCbWord(2)
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(2))
             .is_ok()
     );
 }
@@ -5156,13 +5211,18 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_cgroup_skb_ingress() {
     let err = ctx
         .resolve_ctx_store_target("tstamp", None)
         .expect_err("skb tstamp store target should be rejected on cgroup_skb ingress");
-    assert!(err.contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs"));
+    assert!(
+        err.contains(
+            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs"
+        )
+    );
     let err = ctx
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected on cgroup_skb ingress");
     assert!(
-        err.to_string()
-            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+        err.to_string().contains(
+            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs"
+        )
     );
 }
 
@@ -5174,7 +5234,7 @@ fn test_probe_context_rejects_skb_mark_store_target_on_socket_filter() {
         .expect_err("skb mark store target should be rejected outside tc");
     assert!(
         err.to_string()
-            .contains("ctx.mark is only writable on tc and cgroup_skb programs")
+            .contains("ctx.mark is only writable on tc_action, tc, and cgroup_skb programs")
     );
 }
 

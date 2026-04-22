@@ -8634,6 +8634,16 @@ fn test_compile_remaining_skb_metadata_store_programs() {
         EbpfProgramType::Tc,
         "lo:ingress",
         CellPath {
+            members: vec![string_member("queue_mapping")],
+        },
+        HirLiteral::Int(4),
+        HirLiteral::Int(0),
+        "tc ctx.queue_mapping store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
             members: vec![string_member("priority")],
         },
         HirLiteral::Int(3),
@@ -8699,6 +8709,40 @@ fn test_compile_remaining_skb_metadata_store_programs() {
         HirLiteral::Int(7),
         HirLiteral::Int(0),
         "sk_skb_parser ctx.tc_index store",
+    );
+}
+
+#[test]
+fn test_compile_tc_action_skb_metadata_store_programs() {
+    for (field, value) in [
+        ("mark", 7),
+        ("queue_mapping", 4),
+        ("priority", 3),
+        ("tc_index", 5),
+        ("tc_classid", 9),
+        ("tstamp", 123),
+    ] {
+        assert_ctx_path_store_program_compiles(
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            HirLiteral::Int(value),
+            HirLiteral::Int(0),
+            &format!("tc_action ctx.{field} store"),
+        );
+    }
+
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::TcAction,
+        "demo-action",
+        CellPath {
+            members: vec![string_member("cb"), int_member(2)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc_action ctx.cb[2] store",
     );
 }
 

@@ -130,7 +130,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         180
     }
 
-    pub(super) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
+    pub(crate) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
         //     __u32 pkt_type;

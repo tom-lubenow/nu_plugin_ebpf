@@ -4895,8 +4895,9 @@ fn test_lower_cgroup_skb_ingress_ctx_tstamp_assignment_is_rejected() {
     .expect_err("cgroup_skb ingress ctx.tstamp assignment should be rejected");
 
     assert!(
-        err.to_string()
-            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+        err.to_string().contains(
+            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs"
+        )
     );
 }
 
@@ -4925,6 +4926,37 @@ fn test_lower_tc_ctx_mark_assignment() {
         inst,
         MirInst::StoreCtxField {
             target: CtxStoreTarget::SkbMark,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_tc_action_ctx_queue_mapping_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("queue_mapping")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc_action ctx.queue_mapping assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbQueueMapping,
             ty: MirType::U32,
             ..
         }

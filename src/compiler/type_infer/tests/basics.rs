@@ -3087,6 +3087,23 @@ fn test_type_infer_accepts_store_skb_mark_on_tc() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_skb_queue_mapping_on_tc_action() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbQueueMapping,
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb queue_mapping store should type-check on tc_action");
+}
+
+#[test]
 fn test_type_infer_accepts_store_skb_mark_on_cgroup_skb() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
@@ -3234,8 +3251,9 @@ fn test_type_error_store_skb_tstamp_rejects_cgroup_skb_ingress_context() {
         .infer(&func)
         .expect_err("skb tstamp store should be rejected on cgroup_skb ingress");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only writable on tc and cgroup_skb:egress programs")
+        e.message.contains(
+            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs",
+        )
     }));
 }
 
@@ -3257,7 +3275,7 @@ fn test_type_error_store_skb_mark_rejects_socket_filter_context() {
         .expect_err("skb mark store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.mark is only writable on tc and cgroup_skb programs")
+            .contains("ctx.mark is only writable on tc_action, tc, and cgroup_skb programs")
     }));
 }
 
@@ -3300,8 +3318,9 @@ fn test_type_error_store_skb_tc_index_rejects_socket_filter_context() {
         .infer(&func)
         .expect_err("skb tc_index store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("ctx.tc_index is only writable on tc, sk_skb, and sk_skb_parser programs")
+        e.message.contains(
+            "ctx.tc_index is only writable on tc_action, tc, sk_skb, and sk_skb_parser programs",
+        )
     }));
 }
 

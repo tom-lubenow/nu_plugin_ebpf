@@ -315,7 +315,8 @@ host-order `u32` words. `ctx.eth_protocol` and `ctx.vlan_proto` are
 normalized to host byte order, and `ctx.cb` follows the same
 fixed-array model as `ctx.args`. Writable skb
 metadata is attach-sensitive. On `socket_filter`, fixed `ctx.cb.N`
-is writable. On `tc`, `ctx.mark`, `ctx.priority`, `ctx.tc_index`,
+is writable. On `tc_action` and `tc`, `ctx.mark`,
+`ctx.queue_mapping`, `ctx.priority`, `ctx.tc_index`,
 `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are writable.
 On `cgroup_skb`, `ctx.mark`, `ctx.priority`, and fixed `ctx.cb.N`
 are writable on both directions, and `ctx.tstamp` is additionally
