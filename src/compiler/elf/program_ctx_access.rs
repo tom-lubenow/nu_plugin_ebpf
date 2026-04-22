@@ -270,27 +270,27 @@ const SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] 
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Tstamp,
         "tstamp",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_*, tc, and cgroup_skb programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Hwtstamp,
         "hwtstamp",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_*, tc, and cgroup_skb programs"),
     ),
 ];
 
@@ -316,17 +316,17 @@ const CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
 ];
 
@@ -334,33 +334,33 @@ const SK_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Tstamp,
         "tstamp",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_*, tc, and cgroup_skb programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_* and tc programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Hwtstamp,
         "hwtstamp",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc and cgroup_skb programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("lwt_*, tc, and cgroup_skb programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::SockMark,
         "mark",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "cgroup_sock, socket_filter, tc, and cgroup_skb programs",
+            "cgroup_sock, socket_filter, lwt_*, tc, and cgroup_skb programs",
         ),
     ),
 ];
@@ -817,7 +817,7 @@ fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) ->
         )
     } else {
         format!(
-            "ctx.{} is only available on packet-context programs (xdp, flow_dissector, socket_filter, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
+            "ctx.{} is only available on packet-context programs (xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
             field.display_name()
         )
     }
@@ -926,6 +926,10 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkLookup,
     EbpfProgramType::FlowDissector,
     EbpfProgramType::Netfilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -944,6 +948,10 @@ const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
     EbpfProgramType::FlowDissector,
     EbpfProgramType::SocketFilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -956,6 +964,10 @@ const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 const PACKET_DATA_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
     EbpfProgramType::FlowDissector,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -968,6 +980,10 @@ const PACKET_DATA_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 const INGRESS_IFINDEX_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
     EbpfProgramType::SocketFilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::SkLookup,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -992,6 +1008,10 @@ const STACK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::Tc,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1001,6 +1021,10 @@ const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 const ETH_PROTOCOL_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::FlowDissector,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::Tc,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1010,6 +1034,10 @@ const ETH_PROTOCOL_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const PACKET_HASH_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::Tc,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1310,7 +1338,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SkbFields => format!(
-                "ctx.{} is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::DataMetaField => {
@@ -1368,7 +1396,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::ProtocolField => format!(
-                "ctx.{} is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, sk_lookup, and sk_reuseport programs",
+                "ctx.{} is only available on skb-backed packet, lwt_*, cgroup_sock, cgroup_sock_addr, sk_lookup, and sk_reuseport programs",
                 field.display_name()
             ),
             Self::CgroupSockFields => format!(
@@ -1376,7 +1404,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SockMarkPriorityFields => format!(
-                "ctx.{} is only available on cgroup_sock, socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on cgroup_sock, socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::CgroupSysctlFields => format!(

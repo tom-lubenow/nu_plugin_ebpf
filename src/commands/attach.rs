@@ -71,6 +71,7 @@ Supported attach types:
   - sk_skb_parser
   - flow_dissector (dry-run compile support; live attach is not implemented yet)
   - netfilter (dry-run compile support; live attach is not implemented yet)
+  - lwt_in, lwt_out, lwt_xmit, lwt_seg6local (dry-run compile support; live attach is not implemented yet)
   - sk_reuseport (dry-run compile support; live attach is not implemented yet)
   - cgroup_sysctl
   - cgroup_sockopt
@@ -705,6 +706,22 @@ Context parameter syntax (recommended):
     `pass` / `ok` for `1`, `stolen` for `2`, `queue` for `3`, and
     `repeat` for `4`.
 
+  lwt_* fields:
+    {|ctx| $ctx.packet_len } - Get packet length from __sk_buff.len
+    {|ctx| $ctx.eth_protocol } - Get skb protocol / ethertype in host byte order
+    {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol
+    {|ctx| $ctx.ingress_ifindex } - Get arriving ingress interface index
+    {|ctx| $ctx.ifindex } - Get skb interface index
+    {|ctx| $ctx.hash } - Get skb hash
+    Note: `lwt_in:demo-route`, `lwt_out:demo-route`,
+    `lwt_xmit:demo-route`, and `lwt_seg6local:demo-route` emit
+    `lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` sections.
+    Current loader support is compile/dry-run only, so live attach returns
+    a clear unsupported error instead of attempting route attachment.
+    Return aliases are `ok` / `pass` for `0`, `drop` for `2`, and
+    `redirect` for `7`; `lwt_in` and `lwt_xmit` also accept `reroute`
+    for `128`.
+
   sk_reuseport fields:
     {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len
     {|ctx| $ctx.eth_protocol } - Get Ethernet protocol in host byte order
@@ -877,7 +894,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -935,6 +952,10 @@ Requirements:
             "sk_skb_parser",
             "flow_dissector",
             "netfilter",
+            "lwt_in",
+            "lwt_out",
+            "lwt_xmit",
+            "lwt_seg6local",
             "sk_reuseport",
             "cgroup_sysctl",
             "cgroup_sockopt",
@@ -1085,6 +1106,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'netfilter:ipv4:pre_routing:priority=-100:defrag' {|ctx| $ctx.hook | count; 'accept' }",
                 description: "Compile a netfilter hook that counts hook numbers and accepts packets",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'lwt_xmit:demo-route' {|ctx| $ctx.hash | count; 'reroute' }",
+                description: "Compile an LWT transmit program that counts skb hashes and requests reroute",
                 result: None,
             },
             Example {

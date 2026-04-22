@@ -1121,6 +1121,32 @@ impl NetfilterTarget {
     }
 }
 
+/// Parsed lightweight tunnel target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LwtTarget {
+    /// Descriptive route/attachment label. Live route attach is not implemented yet.
+    pub route: String,
+}
+
+impl LwtTarget {
+    /// Parse an LWT target label. The current compiler uses it for metadata only.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "lwt target label cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            route: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.route.clone()
+    }
+}
+
 /// Supported sk_reuseport section modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkReuseportMode {
@@ -1551,6 +1577,18 @@ pub enum ProgramSpec {
     Netfilter {
         target: NetfilterTarget,
     },
+    LwtIn {
+        target: LwtTarget,
+    },
+    LwtOut {
+        target: LwtTarget,
+    },
+    LwtXmit {
+        target: LwtTarget,
+    },
+    LwtSeg6Local {
+        target: LwtTarget,
+    },
     SkReuseport {
         target: SkReuseportTarget,
     },
@@ -1839,6 +1877,18 @@ impl ProgramSpec {
             EbpfProgramType::Netfilter => Ok(ProgramSpec::Netfilter {
                 target: NetfilterTarget::parse(target)?,
             }),
+            EbpfProgramType::LwtIn => Ok(ProgramSpec::LwtIn {
+                target: LwtTarget::parse(target)?,
+            }),
+            EbpfProgramType::LwtOut => Ok(ProgramSpec::LwtOut {
+                target: LwtTarget::parse(target)?,
+            }),
+            EbpfProgramType::LwtXmit => Ok(ProgramSpec::LwtXmit {
+                target: LwtTarget::parse(target)?,
+            }),
+            EbpfProgramType::LwtSeg6Local => Ok(ProgramSpec::LwtSeg6Local {
+                target: LwtTarget::parse(target)?,
+            }),
             EbpfProgramType::SkReuseport => Ok(ProgramSpec::SkReuseport {
                 target: SkReuseportTarget::parse(target)?,
             }),
@@ -1902,6 +1952,10 @@ impl ProgramSpec {
             ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
             ProgramSpec::FlowDissector { .. } => EbpfProgramType::FlowDissector,
             ProgramSpec::Netfilter { .. } => EbpfProgramType::Netfilter,
+            ProgramSpec::LwtIn { .. } => EbpfProgramType::LwtIn,
+            ProgramSpec::LwtOut { .. } => EbpfProgramType::LwtOut,
+            ProgramSpec::LwtXmit { .. } => EbpfProgramType::LwtXmit,
+            ProgramSpec::LwtSeg6Local { .. } => EbpfProgramType::LwtSeg6Local,
             ProgramSpec::SkReuseport { .. } => EbpfProgramType::SkReuseport,
             ProgramSpec::SkMsg { .. } => EbpfProgramType::SkMsg,
             ProgramSpec::SkSkb { .. } => EbpfProgramType::SkSkb,
@@ -1940,6 +1994,10 @@ impl ProgramSpec {
             ProgramSpec::SkLookup { target } => target.target_string(),
             ProgramSpec::FlowDissector { target } => target.target_string(),
             ProgramSpec::Netfilter { target } => target.target_string(),
+            ProgramSpec::LwtIn { target }
+            | ProgramSpec::LwtOut { target }
+            | ProgramSpec::LwtXmit { target }
+            | ProgramSpec::LwtSeg6Local { target } => target.target_string(),
             ProgramSpec::SkReuseport { target } => target.target_string(),
             ProgramSpec::SkMsg { target } => target.target_string(),
             ProgramSpec::SkSkb { target } => target.target_string(),
@@ -2004,6 +2062,17 @@ impl ProgramSpec {
     pub(crate) fn netfilter_target(&self) -> Option<&NetfilterTarget> {
         match self {
             ProgramSpec::Netfilter { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn lwt_target(&self) -> Option<&LwtTarget> {
+        match self {
+            ProgramSpec::LwtIn { target }
+            | ProgramSpec::LwtOut { target }
+            | ProgramSpec::LwtXmit { target }
+            | ProgramSpec::LwtSeg6Local { target } => Some(target),
             _ => None,
         }
     }
@@ -2360,6 +2429,8 @@ mod tests {
             .expect("flow_dissector spec should parse");
         let netfilter = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
             .expect("netfilter spec should parse");
+        let lwt_xmit =
+            ProgramSpec::parse("lwt_xmit:demo-route").expect("lwt_xmit spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
@@ -2435,6 +2506,11 @@ mod tests {
             Some(true)
         );
         assert_eq!(netfilter.section_name(), "netfilter");
+        assert_eq!(
+            lwt_xmit.lwt_target().map(|target| target.route.as_str()),
+            Some("demo-route")
+        );
+        assert_eq!(lwt_xmit.section_name(), "lwt_xmit");
         assert_eq!(
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),
@@ -2580,6 +2656,16 @@ mod tests {
             err.to_string(),
             "Invalid netfilter target: defrag requires priority greater than -400"
         );
+    }
+
+    #[test]
+    fn test_lwt_target_requires_non_empty_label() {
+        let target = LwtTarget::parse("demo-route").expect("lwt target should parse");
+        assert_eq!(target.route, "demo-route");
+        assert_eq!(target.target_string(), "demo-route");
+
+        let err = LwtTarget::parse("").expect_err("empty lwt target should reject");
+        assert_eq!(err.to_string(), "lwt target label cannot be empty");
     }
 
     #[test]

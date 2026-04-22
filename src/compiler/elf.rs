@@ -826,6 +826,14 @@ pub enum EbpfProgramType {
     FlowDissector,
     /// Netfilter hook program attached to a network namespace netfilter hook
     Netfilter,
+    /// Lightweight tunnel input program
+    LwtIn,
+    /// Lightweight tunnel output program
+    LwtOut,
+    /// Lightweight tunnel transmit program
+    LwtXmit,
+    /// Lightweight tunnel Segment Routing local action program
+    LwtSeg6Local,
     /// Socket reuseport selector/migration program
     SkReuseport,
     /// Socket message verdict program attached to a pinned sockmap or sockhash
@@ -907,6 +915,10 @@ impl EbpfProgramType {
             EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
             EbpfProgramType::FlowDissector => &FLOW_DISSECTOR_INFO,
             EbpfProgramType::Netfilter => &NETFILTER_INFO,
+            EbpfProgramType::LwtIn => &LWT_IN_INFO,
+            EbpfProgramType::LwtOut => &LWT_OUT_INFO,
+            EbpfProgramType::LwtXmit => &LWT_XMIT_INFO,
+            EbpfProgramType::LwtSeg6Local => &LWT_SEG6LOCAL_INFO,
             EbpfProgramType::SkReuseport => &SK_REUSEPORT_INFO,
             EbpfProgramType::SkMsg => &SK_MSG_INFO,
             EbpfProgramType::SkSkb => &SK_SKB_INFO,
@@ -1055,6 +1067,7 @@ pub enum ProgramAttachKind {
     SkLookup,
     FlowDissector,
     Netfilter,
+    Lwt,
     SkReuseport,
     SkMsg,
     SkSkb,
@@ -1083,6 +1096,7 @@ pub enum ProgramTargetKind {
     SocketFilterTarget,
     NetworkNamespacePath,
     NetfilterHook,
+    LightweightTunnelRoute,
     SocketReuseportMode,
     PinnedSockMapPath,
     TrafficControlInterface,

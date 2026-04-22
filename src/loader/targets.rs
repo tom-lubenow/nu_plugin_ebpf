@@ -241,6 +241,10 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             &target.netns_path,
         ),
         ProgramSpec::Netfilter { .. } => Ok(()),
+        ProgramSpec::LwtIn { .. }
+        | ProgramSpec::LwtOut { .. }
+        | ProgramSpec::LwtXmit { .. }
+        | ProgramSpec::LwtSeg6Local { .. } => Ok(()),
         ProgramSpec::SkReuseport { .. } => Ok(()),
         ProgramSpec::SkMsg { .. } | ProgramSpec::SkSkb { .. } | ProgramSpec::SkSkbParser { .. } => {
             let map_path = spec.pinned_map_path().unwrap_or_else(|| {

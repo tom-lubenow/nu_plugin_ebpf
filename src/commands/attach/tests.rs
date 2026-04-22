@@ -7243,6 +7243,45 @@ fn test_compile_netfilter_ctx_scalar_counter_programs() {
 }
 
 #[test]
+fn test_compile_lwt_ctx_scalar_counter_programs() {
+    for (program_type, target, field, context) in [
+        (
+            EbpfProgramType::LwtIn,
+            "demo-route",
+            "packet_len",
+            "lwt_in ctx.packet_len count",
+        ),
+        (
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            "eth_protocol",
+            "lwt_out ctx.eth_protocol count",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            "hash",
+            "lwt_xmit ctx.hash count",
+        ),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            "ifindex",
+            "lwt_seg6local ctx.ifindex count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            program_type,
+            target,
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_sk_reuseport_ctx_scalar_counter_programs() {
     for (field, context) in [
         ("packet_len", "sk_reuseport ctx.packet_len count"),

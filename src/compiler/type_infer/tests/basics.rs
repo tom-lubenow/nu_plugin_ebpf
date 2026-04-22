@@ -2393,7 +2393,7 @@ fn test_infer_socket_filter_tstamp_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only available on tc and cgroup_skb programs")
+            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
     }));
 }
 
@@ -2419,7 +2419,7 @@ fn test_infer_socket_filter_tstamp_type_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp_type is only available on tc programs")
+            .contains("ctx.tstamp_type is only available on lwt_* and tc programs")
     }));
 }
 
@@ -2445,7 +2445,7 @@ fn test_infer_socket_filter_hwtstamp_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.hwtstamp is only available on tc and cgroup_skb programs")
+            .contains("ctx.hwtstamp is only available on lwt_*, tc, and cgroup_skb programs")
     }));
 }
 
@@ -2471,7 +2471,7 @@ fn test_infer_sk_skb_mark_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.mark is only available on cgroup_sock, socket_filter, tc, and cgroup_skb programs",
+            "ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc, and cgroup_skb programs",
         )
     }));
 }
@@ -3187,7 +3187,7 @@ fn test_type_error_store_skb_tstamp_rejects_non_skb_context() {
         .expect_err("skb tstamp store should be rejected outside skb-backed contexts");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "ctx.tstamp is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+            "ctx.tstamp is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
         )
     }));
 }
@@ -3210,7 +3210,7 @@ fn test_type_error_store_skb_tstamp_rejects_socket_filter_context() {
         .expect_err("skb tstamp store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only available on tc and cgroup_skb programs")
+            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
     }));
 }
 

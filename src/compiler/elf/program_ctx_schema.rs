@@ -54,6 +54,27 @@ impl ProgramContextLayoutSpec {
             sock_ops_load_guards: false,
         }
     }
+
+    const fn skb_packet_only(program_type: EbpfProgramType) -> Self {
+        Self {
+            program_type,
+            packet_context: Some(PacketContextKind::SkBuff),
+            data_meta: None,
+            socket_family: None,
+            sock_type: None,
+            protocol: Some(SocketContextLayout::SkBuff),
+            socket_ref: None,
+            ingress_ifindex: Some(IngressIfindexContextLayout::SkBuff),
+            sock_mark_priority: Some(SocketContextLayout::SkBuff),
+            sock_state: None,
+            socket_cookie: false,
+            socket_uid: false,
+            netns_cookie: false,
+            lookup_cookie: false,
+            raw_socket_context_pointer: false,
+            sock_ops_load_guards: false,
+        }
+    }
 }
 
 const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
@@ -100,6 +121,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         Some(SocketContextLayout::SkBuff),
         false,
     ),
+    ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtIn),
+    ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtOut),
+    ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtXmit),
+    ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtSeg6Local),
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSock,
         packet_context: None,

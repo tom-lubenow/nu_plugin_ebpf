@@ -1222,7 +1222,7 @@ fn test_lower_kprobe_ifindex_alias_reports_packet_context_error() {
 
     assert!(err
         .to_string()
-        .contains("ctx.ifindex is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"));
+        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"));
 }
 
 #[test]
@@ -2515,6 +2515,30 @@ fn test_lower_netfilter_action_alias_return_to_const() {
         block.terminator,
         MirInst::Return {
             val: Some(MirValue::Const(3))
+        }
+    ));
+}
+
+#[test]
+fn test_lower_lwt_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"reroute".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lwt action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(128))
         }
     ));
 }

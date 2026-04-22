@@ -751,6 +751,26 @@ fn test_parse_program_spec_netfilter_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_lwt_sections_are_structured() {
+    for (spec_string, expected_type, expected_section) in [
+        ("lwt_in:demo-route", EbpfProgramType::LwtIn, "lwt_in"),
+        ("lwt_out:demo-route", EbpfProgramType::LwtOut, "lwt_out"),
+        ("lwt_xmit:demo-route", EbpfProgramType::LwtXmit, "lwt_xmit"),
+        (
+            "lwt_seg6local:demo-route",
+            EbpfProgramType::LwtSeg6Local,
+            "lwt_seg6local",
+        ),
+    ] {
+        let spec = parse_program_spec(spec_string).unwrap();
+        assert_eq!(spec.program_type(), expected_type);
+        assert_eq!(spec.target_string(), "demo-route");
+        assert_eq!(spec.to_string(), spec_string);
+        assert_eq!(spec.section_name(), expected_section);
+    }
+}
+
+#[test]
 fn test_parse_program_spec_sk_reuseport_sections_are_structured() {
     let select = parse_program_spec("sk_reuseport:select").unwrap();
     assert_eq!(

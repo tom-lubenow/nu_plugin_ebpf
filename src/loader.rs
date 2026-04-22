@@ -106,7 +106,7 @@ mod maps;
 
 pub use crate::program_spec::{
     CgroupDeviceTarget, CgroupSkbTarget, CgroupSockAddrTarget, CgroupSockTarget,
-    CgroupSockoptTarget, FlowDissectorTarget, LircMode2Target, NetfilterHook,
+    CgroupSockoptTarget, FlowDissectorTarget, LircMode2Target, LwtTarget, NetfilterHook,
     NetfilterProtocolFamily, NetfilterTarget, PerfEventEvent, PerfEventHardwareEvent,
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
     SkMsgTarget, SkReuseportMode, SkReuseportTarget, SkSkbTarget, SockOpsTarget,

@@ -33,32 +33,32 @@ The closure receives a context parameter with these fields:
 | `perf_counter` | Perf event counter value from `bpf_perf_prog_read_value` | perf_event |
 | `perf_enabled` | Perf event enabled time from `bpf_perf_prog_read_value` | perf_event |
 | `perf_running` | Perf event running time from `bpf_perf_prog_read_value` | perf_event |
-| `packet_len` / `len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `sk_reuseport_md.len` on sk_reuseport, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks); `ctx.size` is also accepted on sk_msg | xdp, flow_dissector, socket_filter, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `packet_len` / `len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `sk_reuseport_md.len` on sk_reuseport, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks); `ctx.size` is also accepted on sk_msg | xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `xdp_buff_len` / `xdp_buffer_len` | Total XDP buffer length from `bpf_xdp_get_buff_len`, including paged fragments | xdp |
-| `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | flow_dissector, socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
-| `vlan_present` | Whether skb VLAN metadata is present | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `vlan_tci` | skb VLAN TCI | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `cb` | skb control-block words as five host-order `u32` values | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tc_classid` | skb tc_classid | tc |
+| `pkt_type` | skb pkt_type | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `queue_mapping` | skb queue_mapping | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
+| `vlan_present` | Whether skb VLAN metadata is present | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_tci` | skb VLAN TCI | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `cb` | skb control-block words as five host-order `u32` values | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `tc_classid` | skb tc_classid | lwt_*, tc |
 | `cgroup_classid` | skb cgroup class ID from `bpf_get_cgroup_classid` | tc egress |
 | `route_realm` | skb route realm from `bpf_get_route_realm` | tc egress |
 | `csum_level` | skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`; returns a negative error if the kernel cannot query it | tc, sk_skb, sk_skb_parser |
 | `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc egress |
 | `skb_ancestor_cgroup_id.N` | skb ancestor cgroup ID at constant numeric level `N` from `bpf_skb_ancestor_cgroup_id` | tc egress |
-| `napi_id` | skb napi_id | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `wire_len` | skb wire_len | tc |
-| `gso_segs` | skb GSO segment count | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `gso_size` | skb GSO segment size | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tstamp` | skb timestamp | tc, cgroup_skb |
-| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | tc |
-| `hwtstamp` | skb hardware timestamp | tc, cgroup_skb |
-| `data` | Packet data pointer | xdp, flow_dissector, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `napi_id` | skb napi_id | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `wire_len` | skb wire_len | lwt_*, tc |
+| `gso_segs` | skb GSO segment count | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `gso_size` | skb GSO segment size | socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `tstamp` | skb timestamp | lwt_*, tc, cgroup_skb |
+| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | lwt_*, tc |
+| `hwtstamp` | skb hardware timestamp | lwt_*, tc, cgroup_skb |
+| `data` | Packet data pointer | xdp, flow_dissector, lwt_*, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `data_meta` | Packet metadata pointer | xdp, tc |
-| `data_end` | Packet end pointer | xdp, flow_dissector, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
+| `data_end` | Packet end pointer | xdp, flow_dissector, lwt_*, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, lwt_*, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
 | `sample` / `raw` | Raw lirc mode2 sample word | lirc_mode2 |
 | `value` | Low 24-bit lirc mode2 payload value | lirc_mode2 |
 | `mode` | High-byte lirc mode2 event kind mask | lirc_mode2 |
@@ -67,9 +67,9 @@ The closure receives a context parameter with these fields:
 | `device_type` | cgroup device kind (`access_type & 0xffff`) | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
 | `minor` | Requested device minor number | cgroup_device |
-| `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_index` | skb tc_index | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `hash` | skb hash, or sk_reuseport selection hash on sk_reuseport | socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
+| `hash` | skb hash, or sk_reuseport selection hash on sk_reuseport | socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
 | `hash_recalc` / `recalc_hash` | skb hash from `bpf_get_hash_recalc`, recomputing it if needed | tc, sk_skb, sk_skb_parser |
 | `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
 | `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -82,10 +82,10 @@ The closure receives a context parameter with these fields:
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
 | `family` | Kernel socket family | cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
-| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts; IP protocol on sk_reuseport | flow_dissector, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_skb, sk_skb_parser |
+| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts; IP protocol on sk_reuseport | flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_skb, sk_skb_parser |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock (sock_create, sock_release) |
-| `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb |
-| `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, lwt_*, tc, cgroup_skb |
+| `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, lwt_*, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `state` | Current socket or TCP state | cgroup_sock, sock_ops |
 | `op` | sock_ops callback opcode | sock_ops |
 | `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
@@ -357,6 +357,8 @@ Tail calls are exposed as ordinary control flow with `tail-call MAP INDEX` or `I
 `flow_dissector` currently has compile/dry-run support for network-namespace targets such as `flow_dissector:/proc/self/ns/net`. It emits a `flow_dissector` section and exposes a narrow `__sk_buff` packet surface: `ctx.packet_len` / `ctx.len`, `ctx.data`, `ctx.data_end`, `ctx.eth_protocol` / `ctx.protocol`, and `ctx.flow_keys` projections such as `ctx.flow_keys.nhoff`, `ctx.flow_keys.ip_proto`, `ctx.flow_keys.sport`, `ctx.flow_keys.dport`, `ctx.flow_keys.ipv4_src`, or `ctx.flow_keys.ipv6_dst.3`. Return aliases are `"ok"` / `"parsed"` for `0`, `"drop"` for `2`, and `"continue"` / `"fallback"` for `129`. Live attach is intentionally rejected before Aya load because this loader does not yet implement safe flow-dissector attachment and Aya does not expose a high-level attach wrapper for this section.
 
 `netfilter` currently has compile/dry-run support for targets such as `netfilter:ipv4:pre_routing[:priority=N][:defrag]`. It emits a `netfilter` section and exposes the safe scalar `bpf_nf_ctx.state` fields `ctx.hook` and `ctx.pf` / `ctx.protocol_family`. BPF-link specs accept `ipv4` / `ipv6` families and `pre_routing`, `local_in`, `forward`, `local_out`, or `post_routing` hooks; `defrag` requires priority greater than `-400`. Return aliases are `"drop"` / `"deny"` for `0`, `"accept"` / `"allow"` / `"pass"` / `"ok"` for `1`, `"stolen"` for `2`, `"queue"` for `3`, and `"repeat"` for `4`. Live attach is intentionally rejected before Aya load until the loader has BPF-link netfilter attach support.
+
+`lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` currently have compile/dry-run support for descriptive targets such as `lwt_xmit:demo-route`. They emit their matching `lwt_*` sections and expose a conservative `__sk_buff` packet surface: `ctx.packet_len` / `ctx.len`, `ctx.data`, `ctx.data_end`, `ctx.eth_protocol` / `ctx.protocol`, `ctx.ingress_ifindex`, `ctx.ifindex`, and `ctx.hash`, plus the ordinary skb metadata fields already modeled for read-only skb contexts. Return aliases are `"ok"` / `"pass"` for `0`, `"drop"` for `2`, and `"redirect"` for `7`; `lwt_in` and `lwt_xmit` also accept `"reroute"` for `128`. Live attach is intentionally rejected before Aya load because this loader does not yet implement route LWT attachment and Aya does not parse these sections.
 
 `sk_msg` currently attaches to a pinned sockmap or sockhash path such as `/sys/fs/bpf/demo_sockmap`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.packet_len` / `ctx.len` / `ctx.size`, `ctx.data`, `ctx.data_end`, `ctx.family`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`, plus a typed `ctx.sk` pointer for socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or `$ctx.sk.priority`. `ctx.data` / `ctx.data_end` use the same guarded packet access model as XDP and tc, so ordinary byte/scalar reads like `($ctx.data | get 0)` work. The IPv4 address and remote port fields are normalized to host byte order, and the IPv6 fields are exposed as fixed arrays of four host-order `u32` words so ordinary Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`. This initial slice is read-only and uses raw integer verdict codes; `sk_msg` closures can return `"pass"` / `"drop"` instead of raw `1` / `0`, and `"allow"` / `"deny"` aliases also work. `adjust-message --apply BYTES`, `adjust-message --cork BYTES`, `adjust-message --pull START END [--flags N]`, `adjust-message --push START LEN [--flags N]`, and `adjust-message --pop START LEN [--flags N]` are the preferred first-class message-byte surfaces here because they select the corresponding `bpf_msg_*` helper automatically from the current program type. `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class redirect surface here because it selects `bpf_msg_redirect_map` or `bpf_msg_redirect_hash` automatically from the current program type. `adjust-message --pull` can invalidate previously loaded `ctx.data` / `ctx.data_end` pointers, so reload them after the helper before reading packet bytes again. Socket helper-backed projections are available through ordinary `ctx.sk.full.<field>`, `ctx.sk.listener.<field>`, and `ctx.sk.tcp.<field>` paths when the corresponding helper is valid.
 

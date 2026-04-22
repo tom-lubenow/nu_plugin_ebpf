@@ -60,6 +60,10 @@ pub(super) const CGROUP_DEVICE_SPEC_ALIASES: &[&str] = &["cgroup_device"];
 pub(super) const SK_LOOKUP_SPEC_ALIASES: &[&str] = &["sk_lookup"];
 pub(super) const FLOW_DISSECTOR_SPEC_ALIASES: &[&str] = &["flow_dissector"];
 pub(super) const NETFILTER_SPEC_ALIASES: &[&str] = &["netfilter"];
+pub(super) const LWT_IN_SPEC_ALIASES: &[&str] = &["lwt_in"];
+pub(super) const LWT_OUT_SPEC_ALIASES: &[&str] = &["lwt_out"];
+pub(super) const LWT_XMIT_SPEC_ALIASES: &[&str] = &["lwt_xmit"];
+pub(super) const LWT_SEG6LOCAL_SPEC_ALIASES: &[&str] = &["lwt_seg6local"];
 pub(super) const SK_REUSEPORT_SPEC_ALIASES: &[&str] = &["sk_reuseport"];
 pub(super) const SK_MSG_SPEC_ALIASES: &[&str] = &["sk_msg"];
 pub(super) const SK_SKB_SPEC_ALIASES: &[&str] = &["sk_skb"];
@@ -353,6 +357,66 @@ pub(super) const NETFILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     retval_access: ProgramValueAccess::None,
 };
 
+pub(super) const LWT_IN_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::LwtIn,
+    canonical_prefix: "lwt_in",
+    spec_aliases: LWT_IN_SPEC_ALIASES,
+    section_prefix: "lwt_in",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::SkBuffPacket,
+    attach_kind: ProgramAttachKind::Lwt,
+    target_kind: ProgramTargetKind::LightweightTunnelRoute,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const LWT_OUT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::LwtOut,
+    canonical_prefix: "lwt_out",
+    spec_aliases: LWT_OUT_SPEC_ALIASES,
+    section_prefix: "lwt_out",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::SkBuffPacket,
+    attach_kind: ProgramAttachKind::Lwt,
+    target_kind: ProgramTargetKind::LightweightTunnelRoute,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const LWT_XMIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::LwtXmit,
+    canonical_prefix: "lwt_xmit",
+    spec_aliases: LWT_XMIT_SPEC_ALIASES,
+    section_prefix: "lwt_xmit",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::SkBuffPacket,
+    attach_kind: ProgramAttachKind::Lwt,
+    target_kind: ProgramTargetKind::LightweightTunnelRoute,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const LWT_SEG6LOCAL_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::LwtSeg6Local,
+    canonical_prefix: "lwt_seg6local",
+    spec_aliases: LWT_SEG6LOCAL_SPEC_ALIASES,
+    section_prefix: "lwt_seg6local",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::SkBuffPacket,
+    attach_kind: ProgramAttachKind::Lwt,
+    target_kind: ProgramTargetKind::LightweightTunnelRoute,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
 pub(super) const SK_REUSEPORT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkReuseport,
     canonical_prefix: "sk_reuseport",
@@ -574,6 +638,10 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::SkLookup,
     EbpfProgramType::FlowDissector,
     EbpfProgramType::Netfilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -612,6 +680,10 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "sk_lookup",
     "flow_dissector",
     "netfilter",
+    "lwt_in",
+    "lwt_out",
+    "lwt_xmit",
+    "lwt_seg6local",
     "sk_reuseport",
     "sk_msg",
     "sk_skb",

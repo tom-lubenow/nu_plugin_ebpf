@@ -46,6 +46,7 @@ impl EbpfState {
             ProgramAttachKind::SkReuseport
                 | ProgramAttachKind::FlowDissector
                 | ProgramAttachKind::Netfilter
+                | ProgramAttachKind::Lwt
         ) {
             return Err(LoadError::Attach(format!(
                 "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
@@ -808,6 +809,12 @@ impl EbpfState {
             ProgramAttachKind::Netfilter => {
                 return Err(LoadError::Attach(
                     "live attach for netfilter programs is not supported by this loader yet; use --dry-run to compile"
+                        .to_string(),
+                ));
+            }
+            ProgramAttachKind::Lwt => {
+                return Err(LoadError::Attach(
+                    "live attach for lwt programs is not supported by this loader yet; use --dry-run to compile"
                         .to_string(),
                 ));
             }

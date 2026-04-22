@@ -909,7 +909,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(IngressIfindexContextLayout::SkBuff) => Self::sk_buff_offsets().3,
                     None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.ingress_ifindex is only available on xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, and sk_skb_parser programs".to_string(),
+                            "ctx.ingress_ifindex is only available on xdp, socket_filter, lwt_*, tc, cgroup_skb, sk_lookup, sk_skb, and sk_skb_parser programs".to_string(),
                         ));
                     }
                 };
