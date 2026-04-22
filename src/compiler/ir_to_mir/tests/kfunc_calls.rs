@@ -2268,13 +2268,13 @@ fn test_redirect_socket_intrinsic_rejects_non_socket_redirect_programs() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("redirect-socket should be rejected outside sk_msg/sk_skb");
+    .expect_err("redirect-socket should be rejected outside socket redirect/select programs");
 
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
                 msg.contains(
-                    "redirect-socket is only valid in sk_msg, sk_skb, and sk_skb_parser programs"
+                    "redirect-socket is only valid in sk_msg, sk_skb, sk_skb_parser, and sk_reuseport programs"
                 ),
                 "{msg}"
             );

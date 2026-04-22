@@ -1317,6 +1317,10 @@ fn test_verify_mir_for_program_socket_map_helpers_reject_invalid_programs() {
             BpfHelper::SkRedirectHash,
             "helper 'bpf_sk_redirect_hash' is only valid in sk_skb and sk_skb_parser programs",
         ),
+        (
+            BpfHelper::SkSelectReuseport,
+            "helper 'bpf_sk_select_reuseport' is only valid in sk_reuseport programs",
+        ),
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -1340,6 +1344,12 @@ fn test_verify_mir_for_program_socket_map_helpers_reject_invalid_programs() {
                 MirValue::Const(0),
             ],
             BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::SkSelectReuseport => vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(map_slot),
                 MirValue::StackSlot(key_slot),
@@ -1392,6 +1402,10 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
             BpfHelper::SkRedirectHash,
             EbpfProgramType::SkSkbParser.info(),
         ),
+        (
+            BpfHelper::SkSelectReuseport,
+            EbpfProgramType::SkReuseport.info(),
+        ),
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -1415,6 +1429,12 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
                 MirValue::Const(0),
             ],
             BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::SkSelectReuseport => vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(map_slot),
                 MirValue::StackSlot(key_slot),

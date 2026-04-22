@@ -176,6 +176,8 @@ pub enum BpfHelper {
     MsgRedirectHash = 71,
     /// long bpf_sk_redirect_hash(skb, map, key, flags)
     SkRedirectHash = 72,
+    /// long bpf_sk_select_reuseport(ctx, map, key, flags)
+    SkSelectReuseport = 82,
     /// u64 bpf_ktime_get_boot_ns(void)
     KtimeGetBootNs = 125,
     /// u64 bpf_ktime_get_coarse_ns(void)
@@ -390,6 +392,7 @@ impl BpfHelper {
             BpfHelper::SockHashUpdate => "bpf_sock_hash_update",
             BpfHelper::MsgRedirectHash => "bpf_msg_redirect_hash",
             BpfHelper::SkRedirectHash => "bpf_sk_redirect_hash",
+            BpfHelper::SkSelectReuseport => "bpf_sk_select_reuseport",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
             BpfHelper::KtimeGetCoarseNs => "bpf_ktime_get_coarse_ns",
             BpfHelper::KtimeGetTaiNs => "bpf_ktime_get_tai_ns",
@@ -536,6 +539,7 @@ impl BpfHelper {
             "sock_hash_update" => Some(Self::SockHashUpdate),
             "msg_redirect_hash" => Some(Self::MsgRedirectHash),
             "sk_redirect_hash" => Some(Self::SkRedirectHash),
+            "sk_select_reuseport" => Some(Self::SkSelectReuseport),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
             "ktime_get_coarse_ns" => Some(Self::KtimeGetCoarseNs),
             "ktime_get_tai_ns" => Some(Self::KtimeGetTaiNs),
@@ -663,6 +667,7 @@ impl BpfHelper {
             (Self::SockHashUpdate | Self::MsgRedirectHash | Self::SkRedirectHash, 1) => {
                 Some(MapKind::SockHash)
             }
+            (Self::SkSelectReuseport, 1) => Some(MapKind::ReuseportSockArray),
             (Self::SkStorageGet | Self::SkStorageDelete, 0) => Some(MapKind::SkStorage),
             (Self::TaskStorageGet | Self::TaskStorageDelete, 0) => Some(MapKind::TaskStorage),
             (Self::InodeStorageGet | Self::InodeStorageDelete, 0) => Some(MapKind::InodeStorage),
@@ -690,7 +695,8 @@ impl BpfHelper {
             | Self::MsgRedirectMap
             | Self::SockHashUpdate
             | Self::MsgRedirectHash
-            | Self::SkRedirectHash => Some(1),
+            | Self::SkRedirectHash
+            | Self::SkSelectReuseport => Some(1),
             Self::SkStorageGet
             | Self::SkStorageDelete
             | Self::TaskStorageGet

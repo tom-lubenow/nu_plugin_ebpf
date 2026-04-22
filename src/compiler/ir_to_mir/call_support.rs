@@ -1,10 +1,10 @@
 use super::*;
-use crate::compiler::ProgramIntrinsic;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{AddressSpace, MapOpKind};
+use crate::compiler::{EbpfProgramType, ProgramIntrinsic};
 
 #[derive(Debug, Clone)]
 pub(super) struct ScalarKfuncOutArgWriteback {
@@ -198,6 +198,11 @@ impl<'a> HirToMirLowering<'a> {
             "xskmap" | "xsk-map" | "xsk_map" => Some(MapKind::XskMap),
             "sock-map" | "sock_map" | "sockmap" => Some(MapKind::SockMap),
             "sock-hash" | "sock_hash" | "sockhash" => Some(MapKind::SockHash),
+            "reuseport-sockarray"
+            | "reuseport_sockarray"
+            | "reuseportsockarray"
+            | "reuseport-sock-array"
+            | "reuseport_sock_array" => Some(MapKind::ReuseportSockArray),
             "sk-storage" | "sk_storage" | "skstorage" => Some(MapKind::SkStorage),
             "inode-storage" | "inode_storage" | "inodestorage" => Some(MapKind::InodeStorage),
             "task-storage" | "task_storage" | "taskstorage" => Some(MapKind::TaskStorage),
@@ -232,6 +237,9 @@ impl<'a> HirToMirLowering<'a> {
             ),
             MapKind::ProgArray => format!(
                 "{context} --kind {kind_arg} is reserved for program-array maps; use tail-call instead of generic map commands"
+            ),
+            MapKind::ReuseportSockArray => format!(
+                "{context} --kind {kind_arg} is reserved for sk_reuseport socket selection; use redirect-socket with --kind reuseport-sockarray instead of generic map commands"
             ),
             _ => return None,
         };
@@ -495,18 +503,25 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind sockmap or --kind sockhash"
+                "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray"
             )));
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
         match Self::parse_generic_map_kind(&kind) {
-            Some(map_kind) if map_kind.is_socket_map() => Ok(map_kind),
+            Some(map_kind)
+                if matches!(
+                    map_kind,
+                    MapKind::SockMap | MapKind::SockHash | MapKind::ReuseportSockArray
+                ) =>
+            {
+                Ok(map_kind)
+            }
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind sockmap or --kind sockhash, got {:?}",
+                "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray, got {:?}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: sockmap, sockhash"
+                "{context} --kind must be one of: sockmap, sockhash, reuseport-sockarray"
             ))),
         }
     }
@@ -747,14 +762,30 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
 
-        let helper = ctx
-            .program_type()
-            .socket_redirect_helper(map_kind)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "{context} is only valid in sk_msg, sk_skb, and sk_skb_parser programs"
-                ))
-            })?;
+        let program_type = ctx.program_type();
+        let helper = program_type.socket_redirect_helper(map_kind).ok_or_else(|| {
+            let message = match (program_type, map_kind) {
+                (
+                    EbpfProgramType::SkMsg | EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser,
+                    MapKind::ReuseportSockArray,
+                ) => {
+                    format!(
+                        "{context} --kind reuseport-sockarray is only valid in sk_reuseport programs"
+                    )
+                }
+                (EbpfProgramType::SkReuseport, MapKind::SockMap | MapKind::SockHash) => {
+                    format!(
+                        "{context} --kind sockmap/sockhash is only valid in sk_msg, sk_skb, and sk_skb_parser programs"
+                    )
+                }
+                _ => {
+                    format!(
+                        "{context} is only valid in sk_msg, sk_skb, sk_skb_parser, and sk_reuseport programs"
+                    )
+                }
+            };
+            CompileError::UnsupportedInstruction(message)
+        })?;
 
         if let Some(message) = ctx.helper_call_error(helper) {
             return Err(CompileError::UnsupportedInstruction(message));

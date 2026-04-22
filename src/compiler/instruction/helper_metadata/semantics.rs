@@ -449,6 +449,30 @@ impl BpfHelper {
             },
         ];
 
+        const SK_SELECT_REUSEPORT_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper sk_select_reuseport ctx",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper sk_select_reuseport map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper sk_select_reuseport key",
+                allowed: STACK_MAP,
+                fixed_size: Some(4),
+                size_from_arg: None,
+            },
+        ];
+
         const BIND_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1318,6 +1342,11 @@ impl BpfHelper {
             },
             BpfHelper::SkRedirectHash => HelperSemantics {
                 ptr_arg_rules: SK_REDIRECT_HASH_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkSelectReuseport => HelperSemantics {
+                ptr_arg_rules: SK_SELECT_REUSEPORT_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

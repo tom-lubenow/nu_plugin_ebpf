@@ -115,6 +115,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkRedirectHash)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_sk_select_reuseport"),
+        Some(BpfHelper::SkSelectReuseport)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_load_hdr_opt"),
         Some(BpfHelper::LoadHdrOpt)
     ));
@@ -603,6 +607,30 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(sk_redirect_hash_sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sk_redirect_hash_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sk_redirect_hash_sig.ret_kind, HelperRetKind::Scalar);
+
+    let sk_select_reuseport_sig = HelperSignature::for_id(BpfHelper::SkSelectReuseport as u32)
+        .expect("expected bpf_sk_select_reuseport helper signature");
+    assert_eq!(sk_select_reuseport_sig.min_args, 4);
+    assert_eq!(sk_select_reuseport_sig.max_args, 4);
+    assert_eq!(sk_select_reuseport_sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sk_select_reuseport_sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sk_select_reuseport_sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sk_select_reuseport_sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sk_select_reuseport_sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_reuseport_helper_uses_fixed_map_kind() {
+    assert_eq!(
+        BpfHelper::SkSelectReuseport.local_helper_map_arg_index(),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::SkSelectReuseport.helper_map_arg_kind(1),
+        Some(MapKind::ReuseportSockArray)
+    );
+    assert!(BpfHelper::SkSelectReuseport.supports_local_helper_map_fd(1));
+    assert!(!BpfHelper::SkSelectReuseport.helper_requires_explicit_map_kind(1));
 }
 
 #[test]

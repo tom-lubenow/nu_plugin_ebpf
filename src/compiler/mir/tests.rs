@@ -57,6 +57,7 @@ fn test_map_kind_surface_classification() {
         MapKind::XskMap,
         MapKind::SockMap,
         MapKind::SockHash,
+        MapKind::ReuseportSockArray,
         MapKind::SkStorage,
         MapKind::InodeStorage,
         MapKind::TaskStorage,
@@ -72,6 +73,7 @@ fn test_map_kind_surface_classification() {
 
     assert!(MapKind::SockMap.is_socket_map());
     assert!(MapKind::SockHash.is_socket_map());
+    assert!(!MapKind::ReuseportSockArray.is_socket_map());
     assert!(!MapKind::Hash.is_socket_map());
 
     assert!(MapKind::SkStorage.is_local_storage());

@@ -374,7 +374,7 @@ pub(crate) fn infer_instruction_def_type(
                 },
                 true,
             )),
-            MapKind::SockMap => Some((
+            MapKind::SockMap | MapKind::ReuseportSockArray => Some((
                 *dst,
                 MirType::MapRef {
                     key_ty: Box::new(MirType::U32),

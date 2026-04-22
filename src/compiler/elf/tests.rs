@@ -1076,6 +1076,7 @@ fn test_bpf_map_type_constants_match_kernel_uapi() {
     assert_eq!(BpfMapType::CpuMap as u32, 16);
     assert_eq!(BpfMapType::XskMap as u32, 17);
     assert_eq!(BpfMapType::SockHash as u32, 18);
+    assert_eq!(BpfMapType::ReuseportSockArray as u32, 20);
     assert_eq!(BpfMapType::SkStorage as u32, 24);
     assert_eq!(BpfMapType::DevMapHash as u32, 25);
     assert_eq!(BpfMapType::RingBuf as u32, 27);
@@ -1840,6 +1841,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkSelectReuseport),
+        Some("helper 'bpf_sk_select_reuseport' is only valid in sk_reuseport programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SysctlGetCurrentValue),
         Some(
             "helper 'bpf_sysctl_get_current_value' is only valid in cgroup_sysctl programs"
@@ -2460,6 +2465,15 @@ fn test_program_type_socket_redirect_helpers_follow_program_model() {
         EbpfProgramType::SkSkbParser.socket_redirect_helper(MapKind::SockHash),
         Some(BpfHelper::SkRedirectHash)
     ));
+    assert!(matches!(
+        EbpfProgramType::SkReuseport.socket_redirect_helper(MapKind::ReuseportSockArray),
+        Some(BpfHelper::SkSelectReuseport)
+    ));
+    assert!(
+        EbpfProgramType::SkReuseport
+            .socket_redirect_helper(MapKind::SockMap)
+            .is_none()
+    );
     assert!(
         EbpfProgramType::Xdp
             .socket_redirect_helper(MapKind::SockMap)

@@ -1,8 +1,8 @@
 use super::*;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
-    BpfHelper, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature, KfuncSignature,
-    helper_acquire_ref_kind,
+    BpfHelper, HelperArgKind, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature,
+    KfuncSignature, helper_acquire_ref_kind,
 };
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, MapOpKind, STRING_COUNTER_MAP_NAME,
@@ -603,12 +603,13 @@ impl<'a> HirToMirLowering<'a> {
                 let map_kind = self.required_socket_map_kind_arg("redirect-socket")?;
                 let helper =
                     self.socket_redirect_helper_for_current_program("redirect-socket", map_kind)?;
-                let key_vreg = self
+                let key_arg = self
                     .positional_args
                     .get(1)
-                    .map(|(vreg, _)| *vreg)
-                    .or(self.pipeline_input)
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .copied()
+                    .map(|(vreg, reg)| (vreg, Some(reg)))
+                    .or_else(|| self.pipeline_input.map(|vreg| (vreg, self.pipeline_input_reg)))
+                    .or_else(|| src_dst_had_value.then_some((dst_vreg, Some(src_dst))))
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
                             "redirect-socket requires a key from pipeline input or a second positional argument"
@@ -621,13 +622,23 @@ impl<'a> HirToMirLowering<'a> {
 
                 let ctx_vreg = self.materialize_context_pointer_arg();
                 let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
+                let key_value = if helper.signature().arg_kind(2) == HelperArgKind::Pointer {
+                    let (key_ptr_vreg, _) = self.materialize_map_value_probe_pointer(
+                        key_arg.1,
+                        key_arg.0,
+                        "redirect-socket",
+                    )?;
+                    MirValue::VReg(key_ptr_vreg)
+                } else {
+                    MirValue::VReg(key_arg.0)
+                };
                 self.emit(MirInst::CallHelper {
                     dst: dst_vreg,
                     helper: helper as u32,
                     args: vec![
                         MirValue::VReg(ctx_vreg),
                         MirValue::VReg(map_vreg),
-                        MirValue::VReg(key_vreg),
+                        key_value,
                         MirValue::Const(flags as i64),
                     ],
                 });

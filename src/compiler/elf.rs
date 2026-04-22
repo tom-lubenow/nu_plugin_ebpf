@@ -173,6 +173,7 @@ pub enum BpfMapType {
     CpuMap = 16,
     XskMap = 17,
     SockHash = 18,
+    ReuseportSockArray = 20,
     Queue = 22,
     Stack = 23,
     SkStorage = 24,
@@ -321,6 +322,18 @@ impl BpfMapDef {
         Self {
             map_type: BpfMapType::SockHash as u32,
             key_size,
+            value_size: 4,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a reuseport socket array map definition.
+    pub fn reuseport_sockarray(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::ReuseportSockArray as u32,
+            key_size: 4,
             value_size: 4,
             max_entries,
             map_flags: 0,

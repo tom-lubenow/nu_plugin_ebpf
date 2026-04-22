@@ -419,6 +419,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.register_generic_map_spec(map, key_size, Some(value_size))?;
             }
             MapKind::SockMap => self.register_generic_map_spec(map, 4, Some(4))?,
+            MapKind::ReuseportSockArray => self.register_generic_map_spec(map, 4, Some(4))?,
             MapKind::SockHash => {
                 let key_size = match self.current_types.get(&dst) {
                     Some(MirType::MapRef { key_ty, .. }) => key_ty.size().max(1),
@@ -638,6 +639,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::XskMap => BpfMapDef::xsk_map(max_entries),
             MapKind::SockMap => BpfMapDef::sock_map(max_entries),
             MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, max_entries),
+            MapKind::ReuseportSockArray => BpfMapDef::reuseport_sockarray(max_entries),
             MapKind::SkStorage => BpfMapDef::sk_storage(spec.value_size),
             MapKind::InodeStorage => BpfMapDef::inode_storage(spec.value_size),
             MapKind::TaskStorage => BpfMapDef::task_storage(spec.value_size),

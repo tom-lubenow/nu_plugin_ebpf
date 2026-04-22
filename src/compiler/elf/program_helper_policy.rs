@@ -35,6 +35,7 @@ enum HelperProgramSurfaceFamily {
     CgroupSkb,
     SkMsg,
     SkSkb,
+    SkReuseport,
     SocketLookup,
     SocketRelease,
     TcSkLookup,
@@ -264,6 +265,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         family: HelperProgramSurfaceFamily::SkSkb,
         program_types: &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser],
         label: "sk_skb and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SkReuseport,
+        program_types: &[EbpfProgramType::SkReuseport],
+        label: "sk_reuseport",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketLookup,
@@ -609,6 +615,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::SkRedirectMap | BpfHelper::SkRedirectHash => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SkSkb,
         },
+        BpfHelper::SkSelectReuseport => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::SkReuseport,
+        },
         BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
             HelperProgramSurfaceSpec {
                 family: HelperProgramSurfaceFamily::SocketLookup,
@@ -818,6 +827,11 @@ impl EbpfProgramType {
             match map_kind {
                 MapKind::SockMap => Some(BpfHelper::SkRedirectMap),
                 MapKind::SockHash => Some(BpfHelper::SkRedirectHash),
+                _ => None,
+            }
+        } else if HelperProgramSurfaceFamily::SkReuseport.allows(*self) {
+            match map_kind {
+                MapKind::ReuseportSockArray => Some(BpfHelper::SkSelectReuseport),
                 _ => None,
             }
         } else {

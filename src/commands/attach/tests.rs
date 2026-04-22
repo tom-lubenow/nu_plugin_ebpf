@@ -10784,6 +10784,17 @@ fn test_compile_socket_redirect_kind_programs() {
             BpfHelper::SkRedirectHash,
             4,
         ),
+        (
+            "sk_reuseport reuseport-sockarray",
+            EbpfProgramType::SkReuseport,
+            "select",
+            "demo_reuseport",
+            "reuseport-sockarray",
+            HirLiteral::Int(0),
+            MapKind::ReuseportSockArray,
+            BpfHelper::SkSelectReuseport,
+            0,
+        ),
     ] {
         let hir = make_intrinsic_call_return_program(
             DeclId::new(42),
@@ -10859,12 +10870,16 @@ fn test_compile_socket_redirect_kind_programs() {
         let expected_def = match expected_kind {
             MapKind::SockMap => BpfMapDef::sock_map(10240),
             MapKind::SockHash => BpfMapDef::sock_hash(map.def.key_size, 10240),
-            _ => unreachable!("socket redirect only accepts sockmap/sockhash"),
+            MapKind::ReuseportSockArray => BpfMapDef::reuseport_sockarray(10240),
+            _ => unreachable!("socket redirect only accepts sockmap/sockhash/reuseport-sockarray"),
         };
         assert_eq!(map.def.map_type, expected_def.map_type);
         assert_eq!(map.def.value_size, expected_def.value_size);
         assert_eq!(map.def.max_entries, expected_def.max_entries);
-        if expected_kind == MapKind::SockMap {
+        if matches!(
+            expected_kind,
+            MapKind::SockMap | MapKind::ReuseportSockArray
+        ) {
             assert_eq!(map.def.key_size, expected_def.key_size);
         } else {
             assert!(

@@ -276,9 +276,10 @@ impl<'a> TypeInference<'a> {
                     MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap => {
                         (HMType::U32, HMType::Unknown)
                     }
-                    MapKind::SockMap | MapKind::ProgArray | MapKind::PerfEventArray => {
-                        (HMType::U32, HMType::U32)
-                    }
+                    MapKind::SockMap
+                    | MapKind::ReuseportSockArray
+                    | MapKind::ProgArray
+                    | MapKind::PerfEventArray => (HMType::U32, HMType::U32),
                     MapKind::SockHash => (HMType::Var(self.tvar_gen.fresh()), HMType::U32),
                     MapKind::Queue | MapKind::Stack | MapKind::RingBuf => {
                         (HMType::Unknown, HMType::Unknown)
@@ -489,12 +490,13 @@ impl<'a> TypeInference<'a> {
                 key_ty: Box::new(HMType::U32),
                 val_ty: Box::new(HMType::Unknown),
             },
-            BpfHelper::SkRedirectMap | BpfHelper::SockMapUpdate | BpfHelper::MsgRedirectMap => {
-                HMType::MapRef {
-                    key_ty: Box::new(HMType::U32),
-                    val_ty: Box::new(HMType::U32),
-                }
-            }
+            BpfHelper::SkRedirectMap
+            | BpfHelper::SockMapUpdate
+            | BpfHelper::MsgRedirectMap
+            | BpfHelper::SkSelectReuseport => HMType::MapRef {
+                key_ty: Box::new(HMType::U32),
+                val_ty: Box::new(HMType::U32),
+            },
             BpfHelper::SockHashUpdate | BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => {
                 let key_ty = match args.get(2).map(|value| self.value_type(value)) {
                     Some(HMType::Ptr { pointee, .. }) => *pointee,

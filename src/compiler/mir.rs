@@ -76,6 +76,7 @@ pub enum MapKind {
     XskMap,
     SockMap,
     SockHash,
+    ReuseportSockArray,
     SkStorage,
     InodeStorage,
     TaskStorage,
@@ -154,6 +155,7 @@ impl MapKind {
             | MapKind::XskMap
             | MapKind::SockMap
             | MapKind::SockHash
+            | MapKind::ReuseportSockArray
             | MapKind::SkStorage
             | MapKind::InodeStorage
             | MapKind::TaskStorage

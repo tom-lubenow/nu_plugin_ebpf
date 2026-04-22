@@ -71,6 +71,7 @@ impl BpfHelper {
             70 => Some(Self::SockHashUpdate),
             71 => Some(Self::MsgRedirectHash),
             72 => Some(Self::SkRedirectHash),
+            82 => Some(Self::SkSelectReuseport),
             118 => Some(Self::Jiffies64),
             119 => Some(Self::ReadBranchRecords),
             125 => Some(Self::KtimeGetBootNs),
@@ -430,14 +431,15 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::SockHashUpdate | BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => {
-                HelperSignature {
-                    min_args: 4,
-                    max_args: 4,
-                    arg_kinds: [P, P, P, S, S],
-                    ret_kind: HelperRetKind::Scalar,
-                }
-            }
+            BpfHelper::SockHashUpdate
+            | BpfHelper::MsgRedirectHash
+            | BpfHelper::SkRedirectHash
+            | BpfHelper::SkSelectReuseport => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => HelperSignature {
                 min_args: 4,
                 max_args: 4,

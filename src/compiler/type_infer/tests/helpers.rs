@@ -1565,6 +1565,12 @@ fn test_type_error_socket_map_helpers_reject_invalid_programs() {
             "ksys_read",
             "helper 'bpf_sk_redirect_hash' is only valid in sk_skb and sk_skb_parser programs",
         ),
+        (
+            BpfHelper::SkSelectReuseport,
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "helper 'bpf_sk_select_reuseport' is only valid in sk_reuseport programs",
+        ),
     ] {
         let mut func = make_test_function();
         let ctx = func.alloc_vreg();
@@ -1585,6 +1591,12 @@ fn test_type_error_socket_map_helpers_reject_invalid_programs() {
                 MirValue::Const(0),
             ],
             BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::SkSelectReuseport => vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(map_slot),
                 MirValue::StackSlot(key_slot),
@@ -1642,6 +1654,10 @@ fn test_infer_socket_map_helpers_in_supported_programs() {
             BpfHelper::SkRedirectHash,
             ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
         ),
+        (
+            BpfHelper::SkSelectReuseport,
+            ProbeContext::new(EbpfProgramType::SkReuseport, "select"),
+        ),
     ] {
         let mut func = make_test_function();
         let ctx = func.alloc_vreg();
@@ -1662,6 +1678,12 @@ fn test_infer_socket_map_helpers_in_supported_programs() {
                 MirValue::Const(0),
             ],
             BpfHelper::MsgRedirectHash | BpfHelper::SkRedirectHash => vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+            BpfHelper::SkSelectReuseport => vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(map_slot),
                 MirValue::StackSlot(key_slot),

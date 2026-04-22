@@ -1980,6 +1980,78 @@ fn test_compile_sockmap_helper_with_loaded_map_fd() {
 }
 
 #[test]
+fn test_compile_reuseport_sockarray_helper_with_loaded_map_fd() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::StoreSlot {
+        slot: key_slot,
+        offset: 0,
+        val: MirValue::Const(0),
+        ty: MirType::U32,
+    });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_reuseport".to_string(),
+            kind: MapKind::ReuseportSockArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkSelectReuseport as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+    let compiled = compile_mir_to_ebpf(&program, Some(&probe_ctx))
+        .expect("reuseport sockarray helper should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "demo_reuseport")
+        .expect("expected reuseport sockarray runtime artifact");
+    assert_eq!(map.def.map_type, BpfMapType::ReuseportSockArray as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 4);
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "demo_reuseport"),
+        "expected reuseport sockarray relocation"
+    );
+}
+
+#[test]
 fn test_compile_redirect_map_helper_with_loaded_map_fd() {
     use crate::compiler::elf::BpfMapType;
     use crate::compiler::mir::*;
