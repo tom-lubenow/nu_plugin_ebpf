@@ -57,8 +57,8 @@ pub(super) const TP_BTF_SPEC_ALIASES: &[&str] = &["tp_btf"];
 pub(super) const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 pub(super) const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
 pub(super) const RAW_TRACEPOINT_WRITABLE_SPEC_ALIASES: &[&str] = &["raw_tracepoint.w", "raw_tp.w"];
-pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
-pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
+pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe", "uprobe.s"];
+pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe", "uretprobe.s"];
 pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
 pub(super) const EXTENSION_SPEC_ALIASES: &[&str] = &["freplace", "extension", "ext"];
 pub(super) const SYSCALL_SPEC_ALIASES: &[&str] = &["syscall"];
@@ -848,7 +848,9 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "raw_tracepoint.w",
     "raw_tp.w",
     "uprobe",
+    "uprobe.s",
     "uretprobe",
+    "uretprobe.s",
     "perf_event",
     "xdp",
     "socket_filter",

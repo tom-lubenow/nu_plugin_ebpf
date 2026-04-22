@@ -176,11 +176,38 @@ fn test_ebpf_program_preserves_noncanonical_uprobe_target_string_with_cached_pro
     assert_eq!(prog.target, "/usr/bin/app:main+16");
     assert!(matches!(
         prog.parsed_program_spec(),
-        Some(ProgramSpec::Uprobe { target })
+        Some(ProgramSpec::Uprobe { target, .. })
             if target.binary_path == "/usr/bin/app"
                 && target.function_name.as_deref() == Some("main")
                 && target.offset == 16
     ));
+}
+
+#[test]
+fn test_sleepable_uprobe_section_name_uses_program_spec() {
+    let spec = ProgramSpec::parse("uprobe.s:/usr/bin/app:main").expect("sleepable uprobe spec");
+    let prog =
+        EbpfProgram::from_bytecode(EbpfProgramType::Uprobe, "/usr/bin/app:main", "test", vec![])
+            .with_program_spec(spec.clone());
+    assert_eq!(prog.parsed_program_spec(), Some(&spec));
+    assert_eq!(
+        prog.section_name()
+            .expect("sleepable uprobe section name should build"),
+        "uprobe.s//usr/bin/app:main"
+    );
+
+    let from_full_spec = EbpfProgram::from_bytecode(
+        EbpfProgramType::Uretprobe,
+        "uretprobe.s:/lib/libc.so.6:malloc",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        from_full_spec
+            .section_name()
+            .expect("sleepable uretprobe full-spec section name should build"),
+        "uretprobe.s//lib/libc.so.6:malloc"
+    );
 }
 
 #[test]
@@ -1173,10 +1200,25 @@ fn test_probe_context_new_preserves_noncanonical_uprobe_target_string() {
     assert_eq!(ctx.target(), "/usr/bin/app:main+16");
     assert!(matches!(
         ctx.parsed_program_spec(),
-        Some(ProgramSpec::Uprobe { target })
+        Some(ProgramSpec::Uprobe { target, .. })
             if target.binary_path == "/usr/bin/app"
                 && target.function_name.as_deref() == Some("main")
                 && target.offset == 16
+    ));
+}
+
+#[test]
+fn test_probe_context_new_preserves_full_sleepable_uprobe_spec() {
+    let ctx = ProbeContext::new(EbpfProgramType::Uprobe, "uprobe.s:/usr/bin/app:main");
+
+    assert_eq!(ctx.target(), "/usr/bin/app:main");
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::Uprobe {
+            target,
+            sleepable: true
+        }) if target.binary_path == "/usr/bin/app"
+            && target.function_name.as_deref() == Some("main")
     ));
 }
 

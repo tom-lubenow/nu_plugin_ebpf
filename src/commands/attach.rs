@@ -60,7 +60,7 @@ Supported attach types:
   - fmod_ret / fmod_ret.s (dry-run compile support; live attach is not implemented yet)
   - tracepoint, raw_tracepoint
   - raw_tracepoint.w / raw_tp.w (dry-run compile support; live attach is not implemented yet)
-  - uprobe, uretprobe
+  - uprobe / uprobe.s, uretprobe / uretprobe.s
   - lsm
   - freplace / extension (dry-run compile support; live attach is not implemented yet)
   - syscall (dry-run compile support; live attach is not implemented yet)
@@ -914,7 +914,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -967,7 +967,9 @@ Requirements:
             "ext",
             "syscall",
             "uprobe",
+            "uprobe.s",
             "uretprobe",
+            "uretprobe.s",
             "userspace",
             "perf_event",
             "socket_filter",

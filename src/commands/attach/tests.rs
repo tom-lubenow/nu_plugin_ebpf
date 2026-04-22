@@ -6591,6 +6591,45 @@ fn test_compile_kretsyscall_ctx_retval_program() {
 }
 
 #[test]
+fn test_compile_sleepable_uprobe_ctx_pid_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Uprobe,
+        "uprobe.s:/bin/true:main",
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        "sleepable uprobe ctx.pid count",
+    );
+}
+
+#[test]
+fn test_compile_sleepable_uretprobe_ctx_retval_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uretprobe, "uretprobe.s:/bin/true:main");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sleepable uretprobe ctx.retval should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("sleepable uretprobe ctx.retval should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_fexit_projected_ctx_retval_program() {
     let Some((function_name, field_name)) = find_fexit_ret_projection_candidate() else {
         return;

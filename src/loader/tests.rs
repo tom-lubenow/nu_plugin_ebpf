@@ -85,10 +85,34 @@ fn test_parse_program_spec_uprobe_is_structured() {
                 function_name: Some("main".to_string()),
                 offset: 0x10,
                 pid: Some(123),
-            }
+            },
+            sleepable: false,
         }
     );
     assert_eq!(spec.to_string(), "uprobe:/usr/bin/app:main+0x10@123");
+}
+
+#[test]
+fn test_parse_program_spec_sleepable_uprobes() {
+    let (prog_type, target) = parse_probe_spec("uprobe.s:/usr/bin/app:main").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Uprobe);
+    assert_eq!(target, "/usr/bin/app:main");
+
+    let spec = parse_program_spec("uprobe.s:/usr/bin/app:main").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::Uprobe);
+    assert_eq!(spec.target_string(), "/usr/bin/app:main");
+    assert_eq!(spec.section_name(), "uprobe.s//usr/bin/app:main");
+    assert_eq!(spec.to_string(), "uprobe.s:/usr/bin/app:main");
+
+    let (prog_type, target) = parse_probe_spec("uretprobe.s:/lib/libc.so.6:malloc").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Uretprobe);
+    assert_eq!(target, "/lib/libc.so.6:malloc");
+
+    let spec = parse_program_spec("uretprobe.s:/lib/libc.so.6:malloc").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::Uretprobe);
+    assert_eq!(spec.target_string(), "/lib/libc.so.6:malloc");
+    assert_eq!(spec.section_name(), "uretprobe.s//lib/libc.so.6:malloc");
+    assert_eq!(spec.to_string(), "uretprobe.s:/lib/libc.so.6:malloc");
 }
 
 #[test]

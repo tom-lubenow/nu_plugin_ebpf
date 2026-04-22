@@ -1652,9 +1652,11 @@ pub enum ProgramSpec {
     },
     Uprobe {
         target: UprobeTarget,
+        sleepable: bool,
     },
     Uretprobe {
         target: UprobeTarget,
+        sleepable: bool,
     },
     Xdp {
         target: XdpTarget,
@@ -1901,7 +1903,10 @@ impl ProgramSpec {
         Self::from_program_type_target_with_sleepable(
             prog_type,
             target,
-            matches!(prefix, "fentry.s" | "fexit.s" | "fmod_ret.s" | "lsm.s"),
+            matches!(
+                prefix,
+                "fentry.s" | "fexit.s" | "fmod_ret.s" | "lsm.s" | "uprobe.s" | "uretprobe.s"
+            ),
         )
     }
 
@@ -1974,9 +1979,11 @@ impl ProgramSpec {
             }),
             EbpfProgramType::Uprobe => Ok(ProgramSpec::Uprobe {
                 target: UprobeTarget::parse(target)?,
+                sleepable,
             }),
             EbpfProgramType::Uretprobe => Ok(ProgramSpec::Uretprobe {
                 target: UprobeTarget::parse(target)?,
+                sleepable,
             }),
             EbpfProgramType::Xdp => Ok(ProgramSpec::Xdp {
                 target: XdpTarget::parse(target)?,
@@ -2121,7 +2128,7 @@ impl ProgramSpec {
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
             ProgramSpec::RawTracepointWritable { name } => name.clone(),
-            ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => {
+            ProgramSpec::Uprobe { target, .. } | ProgramSpec::Uretprobe { target, .. } => {
                 target.target_string()
             }
             ProgramSpec::Xdp { target } => target.target_string(),
@@ -2162,7 +2169,9 @@ impl ProgramSpec {
 
     pub(crate) fn uprobe_target(&self) -> Option<&UprobeTarget> {
         match self {
-            ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => Some(target),
+            ProgramSpec::Uprobe { target, .. } | ProgramSpec::Uretprobe { target, .. } => {
+                Some(target)
+            }
             _ => None,
         }
     }
@@ -2306,6 +2315,14 @@ impl ProgramSpec {
                 hook,
                 sleepable: true,
             } => format!("lsm.s/{hook}"),
+            ProgramSpec::Uprobe {
+                target,
+                sleepable: true,
+            } => format!("uprobe.s/{}", target.target_string()),
+            ProgramSpec::Uretprobe {
+                target,
+                sleepable: true,
+            } => format!("uretprobe.s/{}", target.target_string()),
             ProgramSpec::CgroupSkb { target } => target.section_name(),
             ProgramSpec::CgroupSock { target } => target.section_name(),
             ProgramSpec::CgroupSysctl { target } => target.section_name().to_string(),
@@ -2390,6 +2407,12 @@ impl fmt::Display for ProgramSpec {
             ProgramSpec::Lsm {
                 sleepable: true, ..
             } => "lsm.s",
+            ProgramSpec::Uprobe {
+                sleepable: true, ..
+            } => "uprobe.s",
+            ProgramSpec::Uretprobe {
+                sleepable: true, ..
+            } => "uretprobe.s",
             _ => self.program_type().canonical_prefix(),
         };
         write!(f, "{}:{}", prefix, self.target_string())
@@ -2572,6 +2595,10 @@ mod tests {
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
         let uprobe =
             ProgramSpec::parse("uprobe:/bin/bash:main+0x4@123").expect("uprobe spec should parse");
+        let sleepable_uprobe = ProgramSpec::parse("uprobe.s:/bin/bash:main")
+            .expect("sleepable uprobe spec should parse");
+        let sleepable_uretprobe = ProgramSpec::parse("uretprobe.s:/lib/libc.so.6:malloc")
+            .expect("sleepable uretprobe spec should parse");
         let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
         let perf_event = ProgramSpec::parse("perf_event:software:cpu-clock:cpu=1")
             .expect("perf_event spec should parse");
@@ -2637,6 +2664,21 @@ mod tests {
                 .uprobe_target()
                 .map(|target| target.binary_path.as_str()),
             Some("/bin/bash")
+        );
+        assert_eq!(sleepable_uprobe.program_type(), EbpfProgramType::Uprobe);
+        assert_eq!(sleepable_uprobe.section_name(), "uprobe.s//bin/bash:main");
+        assert_eq!(sleepable_uprobe.to_string(), "uprobe.s:/bin/bash:main");
+        assert_eq!(
+            sleepable_uretprobe.program_type(),
+            EbpfProgramType::Uretprobe
+        );
+        assert_eq!(
+            sleepable_uretprobe.section_name(),
+            "uretprobe.s//lib/libc.so.6:malloc"
+        );
+        assert_eq!(
+            sleepable_uretprobe.to_string(),
+            "uretprobe.s:/lib/libc.so.6:malloc"
         );
         assert_eq!(
             xdp.xdp_target().map(|target| target.interface.as_str()),

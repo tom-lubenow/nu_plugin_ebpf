@@ -348,7 +348,9 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `tracepoint:category/name`
 /// - `raw_tracepoint:name` or `raw_tp:name`
 /// - `uprobe:/path/to/binary:function_name`
+/// - `uprobe.s:/path/to/binary:function_name`
 /// - `uretprobe:/path/to/binary:function_name`
+/// - `uretprobe.s:/path/to/binary:function_name`
 /// - `xdp:interface`, `xdp:interface:frags`, or `xdp:interface:drv:frags`
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `socket_filter:udp4:127.0.0.1:31337`
