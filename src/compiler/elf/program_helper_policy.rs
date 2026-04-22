@@ -18,6 +18,12 @@ struct HelperZeroArgRequirementSpec {
     error_message: &'static str,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct GetSocketCookieArgPolicySpec {
+    policy: GetSocketCookieArgPolicy,
+    program_types: &'static [EbpfProgramType],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HelperProgramSurfaceFamily {
     LircMode2,
@@ -667,6 +673,38 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
     },
 ];
 
+const GET_SOCKET_COOKIE_ARG_POLICY_SPECS: &[GetSocketCookieArgPolicySpec] = &[
+    GetSocketCookieArgPolicySpec {
+        policy: GetSocketCookieArgPolicy::Context,
+        program_types: &[
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::TcAction,
+            EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
+            EbpfProgramType::Netkit,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::SockOps,
+            EbpfProgramType::SkReuseport,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+    },
+    GetSocketCookieArgPolicySpec {
+        policy: GetSocketCookieArgPolicy::ContextOrSocket,
+        program_types: &[EbpfProgramType::CgroupSock],
+    },
+    GetSocketCookieArgPolicySpec {
+        policy: GetSocketCookieArgPolicy::Socket,
+        program_types: &[
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
+            EbpfProgramType::TpBtf,
+        ],
+    },
+];
+
 impl HelperProgramSurfaceFamily {
     fn spec(self) -> &'static HelperProgramSurfaceFamilySpec {
         HELPER_PROGRAM_SURFACE_FAMILY_SPECS
@@ -1012,34 +1050,10 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
-        if matches!(
-            self,
-            EbpfProgramType::SocketFilter
-                | EbpfProgramType::TcAction
-                | EbpfProgramType::Tc
-                | EbpfProgramType::Tcx
-                | EbpfProgramType::Netkit
-                | EbpfProgramType::CgroupSkb
-                | EbpfProgramType::CgroupSockAddr
-                | EbpfProgramType::SockOps
-                | EbpfProgramType::SkReuseport
-                | EbpfProgramType::SkSkb
-                | EbpfProgramType::SkSkbParser
-        ) {
-            Some(GetSocketCookieArgPolicy::Context)
-        } else if matches!(self, EbpfProgramType::CgroupSock) {
-            Some(GetSocketCookieArgPolicy::ContextOrSocket)
-        } else if matches!(
-            self,
-            EbpfProgramType::Fentry
-                | EbpfProgramType::Fexit
-                | EbpfProgramType::FmodRet
-                | EbpfProgramType::TpBtf
-        ) {
-            Some(GetSocketCookieArgPolicy::Socket)
-        } else {
-            None
-        }
+        GET_SOCKET_COOKIE_ARG_POLICY_SPECS
+            .iter()
+            .find(|spec| spec.program_types.contains(self))
+            .map(|spec| spec.policy)
     }
 
     pub(crate) fn packet_redirect_helper(&self) -> Option<BpfHelper> {

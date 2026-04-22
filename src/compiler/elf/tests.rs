@@ -3360,6 +3360,14 @@ fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
         Some(GetSocketCookieArgPolicy::Context)
     );
     assert_eq!(
+        EbpfProgramType::CgroupSockAddr.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Context)
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Context)
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSock.get_socket_cookie_arg_policy(),
         Some(GetSocketCookieArgPolicy::ContextOrSocket)
     );
@@ -3368,13 +3376,22 @@ fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
         Some(GetSocketCookieArgPolicy::Socket)
     );
     assert_eq!(
+        EbpfProgramType::Fexit.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Socket)
+    );
+    assert_eq!(
         EbpfProgramType::FmodRet.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Socket)
+    );
+    assert_eq!(
+        EbpfProgramType::TpBtf.get_socket_cookie_arg_policy(),
         Some(GetSocketCookieArgPolicy::Socket)
     );
     assert_eq!(
         EbpfProgramType::SkLookup.get_socket_cookie_arg_policy(),
         None
     );
+    assert_eq!(EbpfProgramType::Xdp.get_socket_cookie_arg_policy(), None);
 }
 
 #[test]

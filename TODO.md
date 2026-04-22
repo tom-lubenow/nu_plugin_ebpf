@@ -499,6 +499,7 @@ Near-term priority order:
   - Recent progress: helper program-surface validation now constrains `bpf_sk_storage_get/delete`, including the `cgroup_sock` asymmetry (`get` allowed, `delete` rejected), across ELF policy, type inference, verifier_types, and VCC coverage.
   - Recent progress: context pointer nullability overrides now live in the per-program context layout schema, moving `sk_reuseport.ctx.sk` non-nullness out of the generic field-schema special cases while preserving nullable `ctx.migrating_sk`.
   - Recent progress: program-specific kfunc escape-hatch policy now lives in a compact table for the narrow `sock_ops` and `cgroup_sock_addr` kfunc surfaces instead of repeated direct program-type comparisons.
+  - Recent progress: `bpf_get_socket_cookie` argument policy now comes from an explicit program-surface table, keeping context-pointer vs socket-pointer acceptance out of direct program-type matches.
   - Remaining: broaden mutable globals beyond current scalar/string/binary/list/record cases and add richer explicit global declarations/initializers.
 
 ## Ergonomics and quality
