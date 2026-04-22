@@ -1847,6 +1847,10 @@ fn test_helpers_with_reserved_zero_flags() {
         BpfHelper::SkbChangeProto.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_skb_change_proto' requires arg2 = 0"))
     );
+    assert_eq!(
+        BpfHelper::MsgPullData.zero_scalar_arg_requirement(),
+        Some((3, "helper 'bpf_msg_pull_data' requires arg3 = 0"))
+    );
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);

@@ -8033,6 +8033,60 @@ fn test_verify_mir_for_probe_context_msg_pull_data_invalidates_prior_packet_poin
     );
 }
 
+fn make_msg_pull_data_vcc_call(flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MsgPullData as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::Const(8),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_msg_pull_data_rejects_nonzero_flags() {
+    let (func, types) = make_msg_pull_data_vcc_call(1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_msg_pull_data flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_msg_pull_data' requires arg3 = 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_msg_pull_data_allows_reloaded_packet_pointers() {
     let (mut func, entry) = new_mir_function();
