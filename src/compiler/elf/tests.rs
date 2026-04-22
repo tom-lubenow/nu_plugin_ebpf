@@ -2194,6 +2194,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::FibLookup),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::FibLookup),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbEcnSetCe),
         None
     );
@@ -2313,6 +2321,12 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbChangeType),
         Some("helper 'bpf_skb_change_type' is only valid in tc_action and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::FibLookup),
+        Some(
+            "helper 'bpf_fib_lookup' is only valid in xdp, tc_action, and tc programs".to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),
@@ -2513,6 +2527,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::SkbLoadBytes,
         BpfHelper::SkbLoadBytesRelative,
         BpfHelper::SkLookupTcp,
+        BpfHelper::FibLookup,
         BpfHelper::SkRelease,
         BpfHelper::SkAssign,
         BpfHelper::GetListenerSock,

@@ -5621,6 +5621,87 @@ fn test_verify_mir_for_probe_context_check_mtu_requires_four_byte_mtu_len_pointe
     );
 }
 
+fn make_fib_lookup_vcc_call(
+    plen: i64,
+    params_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let params = func.alloc_stack_slot(params_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::FibLookup as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(params),
+                MirValue::Const(plen),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_fib_lookup_accepts_xdp_and_tc_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+    ] {
+        let (func, types) = make_fib_lookup_vcc_call(64, 64);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected bpf_fib_lookup helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_fib_lookup_rejects_non_xdp_tc_program() {
+    let (func, types) = make_fib_lookup_vcc_call(64, 64);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_fib_lookup to be rejected outside xdp/tc");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_fib_lookup' is only valid in xdp, tc_action, and tc programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_fib_lookup_rejects_small_params_buffer() {
+    let (func, types) = make_fib_lookup_vcc_call(64, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_fib_lookup params buffer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_pull_data_invalidates_prior_packet_pointers() {
     let (mut func, entry) = new_mir_function();

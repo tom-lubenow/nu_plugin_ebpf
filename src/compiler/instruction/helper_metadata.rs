@@ -86,6 +86,7 @@ impl BpfHelper {
             27 => Some(Self::GetStackId),
             67 => Some(Self::GetStack),
             28 => Some(Self::CsumDiff),
+            69 => Some(Self::FibLookup),
             31 => Some(Self::SkbChangeProto),
             32 => Some(Self::SkbChangeType),
             84 => Some(Self::SkLookupTcp),
@@ -560,6 +561,12 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::FibLookup => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::CheckMtu => HelperSignature {

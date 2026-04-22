@@ -754,6 +754,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::TcpCheckSyncookie | BpfHelper::TcpGenSyncookie => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTc,
         },
+        BpfHelper::FibLookup => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::XdpTc,
+        },
         BpfHelper::SkRelease => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketRelease,
         },

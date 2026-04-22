@@ -1318,6 +1318,78 @@ fn test_type_error_check_mtu_helper_requires_four_byte_mtu_len_pointer() {
     );
 }
 
+fn make_fib_lookup_call(plen: i64, params_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let params = func.alloc_stack_slot(params_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::FibLookup as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(params),
+            MirValue::Const(plen),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_fib_lookup_helper_in_xdp_and_tc_programs() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+    ] {
+        let (func, dst) = make_fib_lookup_call(64, 64);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected bpf_fib_lookup helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_fib_lookup_helper_rejects_non_xdp_tc_program() {
+    let (func, _) = make_fib_lookup_call(64, 64);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup to be rejected outside xdp/tc");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_fib_lookup' is only valid in xdp, tc_action, and tc programs")
+    }));
+}
+
+#[test]
+fn test_type_error_fib_lookup_helper_rejects_small_params_buffer() {
+    let (func, _) = make_fib_lookup_call(64, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup params buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper fib_lookup params requires 64 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [

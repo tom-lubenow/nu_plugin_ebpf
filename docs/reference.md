@@ -284,7 +284,11 @@ multi-buffer packet size rather than the linear `ctx.packet_len`. XDP,
 tc_action, and TC also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;
 `MTU_LEN_PTR` must be a stack/map-backed `u32` pointer, and XDP requires
 `FLAGS = 0`. TC flag combinations that depend on runtime `mtu_len` /
-`len_diff` values remain kernel-enforced.
+`len_diff` values remain kernel-enforced. XDP, tc_action, and TC also
+model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
+`PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
+accessible size covers `PLEN`; the kernel still enforces minimum struct
+size and flag-combination rules.
 `tc_action` and TC egress expose skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields; LWT programs expose `ctx.cgroup_classid` and

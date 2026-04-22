@@ -199,6 +199,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::CsumDiff)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_fib_lookup"),
+        Some(BpfHelper::FibLookup)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -1100,6 +1104,16 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    let sig = HelperSignature::for_id(BpfHelper::FibLookup as u32)
+        .expect("expected bpf_fib_lookup helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     let sig = HelperSignature::for_id(BpfHelper::CheckMtu as u32)
         .expect("expected bpf_check_mtu helper signature");
     assert_eq!(sig.min_args, 5);
@@ -1267,6 +1281,33 @@ fn test_helpers_with_reserved_zero_flags() {
             "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
         ))
     );
+}
+
+#[test]
+fn test_fib_lookup_helper_contract() {
+    let semantics = BpfHelper::FibLookup.semantics();
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let ctx = semantics.ptr_arg_rules[0];
+    assert_eq!(ctx.arg_idx, 0);
+    assert_eq!(ctx.op, "helper fib_lookup ctx");
+    assert!(ctx.allowed.allow_kernel);
+    assert!(!ctx.allowed.allow_stack);
+    assert!(!ctx.allowed.allow_map);
+    assert!(!ctx.allowed.allow_user);
+    assert_eq!(ctx.fixed_size, None);
+    assert_eq!(ctx.size_from_arg, None);
+
+    let params = semantics.ptr_arg_rules[1];
+    assert_eq!(params.arg_idx, 1);
+    assert_eq!(params.op, "helper fib_lookup params");
+    assert!(params.allowed.allow_stack);
+    assert!(params.allowed.allow_map);
+    assert!(!params.allowed.allow_kernel);
+    assert!(!params.allowed.allow_user);
+    assert_eq!(params.fixed_size, None);
+    assert_eq!(params.size_from_arg, Some(2));
 }
 
 #[test]

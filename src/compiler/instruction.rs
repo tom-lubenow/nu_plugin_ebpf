@@ -214,6 +214,8 @@ pub enum BpfHelper {
     GetStack = 67,
     /// s64 bpf_csum_diff(from, from_size, to, to_size, seed)
     CsumDiff = 28,
+    /// long bpf_fib_lookup(ctx, params, plen, flags)
+    FibLookup = 69,
     /// long bpf_skb_load_bytes_relative(skb, offset, to, len, start_header)
     SkbLoadBytesRelative = 68,
     /// struct bpf_sock *bpf_sk_lookup_tcp(ctx, tuple, tuple_size, netns, flags)
@@ -419,6 +421,7 @@ impl BpfHelper {
             BpfHelper::GetStackId => "bpf_get_stackid",
             BpfHelper::GetStack => "bpf_get_stack",
             BpfHelper::CsumDiff => "bpf_csum_diff",
+            BpfHelper::FibLookup => "bpf_fib_lookup",
             BpfHelper::SkbLoadBytesRelative => "bpf_skb_load_bytes_relative",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
             BpfHelper::SkLookupUdp => "bpf_sk_lookup_udp",
@@ -570,6 +573,7 @@ impl BpfHelper {
             "get_stackid" => Some(Self::GetStackId),
             "get_stack" => Some(Self::GetStack),
             "csum_diff" => Some(Self::CsumDiff),
+            "fib_lookup" => Some(Self::FibLookup),
             "skb_load_bytes_relative" => Some(Self::SkbLoadBytesRelative),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
             "sk_lookup_udp" => Some(Self::SkLookupUdp),
