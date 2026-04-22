@@ -3493,7 +3493,7 @@ fn test_verify_mir_for_probe_context_skc_to_tcp_sock_rejects_cgroup_sockopt() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected skc_to_tcp_sock cgroup_sockopt program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+        "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
     )));
 }
 

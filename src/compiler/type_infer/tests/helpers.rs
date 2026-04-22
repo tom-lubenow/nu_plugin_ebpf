@@ -2830,7 +2830,7 @@ fn test_type_error_skc_to_tcp_sock_helper_rejects_cgroup_sockopt_program() {
         .infer(&func)
         .expect_err("expected bpf_skc_to_tcp_sock to be rejected on cgroup_sockopt");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+        "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
     )));
 }
 
@@ -2857,6 +2857,48 @@ fn test_infer_skc_to_tcp_sock_helper_in_sk_lookup_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_skc_to_tcp_sock to infer on sk_lookup");
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::named_kernel_struct_ptr("tcp_sock"))
+    );
+}
+
+#[test]
+fn test_infer_skc_to_tcp_sock_helper_in_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: sock,
+        helper: BpfHelper::SkLookupTcp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(tuple_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkcToTcpSock as u32,
+        args: vec![MirValue::VReg(sock)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_skc_to_tcp_sock to infer on xdp");
     assert_eq!(
         types.get(&dst),
         Some(&MirType::named_kernel_struct_ptr("tcp_sock"))

@@ -325,6 +325,16 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketCast,
         program_types: &[
+            EbpfProgramType::Xdp,
+            EbpfProgramType::FlowDissector,
+            EbpfProgramType::SocketFilter,
+            EbpfProgramType::LwtIn,
+            EbpfProgramType::LwtOut,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::LwtSeg6Local,
+            EbpfProgramType::Tc,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSockAddr,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
             EbpfProgramType::FmodRet,
@@ -335,7 +345,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SkSkbParser,
             EbpfProgramType::SockOps,
         ],
-        label: "fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
+        label: "xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TaskStorage,
