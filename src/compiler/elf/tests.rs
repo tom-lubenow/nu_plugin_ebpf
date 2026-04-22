@@ -3293,6 +3293,28 @@ fn test_program_type_socket_redirect_helpers_follow_program_model() {
             .socket_redirect_helper(MapKind::SockMap)
             .is_none()
     );
+    assert_eq!(
+        EbpfProgramType::SkMsg
+            .socket_redirect_error("redirect-socket", MapKind::ReuseportSockArray)
+            .as_deref(),
+        Some("redirect-socket --kind reuseport-sockarray is only valid in sk_reuseport programs")
+    );
+    assert_eq!(
+        EbpfProgramType::SkReuseport
+            .socket_redirect_error("redirect-socket", MapKind::SockMap)
+            .as_deref(),
+        Some(
+            "redirect-socket --kind sockmap/sockhash is only valid in sk_msg, sk_skb, and sk_skb_parser programs"
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp
+            .socket_redirect_error("redirect-socket", MapKind::SockMap)
+            .as_deref(),
+        Some(
+            "redirect-socket is only valid in sk_msg, sk_skb, sk_skb_parser, and sk_reuseport programs"
+        )
+    );
 }
 
 #[test]

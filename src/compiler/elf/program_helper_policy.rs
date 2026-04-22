@@ -31,6 +31,13 @@ struct ProgramSpecificHelperPolicy {
     modeled_helpers: &'static [BpfHelper],
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SocketRedirectHelperSpec {
+    map_kind: MapKind,
+    family: HelperProgramSurfaceFamily,
+    helper: BpfHelper,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HelperProgramSurfaceFamily {
     LircMode2,
@@ -60,6 +67,7 @@ enum HelperProgramSurfaceFamily {
     SkMsg,
     SkSkb,
     SkReuseport,
+    SocketRedirectStream,
     SocketLookup,
     SocketRelease,
     TcSkLookup,
@@ -440,6 +448,15 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         label: "sk_reuseport",
     },
     HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::SocketRedirectStream,
+        program_types: &[
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "sk_msg, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketLookup,
         program_types: &[
             EbpfProgramType::Xdp,
@@ -709,6 +726,34 @@ const GET_SOCKET_COOKIE_ARG_POLICY_SPECS: &[GetSocketCookieArgPolicySpec] = &[
             EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
         ],
+    },
+];
+
+const SOCKET_REDIRECT_HELPER_SPECS: &[SocketRedirectHelperSpec] = &[
+    SocketRedirectHelperSpec {
+        map_kind: MapKind::SockMap,
+        family: HelperProgramSurfaceFamily::SkMsg,
+        helper: BpfHelper::MsgRedirectMap,
+    },
+    SocketRedirectHelperSpec {
+        map_kind: MapKind::SockHash,
+        family: HelperProgramSurfaceFamily::SkMsg,
+        helper: BpfHelper::MsgRedirectHash,
+    },
+    SocketRedirectHelperSpec {
+        map_kind: MapKind::SockMap,
+        family: HelperProgramSurfaceFamily::SkSkb,
+        helper: BpfHelper::SkRedirectMap,
+    },
+    SocketRedirectHelperSpec {
+        map_kind: MapKind::SockHash,
+        family: HelperProgramSurfaceFamily::SkSkb,
+        helper: BpfHelper::SkRedirectHash,
+    },
+    SocketRedirectHelperSpec {
+        map_kind: MapKind::ReuseportSockArray,
+        family: HelperProgramSurfaceFamily::SkReuseport,
+        helper: BpfHelper::SkSelectReuseport,
     },
 ];
 
@@ -1156,26 +1201,38 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn socket_redirect_helper(&self, map_kind: MapKind) -> Option<BpfHelper> {
-        if HelperProgramSurfaceFamily::SkMsg.allows(*self) {
-            match map_kind {
-                MapKind::SockMap => Some(BpfHelper::MsgRedirectMap),
-                MapKind::SockHash => Some(BpfHelper::MsgRedirectHash),
-                _ => None,
-            }
-        } else if HelperProgramSurfaceFamily::SkSkb.allows(*self) {
-            match map_kind {
-                MapKind::SockMap => Some(BpfHelper::SkRedirectMap),
-                MapKind::SockHash => Some(BpfHelper::SkRedirectHash),
-                _ => None,
-            }
-        } else if HelperProgramSurfaceFamily::SkReuseport.allows(*self) {
-            match map_kind {
-                MapKind::ReuseportSockArray => Some(BpfHelper::SkSelectReuseport),
-                _ => None,
-            }
-        } else {
-            None
+        SOCKET_REDIRECT_HELPER_SPECS
+            .iter()
+            .find(|spec| spec.map_kind == map_kind && spec.family.allows(*self))
+            .map(|spec| spec.helper)
+    }
+
+    pub(crate) fn socket_redirect_error(&self, context: &str, map_kind: MapKind) -> Option<String> {
+        if self.socket_redirect_helper(map_kind).is_some() {
+            return None;
         }
+
+        let message = if map_kind == MapKind::ReuseportSockArray
+            && HelperProgramSurfaceFamily::SocketRedirectStream.allows(*self)
+        {
+            format!(
+                "{context} --kind reuseport-sockarray is only valid in {} programs",
+                HelperProgramSurfaceFamily::SkReuseport.label()
+            )
+        } else if matches!(map_kind, MapKind::SockMap | MapKind::SockHash)
+            && HelperProgramSurfaceFamily::SkReuseport.allows(*self)
+        {
+            format!(
+                "{context} --kind sockmap/sockhash is only valid in {} programs",
+                HelperProgramSurfaceFamily::SocketRedirectStream.label()
+            )
+        } else {
+            format!(
+                "{context} is only valid in sk_msg, sk_skb, sk_skb_parser, and sk_reuseport programs"
+            )
+        };
+
+        Some(message)
     }
 }
 
