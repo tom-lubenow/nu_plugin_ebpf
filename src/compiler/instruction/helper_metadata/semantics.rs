@@ -836,6 +836,13 @@ impl BpfHelper {
                 size_from_arg: Some(2),
             },
         ];
+        const GET_BRANCH_SNAPSHOT_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_branch_snapshot entries",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(1),
+        }];
 
         const GET_STACKID_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1810,6 +1817,11 @@ impl BpfHelper {
             },
             BpfHelper::ReadBranchRecords => HelperSemantics {
                 ptr_arg_rules: READ_BRANCH_RECORDS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetBranchSnapshot => HelperSemantics {
+                ptr_arg_rules: GET_BRANCH_SNAPSHOT_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

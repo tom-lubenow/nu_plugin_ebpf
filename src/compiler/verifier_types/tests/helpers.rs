@@ -3087,6 +3087,121 @@ fn test_verify_mir_read_branch_records_rejects_null_nonzero_buffer() {
     );
 }
 
+fn make_get_branch_snapshot_verify_call(
+    size: i64,
+    buf_size: usize,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    let entries_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetBranchSnapshot as u32,
+            args: vec![
+                MirValue::StackSlot(entries_slot),
+                MirValue::Const(size),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_get_branch_snapshot_helper() {
+    let (func, types) = make_get_branch_snapshot_verify_call(24, 24, 0);
+    verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect("expected bpf_get_branch_snapshot helper to verify");
+}
+
+#[test]
+fn test_verify_mir_get_branch_snapshot_allows_null_zero_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetBranchSnapshot as u32,
+            args: vec![MirValue::Const(0), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect("expected bpf_get_branch_snapshot null query to verify");
+}
+
+#[test]
+fn test_verify_mir_get_branch_snapshot_rejects_null_nonzero_buffer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetBranchSnapshot as u32,
+            args: vec![MirValue::Const(0), MirValue::Const(24), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_branch_snapshot to reject null buffer with nonzero size");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 176 arg0 requires arg1 = 0 when arg0 is null")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_get_branch_snapshot_rejects_small_buffer() {
+    let (func, types) = make_get_branch_snapshot_verify_call(24, 8, 0);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_branch_snapshot bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper get_branch_snapshot entries out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_get_branch_snapshot_requires_zero_flags() {
+    let (func, types) = make_get_branch_snapshot_verify_call(24, 24, 1);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_branch_snapshot flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_branch_snapshot' requires arg2 = 0")
+    }));
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_csum_diff_rejects_null_nonzero_side() {
     let mut func = MirFunction::new();

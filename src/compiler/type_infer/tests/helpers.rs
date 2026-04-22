@@ -2753,6 +2753,82 @@ fn test_type_error_packet_output_helper_rejects_small_data_buffer() {
     );
 }
 
+fn make_get_branch_snapshot_call(size: i64, buf_size: usize, flags: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let entries_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetBranchSnapshot as u32,
+        args: vec![
+            MirValue::StackSlot(entries_slot),
+            MirValue::Const(size),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_get_branch_snapshot_helper() {
+    let (func, dst) = make_get_branch_snapshot_call(24, 24, 0);
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_branch_snapshot helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_get_branch_snapshot_allows_null_zero_buffer() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetBranchSnapshot as u32,
+        args: vec![MirValue::Const(0), MirValue::Const(0), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_branch_snapshot null query to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_branch_snapshot_rejects_small_buffer() {
+    let (func, _) = make_get_branch_snapshot_call(24, 8, 0);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_branch_snapshot buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper get_branch_snapshot entries requires 24 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_branch_snapshot_requires_zero_flags() {
+    let (func, _) = make_get_branch_snapshot_call(24, 24, 1);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_branch_snapshot flags error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_branch_snapshot' requires arg2 = 0")
+    }));
+}
+
 #[test]
 fn test_type_error_get_stackid_helper_rejects_xdp_program() {
     let mut func = make_test_function();

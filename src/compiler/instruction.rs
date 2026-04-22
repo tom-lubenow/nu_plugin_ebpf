@@ -210,6 +210,8 @@ pub enum BpfHelper {
     GetFuncIp = 173,
     /// u64 bpf_get_attach_cookie(void *ctx)
     GetAttachCookie = 174,
+    /// long bpf_get_branch_snapshot(entries, size, flags)
+    GetBranchSnapshot = 176,
     /// long bpf_load_hdr_opt(skops, searchby_res, len, flags)
     LoadHdrOpt = 142,
     /// long bpf_store_hdr_opt(skops, from, len, flags)
@@ -453,6 +455,7 @@ impl BpfHelper {
             BpfHelper::ReadBranchRecords => "bpf_read_branch_records",
             BpfHelper::GetFuncIp => "bpf_get_func_ip",
             BpfHelper::GetAttachCookie => "bpf_get_attach_cookie",
+            BpfHelper::GetBranchSnapshot => "bpf_get_branch_snapshot",
             BpfHelper::LoadHdrOpt => "bpf_load_hdr_opt",
             BpfHelper::StoreHdrOpt => "bpf_store_hdr_opt",
             BpfHelper::ReserveHdrOpt => "bpf_reserve_hdr_opt",
@@ -622,6 +625,7 @@ impl BpfHelper {
             "read_branch_records" => Some(Self::ReadBranchRecords),
             "get_func_ip" => Some(Self::GetFuncIp),
             "get_attach_cookie" => Some(Self::GetAttachCookie),
+            "get_branch_snapshot" => Some(Self::GetBranchSnapshot),
             "load_hdr_opt" => Some(Self::LoadHdrOpt),
             "store_hdr_opt" => Some(Self::StoreHdrOpt),
             "reserve_hdr_opt" => Some(Self::ReserveHdrOpt),
@@ -710,6 +714,7 @@ impl BpfHelper {
             (Self::CsumDiff, 0) => Some(1),
             (Self::CsumDiff, 2) => Some(3),
             (Self::ReadBranchRecords, 1) => Some(2),
+            (Self::GetBranchSnapshot, 0) => Some(1),
             _ => None,
         }
     }

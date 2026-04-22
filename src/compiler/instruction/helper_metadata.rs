@@ -85,6 +85,7 @@ impl BpfHelper {
             163 => Some(Self::CheckMtu),
             173 => Some(Self::GetFuncIp),
             174 => Some(Self::GetAttachCookie),
+            176 => Some(Self::GetBranchSnapshot),
             142 => Some(Self::LoadHdrOpt),
             143 => Some(Self::StoreHdrOpt),
             144 => Some(Self::ReserveHdrOpt),
@@ -480,6 +481,12 @@ impl BpfHelper {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::GetBranchSnapshot => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::SockOpsCbFlagsSet => HelperSignature {
                 min_args: 2,
                 max_args: 2,
@@ -842,6 +849,9 @@ impl BpfHelper {
             BpfHelper::RedirectPeer => Some((1, "helper 'bpf_redirect_peer' requires arg1 = 0")),
             BpfHelper::SkbGetXfrmState => {
                 Some((4, "helper 'bpf_skb_get_xfrm_state' requires arg4 = 0"))
+            }
+            BpfHelper::GetBranchSnapshot => {
+                Some((2, "helper 'bpf_get_branch_snapshot' requires arg2 = 0"))
             }
             BpfHelper::StoreHdrOpt => Some((3, "helper 'bpf_store_hdr_opt' requires arg3 = 0")),
             BpfHelper::ReserveHdrOpt => Some((2, "helper 'bpf_reserve_hdr_opt' requires arg2 = 0")),

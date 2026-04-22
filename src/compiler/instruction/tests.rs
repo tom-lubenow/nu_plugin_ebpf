@@ -419,6 +419,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::ReadBranchRecords)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_branch_snapshot"),
+        Some(BpfHelper::GetBranchSnapshot)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -1001,6 +1005,18 @@ fn test_helper_signature_read_branch_records() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_get_branch_snapshot() {
+    let sig = HelperSignature::for_id(BpfHelper::GetBranchSnapshot as u32)
+        .expect("expected bpf_get_branch_snapshot helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
@@ -1775,6 +1791,18 @@ fn test_read_branch_records_zero_size_pointer_contract() {
 }
 
 #[test]
+fn test_get_branch_snapshot_zero_size_and_flag_contract() {
+    assert_eq!(
+        BpfHelper::GetBranchSnapshot.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::GetBranchSnapshot.zero_scalar_arg_requirement(),
+        Some((2, "helper 'bpf_get_branch_snapshot' requires arg2 = 0"))
+    );
+}
+
+#[test]
 fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
@@ -1927,6 +1955,22 @@ fn test_read_branch_records_helper_contract() {
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);
     assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_get_branch_snapshot_helper_contract() {
+    let semantics = BpfHelper::GetBranchSnapshot.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let entries = semantics.ptr_arg_rules[0];
+    assert_eq!(entries.arg_idx, 0);
+    assert_eq!(entries.op, "helper get_branch_snapshot entries");
+    assert!(entries.allowed.allow_stack);
+    assert!(entries.allowed.allow_map);
+    assert!(!entries.allowed.allow_kernel);
+    assert!(!entries.allowed.allow_user);
+    assert_eq!(entries.size_from_arg, Some(1));
 }
 
 #[test]
