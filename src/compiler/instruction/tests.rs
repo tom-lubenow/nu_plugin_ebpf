@@ -447,6 +447,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::DPath)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_bprm_opts_set"),
+        Some(BpfHelper::BprmOptsSet)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -1080,6 +1084,17 @@ fn test_helper_signature_d_path() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_bprm_opts_set() {
+    let sig = HelperSignature::for_id(BpfHelper::BprmOptsSet as u32)
+        .expect("expected bpf_bprm_opts_set signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
@@ -2163,6 +2178,21 @@ fn test_d_path_helper_contract() {
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);
     assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_bprm_opts_set_helper_contract() {
+    let semantics = BpfHelper::BprmOptsSet.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let bprm = semantics.ptr_arg_rules[0];
+    assert_eq!(bprm.arg_idx, 0);
+    assert_eq!(bprm.op, "helper bprm_opts_set bprm");
+    assert!(bprm.allowed.allow_kernel);
+    assert!(!bprm.allowed.allow_stack);
+    assert!(!bprm.allowed.allow_user);
+    assert_eq!(bprm.size_from_arg, None);
 }
 
 #[test]

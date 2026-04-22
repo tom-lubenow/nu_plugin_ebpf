@@ -825,9 +825,11 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::TaskPtRegs => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TaskStorage,
         },
-        BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete => HelperProgramSurfaceSpec {
-            family: HelperProgramSurfaceFamily::Lsm,
-        },
+        BpfHelper::BprmOptsSet | BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete => {
+            HelperProgramSurfaceSpec {
+                family: HelperProgramSurfaceFamily::Lsm,
+            }
+        }
         BpfHelper::GetFuncArg | BpfHelper::GetFuncArgCnt => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TrampolineArgs,
         },

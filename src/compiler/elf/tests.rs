@@ -2076,6 +2076,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::BprmOptsSet),
+        Some("helper 'bpf_bprm_opts_set' is only valid in lsm and lsm_cgroup programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageGet),
         Some(
             "helper 'bpf_sk_storage_get' is only valid in tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
@@ -2582,6 +2586,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::LsmCgroup.helper_call_error(BpfHelper::InodeStorageDelete),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Lsm.helper_call_error(BpfHelper::BprmOptsSet),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LsmCgroup.helper_call_error(BpfHelper::BprmOptsSet),
         None
     );
     assert_eq!(

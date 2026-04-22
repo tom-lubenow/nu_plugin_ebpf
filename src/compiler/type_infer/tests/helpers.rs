@@ -7027,6 +7027,62 @@ fn test_type_error_d_path_rejects_stack_path() {
     }));
 }
 
+fn make_bprm_opts_set_call(flags: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let bprm = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: bprm,
+        field: CtxField::Arg(0),
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::BprmOptsSet as u32,
+        args: vec![MirValue::VReg(bprm), MirValue::Const(flags)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    (func, dst)
+}
+
+#[test]
+fn test_infer_helper_bprm_opts_set_returns_i64() {
+    let (func, dst) = make_bprm_opts_set_call(1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "bprm_check_security");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_bprm_opts_set helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_bprm_opts_set_rejects_stack_bprm() {
+    let mut func = make_test_function();
+    let bprm_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::BprmOptsSet as u32,
+        args: vec![MirValue::StackSlot(bprm_slot), MirValue::Const(1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_bprm_opts_set pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper bprm_opts_set bprm expects pointer in [Kernel]")
+    }));
+}
+
 fn make_copy_from_user_call(size: i64, buf_size: usize, with_task: bool) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let src = func.alloc_vreg();

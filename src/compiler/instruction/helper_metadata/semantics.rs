@@ -1242,6 +1242,13 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const BPRM_OPTS_SET_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper bprm_opts_set bprm",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
         const GET_TASK_STACK_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2012,6 +2019,11 @@ impl BpfHelper {
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
                 ptr_arg_rules: TASK_PT_REGS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::BprmOptsSet => HelperSemantics {
+                ptr_arg_rules: BPRM_OPTS_SET_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

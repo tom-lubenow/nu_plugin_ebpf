@@ -12567,6 +12567,78 @@ fn test_verify_mir_helper_d_path_rejects_stack_path() {
     );
 }
 
+fn make_bprm_opts_set_vcc_call(flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let bprm = func.alloc_vreg();
+    let bprm_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: bprm_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(bprm),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: bprm_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::BprmOptsSet as u32,
+        args: vec![MirValue::VReg(bprm), MirValue::Const(flags)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(bprm, MirType::named_kernel_struct_ptr("linux_binprm"));
+    types.insert(bprm_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_bprm_opts_set_accepts_kernel_bprm() {
+    let (func, types) = make_bprm_opts_set_vcc_call(1);
+    verify_mir(&func, &types).expect("expected bpf_bprm_opts_set helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_bprm_opts_set_rejects_stack_bprm() {
+    let (mut func, entry) = new_mir_function();
+
+    let bprm_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::BprmOptsSet as u32,
+            args: vec![MirValue::StackSlot(bprm_slot), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bprm opts pointer-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper bprm_opts_set bprm expects pointer in [Kernel]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_copy_from_user_vcc_call(
     size: i64,
     buf_size: usize,

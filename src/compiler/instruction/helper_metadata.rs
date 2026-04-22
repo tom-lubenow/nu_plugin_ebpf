@@ -154,6 +154,7 @@ impl BpfHelper {
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
             158 => Some(Self::GetCurrentTaskBtf),
+            159 => Some(Self::BprmOptsSet),
             162 => Some(Self::SockFromFile),
             175 => Some(Self::TaskPtRegs),
             183 => Some(Self::GetFuncArg),
@@ -389,6 +390,12 @@ impl BpfHelper {
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::PointerNonNull,
+            },
+            BpfHelper::BprmOptsSet => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::GetFuncIp | BpfHelper::GetAttachCookie => HelperSignature {
                 min_args: 1,
