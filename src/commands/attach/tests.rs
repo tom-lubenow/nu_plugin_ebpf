@@ -7672,14 +7672,87 @@ fn test_compile_flow_dissector_ctx_packet_byte_counter_program() {
 
 #[test]
 fn test_compile_flow_dissector_ctx_flow_keys_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::FlowDissector,
-        "/proc/self/ns/net",
-        CellPath {
-            members: vec![string_member("flow_keys"), string_member("ip_proto")],
-        },
-        "flow_dissector ctx.flow_keys.ip_proto count",
-    );
+    for (members, context) in [
+        (
+            vec![string_member("flow_keys"), string_member("nhoff")],
+            "flow_dissector ctx.flow_keys.nhoff count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("thoff")],
+            "flow_dissector ctx.flow_keys.thoff count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("addr_proto")],
+            "flow_dissector ctx.flow_keys.addr_proto count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("is_frag")],
+            "flow_dissector ctx.flow_keys.is_frag count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("is_first_frag")],
+            "flow_dissector ctx.flow_keys.is_first_frag count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("is_encap")],
+            "flow_dissector ctx.flow_keys.is_encap count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("ip_proto")],
+            "flow_dissector ctx.flow_keys.ip_proto count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("n_proto")],
+            "flow_dissector ctx.flow_keys.n_proto count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("sport")],
+            "flow_dissector ctx.flow_keys.sport count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("dport")],
+            "flow_dissector ctx.flow_keys.dport count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("ipv4_src")],
+            "flow_dissector ctx.flow_keys.ipv4_src count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("ipv4_dst")],
+            "flow_dissector ctx.flow_keys.ipv4_dst count",
+        ),
+        (
+            vec![
+                string_member("flow_keys"),
+                string_member("ipv6_src"),
+                int_member(0),
+            ],
+            "flow_dissector ctx.flow_keys.ipv6_src[0] count",
+        ),
+        (
+            vec![
+                string_member("flow_keys"),
+                string_member("ipv6_dst"),
+                int_member(3),
+            ],
+            "flow_dissector ctx.flow_keys.ipv6_dst[3] count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("flags")],
+            "flow_dissector ctx.flow_keys.flags count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("flow_label")],
+            "flow_dissector ctx.flow_keys.flow_label count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            CellPath { members },
+            context,
+        );
+    }
 }
 
 #[test]

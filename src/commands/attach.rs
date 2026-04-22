@@ -733,10 +733,19 @@ Context parameter syntax (recommended):
   flow_dissector fields:
     {|ctx| $ctx.data } - Get packet data pointer
     {|ctx| $ctx.data_end } - Get packet end pointer
-    {|ctx| $ctx.flow_keys.nhoff } - Project the flow dissector keys pointer
+    {|ctx| $ctx.flow_keys.nhoff } - Get the flow dissector network-header offset
+    {|ctx| $ctx.flow_keys.thoff } - Get the transport-header offset
+    {|ctx| $ctx.flow_keys.addr_proto } - Get the address-family/protocol marker
+    {|ctx| $ctx.flow_keys.n_proto } - Get the network protocol value
     {|ctx| $ctx.flow_keys.ip_proto } - Get the dissected IP protocol byte
     {|ctx| $ctx.flow_keys.sport } - Get the dissected source port
     {|ctx| $ctx.flow_keys.dport } - Get the dissected destination port
+    {|ctx| $ctx.flow_keys.ipv4_src } - Get the dissected IPv4 source address
+    {|ctx| $ctx.flow_keys.ipv4_dst } - Get the dissected IPv4 destination address
+    {|ctx| ($ctx.flow_keys.ipv6_src | get 0) } - Get an IPv6 source word
+    {|ctx| ($ctx.flow_keys.ipv6_dst | get 3) } - Get an IPv6 destination word
+    {|ctx| $ctx.flow_keys.flags } - Get flow dissector flags
+    {|ctx| $ctx.flow_keys.flow_label } - Get the IPv6 flow label
     Note: `flow_dissector:/proc/self/ns/net` emits a `flow_dissector`
     section. Current Aya loader support is compile/dry-run only, so live
     attach returns a clear unsupported error instead of attempting to load
