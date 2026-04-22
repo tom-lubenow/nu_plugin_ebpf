@@ -275,7 +275,8 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_skb_load_bytes` works on `flow_dissector`, `socket_filter`, `lwt_*`,
 `tc`, `cgroup_skb`, `sk_reuseport`, `sk_skb`, and `sk_skb_parser`;
 `bpf_skb_load_bytes_relative` works on `socket_filter`, `tc`, `cgroup_skb`,
-and `sk_reuseport`; and `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
+and `sk_reuseport`, with `start_header` limited to `BPF_HDR_START_MAC` or
+`BPF_HDR_START_NET`; and `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
 `bpf_xdp_store_bytes` are XDP-only. XDP targets default to SKB/generic
 attach mode for safer development attaches; use `xdp:IFACE:drv` or
 `xdp:IFACE:hw` when driver or hardware mode is intentional. Append

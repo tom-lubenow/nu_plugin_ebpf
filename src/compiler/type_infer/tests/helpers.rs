@@ -5527,6 +5527,42 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
 }
 
 #[test]
+fn test_type_error_skb_load_bytes_relative_rejects_invalid_start_header() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbLoadBytesRelative as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+            MirValue::Const(2),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb_load_bytes_relative start_header validation error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_load_bytes_relative' requires arg4 start_header")
+    }));
+}
+
+#[test]
 fn test_type_error_skb_load_bytes_rejects_small_destination_buffer() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

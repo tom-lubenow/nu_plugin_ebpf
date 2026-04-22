@@ -1738,6 +1738,18 @@ fn test_skb_store_bytes_helper_flag_contract() {
 }
 
 #[test]
+fn test_skb_load_bytes_relative_start_header_contract() {
+    assert_eq!(
+        BpfHelper::SkbLoadBytesRelative.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            1,
+            "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET"
+        ))
+    );
+}
+
+#[test]
 fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(
         BpfHelper::SkbChangeTail.zero_scalar_arg_requirement(),

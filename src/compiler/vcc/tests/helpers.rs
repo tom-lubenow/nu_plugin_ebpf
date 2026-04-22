@@ -4523,6 +4523,54 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_allowed_programs
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_load_bytes_relative_rejects_invalid_start_header() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbLoadBytesRelative as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(2),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb_load_bytes_relative start_header validation error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_load_bytes_relative' requires arg4 start_header")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_skb_load_bytes_rejects_out_of_bounds_destination_buffer() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();

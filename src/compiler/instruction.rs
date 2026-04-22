@@ -931,6 +931,11 @@ impl BpfHelper {
                 3,
                 "helper 'bpf_skb_store_bytes' requires arg4 flags to contain only BPF_F_RECOMPUTE_CSUM/BPF_F_INVALIDATE_HASH bits (0x03)",
             )),
+            (Self::SkbLoadBytesRelative, 4) => Some((
+                0,
+                1,
+                "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
+            )),
             _ => None,
         }
     }
