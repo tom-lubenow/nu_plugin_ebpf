@@ -1376,16 +1376,6 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
         (EbpfProgramType::Netkit, "lo:primary", "netkit"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
-        (
-            EbpfProgramType::UprobeMulti,
-            "/bin/bash:read*",
-            "uprobe.multi",
-        ),
-        (
-            EbpfProgramType::UretprobeMulti,
-            "/bin/bash:read*",
-            "uretprobe.multi",
-        ),
         (EbpfProgramType::LsmCgroup, "socket_bind", "lsm_cgroup"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
         (

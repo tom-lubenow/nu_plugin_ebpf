@@ -1,5 +1,6 @@
 use super::*;
 use aya::programs::perf_event::perf_hw_id;
+use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
 use std::io::BufRead as _;
 
 fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
@@ -7,8 +8,6 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
         kind,
         ProgramAttachKind::RawTracepointWritable
             | ProgramAttachKind::FmodRet
-            | ProgramAttachKind::UprobeMulti
-            | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::LsmCgroup
             | ProgramAttachKind::Netkit
             | ProgramAttachKind::TcAction
@@ -45,6 +44,7 @@ const SYSCALL_SYMBOL_PREFIXES: &[&str] = &[
     "__s390_sys_",
 ];
 const MAX_EMULATED_KPROBE_MULTI_ATTACHES: usize = 1024;
+const MAX_EMULATED_UPROBE_MULTI_ATTACHES: usize = 1024;
 
 fn syscall_probe_candidate_names(syscall: &str) -> Vec<String> {
     let mut candidates = vec![syscall.to_string()];
@@ -168,6 +168,83 @@ fn resolve_kprobe_multi_symbols(pattern: &str) -> Result<Vec<String>, LoadError>
     Ok(matches)
 }
 
+fn uprobe_multi_symbols_from_names(pattern: &str, symbols: &HashSet<String>) -> Vec<String> {
+    let mut matches: Vec<String> = symbols
+        .iter()
+        .filter(|symbol| wildcard_pattern_matches(pattern, symbol))
+        .cloned()
+        .collect();
+    matches.sort();
+    matches
+}
+
+fn uprobe_symbol_names_from_elf_bytes(
+    binary_path: &str,
+    bytes: &[u8],
+) -> Result<HashSet<String>, LoadError> {
+    let file = object::File::parse(bytes).map_err(|e| {
+        LoadError::Attach(format!(
+            "Failed to parse uprobe.multi target binary {binary_path}: {e}"
+        ))
+    })?;
+
+    let mut symbols = HashSet::new();
+    for symbol in file.symbols() {
+        if symbol.kind() == ObjectSymbolKind::Text
+            && symbol.is_definition()
+            && let Ok(name) = symbol.name()
+            && !name.is_empty()
+        {
+            symbols.insert(name.to_string());
+        }
+    }
+    for symbol in file.dynamic_symbols() {
+        if symbol.kind() == ObjectSymbolKind::Text
+            && symbol.is_definition()
+            && let Ok(name) = symbol.name()
+            && !name.is_empty()
+        {
+            symbols.insert(name.to_string());
+        }
+    }
+
+    Ok(symbols)
+}
+
+fn read_uprobe_symbol_names(binary_path: &str) -> Result<HashSet<String>, LoadError> {
+    let bytes = std::fs::read(binary_path).map_err(|e| {
+        LoadError::Attach(format!(
+            "Failed to read uprobe.multi target binary {binary_path}: {e}"
+        ))
+    })?;
+    uprobe_symbol_names_from_elf_bytes(binary_path, &bytes)
+}
+
+fn resolve_uprobe_multi_symbols(
+    target: &crate::program_spec::UprobeMultiTarget,
+) -> Result<Vec<String>, LoadError> {
+    let symbols = read_uprobe_symbol_names(&target.binary_path)?;
+    let matches = uprobe_multi_symbols_from_names(&target.function_pattern, &symbols);
+
+    if matches.is_empty() {
+        return Err(LoadError::Attach(format!(
+            "Failed to resolve uprobe.multi pattern '{}' in {}; no function symbols matched",
+            target.function_pattern, target.binary_path
+        )));
+    }
+    if matches.len() > MAX_EMULATED_UPROBE_MULTI_ATTACHES {
+        return Err(LoadError::Attach(format!(
+            "uprobe.multi pattern '{}' in {} resolved to {} symbols, above this loader's safety cap of {}; refine the pattern or use --dry-run to compile",
+            target.function_pattern,
+            target.binary_path,
+            matches.len(),
+            MAX_EMULATED_UPROBE_MULTI_ATTACHES
+        )));
+    }
+
+    Ok(matches)
+}
+
 fn aya_load_compatible_object(object: &EbpfObject) -> EbpfObject {
     let mut object = object.clone();
 
@@ -191,6 +268,29 @@ fn aya_load_compatible_object(object: &EbpfObject) -> EbpfObject {
             }
             crate::compiler::EbpfProgramType::KretprobeMulti => {
                 program.section_name_override = Some("kretprobe".to_string());
+            }
+            crate::compiler::EbpfProgramType::UprobeMulti => {
+                // Aya 0.13 has no native uprobe.multi parser; live attach emulates it.
+                program.section_name_override = Some(
+                    match program.program_spec.as_ref() {
+                        Some(ProgramSpec::UprobeMulti {
+                            sleepable: true, ..
+                        }) => "uprobe.s",
+                        _ => "uprobe",
+                    }
+                    .to_string(),
+                );
+            }
+            crate::compiler::EbpfProgramType::UretprobeMulti => {
+                program.section_name_override = Some(
+                    match program.program_spec.as_ref() {
+                        Some(ProgramSpec::UretprobeMulti {
+                            sleepable: true, ..
+                        }) => "uretprobe.s",
+                        _ => "uretprobe",
+                    }
+                    .to_string(),
+                );
             }
             _ => {}
         }
@@ -270,6 +370,13 @@ impl EbpfState {
         let kprobe_multi_symbols = match &spec {
             ProgramSpec::KprobeMulti { pattern } | ProgramSpec::KretprobeMulti { pattern } => {
                 Some(resolve_kprobe_multi_symbols(pattern)?)
+            }
+            _ => None,
+        };
+        let uprobe_multi_symbols = match &spec {
+            ProgramSpec::UprobeMulti { target, .. }
+            | ProgramSpec::UretprobeMulti { target, .. } => {
+                Some(resolve_uprobe_multi_symbols(target)?)
             }
             _ => None,
         };
@@ -483,6 +590,37 @@ impl EbpfState {
                             program.prog_type.canonical_prefix()
                         ))
                     })?;
+            }
+            ProgramAttachKind::UprobeMulti | ProgramAttachKind::UretprobeMulti => {
+                let target = spec.uprobe_multi_target().unwrap_or_else(|| {
+                    unreachable!("uprobe.multi attach kind must use uprobe.multi program spec")
+                });
+                let symbols = uprobe_multi_symbols.as_ref().unwrap_or_else(|| {
+                    unreachable!("uprobe.multi attach kind must resolve target symbols")
+                });
+                let uprobe: &mut UProbe = prog.try_into().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to convert to {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                uprobe.load().map_err(|e| {
+                    LoadError::Load(format!(
+                        "Failed to load {}: {e}",
+                        program.prog_type.canonical_prefix()
+                    ))
+                })?;
+                for symbol in symbols {
+                    uprobe
+                        .attach(Some(symbol.as_str()), 0, &target.binary_path, None)
+                        .map_err(|e| {
+                            LoadError::Attach(format!(
+                                "Failed to attach {} to symbol {symbol} in {}: {e}",
+                                program.prog_type.canonical_prefix(),
+                                target.binary_path
+                            ))
+                        })?;
+                }
             }
             ProgramAttachKind::Lsm => {
                 let btf = Btf::from_sys_fs().map_err(|e| {
@@ -1071,8 +1209,6 @@ impl EbpfState {
             }
             ProgramAttachKind::RawTracepointWritable
             | ProgramAttachKind::FmodRet
-            | ProgramAttachKind::UprobeMulti
-            | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::LsmCgroup
             | ProgramAttachKind::Netkit
             | ProgramAttachKind::TcAction
@@ -1353,6 +1489,71 @@ mod tests {
     }
 
     #[test]
+    fn test_aya_load_compatible_object_rewrites_uprobe_multi_sections() {
+        for (spec_text, prog_type, expected_public, expected_loader) in [
+            (
+                "uprobe.multi:/bin/bash:read*",
+                EbpfProgramType::UprobeMulti,
+                "uprobe.multi//bin/bash:read*",
+                "uprobe",
+            ),
+            (
+                "uprobe.multi.s:/bin/bash:read*",
+                EbpfProgramType::UprobeMulti,
+                "uprobe.multi.s//bin/bash:read*",
+                "uprobe.s",
+            ),
+            (
+                "uretprobe.multi:/bin/bash:read*",
+                EbpfProgramType::UretprobeMulti,
+                "uretprobe.multi//bin/bash:read*",
+                "uretprobe",
+            ),
+            (
+                "uretprobe.multi.s:/bin/bash:read*",
+                EbpfProgramType::UretprobeMulti,
+                "uretprobe.multi.s//bin/bash:read*",
+                "uretprobe.s",
+            ),
+        ] {
+            let mut builder = EbpfBuilder::new();
+            builder
+                .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+                .push(EbpfInsn::exit());
+            let spec = ProgramSpec::parse(spec_text).expect("uprobe.multi spec should parse");
+            let object = EbpfProgram::new(prog_type, spec.target_string(), "main", builder)
+                .with_program_spec(spec)
+                .into_object();
+
+            assert_eq!(
+                object
+                    .primary_program()
+                    .expect("object should have a primary program")
+                    .section_name()
+                    .expect("multi-probe section should resolve"),
+                expected_public
+            );
+
+            let load_object = aya_load_compatible_object(&object);
+            assert_eq!(
+                load_object
+                    .primary_program()
+                    .expect("load object should have a primary program")
+                    .section_name()
+                    .expect("loader section should resolve"),
+                expected_loader
+            );
+
+            let elf = load_object
+                .to_elf()
+                .expect("loader-compatible object should emit");
+            let parsed =
+                AyaObject::parse(&elf).expect("Aya should parse rewritten user multi-probe object");
+            assert!(parsed.programs.contains_key("main"));
+        }
+    }
+
+    #[test]
     fn test_syscall_probe_symbols_from_names_handles_abi_wrappers() {
         let symbols = HashSet::from([
             "__x64_sys_openat".to_string(),
@@ -1395,5 +1596,41 @@ mod tests {
             vec!["vfs_read".to_string()]
         );
         assert!(kprobe_multi_symbols_from_names("tcp_*", &symbols).is_empty());
+    }
+
+    #[test]
+    fn test_uprobe_multi_symbols_from_names_matches_wildcards() {
+        let symbols = HashSet::from([
+            "read".to_string(),
+            "read_exact".to_string(),
+            "pread64".to_string(),
+            "write".to_string(),
+        ]);
+
+        assert_eq!(
+            uprobe_multi_symbols_from_names("read*", &symbols),
+            vec!["read".to_string(), "read_exact".to_string()]
+        );
+        assert_eq!(
+            uprobe_multi_symbols_from_names("?read64", &symbols),
+            vec!["pread64".to_string()]
+        );
+        assert!(uprobe_multi_symbols_from_names("open*", &symbols).is_empty());
+    }
+
+    #[test]
+    fn test_uprobe_symbol_names_from_elf_bytes_reads_text_symbols() {
+        let mut builder = EbpfBuilder::new();
+        builder
+            .push(EbpfInsn::mov64_imm(EbpfReg::R0, 0))
+            .push(EbpfInsn::exit());
+        let object = EbpfProgram::new(EbpfProgramType::Uprobe, "/bin/bash:read", "main", builder)
+            .into_object();
+        let elf = object.to_elf().expect("test ELF should emit");
+
+        let symbols = uprobe_symbol_names_from_elf_bytes("test-object", &elf)
+            .expect("test ELF symbols should parse");
+
+        assert!(symbols.contains("main"));
     }
 }

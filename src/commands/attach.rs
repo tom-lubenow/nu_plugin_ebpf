@@ -60,7 +60,7 @@ Supported attach types:
   - tracepoint, raw_tracepoint
   - raw_tracepoint.w / raw_tp.w (dry-run compile support; live attach is not implemented yet)
   - uprobe / uprobe.s, uretprobe / uretprobe.s
-  - uprobe.multi / uprobe.multi.s, uretprobe.multi / uretprobe.multi.s (dry-run compile support; live attach is not implemented yet)
+  - uprobe.multi / uprobe.multi.s, uretprobe.multi / uretprobe.multi.s
   - lsm
   - lsm_cgroup (dry-run compile support; live attach is not implemented yet)
   - freplace / extension (dry-run compile support; live attach is not implemented yet)
@@ -813,8 +813,8 @@ Context parameter syntax (recommended):
     (`kretprobe`, `kretprobe.multi`, `kretsyscall`, `uretprobe`,
     `uretprobe.multi`) expose
     pt_regs-style ctx.retval. Multi-probe forms emit wildcard sections such
-    as `kprobe.multi:vfs_*` or `uprobe.multi:/bin/bash:read*`, but live
-    attach is not implemented yet.
+    as `kprobe.multi:vfs_*` or `uprobe.multi:/bin/bash:read*`; live attach
+    resolves those patterns and creates bounded per-symbol links.
     raw_tracepoint and raw_tracepoint.w expose raw positional ctx.argN slots.
     fentry/fexit/fmod_ret/tp_btf/lsm/lsm_cgroup/struct_ops use
     kernel BTF, and those kernel-BTF-backed contexts also expose named

@@ -2434,7 +2434,6 @@ impl ProgramSpec {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn uprobe_multi_target(&self) -> Option<&UprobeMultiTarget> {
         match self {
             ProgramSpec::UprobeMulti { target, .. }
