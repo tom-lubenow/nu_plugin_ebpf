@@ -1854,6 +1854,14 @@ fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);
+    assert_eq!(
+        BpfHelper::SkbSetTstamp.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            1,
+            "helper 'bpf_skb_set_tstamp' requires arg2 tstamp_type to be BPF_SKB_TSTAMP_UNSPEC or BPF_SKB_TSTAMP_DELIVERY_MONO"
+        ))
+    );
     assert_eq!(BpfHelper::SkbChangeType.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::CheckMtu.zero_scalar_arg_requirement(), None);
     assert_eq!(

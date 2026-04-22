@@ -995,6 +995,11 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
             )),
+            (Self::SkbSetTstamp, 2) => Some((
+                0,
+                1,
+                "helper 'bpf_skb_set_tstamp' requires arg2 tstamp_type to be BPF_SKB_TSTAMP_UNSPEC or BPF_SKB_TSTAMP_DELIVERY_MONO",
+            )),
             (
                 Self::SkStorageGet
                 | Self::TaskStorageGet

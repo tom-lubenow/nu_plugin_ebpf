@@ -1579,6 +1579,42 @@ fn test_type_error_skb_set_tstamp_helper_requires_zero_tstamp_for_unspec_type() 
 }
 
 #[test]
+fn test_type_error_skb_set_tstamp_helper_rejects_invalid_tstamp_type() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbSetTstamp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(123),
+            MirValue::Const(2),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected invalid tstamp type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_set_tstamp' requires arg2")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_skb_set_tstamp_helper_in_tc_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

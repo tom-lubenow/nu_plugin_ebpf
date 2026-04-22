@@ -363,7 +363,8 @@ skb-backed metadata fields remain read-only on the remaining hooks.
 When the timestamp type must also change, `tc_action` and `tc` model
 `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`; the
 current kernel UAPI uses `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
-`BPF_SKB_TSTAMP_DELIVERY_MONO`. `tc_action`, TC, and `cgroup_skb` also
+`BPF_SKB_TSTAMP_DELIVERY_MONO`, and the compiler rejects other values.
+`tc_action`, TC, and `cgroup_skb` also
 model `helper-call "bpf_skb_ecn_set_ce" $ctx` for setting IPv4/IPv6 ECN
 CE when the packet is ECN-capable. `tc_action` and TC model
 `helper-call "bpf_skb_change_proto" $ctx PROTO 0` and
