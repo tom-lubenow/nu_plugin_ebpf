@@ -497,6 +497,7 @@ Near-term priority order:
   - Recent progress: helper program-surface validation now constrains `bpf_sock_from_file` to tracing-style probe programs (`fentry`, `fexit`, `fmod_ret`, `tp_btf`) across ELF policy, type inference, verifier_types, and VCC coverage.
   - Recent progress: helper program-surface validation now constrains `bpf_task_storage_get/delete` to tracing/tracepoint/perf-event/lsm/kprobe-family programs and `bpf_inode_storage_get/delete` to `lsm` / `lsm_cgroup`, with matching ELF/type/verifier/VCC coverage.
   - Recent progress: helper program-surface validation now constrains `bpf_sk_storage_get/delete`, including the `cgroup_sock` asymmetry (`get` allowed, `delete` rejected), across ELF policy, type inference, verifier_types, and VCC coverage.
+  - Recent progress: context pointer nullability overrides now live in the per-program context layout schema, moving `sk_reuseport.ctx.sk` non-nullness out of the generic field-schema special cases while preserving nullable `ctx.migrating_sk`.
   - Remaining: broaden mutable globals beyond current scalar/string/binary/list/record cases and add richer explicit global declarations/initializers.
 
 ## Ergonomics and quality

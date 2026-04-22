@@ -25,6 +25,7 @@ struct ProgramContextLayoutSpec {
     netns_cookie: bool,
     lookup_cookie: bool,
     raw_socket_context_pointer: bool,
+    non_null_ctx_fields: &'static [CtxField],
     sock_ops_load_guards: bool,
 }
 
@@ -51,6 +52,7 @@ impl ProgramContextLayoutSpec {
             netns_cookie,
             lookup_cookie: false,
             raw_socket_context_pointer: false,
+            non_null_ctx_fields: &[],
             sock_ops_load_guards: false,
         }
     }
@@ -72,8 +74,13 @@ impl ProgramContextLayoutSpec {
             netns_cookie: false,
             lookup_cookie: false,
             raw_socket_context_pointer: false,
+            non_null_ctx_fields: &[],
             sock_ops_load_guards: false,
         }
+    }
+
+    fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
+        self.non_null_ctx_fields.contains(field)
     }
 }
 
@@ -94,6 +101,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec::skb_backed(EbpfProgramType::SocketFilter, None, None, true),
@@ -159,6 +167,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: true,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -177,6 +186,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -195,6 +205,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -213,6 +224,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: true,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -231,6 +243,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -249,6 +262,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[CtxField::Socket],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -267,6 +281,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
     ProgramContextLayoutSpec {
@@ -285,6 +300,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        non_null_ctx_fields: &[],
         sock_ops_load_guards: true,
     },
 ];
@@ -417,10 +433,12 @@ impl EbpfProgramType {
                     .is_some_and(|spec| spec.raw_socket_context_pointer))
     }
 
-    #[cfg(test)]
     pub(crate) fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
-        self.ctx_field_is_raw_context_pointer(field)
-            || program_type_ctx_field_pointer_is_non_null(*self, field)
+        self.base_ctx_field_access_error(field).is_none()
+            && (self.ctx_field_is_raw_context_pointer(field)
+                || program_context_layout_spec(*self)
+                    .is_some_and(|spec| spec.ctx_field_pointer_is_non_null(field))
+                || program_type_ctx_field_pointer_is_non_null(*self, field))
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
@@ -438,8 +456,7 @@ impl ProgramSpec {
 
     pub(crate) fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
         self.ctx_field_access_error(field).is_none()
-            && (self.ctx_field_is_raw_context_pointer(field)
-                || program_type_ctx_field_pointer_is_non_null(self.program_type(), field))
+            && self.program_type().ctx_field_pointer_is_non_null(field)
     }
 
     pub(crate) fn packet_context_kind(&self) -> Option<PacketContextKind> {

@@ -743,11 +743,7 @@ pub(crate) fn program_type_ctx_field_pointer_is_non_null(
     field: &CtxField,
 ) -> bool {
     program_type.base_ctx_field_access_error(field).is_none()
-        && (raw_ctx_field_pointer_is_non_null(field)
-            || matches!(
-                (program_type, field),
-                (EbpfProgramType::SkReuseport, CtxField::Socket)
-            ))
+        && raw_ctx_field_pointer_is_non_null(field)
 }
 
 pub(crate) fn ctx_field_sock_ops_load_guard(field: &CtxField) -> Option<SockOpsCallbackGuard> {
