@@ -2416,12 +2416,57 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
         let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected skb packet-edit helper program-surface error");
-        assert!(err.iter().any(|e| {
-            e.message.contains(&format!(
-                "helper '{}' is only valid in tc, sk_skb, and sk_skb_parser programs",
-                helper.name()
-            ))
-        }));
+        let expected = match helper {
+            BpfHelper::GetHashRecalc | BpfHelper::SkbPullData => {
+                "is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
+            }
+            _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
+        };
+        assert!(err.iter().any(|e| { e.message.contains(expected) }));
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_skb_hash_and_pull_helpers() {
+    for (helper, args) in [
+        (BpfHelper::GetHashRecalc, vec![]),
+        (BpfHelper::SkbPullData, vec![MirValue::Const(64)]),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: std::iter::once(MirValue::VReg(ctx))
+                    .chain(args.into_iter())
+                    .collect(),
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected lwt skb hash/pull helper to verify");
     }
 }
 
@@ -2554,9 +2599,13 @@ fn test_verify_mir_for_probe_context_csum_diff_allows_null_zero_side() {
     let mut types = HashMap::new();
     types.insert(dst, MirType::I64);
 
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
-    verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect("expected csum_diff to accept null from with zero from_size");
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+    ] {
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected csum_diff to accept null from with zero from_size");
+    }
 }
 
 #[test]

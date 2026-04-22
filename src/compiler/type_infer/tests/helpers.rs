@@ -806,12 +806,13 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
         let errs = ti
             .infer(&func)
             .expect_err("expected skb packet-mutation helper to be rejected");
-        assert!(errs.iter().any(|e| {
-            e.message.contains(&format!(
-                "helper '{}' is only valid in tc, sk_skb, and sk_skb_parser programs",
-                helper.name()
-            ))
-        }));
+        let expected = match helper {
+            BpfHelper::SkbPullData => {
+                "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
+            }
+            _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
+        };
+        assert!(errs.iter().any(|e| { e.message.contains(expected) }));
     }
 }
 
@@ -851,6 +852,16 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
             BpfHelper::SkbPullData,
             vec![MirValue::Const(64)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+            BpfHelper::SkbPullData,
+            vec![MirValue::Const(64)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+            BpfHelper::GetHashRecalc,
+            vec![],
         ),
         (
             ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
@@ -3732,11 +3743,16 @@ fn test_infer_helper_csum_diff_allows_null_zero_side() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
-    let types = ti
-        .infer(&func)
-        .expect("expected csum_diff to allow null from with zero from_size");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+    ] {
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected csum_diff to allow null from with zero from_size");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
 }
 
 #[test]

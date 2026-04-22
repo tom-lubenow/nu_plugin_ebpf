@@ -1784,7 +1784,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbPullData),
         Some(
-            "helper 'bpf_skb_pull_data' is only valid in tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -1825,7 +1825,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CsumDiff),
-        Some("helper 'bpf_csum_diff' is only valid in xdp and tc programs".to_string())
+        Some("helper 'bpf_csum_diff' is only valid in xdp, tc, and lwt_* programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::CsumDiff),
@@ -2220,6 +2220,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbPullData),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::GetHashRecalc),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::CsumDiff),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::SkSkbParser.helper_call_error(BpfHelper::SkbChangeTail),
         None
     );
@@ -2480,6 +2492,10 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
     ));
     assert!(matches!(
         EbpfProgramType::SkSkb.packet_adjust_helper(PacketAdjustMode::Pull),
+        Some(BpfHelper::SkbPullData)
+    ));
+    assert!(matches!(
+        EbpfProgramType::LwtOut.packet_adjust_helper(PacketAdjustMode::Pull),
         Some(BpfHelper::SkbPullData)
     ));
     assert!(matches!(
@@ -5189,7 +5205,20 @@ fn test_probe_context_rejects_tc_egress_helper_backed_ctx_fields_on_non_tc() {
     let err = ctx
         .ctx_field_access_error(&CtxField::CgroupClassid)
         .expect("expected non-tc access error");
-    assert!(err.contains("ctx.cgroup_classid is only available on tc egress programs"));
+    assert!(err.contains("ctx.cgroup_classid is only available on tc and lwt_* programs"));
+
+    let err = ctx
+        .ctx_field_access_error(&CtxField::SkbCgroupId)
+        .expect("expected non-tc skb cgroup access error");
+    assert!(err.contains("ctx.skb_cgroup_id is only available on tc egress programs"));
+}
+
+#[test]
+fn test_probe_context_allows_lwt_helper_backed_ctx_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+    for field in [CtxField::CgroupClassid, CtxField::RouteRealm] {
+        assert!(ctx.ctx_field_access_error(&field).is_none());
+    }
 }
 
 #[test]
@@ -5202,6 +5231,9 @@ fn test_probe_context_allows_csum_level_on_supported_skb_helper_programs() {
         assert!(ctx.ctx_field_access_error(&CtxField::CsumLevel).is_none());
         assert!(ctx.ctx_field_access_error(&CtxField::HashRecalc).is_none());
     }
+
+    let ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+    assert!(ctx.ctx_field_access_error(&CtxField::HashRecalc).is_none());
 }
 
 #[test]
@@ -5217,9 +5249,9 @@ fn test_probe_context_rejects_csum_level_on_unsupported_skb_program() {
     let err = ctx
         .ctx_field_access_error(&CtxField::HashRecalc)
         .expect("expected unsupported hash_recalc access error");
-    assert!(
-        err.contains("ctx.hash_recalc is only available on tc, sk_skb, and sk_skb_parser programs")
-    );
+    assert!(err.contains(
+        "ctx.hash_recalc is only available on lwt_*, tc, sk_skb, and sk_skb_parser programs"
+    ));
 }
 
 #[test]

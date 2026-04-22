@@ -675,11 +675,11 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::SkbHashHelperFields,
     ),
     (
-        &[
-            CtxField::CgroupClassid,
-            CtxField::RouteRealm,
-            CtxField::SkbCgroupId,
-        ],
+        &[CtxField::CgroupClassid, CtxField::RouteRealm],
+        BaseContextFieldAccessRequirement::TcLwtHelperFields,
+    ),
+    (
+        &[CtxField::SkbCgroupId],
         BaseContextFieldAccessRequirement::TcEgressHelperFields,
     ),
     (SKB_CTX_FIELDS, BaseContextFieldAccessRequirement::SkbFields),
@@ -860,6 +860,7 @@ enum BaseContextFieldAccessRequirement {
     EthProtocolField,
     SkbChecksumHelperFields,
     SkbHashHelperFields,
+    TcLwtHelperFields,
     SkbFields,
     PacketHashField,
     PacketDataFields,
@@ -904,10 +905,28 @@ struct BaseContextFieldAccessProgramSurfaceSpec {
     program_types: &'static [EbpfProgramType],
 }
 
-const SKB_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+const SKB_CHECKSUM_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Tc,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
+];
+
+const SKB_HASH_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
+    EbpfProgramType::Tc,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+];
+
+const TC_LWT_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Tc,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
 ];
 
 const BTF_ARG_COUNT_FIELD_PROGRAMS: &[EbpfProgramType] = &[
@@ -1174,11 +1193,15 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::SkbChecksumHelperFields,
-        program_types: SKB_HELPER_FIELD_PROGRAMS,
+        program_types: SKB_CHECKSUM_HELPER_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::SkbHashHelperFields,
-        program_types: SKB_HELPER_FIELD_PROGRAMS,
+        program_types: SKB_HASH_HELPER_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::TcLwtHelperFields,
+        program_types: TC_LWT_HELPER_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::TcEgressHelperFields,
@@ -1307,6 +1330,7 @@ impl BaseContextFieldAccessRequirement {
             Self::EthProtocolField => self.allowed_by_program_surface(program_type),
             Self::SkbChecksumHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbHashHelperFields => self.allowed_by_program_surface(program_type),
+            Self::TcLwtHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbFields => self.allowed_by_program_surface(program_type),
             Self::PacketHashField => self.allowed_by_program_surface(program_type),
             Self::PacketDataFields => self.allowed_by_program_surface(program_type),
@@ -1402,7 +1426,11 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SkbHashHelperFields => format!(
-                "ctx.{} is only available on tc, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on lwt_*, tc, sk_skb, and sk_skb_parser programs",
+                field.display_name()
+            ),
+            Self::TcLwtHelperFields => format!(
+                "ctx.{} is only available on tc and lwt_* programs",
                 field.display_name()
             ),
             Self::SkbFields => format!(

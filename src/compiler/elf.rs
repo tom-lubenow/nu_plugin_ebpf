@@ -81,7 +81,8 @@ impl PacketAdjustMode {
         match self {
             Self::Head | Self::Tail => "xdp, tc, sk_skb, and sk_skb_parser",
             Self::Meta => "xdp",
-            Self::Pull | Self::Room => "tc, sk_skb, and sk_skb_parser",
+            Self::Pull => "lwt_*, tc, sk_skb, and sk_skb_parser",
+            Self::Room => "tc, sk_skb, and sk_skb_parser",
         }
     }
 }

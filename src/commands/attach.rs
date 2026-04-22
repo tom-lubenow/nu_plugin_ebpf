@@ -159,8 +159,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the packet hash on skb-backed packet and sk_reuseport programs
-    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on tc, sk_skb, and sk_skb_parser
-    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on lwt_*, tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on lwt_*, tc, sk_skb, and sk_skb_parser
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
@@ -203,7 +203,8 @@ Context parameter syntax (recommended):
     and `adjust-packet --room LEN_DIFF --mode MODE [--flags FLAGS]`
     are the preferred first-class skb relayout surfaces, selecting
     `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and
-    `bpf_skb_adjust_room` automatically. After XDP adjust helpers,
+    `bpf_skb_adjust_room` automatically; LWT programs also support
+    `adjust-packet --pull LEN`. After XDP adjust helpers,
     reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end` before
     reading packet bytes again; after skb relayout helpers, reload
     `ctx.data` and `ctx.data_end`. The raw `helper-call
@@ -746,6 +747,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ingress_ifindex } - Get arriving ingress interface index
     {|ctx| $ctx.ifindex } - Get skb interface index
     {|ctx| $ctx.hash } - Get skb hash
+    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc
+    {|ctx| $ctx.cgroup_classid } - Get skb cgroup classid
+    {|ctx| $ctx.route_realm } - Get skb route realm
     Note: `lwt_in:demo-route`, `lwt_out:demo-route`,
     `lwt_xmit:demo-route`, and `lwt_seg6local:demo-route` emit
     `lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` sections.
@@ -753,7 +757,8 @@ Context parameter syntax (recommended):
     a clear unsupported error instead of attempting route attachment.
     Return aliases are `ok` / `pass` for `0`, `drop` for `2`, and
     `redirect` for `7`; `lwt_in` and `lwt_xmit` also accept `reroute`
-    for `128`.
+    for `128`. `adjust-packet --pull LEN` is available for LWT packet
+    linearization.
 
   sk_reuseport fields:
     {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len

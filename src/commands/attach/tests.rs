@@ -7934,6 +7934,18 @@ fn test_compile_tc_ctx_recalc_hash_alias_counter_program() {
 }
 
 #[test]
+fn test_compile_lwt_ctx_recalc_hash_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::LwtOut,
+        "demo-route",
+        CellPath {
+            members: vec![string_member("recalc_hash")],
+        },
+        "lwt ctx.recalc_hash count",
+    );
+}
+
+#[test]
 fn test_compile_tc_egress_ctx_skb_ancestor_cgroup_id_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Tc,
@@ -10517,6 +10529,56 @@ fn test_compile_xdp_adjust_packet_meta_program() {
         Some(&lowering.type_hints),
     )
     .expect("xdp adjust-packet --meta should compile through attach flow");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_lwt_adjust_packet_pull_program() {
+    let hir = make_intrinsic_call_return_program(
+        DeclId::new(42),
+        vec![HirLiteral::Int(64)],
+        vec![],
+        vec![b"pull".to_vec()],
+        HirLiteral::Int(2),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lwt adjust-packet --pull should lower through attach flow");
+
+    let block = lowering.program.main.block(lowering.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbPullData as u32 && args.len() == 2
+    )));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("lwt adjust-packet --pull should compile through attach flow");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }

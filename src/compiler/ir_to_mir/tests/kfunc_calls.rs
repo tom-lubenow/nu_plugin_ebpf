@@ -2601,7 +2601,7 @@ fn test_adjust_packet_intrinsic_lowers_to_skb_change_head_on_tc_and_compiles() {
 }
 
 #[test]
-fn test_adjust_packet_intrinsic_lowers_to_skb_pull_data_on_sk_skb() {
+fn test_adjust_packet_intrinsic_lowers_to_skb_pull_data_on_supported_skb_programs() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -2634,30 +2634,34 @@ fn test_adjust_packet_intrinsic_lowers_to_skb_pull_data_on_sk_skb() {
     let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "adjust-packet".to_string());
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
     let hir_types = infer_hir_types(&hir_program, &decl_names)
-        .expect("adjust-packet intrinsic should type-check on sk_skb");
+        .expect("adjust-packet intrinsic should type-check");
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir_program,
-        Some(&probe_ctx),
-        &decl_names,
-        Some(&hir_types),
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("adjust-packet --pull should lower on sk_skb");
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+        ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+    ] {
+        let result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            Some(&probe_ctx),
+            &decl_names,
+            Some(&hir_types),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("adjust-packet --pull should lower on skb-backed programs");
 
-    let entry = result.program.main.entry;
-    let block = result.program.main.block(entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::SkbPullData as u32 && args.len() == 2
-    )));
+        let entry = result.program.main.entry;
+        let block = result.program.main.block(entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper {
+                helper,
+                args,
+                ..
+            } if *helper == BpfHelper::SkbPullData as u32 && args.len() == 2
+        )));
+    }
 }
 
 #[test]

@@ -21,7 +21,9 @@ enum HelperProgramSurfaceFamily {
     LircMode2,
     Xdp,
     TcSkSkb,
+    TcSkSkbLwt,
     XdpTc,
+    XdpTcLwt,
     Tc,
     TcLwt,
     SkbLoadBytes,
@@ -84,9 +86,34 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         label: "tc, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcSkSkbLwt,
+        program_types: &[
+            EbpfProgramType::LwtIn,
+            EbpfProgramType::LwtOut,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::LwtSeg6Local,
+            EbpfProgramType::Tc,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        label: "lwt_*, tc, sk_skb, and sk_skb_parser",
+    },
+    HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::XdpTc,
         program_types: &[EbpfProgramType::Xdp, EbpfProgramType::Tc],
         label: "xdp and tc",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::XdpTcLwt,
+        program_types: &[
+            EbpfProgramType::Xdp,
+            EbpfProgramType::Tc,
+            EbpfProgramType::LwtIn,
+            EbpfProgramType::LwtOut,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::LwtSeg6Local,
+        ],
+        label: "xdp, tc, and lwt_*",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Tc,
@@ -579,8 +606,6 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::L3CsumReplace
         | BpfHelper::L4CsumReplace
         | BpfHelper::CloneRedirect
-        | BpfHelper::GetHashRecalc
-        | BpfHelper::SkbPullData
         | BpfHelper::CsumUpdate
         | BpfHelper::CsumLevel
         | BpfHelper::SetHashInvalid
@@ -591,13 +616,19 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkbAdjustRoom => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcSkSkb,
         },
+        BpfHelper::GetHashRecalc | BpfHelper::SkbPullData => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TcSkSkbLwt,
+        },
         BpfHelper::SkbLoadBytes => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SkbLoadBytes,
         },
         BpfHelper::SkbLoadBytesRelative => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,
         },
-        BpfHelper::CsumDiff | BpfHelper::Redirect => HelperProgramSurfaceSpec {
+        BpfHelper::CsumDiff => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::XdpTcLwt,
+        },
+        BpfHelper::Redirect => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTc,
         },
         BpfHelper::RedirectPeer
@@ -816,7 +847,7 @@ impl EbpfProgramType {
                     None
                 }
             }
-            PacketAdjustMode::Pull => HelperProgramSurfaceFamily::TcSkSkb
+            PacketAdjustMode::Pull => HelperProgramSurfaceFamily::TcSkSkbLwt
                 .allows(*self)
                 .then_some(BpfHelper::SkbPullData),
             PacketAdjustMode::Room => HelperProgramSurfaceFamily::TcSkSkb
