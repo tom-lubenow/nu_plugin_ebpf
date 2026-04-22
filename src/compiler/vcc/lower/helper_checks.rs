@@ -1100,6 +1100,14 @@ impl<'a> VccLowerer<'a> {
             self.verify_helper_scalar_const_eq(helper_id, arg_idx, arg, 0, message, out)?;
         }
 
+        if let Some((arg_idx, expected, message)) = helper.scalar_arg_const_requirement()
+            && let Some(arg) = args.get(arg_idx)
+        {
+            self.verify_helper_scalar_const_eq(
+                helper_id, arg_idx, arg, expected, message, out,
+            )?;
+        }
+
         if let Some((arg_idx, trigger_arg_idx, message)) =
             helper.zero_scalar_arg_requirement_when_arg_zero()
             && let (Some(arg), Some(trigger)) = (args.get(arg_idx), args.get(trigger_arg_idx))

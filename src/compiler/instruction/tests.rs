@@ -243,6 +243,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::XdpOutput)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_perf_event_read"),
+        Some(BpfHelper::PerfEventRead)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("perf_event_read_value"),
+        Some(BpfHelper::PerfEventReadValue)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -771,6 +779,16 @@ fn test_packet_output_helpers_use_perf_event_array_map_arg() {
 }
 
 #[test]
+fn test_perf_event_read_helpers_use_perf_event_array_map_arg() {
+    for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
+        assert_eq!(helper.local_helper_map_arg_index(), Some(0));
+        assert_eq!(helper.helper_map_arg_kind(0), Some(MapKind::PerfEventArray));
+        assert!(helper.supports_local_helper_map_fd(0));
+        assert!(!helper.helper_requires_explicit_map_kind(0));
+    }
+}
+
+#[test]
 fn test_cgroup_membership_helper_signatures() {
     let skb_sig = HelperSignature::for_id(BpfHelper::SkbUnderCgroup as u32)
         .expect("expected bpf_skb_under_cgroup helper signature");
@@ -886,6 +904,27 @@ fn test_helper_signature_perf_prog_read_value() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_perf_event_read_helpers() {
+    let read = HelperSignature::for_id(BpfHelper::PerfEventRead as u32)
+        .expect("expected bpf_perf_event_read helper signature");
+    assert_eq!(read.min_args, 2);
+    assert_eq!(read.max_args, 2);
+    assert_eq!(read.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(read.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(read.ret_kind, HelperRetKind::Scalar);
+
+    let read_value = HelperSignature::for_id(BpfHelper::PerfEventReadValue as u32)
+        .expect("expected bpf_perf_event_read_value helper signature");
+    assert_eq!(read_value.min_args, 4);
+    assert_eq!(read_value.max_args, 4);
+    assert_eq!(read_value.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(read_value.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(read_value.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(read_value.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(read_value.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -1739,6 +1778,47 @@ fn test_perf_prog_read_value_helper_contract() {
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);
     assert_eq!(buf.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_perf_event_read_helper_contracts() {
+    let read = BpfHelper::PerfEventRead.semantics();
+    assert!(read.positive_size_args.is_empty());
+    assert_eq!(read.ptr_arg_rules.len(), 1);
+    let map = read.ptr_arg_rules[0];
+    assert_eq!(map.arg_idx, 0);
+    assert_eq!(map.op, "helper perf_event_read map");
+    assert!(map.allowed.allow_stack);
+    assert!(!map.allowed.allow_map);
+    assert!(!map.allowed.allow_kernel);
+    assert_eq!(map.size_from_arg, None);
+
+    let read_value = BpfHelper::PerfEventReadValue.semantics();
+    assert_eq!(read_value.positive_size_args, &[3]);
+    assert_eq!(read_value.ptr_arg_rules.len(), 2);
+    let map = read_value.ptr_arg_rules[0];
+    assert_eq!(map.arg_idx, 0);
+    assert_eq!(map.op, "helper perf_event_read_value map");
+    assert!(map.allowed.allow_stack);
+    assert!(!map.allowed.allow_map);
+    assert!(!map.allowed.allow_kernel);
+    assert_eq!(map.size_from_arg, None);
+    let buf = read_value.ptr_arg_rules[1];
+    assert_eq!(buf.arg_idx, 2);
+    assert_eq!(buf.op, "helper perf_event_read_value buf");
+    assert!(buf.allowed.allow_stack);
+    assert!(buf.allowed.allow_map);
+    assert!(!buf.allowed.allow_kernel);
+    assert_eq!(buf.size_from_arg, Some(3));
+
+    assert_eq!(
+        BpfHelper::PerfEventReadValue.scalar_arg_const_requirement(),
+        Some((
+            3,
+            24,
+            "helper 'bpf_perf_event_read_value' requires arg3 = 24"
+        ))
+    );
 }
 
 #[test]

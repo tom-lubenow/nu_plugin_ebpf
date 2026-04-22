@@ -734,6 +734,29 @@ impl BpfHelper {
                 size_from_arg: Some(4),
             },
         ];
+        const PERF_EVENT_READ_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper perf_event_read map",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+        const PERF_EVENT_READ_VALUE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper perf_event_read_value map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper perf_event_read_value buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
         const PACKET_OUTPUT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1728,6 +1751,16 @@ impl BpfHelper {
             BpfHelper::PerfEventOutput => HelperSemantics {
                 ptr_arg_rules: PERF_EVENT_OUTPUT_RULES,
                 positive_size_args: &[4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::PerfEventRead => HelperSemantics {
+                ptr_arg_rules: PERF_EVENT_READ_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::PerfEventReadValue => HelperSemantics {
+                ptr_arg_rules: PERF_EVENT_READ_VALUE_RULES,
+                positive_size_args: &[3],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkbOutput | BpfHelper::XdpOutput => HelperSemantics {

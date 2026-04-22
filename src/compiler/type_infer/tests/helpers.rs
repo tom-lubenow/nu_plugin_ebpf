@@ -2540,6 +2540,86 @@ fn test_infer_perf_event_output_helper_accepts_lwt_program() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_perf_event_read_call(helper: BpfHelper, size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_perf_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+
+    let args = if matches!(helper, BpfHelper::PerfEventRead) {
+        vec![MirValue::VReg(map), MirValue::Const(0)]
+    } else {
+        let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+        vec![
+            MirValue::VReg(map),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+        ]
+    };
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_perf_event_read_helpers() {
+    for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
+        let (func, dst) = make_perf_event_read_call(helper, 24, 24);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected perf event read helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_perf_event_read_value_requires_exact_size() {
+    let (func, _) = make_perf_event_read_call(BpfHelper::PerfEventReadValue, 8, 24);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected perf_event_read_value size error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_perf_event_read_value' requires arg3 = 24")
+    }));
+}
+
+#[test]
+fn test_type_error_perf_event_read_value_rejects_small_buffer() {
+    let (func, _) = make_perf_event_read_call(BpfHelper::PerfEventReadValue, 24, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected perf_event_read_value buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper perf_event_read_value buf requires 24 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_packet_output_call(helper: BpfHelper, size: i64, data_size: usize) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

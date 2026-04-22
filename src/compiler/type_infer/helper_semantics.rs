@@ -499,6 +499,14 @@ impl<'a> TypeInference<'a> {
                 )
             })
         };
+        let arg_is_known_const = |arg_idx, expected| {
+            args.get(arg_idx).is_some_and(|value| {
+                matches!(
+                    self.value_range_for(value, value_ranges),
+                    ValueRange::Known { min, max } if min == expected && max == expected
+                )
+            })
+        };
 
         if let Some((arg_idx, message)) = self
             .probe_ctx
@@ -511,6 +519,12 @@ impl<'a> TypeInference<'a> {
 
         if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
             && !arg_is_known_zero(arg_idx)
+        {
+            errors.push(TypeError::new(message));
+        }
+
+        if let Some((arg_idx, expected, message)) = helper.scalar_arg_const_requirement()
+            && !arg_is_known_const(arg_idx, expected)
         {
             errors.push(TypeError::new(message));
         }

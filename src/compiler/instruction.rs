@@ -140,6 +140,8 @@ pub enum BpfHelper {
     SkbGetTunnelKey = 20,
     /// long bpf_skb_set_tunnel_key(skb, key, size, flags)
     SkbSetTunnelKey = 21,
+    /// u64 bpf_perf_event_read(map, flags)
+    PerfEventRead = 22,
     /// u32 bpf_get_route_realm(skb)
     GetRouteRealm = 24,
     /// long bpf_msg_apply_bytes(msg, bytes)
@@ -168,6 +170,8 @@ pub enum BpfHelper {
     GetSockOpt = 57,
     /// long bpf_perf_prog_read_value(ctx, buf, buf_size)
     PerfProgReadValue = 56,
+    /// long bpf_perf_event_read_value(map, flags, buf, buf_size)
+    PerfEventReadValue = 55,
     /// long bpf_sock_ops_cb_flags_set(bpf_sock, argval)
     SockOpsCbFlagsSet = 59,
     /// long bpf_msg_redirect_map(msg, map, key, flags)
@@ -406,6 +410,7 @@ impl BpfHelper {
             BpfHelper::SkbVlanPop => "bpf_skb_vlan_pop",
             BpfHelper::SkbGetTunnelKey => "bpf_skb_get_tunnel_key",
             BpfHelper::SkbSetTunnelKey => "bpf_skb_set_tunnel_key",
+            BpfHelper::PerfEventRead => "bpf_perf_event_read",
             BpfHelper::GetRouteRealm => "bpf_get_route_realm",
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
@@ -420,6 +425,7 @@ impl BpfHelper {
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
             BpfHelper::GetSockOpt => "bpf_getsockopt",
             BpfHelper::PerfProgReadValue => "bpf_perf_prog_read_value",
+            BpfHelper::PerfEventReadValue => "bpf_perf_event_read_value",
             BpfHelper::SockOpsCbFlagsSet => "bpf_sock_ops_cb_flags_set",
             BpfHelper::MsgRedirectMap => "bpf_msg_redirect_map",
             BpfHelper::GetNetnsCookie => "bpf_get_netns_cookie",
@@ -569,6 +575,7 @@ impl BpfHelper {
             "skb_vlan_pop" => Some(Self::SkbVlanPop),
             "skb_get_tunnel_key" => Some(Self::SkbGetTunnelKey),
             "skb_set_tunnel_key" => Some(Self::SkbSetTunnelKey),
+            "perf_event_read" => Some(Self::PerfEventRead),
             "get_route_realm" => Some(Self::GetRouteRealm),
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
@@ -583,6 +590,7 @@ impl BpfHelper {
             "sock_map_update" => Some(Self::SockMapUpdate),
             "getsockopt" => Some(Self::GetSockOpt),
             "perf_prog_read_value" => Some(Self::PerfProgReadValue),
+            "perf_event_read_value" => Some(Self::PerfEventReadValue),
             "sock_ops_cb_flags_set" => Some(Self::SockOpsCbFlagsSet),
             "msg_redirect_map" => Some(Self::MsgRedirectMap),
             "get_netns_cookie" => Some(Self::GetNetnsCookie),
@@ -714,12 +722,24 @@ impl BpfHelper {
         }
     }
 
+    pub const fn scalar_arg_const_requirement(self) -> Option<(usize, i64, &'static str)> {
+        match self {
+            Self::PerfEventReadValue => Some((
+                3,
+                24,
+                "helper 'bpf_perf_event_read_value' requires arg3 = 24",
+            )),
+            _ => None,
+        }
+    }
+
     pub const fn helper_map_arg_kind(self, arg_idx: usize) -> Option<MapKind> {
         match (self, arg_idx) {
             (Self::TailCall, 1) => Some(MapKind::ProgArray),
             (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 1) => {
                 Some(MapKind::PerfEventArray)
             }
+            (Self::PerfEventRead | Self::PerfEventReadValue, 0) => Some(MapKind::PerfEventArray),
             (Self::GetStackId, 1) => Some(MapKind::StackTrace),
             (Self::SkbUnderCgroup, 1) | (Self::CurrentTaskUnderCgroup, 0) => {
                 Some(MapKind::CgroupArray)
@@ -774,6 +794,7 @@ impl BpfHelper {
             | Self::InodeStorageDelete
             | Self::CgrpStorageGet
             | Self::CgrpStorageDelete => Some(0),
+            Self::PerfEventRead | Self::PerfEventReadValue => Some(0),
             _ => None,
         }
     }

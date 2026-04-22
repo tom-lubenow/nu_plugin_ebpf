@@ -384,6 +384,14 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             )
         })
     };
+    let arg_is_known_const = |arg_idx, expected| {
+        args.get(arg_idx).is_some_and(|value| {
+            matches!(
+                value_range(value, state),
+                ValueRange::Known { min, max } if min == expected && max == expected
+            )
+        })
+    };
 
     if let Some((arg_idx, message)) = probe_ctx
         .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
@@ -397,6 +405,12 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
 
     if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
         && !arg_is_known_zero(arg_idx)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+
+    if let Some((arg_idx, expected, message)) = helper.scalar_arg_const_requirement()
+        && !arg_is_known_const(arg_idx, expected)
     {
         errors.push(VerifierTypeError::new(message));
     }

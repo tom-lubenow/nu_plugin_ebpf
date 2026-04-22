@@ -51,6 +51,7 @@ impl BpfHelper {
             19 => Some(Self::SkbVlanPop),
             20 => Some(Self::SkbGetTunnelKey),
             21 => Some(Self::SkbSetTunnelKey),
+            22 => Some(Self::PerfEventRead),
             24 => Some(Self::GetRouteRealm),
             61 => Some(Self::MsgApplyBytes),
             62 => Some(Self::MsgCorkBytes),
@@ -63,6 +64,7 @@ impl BpfHelper {
             49 => Some(Self::SetSockOpt),
             52 => Some(Self::SkRedirectMap),
             53 => Some(Self::SockMapUpdate),
+            55 => Some(Self::PerfEventReadValue),
             56 => Some(Self::PerfProgReadValue),
             57 => Some(Self::GetSockOpt),
             59 => Some(Self::SockOpsCbFlagsSet),
@@ -443,10 +445,22 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, P, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::PerfEventRead => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::PerfProgReadValue => HelperSignature {
                 min_args: 3,
                 max_args: 3,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::PerfEventReadValue => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::ReadBranchRecords => HelperSignature {
