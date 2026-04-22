@@ -1672,7 +1672,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::Redirect),
-        Some("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs".to_string())
+        Some(
+            "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, and lwt_xmit programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectMap),
@@ -1680,28 +1683,37 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectPeer),
-        Some("helper 'bpf_redirect_peer' is only valid in tc programs".to_string())
+        Some("helper 'bpf_redirect_peer' is only valid in tc_action and tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbUnderCgroup),
-        Some("helper 'bpf_skb_under_cgroup' is only valid in tc and lwt_* programs".to_string())
+        Some(
+            "helper 'bpf_skb_under_cgroup' is only valid in tc_action, tc, and lwt_* programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupId),
-        Some("helper 'bpf_skb_cgroup_id' is only valid in tc programs".to_string())
+        Some("helper 'bpf_skb_cgroup_id' is only valid in tc_action and tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCgroupClassid),
-        Some("helper 'bpf_get_cgroup_classid' is only valid in tc and lwt_* programs".to_string())
+        Some(
+            "helper 'bpf_get_cgroup_classid' is only valid in tc_action, tc, and lwt_* programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetRouteRealm),
-        Some("helper 'bpf_get_route_realm' is only valid in tc and lwt_* programs".to_string())
+        Some(
+            "helper 'bpf_get_route_realm' is only valid in tc_action, tc, and lwt_* programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
         Some(
-            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
                 .to_string()
         )
     );
@@ -1784,48 +1796,51 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbPullData),
         Some(
-            "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc_action, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbLoadBytes),
         Some(
-            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbLoadBytesRelative),
         Some(
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, cgroup_skb, and sk_reuseport programs"
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc_action, tc, cgroup_skb, and sk_reuseport programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbStoreBytes),
         Some(
-            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CloneRedirect),
         Some(
-            "helper 'bpf_clone_redirect' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_clone_redirect' is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::L3CsumReplace),
         Some(
-            "helper 'bpf_l3_csum_replace' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_l3_csum_replace' is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CsumDiff),
-        Some("helper 'bpf_csum_diff' is only valid in xdp, tc, and lwt_* programs".to_string())
+        Some(
+            "helper 'bpf_csum_diff' is only valid in xdp, tc_action, tc, and lwt_* programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::CsumDiff),
@@ -1887,50 +1902,56 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkLookupTcp),
         Some(
-            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
+            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc_action, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkRelease),
         Some(
-            "helper 'bpf_sk_release' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb programs"
+            "helper 'bpf_sk_release' is only valid in xdp, tc_action, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkAssign),
-        Some("helper 'bpf_sk_assign' is only valid in tc and sk_lookup programs".to_string())
+        Some(
+            "helper 'bpf_sk_assign' is only valid in tc_action, tc, and sk_lookup programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::GetListenerSock),
         Some(
-            "helper 'bpf_get_listener_sock' is only valid in tc and cgroup_skb programs"
+            "helper 'bpf_get_listener_sock' is only valid in tc_action, tc, and cgroup_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkFullsock),
-        Some("helper 'bpf_sk_fullsock' is only valid in tc and cgroup_skb programs".to_string())
+        Some(
+            "helper 'bpf_sk_fullsock' is only valid in tc_action, tc, and cgroup_skb programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpSock),
         Some(
-            "helper 'bpf_tcp_sock' is only valid in tc, cgroup_skb, cgroup_sockopt, and sock_ops programs"
+            "helper 'bpf_tcp_sock' is only valid in tc_action, tc, cgroup_skb, cgroup_sockopt, and sock_ops programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToTcpSock),
         Some(
-            "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToUnixSock),
         Some(
-            "helper 'bpf_skc_to_unix_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            "helper 'bpf_skc_to_unix_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
                 .to_string()
         )
     );
@@ -1959,11 +1980,17 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpCheckSyncookie),
-        Some("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs".to_string())
+        Some(
+            "helper 'bpf_tcp_check_syncookie' is only valid in xdp, tc_action, and tc programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpGenSyncookie),
-        Some("helper 'bpf_tcp_gen_syncookie' is only valid in xdp and tc programs".to_string())
+        Some(
+            "helper 'bpf_tcp_gen_syncookie' is only valid in xdp, tc_action, and tc programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
@@ -2017,21 +2044,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageGet),
         Some(
-            "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_sk_storage_get' is only valid in tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageDelete),
         Some(
-            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::CgroupSock.helper_call_error(BpfHelper::SkStorageDelete),
         Some(
-            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
                 .to_string()
         )
     );
@@ -2209,7 +2236,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbSetTstamp),
-        Some("helper 'bpf_skb_set_tstamp' is only valid in tc programs".to_string())
+        Some("helper 'bpf_skb_set_tstamp' is only valid in tc_action and tc programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbStoreBytes),
@@ -2242,7 +2269,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbStoreBytes),
         Some(
-            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -2386,6 +2413,44 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         EbpfProgramType::StructOps.helper_call_error(BpfHelper::SkStorageDelete),
         None
     );
+
+    for helper in [
+        BpfHelper::Redirect,
+        BpfHelper::RedirectPeer,
+        BpfHelper::RedirectNeigh,
+        BpfHelper::SkbSetTstamp,
+        BpfHelper::SkbPullData,
+        BpfHelper::SkbStoreBytes,
+        BpfHelper::SkbChangeHead,
+        BpfHelper::SkbChangeTail,
+        BpfHelper::SkbAdjustRoom,
+        BpfHelper::CsumDiff,
+        BpfHelper::CsumLevel,
+        BpfHelper::GetHashRecalc,
+        BpfHelper::GetCgroupClassid,
+        BpfHelper::GetRouteRealm,
+        BpfHelper::SkbCgroupId,
+        BpfHelper::SkbAncestorCgroupId,
+        BpfHelper::SkbLoadBytes,
+        BpfHelper::SkbLoadBytesRelative,
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkRelease,
+        BpfHelper::SkAssign,
+        BpfHelper::GetListenerSock,
+        BpfHelper::SkFullsock,
+        BpfHelper::TcpSock,
+        BpfHelper::SkcToTcpSock,
+        BpfHelper::SkStorageGet,
+        BpfHelper::SkStorageDelete,
+        BpfHelper::PerfEventOutput,
+    ] {
+        assert_eq!(
+            EbpfProgramType::TcAction.helper_call_error(helper),
+            None,
+            "tc_action should allow helper {}",
+            helper.name()
+        );
+    }
 }
 
 #[test]
@@ -2435,6 +2500,10 @@ fn test_current_task_under_cgroup_is_base_helper_surface() {
 #[test]
 fn test_cgroup_array_membership_helper_follows_program_model() {
     assert!(matches!(
+        EbpfProgramType::TcAction.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
         EbpfProgramType::Tc.cgroup_array_membership_helper(),
         BpfHelper::SkbUnderCgroup
     ));
@@ -2464,6 +2533,7 @@ fn test_cgroup_array_membership_helper_follows_program_model() {
     ));
 
     for program_type in [
+        EbpfProgramType::TcAction,
         EbpfProgramType::Tc,
         EbpfProgramType::LwtIn,
         EbpfProgramType::LwtOut,
@@ -2492,12 +2562,24 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        EbpfProgramType::TcAction.packet_redirect_helper(),
+        Some(BpfHelper::Redirect)
+    ));
+    assert!(matches!(
         EbpfProgramType::LwtXmit.packet_redirect_helper(),
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        EbpfProgramType::TcAction.packet_redirect_peer_helper(),
+        Some(BpfHelper::RedirectPeer)
+    ));
+    assert!(matches!(
         EbpfProgramType::Tc.packet_redirect_peer_helper(),
         Some(BpfHelper::RedirectPeer)
+    ));
+    assert!(matches!(
+        EbpfProgramType::TcAction.packet_redirect_neigh_helper(),
+        Some(BpfHelper::RedirectNeigh)
     ));
     assert!(matches!(
         EbpfProgramType::Tc.packet_redirect_neigh_helper(),
@@ -2519,8 +2601,16 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
         Some(BpfHelper::XdpAdjustMeta)
     ));
     assert!(matches!(
+        EbpfProgramType::TcAction.packet_adjust_helper(PacketAdjustMode::Head),
+        Some(BpfHelper::SkbChangeHead)
+    ));
+    assert!(matches!(
         EbpfProgramType::Tc.packet_adjust_helper(PacketAdjustMode::Head),
         Some(BpfHelper::SkbChangeHead)
+    ));
+    assert!(matches!(
+        EbpfProgramType::TcAction.packet_adjust_helper(PacketAdjustMode::Tail),
+        Some(BpfHelper::SkbChangeTail)
     ));
     assert!(matches!(
         EbpfProgramType::Tc.packet_adjust_helper(PacketAdjustMode::Tail),
@@ -2539,8 +2629,16 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
         Some(BpfHelper::SkbPullData)
     ));
     assert!(matches!(
+        EbpfProgramType::TcAction.packet_adjust_helper(PacketAdjustMode::Pull),
+        Some(BpfHelper::SkbPullData)
+    ));
+    assert!(matches!(
         EbpfProgramType::LwtOut.packet_adjust_helper(PacketAdjustMode::Pull),
         Some(BpfHelper::SkbPullData)
+    ));
+    assert!(matches!(
+        EbpfProgramType::TcAction.packet_adjust_helper(PacketAdjustMode::Room),
+        Some(BpfHelper::SkbAdjustRoom)
     ));
     assert!(matches!(
         EbpfProgramType::SkSkbParser.packet_adjust_helper(PacketAdjustMode::Room),
@@ -5254,12 +5352,16 @@ fn test_probe_context_rejects_tc_egress_helper_backed_ctx_fields_on_non_tc() {
     let err = ctx
         .ctx_field_access_error(&CtxField::CgroupClassid)
         .expect("expected non-tc access error");
-    assert!(err.contains("ctx.cgroup_classid is only available on tc and lwt_* programs"));
+    assert!(
+        err.contains("ctx.cgroup_classid is only available on tc_action, tc, and lwt_* programs")
+    );
 
     let err = ctx
         .ctx_field_access_error(&CtxField::SkbCgroupId)
         .expect("expected non-tc skb cgroup access error");
-    assert!(err.contains("ctx.skb_cgroup_id is only available on tc egress programs"));
+    assert!(
+        err.contains("ctx.skb_cgroup_id is only available on tc_action and tc egress programs")
+    );
 }
 
 #[test]
@@ -5271,9 +5373,22 @@ fn test_probe_context_allows_lwt_helper_backed_ctx_fields() {
 }
 
 #[test]
+fn test_probe_context_allows_tc_action_helper_backed_ctx_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    for field in [
+        CtxField::CgroupClassid,
+        CtxField::RouteRealm,
+        CtxField::SkbCgroupId,
+    ] {
+        assert!(ctx.ctx_field_access_error(&field).is_none());
+    }
+}
+
+#[test]
 fn test_probe_context_allows_csum_level_on_supported_skb_helper_programs() {
     for ctx in [
         ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route"),
+        ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
         ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
         ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
         ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
@@ -5293,14 +5408,14 @@ fn test_probe_context_rejects_csum_level_on_unsupported_skb_program() {
         .ctx_field_access_error(&CtxField::CsumLevel)
         .expect("expected unsupported csum_level access error");
     assert!(err.contains(
-        "ctx.csum_level is only available on lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+        "ctx.csum_level is only available on lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
     ));
 
     let err = ctx
         .ctx_field_access_error(&CtxField::HashRecalc)
         .expect("expected unsupported hash_recalc access error");
     assert!(err.contains(
-        "ctx.hash_recalc is only available on lwt_*, tc, sk_skb, and sk_skb_parser programs"
+        "ctx.hash_recalc is only available on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser programs"
     ));
 }
 

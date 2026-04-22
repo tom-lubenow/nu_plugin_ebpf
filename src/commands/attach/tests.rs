@@ -7690,6 +7690,11 @@ fn test_compile_tc_action_ctx_scalar_counter_programs() {
         ("mark", "tc_action ctx.mark count"),
         ("priority", "tc_action ctx.priority count"),
         ("tc_classid", "tc_action ctx.tc_classid count"),
+        ("cgroup_classid", "tc_action ctx.cgroup_classid count"),
+        ("route_realm", "tc_action ctx.route_realm count"),
+        ("csum_level", "tc_action ctx.csum_level count"),
+        ("skb_cgroup_id", "tc_action ctx.skb_cgroup_id count"),
+        ("hash_recalc", "tc_action ctx.hash_recalc count"),
         ("wire_len", "tc_action ctx.wire_len count"),
         ("tstamp_type", "tc_action ctx.tstamp_type count"),
         ("pkt_type", "tc_action ctx.pkt_type count"),
@@ -7740,6 +7745,30 @@ fn test_compile_tc_action_ctx_socket_projection_counter_program() {
             members: vec![string_member("sk"), string_member("family")],
         },
         "tc_action ctx.sk.family count",
+    );
+}
+
+#[test]
+fn test_compile_tc_action_ctx_recalc_hash_alias_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::TcAction,
+        "demo-action",
+        CellPath {
+            members: vec![string_member("recalc_hash")],
+        },
+        "tc_action ctx.recalc_hash count",
+    );
+}
+
+#[test]
+fn test_compile_tc_action_ctx_skb_ancestor_cgroup_id_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::TcAction,
+        "demo-action",
+        CellPath {
+            members: vec![string_member("skb_ancestor_cgroup_id"), int_member(0)],
+        },
+        "tc_action ctx.skb_ancestor_cgroup_id.0 count",
     );
 }
 
@@ -9545,6 +9574,44 @@ fn test_compile_tc_cgroup_array_map_contains_program() {
 }
 
 #[test]
+fn test_compile_tc_action_cgroup_array_map_contains_program() {
+    let hir = make_cgroup_array_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc_action cgroup-array map-contains should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized tc_action cgroup-array map-contains should compile");
+
+    assert!(
+        result.maps.iter().any(|map| map.name == "tracked_cgroups"),
+        "expected cgroup-array runtime map artifact"
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_lwt_cgroup_array_map_contains_program() {
     let hir = make_cgroup_array_map_contains_program(DeclId::new(42));
     let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
@@ -10636,6 +10703,58 @@ fn test_compile_lwt_xmit_adjust_packet_head_program() {
 }
 
 #[test]
+fn test_compile_tc_action_adjust_packet_head_program() {
+    let hir = make_intrinsic_call_return_program(
+        DeclId::new(42),
+        vec![HirLiteral::Int(8)],
+        vec![],
+        vec![b"head".to_vec()],
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc_action adjust-packet --head should lower through attach flow");
+
+    let block = lowering.program.main.block(lowering.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbChangeHead as u32
+            && args.len() == 3
+            && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
+    )));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("tc_action adjust-packet --head should compile through attach flow");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_tc_redirect_peer_program() {
     let hir = make_intrinsic_call_return_program(
         DeclId::new(42),
@@ -10735,6 +10854,58 @@ fn test_compile_lwt_xmit_redirect_program() {
         Some(&lowering.type_hints),
     )
     .expect("lwt_xmit redirect should compile through attach flow");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_tc_action_redirect_program() {
+    let hir = make_intrinsic_call_return_program(
+        DeclId::new(42),
+        vec![HirLiteral::Int(9)],
+        vec![],
+        vec![],
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc_action redirect should lower through attach flow");
+
+    let block = lowering.program.main.block(lowering.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::Redirect as u32
+            && args.len() == 2
+            && matches!(args.get(1), Some(crate::compiler::mir::MirValue::Const(0)))
+    )));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("tc_action redirect should compile through attach flow");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }

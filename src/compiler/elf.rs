@@ -79,10 +79,10 @@ impl PacketAdjustMode {
 
     pub(crate) fn supported_programs_label(self) -> &'static str {
         match self {
-            Self::Head | Self::Tail => "xdp, lwt_xmit, tc, sk_skb, and sk_skb_parser",
+            Self::Head | Self::Tail => "xdp, lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser",
             Self::Meta => "xdp",
-            Self::Pull => "lwt_*, tc, sk_skb, and sk_skb_parser",
-            Self::Room => "tc, sk_skb, and sk_skb_parser",
+            Self::Pull => "lwt_*, tc_action, tc, sk_skb, and sk_skb_parser",
+            Self::Room => "tc_action, tc, sk_skb, and sk_skb_parser",
         }
     }
 }

@@ -125,9 +125,9 @@ Last updated: 2026-04-21.
   - Ordinary TC-egress context access now exposes helper-backed skb metadata without raw helper spelling as `ctx.cgroup_classid`, `ctx.route_realm`, and `ctx.skb_cgroup_id`; LWT programs now also expose `ctx.cgroup_classid` and `ctx.route_realm`.
   - Typed helper skb mutation coverage now also includes `bpf_clone_redirect`, `bpf_skb_vlan_push`, and `bpf_skb_vlan_pop`, and packet-pointer invalidation now covers the documented skb mutators that can change the underlying packet buffer.
   - Typed helper skb hash coverage now includes `bpf_set_hash`, completing the modeled `bpf_get_hash_recalc` / `bpf_set_hash` / `bpf_set_hash_invalid` helper surface.
-  - Ordinary skb hash context access now exposes the read-style `bpf_get_hash_recalc` form as `ctx.hash_recalc` / `ctx.recalc_hash` on lwt_*/tc/sk_skb/sk_skb_parser programs.
-  - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the lwt_xmit/tc/sk_skb/sk_skb_parser helper surface.
-  - Ordinary skb checksum context access now exposes the read-only `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)` form as `ctx.csum_level` on lwt_xmit/tc/sk_skb/sk_skb_parser programs.
+  - Ordinary skb hash context access now exposes the read-style `bpf_get_hash_recalc` form as `ctx.hash_recalc` / `ctx.recalc_hash` on lwt_*/tc_action/tc/sk_skb/sk_skb_parser programs.
+  - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser helper surface.
+  - Ordinary skb checksum context access now exposes the read-only `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)` form as `ctx.csum_level` on lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser programs.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC/LWT helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.
   - Typed helper time coverage now includes the remaining base no-arg scalar clocks/counters: `bpf_jiffies64`, `bpf_ktime_get_coarse_ns`, and `bpf_ktime_get_tai_ns`.
   - Ordinary context access now exposes those time/counter helpers without raw helper spelling as `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
@@ -307,7 +307,7 @@ Near-term priority order:
   - Recent progress: socket maps now have a resource-oriented `sock_ops` update path via `map-put --kind sockmap|sockhash`, complementing the existing `redirect-socket` consume path.
   - Recent progress: reuseport socket arrays now have first-class `redirect-socket --kind reuseport-sockarray` support on `sk_reuseport`, lowering to `bpf_sk_select_reuseport` with a `BPF_MAP_TYPE_REUSEPORT_SOCKARRAY` map definition.
   - Recent progress: the socket-map update path now validates `map-put --kind sockmap|sockhash` through shared helper-surface policy instead of carrying a separate exact `sock_ops` program-type check in Nu-call lowering.
-  - Recent progress: added `BPF_MAP_TYPE_CGROUP_ARRAY` map definitions plus first-class `map-contains --kind cgroup-array` membership probes. Tc and `lwt_*` programs lower to `bpf_skb_under_cgroup` for the current packet; other programs lower to the base `bpf_current_task_under_cgroup` helper for the current task.
+  - Recent progress: added `BPF_MAP_TYPE_CGROUP_ARRAY` map definitions plus first-class `map-contains --kind cgroup-array` membership probes. `tc_action`, tc, and `lwt_*` programs lower to `bpf_skb_under_cgroup` for the current packet; other programs lower to the base `bpf_current_task_under_cgroup` helper for the current task.
   - Recent progress: generic MIR map-operation capability policy now lives on `MapKind`, so type inference, verifier_types, VCC, and backend codegen reject unsupported operation/kind pairs consistently instead of relying only on Nu lowering.
   - Recent progress: `map-contains` now works on ordinary lookup-capable generic maps, defaulting to hash maps and lowering to `bpf_map_lookup_elem(...) != 0`, while retaining the special bloom-filter and cgroup-array helper paths.
   - Recent progress: `map-contains --kind sk-storage|task-storage|inode-storage|cgrp-storage` now performs lookup-only local-storage presence checks over the owning object pointer, keeping that boolean path on the same resource-oriented map surface as `map-get` and `map-delete`.
@@ -481,7 +481,7 @@ Near-term priority order:
 - [ ] Add end-to-end non-tracing fixtures.
   - Create integration fixtures that validate map-heavy, helper-heavy, and control-flow-heavy programs.
   - Keep fixtures small and verifier-focused to catch regressions quickly.
-  - Recent progress: compile-only `tc_action` / `action` program specs now have a typed program model, parser metadata, TC-style return aliases, read-only skb-backed context access, attach-flow compile fixtures, and an explicit live-attach unsupported path.
+  - Recent progress: compile-only `tc_action` / `action` program specs now have a typed program model, parser metadata, TC-style return aliases, read-only skb-backed context access, cls_act-aligned packet helper support, attach-flow compile fixtures, and an explicit live-attach unsupported path.
   - Recent progress: compile-only `fmod_ret` / `fmod_ret.s` program specs now have typed BPF tracing metadata, `fmod_ret/FUNCTION` section emission, BTF args/retval context support, parser/loader coverage, attach-flow compile fixtures, and an explicit live-attach unsupported path; kernel modify-return allowlist validation and live attachment remain deferred.
   - Recent progress: compile-only `ksyscall` / `kretsyscall` program specs now have typed KPROBE metadata, syscall section emission, pt_regs arg/retval context support, parser/loader coverage, attach-flow compile fixtures, and an explicit live-attach unsupported path.
   - Recent progress: compile-only `kprobe.multi` / `kretprobe.multi` program specs now have typed KPROBE metadata, wildcard section emission, pt_regs arg/retval context support, parser/loader validation, attach-flow compile fixtures, and an explicit live-attach unsupported path.

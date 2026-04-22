@@ -907,6 +907,7 @@ struct BaseContextFieldAccessProgramSurfaceSpec {
 
 const SKB_CHECKSUM_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtXmit,
+    EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -917,12 +918,14 @@ const SKB_HASH_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtOut,
     EbpfProgramType::LwtXmit,
     EbpfProgramType::LwtSeg6Local,
+    EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
 ];
 
 const TC_LWT_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
     EbpfProgramType::LwtIn,
     EbpfProgramType::LwtOut,
@@ -1206,7 +1209,7 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::TcEgressHelperFields,
-        program_types: &[EbpfProgramType::Tc],
+        program_types: &[EbpfProgramType::TcAction, EbpfProgramType::Tc],
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::ArgCountField,
@@ -1423,15 +1426,15 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SkbChecksumHelperFields => format!(
-                "ctx.{} is only available on lwt_xmit, tc, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::SkbHashHelperFields => format!(
-                "ctx.{} is only available on lwt_*, tc, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::TcLwtHelperFields => format!(
-                "ctx.{} is only available on tc and lwt_* programs",
+                "ctx.{} is only available on tc_action, tc, and lwt_* programs",
                 field.display_name()
             ),
             Self::SkbFields => format!(
@@ -1445,7 +1448,7 @@ impl BaseContextFieldAccessRequirement {
                 )
             }
             Self::TcEgressHelperFields => format!(
-                "ctx.{} is only available on tc egress programs",
+                "ctx.{} is only available on tc_action and tc egress programs",
                 field.display_name()
             ),
             Self::SocketTupleFields => format!(

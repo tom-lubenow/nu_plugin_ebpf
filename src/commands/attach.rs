@@ -142,11 +142,11 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array on skb-backed packet programs
     {|ctx| $ctx.tc_classid } - Get the skb tc_classid on tc_action and tc programs
-    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on lwt_* and tc egress
-    {|ctx| $ctx.route_realm } - Get skb route realm on lwt_* and tc egress
-    {|ctx| $ctx.csum_level } - Query skb checksum level on lwt_xmit, tc, sk_skb, and sk_skb_parser
-    {|ctx| $ctx.skb_cgroup_id } - Get skb cgroup ID on tc egress
-    {|ctx| $ctx.skb_ancestor_cgroup_id.0 } - Get skb ancestor cgroup ID on tc egress at constant level 0
+    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on lwt_*, tc_action, and tc egress
+    {|ctx| $ctx.route_realm } - Get skb route realm on lwt_*, tc_action, and tc egress
+    {|ctx| $ctx.csum_level } - Query skb checksum level on lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.skb_cgroup_id } - Get skb cgroup ID on tc_action and tc egress
+    {|ctx| $ctx.skb_ancestor_cgroup_id.0 } - Get skb ancestor cgroup ID on tc_action and tc egress at constant level 0
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
     {|ctx| $ctx.wire_len } - Get the skb wire_len on tc_action and tc programs
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs
@@ -160,8 +160,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the packet hash on skb-backed packet and sk_reuseport programs
-    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on lwt_*, tc, sk_skb, and sk_skb_parser
-    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on lwt_*, tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
     {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
@@ -267,14 +267,15 @@ Context parameter syntax (recommended):
     `mut ctx = $ctx; $ctx.priority = 3`, `mut ctx = $ctx;
     $ctx.tc_index = 5`, or `mut ctx = $ctx; $ctx.tstamp = 123`.
     Other skb-backed metadata fields remain read-only on the remaining
-    hooks. When the timestamp type must also change, tc additionally
-    models `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`;
+    hooks. When the timestamp type must also change, tc_action and tc
+    model `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`;
     use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
     `BPF_SKB_TSTAMP_DELIVERY_MONO`.
     `tc_action:LABEL` (or `action:LABEL`) is compile/dry-run only for
     now. It emits an `action` section, uses the label only as metadata,
-    exposes the TC-style read-only skb context surface, and rejects live
-    attach until the loader has an explicit tc-action attach path.
+    exposes the TC-style read-only skb context plus the modeled TC cls_act
+    packet helper surface, and rejects live attach until the loader has an
+    explicit tc-action attach path.
     `freplace:FUNCTION` (aliases `extension:FUNCTION` and `ext:FUNCTION`)
     emits a `freplace/FUNCTION` extension section for replacing a global
     function in another loaded BPF program. It is compile/dry-run only;
@@ -568,7 +569,7 @@ Context parameter syntax (recommended):
     as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_verdict` programs.
     It uses raw verdict codes but supports `pass` / `drop` aliases, and
     `ctx.data` / `ctx.data_end` use the same guarded packet access model as
-    tc and cgroup_skb. Modeled skb packet-edit helpers also use the
+    tc_action, tc, and cgroup_skb. Modeled skb packet-edit helpers also use the
     ordinary helper surface here, including `bpf_skb_store_bytes`,
     `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
     `bpf_get_hash_recalc`, `bpf_csum_update`, `bpf_set_hash_invalid`,

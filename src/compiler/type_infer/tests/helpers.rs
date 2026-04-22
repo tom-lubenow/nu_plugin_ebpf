@@ -652,8 +652,9 @@ fn test_type_error_redirect_helper_rejects_non_packet_programs() {
         .infer(&func)
         .expect_err("expected bpf_redirect to be rejected on unsupported programs");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs")
+        e.message.contains(
+            "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, and lwt_xmit programs",
+        )
     }));
 }
 
@@ -697,6 +698,26 @@ fn test_infer_redirect_helper_in_tc_program() {
     let types = ti
         .infer(&func)
         .expect("expected tc bpf_redirect helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_redirect_helper_in_tc_action_program() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Redirect as u32,
+        args: vec![MirValue::Const(1), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected tc_action bpf_redirect helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
@@ -808,15 +829,15 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
             .expect_err("expected skb packet-mutation helper to be rejected");
         let expected = match helper {
             BpfHelper::SkbPullData => {
-                "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
+                "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc_action, tc, sk_skb, and sk_skb_parser programs"
             }
             BpfHelper::SkbChangeTail
             | BpfHelper::CloneRedirect
             | BpfHelper::SkbChangeHead
             | BpfHelper::CsumLevel => {
-                "is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+                "is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
             }
-            _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
+            _ => "is only valid in tc_action, tc, sk_skb, and sk_skb_parser programs",
         };
         assert!(errs.iter().any(|e| { e.message.contains(expected) }));
     }
@@ -860,6 +881,11 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             vec![MirValue::Const(64)],
         ),
         (
+            ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+            BpfHelper::SkbPullData,
+            vec![MirValue::Const(64)],
+        ),
+        (
             ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
             BpfHelper::SkbPullData,
             vec![MirValue::Const(64)],
@@ -871,6 +897,11 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
         ),
         (
             ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
             BpfHelper::SkbChangeHead,
             vec![MirValue::Const(14), MirValue::Const(0)],
         ),
@@ -921,6 +952,11 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
         ),
         (
             ProbeContext::new(EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+            BpfHelper::SkbAdjustRoom,
+            vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
+        ),
+        (
+            ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
             BpfHelper::SkbAdjustRoom,
             vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
         ),
@@ -977,10 +1013,10 @@ fn test_type_error_skb_set_tstamp_helper_rejects_non_tc_program() {
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
         .infer(&func)
-        .expect_err("expected bpf_skb_set_tstamp to be rejected outside tc");
+        .expect_err("expected bpf_skb_set_tstamp to be rejected outside tc_action/tc");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_skb_set_tstamp' is only valid in tc programs")
+            .contains("helper 'bpf_skb_set_tstamp' is only valid in tc_action and tc programs")
     }));
 }
 
@@ -1044,6 +1080,13 @@ fn test_infer_skb_set_tstamp_helper_in_tc_program() {
     let types = ti
         .infer(&func)
         .expect("expected tc bpf_skb_set_tstamp helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected tc_action bpf_skb_set_tstamp helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
@@ -1849,7 +1892,7 @@ fn test_type_error_perf_event_output_helper_rejects_lsm_program() {
         .infer(&func)
         .expect_err("expected bpf_perf_event_output to be rejected on lsm");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
     )));
 }
 
@@ -2500,9 +2543,9 @@ fn test_type_error_tc_egress_skb_metadata_helpers_reject_unsupported_program() {
             .expect_err("expected skb metadata helper to reject unsupported program");
         let expected = match helper {
             BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => {
-                "is only valid in tc and lwt_* programs"
+                "is only valid in tc_action, tc, and lwt_* programs"
             }
-            _ => "is only valid in tc programs",
+            _ => "is only valid in tc_action and tc programs",
         };
         assert!(
             errs.iter().any(|e| e.message.contains(expected)),
@@ -2553,7 +2596,7 @@ fn test_type_error_redirect_peer_helper_rejects_non_tc_program() {
         .expect_err("expected bpf_redirect_peer to be rejected outside tc");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect_peer' is only valid in tc programs")
+            .contains("helper 'bpf_redirect_peer' is only valid in tc_action and tc programs")
     }));
 }
 
@@ -2589,7 +2632,7 @@ fn test_type_error_sk_lookup_tcp_helper_rejects_invalid_program() {
         .expect_err("expected bpf_sk_lookup_tcp to be rejected on kprobe");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs",
+            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc_action, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs",
         )
     }));
 }
@@ -2741,7 +2784,7 @@ fn test_type_error_get_listener_sock_helper_rejects_sk_lookup_program() {
         .expect_err("expected bpf_get_listener_sock to be rejected on sk_lookup");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_get_listener_sock' is only valid in tc and cgroup_skb programs")
+            .contains("helper 'bpf_get_listener_sock' is only valid in tc_action, tc, and cgroup_skb programs")
     }));
 }
 
@@ -2813,8 +2856,9 @@ fn test_type_error_sk_fullsock_helper_rejects_sk_lookup_program() {
         .infer(&func)
         .expect_err("expected bpf_sk_fullsock to be rejected on sk_lookup");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("helper 'bpf_sk_fullsock' is only valid in tc and cgroup_skb programs")
+        e.message.contains(
+            "helper 'bpf_sk_fullsock' is only valid in tc_action, tc, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -2887,7 +2931,7 @@ fn test_type_error_tcp_sock_helper_rejects_sk_lookup_program() {
         .expect_err("expected bpf_tcp_sock to be rejected on sk_lookup");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "helper 'bpf_tcp_sock' is only valid in tc, cgroup_skb, cgroup_sockopt, and sock_ops programs",
+            "helper 'bpf_tcp_sock' is only valid in tc_action, tc, cgroup_skb, cgroup_sockopt, and sock_ops programs",
         )
     }));
 }
@@ -2942,7 +2986,7 @@ fn test_type_error_skc_to_tcp_sock_helper_rejects_cgroup_sockopt_program() {
         .infer(&func)
         .expect_err("expected bpf_skc_to_tcp_sock to be rejected on cgroup_sockopt");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+        "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
     )));
 }
 
@@ -3299,7 +3343,7 @@ fn test_type_error_sk_storage_get_helper_rejects_xdp_program() {
         .infer(&func)
         .expect_err("expected bpf_sk_storage_get to be rejected on xdp");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+        "helper 'bpf_sk_storage_get' is only valid in tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 
@@ -3365,7 +3409,7 @@ fn test_type_error_sk_storage_delete_helper_rejects_cgroup_sock_program() {
         .infer(&func)
         .expect_err("expected bpf_sk_storage_delete to be rejected on cgroup_sock");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+        "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 
@@ -3463,7 +3507,7 @@ fn test_type_error_redirect_neigh_helper_rejects_non_tc_programs() {
         .expect_err("expected bpf_redirect_neigh to be rejected outside tc");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect_neigh' is only valid in tc programs")
+            .contains("helper 'bpf_redirect_neigh' is only valid in tc_action and tc programs")
     }));
 }
 
@@ -3603,6 +3647,18 @@ fn test_infer_packet_byte_helpers_follow_program_surface() {
         ),
         (
             BpfHelper::SkbLoadBytes,
+            EbpfProgramType::TcAction,
+            "demo-action",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::TcAction,
+            "demo-action",
+            5,
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
             EbpfProgramType::SkReuseport,
             "select",
             4,
@@ -3658,13 +3714,13 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe,
             "ksys_read",
-            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,
             EbpfProgramType::SkSkb,
             "/sys/fs/bpf/demo_sockmap",
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, cgroup_skb, and sk_reuseport programs",
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc_action, tc, cgroup_skb, and sk_reuseport programs",
         ),
         (
             BpfHelper::XdpStoreBytes,
@@ -4383,8 +4439,9 @@ fn test_type_error_tcp_check_syncookie_helper_rejects_kprobe_program() {
         .infer(&func)
         .expect_err("expected bpf_tcp_check_syncookie to be rejected on kprobe");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs")
+        e.message.contains(
+            "helper 'bpf_tcp_check_syncookie' is only valid in xdp, tc_action, and tc programs",
+        )
     }));
 }
 

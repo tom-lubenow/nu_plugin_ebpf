@@ -862,6 +862,10 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_eg
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect("expected tc-egress skb metadata helper to verify");
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected tc_action skb metadata helper to verify");
     }
 }
 
@@ -1005,9 +1009,9 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_unsup
             .expect_err("expected skb metadata helper unsupported-program context error");
         let expected = match helper {
             BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => {
-                "is only valid in tc and lwt_* programs"
+                "is only valid in tc_action, tc, and lwt_* programs"
             }
-            _ => "is only valid in tc programs",
+            _ => "is only valid in tc_action and tc programs",
         };
         assert!(
             err.iter().any(|e| e.message.contains(expected)),
@@ -1273,8 +1277,9 @@ fn test_verify_mir_for_program_redirect_rejects_non_packet_programs() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
         .expect_err("expected redirect helper program-surface error");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("helper 'bpf_redirect' is only valid in xdp, tc, and lwt_xmit programs")
+        e.message.contains(
+            "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, and lwt_xmit programs",
+        )
     }));
 }
 
@@ -1306,7 +1311,7 @@ fn test_verify_mir_for_program_redirect_neigh_rejects_non_tc_programs() {
         .expect_err("expected redirect_neigh helper program-surface error");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect_neigh' is only valid in tc programs")
+            .contains("helper 'bpf_redirect_neigh' is only valid in tc_action and tc programs")
     }));
 }
 
@@ -1716,7 +1721,7 @@ fn test_verify_mir_for_program_perf_event_output_helper_rejects_lsm() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Lsm.info())
         .expect_err("expected perf_event_output helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
     )));
 }
 
@@ -2150,7 +2155,7 @@ fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs()
             .expect_err("expected skb packet-edit helper program-surface error");
         let expected = match helper {
             BpfHelper::GetHashRecalc | BpfHelper::SkbPullData => {
-                "is only valid in lwt_*, tc, sk_skb, and sk_skb_parser programs"
+                "is only valid in lwt_*, tc_action, tc, sk_skb, and sk_skb_parser programs"
             }
             BpfHelper::SkbStoreBytes
             | BpfHelper::L3CsumReplace
@@ -2161,9 +2166,9 @@ fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs()
             | BpfHelper::CsumLevel
             | BpfHelper::SetHashInvalid
             | BpfHelper::SkbChangeHead => {
-                "is only valid in lwt_xmit, tc, sk_skb, and sk_skb_parser programs"
+                "is only valid in lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs"
             }
-            _ => "is only valid in tc, sk_skb, and sk_skb_parser programs",
+            _ => "is only valid in tc_action, tc, sk_skb, and sk_skb_parser programs",
         };
         assert!(err.iter().any(|e| { e.message.contains(expected) }));
     }
@@ -2175,6 +2180,11 @@ fn test_verify_mir_for_program_lwt_skb_helpers() {
         (EbpfProgramType::LwtOut, BpfHelper::GetHashRecalc, vec![]),
         (
             EbpfProgramType::LwtOut,
+            BpfHelper::SkbPullData,
+            vec![MirValue::Const(64)],
+        ),
+        (
+            EbpfProgramType::TcAction,
             BpfHelper::SkbPullData,
             vec![MirValue::Const(64)],
         ),
@@ -2194,9 +2204,19 @@ fn test_verify_mir_for_program_lwt_skb_helpers() {
             vec![MirValue::Const(14), MirValue::Const(0)],
         ),
         (
+            EbpfProgramType::TcAction,
+            BpfHelper::SkbChangeHead,
+            vec![MirValue::Const(14), MirValue::Const(0)],
+        ),
+        (
             EbpfProgramType::LwtXmit,
             BpfHelper::CloneRedirect,
             vec![MirValue::Const(1), MirValue::Const(0)],
+        ),
+        (
+            EbpfProgramType::TcAction,
+            BpfHelper::SkbAdjustRoom,
+            vec![MirValue::Const(14), MirValue::Const(0), MirValue::Const(0)],
         ),
         (EbpfProgramType::LwtXmit, BpfHelper::SetHashInvalid, vec![]),
         (
@@ -2579,12 +2599,12 @@ fn test_verify_mir_for_program_packet_byte_helpers_reject_invalid_programs() {
         (
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe.info(),
-            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,
             EbpfProgramType::SkSkb.info(),
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, cgroup_skb, and sk_reuseport programs",
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc_action, tc, cgroup_skb, and sk_reuseport programs",
         ),
         (
             BpfHelper::XdpLoadBytes,
@@ -2653,6 +2673,12 @@ fn test_verify_mir_for_program_packet_byte_helpers_accept_allowed_programs() {
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::FlowDissector.info(),
             4,
+        ),
+        (BpfHelper::SkbLoadBytes, EbpfProgramType::TcAction.info(), 4),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::TcAction.info(),
+            5,
         ),
         (BpfHelper::SkbLoadBytes, EbpfProgramType::LwtOut.info(), 4),
     ] {
@@ -3022,7 +3048,7 @@ fn test_verify_mir_for_probe_context_redirect_peer_rejects_non_tc_program() {
         .expect_err("expected redirect_peer non-tc program error");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_redirect_peer' is only valid in tc programs")
+            .contains("helper 'bpf_redirect_peer' is only valid in tc_action and tc programs")
     }));
 }
 
@@ -3071,7 +3097,7 @@ fn test_verify_mir_for_probe_context_sk_lookup_tcp_rejects_invalid_program() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_lookup_tcp helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
+        "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc_action, tc, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
     )));
 }
 
@@ -3321,11 +3347,9 @@ fn test_verify_mir_for_probe_context_get_listener_sock_rejects_sk_lookup() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected get_listener_sock sk_lookup program-surface error");
-    assert!(
-        err.iter().any(|e| e.message.contains(
-            "helper 'bpf_get_listener_sock' is only valid in tc and cgroup_skb programs"
-        ))
-    );
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_get_listener_sock' is only valid in tc_action, tc, and cgroup_skb programs"
+    )));
 }
 
 #[test]
@@ -3461,8 +3485,9 @@ fn test_verify_mir_for_probe_context_sk_fullsock_rejects_sk_lookup() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_fullsock sk_lookup program-surface error");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("helper 'bpf_sk_fullsock' is only valid in tc and cgroup_skb programs")
+        e.message.contains(
+            "helper 'bpf_sk_fullsock' is only valid in tc_action, tc, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -3599,7 +3624,7 @@ fn test_verify_mir_for_probe_context_tcp_sock_rejects_sk_lookup() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected tcp_sock sk_lookup program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_tcp_sock' is only valid in tc, cgroup_skb, cgroup_sockopt, and sock_ops programs"
+        "helper 'bpf_tcp_sock' is only valid in tc_action, tc, cgroup_skb, cgroup_sockopt, and sock_ops programs"
     )));
 }
 
@@ -3701,7 +3726,7 @@ fn test_verify_mir_for_probe_context_skc_to_tcp_sock_rejects_cgroup_sockopt() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected skc_to_tcp_sock cgroup_sockopt program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+        "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
     )));
 }
 
@@ -4513,7 +4538,7 @@ fn test_verify_mir_for_probe_context_sk_storage_get_rejects_xdp() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_storage_get xdp program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+        "helper 'bpf_sk_storage_get' is only valid in tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 
@@ -4627,7 +4652,7 @@ fn test_verify_mir_for_probe_context_sk_storage_delete_rejects_cgroup_sock() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_storage_delete cgroup_sock program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+        "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 
@@ -5000,10 +5025,10 @@ fn test_verify_mir_for_probe_context_skb_set_tstamp_rejects_non_tc_program() {
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect_err("expected bpf_skb_set_tstamp to be rejected outside tc");
+        .expect_err("expected bpf_skb_set_tstamp to be rejected outside tc_action/tc");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_skb_set_tstamp' is only valid in tc programs")
+            .contains("helper 'bpf_skb_set_tstamp' is only valid in tc_action and tc programs")
     }));
 }
 
@@ -5095,6 +5120,10 @@ fn test_verify_mir_for_probe_context_skb_set_tstamp_accepts_tc_program() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected tc bpf_skb_set_tstamp helper to verify");
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected tc_action bpf_skb_set_tstamp helper to verify");
 }
 
 #[test]
@@ -6365,8 +6394,9 @@ fn test_verify_mir_for_probe_context_tcp_check_syncookie_rejects_kprobe() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected tcp_check_syncookie kprobe program-surface error");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("helper 'bpf_tcp_check_syncookie' is only valid in xdp and tc programs")
+        e.message.contains(
+            "helper 'bpf_tcp_check_syncookie' is only valid in xdp, tc_action, and tc programs",
+        )
     }));
 }
 
