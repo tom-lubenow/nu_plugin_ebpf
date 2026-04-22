@@ -14,6 +14,7 @@ impl BpfHelper {
             45 => Some(Self::ProbeReadStr),
             112 => Some(Self::ProbeReadUser),
             113 => Some(Self::ProbeReadKernel),
+            36 => Some(Self::ProbeWriteUser),
             5 => Some(Self::KtimeGetNs),
             6 => Some(Self::TracePrintk),
             7 => Some(Self::GetPrandomU32),
@@ -354,6 +355,12 @@ impl BpfHelper {
                 min_args: 3,
                 max_args: 3,
                 arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::ProbeWriteUser => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::CopyFromUserTask => HelperSignature {

@@ -670,6 +670,23 @@ impl BpfHelper {
             },
         ];
 
+        const PROBE_WRITE_USER_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper probe_write_user dst",
+                allowed: USER,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper probe_write_user src",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
         const COPY_FROM_USER_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1886,6 +1903,11 @@ impl BpfHelper {
             BpfHelper::ProbeReadUser | BpfHelper::ProbeReadUserStr => HelperSemantics {
                 ptr_arg_rules: PROBE_READ_USER_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ProbeWriteUser => HelperSemantics {
+                ptr_arg_rules: PROBE_WRITE_USER_RULES,
+                positive_size_args: &[2],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::CopyFromUser => HelperSemantics {

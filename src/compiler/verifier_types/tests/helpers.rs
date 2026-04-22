@@ -5519,6 +5519,62 @@ fn make_copy_from_user_verify_call(
     (func, types)
 }
 
+fn make_probe_write_user_verify_call(
+    size: i64,
+    src_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call_block = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let user_dst = func.alloc_vreg();
+    let user_dst_non_null = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(src_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: user_dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(user_dst),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: user_dst_non_null,
+        if_true: call_block,
+        if_false: done,
+    };
+
+    func.block_mut(call_block)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::ProbeWriteUser as u32,
+            args: vec![
+                MirValue::VReg(user_dst),
+                MirValue::StackSlot(src_slot),
+                MirValue::Const(size),
+            ],
+        });
+    func.block_mut(call_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        user_dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(user_dst_non_null, MirType::Bool);
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_helper_copy_from_user_accepts_user_src() {
     let (func, types) = make_copy_from_user_verify_call(16, 16, false, 0);
@@ -5532,6 +5588,12 @@ fn test_verify_mir_helper_copy_from_user_task_accepts_task_arg() {
 }
 
 #[test]
+fn test_verify_mir_helper_probe_write_user_accepts_user_dst() {
+    let (func, types) = make_probe_write_user_verify_call(16, 16);
+    verify_mir(&func, &types).expect("expected bpf_probe_write_user helper to verify");
+}
+
+#[test]
 fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
     let (func, types) = make_copy_from_user_verify_call(16, 8, false, 0);
     let err = verify_mir(&func, &types).expect_err("expected copy_from_user bounds error");
@@ -5539,6 +5601,54 @@ fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
         err.iter().any(|e| e
             .message
             .contains("helper copy_from_user dst out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_probe_write_user_rejects_small_source_buffer() {
+    let (func, types) = make_probe_write_user_verify_call(16, 8);
+    let err = verify_mir(&func, &types).expect_err("expected probe_write_user bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper probe_write_user src out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_probe_write_user_rejects_stack_dst() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::ProbeWriteUser as u32,
+            args: vec![
+                MirValue::StackSlot(dst_slot),
+                MirValue::StackSlot(src_slot),
+                MirValue::Const(8),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected probe_write_user dst error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper probe_write_user dst expects pointer in [User]")),
         "unexpected errors: {:?}",
         err
     );

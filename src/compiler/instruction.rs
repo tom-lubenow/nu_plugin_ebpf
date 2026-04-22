@@ -66,6 +66,8 @@ pub enum BpfHelper {
     ProbeReadUser = 112,
     /// long bpf_probe_read_kernel(dst, size, unsafe_ptr)
     ProbeReadKernel = 113,
+    /// long bpf_probe_write_user(user_dst, src, len)
+    ProbeWriteUser = 36,
     /// long bpf_copy_from_user(dst, size, user_ptr)
     CopyFromUser = 148,
     /// u64 bpf_ktime_get_ns(void)
@@ -407,6 +409,7 @@ impl BpfHelper {
             BpfHelper::ProbeReadStr => "bpf_probe_read_str",
             BpfHelper::ProbeReadUser => "bpf_probe_read_user",
             BpfHelper::ProbeReadKernel => "bpf_probe_read_kernel",
+            BpfHelper::ProbeWriteUser => "bpf_probe_write_user",
             BpfHelper::CopyFromUser => "bpf_copy_from_user",
             BpfHelper::KtimeGetNs => "bpf_ktime_get_ns",
             BpfHelper::TracePrintk => "bpf_trace_printk",
@@ -589,6 +592,7 @@ impl BpfHelper {
             "probe_read_str" => Some(Self::ProbeReadStr),
             "probe_read_user" => Some(Self::ProbeReadUser),
             "probe_read_kernel" => Some(Self::ProbeReadKernel),
+            "probe_write_user" => Some(Self::ProbeWriteUser),
             "copy_from_user" => Some(Self::CopyFromUser),
             "ktime_get_ns" => Some(Self::KtimeGetNs),
             "trace_printk" => Some(Self::TracePrintk),

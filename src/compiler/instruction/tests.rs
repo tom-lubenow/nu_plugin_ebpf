@@ -275,6 +275,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::CopyFromUser)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_probe_write_user"),
+        Some(BpfHelper::ProbeWriteUser)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("copy_from_user_task"),
         Some(BpfHelper::CopyFromUserTask)
     ));
@@ -531,6 +535,18 @@ fn test_helper_signature_copy_from_user_task() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_probe_write_user() {
+    let sig = HelperSignature::for_id(BpfHelper::ProbeWriteUser as u32)
+        .expect("expected bpf_probe_write_user helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
@@ -2170,6 +2186,25 @@ fn test_get_task_stack_helper_contract() {
 
 #[test]
 fn test_copy_from_user_helper_contracts() {
+    let write_semantics = BpfHelper::ProbeWriteUser.semantics();
+    assert_eq!(write_semantics.positive_size_args, &[2]);
+    assert_eq!(write_semantics.ptr_arg_rules.len(), 2);
+
+    let user_dst = write_semantics.ptr_arg_rules[0];
+    assert_eq!(user_dst.arg_idx, 0);
+    assert_eq!(user_dst.op, "helper probe_write_user dst");
+    assert!(user_dst.allowed.allow_user);
+    assert!(!user_dst.allowed.allow_stack);
+    assert_eq!(user_dst.size_from_arg, Some(2));
+
+    let write_src = write_semantics.ptr_arg_rules[1];
+    assert_eq!(write_src.arg_idx, 1);
+    assert_eq!(write_src.op, "helper probe_write_user src");
+    assert!(write_src.allowed.allow_stack);
+    assert!(write_src.allowed.allow_map);
+    assert!(!write_src.allowed.allow_user);
+    assert_eq!(write_src.size_from_arg, Some(2));
+
     let semantics = BpfHelper::CopyFromUser.semantics();
     assert!(semantics.positive_size_args.is_empty());
     assert_eq!(semantics.ptr_arg_rules.len(), 2);

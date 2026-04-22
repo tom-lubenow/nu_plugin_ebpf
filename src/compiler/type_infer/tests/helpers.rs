@@ -7337,6 +7337,31 @@ fn make_copy_from_user_call(size: i64, buf_size: usize, with_task: bool) -> (Mir
     (func, dst)
 }
 
+fn make_probe_write_user_call(size: i64, src_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let user_dst = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(src_size, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: user_dst,
+        field: CtxField::Arg(0),
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeWriteUser as u32,
+        args: vec![
+            MirValue::VReg(user_dst),
+            MirValue::StackSlot(src_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 #[test]
 fn test_infer_helper_copy_from_user_returns_i64() {
     let (func, dst) = make_copy_from_user_call(16, 16, false);
@@ -7360,6 +7385,17 @@ fn test_infer_helper_copy_from_user_task_returns_i64() {
 }
 
 #[test]
+fn test_infer_helper_probe_write_user_returns_i64() {
+    let (func, dst) = make_probe_write_user_call(16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_probe_write_user helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_copy_from_user_rejects_small_buffer() {
     let (func, _) = make_copy_from_user_call(16, 8, false);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
@@ -7374,6 +7410,52 @@ fn test_type_error_copy_from_user_rejects_small_buffer() {
         "unexpected errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_type_error_probe_write_user_rejects_small_source_buffer() {
+    let (func, _) = make_probe_write_user_call(16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_probe_write_user source bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper probe_write_user src requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_probe_write_user_rejects_stack_dst() {
+    let mut func = make_test_function();
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeWriteUser as u32,
+        args: vec![
+            MirValue::StackSlot(dst_slot),
+            MirValue::StackSlot(src_slot),
+            MirValue::Const(8),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected probe_write_user destination pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper probe_write_user dst expects pointer in [User]")
+    }));
 }
 
 #[test]

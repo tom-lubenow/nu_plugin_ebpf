@@ -769,9 +769,11 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::XdpOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::GetStackId,
         },
-        BpfHelper::ProbeRead | BpfHelper::ProbeReadStr => HelperProgramSurfaceSpec {
-            family: HelperProgramSurfaceFamily::LegacyProbeRead,
-        },
+        BpfHelper::ProbeRead | BpfHelper::ProbeReadStr | BpfHelper::ProbeWriteUser => {
+            HelperProgramSurfaceSpec {
+                family: HelperProgramSurfaceFamily::LegacyProbeRead,
+            }
+        }
         BpfHelper::GetSocketCookie => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketCookie,
         },
