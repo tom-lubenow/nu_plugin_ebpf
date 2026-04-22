@@ -9122,6 +9122,20 @@ fn test_compile_cgroup_sock_addr_sendmsg6_ctx_msg_src_ip6_store_program() {
 }
 
 #[test]
+fn test_compile_cgroup_sock_addr_unix_ctx_sun_path_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+        CellPath {
+            members: vec![string_member("sun_path")],
+        },
+        HirLiteral::String(b"/tmp/nu-ebpf.sock".to_vec()),
+        HirLiteral::String(b"allow".to_vec()),
+        "cgroup_sock_addr:connect_unix ctx.sun_path store",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sockopt_set_ctx_level_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::CgroupSockopt,

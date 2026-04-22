@@ -116,6 +116,17 @@ pub(super) const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
+pub(super) const CGROUP_SOCK_ADDR_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::HelperCalls,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::Globals,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
 
 pub(super) const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Kprobe,
@@ -820,7 +831,7 @@ pub(super) const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::CgroupSockAddr,
     target_kind: ProgramTargetKind::CgroupPathSockAddrAttachType,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: CGROUP_SOCK_ADDR_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };

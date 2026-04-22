@@ -1,3 +1,4 @@
+use crate::compiler::EbpfProgramType;
 use crate::program_spec::{ProgramSpec, StructOpsFamily};
 
 const SCHED_EXT_DISPATCH_ONLY_KFUNCS: &[&str] = &[
@@ -47,6 +48,23 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
 
 impl ProgramSpec {
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
+        if kfunc == "bpf_sock_addr_set_sun_path"
+            && self.program_type() != EbpfProgramType::CgroupSockAddr
+        {
+            return Some(
+                "kfunc 'bpf_sock_addr_set_sun_path' is only valid in cgroup_sock_addr programs"
+                    .to_string(),
+            );
+        }
+        if self.program_type() == EbpfProgramType::CgroupSockAddr
+            && kfunc != "bpf_sock_addr_set_sun_path"
+        {
+            return Some(format!(
+                "kfunc '{}' is not modeled for cgroup_sock_addr programs",
+                kfunc
+            ));
+        }
+
         let Some((StructOpsFamily::SchedExt, sleepable)) =
             self.attach_shape().struct_ops_callback()
         else {
@@ -121,6 +139,33 @@ mod tests {
         assert_eq!(
             tcp_congestion.kfunc_call_error("scx_bpf_dispatch_nr_slots"),
             None
+        );
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_policy_limits_sock_addr_set_sun_path_to_sock_addr() {
+        let sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+            .expect("expected cgroup_sock_addr unix spec");
+        assert_eq!(
+            sock_addr.kfunc_call_error("bpf_sock_addr_set_sun_path"),
+            None
+        );
+
+        let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
+            .expect("expected xdp spec");
+        assert_eq!(
+            xdp.kfunc_call_error("bpf_sock_addr_set_sun_path"),
+            Some(
+                "kfunc 'bpf_sock_addr_set_sun_path' is only valid in cgroup_sock_addr programs"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            sock_addr.kfunc_call_error("bpf_task_from_pid"),
+            Some(
+                "kfunc 'bpf_task_from_pid' is not modeled for cgroup_sock_addr programs"
+                    .to_string()
+            )
         );
     }
 }

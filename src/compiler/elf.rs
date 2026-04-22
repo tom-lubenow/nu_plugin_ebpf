@@ -1260,6 +1260,7 @@ pub(crate) enum CtxWriteTarget {
     SysctlNewValue,
     SockoptOptvalByte(usize),
     AssignSocket,
+    CgroupSockAddrSunPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

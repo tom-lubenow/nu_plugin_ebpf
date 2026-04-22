@@ -109,6 +109,12 @@ impl KfuncSignature {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_sock_addr_set_sun_path" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_copy_from_user_str" => Some(Self {
                 min_args: 4,
                 max_args: 4,

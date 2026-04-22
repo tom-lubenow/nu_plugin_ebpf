@@ -2224,6 +2224,18 @@ fn test_kfunc_signature_map_sum_elem_count() {
 }
 
 #[test]
+fn test_kfunc_signature_sock_addr_set_sun_path() {
+    let sig = KfuncSignature::for_name("bpf_sock_addr_set_sun_path")
+        .expect("expected bpf_sock_addr_set_sun_path kfunc signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+}
+
+#[test]
 fn test_kfunc_signature_copy_from_user_strs() {
     let sig = KfuncSignature::for_name("bpf_copy_from_user_str")
         .expect("expected bpf_copy_from_user_str kfunc signature");
@@ -3348,6 +3360,22 @@ fn test_kfunc_semantics_path_d_path_buffer_rule() {
     let rule = semantics.ptr_arg_rules[0];
     assert_eq!(rule.arg_idx, 1);
     assert_eq!(rule.op, "kfunc path_d_path buffer");
+    assert!(rule.allowed.allow_stack);
+    assert!(rule.allowed.allow_map);
+    assert!(!rule.allowed.allow_kernel);
+    assert!(!rule.allowed.allow_user);
+    assert_eq!(rule.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_kfunc_semantics_sock_addr_set_sun_path_rules() {
+    let semantics = kfunc_semantics("bpf_sock_addr_set_sun_path");
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let rule = semantics.ptr_arg_rules[0];
+    assert_eq!(rule.arg_idx, 1);
+    assert_eq!(rule.op, "kfunc bpf_sock_addr_set_sun_path path");
     assert!(rule.allowed.allow_stack);
     assert!(rule.allowed.allow_map);
     assert!(!rule.allowed.allow_kernel);

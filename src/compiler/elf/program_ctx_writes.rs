@@ -32,6 +32,7 @@ enum ContextWriteTargetSpec {
     SysctlNewValue,
     SockoptOptvalByte,
     AssignSocket,
+    CgroupSockAddrSunPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +40,7 @@ enum ContextWriteAvailability {
     CgroupSockCreateReleaseOnly,
     CgroupSockoptSetOnly,
     CgroupSkbEgressOnly,
+    CgroupSockAddrUnixOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +193,14 @@ impl ContextWriteTargetSpec {
                     .helper_call_error(BpfHelper::SkAssign)
                     .map_or(Ok(CtxWriteTarget::AssignSocket), Err),
             },
+            Self::CgroupSockAddrSunPath => match index {
+                Some(_) => Err(format!(
+                    "ctx.{field_name} does not support indexed assignment"
+                )),
+                None => spec
+                    .kfunc_call_error("bpf_sock_addr_set_sun_path")
+                    .map_or(Ok(CtxWriteTarget::CgroupSockAddrSunPath), Err),
+            },
         }
     }
 
@@ -200,6 +210,7 @@ impl ContextWriteTargetSpec {
             Self::SysctlNewValue => false,
             Self::SockoptOptvalByte => false,
             Self::AssignSocket => false,
+            Self::CgroupSockAddrSunPath => false,
         }
     }
 }
@@ -223,6 +234,15 @@ impl ContextWriteAvailability {
                     "ctx.{field_name} is only writable on tc_action, tc, and cgroup_skb:egress programs"
                 )
             }),
+            Self::CgroupSockAddrUnixOnly => attach_shape.cgroup_sock_addr().and_then(
+                |(family, _)| {
+                    (family != ProgramAttachAddressFamily::Unix).then(|| {
+                        format!(
+                            "ctx.{field_name} is only writable on cgroup_sock_addr UNIX hooks"
+                        )
+                    })
+                },
+            ),
         }
     }
 }
@@ -306,11 +326,13 @@ impl ContextWriteSurfaceSpec {
                     CtxWriteTarget::SysctlNewValue => unreachable!(),
                     CtxWriteTarget::SockoptOptvalByte(_) => unreachable!(),
                     CtxWriteTarget::AssignSocket => unreachable!(),
+                    CtxWriteTarget::CgroupSockAddrSunPath => unreachable!(),
                 },
             )),
             ContextWriteTargetSpec::SysctlNewValue => None,
             ContextWriteTargetSpec::SockoptOptvalByte => None,
             ContextWriteTargetSpec::AssignSocket => None,
+            ContextWriteTargetSpec::CgroupSockAddrSunPath => None,
         }
     }
 
@@ -495,6 +517,11 @@ const CGROUP_SOCKOPT_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
 ];
 
 const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::special_write(
+        "sun_path",
+        ContextWriteTargetSpec::CgroupSockAddrSunPath,
+    )
+    .with_availability(ContextWriteAvailability::CgroupSockAddrUnixOnly),
     ContextWriteSurfaceSpec::store_field(
         "user_ip4",
         CtxField::UserIp4,

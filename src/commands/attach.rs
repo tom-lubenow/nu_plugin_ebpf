@@ -679,13 +679,15 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     {|ctx| $ctx.msg_src_ip4 } - Get the IPv4 source address in host byte order on sendmsg4
     {|ctx| $ctx.msg_src_ip6 } - Get the IPv6 source address as four host-order u32 words on sendmsg6
+    {mut ctx = $ctx; $ctx.sun_path = "/tmp/demo.sock"} - Set the UNIX sockaddr path on *_unix hooks
     Note: cgroup_sock_addr closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. UNIX socket-address hooks (`connect_unix`,
     `sendmsg_unix`, `recvmsg_unix`, `getpeername_unix`, and
     `getsockname_unix`) are compile/dry-run only and expose common socket
     metadata such as `ctx.user_family`, `ctx.family`, `ctx.sock_type`,
-    `ctx.protocol`, and `ctx.sk`; they intentionally do not reinterpret
-    IPv4/IPv6 tuple aliases as UNIX path fields. This initial slice still
+    `ctx.protocol`, and `ctx.sk`; UNIX path mutation is modeled as ordinary
+    `ctx.sun_path` assignment backed by `bpf_sock_addr_set_sun_path` instead of
+    reinterpreting IPv4/IPv6 tuple aliases as UNIX path fields. This initial slice still
     exposes IPv6 addresses as fixed arrays of four u32 words rather than a
     higher-level address type. `ctx.sk` uses the same typed `bpf_sock` projection model as
     `cgroup_sock`, `cgroup_sockopt`, `sock_ops`, `sk_lookup`, and `sk_msg`.

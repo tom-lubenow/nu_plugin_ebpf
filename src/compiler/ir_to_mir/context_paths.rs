@@ -479,6 +479,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_socket_assignment_update(new_value, &path_desc)?;
                 return Ok(());
             }
+            CtxWriteTarget::CgroupSockAddrSunPath => {
+                self.lower_cgroup_sock_addr_sun_path_update(src_dst, new_value, &path_desc)?;
+                return Ok(());
+            }
         }
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = true;
@@ -514,6 +518,21 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(status_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn materialize_value_arg_vreg(&mut self, value: MirValue, ty: MirType) -> VReg {
+        match value {
+            MirValue::VReg(vreg) => vreg,
+            other => {
+                let vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: vreg,
+                    src: other,
+                });
+                self.vreg_type_hints.insert(vreg, ty);
+                vreg
+            }
+        }
     }
 
     fn sysctl_new_value_len_arg(
@@ -561,18 +580,19 @@ impl<'a> HirToMirLowering<'a> {
         })?))
     }
 
-    fn materialize_sysctl_new_value_buffer(
+    fn materialize_context_byte_buffer(
         &mut self,
         new_value: RegId,
         new_value_vreg: VReg,
         path_desc: &str,
+        value_desc: &str,
     ) -> Result<(VReg, MirValue), CompileError> {
         let value_ty = self
             .typed_value_runtime_type(new_value, new_value_vreg)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
-                    "context cell path update '.{} = ...' requires type information for the new sysctl value",
-                    path_desc
+                    "context cell path update '.{} = ...' requires type information for {}",
+                    path_desc, value_desc
                 ))
             })?;
 
@@ -629,6 +649,60 @@ impl<'a> HirToMirLowering<'a> {
         Ok((buf_vreg, len_arg))
     }
 
+    fn lower_cgroup_sock_addr_sun_path_update(
+        &mut self,
+        src_dst: RegId,
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
+        };
+        if let Some(message) = ctx.kfunc_call_error("bpf_sock_addr_set_sun_path") {
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+
+        let new_value_vreg = self.get_vreg(new_value);
+        let (buf_vreg, len_arg) = self.materialize_context_byte_buffer(
+            new_value,
+            new_value_vreg,
+            path_desc,
+            "the new UNIX socket path",
+        )?;
+        if let MirValue::Const(len) = &len_arg {
+            if *len <= 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' requires a non-empty UNIX socket path",
+                    path_desc
+                )));
+            }
+            if *len > 108 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "context cell path update '.{} = ...' UNIX socket path is too long (max 108 bytes)",
+                    path_desc
+                )));
+            }
+        }
+
+        let ctx_vreg = self.materialize_context_pointer_arg();
+        let len_vreg = self.materialize_value_arg_vreg(len_arg, MirType::U32);
+        let ret_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::CallKfunc {
+            dst: ret_vreg,
+            kfunc: "bpf_sock_addr_set_sun_path".to_string(),
+            btf_id: None,
+            args: vec![ctx_vreg, buf_vreg, len_vreg],
+        });
+        self.vreg_type_hints.insert(ret_vreg, MirType::I64);
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
+    }
+
     fn lower_cgroup_sysctl_new_value_update(
         &mut self,
         src_dst: RegId,
@@ -646,8 +720,12 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let new_value_vreg = self.get_vreg(new_value);
-        let (buf_vreg, len_arg) =
-            self.materialize_sysctl_new_value_buffer(new_value, new_value_vreg, path_desc)?;
+        let (buf_vreg, len_arg) = self.materialize_context_byte_buffer(
+            new_value,
+            new_value_vreg,
+            path_desc,
+            "the new sysctl value",
+        )?;
         let ctx_vreg = self.materialize_context_pointer_arg();
         let ret_vreg = self.func.alloc_vreg();
         self.emit(MirInst::CallHelper {

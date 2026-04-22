@@ -5055,6 +5055,33 @@ fn test_probe_context_rejects_socket_assignment_on_tc_egress() {
 }
 
 #[test]
+fn test_probe_context_resolves_cgroup_sock_addr_unix_sun_path_write_target() {
+    let ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+    assert_eq!(
+        ctx.resolve_ctx_write_target("sun_path", None)
+            .expect("cgroup_sock_addr unix sun_path write target should resolve"),
+        CtxWriteTarget::CgroupSockAddrSunPath
+    );
+
+    let err = ctx
+        .resolve_ctx_write_target("sun_path", Some(0))
+        .expect_err("sun_path indexed assignment should be rejected");
+    assert!(err.contains("does not support indexed assignment"));
+}
+
+#[test]
+fn test_probe_context_rejects_cgroup_sock_addr_inet_sun_path_write_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let err = ctx
+        .resolve_ctx_write_target("sun_path", None)
+        .expect_err("inet cgroup_sock_addr sun_path write target should reject");
+    assert!(err.contains("ctx.sun_path is only writable on cgroup_sock_addr UNIX hooks"));
+}
+
+#[test]
 fn test_probe_context_resolves_skb_tstamp_store_target_on_tc() {
     let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     assert_eq!(

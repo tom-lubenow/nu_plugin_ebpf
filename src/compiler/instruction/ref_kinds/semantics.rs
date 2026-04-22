@@ -15,6 +15,13 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         fixed_size: None,
         size_from_arg: Some(2),
     }];
+    const SOCK_ADDR_SET_SUN_PATH_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 1,
+        op: "kfunc bpf_sock_addr_set_sun_path path",
+        allowed: STACK_MAP,
+        fixed_size: None,
+        size_from_arg: Some(2),
+    }];
     const SCX_EVENTS_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
         arg_idx: 0,
         op: "kfunc scx_bpf_events events",
@@ -276,6 +283,10 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     match kfunc {
         "bpf_path_d_path" => KfuncSemantics {
             ptr_arg_rules: PATH_D_PATH_RULES,
+            positive_size_args: &[2],
+        },
+        "bpf_sock_addr_set_sun_path" => KfuncSemantics {
+            ptr_arg_rules: SOCK_ADDR_SET_SUN_PATH_RULES,
             positive_size_args: &[2],
         },
         "bpf_copy_from_user_str" => KfuncSemantics {
