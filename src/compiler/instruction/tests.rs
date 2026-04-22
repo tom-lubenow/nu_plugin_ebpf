@@ -2445,6 +2445,14 @@ fn test_bprm_opts_set_helper_contract() {
     let semantics = BpfHelper::BprmOptsSet.semantics();
     assert!(semantics.positive_size_args.is_empty());
     assert_eq!(semantics.ptr_arg_rules.len(), 1);
+    assert_eq!(
+        BpfHelper::BprmOptsSet.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            1,
+            "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits (0x01)"
+        ))
+    );
 
     let bprm = semantics.ptr_arg_rules[0];
     assert_eq!(bprm.arg_idx, 0);

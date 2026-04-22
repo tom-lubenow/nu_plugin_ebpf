@@ -880,6 +880,11 @@ impl BpfHelper {
                 15,
                 "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits (0x0f)",
             )),
+            (Self::BprmOptsSet, 1) => Some((
+                0,
+                1,
+                "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits (0x01)",
+            )),
             _ => None,
         }
     }

@@ -13419,6 +13419,19 @@ fn test_verify_mir_helper_bprm_opts_set_accepts_kernel_bprm() {
 }
 
 #[test]
+fn test_verify_mir_helper_bprm_opts_set_rejects_invalid_flags() {
+    let (func, types) = make_bprm_opts_set_vcc_call(2);
+    let err = verify_mir(&func, &types).expect_err("expected bprm opts flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_bprm_opts_set' requires arg1 flags")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_bprm_opts_set_rejects_stack_bprm() {
     let (mut func, entry) = new_mir_function();
 

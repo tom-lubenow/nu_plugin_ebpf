@@ -7619,6 +7619,20 @@ fn test_infer_helper_bprm_opts_set_returns_i64() {
 }
 
 #[test]
+fn test_type_error_bprm_opts_set_rejects_invalid_flags() {
+    let (func, _) = make_bprm_opts_set_call(2);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "bprm_check_security");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_bprm_opts_set flags error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_bprm_opts_set' requires arg1 flags")
+    }));
+}
+
+#[test]
 fn test_type_error_bprm_opts_set_rejects_stack_bprm() {
     let mut func = make_test_function();
     let bprm_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
