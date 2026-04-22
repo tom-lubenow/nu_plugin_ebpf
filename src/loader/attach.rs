@@ -20,16 +20,53 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
     )
 }
 
+fn unsupported_live_attach_detail(kind: ProgramAttachKind) -> &'static str {
+    match kind {
+        ProgramAttachKind::RawTracepointWritable => {
+            "the current object loader does not preserve writable raw-tracepoint sections, and rewriting them as raw_tracepoint would change verifier semantics"
+        }
+        ProgramAttachKind::FmodRet => {
+            "the current Aya loader surface does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support"
+        }
+        ProgramAttachKind::LsmCgroup => {
+            "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
+        }
+        ProgramAttachKind::Netkit => {
+            "the current Aya loader surface does not expose a netkit attach wrapper"
+        }
+        ProgramAttachKind::TcAction => {
+            "the current Aya loader surface does not expose a tc_action attach wrapper"
+        }
+        ProgramAttachKind::SkReuseport => {
+            "the current Aya loader surface does not expose a sk_reuseport attach wrapper"
+        }
+        ProgramAttachKind::FlowDissector => {
+            "the current Aya loader surface does not expose a flow-dissector attach wrapper"
+        }
+        ProgramAttachKind::Netfilter => "the loader still needs BPF-link netfilter attach support",
+        ProgramAttachKind::Lwt => "the loader still needs route LWT attach support",
+        ProgramAttachKind::Extension => {
+            "extension/freplace live attach requires a loaded target program and BTF/function pairing, not only a target function name"
+        }
+        ProgramAttachKind::Syscall => {
+            "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
+        }
+        _ => "this attach kind has no live attach implementation",
+    }
+}
+
 fn unsupported_live_attach_error(prog_type: crate::compiler::EbpfProgramType) -> LoadError {
+    let attach_kind = prog_type.attach_kind();
     LoadError::Attach(format!(
-        "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
-        prog_type.canonical_prefix()
+        "live attach for {} programs is not supported by this loader yet; {}; use --dry-run to compile",
+        prog_type.canonical_prefix(),
+        unsupported_live_attach_detail(attach_kind)
     ))
 }
 
 fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> LoadError {
     LoadError::Attach(format!(
-        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; use --dry-run to compile",
+        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks; use --dry-run to compile",
         target.attach_type_name()
     ))
 }

@@ -506,6 +506,7 @@ Near-term priority order:
   - Recent progress: socket tuple context diagnostics now match the expanded modeled surface, including `cgroup_sock` and `cgroup_sock_addr` alongside skb/socket-message/socket-lookup/sock_ops families.
   - Recent progress: unknown-kfunc diagnostics now indicate when the symbol exists in kernel BTF but lacks a compiler-side typed signature.
   - Recent progress: annotated mutable-global failures now explain when `null` cannot honestly fix string/list/binary capacity, and point users toward concrete exemplars or `global-define --type ...` instead of reporting a generic unsupported-type error.
+  - Recent progress: compile-only live-attach rejections now include attach-family-specific blocker details for raw_tracepoint.w, fmod_ret, lsm_cgroup, netkit, tc_action, sk_reuseport, flow_dissector, netfilter, lwt_*, freplace, syscall, and cgroup_sock_addr UNIX hooks instead of only a generic unsupported-loader message.
 
 - [~] Build a compatibility test matrix.
   - Add automated tests that exercise compilation and loading across representative kernel versions/configs.

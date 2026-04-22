@@ -1367,29 +1367,91 @@ fn test_attach_with_pin_rejects_struct_ops_objects() {
 fn test_attach_rejects_compile_only_programs_before_loading() {
     let state = EbpfState::new();
 
-    for (prog_type, target, label) in [
+    for (prog_type, target, label, detail) in [
         (
             EbpfProgramType::RawTracepointWritable,
             "sys_enter",
             "raw_tracepoint.w",
+            "does not preserve writable raw-tracepoint sections",
         ),
-        (EbpfProgramType::TcAction, "demo-action", "tc_action"),
-        (EbpfProgramType::Netkit, "lo:primary", "netkit"),
-        (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
-        (EbpfProgramType::LsmCgroup, "socket_bind", "lsm_cgroup"),
-        (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
+        (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            "tc_action",
+            "does not expose a tc_action attach wrapper",
+        ),
+        (
+            EbpfProgramType::Netkit,
+            "lo:primary",
+            "netkit",
+            "does not expose a netkit attach wrapper",
+        ),
+        (
+            EbpfProgramType::FmodRet,
+            "do_sys_openat2",
+            "fmod_ret",
+            "does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup",
+            "requires cgroup-aware BPF link setup",
+        ),
+        (
+            EbpfProgramType::SkReuseport,
+            "select",
+            "sk_reuseport",
+            "does not expose a sk_reuseport attach wrapper",
+        ),
         (
             EbpfProgramType::FlowDissector,
             "/proc/self/ns/net",
             "flow_dissector",
+            "does not expose a flow-dissector attach wrapper",
         ),
-        (EbpfProgramType::Netfilter, "ipv4:pre_routing", "netfilter"),
-        (EbpfProgramType::LwtIn, "demo-route", "lwt_in"),
-        (EbpfProgramType::LwtOut, "demo-route", "lwt_out"),
-        (EbpfProgramType::LwtXmit, "demo-route", "lwt_xmit"),
-        (EbpfProgramType::LwtSeg6Local, "demo-route", "lwt_seg6local"),
-        (EbpfProgramType::Extension, "replace_me", "freplace"),
-        (EbpfProgramType::Syscall, "demo", "syscall"),
+        (
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            "netfilter",
+            "needs BPF-link netfilter attach support",
+        ),
+        (
+            EbpfProgramType::LwtIn,
+            "demo-route",
+            "lwt_in",
+            "needs route LWT attach support",
+        ),
+        (
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            "lwt_out",
+            "needs route LWT attach support",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            "lwt_xmit",
+            "needs route LWT attach support",
+        ),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            "lwt_seg6local",
+            "needs route LWT attach support",
+        ),
+        (
+            EbpfProgramType::Extension,
+            "replace_me",
+            "freplace",
+            "requires a loaded target program and BTF/function pairing",
+        ),
+        (
+            EbpfProgramType::Syscall,
+            "demo",
+            "syscall",
+            "has no ordinary hook attach in this loader",
+        ),
     ] {
         let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();
         let err = state
@@ -1402,7 +1464,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
                 LoadError::Attach(ref msg)
                     if msg.contains(&format!(
                         "live attach for {label} programs is not supported by this loader yet"
-                    )) && msg.contains("use --dry-run to compile")
+                    )) && msg.contains(detail) && msg.contains("use --dry-run to compile")
             ),
             "unexpected live-attach error for {label}: {err:?}"
         );
@@ -1429,6 +1491,7 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
             err,
             LoadError::Attach(ref msg)
                 if msg.contains("live attach for cgroup_sock_addr connect_unix hooks is not supported by this loader yet")
+                    && msg.contains("does not expose BPF_CGROUP_UNIX_* hooks")
                     && msg.contains("use --dry-run to compile")
         ),
         "unexpected cgroup_sock_addr unix live-attach error: {err:?}"
