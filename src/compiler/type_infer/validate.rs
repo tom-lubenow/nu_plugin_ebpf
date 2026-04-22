@@ -84,6 +84,7 @@ impl<'a> TypeInference<'a> {
             MirInst::EmitEvent { .. } | MirInst::EmitRecord { .. } => Some(ProgramCapability::Emit),
             MirInst::Histogram { .. } => Some(ProgramCapability::Histograms),
             MirInst::StartTimer | MirInst::StopTimer { .. } => Some(ProgramCapability::Timers),
+            MirInst::CallHelper { .. } => Some(ProgramCapability::HelperCalls),
             MirInst::CallKfunc { .. } => Some(ProgramCapability::KfuncCalls),
             MirInst::TailCall { .. } => Some(ProgramCapability::TailCalls),
             MirInst::LoadMapFd { .. } => Some(ProgramCapability::GenericMaps),

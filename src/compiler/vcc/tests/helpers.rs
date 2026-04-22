@@ -1734,6 +1734,36 @@ fn test_verify_mir_for_program_rejects_missing_tail_call_capability() {
 }
 
 #[test]
+fn test_verify_mir_for_program_rejects_missing_helper_call_capability() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
+
+    let limited_program = ProgramTypeInfo {
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetCurrentPidTgid as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir_for_program(&func, &types, &limited_program)
+        .expect_err("expected helper-call capability rejection");
+    assert!(
+        err.iter().any(|e| e.message.contains("helper calls")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_program_redirect_requires_zero_flags_in_xdp() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

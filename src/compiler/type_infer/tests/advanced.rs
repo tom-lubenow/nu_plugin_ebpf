@@ -1222,6 +1222,42 @@ fn test_required_program_capability_classifies_stack_trace_ctx_load() {
 }
 
 #[test]
+fn test_required_program_capability_classifies_helper_calls() {
+    let inst = MirInst::CallHelper {
+        dst: VReg(0),
+        helper: BpfHelper::GetCurrentPidTgid as u32,
+        args: vec![],
+    };
+
+    assert_eq!(
+        TypeInference::required_program_capability(&inst),
+        Some(ProgramCapability::HelperCalls)
+    );
+}
+
+#[test]
+fn test_validate_program_capability_rejects_helpers_when_capability_missing() {
+    const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
+
+    let limited_program = ProgramTypeInfo {
+        supported_capabilities: LIMITED_CAPABILITIES,
+        ..*EbpfProgramType::Kprobe.info()
+    };
+    let inst = MirInst::CallHelper {
+        dst: VReg(0),
+        helper: BpfHelper::GetCurrentPidTgid as u32,
+        args: vec![],
+    };
+    let mut errors = Vec::new();
+
+    TypeInference::validate_program_capability_for_info(&inst, &limited_program, &mut errors);
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("helper calls"));
+    assert!(errors[0].message.contains("kprobe programs"));
+}
+
+#[test]
 fn test_validate_program_capability_rejects_kfuncs_when_capability_missing() {
     const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
 
