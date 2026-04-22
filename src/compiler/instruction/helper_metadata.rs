@@ -127,6 +127,8 @@ impl BpfHelper {
             102 => Some(Self::SysctlGetCurrentValue),
             103 => Some(Self::SysctlGetNewValue),
             104 => Some(Self::SysctlSetNewValue),
+            105 => Some(Self::Strtol),
+            106 => Some(Self::Strtoul),
             107 => Some(Self::SkStorageGet),
             108 => Some(Self::SkStorageDelete),
             110 => Some(Self::TcpGenSyncookie),
@@ -673,6 +675,12 @@ impl BpfHelper {
                 min_args: 3,
                 max_args: 3,
                 arg_kinds: [P, P, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::Strtol | BpfHelper::Strtoul => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, P, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkAssign => HelperSignature {

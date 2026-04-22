@@ -1937,6 +1937,60 @@ fn test_verify_mir_get_ns_current_pid_tgid_rejects_small_buffer() {
     );
 }
 
+fn make_strtox_verify_call(
+    helper: BpfHelper,
+    buf_len: i64,
+    buf_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(buf_len),
+                MirValue::Const(0),
+                MirValue::StackSlot(res_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_strtox_helpers() {
+    for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
+        let (func, types) = make_strtox_verify_call(helper, 8, 8);
+        verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+            .expect("expected string conversion helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_strtox_helper_rejects_small_buffer() {
+    let (func, types) = make_strtox_verify_call(BpfHelper::Strtol, 16, 8);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected string conversion buffer bounds error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper strtox buf out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_packet_output_verify_call(
     helper: BpfHelper,
     size: i64,

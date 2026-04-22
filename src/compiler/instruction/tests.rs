@@ -255,6 +255,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetNsCurrentPidTgid)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_strtol"),
+        Some(BpfHelper::Strtol)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("strtoul"),
+        Some(BpfHelper::Strtoul)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -484,6 +492,47 @@ fn test_helper_signatures_sysctl_helpers() {
         assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+}
+
+#[test]
+fn test_helper_signature_strtox_helpers() {
+    for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {} helper signature", helper.name()));
+        assert_eq!(sig.min_args, 4);
+        assert_eq!(sig.max_args, 4);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+}
+
+#[test]
+fn test_strtox_helper_contracts() {
+    for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
+        let semantics = helper.semantics();
+        assert_eq!(semantics.positive_size_args, &[1]);
+        assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+        let buf = semantics.ptr_arg_rules[0];
+        assert_eq!(buf.arg_idx, 0);
+        assert_eq!(buf.op, "helper strtox buf");
+        assert!(buf.allowed.allow_stack);
+        assert!(buf.allowed.allow_map);
+        assert!(!buf.allowed.allow_kernel);
+        assert_eq!(buf.size_from_arg, Some(1));
+
+        let res = semantics.ptr_arg_rules[1];
+        assert_eq!(res.arg_idx, 3);
+        assert_eq!(res.op, "helper strtox res");
+        assert!(res.allowed.allow_stack);
+        assert!(res.allowed.allow_map);
+        assert!(!res.allowed.allow_kernel);
+        assert_eq!(res.fixed_size, Some(8));
+        assert_eq!(res.size_from_arg, None);
     }
 }
 

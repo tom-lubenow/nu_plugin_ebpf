@@ -364,6 +364,23 @@ impl BpfHelper {
             },
         ];
 
+        const STRTOX_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper strtox buf",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper strtox res",
+                allowed: STACK_MAP,
+                fixed_size: Some(8),
+                size_from_arg: None,
+            },
+        ];
+
         const SET_SOCKOPT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1355,6 +1372,11 @@ impl BpfHelper {
             BpfHelper::SysctlSetNewValue => HelperSemantics {
                 ptr_arg_rules: SYSCTL_SET_VALUE_RULES,
                 positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::Strtol | BpfHelper::Strtoul => HelperSemantics {
+                ptr_arg_rules: STRTOX_RULES,
+                positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::MsgApplyBytes => HelperSemantics {

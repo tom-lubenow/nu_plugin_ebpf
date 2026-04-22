@@ -294,6 +294,10 @@ pub enum BpfHelper {
     SysctlGetNewValue = 103,
     /// long bpf_sysctl_set_new_value(ctx, buf, buf_len)
     SysctlSetNewValue = 104,
+    /// long bpf_strtol(buf, buf_len, flags, res)
+    Strtol = 105,
+    /// long bpf_strtoul(buf, buf_len, flags, res)
+    Strtoul = 106,
     /// void *bpf_sk_storage_get(map, sk, value, flags)
     SkStorageGet = 107,
     /// long bpf_sk_storage_delete(map, sk)
@@ -491,6 +495,8 @@ impl BpfHelper {
             BpfHelper::SysctlGetCurrentValue => "bpf_sysctl_get_current_value",
             BpfHelper::SysctlGetNewValue => "bpf_sysctl_get_new_value",
             BpfHelper::SysctlSetNewValue => "bpf_sysctl_set_new_value",
+            BpfHelper::Strtol => "bpf_strtol",
+            BpfHelper::Strtoul => "bpf_strtoul",
             BpfHelper::SkStorageGet => "bpf_sk_storage_get",
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
@@ -658,6 +664,8 @@ impl BpfHelper {
             "sysctl_get_current_value" => Some(Self::SysctlGetCurrentValue),
             "sysctl_get_new_value" => Some(Self::SysctlGetNewValue),
             "sysctl_set_new_value" => Some(Self::SysctlSetNewValue),
+            "strtol" => Some(Self::Strtol),
+            "strtoul" => Some(Self::Strtoul),
             "sk_storage_get" => Some(Self::SkStorageGet),
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),
