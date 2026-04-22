@@ -2214,6 +2214,22 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbGetTunnelKey),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::SkbSetTunnelKey),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::SkbGetTunnelOpt),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_call_error(BpfHelper::SkbSetTunnelOpt),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbEcnSetCe),
         None
     );
@@ -2321,6 +2337,20 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbChangeType),
         Some("helper 'bpf_skb_change_type' is only valid in tc_action and tc programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbGetTunnelKey),
+        Some(
+            "helper 'bpf_skb_get_tunnel_key' is only valid in tc_action, tc, and lwt_xmit programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbSetTunnelOpt),
+        Some(
+            "helper 'bpf_skb_set_tunnel_opt' is only valid in tc_action, tc, and lwt_xmit programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::FibLookup),
@@ -2510,6 +2540,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::RedirectNeigh,
         BpfHelper::SkbChangeProto,
         BpfHelper::SkbChangeType,
+        BpfHelper::SkbGetTunnelKey,
+        BpfHelper::SkbSetTunnelKey,
+        BpfHelper::SkbGetTunnelOpt,
+        BpfHelper::SkbSetTunnelOpt,
         BpfHelper::SkbSetTstamp,
         BpfHelper::CheckMtu,
         BpfHelper::SkbPullData,

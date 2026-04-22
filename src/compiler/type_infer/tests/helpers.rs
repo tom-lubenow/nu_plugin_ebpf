@@ -1390,6 +1390,100 @@ fn test_type_error_fib_lookup_helper_rejects_small_params_buffer() {
     );
 }
 
+fn make_skb_tunnel_helper_call(
+    helper: BpfHelper,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buffer = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+    let args = if matches!(
+        helper,
+        BpfHelper::SkbGetTunnelKey | BpfHelper::SkbSetTunnelKey
+    ) {
+        vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buffer),
+            MirValue::Const(size),
+            MirValue::Const(0),
+        ]
+    } else {
+        vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buffer),
+            MirValue::Const(size),
+        ]
+    };
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args,
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_skb_tunnel_helpers_in_tc_and_lwt_xmit_programs() {
+    for helper in [
+        BpfHelper::SkbGetTunnelKey,
+        BpfHelper::SkbSetTunnelKey,
+        BpfHelper::SkbGetTunnelOpt,
+        BpfHelper::SkbSetTunnelOpt,
+    ] {
+        for probe_ctx in [
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+            ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
+            ProbeContext::new(EbpfProgramType::LwtXmit, "lwt-xmit"),
+        ] {
+            let (func, dst) = make_skb_tunnel_helper_call(helper, 16, 16);
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let types = ti
+                .infer(&func)
+                .expect("expected skb tunnel helper to infer");
+            assert_eq!(types.get(&dst), Some(&MirType::I64));
+        }
+    }
+}
+
+#[test]
+fn test_type_error_skb_tunnel_helpers_reject_non_tc_lwt_xmit_program() {
+    let (func, _) = make_skb_tunnel_helper_call(BpfHelper::SkbGetTunnelKey, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "lwt-out");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb tunnel helper to be rejected outside tc/lwt_xmit");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_skb_get_tunnel_key' is only valid in tc_action, tc, and lwt_xmit programs"
+    )));
+}
+
+#[test]
+fn test_type_error_skb_tunnel_helper_rejects_small_buffer() {
+    let (func, _) = make_skb_tunnel_helper_call(BpfHelper::SkbSetTunnelOpt, 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb tunnel buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper skb_tunnel buffer requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     for (helper, args) in [

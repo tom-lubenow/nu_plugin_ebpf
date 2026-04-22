@@ -28,6 +28,7 @@ enum HelperProgramSurfaceFamily {
     XdpTcLwtXmit,
     Tc,
     TcLwt,
+    TcLwtXmit,
     SkbLoadBytes,
     SkbLoadBytesRelative,
     PerfEventOutput,
@@ -161,6 +162,15 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtSeg6Local,
         ],
         label: "tc_action, tc, and lwt_*",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcLwtXmit,
+        program_types: &[
+            EbpfProgramType::TcAction,
+            EbpfProgramType::Tc,
+            EbpfProgramType::LwtXmit,
+        ],
+        label: "tc_action, tc, and lwt_xmit",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkbLoadBytes,
@@ -704,6 +714,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
                 family: HelperProgramSurfaceFamily::TcLwt,
             }
         }
+        BpfHelper::SkbGetTunnelKey
+        | BpfHelper::SkbSetTunnelKey
+        | BpfHelper::SkbGetTunnelOpt
+        | BpfHelper::SkbSetTunnelOpt => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TcLwtXmit,
+        },
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEventOutput,
         },

@@ -175,6 +175,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbVlanPop)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_get_tunnel_key"),
+        Some(BpfHelper::SkbGetTunnelKey)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("skb_set_tunnel_key"),
+        Some(BpfHelper::SkbSetTunnelKey)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_change_head"),
         Some(BpfHelper::SkbChangeHead)
     ));
@@ -197,6 +205,14 @@ fn test_bpf_helper_name_roundtrip() {
     assert!(matches!(
         BpfHelper::from_name("bpf_csum_diff"),
         Some(BpfHelper::CsumDiff)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_skb_get_tunnel_opt"),
+        Some(BpfHelper::SkbGetTunnelOpt)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("skb_set_tunnel_opt"),
+        Some(BpfHelper::SkbSetTunnelOpt)
     ));
     assert!(matches!(
         BpfHelper::from_name("bpf_fib_lookup"),
@@ -1114,6 +1130,29 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    for helper in [BpfHelper::SkbGetTunnelKey, BpfHelper::SkbSetTunnelKey] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected skb tunnel key signature");
+        assert_eq!(sig.min_args, 4);
+        assert_eq!(sig.max_args, 4);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    for helper in [BpfHelper::SkbGetTunnelOpt, BpfHelper::SkbSetTunnelOpt] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected skb tunnel opt signature");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
     let sig = HelperSignature::for_id(BpfHelper::CheckMtu as u32)
         .expect("expected bpf_check_mtu helper signature");
     assert_eq!(sig.min_args, 5);
@@ -1245,6 +1284,10 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::CsumLevel,
         BpfHelper::SkbEcnSetCe,
         BpfHelper::SkbChangeType,
+        BpfHelper::SkbGetTunnelKey,
+        BpfHelper::SkbSetTunnelKey,
+        BpfHelper::SkbGetTunnelOpt,
+        BpfHelper::SkbSetTunnelOpt,
     ] {
         assert!(
             !helper.invalidates_packet_pointers(),
@@ -1273,6 +1316,14 @@ fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbChangeType.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::CheckMtu.zero_scalar_arg_requirement(), None);
+    assert_eq!(
+        BpfHelper::SkbGetTunnelKey.zero_scalar_arg_requirement(),
+        None
+    );
+    assert_eq!(
+        BpfHelper::SkbSetTunnelKey.zero_scalar_arg_requirement(),
+        None
+    );
     assert_eq!(
         BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement_when_arg_zero(),
         Some((
@@ -1308,6 +1359,40 @@ fn test_fib_lookup_helper_contract() {
     assert!(!params.allowed.allow_user);
     assert_eq!(params.fixed_size, None);
     assert_eq!(params.size_from_arg, Some(2));
+}
+
+#[test]
+fn test_skb_tunnel_helpers_contract() {
+    for helper in [
+        BpfHelper::SkbGetTunnelKey,
+        BpfHelper::SkbSetTunnelKey,
+        BpfHelper::SkbGetTunnelOpt,
+        BpfHelper::SkbSetTunnelOpt,
+    ] {
+        let semantics = helper.semantics();
+        assert_eq!(semantics.positive_size_args, &[2]);
+        assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+        let skb = semantics.ptr_arg_rules[0];
+        assert_eq!(skb.arg_idx, 0);
+        assert_eq!(skb.op, "helper skb_tunnel skb");
+        assert!(skb.allowed.allow_kernel);
+        assert!(!skb.allowed.allow_stack);
+        assert!(!skb.allowed.allow_map);
+        assert!(!skb.allowed.allow_user);
+        assert_eq!(skb.fixed_size, None);
+        assert_eq!(skb.size_from_arg, None);
+
+        let buffer = semantics.ptr_arg_rules[1];
+        assert_eq!(buffer.arg_idx, 1);
+        assert_eq!(buffer.op, "helper skb_tunnel buffer");
+        assert!(buffer.allowed.allow_stack);
+        assert!(buffer.allowed.allow_map);
+        assert!(!buffer.allowed.allow_kernel);
+        assert!(!buffer.allowed.allow_user);
+        assert_eq!(buffer.fixed_size, None);
+        assert_eq!(buffer.size_from_arg, Some(2));
+    }
 }
 
 #[test]

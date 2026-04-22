@@ -133,6 +133,7 @@ Last updated: 2026-04-22.
   - Typed helper TC packet-shape coverage now includes `bpf_skb_change_proto` and `bpf_skb_change_type`, including zero reserved flags for `change_proto` and packet-pointer invalidation for protocol changes.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC/LWT helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.
   - Typed route-lookup helper coverage now includes `bpf_fib_lookup` on XDP/tc_action/TC, with ctx pointer checks and stack/map params-buffer bounds driven by `plen`.
+  - Typed skb tunnel metadata helper coverage now includes `bpf_skb_get_tunnel_key`, `bpf_skb_set_tunnel_key`, `bpf_skb_get_tunnel_opt`, and `bpf_skb_set_tunnel_opt` on tc_action/TC/lwt_xmit, with stack/map buffer bounds driven by the helper size argument.
   - Typed helper MTU-check coverage now includes `bpf_check_mtu` on XDP/tc_action/TC, with kernel-context and stack/map-backed `u32 mtu_len` pointer checks plus XDP zero-flags policy.
   - Typed helper time coverage now includes the remaining base no-arg scalar clocks/counters: `bpf_jiffies64`, `bpf_ktime_get_coarse_ns`, and `bpf_ktime_get_tai_ns`.
   - Ordinary context access now exposes those time/counter helpers without raw helper spelling as `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.

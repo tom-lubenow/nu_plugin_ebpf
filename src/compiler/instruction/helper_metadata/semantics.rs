@@ -123,6 +123,22 @@ impl BpfHelper {
                 size_from_arg: Some(2),
             },
         ];
+        const SKB_TUNNEL_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper skb_tunnel skb",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper skb_tunnel buffer",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
 
         const MAP_LOOKUP_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -1326,6 +1342,14 @@ impl BpfHelper {
             },
             BpfHelper::FibLookup => HelperSemantics {
                 ptr_arg_rules: FIB_LOOKUP_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkbGetTunnelKey
+            | BpfHelper::SkbSetTunnelKey
+            | BpfHelper::SkbGetTunnelOpt
+            | BpfHelper::SkbSetTunnelOpt => HelperSemantics {
+                ptr_arg_rules: SKB_TUNNEL_RULES,
                 positive_size_args: &[2],
                 ringbuf_record_arg0: false,
             },

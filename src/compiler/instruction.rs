@@ -136,6 +136,10 @@ pub enum BpfHelper {
     SkbVlanPush = 18,
     /// long bpf_skb_vlan_pop(skb)
     SkbVlanPop = 19,
+    /// long bpf_skb_get_tunnel_key(skb, key, size, flags)
+    SkbGetTunnelKey = 20,
+    /// long bpf_skb_set_tunnel_key(skb, key, size, flags)
+    SkbSetTunnelKey = 21,
     /// u32 bpf_get_route_realm(skb)
     GetRouteRealm = 24,
     /// long bpf_msg_apply_bytes(msg, bytes)
@@ -214,6 +218,10 @@ pub enum BpfHelper {
     GetStack = 67,
     /// s64 bpf_csum_diff(from, from_size, to, to_size, seed)
     CsumDiff = 28,
+    /// long bpf_skb_get_tunnel_opt(skb, opt, size)
+    SkbGetTunnelOpt = 29,
+    /// long bpf_skb_set_tunnel_opt(skb, opt, size)
+    SkbSetTunnelOpt = 30,
     /// long bpf_fib_lookup(ctx, params, plen, flags)
     FibLookup = 69,
     /// long bpf_skb_load_bytes_relative(skb, offset, to, len, start_header)
@@ -382,6 +390,8 @@ impl BpfHelper {
             BpfHelper::GetCgroupClassid => "bpf_get_cgroup_classid",
             BpfHelper::SkbVlanPush => "bpf_skb_vlan_push",
             BpfHelper::SkbVlanPop => "bpf_skb_vlan_pop",
+            BpfHelper::SkbGetTunnelKey => "bpf_skb_get_tunnel_key",
+            BpfHelper::SkbSetTunnelKey => "bpf_skb_set_tunnel_key",
             BpfHelper::GetRouteRealm => "bpf_get_route_realm",
             BpfHelper::MsgApplyBytes => "bpf_msg_apply_bytes",
             BpfHelper::MsgCorkBytes => "bpf_msg_cork_bytes",
@@ -421,6 +431,8 @@ impl BpfHelper {
             BpfHelper::GetStackId => "bpf_get_stackid",
             BpfHelper::GetStack => "bpf_get_stack",
             BpfHelper::CsumDiff => "bpf_csum_diff",
+            BpfHelper::SkbGetTunnelOpt => "bpf_skb_get_tunnel_opt",
+            BpfHelper::SkbSetTunnelOpt => "bpf_skb_set_tunnel_opt",
             BpfHelper::FibLookup => "bpf_fib_lookup",
             BpfHelper::SkbLoadBytesRelative => "bpf_skb_load_bytes_relative",
             BpfHelper::SkLookupTcp => "bpf_sk_lookup_tcp",
@@ -534,6 +546,8 @@ impl BpfHelper {
             "get_cgroup_classid" => Some(Self::GetCgroupClassid),
             "skb_vlan_push" => Some(Self::SkbVlanPush),
             "skb_vlan_pop" => Some(Self::SkbVlanPop),
+            "skb_get_tunnel_key" => Some(Self::SkbGetTunnelKey),
+            "skb_set_tunnel_key" => Some(Self::SkbSetTunnelKey),
             "get_route_realm" => Some(Self::GetRouteRealm),
             "msg_apply_bytes" => Some(Self::MsgApplyBytes),
             "msg_cork_bytes" => Some(Self::MsgCorkBytes),
@@ -573,6 +587,8 @@ impl BpfHelper {
             "get_stackid" => Some(Self::GetStackId),
             "get_stack" => Some(Self::GetStack),
             "csum_diff" => Some(Self::CsumDiff),
+            "skb_get_tunnel_opt" => Some(Self::SkbGetTunnelOpt),
+            "skb_set_tunnel_opt" => Some(Self::SkbSetTunnelOpt),
             "fib_lookup" => Some(Self::FibLookup),
             "skb_load_bytes_relative" => Some(Self::SkbLoadBytesRelative),
             "sk_lookup_tcp" => Some(Self::SkLookupTcp),
