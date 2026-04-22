@@ -7647,15 +7647,59 @@ fn test_compile_bound_socket_helper_ctx_projection_program() {
 }
 
 #[test]
-fn test_compile_sk_lookup_ctx_local_port_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::SkLookup,
-        "/proc/self/ns/net",
-        CellPath {
-            members: vec![string_member("local_port")],
-        },
-        "sk_lookup ctx.local_port count",
-    );
+fn test_compile_sk_lookup_ctx_scalar_counter_programs() {
+    for (field, context) in [
+        ("family", "sk_lookup ctx.family count"),
+        ("protocol", "sk_lookup ctx.protocol count"),
+        ("cookie", "sk_lookup ctx.cookie count"),
+        ("remote_ip4", "sk_lookup ctx.remote_ip4 count"),
+        ("remote_port", "sk_lookup ctx.remote_port count"),
+        ("local_ip4", "sk_lookup ctx.local_ip4 count"),
+        ("local_port", "sk_lookup ctx.local_port count"),
+        ("ingress_ifindex", "sk_lookup ctx.ingress_ifindex count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::SkLookup,
+            "/proc/self/ns/net",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_sk_lookup_ctx_array_and_socket_projection_counter_programs() {
+    for (members, context) in [
+        (
+            vec![string_member("remote_ip6"), int_member(3)],
+            "sk_lookup ctx.remote_ip6[3] count",
+        ),
+        (
+            vec![string_member("local_ip6"), int_member(0)],
+            "sk_lookup ctx.local_ip6[0] count",
+        ),
+        (
+            vec![string_member("sk"), string_member("bound_dev_if")],
+            "sk_lookup ctx.sk.bound_dev_if count",
+        ),
+        (
+            vec![string_member("sk"), string_member("src_ip4")],
+            "sk_lookup ctx.sk.src_ip4 count",
+        ),
+        (
+            vec![string_member("sk"), string_member("src_ip6"), int_member(0)],
+            "sk_lookup ctx.sk.src_ip6[0] count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::SkLookup,
+            "/proc/self/ns/net",
+            CellPath { members },
+            context,
+        );
+    }
 }
 
 #[test]
