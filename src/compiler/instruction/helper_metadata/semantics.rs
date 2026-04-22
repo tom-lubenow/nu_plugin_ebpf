@@ -1388,6 +1388,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const TCP_SEND_ACK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper tcp_send_ack tp",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const SKC_TO_TCP6_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper skc_to_tcp6_sock sk",
@@ -2146,6 +2154,11 @@ impl BpfHelper {
             },
             BpfHelper::TcpSock => HelperSemantics {
                 ptr_arg_rules: TCP_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TcpSendAck => HelperSemantics {
+                ptr_arg_rules: TCP_SEND_ACK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

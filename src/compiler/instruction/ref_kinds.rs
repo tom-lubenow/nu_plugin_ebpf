@@ -688,6 +688,7 @@ pub const fn helper_pointer_arg_ref_kind(
             BpfHelper::SkRelease
             | BpfHelper::SkFullsock
             | BpfHelper::TcpSock
+            | BpfHelper::TcpSendAck
             | BpfHelper::GetListenerSock
             | BpfHelper::TcpCheckSyncookie
             | BpfHelper::TcpGenSyncookie

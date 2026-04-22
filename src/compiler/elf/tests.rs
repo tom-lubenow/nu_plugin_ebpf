@@ -2112,6 +2112,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpSendAck),
+        Some(
+            "helper 'bpf_tcp_send_ack' is only valid in tcp_congestion_ops struct_ops programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
         Some(
             "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
@@ -2672,6 +2679,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::StructOps.helper_call_error(BpfHelper::TcpSendAck),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Kretprobe.helper_call_error(BpfHelper::TaskStorageGet),
         None
     );
@@ -2784,6 +2795,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
             helper.name()
         );
     }
+}
+
+#[test]
+fn test_probe_context_helper_call_error_refines_tcp_congestion_struct_ops_helpers() {
+    let tcp = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    assert_eq!(tcp.helper_call_error(BpfHelper::TcpSendAck), None);
+
+    let sched_ext = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+    assert_eq!(
+        sched_ext.helper_call_error(BpfHelper::TcpSendAck),
+        Some(
+            "helper 'bpf_tcp_send_ack' is only valid in tcp_congestion_ops struct_ops programs"
+                .to_string()
+        )
+    );
 }
 
 #[test]

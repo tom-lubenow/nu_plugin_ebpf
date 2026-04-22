@@ -4106,6 +4106,79 @@ fn test_infer_tcp_sock_helper_in_cgroup_sockopt_program() {
 }
 
 #[test]
+fn test_infer_tcp_send_ack_helper_in_tcp_congestion_struct_ops_callback() {
+    let mut func = make_test_function();
+    let tcp_sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpSendAck as u32,
+        args: vec![MirValue::VReg(tcp_sock), MirValue::Const(123)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    let hints = HashMap::from([(tcp_sock, MirType::named_kernel_struct_ptr("tcp_sock"))]);
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_tcp_send_ack to infer on tcp_congestion_ops struct_ops callback");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_tcp_send_ack_helper_rejects_non_tcp_congestion_struct_ops_callback() {
+    let mut func = make_test_function();
+    let tcp_sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpSendAck as u32,
+        args: vec![MirValue::VReg(tcp_sock), MirValue::Const(123)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+    let hints = HashMap::from([(tcp_sock, MirType::named_kernel_struct_ptr("tcp_sock"))]);
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti.infer(&func).expect_err(
+        "expected bpf_tcp_send_ack to be rejected outside tcp_congestion_ops struct_ops",
+    );
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_tcp_send_ack' is only valid in tcp_congestion_ops struct_ops programs",
+        )
+    }));
+}
+
+#[test]
+fn test_type_error_tcp_send_ack_helper_rejects_non_socket_pointer() {
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpSendAck as u32,
+        args: vec![MirValue::VReg(task), MirValue::Const(123)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    let hints = HashMap::from([(task, MirType::named_kernel_struct_ptr("task_struct"))]);
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected non-socket bpf_tcp_send_ack pointer error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_tcp_send_ack' arg0 expects socket pointer")
+    }));
+}
+
+#[test]
 fn test_type_error_skc_to_tcp_sock_helper_rejects_cgroup_sockopt_program() {
     let mut func = make_test_function();
     let sock = func.alloc_vreg();

@@ -326,6 +326,8 @@ pub enum BpfHelper {
     TcpGenSyncookie = 110,
     /// long bpf_send_signal(sig)
     SendSignal = 109,
+    /// long bpf_tcp_send_ack(tp, rcv_nxt)
+    TcpSendAck = 116,
     /// long bpf_send_signal_thread(sig)
     SendSignalThread = 117,
     /// long bpf_skb_output(ctx, map, flags, data, size)
@@ -541,6 +543,7 @@ impl BpfHelper {
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
             BpfHelper::SendSignal => "bpf_send_signal",
+            BpfHelper::TcpSendAck => "bpf_tcp_send_ack",
             BpfHelper::SendSignalThread => "bpf_send_signal_thread",
             BpfHelper::SkbOutput => "bpf_skb_output",
             BpfHelper::XdpOutput => "bpf_xdp_output",
@@ -725,6 +728,7 @@ impl BpfHelper {
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),
             "send_signal" => Some(Self::SendSignal),
+            "tcp_send_ack" => Some(Self::TcpSendAck),
             "send_signal_thread" => Some(Self::SendSignalThread),
             "skb_output" => Some(Self::SkbOutput),
             "xdp_output" => Some(Self::XdpOutput),

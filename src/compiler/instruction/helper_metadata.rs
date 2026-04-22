@@ -140,6 +140,7 @@ impl BpfHelper {
             109 => Some(Self::SendSignal),
             110 => Some(Self::TcpGenSyncookie),
             111 => Some(Self::SkbOutput),
+            116 => Some(Self::TcpSendAck),
             117 => Some(Self::SendSignalThread),
             121 => Some(Self::XdpOutput),
             124 => Some(Self::SkAssign),
@@ -738,6 +739,12 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::TcpSendAck => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SysctlGetName => HelperSignature {

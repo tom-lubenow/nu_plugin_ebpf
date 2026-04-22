@@ -279,6 +279,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::ProbeWriteUser)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_tcp_send_ack"),
+        Some(BpfHelper::TcpSendAck)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("copy_from_user_task"),
         Some(BpfHelper::CopyFromUserTask)
     ));
@@ -2494,6 +2498,14 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
+    let sig = HelperSignature::for_id(BpfHelper::TcpSendAck as u32)
+        .expect("expected bpf_tcp_send_ack helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
     let sig = HelperSignature::for_id(BpfHelper::SkAssign as u32)
         .expect("expected bpf_sk_assign helper signature");
     assert_eq!(sig.min_args, 3);
@@ -2599,6 +2611,20 @@ fn test_helper_signature_socket_helpers() {
 }
 
 #[test]
+fn test_tcp_send_ack_helper_contract() {
+    let semantics = BpfHelper::TcpSendAck.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+    let tp = semantics.ptr_arg_rules[0];
+    assert_eq!(tp.arg_idx, 0);
+    assert_eq!(tp.op, "helper tcp_send_ack tp");
+    assert!(tp.allowed.allow_kernel);
+    assert!(!tp.allowed.allow_stack);
+    assert!(!tp.allowed.allow_map);
+    assert!(!tp.allowed.allow_user);
+}
+
+#[test]
 fn test_helper_ref_kind_mappings() {
     assert_eq!(
         helper_acquire_ref_kind(BpfHelper::SkLookupTcp),
@@ -2626,6 +2652,10 @@ fn test_helper_ref_kind_mappings() {
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::TcpGenSyncookie, 0),
+        Some(KfuncRefKind::Socket)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::TcpSendAck, 0),
         Some(KfuncRefKind::Socket)
     );
     assert_eq!(

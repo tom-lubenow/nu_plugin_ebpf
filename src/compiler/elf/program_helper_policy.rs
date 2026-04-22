@@ -1,7 +1,9 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec};
+use crate::program_spec::{
+    ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec, StructOpsFamily,
+};
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
@@ -50,6 +52,7 @@ enum HelperProgramSurfaceFamily {
     TcSkLookup,
     TcCgroupSkb,
     TcpSock,
+    TcpCongestionStructOps,
     SocketCast,
     TaskStorage,
     Lsm,
@@ -442,6 +445,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SockOps,
         ],
         label: "tc_action, tc, cgroup_skb, cgroup_sockopt, and sock_ops",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcpCongestionStructOps,
+        program_types: &[EbpfProgramType::StructOps],
+        label: "tcp_congestion_ops struct_ops",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketCast,
@@ -839,6 +847,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::TcpSock => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TcpSock,
         },
+        BpfHelper::TcpSendAck => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TcpCongestionStructOps,
+        },
         BpfHelper::SkcToTcpSock
         | BpfHelper::SkcToTcp6Sock
         | BpfHelper::SkcToTcpTimewaitSock
@@ -1090,6 +1101,16 @@ impl ProgramSpec {
             {
                 Some(format!(
                     "helper '{}' is not valid on cgroup_sock_addr recvmsg/getpeername/getsockname hooks",
+                    helper.name()
+                ))
+            }
+            _ if attach_shape
+                .struct_ops_callback()
+                .is_some_and(|(family, _)| family != StructOpsFamily::TcpCongestion)
+                && helper_ids_equal(helper, BpfHelper::TcpSendAck) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in tcp_congestion_ops struct_ops programs",
                     helper.name()
                 ))
             }

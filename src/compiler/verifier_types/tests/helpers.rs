@@ -4524,6 +4524,124 @@ fn test_verify_mir_for_probe_context_tcp_sock_accepts_cgroup_sockopt() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_tcp_send_ack_accepts_tcp_congestion_struct_ops() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let tcp_sock = func.alloc_vreg();
+    let tcp_sock_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: tcp_sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(tcp_sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: tcp_sock_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpSendAck as u32,
+        args: vec![MirValue::VReg(tcp_sock), MirValue::Const(123)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(tcp_sock, MirType::named_kernel_struct_ptr("tcp_sock"));
+    types.insert(tcp_sock_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected tcp_send_ack tcp_congestion_ops struct_ops context to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_tcp_send_ack_rejects_sched_ext_struct_ops() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let tcp_sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TcpSendAck as u32,
+            args: vec![MirValue::VReg(tcp_sock), MirValue::Const(123)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(tcp_sock, MirType::named_kernel_struct_ptr("tcp_sock"));
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected tcp_send_ack sched_ext struct_ops program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_tcp_send_ack' is only valid in tcp_congestion_ops struct_ops programs"
+    )));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_tcp_send_ack_rejects_non_socket_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let task_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: task_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: task_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpSendAck as u32,
+        args: vec![MirValue::VReg(task), MirValue::Const(123)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(task_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected tcp_send_ack non-socket pointer error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_tcp_send_ack' arg0 expects socket pointer")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_skc_to_tcp_sock_rejects_cgroup_sockopt() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
