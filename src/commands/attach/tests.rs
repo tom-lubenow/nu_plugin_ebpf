@@ -8801,6 +8801,26 @@ fn test_compile_xdp_ctx_data_meta_byte_store_program() {
 #[test]
 fn test_compile_additional_direct_packet_write_programs() {
     assert_ctx_path_store_program_compiles(
+        EbpfProgramType::TcAction,
+        "demo-action",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc_action ctx.data[0] store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::TcAction,
+        "demo-action",
+        CellPath {
+            members: vec![string_member("data_meta"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(0),
+        "tc_action ctx.data_meta[0] store",
+    );
+    assert_ctx_path_store_program_compiles(
         EbpfProgramType::Tc,
         "lo:ingress",
         CellPath {

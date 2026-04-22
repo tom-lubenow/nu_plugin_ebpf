@@ -235,15 +235,16 @@ Context parameter syntax (recommended):
     Raw numeric return codes still work. Packet reads
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
-    `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`, `tc`,
-    `sk_skb`, and `sk_skb_parser`, those same scalar/header paths are
-    also writable after shadowing the closure parameter as mutable, for
+    `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,
+    `tc_action`, `tc`, `sk_skb`, and `sk_skb_parser`, those same
+    scalar/header paths are also writable after shadowing the closure
+    parameter as mutable, for
     example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
     $ctx.data.u16be.6 = 0x86dd`, or `mut ctx = $ctx;
     $ctx.data.eth.ethertype = 0x86dd`. These lower to guarded packet
     stores and automatically normalize big-endian packet scalars back to
-    network byte order. Other packet families remain read-only for direct
-    packet writes. Those views also support `payload` stepping:
+    network byte order. Other packet families remain read-only for
+    direct packet writes. Those views also support `payload` stepping:
     `eth.payload` skips Ethernet and up to two stacked VLAN tags when
     present, `ipv4.payload` uses the runtime IHL, `ipv6.payload` skips
     the fixed IPv6 header plus a bounded chain of common IPv6 extension
@@ -274,8 +275,8 @@ Context parameter syntax (recommended):
     `BPF_SKB_TSTAMP_DELIVERY_MONO`.
     `tc_action:LABEL` (or `action:LABEL`) is compile/dry-run only for
     now. It emits an `action` section, uses the label only as metadata,
-    exposes the TC-style read-only skb context plus the modeled TC cls_act
-    packet helper surface, and rejects live attach until the loader has an
+    exposes the TC-style skb context plus the modeled TC cls_act packet
+    helper surface, and rejects live attach until the loader has an
     explicit tc-action attach path.
     `freplace:FUNCTION` (aliases `extension:FUNCTION` and `ext:FUNCTION`)
     emits a `freplace/FUNCTION` extension section for replacing a global

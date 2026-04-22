@@ -4813,6 +4813,62 @@ fn test_lower_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
 }
 
 #[test]
+fn test_lower_tc_action_ctx_data_meta_byte_assignment_uses_data_guard() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("data_meta"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc_action ctx.data_meta byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataMeta,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        !blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_tc_ctx_tstamp_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {

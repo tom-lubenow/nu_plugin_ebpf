@@ -196,15 +196,16 @@ but it does not expose raw packet pointers. Scalar packet byte reads
 work through normal Nushell indexing such as `($ctx.data | get 0)`,
 and fixed-width big-endian scalars can be read directly through cell
 paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These lower
-to data_end-guarded packet loads. On `xdp`, `tc`, `sk_skb`, and `sk_skb_parser`, the same scalar/header
-packet paths are also writable through ordinary cell-path updates
+to data_end-guarded packet loads. On `xdp`, `tc_action`, `tc`,
+`sk_skb`, and `sk_skb_parser`, the same scalar/header packet paths are
+also writable through ordinary cell-path updates
 after shadowing the immutable closure parameter as mutable, for
 example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
 $ctx.data.u16be.6 = 0x86dd`, or `mut ctx = $ctx;
 $ctx.data.eth.ethertype = 0x86dd`. Those lower to guarded packet
 stores and automatically normalize big-endian packet scalars back to
-network byte order. Other packet families, including compile-only
-`tc_action`, remain read-only for direct packet writes. Fixed header views `eth`, `ipv4`, `ipv6`, `icmp`,
+network byte order. Other packet families remain read-only for direct
+packet writes. Fixed header views `eth`, `ipv4`, `ipv6`, `icmp`,
 `icmpv6`, `udp`, and `tcp` are also available, for example
 `$ctx.data.eth.ethertype`, `$ctx.data.eth.payload.ipv4.protocol`,
 `$ctx.data.eth.payload.ipv6.next_header`,
@@ -233,7 +234,7 @@ against `ctx.data` rather than `ctx.data_end`. `tc_action` and `tc` also expose
 which is useful for consuming metadata carried forward from earlier
 packet-processing stages. `tc_action:LABEL` and its `action:LABEL`
 alias emit an `action` section with TC-style return aliases and the
-same read-only skb packet/context fields. Its helper surface mirrors the
+same skb packet/context fields. Its helper surface mirrors the
 kernel TC cls_act helper family for first-class packet redirects,
 skb relayout/edit helpers, cgroup-array membership, and helper-backed
 skb metadata fields; live attach is intentionally rejected until the

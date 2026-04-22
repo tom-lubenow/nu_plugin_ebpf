@@ -279,6 +279,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
 
 const DIRECT_PACKET_WRITE_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
+    EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,

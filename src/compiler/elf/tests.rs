@@ -653,6 +653,7 @@ fn test_program_type_metadata_for_socket_filter() {
 #[test]
 fn test_program_type_direct_packet_write_support_follows_program_model() {
     assert!(EbpfProgramType::Xdp.supports_direct_packet_writes());
+    assert!(EbpfProgramType::TcAction.supports_direct_packet_writes());
     assert!(EbpfProgramType::Tc.supports_direct_packet_writes());
     assert!(EbpfProgramType::SkSkb.supports_direct_packet_writes());
     assert!(EbpfProgramType::SkSkbParser.supports_direct_packet_writes());
