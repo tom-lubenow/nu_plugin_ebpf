@@ -2392,8 +2392,9 @@ fn test_infer_socket_filter_tstamp_field_rejects() {
         .expect_err("expected socket_filter tstamp field to be rejected");
 
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -2418,8 +2419,9 @@ fn test_infer_socket_filter_tstamp_type_field_rejects() {
         .expect_err("expected socket_filter tstamp_type field to be rejected");
 
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp_type is only available on tc_action, tc, and tcx programs")
+        e.message.contains(
+            "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs",
+        )
     }));
 }
 
@@ -2445,7 +2447,7 @@ fn test_infer_socket_filter_hwtstamp_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.hwtstamp is only available on tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.hwtstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
         )
     }));
 }
@@ -2455,23 +2457,23 @@ fn test_infer_lwt_rejects_kernel_restricted_skb_metadata_fields() {
     for (field, expected) in [
         (
             CtxField::TcClassid,
-            "ctx.tc_classid is only available on tc_action, tc, and tcx programs",
+            "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs",
         ),
         (
             CtxField::WireLen,
-            "ctx.wire_len is only available on tc_action, tc, and tcx programs",
+            "ctx.wire_len is only available on tc_action, tc, tcx, and netkit programs",
         ),
         (
             CtxField::Tstamp,
-            "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
         ),
         (
             CtxField::TstampType,
-            "ctx.tstamp_type is only available on tc_action, tc, and tcx programs",
+            "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs",
         ),
         (
             CtxField::Hwtstamp,
-            "ctx.hwtstamp is only available on tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.hwtstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
         ),
     ] {
         let mut func = make_test_function();
@@ -2518,7 +2520,7 @@ fn test_infer_sk_skb_mark_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs",
         )
     }));
 }
@@ -3267,8 +3269,9 @@ fn test_type_error_store_skb_tstamp_rejects_non_skb_context() {
         .infer(&func)
         .expect_err("skb tstamp store should be rejected outside skb-backed contexts");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -3289,8 +3292,9 @@ fn test_type_error_store_skb_tstamp_rejects_socket_filter_context() {
         .infer(&func)
         .expect_err("skb tstamp store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -3312,7 +3316,7 @@ fn test_type_error_store_skb_tstamp_rejects_cgroup_skb_ingress_context() {
         .expect_err("skb tstamp store should be rejected on cgroup_skb ingress");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs",
+            "ctx.tstamp is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs",
         )
     }));
 }
@@ -3335,7 +3339,7 @@ fn test_type_error_store_skb_mark_rejects_socket_filter_context() {
         .expect_err("skb mark store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs",
         )
     }));
 }
@@ -3380,7 +3384,7 @@ fn test_type_error_store_skb_tc_index_rejects_socket_filter_context() {
         .expect_err("skb tc_index store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "ctx.tc_index is only writable on tc_action, tc, tcx, sk_skb, and sk_skb_parser programs",
+            "ctx.tc_index is only writable on tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs",
         )
     }));
 }

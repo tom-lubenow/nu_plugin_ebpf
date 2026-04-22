@@ -362,6 +362,69 @@ impl TcTarget {
     }
 }
 
+/// Netkit device hook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetkitAttachType {
+    Primary,
+    Peer,
+}
+
+/// Parsed netkit target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetkitTarget {
+    /// Netkit network interface name.
+    pub interface: String,
+    /// Netkit primary or peer hook.
+    pub attach_type: NetkitAttachType,
+}
+
+impl NetkitTarget {
+    /// Parse a netkit target string of the form `iface:primary` or `iface:peer`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        let (interface, endpoint) = target.split_once(':').ok_or_else(|| {
+            ProgramSpecParseError::new(format!(
+                "Invalid netkit target: {target}. Expected format: interface:primary or interface:peer"
+            ))
+        })?;
+
+        if interface.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "netkit interface target cannot be empty",
+            ));
+        }
+
+        let attach_type = match endpoint {
+            "primary" => NetkitAttachType::Primary,
+            "peer" => NetkitAttachType::Peer,
+            _ => {
+                return Err(ProgramSpecParseError::new(format!(
+                    "Invalid netkit endpoint: {endpoint}. Expected primary or peer"
+                )));
+            }
+        };
+
+        Ok(Self {
+            interface: interface.to_string(),
+            attach_type,
+        })
+    }
+
+    pub fn attach_type_name(&self) -> &'static str {
+        match self.attach_type {
+            NetkitAttachType::Primary => "primary",
+            NetkitAttachType::Peer => "peer",
+        }
+    }
+
+    pub fn target_string(&self) -> String {
+        format!("{}:{}", self.interface, self.attach_type_name())
+    }
+
+    pub fn section_name(&self) -> String {
+        format!("netkit/{}", self.attach_type_name())
+    }
+}
+
 /// Parsed traffic-control action target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TcActionTarget {
@@ -1849,6 +1912,9 @@ pub enum ProgramSpec {
     Tcx {
         target: TcTarget,
     },
+    Netkit {
+        target: NetkitTarget,
+    },
     TcAction {
         target: TcActionTarget,
     },
@@ -2210,6 +2276,9 @@ impl ProgramSpec {
             EbpfProgramType::Tcx => Ok(ProgramSpec::Tcx {
                 target: TcTarget::parse(target)?,
             }),
+            EbpfProgramType::Netkit => Ok(ProgramSpec::Netkit {
+                target: NetkitTarget::parse(target)?,
+            }),
             EbpfProgramType::TcAction => Ok(ProgramSpec::TcAction {
                 target: TcActionTarget::parse(target)?,
             }),
@@ -2278,6 +2347,7 @@ impl ProgramSpec {
             ProgramSpec::SockOps { .. } => EbpfProgramType::SockOps,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
             ProgramSpec::Tcx { .. } => EbpfProgramType::Tcx,
+            ProgramSpec::Netkit { .. } => EbpfProgramType::Netkit,
             ProgramSpec::TcAction { .. } => EbpfProgramType::TcAction,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
             ProgramSpec::CgroupSock { .. } => EbpfProgramType::CgroupSock,
@@ -2335,6 +2405,7 @@ impl ProgramSpec {
             ProgramSpec::SockOps { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
             ProgramSpec::Tcx { target } => target.target_string(),
+            ProgramSpec::Netkit { target } => target.target_string(),
             ProgramSpec::TcAction { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSock { target } => target.target_string(),
@@ -2441,6 +2512,13 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn netkit_target(&self) -> Option<&NetkitTarget> {
+        match self {
+            ProgramSpec::Netkit { target } => Some(target),
+            _ => None,
+        }
+    }
+
     pub(crate) fn cgroup_skb_target(&self) -> Option<&CgroupSkbTarget> {
         match self {
             ProgramSpec::CgroupSkb { target } => Some(target),
@@ -2535,6 +2613,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
             ProgramSpec::Xdp { target } => target.section_name().to_string(),
             ProgramSpec::Tcx { target } => format!("tcx/{}", target.attach_type_name()),
+            ProgramSpec::Netkit { target } => target.section_name(),
             ProgramSpec::SkReuseport { target } => target.section_name().to_string(),
             ProgramSpec::StructOpsCallback { callback_name, .. } => {
                 let sleepable = self
@@ -2695,6 +2774,8 @@ mod tests {
             .expect("tc target should parse");
         let tcx = ProgramSpec::from_program_type_target(EbpfProgramType::Tcx, "lo:egress")
             .expect("tcx target should parse");
+        let netkit = ProgramSpec::from_program_type_target(EbpfProgramType::Netkit, "nk0:primary")
+            .expect("netkit target should parse");
         let cgroup_skb = ProgramSpec::from_program_type_target(
             EbpfProgramType::CgroupSkb,
             "/sys/fs/cgroup:egress",
@@ -2738,6 +2819,8 @@ mod tests {
         );
         assert!(tcx.attach_shape().is_tc_egress());
         assert_eq!(tcx.section_name(), "tcx/egress");
+        assert_eq!(netkit.attach_shape(), ProgramAttachShape::Generic);
+        assert_eq!(netkit.section_name(), "netkit/primary");
         assert_eq!(
             cgroup_skb.attach_shape(),
             ProgramAttachShape::CgroupSkb { ingress: false }
@@ -2872,6 +2955,7 @@ mod tests {
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
         let tcx = ProgramSpec::parse("tcx:lo:egress").expect("tcx spec should parse");
+        let netkit = ProgramSpec::parse("netkit:nk0:peer").expect("netkit spec should parse");
         let tc_action =
             ProgramSpec::parse("tc_action:demo-action").expect("tc_action spec should parse");
         let cgroup_skb = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:egress")
@@ -3061,6 +3145,16 @@ mod tests {
         assert_eq!(tcx.target_string(), "lo:egress");
         assert_eq!(tcx.section_name(), "tcx/egress");
         assert_eq!(tcx.to_string(), "tcx:lo:egress");
+        assert_eq!(
+            netkit
+                .netkit_target()
+                .map(|target| target.interface.as_str()),
+            Some("nk0")
+        );
+        assert_eq!(netkit.program_type(), EbpfProgramType::Netkit);
+        assert_eq!(netkit.target_string(), "nk0:peer");
+        assert_eq!(netkit.section_name(), "netkit/peer");
+        assert_eq!(netkit.to_string(), "netkit:nk0:peer");
         assert_eq!(tc_action.target_string(), "demo-action");
         assert_eq!(tc_action.section_name(), "action");
         assert_eq!(

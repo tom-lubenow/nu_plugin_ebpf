@@ -337,6 +337,25 @@ fn test_tcx_section_name() {
 }
 
 #[test]
+fn test_netkit_section_name() {
+    let primary =
+        EbpfProgram::from_bytecode(EbpfProgramType::Netkit, "nk0:primary", "test", vec![]);
+    assert_eq!(
+        primary
+            .section_name()
+            .expect("netkit primary section name should build"),
+        "netkit/primary"
+    );
+
+    let peer = EbpfProgram::from_bytecode(EbpfProgramType::Netkit, "nk0:peer", "test", vec![]);
+    assert_eq!(
+        peer.section_name()
+            .expect("netkit peer section name should build"),
+        "netkit/peer"
+    );
+}
+
+#[test]
 fn test_sk_lookup_section_name() {
     let prog = EbpfProgram::from_bytecode(
         EbpfProgramType::SkLookup,
@@ -637,6 +656,19 @@ fn test_program_type_metadata_for_tcx() {
 }
 
 #[test]
+fn test_program_type_metadata_for_netkit() {
+    let info = EbpfProgramType::Netkit.info();
+    assert_eq!(info.canonical_prefix, "netkit");
+    assert_eq!(info.kernel_prog_type, "BPF_PROG_TYPE_SCHED_CLS");
+    assert_eq!(info.section_prefix, "netkit");
+    assert_eq!(info.attach_kind, ProgramAttachKind::Netkit);
+    assert_eq!(info.target_kind, ProgramTargetKind::TrafficControlInterface);
+    assert_eq!(info.context_family, ProgramContextFamily::SkBuffPacket);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+}
+
+#[test]
 fn test_sk_skb_section_name() {
     assert_eq!(
         EbpfProgramType::SkSkb.section_prefix(),
@@ -688,6 +720,7 @@ fn test_program_type_direct_packet_write_support_follows_program_model() {
     assert!(EbpfProgramType::TcAction.supports_direct_packet_writes());
     assert!(EbpfProgramType::Tc.supports_direct_packet_writes());
     assert!(EbpfProgramType::Tcx.supports_direct_packet_writes());
+    assert!(EbpfProgramType::Netkit.supports_direct_packet_writes());
     assert!(EbpfProgramType::LwtXmit.supports_direct_packet_writes());
     assert!(EbpfProgramType::SkMsg.supports_direct_packet_writes());
     assert!(EbpfProgramType::SkSkb.supports_direct_packet_writes());
@@ -725,6 +758,15 @@ fn test_program_type_return_action_aliases_cover_const_families() {
         Some(ProgramReturnAlias::Const(0))
     );
     assert_eq!(EbpfProgramType::Tcx.return_action_alias("trap"), None);
+    assert_eq!(
+        EbpfProgramType::Netkit.return_action_alias("next"),
+        Some(ProgramReturnAlias::Const(-1))
+    );
+    assert_eq!(
+        EbpfProgramType::Netkit.return_action_alias("redirect"),
+        Some(ProgramReturnAlias::Const(7))
+    );
+    assert_eq!(EbpfProgramType::Netkit.return_action_alias("trap"), None);
     assert_eq!(
         EbpfProgramType::FlowDissector.return_action_alias("fallback"),
         Some(ProgramReturnAlias::Const(129))
@@ -951,6 +993,10 @@ fn test_program_type_data_meta_layouts_follow_program_model() {
     );
     assert_eq!(
         EbpfProgramType::Tcx.data_meta_context_kind(),
+        Some(PacketContextKind::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::Netkit.data_meta_context_kind(),
         Some(PacketContextKind::SkBuff)
     );
     assert_eq!(EbpfProgramType::CgroupSkb.data_meta_context_kind(), None);
@@ -1813,7 +1859,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::Redirect),
         Some(
-            "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, tcx, and lwt_xmit programs"
+            "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, tcx, netkit, and lwt_xmit programs"
                 .to_string()
         )
     );
@@ -1824,49 +1870,49 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::RedirectPeer),
         Some(
-            "helper 'bpf_redirect_peer' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_redirect_peer' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbUnderCgroup),
         Some(
-            "helper 'bpf_skb_under_cgroup' is only valid in tc_action, tc, tcx, and lwt_* programs"
+            "helper 'bpf_skb_under_cgroup' is only valid in tc_action, tc, tcx, netkit, and lwt_* programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupId),
         Some(
-            "helper 'bpf_skb_cgroup_id' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_skb_cgroup_id' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupClassid),
         Some(
-            "helper 'bpf_skb_cgroup_classid' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_skb_cgroup_classid' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCgroupClassid),
         Some(
-            "helper 'bpf_get_cgroup_classid' is only valid in tc_action, tc, tcx, and lwt_* programs"
+            "helper 'bpf_get_cgroup_classid' is only valid in tc_action, tc, tcx, netkit, and lwt_* programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetRouteRealm),
         Some(
-            "helper 'bpf_get_route_realm' is only valid in tc_action, tc, tcx, and lwt_* programs"
+            "helper 'bpf_get_route_realm' is only valid in tc_action, tc, tcx, netkit, and lwt_* programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
         Some(
-            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, tcx, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, tcx, netkit, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
                 .to_string()
         )
     );
@@ -1969,7 +2015,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
-            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -1984,49 +2030,49 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbPullData),
         Some(
-            "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbLoadBytes),
         Some(
-            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbLoadBytesRelative),
         Some(
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc_action, tc, tcx, cgroup_skb, and sk_reuseport programs"
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, and sk_reuseport programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbStoreBytes),
         Some(
-            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CloneRedirect),
         Some(
-            "helper 'bpf_clone_redirect' is only valid in lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_clone_redirect' is only valid in lwt_xmit, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::L3CsumReplace),
         Some(
-            "helper 'bpf_l3_csum_replace' is only valid in lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_l3_csum_replace' is only valid in lwt_xmit, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::CsumDiff),
         Some(
-            "helper 'bpf_csum_diff' is only valid in xdp, tc_action, tc, tcx, and lwt_* programs"
+            "helper 'bpf_csum_diff' is only valid in xdp, tc_action, tc, tcx, netkit, and lwt_* programs"
                 .to_string()
         )
     );
@@ -2090,56 +2136,56 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkLookupTcp),
         Some(
-            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
+            "helper 'bpf_sk_lookup_tcp' is only valid in xdp, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock_addr, and sk_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkRelease),
         Some(
-            "helper 'bpf_sk_release' is only valid in xdp, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb programs"
+            "helper 'bpf_sk_release' is only valid in xdp, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkAssign),
         Some(
-            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs"
+            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, netkit, and sk_lookup programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::GetListenerSock),
         Some(
-            "helper 'bpf_get_listener_sock' is only valid in tc_action, tc, tcx, and cgroup_skb programs"
+            "helper 'bpf_get_listener_sock' is only valid in tc_action, tc, tcx, netkit, and cgroup_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkFullsock),
         Some(
-            "helper 'bpf_sk_fullsock' is only valid in tc_action, tc, tcx, and cgroup_skb programs"
+            "helper 'bpf_sk_fullsock' is only valid in tc_action, tc, tcx, netkit, and cgroup_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpSock),
         Some(
-            "helper 'bpf_tcp_sock' is only valid in tc_action, tc, tcx, cgroup_skb, cgroup_sockopt, and sock_ops programs"
+            "helper 'bpf_tcp_sock' is only valid in tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sockopt, and sock_ops programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToTcpSock),
         Some(
-            "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            "helper 'bpf_skc_to_tcp_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToUnixSock),
         Some(
-            "helper 'bpf_skc_to_unix_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            "helper 'bpf_skc_to_unix_sock' is only valid in xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
                 .to_string()
         )
     );
@@ -2169,14 +2215,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpCheckSyncookie),
         Some(
-            "helper 'bpf_tcp_check_syncookie' is only valid in xdp, tc_action, tc, and tcx programs"
+            "helper 'bpf_tcp_check_syncookie' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpGenSyncookie),
         Some(
-            "helper 'bpf_tcp_gen_syncookie' is only valid in xdp, tc_action, tc, and tcx programs"
+            "helper 'bpf_tcp_gen_syncookie' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
@@ -2261,21 +2307,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageGet),
         Some(
-            "helper 'bpf_sk_storage_get' is only valid in tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_sk_storage_get' is only valid in tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageDelete),
         Some(
-            "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::CgroupSock.helper_call_error(BpfHelper::SkStorageDelete),
         Some(
-            "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_sk_storage_delete' is only valid in tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
                 .to_string()
         )
     );
@@ -2549,63 +2595,63 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbSetTstamp),
         Some(
-            "helper 'bpf_skb_set_tstamp' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_skb_set_tstamp' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::CheckMtu),
         Some(
-            "helper 'bpf_check_mtu' is only valid in xdp, tc_action, tc, and tcx programs"
+            "helper 'bpf_check_mtu' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbEcnSetCe),
         Some(
-            "helper 'bpf_skb_ecn_set_ce' is only valid in tc_action, tc, tcx, and cgroup_skb programs"
+            "helper 'bpf_skb_ecn_set_ce' is only valid in tc_action, tc, tcx, netkit, and cgroup_skb programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbChangeProto),
         Some(
-            "helper 'bpf_skb_change_proto' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_skb_change_proto' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbChangeType),
         Some(
-            "helper 'bpf_skb_change_type' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_skb_change_type' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbGetXfrmState),
         Some(
-            "helper 'bpf_skb_get_xfrm_state' is only valid in tc_action, tc, and tcx programs"
+            "helper 'bpf_skb_get_xfrm_state' is only valid in tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbGetTunnelKey),
         Some(
-            "helper 'bpf_skb_get_tunnel_key' is only valid in tc_action, tc, tcx, and lwt_xmit programs"
+            "helper 'bpf_skb_get_tunnel_key' is only valid in tc_action, tc, tcx, netkit, and lwt_xmit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbSetTunnelOpt),
         Some(
-            "helper 'bpf_skb_set_tunnel_opt' is only valid in tc_action, tc, tcx, and lwt_xmit programs"
+            "helper 'bpf_skb_set_tunnel_opt' is only valid in tc_action, tc, tcx, netkit, and lwt_xmit programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::FibLookup),
         Some(
-            "helper 'bpf_fib_lookup' is only valid in xdp, tc_action, tc, and tcx programs"
+            "helper 'bpf_fib_lookup' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
                 .to_string()
         )
     );
@@ -2670,7 +2716,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbStoreBytes),
         Some(
-            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_store_bytes' is only valid in lwt_xmit, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -2942,6 +2988,7 @@ fn test_current_task_under_cgroup_is_base_helper_surface() {
         EbpfProgramType::SockOps,
         EbpfProgramType::Tc,
         EbpfProgramType::Tcx,
+        EbpfProgramType::Netkit,
         EbpfProgramType::CgroupSkb,
         EbpfProgramType::CgroupSock,
         EbpfProgramType::CgroupSysctl,
@@ -2973,6 +3020,10 @@ fn test_cgroup_array_membership_helper_follows_program_model() {
         BpfHelper::SkbUnderCgroup
     ));
     assert!(matches!(
+        EbpfProgramType::Netkit.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
         EbpfProgramType::LwtIn.cgroup_array_membership_helper(),
         BpfHelper::SkbUnderCgroup
     ));
@@ -3000,6 +3051,8 @@ fn test_cgroup_array_membership_helper_follows_program_model() {
     for program_type in [
         EbpfProgramType::TcAction,
         EbpfProgramType::Tc,
+        EbpfProgramType::Tcx,
+        EbpfProgramType::Netkit,
         EbpfProgramType::LwtIn,
         EbpfProgramType::LwtOut,
         EbpfProgramType::LwtXmit,
@@ -3031,6 +3084,10 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
         Some(BpfHelper::Redirect)
     ));
     assert!(matches!(
+        EbpfProgramType::Netkit.packet_redirect_helper(),
+        Some(BpfHelper::Redirect)
+    ));
+    assert!(matches!(
         EbpfProgramType::TcAction.packet_redirect_helper(),
         Some(BpfHelper::Redirect)
     ));
@@ -3051,6 +3108,10 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
         Some(BpfHelper::RedirectPeer)
     ));
     assert!(matches!(
+        EbpfProgramType::Netkit.packet_redirect_peer_helper(),
+        Some(BpfHelper::RedirectPeer)
+    ));
+    assert!(matches!(
         EbpfProgramType::TcAction.packet_redirect_neigh_helper(),
         Some(BpfHelper::RedirectNeigh)
     ));
@@ -3060,6 +3121,10 @@ fn test_program_type_packet_redirect_helpers_follow_program_model() {
     ));
     assert!(matches!(
         EbpfProgramType::Tcx.packet_redirect_neigh_helper(),
+        Some(BpfHelper::RedirectNeigh)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Netkit.packet_redirect_neigh_helper(),
         Some(BpfHelper::RedirectNeigh)
     ));
     assert!(EbpfProgramType::Xdp.packet_redirect_peer_helper().is_none());
@@ -3090,6 +3155,10 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
         Some(BpfHelper::SkbChangeHead)
     ));
     assert!(matches!(
+        EbpfProgramType::Netkit.packet_adjust_helper(PacketAdjustMode::Head),
+        Some(BpfHelper::SkbChangeHead)
+    ));
+    assert!(matches!(
         EbpfProgramType::TcAction.packet_adjust_helper(PacketAdjustMode::Tail),
         Some(BpfHelper::SkbChangeTail)
     ));
@@ -3099,6 +3168,10 @@ fn test_program_type_packet_adjust_helpers_follow_program_model() {
     ));
     assert!(matches!(
         EbpfProgramType::Tcx.packet_adjust_helper(PacketAdjustMode::Tail),
+        Some(BpfHelper::SkbChangeTail)
+    ));
+    assert!(matches!(
+        EbpfProgramType::Netkit.packet_adjust_helper(PacketAdjustMode::Tail),
         Some(BpfHelper::SkbChangeTail)
     ));
     assert!(matches!(
@@ -3236,6 +3309,13 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
         ))
     );
     assert_eq!(
+        EbpfProgramType::Netkit.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        Some((
+            2,
+            "helper 'bpf_sk_assign' requires arg2 = 0 in netkit programs"
+        ))
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_zero_arg_requirement(BpfHelper::CheckMtu),
         Some((
             4,
@@ -3264,6 +3344,10 @@ fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
     );
     assert_eq!(
         EbpfProgramType::Tcx.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Context)
+    );
+    assert_eq!(
+        EbpfProgramType::Netkit.get_socket_cookie_arg_policy(),
         Some(GetSocketCookieArgPolicy::Context)
     );
     assert_eq!(
@@ -5774,11 +5858,9 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
     let err = ctx
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected outside skb-backed contexts");
-    assert!(
-        err.to_string().contains(
-            "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
-        )
-    );
+    assert!(err.to_string().contains(
+        "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
+    ));
 }
 
 #[test]
@@ -5787,11 +5869,9 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_socket_filter() {
     let err = ctx
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected outside tc");
-    assert!(
-        err.to_string().contains(
-            "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
-        )
-    );
+    assert!(err.to_string().contains(
+        "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
+    ));
 }
 
 #[test]
@@ -5801,13 +5881,13 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_cgroup_skb_ingress() {
         .resolve_ctx_store_target("tstamp", None)
         .expect_err("skb tstamp store target should be rejected on cgroup_skb ingress");
     assert!(err.contains(
-        "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs"
+        "ctx.tstamp is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
     ));
     let err = ctx
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected on cgroup_skb ingress");
     assert!(err.to_string().contains(
-        "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs"
+        "ctx.tstamp is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
     ));
 }
 
@@ -5818,7 +5898,7 @@ fn test_probe_context_rejects_skb_mark_store_target_on_socket_filter() {
         .validate_ctx_store_target(&CtxStoreTarget::SkbMark)
         .expect_err("skb mark store target should be rejected outside tc");
     assert!(err.to_string().contains(
-        "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, and cgroup_skb programs"
+        "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs"
     ));
 }
 
@@ -5997,7 +6077,7 @@ fn test_probe_context_rejects_tc_egress_helper_backed_ctx_fields_on_non_tc() {
         .ctx_field_access_error(&CtxField::CgroupClassid)
         .expect("expected non-tc access error");
     assert!(err.contains(
-        "ctx.cgroup_classid is only available on tc_action, tc, tcx, and lwt_* programs"
+        "ctx.cgroup_classid is only available on tc_action, tc, tcx, netkit, and lwt_* programs"
     ));
 
     let err = ctx
@@ -6052,14 +6132,14 @@ fn test_probe_context_rejects_csum_level_on_unsupported_skb_program() {
         .ctx_field_access_error(&CtxField::CsumLevel)
         .expect("expected unsupported csum_level access error");
     assert!(err.contains(
-        "ctx.csum_level is only available on lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+        "ctx.csum_level is only available on lwt_xmit, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
     ));
 
     let err = ctx
         .ctx_field_access_error(&CtxField::HashRecalc)
         .expect("expected unsupported hash_recalc access error");
     assert!(err.contains(
-        "ctx.hash_recalc is only available on lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+        "ctx.hash_recalc is only available on lwt_*, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
     ));
 }
 
@@ -6069,9 +6149,9 @@ fn test_probe_context_rejects_data_meta_on_cgroup_skb() {
     let err = ctx
         .ctx_field_access_error(&CtxField::DataMeta)
         .expect("expected cgroup_skb data_meta access error");
-    assert!(
-        err.contains("ctx.data_meta is only available on xdp, tc_action, tc, and tcx programs")
-    );
+    assert!(err.contains(
+        "ctx.data_meta is only available on xdp, tc_action, tc, tcx, and netkit programs"
+    ));
 }
 
 #[test]
@@ -6091,13 +6171,15 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected cgroup_skb tc_classid access error")
-            .contains("ctx.tc_classid is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected cgroup_skb wire_len access error")
-            .contains("ctx.wire_len is only available on tc_action, tc, and tcx programs")
+            .contains("ctx.wire_len is only available on tc_action, tc, tcx, and netkit programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
@@ -6105,7 +6187,9 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected cgroup_skb tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
@@ -6415,13 +6499,15 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected socket_filter tc_classid access error")
-            .contains("ctx.tc_classid is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected socket_filter wire_len access error")
-            .contains("ctx.wire_len is only available on tc_action, tc, and tcx programs")
+            .contains("ctx.wire_len is only available on tc_action, tc, tcx, and netkit programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
@@ -6429,19 +6515,21 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected socket_filter tstamp access error")
             .contains(
-                "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
             )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected socket_filter tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected socket_filter hwtstamp access error")
             .contains(
-                "ctx.hwtstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.hwtstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
             )
     );
     assert!(
@@ -6514,14 +6602,14 @@ fn test_probe_context_allows_sk_reuseport_fields() {
         ctx.ctx_field_access_error(&CtxField::PktType)
             .expect("expected sk_reuseport pkt_type access error")
             .contains(
-                "ctx.pkt_type is only available on socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                "ctx.pkt_type is only available on socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"
             )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::VlanTci)
             .expect("expected sk_reuseport vlan_tci access error")
             .contains(
-                "ctx.vlan_tci is only available on socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                "ctx.vlan_tci is only available on socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"
             )
     );
 }
@@ -6554,7 +6642,7 @@ fn test_probe_context_allows_flow_dissector_fields() {
         ctx.ctx_field_access_error(&CtxField::Socket)
             .expect("expected flow_dissector sk access error")
             .contains(
-                "ctx.sk is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                "ctx.sk is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
             )
     );
     assert!(
@@ -6614,23 +6702,23 @@ fn test_probe_context_allows_lwt_skb_packet_fields_without_socket_fields() {
     for (field, expected) in [
         (
             CtxField::TcClassid,
-            "ctx.tc_classid is only available on tc_action, tc, and tcx programs",
+            "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs",
         ),
         (
             CtxField::WireLen,
-            "ctx.wire_len is only available on tc_action, tc, and tcx programs",
+            "ctx.wire_len is only available on tc_action, tc, tcx, and netkit programs",
         ),
         (
             CtxField::Tstamp,
-            "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
         ),
         (
             CtxField::TstampType,
-            "ctx.tstamp_type is only available on tc_action, tc, and tcx programs",
+            "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs",
         ),
         (
             CtxField::Hwtstamp,
-            "ctx.hwtstamp is only available on tc_action, tc, tcx, and cgroup_skb programs",
+            "ctx.hwtstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs",
         ),
     ] {
         assert!(
@@ -6643,7 +6731,7 @@ fn test_probe_context_allows_lwt_skb_packet_fields_without_socket_fields() {
         ctx.ctx_field_access_error(&CtxField::Socket)
             .expect("expected lwt socket access error")
             .contains(
-                "ctx.sk is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                "ctx.sk is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
             )
     );
 }
@@ -6857,7 +6945,7 @@ fn test_probe_context_rejects_netns_cookie_on_sk_lookup() {
         .ctx_field_access_error(&CtxField::NetnsCookie)
         .expect("expected netns_cookie field access error");
     assert!(err.contains(
-        "ctx.netns_cookie is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs"
+        "ctx.netns_cookie is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs"
     ));
 }
 
@@ -6868,7 +6956,7 @@ fn test_probe_context_rejects_socket_uid_on_sk_lookup() {
         .ctx_field_access_error(&CtxField::SocketUid)
         .expect("expected socket_uid field access error");
     assert!(err.contains(
-        "ctx.socket_uid is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs"
+        "ctx.socket_uid is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"
     ));
 }
 
@@ -6905,13 +6993,15 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected sk_skb tc_classid access error")
-            .contains("ctx.tc_classid is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected sk_skb wire_len access error")
-            .contains("ctx.wire_len is only available on tc_action, tc, and tcx programs")
+            .contains("ctx.wire_len is only available on tc_action, tc, tcx, and netkit programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
@@ -6919,19 +7009,21 @@ fn test_probe_context_allows_sk_skb_fields() {
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected sk_skb tstamp access error")
             .contains(
-                "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
             )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected sk_skb tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected sk_skb hwtstamp access error")
             .contains(
-                "ctx.hwtstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.hwtstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
             )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
@@ -6942,7 +7034,7 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockMark)
             .expect("expected sk_skb mark access error")
-            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb programs")
+            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)
@@ -6978,13 +7070,15 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected sk_skb_parser tc_classid access error")
-            .contains("ctx.tc_classid is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected sk_skb_parser wire_len access error")
-            .contains("ctx.wire_len is only available on tc_action, tc, and tcx programs")
+            .contains("ctx.wire_len is only available on tc_action, tc, tcx, and netkit programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
@@ -6992,19 +7086,21 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected sk_skb_parser tstamp access error")
             .contains(
-                "ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
             )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected sk_skb_parser tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on tc_action, tc, and tcx programs")
+            .contains(
+                "ctx.tstamp_type is only available on tc_action, tc, tcx, and netkit programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected sk_skb_parser hwtstamp access error")
             .contains(
-                "ctx.hwtstamp is only available on tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.hwtstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
             )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
@@ -7013,7 +7109,7 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockMark)
             .expect("expected sk_skb_parser mark access error")
-            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb programs")
+            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)

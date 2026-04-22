@@ -231,7 +231,7 @@ impl ContextWriteAvailability {
             }),
             Self::CgroupSkbEgressOnly => attach_shape.is_cgroup_skb_ingress().then(|| {
                 format!(
-                    "ctx.{field_name} is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs"
+                    "ctx.{field_name} is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
                 )
             }),
             Self::CgroupSockAddrUnixOnly => attach_shape.cgroup_sock_addr().and_then(
@@ -596,6 +596,10 @@ const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
     },
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::Tcx,
+        surfaces: TC_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::Netkit,
         surfaces: TC_CTX_WRITE_SURFACES,
     },
     ProgramContextWriteSurfaceSpec {

@@ -618,6 +618,26 @@ fn test_parse_program_spec_tcx_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_netkit_is_structured() {
+    let (prog_type, target) = parse_probe_spec("netkit:lo:peer").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Netkit);
+    assert_eq!(target, "lo:peer");
+
+    let spec = parse_program_spec("netkit:lo:peer").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Netkit {
+            target: NetkitTarget {
+                interface: "lo".to_string(),
+                attach_type: NetkitAttachType::Peer,
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "netkit:lo:peer");
+    assert_eq!(spec.section_name(), "netkit/peer");
+}
+
+#[test]
 fn test_parse_program_spec_tc_action_is_structured() {
     let (prog_type, target) = parse_probe_spec("action:demo-action").unwrap();
     assert_eq!(prog_type, EbpfProgramType::TcAction);
@@ -1355,6 +1375,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         ),
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
         (EbpfProgramType::Tcx, "lo:ingress", "tcx"),
+        (EbpfProgramType::Netkit, "lo:primary", "netkit"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
         (EbpfProgramType::KprobeMulti, "vfs_*", "kprobe.multi"),
         (EbpfProgramType::KretprobeMulti, "vfs_*", "kretprobe.multi"),

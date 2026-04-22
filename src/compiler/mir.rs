@@ -1286,25 +1286,25 @@ impl CtxStoreTarget {
                 "writable cgroup_sock priority is only supported on cgroup_sock programs"
             }
             CtxStoreTarget::SkbMark => {
-                "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs"
             }
             CtxStoreTarget::SkbQueueMapping => {
-                "ctx.queue_mapping is only writable on tc_action, tc, and tcx programs"
+                "ctx.queue_mapping is only writable on tc_action, tc, tcx, and netkit programs"
             }
             CtxStoreTarget::SkbPriority => {
-                "ctx.priority is only writable on lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                "ctx.priority is only writable on lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"
             }
             CtxStoreTarget::SkbTcIndex => {
-                "ctx.tc_index is only writable on tc_action, tc, tcx, sk_skb, and sk_skb_parser programs"
+                "ctx.tc_index is only writable on tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"
             }
             CtxStoreTarget::SkbCbWord(_) => {
-                "ctx.cb is only writable on socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb programs"
+                "ctx.cb is only writable on socket_filter, lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs"
             }
             CtxStoreTarget::SkbTcClassid => {
-                "ctx.tc_classid is only writable on tc_action, tc, and tcx programs"
+                "ctx.tc_classid is only writable on tc_action, tc, tcx, and netkit programs"
             }
             CtxStoreTarget::SkbTstamp => {
-                "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs"
+                "ctx.tstamp is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
             }
             CtxStoreTarget::SysctlFilePos => {
                 "writable cgroup_sysctl file_pos is only supported on cgroup_sysctl programs"

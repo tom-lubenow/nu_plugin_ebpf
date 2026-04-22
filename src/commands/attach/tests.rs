@@ -7793,6 +7793,35 @@ fn test_compile_tcx_ctx_scalar_and_packet_pointer_programs() {
 }
 
 #[test]
+fn test_compile_netkit_ctx_scalar_and_packet_pointer_programs() {
+    for (members, context) in [
+        (
+            vec![string_member("packet_len")],
+            "netkit primary ctx.packet_len count",
+        ),
+        (
+            vec![string_member("data"), int_member(0)],
+            "netkit primary ctx.data[0] count",
+        ),
+        (
+            vec![string_member("data_meta"), int_member(0)],
+            "netkit primary ctx.data_meta[0] count",
+        ),
+        (
+            vec![string_member("sk"), string_member("family")],
+            "netkit primary ctx.sk.family count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            CellPath { members },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_tc_action_ctx_socket_projection_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::TcAction,

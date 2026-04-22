@@ -19,6 +19,7 @@ const SKB_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::Tc,
     EbpfProgramType::Tcx,
+    EbpfProgramType::Netkit,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,

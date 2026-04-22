@@ -321,6 +321,12 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
         ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => {
             validate_network_interface_target(&target.interface)
         }
+        ProgramSpec::Netkit { .. } => {
+            let target = spec
+                .netkit_target()
+                .unwrap_or_else(|| unreachable!("netkit specs must carry a netkit target"));
+            validate_network_interface_target(&target.interface)
+        }
         ProgramSpec::TcAction { .. } => Ok(()),
         ProgramSpec::CgroupSkb { target } => {
             validate_cgroup_directory_target("cgroup_skb", &target.cgroup_path)

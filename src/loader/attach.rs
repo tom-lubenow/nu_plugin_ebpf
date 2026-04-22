@@ -14,6 +14,7 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
             | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::LsmCgroup
             | ProgramAttachKind::Tcx
+            | ProgramAttachKind::Netkit
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector
@@ -837,6 +838,7 @@ impl EbpfState {
             | ProgramAttachKind::UretprobeMulti
             | ProgramAttachKind::LsmCgroup
             | ProgramAttachKind::Tcx
+            | ProgramAttachKind::Netkit
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector

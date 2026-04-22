@@ -1222,7 +1222,7 @@ fn test_lower_kprobe_ifindex_alias_reports_packet_context_error() {
 
     assert!(err
         .to_string()
-        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs"));
+        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"));
 }
 
 #[test]
@@ -4952,7 +4952,7 @@ fn test_lower_cgroup_skb_ingress_ctx_tstamp_assignment_is_rejected() {
     .expect_err("cgroup_skb ingress ctx.tstamp assignment should be rejected");
 
     assert!(err.to_string().contains(
-        "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs"
+        "ctx.tstamp is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
     ));
 }
 

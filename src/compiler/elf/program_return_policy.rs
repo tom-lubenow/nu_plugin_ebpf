@@ -281,7 +281,8 @@ const SOCKET_FILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramTyp
 const TC_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::Tc, EbpfProgramType::TcAction];
 
-const TCX_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tcx];
+const TCX_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Tcx, EbpfProgramType::Netkit];
 
 const FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
 
