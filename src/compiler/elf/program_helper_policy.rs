@@ -24,6 +24,13 @@ struct GetSocketCookieArgPolicySpec {
     program_types: &'static [EbpfProgramType],
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ProgramSpecificHelperPolicy {
+    program_type: EbpfProgramType,
+    label: &'static str,
+    modeled_helpers: &'static [BpfHelper],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HelperProgramSurfaceFamily {
     LircMode2,
@@ -747,6 +754,15 @@ fn helper_list_contains(helpers: &[BpfHelper], helper: BpfHelper) -> bool {
         .any(|candidate| helper_ids_equal(candidate, helper))
 }
 
+fn program_specific_helper_policy(
+    program_type: EbpfProgramType,
+) -> Option<ProgramSpecificHelperPolicy> {
+    PROGRAM_SPECIFIC_HELPER_POLICIES
+        .iter()
+        .copied()
+        .find(|policy| policy.program_type == program_type)
+}
+
 const TC_INGRESS_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::RedirectPeer, BpfHelper::SkAssign];
 const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] = &[
     BpfHelper::GetCgroupClassid,
@@ -762,6 +778,12 @@ const SYSCALL_MODELED_HELPERS: &[BpfHelper] = &[
     BpfHelper::SysClose,
     BpfHelper::KallsymsLookupName,
 ];
+const PROGRAM_SPECIFIC_HELPER_POLICIES: &[ProgramSpecificHelperPolicy] =
+    &[ProgramSpecificHelperPolicy {
+        program_type: EbpfProgramType::Syscall,
+        label: "syscall",
+        modeled_helpers: SYSCALL_MODELED_HELPERS,
+    }];
 const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port"];
 const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4"];
 const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6"];
@@ -1026,13 +1048,14 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
 
 impl EbpfProgramType {
     pub(crate) fn helper_call_error(&self, helper: BpfHelper) -> Option<String> {
-        if *self == EbpfProgramType::Syscall
-            && !helper_list_contains(SYSCALL_MODELED_HELPERS, helper)
-        {
-            return Some(format!(
-                "helper '{}' is not modeled for syscall programs",
-                helper.name()
-            ));
+        if let Some(policy) = program_specific_helper_policy(*self) {
+            if !helper_list_contains(policy.modeled_helpers, helper) {
+                return Some(format!(
+                    "helper '{}' is not modeled for {} programs",
+                    helper.name(),
+                    policy.label
+                ));
+            }
         }
         helper_program_surface_spec(helper)
             .filter(|spec| !spec.allows(*self))
