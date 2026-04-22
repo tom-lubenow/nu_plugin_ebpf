@@ -966,6 +966,11 @@ impl EbpfProgramType {
         self.info().canonical_prefix
     }
 
+    /// Get the underlying kernel UAPI `BPF_PROG_TYPE_*` enum name.
+    pub fn kernel_prog_type(&self) -> &'static str {
+        self.info().kernel_prog_type
+    }
+
     /// Get the ELF section name prefix for this program type
     pub fn section_prefix(&self) -> &'static str {
         self.info().section_prefix

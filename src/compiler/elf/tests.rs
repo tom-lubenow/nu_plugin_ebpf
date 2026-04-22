@@ -2470,6 +2470,72 @@ fn test_program_type_spec_prefix_registry_matches_alias_metadata() {
 }
 
 #[test]
+fn test_program_type_registry_covers_current_kernel_uapi_program_types() {
+    let modeled_kernel_types: std::collections::HashSet<_> =
+        EbpfProgramType::supported_program_types()
+            .iter()
+            .map(EbpfProgramType::kernel_prog_type)
+            .collect();
+
+    for kernel_type in [
+        "BPF_PROG_TYPE_SOCKET_FILTER",
+        "BPF_PROG_TYPE_KPROBE",
+        "BPF_PROG_TYPE_SCHED_CLS",
+        "BPF_PROG_TYPE_SCHED_ACT",
+        "BPF_PROG_TYPE_TRACEPOINT",
+        "BPF_PROG_TYPE_XDP",
+        "BPF_PROG_TYPE_PERF_EVENT",
+        "BPF_PROG_TYPE_CGROUP_SKB",
+        "BPF_PROG_TYPE_CGROUP_SOCK",
+        "BPF_PROG_TYPE_LWT_IN",
+        "BPF_PROG_TYPE_LWT_OUT",
+        "BPF_PROG_TYPE_LWT_XMIT",
+        "BPF_PROG_TYPE_SOCK_OPS",
+        "BPF_PROG_TYPE_SK_SKB",
+        "BPF_PROG_TYPE_CGROUP_DEVICE",
+        "BPF_PROG_TYPE_SK_MSG",
+        "BPF_PROG_TYPE_RAW_TRACEPOINT",
+        "BPF_PROG_TYPE_CGROUP_SOCK_ADDR",
+        "BPF_PROG_TYPE_LWT_SEG6LOCAL",
+        "BPF_PROG_TYPE_LIRC_MODE2",
+        "BPF_PROG_TYPE_SK_REUSEPORT",
+        "BPF_PROG_TYPE_FLOW_DISSECTOR",
+        "BPF_PROG_TYPE_CGROUP_SYSCTL",
+        "BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE",
+        "BPF_PROG_TYPE_CGROUP_SOCKOPT",
+        "BPF_PROG_TYPE_TRACING",
+        "BPF_PROG_TYPE_STRUCT_OPS",
+        "BPF_PROG_TYPE_EXT",
+        "BPF_PROG_TYPE_LSM",
+        "BPF_PROG_TYPE_SK_LOOKUP",
+        "BPF_PROG_TYPE_SYSCALL",
+        "BPF_PROG_TYPE_NETFILTER",
+    ] {
+        assert!(
+            modeled_kernel_types.contains(kernel_type),
+            "kernel UAPI program type {kernel_type} should be represented in the program model"
+        );
+    }
+
+    assert_eq!(
+        EbpfProgramType::TcAction.kernel_prog_type(),
+        "BPF_PROG_TYPE_SCHED_ACT"
+    );
+    assert_eq!(
+        EbpfProgramType::Fentry.kernel_prog_type(),
+        "BPF_PROG_TYPE_TRACING"
+    );
+    assert_eq!(
+        EbpfProgramType::Extension.kernel_prog_type(),
+        "BPF_PROG_TYPE_EXT"
+    );
+    assert_eq!(
+        EbpfProgramType::Syscall.kernel_prog_type(),
+        "BPF_PROG_TYPE_SYSCALL"
+    );
+}
+
+#[test]
 fn test_program_intrinsic_command_registry() {
     assert_eq!(
         ProgramIntrinsic::from_command_name("helper-call"),

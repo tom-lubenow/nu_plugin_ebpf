@@ -32,6 +32,7 @@ impl ProgramContextFamily {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProgramTypeInfo {
     pub program_type: EbpfProgramType,
+    pub kernel_prog_type: &'static str,
     pub canonical_prefix: &'static str,
     pub spec_aliases: &'static [&'static str],
     pub section_prefix: &'static str,
@@ -110,6 +111,7 @@ pub(super) const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
 
 pub(super) const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Kprobe,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
     canonical_prefix: "kprobe",
     spec_aliases: KPROBE_SPEC_ALIASES,
     section_prefix: "kprobe",
@@ -125,6 +127,7 @@ pub(super) const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Kretprobe,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
     canonical_prefix: "kretprobe",
     spec_aliases: KRETPROBE_SPEC_ALIASES,
     section_prefix: "kretprobe",
@@ -140,6 +143,7 @@ pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Fentry,
+    kernel_prog_type: "BPF_PROG_TYPE_TRACING",
     canonical_prefix: "fentry",
     spec_aliases: FENTRY_SPEC_ALIASES,
     section_prefix: "fentry",
@@ -155,6 +159,7 @@ pub(super) const FENTRY_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Fexit,
+    kernel_prog_type: "BPF_PROG_TYPE_TRACING",
     canonical_prefix: "fexit",
     spec_aliases: FEXIT_SPEC_ALIASES,
     section_prefix: "fexit",
@@ -170,6 +175,7 @@ pub(super) const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::TpBtf,
+    kernel_prog_type: "BPF_PROG_TYPE_TRACING",
     canonical_prefix: "tp_btf",
     spec_aliases: TP_BTF_SPEC_ALIASES,
     section_prefix: "tp_btf",
@@ -185,6 +191,7 @@ pub(super) const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Tracepoint,
+    kernel_prog_type: "BPF_PROG_TYPE_TRACEPOINT",
     canonical_prefix: "tracepoint",
     spec_aliases: TRACEPOINT_SPEC_ALIASES,
     section_prefix: "tracepoint",
@@ -200,6 +207,7 @@ pub(super) const TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::RawTracepoint,
+    kernel_prog_type: "BPF_PROG_TYPE_RAW_TRACEPOINT",
     canonical_prefix: "raw_tracepoint",
     spec_aliases: RAW_TRACEPOINT_SPEC_ALIASES,
     section_prefix: "raw_tracepoint",
@@ -215,6 +223,7 @@ pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const RAW_TRACEPOINT_WRITABLE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::RawTracepointWritable,
+    kernel_prog_type: "BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE",
     canonical_prefix: "raw_tracepoint.w",
     spec_aliases: RAW_TRACEPOINT_WRITABLE_SPEC_ALIASES,
     section_prefix: "raw_tracepoint.w",
@@ -230,6 +239,7 @@ pub(super) const RAW_TRACEPOINT_WRITABLE_INFO: ProgramTypeInfo = ProgramTypeInfo
 
 pub(super) const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Uprobe,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
     canonical_prefix: "uprobe",
     spec_aliases: UPROBE_SPEC_ALIASES,
     section_prefix: "uprobe",
@@ -245,6 +255,7 @@ pub(super) const UPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Uretprobe,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
     canonical_prefix: "uretprobe",
     spec_aliases: URETPROBE_SPEC_ALIASES,
     section_prefix: "uretprobe",
@@ -260,6 +271,7 @@ pub(super) const URETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Lsm,
+    kernel_prog_type: "BPF_PROG_TYPE_LSM",
     canonical_prefix: "lsm",
     spec_aliases: LSM_SPEC_ALIASES,
     section_prefix: "lsm",
@@ -277,6 +289,7 @@ pub(super) const EXTENSION_CAPABILITIES: &[ProgramCapability] = &[];
 
 pub(super) const EXTENSION_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Extension,
+    kernel_prog_type: "BPF_PROG_TYPE_EXT",
     canonical_prefix: "freplace",
     spec_aliases: EXTENSION_SPEC_ALIASES,
     section_prefix: "freplace",
@@ -294,6 +307,7 @@ pub(super) const SYSCALL_CAPABILITIES: &[ProgramCapability] = &[];
 
 pub(super) const SYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Syscall,
+    kernel_prog_type: "BPF_PROG_TYPE_SYSCALL",
     canonical_prefix: "syscall",
     spec_aliases: SYSCALL_SPEC_ALIASES,
     section_prefix: "syscall",
@@ -309,6 +323,7 @@ pub(super) const SYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Xdp,
+    kernel_prog_type: "BPF_PROG_TYPE_XDP",
     canonical_prefix: "xdp",
     spec_aliases: XDP_SPEC_ALIASES,
     section_prefix: "xdp",
@@ -324,6 +339,7 @@ pub(super) const XDP_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::PerfEvent,
+    kernel_prog_type: "BPF_PROG_TYPE_PERF_EVENT",
     canonical_prefix: "perf_event",
     spec_aliases: PERF_EVENT_SPEC_ALIASES,
     section_prefix: "perf_event",
@@ -339,6 +355,7 @@ pub(super) const PERF_EVENT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SocketFilter,
+    kernel_prog_type: "BPF_PROG_TYPE_SOCKET_FILTER",
     canonical_prefix: "socket_filter",
     spec_aliases: SOCKET_FILTER_SPEC_ALIASES,
     section_prefix: "socket",
@@ -354,6 +371,7 @@ pub(super) const SOCKET_FILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupDevice,
+    kernel_prog_type: "BPF_PROG_TYPE_CGROUP_DEVICE",
     canonical_prefix: "cgroup_device",
     spec_aliases: CGROUP_DEVICE_SPEC_ALIASES,
     section_prefix: "cgroup",
@@ -369,6 +387,7 @@ pub(super) const CGROUP_DEVICE_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkLookup,
+    kernel_prog_type: "BPF_PROG_TYPE_SK_LOOKUP",
     canonical_prefix: "sk_lookup",
     spec_aliases: SK_LOOKUP_SPEC_ALIASES,
     section_prefix: "sk_lookup",
@@ -384,6 +403,7 @@ pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const FLOW_DISSECTOR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::FlowDissector,
+    kernel_prog_type: "BPF_PROG_TYPE_FLOW_DISSECTOR",
     canonical_prefix: "flow_dissector",
     spec_aliases: FLOW_DISSECTOR_SPEC_ALIASES,
     section_prefix: "flow_dissector",
@@ -399,6 +419,7 @@ pub(super) const FLOW_DISSECTOR_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const NETFILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Netfilter,
+    kernel_prog_type: "BPF_PROG_TYPE_NETFILTER",
     canonical_prefix: "netfilter",
     spec_aliases: NETFILTER_SPEC_ALIASES,
     section_prefix: "netfilter",
@@ -414,6 +435,7 @@ pub(super) const NETFILTER_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const LWT_IN_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::LwtIn,
+    kernel_prog_type: "BPF_PROG_TYPE_LWT_IN",
     canonical_prefix: "lwt_in",
     spec_aliases: LWT_IN_SPEC_ALIASES,
     section_prefix: "lwt_in",
@@ -429,6 +451,7 @@ pub(super) const LWT_IN_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const LWT_OUT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::LwtOut,
+    kernel_prog_type: "BPF_PROG_TYPE_LWT_OUT",
     canonical_prefix: "lwt_out",
     spec_aliases: LWT_OUT_SPEC_ALIASES,
     section_prefix: "lwt_out",
@@ -444,6 +467,7 @@ pub(super) const LWT_OUT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const LWT_XMIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::LwtXmit,
+    kernel_prog_type: "BPF_PROG_TYPE_LWT_XMIT",
     canonical_prefix: "lwt_xmit",
     spec_aliases: LWT_XMIT_SPEC_ALIASES,
     section_prefix: "lwt_xmit",
@@ -459,6 +483,7 @@ pub(super) const LWT_XMIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const LWT_SEG6LOCAL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::LwtSeg6Local,
+    kernel_prog_type: "BPF_PROG_TYPE_LWT_SEG6LOCAL",
     canonical_prefix: "lwt_seg6local",
     spec_aliases: LWT_SEG6LOCAL_SPEC_ALIASES,
     section_prefix: "lwt_seg6local",
@@ -474,6 +499,7 @@ pub(super) const LWT_SEG6LOCAL_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SK_REUSEPORT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkReuseport,
+    kernel_prog_type: "BPF_PROG_TYPE_SK_REUSEPORT",
     canonical_prefix: "sk_reuseport",
     spec_aliases: SK_REUSEPORT_SPEC_ALIASES,
     section_prefix: "sk_reuseport",
@@ -489,6 +515,7 @@ pub(super) const SK_REUSEPORT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkMsg,
+    kernel_prog_type: "BPF_PROG_TYPE_SK_MSG",
     canonical_prefix: "sk_msg",
     spec_aliases: SK_MSG_SPEC_ALIASES,
     section_prefix: "sk_msg",
@@ -504,6 +531,7 @@ pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkSkb,
+    kernel_prog_type: "BPF_PROG_TYPE_SK_SKB",
     canonical_prefix: "sk_skb",
     spec_aliases: SK_SKB_SPEC_ALIASES,
     section_prefix: "sk_skb/stream_verdict",
@@ -519,6 +547,7 @@ pub(super) const SK_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SK_SKB_PARSER_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkSkbParser,
+    kernel_prog_type: "BPF_PROG_TYPE_SK_SKB",
     canonical_prefix: "sk_skb_parser",
     spec_aliases: SK_SKB_PARSER_SPEC_ALIASES,
     section_prefix: "sk_skb/stream_parser",
@@ -534,6 +563,7 @@ pub(super) const SK_SKB_PARSER_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SockOps,
+    kernel_prog_type: "BPF_PROG_TYPE_SOCK_OPS",
     canonical_prefix: "sock_ops",
     spec_aliases: SOCK_OPS_SPEC_ALIASES,
     section_prefix: "sockops",
@@ -549,6 +579,7 @@ pub(super) const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Tc,
+    kernel_prog_type: "BPF_PROG_TYPE_SCHED_CLS",
     canonical_prefix: "tc",
     spec_aliases: TC_SPEC_ALIASES,
     section_prefix: "classifier",
@@ -564,6 +595,7 @@ pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const TC_ACTION_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::TcAction,
+    kernel_prog_type: "BPF_PROG_TYPE_SCHED_ACT",
     canonical_prefix: "tc_action",
     spec_aliases: TC_ACTION_SPEC_ALIASES,
     section_prefix: "action",
@@ -579,6 +611,7 @@ pub(super) const TC_ACTION_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSkb,
+    kernel_prog_type: "BPF_PROG_TYPE_CGROUP_SKB",
     canonical_prefix: "cgroup_skb",
     spec_aliases: CGROUP_SKB_SPEC_ALIASES,
     section_prefix: "cgroup_skb",
@@ -594,6 +627,7 @@ pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSock,
+    kernel_prog_type: "BPF_PROG_TYPE_CGROUP_SOCK",
     canonical_prefix: "cgroup_sock",
     spec_aliases: CGROUP_SOCK_SPEC_ALIASES,
     section_prefix: "cgroup",
@@ -609,6 +643,7 @@ pub(super) const CGROUP_SOCK_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSysctl,
+    kernel_prog_type: "BPF_PROG_TYPE_CGROUP_SYSCTL",
     canonical_prefix: "cgroup_sysctl",
     spec_aliases: CGROUP_SYSCTL_SPEC_ALIASES,
     section_prefix: "cgroup",
@@ -624,6 +659,7 @@ pub(super) const CGROUP_SYSCTL_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const CGROUP_SOCKOPT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSockopt,
+    kernel_prog_type: "BPF_PROG_TYPE_CGROUP_SOCKOPT",
     canonical_prefix: "cgroup_sockopt",
     spec_aliases: CGROUP_SOCKOPT_SPEC_ALIASES,
     section_prefix: "cgroup",
@@ -639,6 +675,7 @@ pub(super) const CGROUP_SOCKOPT_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSockAddr,
+    kernel_prog_type: "BPF_PROG_TYPE_CGROUP_SOCK_ADDR",
     canonical_prefix: "cgroup_sock_addr",
     spec_aliases: CGROUP_SOCK_ADDR_SPEC_ALIASES,
     section_prefix: "cgroup",
@@ -654,6 +691,7 @@ pub(super) const CGROUP_SOCK_ADDR_INFO: ProgramTypeInfo = ProgramTypeInfo {
 
 pub(super) const LIRC_MODE2_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::LircMode2,
+    kernel_prog_type: "BPF_PROG_TYPE_LIRC_MODE2",
     canonical_prefix: "lirc_mode2",
     spec_aliases: LIRC_MODE2_SPEC_ALIASES,
     section_prefix: "lirc_mode2",
@@ -677,6 +715,7 @@ pub(super) const STRUCT_OPS_CAPABILITIES: &[ProgramCapability] = &[
 
 pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::StructOps,
+    kernel_prog_type: "BPF_PROG_TYPE_STRUCT_OPS",
     canonical_prefix: "struct_ops",
     spec_aliases: STRUCT_OPS_SPEC_ALIASES,
     section_prefix: "struct_ops",
