@@ -7266,6 +7266,7 @@ fn test_verify_mir_for_probe_context_check_mtu_requires_four_byte_mtu_len_pointe
 fn make_fib_lookup_vcc_call(
     plen: i64,
     params_size: usize,
+    flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
@@ -7288,7 +7289,7 @@ fn make_fib_lookup_vcc_call(
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(params),
                 MirValue::Const(plen),
-                MirValue::Const(0),
+                MirValue::Const(flags),
             ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -7313,7 +7314,7 @@ fn test_verify_mir_for_probe_context_fib_lookup_accepts_xdp_and_tc_programs() {
         ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
         ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
     ] {
-        let (func, types) = make_fib_lookup_vcc_call(64, 64);
+        let (func, types) = make_fib_lookup_vcc_call(64, 64, 0);
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect("expected bpf_fib_lookup helper to verify");
     }
@@ -7321,7 +7322,7 @@ fn test_verify_mir_for_probe_context_fib_lookup_accepts_xdp_and_tc_programs() {
 
 #[test]
 fn test_verify_mir_for_probe_context_fib_lookup_rejects_non_xdp_tc_program() {
-    let (func, types) = make_fib_lookup_vcc_call(64, 64);
+    let (func, types) = make_fib_lookup_vcc_call(64, 64, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_fib_lookup to be rejected outside xdp/tc");
@@ -7333,12 +7334,27 @@ fn test_verify_mir_for_probe_context_fib_lookup_rejects_non_xdp_tc_program() {
 
 #[test]
 fn test_verify_mir_for_probe_context_fib_lookup_rejects_small_params_buffer() {
-    let (func, types) = make_fib_lookup_vcc_call(64, 8);
+    let (func, types) = make_fib_lookup_vcc_call(64, 8, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_fib_lookup params buffer bounds error");
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_fib_lookup_rejects_invalid_flags() {
+    let (func, types) = make_fib_lookup_vcc_call(64, 64, 0x40);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_fib_lookup flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_fib_lookup' requires arg3 flags")),
         "unexpected errors: {:?}",
         err
     );

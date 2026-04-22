@@ -147,7 +147,7 @@ Last updated: 2026-04-22.
   - Typed helper skb ECN coverage now includes `bpf_skb_ecn_set_ce` on TC/tc_action/cgroup_skb, with shared skb-context pointer checks and program-surface policy.
   - Typed helper TC packet-shape coverage now includes `bpf_skb_change_proto` and `bpf_skb_change_type`, including zero reserved flags for `change_proto` and packet-pointer invalidation for protocol changes.
   - Generic checksum-diff coverage now includes `bpf_csum_diff` on the XDP/TC/LWT helper surface, with word-sized buffer length validation and explicit null-buffer/zero-size pairing checks.
-  - Typed route-lookup helper coverage now includes `bpf_fib_lookup` on XDP/tc_action/TC, with ctx pointer checks and stack/map params-buffer bounds driven by `plen`.
+  - Typed route-lookup helper coverage now includes `bpf_fib_lookup` on XDP/tc_action/TC, with ctx pointer checks, stack/map params-buffer bounds driven by `plen`, and `BPF_FIB_LOOKUP_*` flag-mask validation.
   - Typed skb tunnel metadata helper coverage now includes `bpf_skb_get_tunnel_key`, `bpf_skb_set_tunnel_key`, `bpf_skb_get_tunnel_opt`, and `bpf_skb_set_tunnel_opt` on tc_action/TC/lwt_xmit, with stack/map buffer bounds driven by the helper size argument and tunnel-key flag validation for the key helpers.
   - Typed skb XFRM metadata helper coverage now includes `bpf_skb_get_xfrm_state` on tc_action/TC, with zero reserved flags and stack/map output-buffer bounds driven by the helper size argument.
   - Typed LWT helper coverage now includes `bpf_lwt_push_encap` on lwt_in/lwt_xmit plus `bpf_lwt_seg6_store_bytes`, `bpf_lwt_seg6_adjust_srh`, and `bpf_lwt_seg6_action` on lwt_seg6local, including packet-pointer invalidation and stack/map buffer bounds for buffer-taking forms.

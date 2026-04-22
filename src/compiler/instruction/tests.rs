@@ -1899,6 +1899,13 @@ fn test_fib_lookup_helper_contract() {
     assert!(!params.allowed.allow_user);
     assert_eq!(params.fixed_size, None);
     assert_eq!(params.size_from_arg, Some(2));
+    assert_eq!(
+        BpfHelper::FibLookup.scalar_arg_bitmask_requirement(3),
+        Some((
+            0x3f,
+            "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)"
+        ))
+    );
 }
 
 #[test]

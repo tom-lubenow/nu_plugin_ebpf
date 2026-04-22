@@ -293,8 +293,9 @@ tc_action, and TC also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_P
 `len_diff` values remain kernel-enforced. XDP, tc_action, and TC also
 model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
 `PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
-accessible size covers `PLEN`; the kernel still enforces minimum struct
-size and flag-combination rules. `tc_action`, TC, and `lwt_xmit` model
+accessible size covers `PLEN`; `FLAGS` may contain only modeled
+`BPF_FIB_LOOKUP_*` bits (`0x3f`), while the kernel still enforces minimum
+struct size and flag-combination rules. `tc_action`, TC, and `lwt_xmit` model
 the skb tunnel metadata helpers:
 `helper-call "bpf_skb_get_tunnel_key" $ctx KEY_PTR SIZE FLAGS`,
 `helper-call "bpf_skb_set_tunnel_key" $ctx KEY_PTR SIZE FLAGS`,

@@ -1027,6 +1027,10 @@ impl BpfHelper {
                 0x1b,
                 "helper 'bpf_redirect_map' requires arg2 flags to contain only fallback return-code bits plus BPF_F_BROADCAST/BPF_F_EXCLUDE_INGRESS (0x1b)",
             )),
+            (Self::FibLookup, 3) => Some((
+                0x3f,
+                "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)",
+            )),
             _ => None,
         }
     }

@@ -1702,7 +1702,7 @@ fn test_type_error_check_mtu_helper_requires_four_byte_mtu_len_pointer() {
     );
 }
 
-fn make_fib_lookup_call(plen: i64, params_size: usize) -> (MirFunction, VReg) {
+fn make_fib_lookup_call(plen: i64, params_size: usize, flags: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -1720,7 +1720,7 @@ fn make_fib_lookup_call(plen: i64, params_size: usize) -> (MirFunction, VReg) {
             MirValue::VReg(ctx),
             MirValue::StackSlot(params),
             MirValue::Const(plen),
-            MirValue::Const(0),
+            MirValue::Const(flags),
         ],
     });
     block.terminator = MirInst::Return { val: None };
@@ -1734,7 +1734,7 @@ fn test_infer_fib_lookup_helper_in_xdp_and_tc_programs() {
         ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
         ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
     ] {
-        let (func, dst) = make_fib_lookup_call(64, 64);
+        let (func, dst) = make_fib_lookup_call(64, 64, 0);
         let mut ti = TypeInference::new(Some(probe_ctx));
         let types = ti
             .infer(&func)
@@ -1745,7 +1745,7 @@ fn test_infer_fib_lookup_helper_in_xdp_and_tc_programs() {
 
 #[test]
 fn test_type_error_fib_lookup_helper_rejects_non_xdp_tc_program() {
-    let (func, _) = make_fib_lookup_call(64, 64);
+    let (func, _) = make_fib_lookup_call(64, 64, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -1759,7 +1759,7 @@ fn test_type_error_fib_lookup_helper_rejects_non_xdp_tc_program() {
 
 #[test]
 fn test_type_error_fib_lookup_helper_rejects_small_params_buffer() {
-    let (func, _) = make_fib_lookup_call(64, 8);
+    let (func, _) = make_fib_lookup_call(64, 8, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -1769,6 +1769,23 @@ fn test_type_error_fib_lookup_helper_rejects_small_params_buffer() {
         errs.iter().any(|e| e
             .message
             .contains("helper fib_lookup params requires 64 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_fib_lookup_helper_rejects_invalid_flags() {
+    let (func, _) = make_fib_lookup_call(64, 64, 0x40);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup flags error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_fib_lookup' requires arg3 flags")),
         "unexpected errors: {:?}",
         errs
     );
