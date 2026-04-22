@@ -312,7 +312,7 @@ fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
         .infer(&func)
         .expect_err("expected bpf_get_socket_cookie to be rejected on sk_lookup");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
     )));
 }
 

@@ -189,6 +189,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Fexit,
             EbpfProgramType::TpBtf,
             EbpfProgramType::SocketFilter,
+            EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSock,
@@ -197,23 +198,25 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
+        label: "fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketUid,
         program_types: &[
             EbpfProgramType::SocketFilter,
+            EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+        label: "socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::NetnsCookie,
         program_types: &[
             EbpfProgramType::SocketFilter,
+            EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSock,
@@ -222,7 +225,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SockOps,
             EbpfProgramType::SkMsg,
         ],
-        label: "socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg",
+        label: "socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::CgroupSkb,
@@ -669,6 +672,7 @@ impl EbpfProgramType {
         if matches!(
             self,
             EbpfProgramType::SocketFilter
+                | EbpfProgramType::TcAction
                 | EbpfProgramType::Tc
                 | EbpfProgramType::CgroupSkb
                 | EbpfProgramType::CgroupSockAddr

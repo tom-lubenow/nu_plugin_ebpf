@@ -7309,6 +7309,28 @@ fn test_compile_lwt_ctx_scalar_counter_programs() {
 }
 
 #[test]
+fn test_compile_tc_action_ctx_scalar_counter_programs() {
+    for (field, context) in [
+        ("packet_len", "tc_action ctx.packet_len count"),
+        ("eth_protocol", "tc_action ctx.eth_protocol count"),
+        ("hash", "tc_action ctx.hash count"),
+        ("ifindex", "tc_action ctx.ifindex count"),
+        ("socket_cookie", "tc_action ctx.socket_cookie count"),
+        ("socket_uid", "tc_action ctx.socket_uid count"),
+        ("netns_cookie", "tc_action ctx.netns_cookie count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_sk_reuseport_ctx_scalar_counter_programs() {
     for (field, context) in [
         ("packet_len", "sk_reuseport ctx.packet_len count"),

@@ -110,7 +110,7 @@ pub use crate::program_spec::{
     NetfilterProtocolFamily, NetfilterTarget, PerfEventEvent, PerfEventHardwareEvent,
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, SkLookupTarget,
     SkMsgTarget, SkReuseportMode, SkReuseportTarget, SkSkbTarget, SockOpsTarget,
-    SocketFilterTarget, TcTarget, UprobeTarget,
+    SocketFilterTarget, TcActionTarget, TcTarget, UprobeTarget,
 };
 pub use targets::{parse_probe_spec, parse_program_spec};
 

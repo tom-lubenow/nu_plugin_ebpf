@@ -265,6 +265,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             validate_cgroup_path_target(cgroup_path)
         }
         ProgramSpec::Tc { target } => validate_network_interface_target(&target.interface),
+        ProgramSpec::TcAction { .. } => Ok(()),
         ProgramSpec::CgroupSkb { target } => {
             validate_cgroup_directory_target("cgroup_skb", &target.cgroup_path)
         }

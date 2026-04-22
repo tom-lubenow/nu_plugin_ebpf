@@ -488,7 +488,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             .and_then(|ctx| ctx.data_meta_context_kind())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
-                    "ctx.data_meta is only available on xdp and tc programs".to_string(),
+                    "ctx.data_meta is only available on xdp, tc_action, and tc programs"
+                        .to_string(),
                 )
             })
     }

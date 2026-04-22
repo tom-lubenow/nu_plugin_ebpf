@@ -255,7 +255,8 @@ const XDP_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
 
 const SOCKET_FILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SocketFilter];
 
-const TC_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
+const TC_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Tc, EbpfProgramType::TcAction];
 
 const FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
 

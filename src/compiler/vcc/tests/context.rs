@@ -1020,7 +1020,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_non_skb_program
         .expect_err("expected skb tstamp store to be rejected outside skb-backed programs");
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.tstamp is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+            "ctx.tstamp is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
         )
     }));
 }
@@ -1041,8 +1041,9 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_socket_filter()
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect_err("expected skb tstamp store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
+        )
     }));
 }
 

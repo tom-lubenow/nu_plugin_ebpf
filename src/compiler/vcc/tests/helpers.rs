@@ -337,7 +337,7 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_sk_lookup() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected get_socket_cookie sk_lookup program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
     )));
 }
 

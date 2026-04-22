@@ -1222,7 +1222,7 @@ fn test_lower_kprobe_ifindex_alias_reports_packet_context_error() {
 
     assert!(err
         .to_string()
-        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"));
+        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"));
 }
 
 #[test]

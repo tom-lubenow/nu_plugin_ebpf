@@ -2392,8 +2392,9 @@ fn test_infer_socket_filter_tstamp_field_rejects() {
         .expect_err("expected socket_filter tstamp field to be rejected");
 
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -2419,7 +2420,7 @@ fn test_infer_socket_filter_tstamp_type_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp_type is only available on lwt_* and tc programs")
+            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
     }));
 }
 
@@ -2444,8 +2445,9 @@ fn test_infer_socket_filter_hwtstamp_field_rejects() {
         .expect_err("expected socket_filter hwtstamp field to be rejected");
 
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.hwtstamp is only available on lwt_*, tc, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -2471,7 +2473,7 @@ fn test_infer_sk_skb_mark_field_rejects() {
 
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc, and cgroup_skb programs",
+            "ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs",
         )
     }));
 }
@@ -3187,7 +3189,7 @@ fn test_type_error_store_skb_tstamp_rejects_non_skb_context() {
         .expect_err("skb tstamp store should be rejected outside skb-backed contexts");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "ctx.tstamp is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+            "ctx.tstamp is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
         )
     }));
 }
@@ -3209,8 +3211,9 @@ fn test_type_error_store_skb_tstamp_rejects_socket_filter_context() {
         .infer(&func)
         .expect_err("skb tstamp store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
-        e.message
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs",
+        )
     }));
 }
 

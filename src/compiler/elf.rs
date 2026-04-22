@@ -848,6 +848,8 @@ pub enum EbpfProgramType {
     SockOps,
     /// Traffic-control classifier attached to an interface ingress/egress hook
     Tc,
+    /// Traffic-control action program
+    TcAction,
     /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
     CgroupSkb,
     /// Cgroup socket program attached to socket lifecycle hooks
@@ -928,6 +930,7 @@ impl EbpfProgramType {
             EbpfProgramType::SkSkbParser => &SK_SKB_PARSER_INFO,
             EbpfProgramType::SockOps => &SOCK_OPS_INFO,
             EbpfProgramType::Tc => &TC_INFO,
+            EbpfProgramType::TcAction => &TC_ACTION_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
             EbpfProgramType::CgroupSock => &CGROUP_SOCK_INFO,
             EbpfProgramType::CgroupSysctl => &CGROUP_SYSCTL_INFO,
@@ -1078,6 +1081,7 @@ pub enum ProgramAttachKind {
     SkSkbParser,
     SockOps,
     Tc,
+    TcAction,
     CgroupSkb,
     CgroupSock,
     CgroupSysctl,
@@ -1104,6 +1108,7 @@ pub enum ProgramTargetKind {
     SocketReuseportMode,
     PinnedSockMapPath,
     TrafficControlInterface,
+    TrafficControlAction,
     CgroupPathAttachType,
     CgroupPathSockAttachType,
     CgroupPath,

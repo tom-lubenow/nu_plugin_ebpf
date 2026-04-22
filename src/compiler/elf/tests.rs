@@ -308,6 +308,18 @@ fn test_program_type_metadata_for_sk_msg() {
 }
 
 #[test]
+fn test_program_type_metadata_for_tc_action() {
+    let info = EbpfProgramType::TcAction.info();
+    assert_eq!(info.canonical_prefix, "tc_action");
+    assert_eq!(info.section_prefix, "action");
+    assert_eq!(info.attach_kind, ProgramAttachKind::TcAction);
+    assert_eq!(info.target_kind, ProgramTargetKind::TrafficControlAction);
+    assert_eq!(info.context_family, ProgramContextFamily::SkBuffPacket);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+}
+
+#[test]
 fn test_sk_skb_section_name() {
     assert_eq!(
         EbpfProgramType::SkSkb.section_prefix(),
@@ -376,6 +388,10 @@ fn test_program_type_return_action_aliases_cover_const_families() {
     assert_eq!(
         EbpfProgramType::Tc.return_action_alias("trap"),
         Some(ProgramReturnAlias::Const(8))
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.return_action_alias("drop"),
+        Some(ProgramReturnAlias::Const(2))
     );
     assert_eq!(
         EbpfProgramType::FlowDissector.return_action_alias("fallback"),
@@ -1401,7 +1417,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
-            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -1723,6 +1739,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::GetSocketUid),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::GetSocketCookie),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::GetSocketUid),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.helper_call_error(BpfHelper::GetNetnsCookie),
         None
     );
     assert_eq!(
@@ -2102,6 +2130,10 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
 fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
     assert_eq!(
         EbpfProgramType::SocketFilter.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Context)
+    );
+    assert_eq!(
+        EbpfProgramType::TcAction.get_socket_cookie_arg_policy(),
         Some(GetSocketCookieArgPolicy::Context)
     );
     assert_eq!(
@@ -4361,7 +4393,7 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_non_skb_program() {
         .expect_err("skb tstamp store target should be rejected outside skb-backed contexts");
     assert!(
         err.to_string().contains(
-            "ctx.tstamp is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+            "ctx.tstamp is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
         )
     );
 }
@@ -4373,8 +4405,9 @@ fn test_probe_context_rejects_skb_tstamp_store_target_on_socket_filter() {
         .validate_ctx_store_target(&CtxStoreTarget::SkbTstamp)
         .expect_err("skb tstamp store target should be rejected outside tc");
     assert!(
-        err.to_string()
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+        err.to_string().contains(
+            "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+        )
     );
 }
 
@@ -4619,7 +4652,7 @@ fn test_probe_context_rejects_data_meta_on_cgroup_skb() {
     let err = ctx
         .ctx_field_access_error(&CtxField::DataMeta)
         .expect("expected cgroup_skb data_meta access error");
-    assert!(err.contains("ctx.data_meta is only available on xdp and tc programs"));
+    assert!(err.contains("ctx.data_meta is only available on xdp, tc_action, and tc programs"));
 }
 
 #[test]
@@ -4639,13 +4672,13 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected cgroup_skb tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_* and tc programs")
+            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected cgroup_skb wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_* and tc programs")
+            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
@@ -4653,7 +4686,7 @@ fn test_probe_context_allows_packet_fields_on_cgroup_skb() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected cgroup_skb tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_* and tc programs")
+            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Hwtstamp).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
@@ -4929,30 +4962,34 @@ fn test_probe_context_allows_socket_filter_packet_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected socket_filter tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_* and tc programs")
+            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected socket_filter wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_* and tc programs")
+            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected socket_filter tstamp access error")
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+            .contains(
+                "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected socket_filter tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_* and tc programs")
+            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected socket_filter hwtstamp access error")
-            .contains("ctx.hwtstamp is only available on lwt_*, tc, and cgroup_skb programs")
+            .contains(
+                "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Data)
@@ -5020,14 +5057,14 @@ fn test_probe_context_allows_sk_reuseport_fields() {
         ctx.ctx_field_access_error(&CtxField::PktType)
             .expect("expected sk_reuseport pkt_type access error")
             .contains(
-                "ctx.pkt_type is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                "ctx.pkt_type is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
             )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::VlanTci)
             .expect("expected sk_reuseport vlan_tci access error")
             .contains(
-                "ctx.vlan_tci is only available on socket_filter, lwt_*, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                "ctx.vlan_tci is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
             )
     );
 }
@@ -5046,7 +5083,7 @@ fn test_probe_context_allows_flow_dissector_fields() {
         ctx.ctx_field_access_error(&CtxField::Socket)
             .expect("expected flow_dissector sk access error")
             .contains(
-                "ctx.sk is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                "ctx.sk is only available on socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
             )
     );
     assert!(
@@ -5099,9 +5136,34 @@ fn test_probe_context_allows_lwt_skb_packet_fields_without_socket_fields() {
         ctx.ctx_field_access_error(&CtxField::Socket)
             .expect("expected lwt socket access error")
             .contains(
-                "ctx.sk is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+                "ctx.sk is only available on socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
             )
     );
+}
+
+#[test]
+fn test_probe_context_allows_tc_action_skb_packet_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
+
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataMeta).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::EthProtocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::IngressIfindex)
+            .is_none()
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::SkbHash).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SocketCookie)
+            .is_none()
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::SocketUid).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::NetnsCookie).is_none());
 }
 
 #[test]
@@ -5288,7 +5350,7 @@ fn test_probe_context_rejects_netns_cookie_on_sk_lookup() {
         .ctx_field_access_error(&CtxField::NetnsCookie)
         .expect("expected netns_cookie field access error");
     assert!(err.contains(
-        "ctx.netns_cookie is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs"
+        "ctx.netns_cookie is only available on socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs"
     ));
 }
 
@@ -5299,7 +5361,7 @@ fn test_probe_context_rejects_socket_uid_on_sk_lookup() {
         .ctx_field_access_error(&CtxField::SocketUid)
         .expect("expected socket_uid field access error");
     assert!(err.contains(
-        "ctx.socket_uid is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+        "ctx.socket_uid is only available on socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
     ));
 }
 
@@ -5336,30 +5398,34 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected sk_skb tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_* and tc programs")
+            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected sk_skb wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_* and tc programs")
+            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected sk_skb tstamp access error")
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+            .contains(
+                "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected sk_skb tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_* and tc programs")
+            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected sk_skb hwtstamp access error")
-            .contains("ctx.hwtstamp is only available on lwt_*, tc, and cgroup_skb programs")
+            .contains(
+                "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
@@ -5369,7 +5435,7 @@ fn test_probe_context_allows_sk_skb_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockMark)
             .expect("expected sk_skb mark access error")
-            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc, and cgroup_skb programs")
+            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)
@@ -5405,30 +5471,34 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::TcClassid)
             .expect("expected sk_skb_parser tc_classid access error")
-            .contains("ctx.tc_classid is only available on lwt_* and tc programs")
+            .contains("ctx.tc_classid is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::NapiId).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::WireLen)
             .expect("expected sk_skb_parser wire_len access error")
-            .contains("ctx.wire_len is only available on lwt_* and tc programs")
+            .contains("ctx.wire_len is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSegs).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::GsoSize).is_none());
     assert!(
         ctx.ctx_field_access_error(&CtxField::Tstamp)
             .expect("expected sk_skb_parser tstamp access error")
-            .contains("ctx.tstamp is only available on lwt_*, tc, and cgroup_skb programs")
+            .contains(
+                "ctx.tstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+            )
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::TstampType)
             .expect("expected sk_skb_parser tstamp_type access error")
-            .contains("ctx.tstamp_type is only available on lwt_* and tc programs")
+            .contains("ctx.tstamp_type is only available on lwt_*, tc_action, and tc programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::Hwtstamp)
             .expect("expected sk_skb_parser hwtstamp access error")
-            .contains("ctx.hwtstamp is only available on lwt_*, tc, and cgroup_skb programs")
+            .contains(
+                "ctx.hwtstamp is only available on lwt_*, tc_action, tc, and cgroup_skb programs"
+            )
     );
     assert!(ctx.ctx_field_access_error(&CtxField::Ifindex).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::TcIndex).is_none());
@@ -5436,7 +5506,7 @@ fn test_probe_context_allows_sk_skb_parser_socket_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockMark)
             .expect("expected sk_skb_parser mark access error")
-            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc, and cgroup_skb programs")
+            .contains("ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs")
     );
     assert!(
         ctx.ctx_field_access_error(&CtxField::SockPriority)

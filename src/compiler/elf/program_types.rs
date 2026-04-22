@@ -71,6 +71,7 @@ pub(super) const SK_SKB_SPEC_ALIASES: &[&str] = &["sk_skb"];
 pub(super) const SK_SKB_PARSER_SPEC_ALIASES: &[&str] = &["sk_skb_parser"];
 pub(super) const SOCK_OPS_SPEC_ALIASES: &[&str] = &["sock_ops", "sockops"];
 pub(super) const TC_SPEC_ALIASES: &[&str] = &["tc"];
+pub(super) const TC_ACTION_SPEC_ALIASES: &[&str] = &["tc_action", "action"];
 pub(super) const CGROUP_SKB_SPEC_ALIASES: &[&str] = &["cgroup_skb"];
 pub(super) const CGROUP_SOCK_SPEC_ALIASES: &[&str] = &["cgroup_sock"];
 pub(super) const CGROUP_SYSCTL_SPEC_ALIASES: &[&str] = &["cgroup_sysctl"];
@@ -523,6 +524,21 @@ pub(super) const TC_INFO: ProgramTypeInfo = ProgramTypeInfo {
     retval_access: ProgramValueAccess::None,
 };
 
+pub(super) const TC_ACTION_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::TcAction,
+    canonical_prefix: "tc_action",
+    spec_aliases: TC_ACTION_SPEC_ALIASES,
+    section_prefix: "action",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::SkBuffPacket,
+    attach_kind: ProgramAttachKind::TcAction,
+    target_kind: ProgramTargetKind::TrafficControlAction,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
 pub(super) const CGROUP_SKB_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::CgroupSkb,
     canonical_prefix: "cgroup_skb",
@@ -665,6 +681,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkbParser,
     EbpfProgramType::SockOps,
     EbpfProgramType::Tc,
+    EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::CgroupSock,
     EbpfProgramType::CgroupSysctl,
@@ -710,6 +727,8 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "sock_ops",
     "sockops",
     "tc",
+    "tc_action",
+    "action",
     "cgroup_skb",
     "cgroup_sock",
     "cgroup_sysctl",

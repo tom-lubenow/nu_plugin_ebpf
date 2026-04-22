@@ -321,6 +321,32 @@ impl TcTarget {
     }
 }
 
+/// Parsed traffic-control action target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TcActionTarget {
+    /// Descriptive action label. Live tc-action attach is not implemented yet.
+    pub label: String,
+}
+
+impl TcActionTarget {
+    /// Parse a tc_action target label. The compiler uses it for metadata only.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "tc_action target label cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            label: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.label.clone()
+    }
+}
+
 /// Parsed cgroup_skb target information.
 #[derive(Debug, Clone)]
 pub struct CgroupSkbTarget {
@@ -1613,6 +1639,9 @@ pub enum ProgramSpec {
     Tc {
         target: TcTarget,
     },
+    TcAction {
+        target: TcActionTarget,
+    },
     CgroupSkb {
         target: CgroupSkbTarget,
     },
@@ -1916,6 +1945,9 @@ impl ProgramSpec {
             EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
                 target: TcTarget::parse(target)?,
             }),
+            EbpfProgramType::TcAction => Ok(ProgramSpec::TcAction {
+                target: TcActionTarget::parse(target)?,
+            }),
             EbpfProgramType::CgroupSkb => Ok(ProgramSpec::CgroupSkb {
                 target: CgroupSkbTarget::parse(target)?,
             }),
@@ -1970,6 +2002,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupDevice { .. } => EbpfProgramType::CgroupDevice,
             ProgramSpec::SockOps { .. } => EbpfProgramType::SockOps,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
+            ProgramSpec::TcAction { .. } => EbpfProgramType::TcAction,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
             ProgramSpec::CgroupSock { .. } => EbpfProgramType::CgroupSock,
             ProgramSpec::CgroupSysctl { .. } => EbpfProgramType::CgroupSysctl,
@@ -2013,6 +2046,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupDevice { target } => target.target_string(),
             ProgramSpec::SockOps { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
+            ProgramSpec::TcAction { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSock { target } => target.target_string(),
             ProgramSpec::CgroupSysctl { target } => target.target_string(),
@@ -2444,6 +2478,8 @@ mod tests {
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
+        let tc_action =
+            ProgramSpec::parse("tc_action:demo-action").expect("tc_action spec should parse");
         let cgroup_skb = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:egress")
             .expect("cgroup_skb spec should parse");
         let cgroup_sock = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
@@ -2535,6 +2571,8 @@ mod tests {
             tc.tc_target().map(|target| target.interface.as_str()),
             Some("lo")
         );
+        assert_eq!(tc_action.target_string(), "demo-action");
+        assert_eq!(tc_action.section_name(), "action");
         assert_eq!(
             cgroup_skb
                 .cgroup_skb_target()
@@ -2584,6 +2622,15 @@ mod tests {
         let err =
             CgroupSysctlTarget::parse("").expect_err("empty cgroup_sysctl path should be rejected");
         assert_eq!(err.to_string(), "cgroup_sysctl cgroup path cannot be empty");
+    }
+
+    #[test]
+    fn test_tc_action_target_requires_non_empty_label() {
+        let target = TcActionTarget::parse("demo-action").expect("tc_action target should parse");
+        assert_eq!(target.target_string(), "demo-action");
+
+        let err = TcActionTarget::parse("").expect_err("empty tc_action label should be rejected");
+        assert_eq!(err.to_string(), "tc_action target label cannot be empty");
     }
 
     #[test]

@@ -104,6 +104,12 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         true,
     ),
     ProgramContextLayoutSpec::skb_backed(
+        EbpfProgramType::TcAction,
+        Some(PacketContextKind::SkBuff),
+        None,
+        true,
+    ),
+    ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::CgroupSkb,
         None,
         Some(SocketContextLayout::SkBuff),

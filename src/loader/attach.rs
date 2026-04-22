@@ -48,6 +48,7 @@ impl EbpfState {
                 | ProgramAttachKind::Netfilter
                 | ProgramAttachKind::Lwt
                 | ProgramAttachKind::RawTracepointWritable
+                | ProgramAttachKind::TcAction
         ) {
             return Err(LoadError::Attach(format!(
                 "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
@@ -650,6 +651,12 @@ impl EbpfState {
                 classifier
                     .attach(&target.interface, target.attach_type)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach tc: {e}")))?;
+            }
+            ProgramAttachKind::TcAction => {
+                return Err(LoadError::Attach(
+                    "live attach for tc_action programs is not supported by this loader yet; use --dry-run to compile"
+                        .to_string(),
+                ));
             }
             ProgramAttachKind::CgroupSkb => {
                 let target = spec.cgroup_skb_target().unwrap_or_else(|| {

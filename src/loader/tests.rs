@@ -426,6 +426,19 @@ fn test_parse_program_spec_tc_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_tc_action_is_structured() {
+    let (prog_type, target) = parse_probe_spec("action:demo-action").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::TcAction);
+    assert_eq!(target, "demo-action");
+
+    let spec = parse_program_spec("tc_action:demo-action").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::TcAction);
+    assert_eq!(spec.target_string(), "demo-action");
+    assert_eq!(spec.to_string(), "tc_action:demo-action");
+    assert_eq!(spec.section_name(), "action");
+}
+
+#[test]
 fn test_program_spec_parse_tracepoint_section_name() {
     let spec = ProgramSpec::parse("tracepoint:sched/sched_switch").unwrap();
     assert_eq!(spec.section_name(), "tracepoint/sched/sched_switch");
