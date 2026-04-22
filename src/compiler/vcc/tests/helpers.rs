@@ -1476,6 +1476,97 @@ fn test_verify_mir_for_probe_context_sockopt_helpers_accept_supported_socket_con
     }
 }
 
+fn make_cgroup_retval_vcc_call(helper: BpfHelper) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    let args = if matches!(helper, BpfHelper::SetRetval) {
+        vec![MirValue::Const(-1)]
+    } else {
+        Vec::new()
+    };
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_cgroup_retval_helpers_accept_supported_contexts() {
+    for (helper, probe_ctx) in [
+        (
+            BpfHelper::GetRetval,
+            ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup"),
+        ),
+        (
+            BpfHelper::SetRetval,
+            ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create"),
+        ),
+        (
+            BpfHelper::GetRetval,
+            ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get"),
+        ),
+        (
+            BpfHelper::SetRetval,
+            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:sendmsg4"),
+        ),
+        (
+            BpfHelper::GetRetval,
+            ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup"),
+        ),
+    ] {
+        let (func, types) = make_cgroup_retval_vcc_call(helper);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected cgroup retval helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_cgroup_retval_helpers_reject_invalid_contexts() {
+    for (helper, probe_ctx, expected) in [
+        (
+            BpfHelper::GetRetval,
+            ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read"),
+            "helper 'bpf_get_retval' is only valid in cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl programs",
+        ),
+        (
+            BpfHelper::SetRetval,
+            ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress"),
+            "helper 'bpf_set_retval' is only valid in cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl programs",
+        ),
+        (
+            BpfHelper::GetRetval,
+            ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup"),
+            "helper 'bpf_get_retval' is only valid in cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl programs",
+        ),
+        (
+            BpfHelper::SetRetval,
+            ProbeContext::new(
+                EbpfProgramType::CgroupSockAddr,
+                "/sys/fs/cgroup:getpeername4",
+            ),
+            "helper 'bpf_set_retval' is not valid on cgroup_sock_addr recvmsg/getpeername/getsockname hooks",
+        ),
+    ] {
+        let (func, types) = make_cgroup_retval_vcc_call(helper);
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected cgroup retval helper program-surface error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
+}
+
 #[test]
 fn test_verify_mir_for_program_bind_helper_rejects_invalid_program_or_attach() {
     for (probe_ctx, expected) in [

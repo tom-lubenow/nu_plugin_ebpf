@@ -363,6 +363,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetCurrentAncestorCgroupId)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_retval"),
+        Some(BpfHelper::GetRetval)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("set_retval"),
+        Some(BpfHelper::SetRetval)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_cgroup_classid"),
         Some(BpfHelper::GetCgroupClassid)
     ));
@@ -1273,6 +1281,22 @@ fn test_helper_signatures_sk_cgroup_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signatures_cgroup_retval_helpers() {
+    let get = HelperSignature::for_id(BpfHelper::GetRetval as u32)
+        .expect("expected bpf_get_retval helper signature");
+    assert_eq!(get.min_args, 0);
+    assert_eq!(get.max_args, 0);
+    assert_eq!(get.ret_kind, HelperRetKind::Scalar);
+
+    let set = HelperSignature::for_id(BpfHelper::SetRetval as u32)
+        .expect("expected bpf_set_retval helper signature");
+    assert_eq!(set.min_args, 1);
+    assert_eq!(set.max_args, 1);
+    assert_eq!(set.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(set.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]

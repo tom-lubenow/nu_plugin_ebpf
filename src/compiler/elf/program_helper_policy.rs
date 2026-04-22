@@ -1,7 +1,7 @@
 use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramSpec};
+use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec};
 
 #[derive(Debug, Clone, Copy)]
 struct HelperProgramSurfaceSpec {
@@ -59,6 +59,7 @@ enum HelperProgramSurfaceFamily {
     TracingSocket,
     Sockopt,
     CgroupSockAddr,
+    CgroupRetval,
     SockOps,
     CgroupSysctl,
 }
@@ -572,6 +573,17 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         label: "cgroup_sock_addr",
     },
     HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::CgroupRetval,
+        program_types: &[
+            EbpfProgramType::CgroupDevice,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::CgroupSysctl,
+        ],
+        label: "cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl",
+    },
+    HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SockOps,
         program_types: &[EbpfProgramType::SockOps],
         label: "sock_ops",
@@ -633,6 +645,7 @@ const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] = &[
     BpfHelper::SkbAncestorCgroupId,
 ];
 const CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bind];
+const CGROUP_RETVAL_HELPERS: &[BpfHelper] = &[BpfHelper::GetRetval, BpfHelper::SetRetval];
 const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port"];
 const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4"];
 const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6"];
@@ -853,6 +866,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::Bind => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::CgroupSockAddr,
         },
+        BpfHelper::GetRetval | BpfHelper::SetRetval => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::CgroupRetval,
+        },
         BpfHelper::SockOpsCbFlagsSet
         | BpfHelper::SockMapUpdate
         | BpfHelper::SockHashUpdate
@@ -1044,6 +1060,20 @@ impl ProgramSpec {
             {
                 Some(format!(
                     "helper '{}' is only valid on cgroup_sock_addr connect4/connect6 hooks",
+                    helper.name()
+                ))
+            }
+            _ if attach_shape.cgroup_sock_addr().is_some_and(|(_, hook)| {
+                matches!(
+                    hook,
+                    ProgramAttachSockAddrHook::RecvMsg
+                        | ProgramAttachSockAddrHook::GetPeerName
+                        | ProgramAttachSockAddrHook::GetSockName
+                )
+            }) && helper_list_contains(CGROUP_RETVAL_HELPERS, helper) =>
+            {
+                Some(format!(
+                    "helper '{}' is not valid on cgroup_sock_addr recvmsg/getpeername/getsockname hooks",
                     helper.name()
                 ))
             }

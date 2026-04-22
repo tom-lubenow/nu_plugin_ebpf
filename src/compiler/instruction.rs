@@ -134,6 +134,10 @@ pub enum BpfHelper {
     GetNsCurrentPidTgid = 120,
     /// u64 bpf_get_current_ancestor_cgroup_id(int ancestor_level)
     GetCurrentAncestorCgroupId = 123,
+    /// int bpf_get_retval(void)
+    GetRetval = 186,
+    /// int bpf_set_retval(int retval)
+    SetRetval = 187,
     /// int bpf_get_current_comm(buf, size)
     GetCurrentComm = 16,
     /// u32 bpf_get_cgroup_classid(skb)
@@ -435,6 +439,8 @@ impl BpfHelper {
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
             BpfHelper::GetNsCurrentPidTgid => "bpf_get_ns_current_pid_tgid",
             BpfHelper::GetCurrentAncestorCgroupId => "bpf_get_current_ancestor_cgroup_id",
+            BpfHelper::GetRetval => "bpf_get_retval",
+            BpfHelper::SetRetval => "bpf_set_retval",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::GetCgroupClassid => "bpf_get_cgroup_classid",
             BpfHelper::SkbVlanPush => "bpf_skb_vlan_push",
@@ -614,6 +620,8 @@ impl BpfHelper {
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
             "get_ns_current_pid_tgid" => Some(Self::GetNsCurrentPidTgid),
             "get_current_ancestor_cgroup_id" => Some(Self::GetCurrentAncestorCgroupId),
+            "get_retval" => Some(Self::GetRetval),
+            "set_retval" => Some(Self::SetRetval),
             "get_current_comm" => Some(Self::GetCurrentComm),
             "get_cgroup_classid" => Some(Self::GetCgroupClassid),
             "skb_vlan_push" => Some(Self::SkbVlanPush),

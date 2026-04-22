@@ -1607,6 +1607,11 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
         "/sys/fs/cgroup:connect_unix",
     );
     let bind = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:bind4");
+    let recvmsg = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:recvmsg4");
+    let getpeername = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:getpeername4",
+    );
     let sockopt_get = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let sockopt_set = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
     let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
@@ -1681,10 +1686,55 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     );
     assert!(bind.helper_call_error(BpfHelper::GetSockOpt).is_none());
     assert!(bind.helper_call_error(BpfHelper::SetSockOpt).is_none());
+    assert!(bind.helper_call_error(BpfHelper::GetRetval).is_none());
+    assert!(connect.helper_call_error(BpfHelper::SetRetval).is_none());
+    assert_eq!(
+        recvmsg.helper_call_error(BpfHelper::GetRetval),
+        Some(
+            "helper 'bpf_get_retval' is not valid on cgroup_sock_addr recvmsg/getpeername/getsockname hooks"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        getpeername.helper_call_error(BpfHelper::SetRetval),
+        Some(
+            "helper 'bpf_set_retval' is not valid on cgroup_sock_addr recvmsg/getpeername/getsockname hooks"
+                .to_string()
+        )
+    );
 }
 
 #[test]
 fn test_program_type_helper_call_error_covers_program_only_rules() {
+    assert!(
+        EbpfProgramType::CgroupDevice
+            .helper_call_error(BpfHelper::GetRetval)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::CgroupSock
+            .helper_call_error(BpfHelper::SetRetval)
+            .is_none()
+    );
+    assert!(
+        EbpfProgramType::CgroupSysctl
+            .helper_call_error(BpfHelper::GetRetval)
+            .is_none()
+    );
+    assert_eq!(
+        EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::GetRetval),
+        Some(
+            "helper 'bpf_get_retval' is only valid in cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::SockOps.helper_call_error(BpfHelper::SetRetval),
+        Some(
+            "helper 'bpf_set_retval' is only valid in cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl programs"
+                .to_string()
+        )
+    );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::MsgApplyBytes),
         Some("helper 'bpf_msg_apply_bytes' is only valid in sk_msg programs".to_string())
