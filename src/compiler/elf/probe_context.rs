@@ -331,10 +331,7 @@ impl ProbeContext {
 
     pub(crate) fn btf_context_label(&self) -> String {
         if let Some(spec) = self.parsed_program_spec() {
-            if !matches!(
-                spec,
-                ProgramSpec::StructOps { .. } | ProgramSpec::StructOpsCallback { .. }
-            ) {
+            if spec.struct_ops_value_type_name().is_none() {
                 return spec.to_string();
             }
         }
