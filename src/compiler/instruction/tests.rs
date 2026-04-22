@@ -2428,6 +2428,16 @@ fn test_perf_event_read_helper_contracts() {
             "helper 'bpf_perf_event_read_value' requires arg3 = 24"
         ))
     );
+    for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                0xffff_ffff,
+                "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)"
+            ))
+        );
+    }
 }
 
 #[test]

@@ -975,6 +975,11 @@ impl BpfHelper {
                 3,
                 "helper 'bpf_sk_assign' requires arg2 flags to contain only BPF_SK_LOOKUP_F_REPLACE/BPF_SK_LOOKUP_F_NO_REUSEPORT bits (0x03)",
             )),
+            (Self::PerfEventRead | Self::PerfEventReadValue, 1) => Some((
+                0,
+                0xffff_ffff,
+                "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)",
+            )),
             (Self::SkbSetTunnelKey, 3) => Some((
                 0,
                 31,

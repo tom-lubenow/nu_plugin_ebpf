@@ -2364,6 +2364,7 @@ fn test_verify_mir_for_probe_context_perf_event_output_helper_accepts_lwt() {
 
 fn make_perf_event_read_verify_call(
     helper: BpfHelper,
+    flags: i64,
     size: i64,
     buf_size: usize,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
@@ -2383,12 +2384,12 @@ fn make_perf_event_read_verify_call(
     });
 
     let args = if matches!(helper, BpfHelper::PerfEventRead) {
-        vec![MirValue::VReg(map), MirValue::Const(0)]
+        vec![MirValue::VReg(map), MirValue::Const(flags)]
     } else {
         let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
         vec![
             MirValue::VReg(map),
-            MirValue::Const(0),
+            MirValue::Const(flags),
             MirValue::StackSlot(buf_slot),
             MirValue::Const(size),
         ]
@@ -2419,7 +2420,7 @@ fn make_perf_event_read_verify_call(
 #[test]
 fn test_verify_mir_perf_event_read_helpers() {
     for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
-        let (func, types) = make_perf_event_read_verify_call(helper, 24, 24);
+        let (func, types) = make_perf_event_read_verify_call(helper, 0, 24, 24);
         verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
             .expect("expected perf event read helper to verify");
     }
@@ -2427,7 +2428,7 @@ fn test_verify_mir_perf_event_read_helpers() {
 
 #[test]
 fn test_verify_mir_perf_event_read_value_requires_exact_size() {
-    let (func, types) = make_perf_event_read_verify_call(BpfHelper::PerfEventReadValue, 8, 24);
+    let (func, types) = make_perf_event_read_verify_call(BpfHelper::PerfEventReadValue, 0, 8, 24);
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected perf_event_read_value size error");
     assert!(err.iter().any(|e| {
@@ -2438,7 +2439,7 @@ fn test_verify_mir_perf_event_read_value_requires_exact_size() {
 
 #[test]
 fn test_verify_mir_perf_event_read_value_rejects_small_buffer() {
-    let (func, types) = make_perf_event_read_verify_call(BpfHelper::PerfEventReadValue, 24, 8);
+    let (func, types) = make_perf_event_read_verify_call(BpfHelper::PerfEventReadValue, 0, 24, 8);
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected perf_event_read_value buffer bounds error");
     assert!(
@@ -2448,6 +2449,23 @@ fn test_verify_mir_perf_event_read_value_rejects_small_buffer() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_perf_event_read_helpers_reject_invalid_flags() {
+    for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
+        let (func, types) = make_perf_event_read_verify_call(helper, 0x1_0000_0000, 24, 24);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+            .expect_err("expected perf_event_read flags error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("perf event read helpers require arg1 flags")),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            err
+        );
+    }
 }
 
 fn make_get_ns_current_pid_tgid_verify_call(
