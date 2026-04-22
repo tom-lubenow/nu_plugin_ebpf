@@ -1,7 +1,8 @@
 use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
-    CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgramType, MapRef, MirType,
+    CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgram, EbpfProgramType, MapRef,
+    MirType,
     ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
@@ -1106,6 +1107,51 @@ fn test_attach_with_pin_rejects_struct_ops_objects() {
     assert!(
         matches!(err, LoadError::Load(msg) if msg.contains("do not yet support pinned map sharing"))
     );
+}
+
+#[test]
+fn test_attach_rejects_compile_only_programs_before_loading() {
+    let state = EbpfState::new();
+
+    for (prog_type, target, label) in [
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w",
+        ),
+        (EbpfProgramType::TcAction, "demo-action", "tc_action"),
+        (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
+        (
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            "flow_dissector",
+        ),
+        (EbpfProgramType::Netfilter, "ipv4:pre_routing", "netfilter"),
+        (EbpfProgramType::LwtIn, "demo-route", "lwt_in"),
+        (EbpfProgramType::LwtOut, "demo-route", "lwt_out"),
+        (EbpfProgramType::LwtXmit, "demo-route", "lwt_xmit"),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            "lwt_seg6local",
+        ),
+    ] {
+        let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();
+        let err = state
+            .attach(&object)
+            .expect_err("compile-only programs should reject live attach before ELF emission");
+
+        assert!(
+            matches!(
+                err,
+                LoadError::Attach(ref msg)
+                    if msg.contains(&format!(
+                        "live attach for {label} programs is not supported by this loader yet"
+                    )) && msg.contains("use --dry-run to compile")
+            ),
+            "unexpected live-attach error for {label}: {err:?}"
+        );
+    }
 }
 
 #[test]
