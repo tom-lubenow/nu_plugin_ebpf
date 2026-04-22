@@ -139,7 +139,7 @@ Last updated: 2026-04-22.
   - Typed helper task-pointer coverage now includes legacy `bpf_get_current_task` alongside `bpf_get_current_task_btf`, returning a non-null typed `task_struct` pointer on task-aware program surfaces.
   - Typed helper TC-egress skb metadata coverage now includes `bpf_get_cgroup_classid` and `bpf_get_route_realm`, with attach-sensitive policy parity across type inference, verifier_types, and VCC.
   - Ordinary TC-egress context access now exposes helper-backed skb metadata without raw helper spelling as `ctx.cgroup_classid`, `ctx.route_realm`, and `ctx.skb_cgroup_id`; LWT programs now also expose `ctx.cgroup_classid` and `ctx.route_realm`.
-  - Typed helper skb mutation coverage now also includes `bpf_clone_redirect`, `bpf_skb_vlan_push`, and `bpf_skb_vlan_pop`, and packet-pointer invalidation now covers the documented skb mutators that can change the underlying packet buffer.
+  - Typed helper skb mutation coverage now also includes `bpf_clone_redirect`, `bpf_skb_vlan_push`, and `bpf_skb_vlan_pop`; packet-pointer invalidation now covers the documented skb mutators that can change the underlying packet buffer, and `bpf_skb_store_bytes` enforces its checksum/hash flag mask.
   - Typed helper skb hash coverage now includes `bpf_set_hash`, completing the modeled `bpf_get_hash_recalc` / `bpf_set_hash` / `bpf_set_hash_invalid` helper surface.
   - Ordinary skb hash context access now exposes the read-style `bpf_get_hash_recalc` form as `ctx.hash_recalc` / `ctx.recalc_hash` on lwt_*/tc_action/tc/sk_skb/sk_skb_parser programs.
   - Typed helper skb checksum metadata coverage now includes `bpf_csum_level` on the lwt_xmit/tc_action/tc/sk_skb/sk_skb_parser helper surface.

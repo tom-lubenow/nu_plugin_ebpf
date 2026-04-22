@@ -267,6 +267,8 @@ packet-edit helpers through the ordinary helper surface, including
 `bpf_csum_level`, and `bpf_set_hash_invalid`. `tc_action`, `tc`, `sk_skb`, and
 `sk_skb_parser` additionally model `bpf_skb_vlan_push`,
 `bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`.
+`bpf_skb_store_bytes` flags may contain only `BPF_F_RECOMPUTE_CSUM` and
+`BPF_F_INVALIDATE_HASH`.
 These skb mutation helpers invalidate guarded
 direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:

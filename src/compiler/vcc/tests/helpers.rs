@@ -3954,6 +3954,54 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_out_of_bounds_sourc
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_invalid_flags() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbStoreBytes as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(4),
+                MirValue::Const(4),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_store_bytes flag validation error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_store_bytes' requires arg4 flags")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_csum_diff_allows_null_zero_side() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

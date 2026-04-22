@@ -1726,6 +1726,18 @@ fn test_helpers_with_packet_pointer_invalidation() {
 }
 
 #[test]
+fn test_skb_store_bytes_helper_flag_contract() {
+    assert_eq!(
+        BpfHelper::SkbStoreBytes.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            3,
+            "helper 'bpf_skb_store_bytes' requires arg4 flags to contain only BPF_F_RECOMPUTE_CSUM/BPF_F_INVALIDATE_HASH bits (0x03)"
+        ))
+    );
+}
+
+#[test]
 fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(
         BpfHelper::SkbChangeTail.zero_scalar_arg_requirement(),

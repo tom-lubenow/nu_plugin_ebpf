@@ -1221,6 +1221,42 @@ fn test_type_error_skb_change_head_helper_requires_zero_flags() {
 }
 
 #[test]
+fn test_type_error_skb_store_bytes_rejects_invalid_flags() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbStoreBytes as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(4),
+            MirValue::Const(4),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_store_bytes flag validation error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_store_bytes' requires arg4 flags")
+    }));
+}
+
+#[test]
 fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
     for (probe_ctx, helper, extra_args) in [
         (

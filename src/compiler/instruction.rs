@@ -926,6 +926,11 @@ impl BpfHelper {
                 31,
                 "helper 'bpf_skb_set_tunnel_key' requires arg3 flags to contain only BPF_F_TUNINFO_IPV6/BPF_F_ZERO_CSUM_TX/BPF_F_DONT_FRAGMENT/BPF_F_SEQ_NUMBER/BPF_F_NO_TUNNEL_KEY bits (0x1f)",
             )),
+            (Self::SkbStoreBytes, 4) => Some((
+                0,
+                3,
+                "helper 'bpf_skb_store_bytes' requires arg4 flags to contain only BPF_F_RECOMPUTE_CSUM/BPF_F_INVALIDATE_HASH bits (0x03)",
+            )),
             _ => None,
         }
     }
