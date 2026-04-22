@@ -2635,7 +2635,7 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe,
             "ksys_read",
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,
@@ -2694,10 +2694,32 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_sk_reuseport() {
-    for (helper, args_len) in [
-        (BpfHelper::SkbLoadBytes, 4),
-        (BpfHelper::SkbLoadBytesRelative, 5),
+fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_allowed_programs() {
+    for (helper, program_type, target, args_len) in [
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::SkReuseport,
+            "select",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::SkReuseport,
+            "select",
+            5,
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            4,
+        ),
     ] {
         let (mut func, entry) = new_mir_function();
         let ctx = func.alloc_vreg();
@@ -2735,11 +2757,12 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_sk_reuseport() {
         );
         types.insert(dst, MirType::I64);
 
-        let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+        let probe_ctx = ProbeContext::new(program_type, target);
         verify_mir_for_probe_context(&func, &types, &probe_ctx).unwrap_or_else(|errs| {
             panic!(
-                "expected {} to verify in sk_reuseport: {:?}",
+                "expected {} to verify in {}: {:?}",
                 helper.name(),
+                program_type.canonical_prefix(),
                 errs
             )
         });

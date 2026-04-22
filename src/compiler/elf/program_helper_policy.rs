@@ -95,14 +95,19 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkbLoadBytes,
         program_types: &[
+            EbpfProgramType::FlowDissector,
             EbpfProgramType::SocketFilter,
+            EbpfProgramType::LwtIn,
+            EbpfProgramType::LwtOut,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::LwtSeg6Local,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::SkReuseport,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser",
+        label: "flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,

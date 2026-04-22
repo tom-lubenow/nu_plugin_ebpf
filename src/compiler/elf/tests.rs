@@ -1787,7 +1787,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbLoadBytes),
         Some(
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -2161,6 +2161,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::SocketFilter.helper_call_error(BpfHelper::SkbLoadBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::FlowDissector.helper_call_error(BpfHelper::SkbLoadBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbLoadBytes),
         None
     );
     assert_eq!(

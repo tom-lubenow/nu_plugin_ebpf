@@ -3437,6 +3437,18 @@ fn test_infer_packet_byte_helpers_follow_program_surface() {
         ),
         (
             BpfHelper::SkbLoadBytes,
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
             EbpfProgramType::SkReuseport,
             "select",
             4,
@@ -3492,7 +3504,7 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe,
             "ksys_read",
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,

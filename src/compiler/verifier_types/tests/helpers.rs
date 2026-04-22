@@ -2371,7 +2371,7 @@ fn test_verify_mir_for_program_packet_byte_helpers_reject_invalid_programs() {
         (
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe.info(),
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in flow_dissector, socket_filter, lwt_*, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,
@@ -2429,10 +2429,24 @@ fn test_verify_mir_for_program_packet_byte_helpers_reject_invalid_programs() {
 }
 
 #[test]
-fn test_verify_mir_for_program_packet_byte_helpers_accept_sk_reuseport() {
-    for (helper, args_len) in [
-        (BpfHelper::SkbLoadBytes, 4),
-        (BpfHelper::SkbLoadBytesRelative, 5),
+fn test_verify_mir_for_program_packet_byte_helpers_accept_allowed_programs() {
+    for (helper, program_info, args_len) in [
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::SkReuseport.info(),
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::SkReuseport.info(),
+            5,
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::FlowDissector.info(),
+            4,
+        ),
+        (BpfHelper::SkbLoadBytes, EbpfProgramType::LwtOut.info(), 4),
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -2472,15 +2486,14 @@ fn test_verify_mir_for_program_packet_byte_helpers_accept_sk_reuseport() {
         );
         types.insert(dst, MirType::I64);
 
-        verify_mir_for_program(&func, &types, EbpfProgramType::SkReuseport.info()).unwrap_or_else(
-            |errs| {
-                panic!(
-                    "expected {} to verify in sk_reuseport: {:?}",
-                    helper.name(),
-                    errs
-                )
-            },
-        );
+        verify_mir_for_program(&func, &types, program_info).unwrap_or_else(|errs| {
+            panic!(
+                "expected {} to verify in {}: {:?}",
+                helper.name(),
+                program_info.canonical_prefix,
+                errs
+            )
+        });
     }
 }
 
