@@ -4432,7 +4432,7 @@ fn test_infer_sk_assign_helper_in_sk_lookup_program() {
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::SkAssign as u32,
-        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(3)],
     });
     block.terminator = MirInst::Return { val: None };
 
@@ -4442,6 +4442,35 @@ fn test_infer_sk_assign_helper_in_sk_lookup_program() {
         .infer(&func)
         .expect("expected bpf_sk_assign to infer on sk_lookup");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_sk_assign_helper_rejects_invalid_sk_lookup_flags() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(4)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_sk_assign to reject invalid sk_lookup flags");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_assign' requires arg2 flags")
+    }));
 }
 
 #[test]

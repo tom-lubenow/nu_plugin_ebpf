@@ -921,6 +921,11 @@ impl BpfHelper {
                 3,
                 "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)",
             )),
+            (Self::SkAssign, 2) => Some((
+                0,
+                3,
+                "helper 'bpf_sk_assign' requires arg2 flags to contain only BPF_SK_LOOKUP_F_REPLACE/BPF_SK_LOOKUP_F_NO_REUSEPORT bits (0x03)",
+            )),
             (Self::SkbSetTunnelKey, 3) => Some((
                 0,
                 31,

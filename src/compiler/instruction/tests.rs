@@ -2785,6 +2785,14 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkAssign.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            3,
+            "helper 'bpf_sk_assign' requires arg2 flags to contain only BPF_SK_LOOKUP_F_REPLACE/BPF_SK_LOOKUP_F_NO_REUSEPORT bits (0x03)"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::SkRelease as u32)
         .expect("expected bpf_sk_release helper signature");
