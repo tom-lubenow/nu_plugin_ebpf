@@ -1684,7 +1684,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbUnderCgroup),
-        Some("helper 'bpf_skb_under_cgroup' is only valid in tc programs".to_string())
+        Some("helper 'bpf_skb_under_cgroup' is only valid in tc and lwt_* programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupId),
@@ -1692,7 +1692,11 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCgroupClassid),
-        Some("helper 'bpf_get_cgroup_classid' is only valid in tc programs".to_string())
+        Some("helper 'bpf_get_cgroup_classid' is only valid in tc and lwt_* programs".to_string())
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetRouteRealm),
+        Some("helper 'bpf_get_route_realm' is only valid in tc and lwt_* programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
@@ -2132,6 +2136,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::SkbUnderCgroup),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::GetCgroupClassid),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::LwtOut.helper_call_error(BpfHelper::GetRouteRealm),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbAncestorCgroupId),
         None
     );
@@ -2346,6 +2362,10 @@ fn test_current_task_under_cgroup_is_base_helper_surface() {
         EbpfProgramType::Xdp,
         EbpfProgramType::PerfEvent,
         EbpfProgramType::SocketFilter,
+        EbpfProgramType::LwtIn,
+        EbpfProgramType::LwtOut,
+        EbpfProgramType::LwtXmit,
+        EbpfProgramType::LwtSeg6Local,
         EbpfProgramType::CgroupDevice,
         EbpfProgramType::SkLookup,
         EbpfProgramType::SkMsg,
@@ -2376,6 +2396,22 @@ fn test_cgroup_array_membership_helper_follows_program_model() {
         BpfHelper::SkbUnderCgroup
     ));
     assert!(matches!(
+        EbpfProgramType::LwtIn.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
+        EbpfProgramType::LwtOut.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
+        EbpfProgramType::LwtXmit.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
+        EbpfProgramType::LwtSeg6Local.cgroup_array_membership_helper(),
+        BpfHelper::SkbUnderCgroup
+    ));
+    assert!(matches!(
         EbpfProgramType::Xdp.cgroup_array_membership_helper(),
         BpfHelper::CurrentTaskUnderCgroup
     ));
@@ -2386,6 +2422,10 @@ fn test_cgroup_array_membership_helper_follows_program_model() {
 
     for program_type in [
         EbpfProgramType::Tc,
+        EbpfProgramType::LwtIn,
+        EbpfProgramType::LwtOut,
+        EbpfProgramType::LwtXmit,
+        EbpfProgramType::LwtSeg6Local,
         EbpfProgramType::Xdp,
         EbpfProgramType::Kprobe,
     ] {

@@ -2365,6 +2365,34 @@ fn test_infer_tc_egress_skb_metadata_helpers() {
 }
 
 #[test]
+fn test_infer_lwt_cgroup_metadata_helpers() {
+    for helper in [BpfHelper::GetCgroupClassid, BpfHelper::GetRouteRealm] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected lwt cgroup metadata helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_tc_egress_skb_metadata_helpers_reject_tc_ingress() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
@@ -2403,7 +2431,7 @@ fn test_type_error_tc_egress_skb_metadata_helpers_reject_tc_ingress() {
 }
 
 #[test]
-fn test_type_error_tc_egress_skb_metadata_helpers_reject_non_tc_program() {
+fn test_type_error_tc_egress_skb_metadata_helpers_reject_unsupported_program() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
         (BpfHelper::GetRouteRealm, vec![]),
@@ -2432,10 +2460,16 @@ fn test_type_error_tc_egress_skb_metadata_helpers_reject_non_tc_program() {
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti
             .infer(&func)
-            .expect_err("expected tc-egress skb metadata helper to reject non-tc program");
+            .expect_err("expected skb metadata helper to reject unsupported program");
+        let expected = match helper {
+            BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => {
+                "is only valid in tc and lwt_* programs"
+            }
+            _ => "is only valid in tc programs",
+        };
         assert!(
-            errs.iter()
-                .any(|e| e.message.contains("is only valid in tc programs"))
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected error containing {expected:?}, got {errs:?}"
         );
     }
 }

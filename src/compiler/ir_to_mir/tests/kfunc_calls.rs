@@ -4880,7 +4880,59 @@ fn test_map_contains_cgroup_array_uses_skb_helper_on_tc() {
 }
 
 #[test]
-fn test_map_contains_cgroup_array_uses_current_task_helper_off_tc() {
+fn test_map_contains_cgroup_array_uses_skb_helper_on_lwt() {
+    let hir_program = make_cgroup_array_map_contains_hir();
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-contains".to_string());
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lwt cgroup-array map-contains should lower");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::SkbUnderCgroup as u32 && args.len() == 3
+    )));
+    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("lwt cgroup-array map-contains should compile");
+
+    let map = compiled
+        .maps
+        .iter()
+        .find(|map| map.name == "tracked_cgroups")
+        .expect("expected cgroup-array runtime map");
+    assert_eq!(map.def.map_type, BpfMapType::CgroupArray as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 4);
+}
+
+#[test]
+fn test_map_contains_cgroup_array_uses_current_task_helper_on_kprobe() {
     let hir_program = make_cgroup_array_map_contains_hir();
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "map-contains".to_string());

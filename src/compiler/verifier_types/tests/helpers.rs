@@ -866,6 +866,47 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_eg
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_lwt_cgroup_metadata_helpers() {
+    for helper in [BpfHelper::GetCgroupClassid, BpfHelper::GetRouteRealm] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![MirValue::VReg(ctx)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected lwt cgroup metadata helper to verify");
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_tc_ingress() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
@@ -918,7 +959,7 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_tc_in
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_non_tc() {
+fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_unsupported_program() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
         (BpfHelper::GetRouteRealm, vec![]),
@@ -961,10 +1002,16 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_non_t
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected tc-egress skb metadata helper non-tc context error");
+            .expect_err("expected skb metadata helper unsupported-program context error");
+        let expected = match helper {
+            BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => {
+                "is only valid in tc and lwt_* programs"
+            }
+            _ => "is only valid in tc programs",
+        };
         assert!(
-            err.iter()
-                .any(|e| e.message.contains("is only valid in tc programs"))
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected error containing {expected:?}, got {err:?}"
         );
     }
 }

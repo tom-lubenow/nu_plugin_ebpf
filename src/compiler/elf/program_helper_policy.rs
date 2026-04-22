@@ -23,6 +23,7 @@ enum HelperProgramSurfaceFamily {
     TcSkSkb,
     XdpTc,
     Tc,
+    TcLwt,
     SkbLoadBytes,
     SkbLoadBytesRelative,
     PerfEventOutput,
@@ -91,6 +92,17 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         family: HelperProgramSurfaceFamily::Tc,
         program_types: &[EbpfProgramType::Tc],
         label: "tc",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TcLwt,
+        program_types: &[
+            EbpfProgramType::Tc,
+            EbpfProgramType::LwtIn,
+            EbpfProgramType::LwtOut,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::LwtSeg6Local,
+        ],
+        label: "tc and lwt_*",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkbLoadBytes,
@@ -591,13 +603,15 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         BpfHelper::RedirectPeer
         | BpfHelper::RedirectNeigh
         | BpfHelper::SkbSetTstamp
-        | BpfHelper::SkbUnderCgroup
-        | BpfHelper::GetCgroupClassid
-        | BpfHelper::GetRouteRealm
         | BpfHelper::SkbCgroupId
         | BpfHelper::SkbAncestorCgroupId => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Tc,
         },
+        BpfHelper::SkbUnderCgroup | BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm => {
+            HelperProgramSurfaceSpec {
+                family: HelperProgramSurfaceFamily::TcLwt,
+            }
+        }
         BpfHelper::PerfEventOutput => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::PerfEventOutput,
         },
@@ -772,7 +786,7 @@ impl EbpfProgramType {
     }
 
     pub(crate) fn cgroup_array_membership_helper(&self) -> BpfHelper {
-        if HelperProgramSurfaceFamily::Tc.allows(*self) {
+        if HelperProgramSurfaceFamily::TcLwt.allows(*self) {
             BpfHelper::SkbUnderCgroup
         } else {
             BpfHelper::CurrentTaskUnderCgroup
