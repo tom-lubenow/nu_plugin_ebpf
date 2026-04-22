@@ -69,6 +69,7 @@ Supported attach types:
   - sk_msg
   - sk_skb
   - sk_skb_parser
+  - sk_reuseport (dry-run compile support; live attach is not implemented yet)
   - cgroup_sysctl
   - cgroup_sockopt
   - cgroup_sock_addr
@@ -141,12 +142,12 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.tstamp } - Get the skb timestamp on tc and cgroup_skb programs
     {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on tc programs
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on tc and cgroup_skb programs
-    {|ctx| $ctx.data }    - Get packet data pointer on xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
-    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.data }    - Get packet data pointer on xdp, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
-    {|ctx| $ctx.hash }    - Get the skb hash on skb-backed packet programs
+    {|ctx| $ctx.hash }    - Get the packet hash on skb-backed packet and sk_reuseport programs
     {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on tc, sk_skb, and sk_skb_parser
     {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on tc, sk_skb, and sk_skb_parser
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
@@ -673,6 +674,19 @@ Context parameter syntax (recommended):
     `bpf_sk_assign`; `$ctx.sk = 0` clears an earlier selection.
     `assign-socket` remains available when explicit flags are needed.
 
+  sk_reuseport fields:
+    {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len
+    {|ctx| $ctx.eth_protocol } - Get Ethernet protocol in host byte order
+    {|ctx| $ctx.ip_protocol } - Get IP protocol
+    {|ctx| $ctx.hash } - Get the reuseport selection hash
+    {|ctx| $ctx.bind_inany } - Get bind-in-any state
+    {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer
+    {|ctx| $ctx.migrating_sk.bound_dev_if } - Project the migrating socket on sk_reuseport:migrate
+    Note: `sk_reuseport:select` emits a `sk_reuseport` section and
+    `sk_reuseport:migrate` emits `sk_reuseport/migrate`. Current Aya loader
+    support is compile/dry-run only, so live attach returns a clear
+    unsupported error instead of attempting to load the object.
+
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
     {|ctx| $ctx.arg1 }    - Get function argument 1
@@ -832,7 +846,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -888,6 +902,7 @@ Requirements:
             "sk_msg",
             "sk_skb",
             "sk_skb_parser",
+            "sk_reuseport",
             "cgroup_sysctl",
             "cgroup_sockopt",
             "cgroup_sock_addr",
@@ -1022,6 +1037,11 @@ Requirements:
             Example {
                 example: "ebpf attach 'sk_lookup:/proc/self/ns/net' {|ctx| $ctx.local_port | count; 'pass' }",
                 description: "Count local ports seen by socket lookup in the current network namespace",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'sk_reuseport:select' {|ctx| $ctx.hash | count; 'pass' }",
+                description: "Compile a sk_reuseport selector that counts reuseport selection hashes",
                 result: None,
             },
             Example {

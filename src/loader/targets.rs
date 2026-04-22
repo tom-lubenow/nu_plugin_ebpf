@@ -235,6 +235,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             "sk_lookup target must be a network namespace file, not a directory",
             &target.netns_path,
         ),
+        ProgramSpec::SkReuseport { .. } => Ok(()),
         ProgramSpec::SkMsg { .. } | ProgramSpec::SkSkb { .. } | ProgramSpec::SkSkbParser { .. } => {
             let map_path = spec.pinned_map_path().unwrap_or_else(|| {
                 unreachable!("socket map program specs must carry a pinned map path")
@@ -307,6 +308,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `socket_filter:udp4:127.0.0.1:31337`
 /// - `sk_lookup:/proc/self/ns/net`
+/// - `sk_reuseport:select` or `sk_reuseport:migrate`
 /// - `sk_msg:/sys/fs/bpf/pinned_sockmap`
 /// - `cgroup_device:/path/to/cgroup`
 /// - `sock_ops:/path/to/cgroup`

@@ -499,7 +499,6 @@ const PERF_EVENT_CTX_FIELDS: &[CtxField] = &[CtxField::PerfSamplePeriod, CtxFiel
 const SKB_CTX_FIELDS: &[CtxField] = &[
     CtxField::PktType,
     CtxField::QueueMapping,
-    CtxField::EthProtocol,
     CtxField::VlanPresent,
     CtxField::VlanTci,
     CtxField::VlanProto,
@@ -514,8 +513,8 @@ const SKB_CTX_FIELDS: &[CtxField] = &[
     CtxField::Hwtstamp,
     CtxField::Ifindex,
     CtxField::TcIndex,
-    CtxField::SkbHash,
 ];
+const REUSEPORT_CTX_FIELDS: &[CtxField] = &[CtxField::BindInany, CtxField::MigratingSocket];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
     CtxField::RemoteIp6,
@@ -636,6 +635,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::PacketLenField,
     ),
     (
+        &[CtxField::EthProtocol],
+        BaseContextFieldAccessRequirement::EthProtocolField,
+    ),
+    (
         &[CtxField::CsumLevel],
         BaseContextFieldAccessRequirement::SkbChecksumHelperFields,
     ),
@@ -653,8 +656,16 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
     ),
     (SKB_CTX_FIELDS, BaseContextFieldAccessRequirement::SkbFields),
     (
+        &[CtxField::SkbHash],
+        BaseContextFieldAccessRequirement::PacketHashField,
+    ),
+    (
         &[CtxField::Data, CtxField::DataEnd],
         BaseContextFieldAccessRequirement::PacketDataFields,
+    ),
+    (
+        REUSEPORT_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::ReuseportFields,
     ),
     (
         &[CtxField::DataMeta],
@@ -677,7 +688,7 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::SocketTupleFields,
     ),
     (
-        &[CtxField::Socket],
+        &[CtxField::Socket, CtxField::MigratingSocket],
         BaseContextFieldAccessRequirement::SocketRefField,
     ),
     (
@@ -795,7 +806,7 @@ fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) ->
         )
     } else {
         format!(
-            "ctx.{} is only available on packet-context programs (xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
+            "ctx.{} is only available on packet-context programs (xdp, socket_filter, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
             field.display_name()
         )
     }
@@ -810,10 +821,13 @@ enum BaseContextFieldAccessRequirement {
     PerfEventHelperFields,
     XdpHelperFields,
     PacketLenField,
+    EthProtocolField,
     SkbChecksumHelperFields,
     SkbHashHelperFields,
     SkbFields,
+    PacketHashField,
     PacketDataFields,
+    ReuseportFields,
     DataMetaField,
     IngressIfindexField,
     RxQueueIndexField,
@@ -897,6 +911,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::CgroupDevice,
     EbpfProgramType::SkLookup,
+    EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -913,6 +928,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
     EbpfProgramType::SocketFilter,
+    EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -923,6 +939,7 @@ const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const PACKET_DATA_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
+    EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -963,6 +980,26 @@ const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
 ];
+
+const ETH_PROTOCOL_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SkReuseport,
+];
+
+const PACKET_HASH_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::Tc,
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SkReuseport,
+];
+
+const REUSEPORT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkReuseport];
 
 const DEVICE_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupDevice];
 
@@ -1015,6 +1052,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: PACKET_LEN_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::EthProtocolField,
+        program_types: ETH_PROTOCOL_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::SkbChecksumHelperFields,
         program_types: SKB_HELPER_FIELD_PROGRAMS,
     },
@@ -1043,8 +1084,16 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: SKB_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::PacketHashField,
+        program_types: PACKET_HASH_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::PacketDataFields,
         program_types: PACKET_DATA_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::ReuseportFields,
+        program_types: REUSEPORT_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::IngressIfindexField,
@@ -1130,10 +1179,13 @@ impl BaseContextFieldAccessRequirement {
             Self::PerfEventHelperFields => self.allowed_by_program_surface(program_type),
             Self::XdpHelperFields => self.allowed_by_program_surface(program_type),
             Self::PacketLenField => self.allowed_by_program_surface(program_type),
+            Self::EthProtocolField => self.allowed_by_program_surface(program_type),
             Self::SkbChecksumHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbHashHelperFields => self.allowed_by_program_surface(program_type),
             Self::SkbFields => self.allowed_by_program_surface(program_type),
+            Self::PacketHashField => self.allowed_by_program_surface(program_type),
             Self::PacketDataFields => self.allowed_by_program_surface(program_type),
+            Self::ReuseportFields => self.allowed_by_program_surface(program_type),
             Self::DataMetaField => program_type.supports_data_meta_ctx_field(),
             Self::IngressIfindexField => self.allowed_by_program_surface(program_type),
             Self::RxQueueIndexField => self.allowed_by_program_surface(program_type),
@@ -1200,10 +1252,16 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::PacketLenField
+            | Self::EthProtocolField
+            | Self::PacketHashField
             | Self::PacketDataFields
             | Self::IngressIfindexField
             | Self::RxQueueIndexField
             | Self::EgressIfindexField => packet_field_access_error(program_type, field),
+            Self::ReuseportFields => format!(
+                "ctx.{} is only available on sk_reuseport programs",
+                field.display_name()
+            ),
             Self::SkbChecksumHelperFields => format!(
                 "ctx.{} is only available on tc, sk_skb, and sk_skb_parser programs",
                 field.display_name()
@@ -1228,7 +1286,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SocketRefField => format!(
-                "ctx.{} is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
+                "ctx.{} is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             ),
             Self::LookupCookieField => {
@@ -1271,7 +1329,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::ProtocolField => format!(
-                "ctx.{} is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, and sk_lookup programs",
+                "ctx.{} is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, sk_lookup, and sk_reuseport programs",
                 field.display_name()
             ),
             Self::CgroupSockFields => format!(

@@ -41,6 +41,15 @@ impl EbpfState {
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
         let program = object.primary_program().map_err(LoadError::from)?;
+        if matches!(
+            program.prog_type.attach_kind(),
+            ProgramAttachKind::SkReuseport
+        ) {
+            return Err(LoadError::Attach(
+                "live attach for sk_reuseport programs is not supported by this loader yet; use --dry-run to compile"
+                    .to_string(),
+            ));
+        }
 
         // Generate ELF
         let elf_bytes = object.to_elf()?;
@@ -781,6 +790,12 @@ impl EbpfState {
                     .map_err(|e| LoadError::Load(format!("Failed to load lirc_mode2: {e}")))?;
                 lirc.attach(&device)
                     .map_err(|e| LoadError::Attach(format!("Failed to attach lirc_mode2: {e}")))?;
+            }
+            ProgramAttachKind::SkReuseport => {
+                return Err(LoadError::Attach(
+                    "live attach for sk_reuseport programs is not supported by this loader yet; use --dry-run to compile"
+                        .to_string(),
+                ));
             }
             ProgramAttachKind::StructOps => {
                 return Err(LoadError::Load(

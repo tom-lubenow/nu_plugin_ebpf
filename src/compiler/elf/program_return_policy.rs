@@ -161,6 +161,7 @@ const ALLOW_DENY_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::CgroupSockopt,
     EbpfProgramType::CgroupSockAddr,
     EbpfProgramType::SkLookup,
+    EbpfProgramType::SkReuseport,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkMsg,
 ];

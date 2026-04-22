@@ -790,6 +790,10 @@ pub enum CtxField {
     Protocol,
     /// current bpf_sock pointer on sk_lookup/sk_msg
     Socket,
+    /// sk_reuseport_md::bind_inany
+    BindInany,
+    /// sk_reuseport_md::migrating_sk
+    MigratingSocket,
     /// bpf_sock::bound_dev_if
     BoundDevIf,
     /// bpf_sock::mark
@@ -1002,6 +1006,8 @@ impl CtxField {
             CtxField::SockType => "sock_type".to_string(),
             CtxField::Protocol => "protocol".to_string(),
             CtxField::Socket => "sk".to_string(),
+            CtxField::BindInany => "bind_inany".to_string(),
+            CtxField::MigratingSocket => "migrating_sk".to_string(),
             CtxField::BoundDevIf => "bound_dev_if".to_string(),
             CtxField::SockMark => "mark".to_string(),
             CtxField::SockPriority => "priority".to_string(),

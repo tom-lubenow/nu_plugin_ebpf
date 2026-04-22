@@ -55,7 +55,10 @@ impl<'a> HirToMirLowering<'a> {
         path_desc: &str,
         root_ctx_field: Option<&CtxField>,
     ) -> Result<Option<MirType>, CompileError> {
-        let socket_cgroup_projection = if root_ctx_field == Some(&CtxField::Socket) {
+        let socket_cgroup_projection = if matches!(
+            root_ctx_field,
+            Some(CtxField::Socket | CtxField::MigratingSocket)
+        ) {
             match path_members {
                 [PathMember::String { val, .. }] if val == "cgroup_id" => {
                     Some((BpfHelper::SkCgroupId, Vec::new()))
@@ -140,7 +143,10 @@ impl<'a> HirToMirLowering<'a> {
         root_ctx_field: Option<&CtxField>,
         projected_semantics: Option<&AnnotatedValueSemantics>,
     ) -> Result<Option<MirType>, CompileError> {
-        let socket_helper_projection = if root_ctx_field == Some(&CtxField::Socket) {
+        let socket_helper_projection = if matches!(
+            root_ctx_field,
+            Some(CtxField::Socket | CtxField::MigratingSocket)
+        ) {
             match path_members {
                 [PathMember::String { val, .. }, rest @ ..]
                     if val == "tcp" || val == "tcp_sock" =>

@@ -822,6 +822,8 @@ pub enum EbpfProgramType {
     CgroupDevice,
     /// Socket lookup program attached to a network namespace
     SkLookup,
+    /// Socket reuseport selector/migration program
+    SkReuseport,
     /// Socket message verdict program attached to a pinned sockmap or sockhash
     SkMsg,
     /// Socket-to-socket-buffer stream verdict program attached to a pinned sockmap or sockhash
@@ -899,6 +901,7 @@ impl EbpfProgramType {
             EbpfProgramType::SocketFilter => &SOCKET_FILTER_INFO,
             EbpfProgramType::CgroupDevice => &CGROUP_DEVICE_INFO,
             EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
+            EbpfProgramType::SkReuseport => &SK_REUSEPORT_INFO,
             EbpfProgramType::SkMsg => &SK_MSG_INFO,
             EbpfProgramType::SkSkb => &SK_SKB_INFO,
             EbpfProgramType::SkSkbParser => &SK_SKB_PARSER_INFO,
@@ -1044,6 +1047,7 @@ pub enum ProgramAttachKind {
     SocketFilter,
     CgroupDevice,
     SkLookup,
+    SkReuseport,
     SkMsg,
     SkSkb,
     SkSkbParser,
@@ -1070,6 +1074,7 @@ pub enum ProgramTargetKind {
     PerfEventTarget,
     SocketFilterTarget,
     NetworkNamespacePath,
+    SocketReuseportMode,
     PinnedSockMapPath,
     TrafficControlInterface,
     CgroupPathAttachType,
@@ -1103,6 +1108,7 @@ pub enum ProgramBtfCallableSurface {
 pub enum PacketContextKind {
     XdpMd,
     SkBuff,
+    SkReuseport,
     SkMsg,
     SockOps,
 }
@@ -1161,6 +1167,7 @@ pub(crate) enum SocketContextLayout {
     CgroupSock,
     CgroupSockopt,
     SkLookup,
+    SkReuseport,
     SkMsg,
     SkBuff,
     SockOps,

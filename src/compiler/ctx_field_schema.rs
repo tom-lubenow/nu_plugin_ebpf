@@ -440,6 +440,7 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::Family
         | CtxField::SockType
         | CtxField::Protocol
+        | CtxField::BindInany
         | CtxField::BoundDevIf
         | CtxField::SockMark
         | CtxField::SockPriority
@@ -559,12 +560,14 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
                 address_space: AddressSpace::Kernel,
             }))
         }
-        CtxField::Socket => BaseContextFieldSchemaSpec::socket_validated(
-            ContextFieldTypeSpec::value(MirType::Ptr {
-                pointee: Box::new(synthetic_bpf_sock_type()),
-                address_space: AddressSpace::Kernel,
-            }),
-        ),
+        CtxField::Socket | CtxField::MigratingSocket => {
+            BaseContextFieldSchemaSpec::socket_validated(ContextFieldTypeSpec::value(
+                MirType::Ptr {
+                    pointee: Box::new(synthetic_bpf_sock_type()),
+                    address_space: AddressSpace::Kernel,
+                },
+            ))
+        }
         CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
             BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),

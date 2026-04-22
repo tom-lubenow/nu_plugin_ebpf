@@ -462,6 +462,13 @@ fn test_parse_probe_spec_sk_lookup_root_netns() {
 }
 
 #[test]
+fn test_parse_probe_spec_sk_reuseport_select() {
+    let (prog_type, target) = parse_probe_spec("sk_reuseport:select").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::SkReuseport);
+    assert_eq!(target, "select");
+}
+
+#[test]
 fn test_parse_probe_spec_sk_msg_pinned_sockmap() {
     let path = std::env::current_exe().unwrap();
     let spec = format!("sk_msg:{}", path.display());
@@ -694,6 +701,33 @@ fn test_parse_program_spec_sk_lookup_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_sk_reuseport_sections_are_structured() {
+    let select = parse_program_spec("sk_reuseport:select").unwrap();
+    assert_eq!(
+        select,
+        ProgramSpec::SkReuseport {
+            target: SkReuseportTarget {
+                mode: SkReuseportMode::Select,
+            }
+        }
+    );
+    assert_eq!(select.to_string(), "sk_reuseport:select");
+    assert_eq!(select.section_name(), "sk_reuseport");
+
+    let migrate = parse_program_spec("sk_reuseport:migrate").unwrap();
+    assert_eq!(
+        migrate,
+        ProgramSpec::SkReuseport {
+            target: SkReuseportTarget {
+                mode: SkReuseportMode::Migrate,
+            }
+        }
+    );
+    assert_eq!(migrate.to_string(), "sk_reuseport:migrate");
+    assert_eq!(migrate.section_name(), "sk_reuseport/migrate");
 }
 
 #[test]

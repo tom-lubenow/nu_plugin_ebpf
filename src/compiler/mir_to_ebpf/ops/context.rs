@@ -217,6 +217,21 @@ impl<'a> MirToEbpfCompiler<'a> {
         72
     }
 
+    pub(super) fn sk_reuseport_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
+        // struct sk_reuseport_md {
+        //     __bpf_md_ptr(void *, data);
+        //     __bpf_md_ptr(void *, data_end);
+        //     __u32 len;
+        //     __u32 eth_protocol;  // network byte order
+        //     __u32 ip_protocol;
+        //     __u32 bind_inany;
+        //     __u32 hash;
+        //     struct bpf_sock *sk;
+        //     struct bpf_sock *migrating_sk;
+        // };
+        (0, 8, 16, 20, 24, 28, 32, 40, 48)
+    }
+
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()
     -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {

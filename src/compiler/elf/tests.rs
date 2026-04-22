@@ -391,6 +391,7 @@ fn test_program_type_allow_deny_return_alias_surface_covers_policy_programs() {
         EbpfProgramType::CgroupSockopt,
         EbpfProgramType::CgroupSockAddr,
         EbpfProgramType::SkLookup,
+        EbpfProgramType::SkReuseport,
         EbpfProgramType::SkSkb,
         EbpfProgramType::SkMsg,
     ] {
@@ -499,6 +500,10 @@ fn test_program_type_socket_layouts_follow_program_model() {
         Some(SocketContextLayout::SkBuff)
     );
     assert_eq!(
+        EbpfProgramType::SkReuseport.protocol_context_layout(),
+        Some(SocketContextLayout::SkReuseport)
+    );
+    assert_eq!(
         EbpfProgramType::SocketFilter.socket_family_context_layout(),
         None
     );
@@ -530,6 +535,11 @@ fn test_program_type_socket_ref_layouts_follow_program_model() {
     assert_eq!(
         EbpfProgramType::SockOps.socket_ref_context_layout(),
         Some(SocketContextLayout::SockOps)
+    );
+
+    assert_eq!(
+        EbpfProgramType::SkReuseport.socket_ref_context_layout(),
+        Some(SocketContextLayout::SkReuseport)
     );
 
     assert_eq!(EbpfProgramType::Xdp.socket_ref_context_layout(), None);
@@ -610,6 +620,22 @@ fn test_program_type_metadata_for_cgroup_device() {
     assert_eq!(info.target_kind, ProgramTargetKind::CgroupPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
+}
+
+#[test]
+fn test_program_type_metadata_for_sk_reuseport() {
+    let info = EbpfProgramType::SkReuseport.info();
+    assert_eq!(info.canonical_prefix, "sk_reuseport");
+    assert_eq!(info.section_prefix, "sk_reuseport");
+    assert_eq!(info.attach_kind, ProgramAttachKind::SkReuseport);
+    assert_eq!(info.target_kind, ProgramTargetKind::SocketReuseportMode);
+    assert_eq!(info.context_family, ProgramContextFamily::SkReuseport);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(
+        info.supported_capabilities
+            .contains(&ProgramCapability::Counters)
+    );
 }
 
 #[test]
@@ -4867,6 +4893,38 @@ fn test_probe_context_allows_sk_lookup_fields() {
     assert!(
         ctx.ctx_field_access_error(&CtxField::IngressIfindex)
             .is_none()
+    );
+}
+
+#[test]
+fn test_probe_context_allows_sk_reuseport_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::EthProtocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::SkbHash).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::BindInany).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::MigratingSocket)
+            .is_none()
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::PktType)
+            .expect("expected sk_reuseport pkt_type access error")
+            .contains(
+                "ctx.pkt_type is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+            )
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::VlanTci)
+            .expect("expected sk_reuseport vlan_tci access error")
+            .contains(
+                "ctx.vlan_tci is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+            )
     );
 }
 

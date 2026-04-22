@@ -7195,6 +7195,38 @@ fn test_compile_sk_lookup_ctx_local_port_counter_program() {
 }
 
 #[test]
+fn test_compile_sk_reuseport_ctx_scalar_counter_programs() {
+    for (field, context) in [
+        ("packet_len", "sk_reuseport ctx.packet_len count"),
+        ("eth_protocol", "sk_reuseport ctx.eth_protocol count"),
+        ("ip_protocol", "sk_reuseport ctx.ip_protocol count"),
+        ("hash", "sk_reuseport ctx.hash count"),
+        ("bind_inany", "sk_reuseport ctx.bind_inany count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::SkReuseport,
+            "select",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_sk_reuseport_ctx_socket_projection_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::SkReuseport,
+        "migrate",
+        CellPath {
+            members: vec![string_member("migrating_sk"), string_member("bound_dev_if")],
+        },
+        "sk_reuseport:migrate ctx.migrating_sk.bound_dev_if count",
+    );
+}
+
+#[test]
 fn test_compile_xdp_ctx_rx_queue_index_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Xdp,

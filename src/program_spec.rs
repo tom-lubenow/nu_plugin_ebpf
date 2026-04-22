@@ -952,6 +952,61 @@ impl SkLookupTarget {
     }
 }
 
+/// Supported sk_reuseport section modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkReuseportMode {
+    Select,
+    Migrate,
+}
+
+impl SkReuseportMode {
+    pub fn target_name(self) -> &'static str {
+        match self {
+            Self::Select => "select",
+            Self::Migrate => "migrate",
+        }
+    }
+
+    pub fn section_name(self) -> &'static str {
+        match self {
+            Self::Select => "sk_reuseport",
+            Self::Migrate => "sk_reuseport/migrate",
+        }
+    }
+}
+
+/// Parsed sk_reuseport target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkReuseportTarget {
+    /// Section mode. `select` is the default reuseport selector surface.
+    pub mode: SkReuseportMode,
+}
+
+impl SkReuseportTarget {
+    /// Parse a sk_reuseport target string of the form `select` or `migrate`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        let mode = match target {
+            "select" | "default" => SkReuseportMode::Select,
+            "migrate" => SkReuseportMode::Migrate,
+            _ => {
+                return Err(ProgramSpecParseError::new(format!(
+                    "Invalid sk_reuseport target: {target}. Expected select or migrate"
+                )));
+            }
+        };
+
+        Ok(Self { mode })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.mode.target_name().to_string()
+    }
+
+    pub fn section_name(&self) -> &'static str {
+        self.mode.section_name()
+    }
+}
+
 /// Parsed lirc_mode2 target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LircMode2Target {
@@ -1321,6 +1376,9 @@ pub enum ProgramSpec {
     SkLookup {
         target: SkLookupTarget,
     },
+    SkReuseport {
+        target: SkReuseportTarget,
+    },
     SkMsg {
         target: SkMsgTarget,
     },
@@ -1600,6 +1658,9 @@ impl ProgramSpec {
             EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
                 target: SkLookupTarget::parse(target)?,
             }),
+            EbpfProgramType::SkReuseport => Ok(ProgramSpec::SkReuseport {
+                target: SkReuseportTarget::parse(target)?,
+            }),
             EbpfProgramType::SkMsg => Ok(ProgramSpec::SkMsg {
                 target: SkMsgTarget::parse(target)?,
             }),
@@ -1658,6 +1719,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
             ProgramSpec::SocketFilter { .. } => EbpfProgramType::SocketFilter,
             ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
+            ProgramSpec::SkReuseport { .. } => EbpfProgramType::SkReuseport,
             ProgramSpec::SkMsg { .. } => EbpfProgramType::SkMsg,
             ProgramSpec::SkSkb { .. } => EbpfProgramType::SkSkb,
             ProgramSpec::SkSkbParser { .. } => EbpfProgramType::SkSkbParser,
@@ -1693,6 +1755,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::SocketFilter { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
+            ProgramSpec::SkReuseport { target } => target.target_string(),
             ProgramSpec::SkMsg { target } => target.target_string(),
             ProgramSpec::SkSkb { target } => target.target_string(),
             ProgramSpec::SkSkbParser { target } => target.target_string(),
@@ -1839,6 +1902,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
             ProgramSpec::Xdp { target } => target.section_name().to_string(),
+            ProgramSpec::SkReuseport { target } => target.section_name().to_string(),
             ProgramSpec::StructOpsCallback { callback_name, .. } => {
                 let sleepable = self
                     .attach_shape()

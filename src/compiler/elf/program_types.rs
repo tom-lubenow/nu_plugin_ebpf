@@ -7,6 +7,7 @@ pub enum ProgramContextFamily {
     Xdp,
     SkBuffPacket,
     SkLookup,
+    SkReuseport,
     SkMsg,
     SockOps,
     CgroupSock,
@@ -55,6 +56,7 @@ pub(super) const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 pub(super) const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
 pub(super) const CGROUP_DEVICE_SPEC_ALIASES: &[&str] = &["cgroup_device"];
 pub(super) const SK_LOOKUP_SPEC_ALIASES: &[&str] = &["sk_lookup"];
+pub(super) const SK_REUSEPORT_SPEC_ALIASES: &[&str] = &["sk_reuseport"];
 pub(super) const SK_MSG_SPEC_ALIASES: &[&str] = &["sk_msg"];
 pub(super) const SK_SKB_SPEC_ALIASES: &[&str] = &["sk_skb"];
 pub(super) const SK_SKB_PARSER_SPEC_ALIASES: &[&str] = &["sk_skb_parser"];
@@ -317,6 +319,21 @@ pub(super) const SK_LOOKUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
     retval_access: ProgramValueAccess::None,
 };
 
+pub(super) const SK_REUSEPORT_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::SkReuseport,
+    canonical_prefix: "sk_reuseport",
+    spec_aliases: SK_REUSEPORT_SPEC_ALIASES,
+    section_prefix: "sk_reuseport",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::SkReuseport,
+    attach_kind: ProgramAttachKind::SkReuseport,
+    target_kind: ProgramTargetKind::SocketReuseportMode,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
 pub(super) const SK_MSG_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::SkMsg,
     canonical_prefix: "sk_msg",
@@ -521,6 +538,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::CgroupDevice,
     EbpfProgramType::SkLookup,
+    EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
@@ -556,6 +574,7 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "sock_filter",
     "cgroup_device",
     "sk_lookup",
+    "sk_reuseport",
     "sk_msg",
     "sk_skb",
     "sk_skb_parser",
