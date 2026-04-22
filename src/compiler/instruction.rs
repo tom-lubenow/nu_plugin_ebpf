@@ -170,6 +170,8 @@ pub enum BpfHelper {
     SkbAdjustRoom = 50,
     /// long bpf_skb_set_tstamp(skb, tstamp, tstamp_type)
     SkbSetTstamp = 192,
+    /// u64 bpf_skb_cgroup_classid(skb)
+    SkbCgroupClassid = 151,
     /// long bpf_ima_file_hash(file, dst, size)
     ImaFileHash = 193,
     /// long bpf_copy_from_user_task(dst, size, user_ptr, task, flags)
@@ -457,6 +459,7 @@ impl BpfHelper {
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SkbAdjustRoom => "bpf_skb_adjust_room",
             BpfHelper::SkbSetTstamp => "bpf_skb_set_tstamp",
+            BpfHelper::SkbCgroupClassid => "bpf_skb_cgroup_classid",
             BpfHelper::ImaFileHash => "bpf_ima_file_hash",
             BpfHelper::CopyFromUserTask => "bpf_copy_from_user_task",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
@@ -638,6 +641,7 @@ impl BpfHelper {
             "get_socket_uid" => Some(Self::GetSocketUid),
             "skb_adjust_room" => Some(Self::SkbAdjustRoom),
             "skb_set_tstamp" => Some(Self::SkbSetTstamp),
+            "skb_cgroup_classid" => Some(Self::SkbCgroupClassid),
             "ima_file_hash" => Some(Self::ImaFileHash),
             "copy_from_user_task" => Some(Self::CopyFromUserTask),
             "setsockopt" => Some(Self::SetSockOpt),

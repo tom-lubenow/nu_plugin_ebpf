@@ -1734,6 +1734,17 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::SkbCgroupClassid => HelperSemantics {
+                ptr_arg_rules: &[HelperPtrArgRule {
+                    arg_idx: 0,
+                    op: "helper skb_cgroup_classid skb",
+                    allowed: KERNEL,
+                    fixed_size: None,
+                    size_from_arg: None,
+                }],
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::GetRouteRealm => HelperSemantics {
                 ptr_arg_rules: &[HelperPtrArgRule {
                     arg_idx: 0,

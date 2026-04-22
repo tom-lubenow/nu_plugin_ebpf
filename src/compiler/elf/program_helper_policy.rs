@@ -731,6 +731,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkbChangeType
         | BpfHelper::SkbSetTstamp
         | BpfHelper::SkbGetXfrmState
+        | BpfHelper::SkbCgroupClassid
         | BpfHelper::SkbCgroupId
         | BpfHelper::SkbAncestorCgroupId => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Tc,

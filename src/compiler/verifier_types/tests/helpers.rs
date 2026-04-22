@@ -893,6 +893,45 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_eg
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_cgroup_classid_accepts_tc_ingress() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbCgroupClassid as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected skb_cgroup_classid helper to verify on tc ingress");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_lwt_cgroup_metadata_helpers() {
     for helper in [BpfHelper::GetCgroupClassid, BpfHelper::GetRouteRealm] {
         let mut func = MirFunction::new();
@@ -990,6 +1029,7 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_reject_unsup
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
         (BpfHelper::GetRouteRealm, vec![]),
+        (BpfHelper::SkbCgroupClassid, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {

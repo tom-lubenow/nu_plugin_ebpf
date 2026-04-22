@@ -355,6 +355,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkbCgroupId)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_skb_cgroup_classid"),
+        Some(BpfHelper::SkbCgroupClassid)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_ancestor_cgroup_id"),
         Some(BpfHelper::SkbAncestorCgroupId)
     ));
@@ -1305,6 +1309,7 @@ fn test_helper_signatures_tc_egress_skb_metadata_helpers() {
         BpfHelper::GetCgroupClassid,
         BpfHelper::GetRouteRealm,
         BpfHelper::SkbEcnSetCe,
+        BpfHelper::SkbCgroupClassid,
     ] {
         let sig =
             HelperSignature::for_id(helper as u32).expect("expected skb metadata helper signature");

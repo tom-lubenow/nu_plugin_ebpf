@@ -1774,6 +1774,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_skb_cgroup_id' is only valid in tc_action and tc programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkbCgroupClassid),
+        Some(
+            "helper 'bpf_skb_cgroup_classid' is only valid in tc_action and tc programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCgroupClassid),
         Some(
             "helper 'bpf_get_cgroup_classid' is only valid in tc_action, tc, and lwt_* programs"
@@ -2296,6 +2303,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbCgroupClassid),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::SkbChangeProto),
         None
     );
@@ -2704,6 +2715,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         BpfHelper::GetHashRecalc,
         BpfHelper::GetCgroupClassid,
         BpfHelper::GetRouteRealm,
+        BpfHelper::SkbCgroupClassid,
         BpfHelper::SkbCgroupId,
         BpfHelper::SkbAncestorCgroupId,
         BpfHelper::SkbLoadBytes,

@@ -3561,6 +3561,32 @@ fn test_infer_tc_egress_skb_metadata_helpers() {
 }
 
 #[test]
+fn test_infer_skb_cgroup_classid_helper_in_tc_ingress() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbCgroupClassid as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected skb_cgroup_classid helper to infer on tc ingress");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_infer_lwt_cgroup_metadata_helpers() {
     for helper in [BpfHelper::GetCgroupClassid, BpfHelper::GetRouteRealm] {
         let mut func = make_test_function();
@@ -3631,6 +3657,7 @@ fn test_type_error_tc_egress_skb_metadata_helpers_reject_unsupported_program() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
         (BpfHelper::GetRouteRealm, vec![]),
+        (BpfHelper::SkbCgroupClassid, vec![]),
         (BpfHelper::SkbCgroupId, vec![]),
         (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
     ] {

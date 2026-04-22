@@ -64,6 +64,7 @@ impl BpfHelper {
             46 => Some(Self::GetSocketCookie),
             47 => Some(Self::GetSocketUid),
             50 => Some(Self::SkbAdjustRoom),
+            151 => Some(Self::SkbCgroupClassid),
             192 => Some(Self::SkbSetTstamp),
             49 => Some(Self::SetSockOpt),
             52 => Some(Self::SkRedirectMap),
@@ -634,14 +635,15 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::GetCgroupClassid | BpfHelper::GetRouteRealm | BpfHelper::SkbEcnSetCe => {
-                HelperSignature {
-                    min_args: 1,
-                    max_args: 1,
-                    arg_kinds: [P, S, S, S, S],
-                    ret_kind: HelperRetKind::Scalar,
-                }
-            }
+            BpfHelper::GetCgroupClassid
+            | BpfHelper::GetRouteRealm
+            | BpfHelper::SkbEcnSetCe
+            | BpfHelper::SkbCgroupClassid => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::PerfEventOutput => HelperSignature {
                 min_args: 5,
                 max_args: 5,
