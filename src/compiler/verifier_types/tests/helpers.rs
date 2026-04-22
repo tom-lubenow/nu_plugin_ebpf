@@ -4854,6 +4854,50 @@ fn test_verify_mir_for_probe_context_sk_assign_rejects_tc_egress() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sk_assign_rejects_netkit() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkAssign as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sk_assign netkit context error");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs",
+        )
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sk_assign_requires_zero_flags_in_tc() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -461,10 +461,9 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
             EbpfProgramType::Tcx,
-            EbpfProgramType::Netkit,
             EbpfProgramType::SkLookup,
         ],
-        label: "tc_action, tc, tcx, netkit, and sk_lookup",
+        label: "tc_action, tc, tcx, and sk_lookup",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcCgroupSkb,
@@ -746,12 +745,6 @@ const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
         program_type: EbpfProgramType::Tcx,
         arg_idx: 2,
         error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tcx programs",
-    },
-    HelperZeroArgRequirementSpec {
-        helper: BpfHelper::SkAssign,
-        program_type: EbpfProgramType::Netkit,
-        arg_idx: 2,
-        error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in netkit programs",
     },
     HelperZeroArgRequirementSpec {
         helper: BpfHelper::CheckMtu,

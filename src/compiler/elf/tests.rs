@@ -1709,6 +1709,7 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     let sockopt_get = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
     let sockopt_set = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:set");
     let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    let netkit = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
 
     assert!(ingress.helper_call_error(BpfHelper::RedirectPeer).is_none());
@@ -1738,6 +1739,13 @@ fn test_probe_context_helper_call_error_uses_typed_attach_kind() {
     assert_eq!(
         tcx_egress.helper_call_error(BpfHelper::SkAssign),
         Some("helper 'bpf_sk_assign' is only valid in tc/tcx ingress programs".to_string())
+    );
+    assert_eq!(
+        netkit.helper_call_error(BpfHelper::SkAssign),
+        Some(
+            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs"
+                .to_string()
+        )
     );
     assert!(
         egress
@@ -2150,7 +2158,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkAssign),
         Some(
-            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, netkit, and sk_lookup programs"
+            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs"
                 .to_string()
         )
     );
@@ -3310,10 +3318,7 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
     );
     assert_eq!(
         EbpfProgramType::Netkit.helper_zero_arg_requirement(BpfHelper::SkAssign),
-        Some((
-            2,
-            "helper 'bpf_sk_assign' requires arg2 = 0 in netkit programs"
-        ))
+        None
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_zero_arg_requirement(BpfHelper::CheckMtu),

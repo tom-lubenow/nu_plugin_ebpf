@@ -2741,6 +2741,31 @@ fn test_lower_tc_egress_ctx_sk_assignment_rejects_sk_assign() {
 }
 
 #[test]
+fn test_lower_netkit_ctx_sk_assignment_rejects_sk_assign() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("netkit ctx.sk assignment should reject bpf_sk_assign");
+
+    assert!(err.to_string().contains(
+        "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs"
+    ));
+}
+
+#[test]
 fn test_lower_sk_lookup_ctx_socket_src_ip4_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("src_ip4")],

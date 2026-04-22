@@ -4633,6 +4633,36 @@ fn test_type_error_sk_assign_helper_rejects_tc_egress() {
 }
 
 #[test]
+fn test_type_error_sk_assign_helper_rejects_netkit() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkAssign as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_sk_assign to be rejected on netkit");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs",
+        )
+    }));
+}
+
+#[test]
 fn test_type_error_sk_assign_helper_requires_zero_flags_in_tc() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
