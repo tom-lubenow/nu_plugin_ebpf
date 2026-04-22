@@ -79,10 +79,12 @@ impl PacketAdjustMode {
 
     pub(crate) fn supported_programs_label(self) -> &'static str {
         match self {
-            Self::Head | Self::Tail => "xdp, lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser",
+            Self::Head | Self::Tail => {
+                "xdp, lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser"
+            }
             Self::Meta => "xdp",
-            Self::Pull => "lwt_*, tc_action, tc, sk_skb, and sk_skb_parser",
-            Self::Room => "tc_action, tc, sk_skb, and sk_skb_parser",
+            Self::Pull => "lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser",
+            Self::Room => "tc_action, tc, tcx, sk_skb, and sk_skb_parser",
         }
     }
 }
@@ -882,6 +884,8 @@ pub enum EbpfProgramType {
     SockOps,
     /// Traffic-control classifier attached to an interface ingress/egress hook
     Tc,
+    /// TCX classifier attached to an interface ingress/egress hook
+    Tcx,
     /// Traffic-control action program
     TcAction,
     /// Cgroup socket-buffer program attached to a cgroup ingress/egress hook
@@ -978,6 +982,7 @@ impl EbpfProgramType {
             EbpfProgramType::SkSkbParser => &SK_SKB_PARSER_INFO,
             EbpfProgramType::SockOps => &SOCK_OPS_INFO,
             EbpfProgramType::Tc => &TC_INFO,
+            EbpfProgramType::Tcx => &TCX_INFO,
             EbpfProgramType::TcAction => &TC_ACTION_INFO,
             EbpfProgramType::CgroupSkb => &CGROUP_SKB_INFO,
             EbpfProgramType::CgroupSock => &CGROUP_SOCK_INFO,
@@ -1144,6 +1149,7 @@ pub enum ProgramAttachKind {
     SkSkbParser,
     SockOps,
     Tc,
+    Tcx,
     TcAction,
     CgroupSkb,
     CgroupSock,

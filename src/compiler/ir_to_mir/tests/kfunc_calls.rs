@@ -3617,7 +3617,7 @@ fn test_redirect_intrinsic_rejects_non_packet_programs() {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
                 msg.contains(
-                    "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, and lwt_xmit programs",
+                    "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, tcx, and lwt_xmit programs",
                 ),
                 "{msg}"
             );

@@ -598,6 +598,26 @@ fn test_parse_program_spec_tc_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_tcx_is_structured() {
+    let (prog_type, target) = parse_probe_spec("tcx:lo:egress").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Tcx);
+    assert_eq!(target, "lo:egress");
+
+    let spec = parse_program_spec("tcx:lo:egress").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::Tcx {
+            target: TcTarget {
+                interface: "lo".to_string(),
+                attach_type: aya::programs::TcAttachType::Egress,
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "tcx:lo:egress");
+    assert_eq!(spec.section_name(), "tcx/egress");
+}
+
+#[test]
 fn test_parse_program_spec_tc_action_is_structured() {
     let (prog_type, target) = parse_probe_spec("action:demo-action").unwrap();
     assert_eq!(prog_type, EbpfProgramType::TcAction);
@@ -1334,6 +1354,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "raw_tracepoint.w",
         ),
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
+        (EbpfProgramType::Tcx, "lo:ingress", "tcx"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
         (EbpfProgramType::KprobeMulti, "vfs_*", "kprobe.multi"),
         (EbpfProgramType::KretprobeMulti, "vfs_*", "kretprobe.multi"),

@@ -116,6 +116,29 @@ const TC_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
     },
 ];
 
+const TCX_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
+    ReturnActionAliasEntry {
+        alias: "next",
+        value: ProgramReturnAlias::Const(-1),
+    },
+    ReturnActionAliasEntry {
+        alias: "pass",
+        value: ProgramReturnAlias::Const(0),
+    },
+    ReturnActionAliasEntry {
+        alias: "ok",
+        value: ProgramReturnAlias::Const(0),
+    },
+    ReturnActionAliasEntry {
+        alias: "drop",
+        value: ProgramReturnAlias::Const(2),
+    },
+    ReturnActionAliasEntry {
+        alias: "redirect",
+        value: ProgramReturnAlias::Const(7),
+    },
+];
+
 const ALLOW_DENY_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
     ReturnActionAliasEntry {
         alias: "deny",
@@ -258,6 +281,8 @@ const SOCKET_FILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramTyp
 const TC_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::Tc, EbpfProgramType::TcAction];
 
+const TCX_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tcx];
+
 const FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
 
 const NETFILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Netfilter];
@@ -294,6 +319,10 @@ const RETURN_ACTION_ALIAS_SURFACES: &[ReturnActionAliasSurface] = &[
     ReturnActionAliasSurface {
         program_types: TC_RETURN_ALIAS_PROGRAMS,
         entries: TC_RETURN_ALIAS_ENTRIES,
+    },
+    ReturnActionAliasSurface {
+        program_types: TCX_RETURN_ALIAS_PROGRAMS,
+        entries: TCX_RETURN_ALIAS_ENTRIES,
     },
     ReturnActionAliasSurface {
         program_types: FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS,

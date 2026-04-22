@@ -70,6 +70,7 @@ Supported attach types:
   - perf_event
   - socket_filter
   - xdp, tc
+  - tcx (dry-run compile support; live attach is not implemented yet)
   - cgroup_skb
   - cgroup_device
   - cgroup_sock
@@ -141,32 +142,32 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.vlan_tci } - Get the skb VLAN TCI on skb-backed packet programs
     {|ctx| $ctx.vlan_proto } - Get the skb VLAN ethertype in host byte order on skb-backed packet programs
     {|ctx| $ctx.cb } - Get the skb cb words as a fixed array on skb-backed packet programs
-    {|ctx| $ctx.tc_classid } - Get the skb tc_classid on tc_action and tc programs
-    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on lwt_*, tc_action, and tc egress
-    {|ctx| $ctx.route_realm } - Get skb route realm on lwt_*, tc_action, and tc egress
-    {|ctx| $ctx.csum_level } - Query skb checksum level on lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser
-    {|ctx| $ctx.skb_cgroup_id } - Get skb cgroup ID on tc_action and tc egress
-    {|ctx| $ctx.skb_ancestor_cgroup_id.0 } - Get skb ancestor cgroup ID on tc_action and tc egress at constant level 0
+    {|ctx| $ctx.tc_classid } - Get the skb tc_classid on tc_action, tc, and tcx programs
+    {|ctx| $ctx.cgroup_classid } - Get skb cgroup class ID on lwt_*, tc_action, tc egress, and tcx egress
+    {|ctx| $ctx.route_realm } - Get skb route realm on lwt_*, tc_action, tc egress, and tcx egress
+    {|ctx| $ctx.csum_level } - Query skb checksum level on lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.skb_cgroup_id } - Get skb cgroup ID on tc_action, tc egress, and tcx egress
+    {|ctx| $ctx.skb_ancestor_cgroup_id.0 } - Get skb ancestor cgroup ID on tc_action, tc egress, and tcx egress at constant level 0
     {|ctx| $ctx.napi_id } - Get the skb napi_id on skb-backed packet programs
-    {|ctx| $ctx.wire_len } - Get the skb wire_len on tc_action and tc programs
+    {|ctx| $ctx.wire_len } - Get the skb wire_len on tc_action, tc, and tcx programs
     {|ctx| $ctx.gso_segs } - Get the skb gso_segs on skb-backed packet programs
     {|ctx| $ctx.gso_size } - Get the skb gso_size on skb-backed packet programs
-    {|ctx| $ctx.tstamp } - Get the skb timestamp on tc_action, tc, and cgroup_skb programs
-    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on tc_action and tc programs
-    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on tc_action, tc, and cgroup_skb programs
-    {|ctx| $ctx.data }    - Get packet data pointer on xdp, flow_dissector, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
-    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, flow_dissector, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.tstamp } - Get the skb timestamp on tc_action, tc, tcx, and cgroup_skb programs
+    {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on tc_action, tc, and tcx programs
+    {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on tc_action, tc, tcx, and cgroup_skb programs
+    {|ctx| $ctx.data }    - Get packet data pointer on xdp, flow_dissector, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, flow_dissector, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
     {|ctx| $ctx.hash }    - Get the packet hash on skb-backed packet and sk_reuseport programs
-    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser
-    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.hash_recalc } - Get skb hash via bpf_get_hash_recalc on lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.recalc_hash } - Alias for ctx.hash_recalc on lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie on supported socket-backed contexts
-    {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser
+    {|ctx| $ctx.socket_uid } - Get the socket owner UID on socket_filter, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie on supported socket-backed contexts
-    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock sock_create/sock_release, socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs
-    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock sock_create/sock_release, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs
+    {|ctx| $ctx.mark }    - Get the socket or skb mark on cgroup_sock sock_create/sock_release, socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb programs
+    {|ctx| $ctx.priority } - Get the socket or skb priority on cgroup_sock sock_create/sock_release, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs
     {|ctx| $ctx.family }  - Get socket family on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order on cgroup_sock, cgroup_sock_addr connect4/getpeername4/sendmsg4/recvmsg4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words on cgroup_sock, cgroup_sock_addr connect6/getpeername6/sendmsg6/recvmsg6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs
@@ -190,16 +191,17 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
     {|ctx| $ctx.egress_ifindex } - Get egress interface index
     Note: XDP closures can return action aliases like `pass`, `drop`,
-    `tx`, and `redirect`, and TC / tc_action closures can return aliases like `ok`,
-    `shot`, `pipe`, and `redirect`. cgroup_skb closures can return
+    `tx`, and `redirect`, TC / tc_action closures can return aliases like `ok`,
+    `shot`, `pipe`, and `redirect`, and TCX closures can return aliases like
+    `next`, `pass`, `drop`, and `redirect`. cgroup_skb closures can return
     `allow` or `deny`. socket_filter closures can return `drop` / `deny`
     for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
     returning `ctx.packet_len`. `redirect IFINDEX` is the preferred
-    first-class packet redirect surface on XDP/TC, with optional
+    first-class packet redirect surface on XDP/TC/TCX, with optional
     `--flags`; XDP still requires `FLAGS = 0`. `adjust-packet
     --head|--meta|--tail DELTA` is the preferred first-class XDP packet
     relayout surface, selecting the corresponding `bpf_xdp_adjust_*`
-    helper automatically. On `tc`, `sk_skb`, and `sk_skb_parser`,
+    helper automatically. On `tc`, `tcx`, `sk_skb`, and `sk_skb_parser`,
     `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`,
     and `adjust-packet --room LEN_DIFF --mode MODE [--flags FLAGS]`
     are the preferred first-class skb relayout surfaces, selecting
@@ -210,12 +212,12 @@ Context parameter syntax (recommended):
     reading packet bytes again; after skb relayout helpers, reload
     `ctx.data` and `ctx.data_end`. The raw `helper-call
     "bpf_xdp_adjust_*"` and `helper-call "bpf_skb_*"` forms remain
-    available as escape hatches. `tc`, `sk_skb`, and `sk_skb_parser`
+    available as escape hatches. `tc`, `tcx`, `sk_skb`, and `sk_skb_parser`
     also model skb packet-edit helpers such as `bpf_skb_store_bytes`,
     `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
     `bpf_get_hash_recalc`, `bpf_csum_update`, and
     `bpf_set_hash_invalid`.
-    `redirect --peer IFINDEX` is modeled on `tc:...:ingress` and also
+    `redirect --peer IFINDEX` is modeled on `tc:...:ingress` and `tcx:...:ingress`, and also
     requires `FLAGS = 0`. `redirect --neigh IFINDEX` is modeled on tc
     paths for the default neighbor-resolution form, lowering to
     `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
@@ -224,7 +226,7 @@ Context parameter syntax (recommended):
     zero-flag surface for `bpf_sk_assign`, supplying the ambient context
     pointer automatically. `assign-socket SK [--flags FLAGS]` remains
     available when the program needs the helper status or explicit
-    `sk_lookup` flags. It is valid on `tc:...:ingress` with zero flags and
+    `sk_lookup` flags. It is valid on `tc:...:ingress` / `tcx:...:ingress` with zero flags and
     on `sk_lookup`, where `--replace` and `--no-reuseport` map to the
     corresponding `BPF_SK_LOOKUP_F_*` flags. Assigning `0` to `ctx.sk`
     resets a previous `sk_lookup` selection.
@@ -236,7 +238,7 @@ Context parameter syntax (recommended):
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
     `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,
-    `lwt_xmit`, `tc_action`, `tc`, `sk_msg`, `sk_skb`, and
+    `lwt_xmit`, `tc_action`, `tc`, `tcx`, `sk_msg`, `sk_skb`, and
     `sk_skb_parser`, those same scalar/header paths are also writable
     after shadowing the closure parameter as mutable, for
     example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
@@ -257,7 +259,7 @@ Context parameter syntax (recommended):
     IPv6 extension headers are still not modeled.
     Writable skb metadata is attach-sensitive. On `socket_filter`,
     fixed `ctx.cb.N` is writable. On `lwt_*`, `ctx.mark`,
-    `ctx.priority`, and fixed `ctx.cb.N` are writable. On `tc_action` and `tc`, `ctx.mark`,
+    `ctx.priority`, and fixed `ctx.cb.N` are writable. On `tc_action`, `tc`, and `tcx`, `ctx.mark`,
     `ctx.queue_mapping`, `ctx.priority`, `ctx.tc_index`,
     `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are writable.
     On `cgroup_skb`,
@@ -270,7 +272,7 @@ Context parameter syntax (recommended):
     `mut ctx = $ctx; $ctx.priority = 3`, `mut ctx = $ctx;
     $ctx.tc_index = 5`, or `mut ctx = $ctx; $ctx.tstamp = 123`.
     Other skb-backed metadata fields remain read-only on the remaining
-    hooks. When the timestamp type must also change, tc_action and tc
+    hooks. When the timestamp type must also change, tc_action, tc, and tcx
     model `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`;
     use `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
     `BPF_SKB_TSTAMP_DELIVERY_MONO`.
@@ -279,6 +281,9 @@ Context parameter syntax (recommended):
     exposes the TC-style skb context plus the modeled TC cls_act packet
     helper surface, and rejects live attach until the loader has an
     explicit tc-action attach path.
+    `tcx:IFACE:ingress|egress` is compile/dry-run only for now. It emits
+    `tcx/ingress` or `tcx/egress`, reuses the TC skb context surface, and
+    rejects live attach until the loader has an explicit TCX attach path.
     `freplace:FUNCTION` (aliases `extension:FUNCTION` and `ext:FUNCTION`)
     emits a `freplace/FUNCTION` extension section for replacing a global
     function in another loaded BPF program. It is compile/dry-run only;
@@ -576,7 +581,7 @@ Context parameter syntax (recommended):
     as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_verdict` programs.
     It uses raw verdict codes but supports `pass` / `drop` aliases, and
     `ctx.data` / `ctx.data_end` use the same guarded packet access model as
-    tc_action, tc, and cgroup_skb. Modeled skb packet-edit helpers also use the
+    tc_action, tc, tcx, and cgroup_skb. Modeled skb packet-edit helpers also use the
     ordinary helper surface here, including `bpf_skb_store_bytes`,
     `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
     `bpf_get_hash_recalc`, `bpf_csum_update`, `bpf_set_hash_invalid`,
@@ -961,7 +966,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'kprobe.multi:vfs_*', 'kretprobe.multi:vfs_*', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'uprobe.multi:/usr/bin/app:main*', 'uretprobe.multi:/usr/bin/app:main*', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'kprobe.multi:vfs_*', 'kretprobe.multi:vfs_*', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'uprobe.multi:/usr/bin/app:main*', 'uretprobe.multi:/usr/bin/app:main*', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc:lo:ingress', 'tcx:lo:ingress', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -1028,6 +1033,7 @@ Requirements:
             "socket_filter",
             "xdp",
             "tc",
+            "tcx",
             "tc_action",
             "action",
             "cgroup_skb",
@@ -1138,6 +1144,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'tc_action:demo-action' {|ctx| $ctx.packet_len | count; 'ok' }",
                 description: "Compile a tc action program that counts packet lengths without loading it",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'tcx:lo:ingress' {|ctx| $ctx.packet_len | count; 'pass' }",
+                description: "Compile a TCX classifier program without loading it",
                 result: None,
             },
             Example {

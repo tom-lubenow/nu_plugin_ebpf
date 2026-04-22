@@ -318,7 +318,9 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 .unwrap_or_else(|| unreachable!("cgroup program specs must carry a cgroup path"));
             validate_cgroup_path_target(cgroup_path)
         }
-        ProgramSpec::Tc { target } => validate_network_interface_target(&target.interface),
+        ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => {
+            validate_network_interface_target(&target.interface)
+        }
         ProgramSpec::TcAction { .. } => Ok(()),
         ProgramSpec::CgroupSkb { target } => {
             validate_cgroup_directory_target("cgroup_skb", &target.cgroup_path)
@@ -394,6 +396,8 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `sock_ops:/path/to/cgroup`
 /// - `tc:interface:ingress`
 /// - `tc:interface:egress`
+/// - `tcx:interface:ingress`
+/// - `tcx:interface:egress`
 /// - `cgroup_skb:/path/to/cgroup:ingress`
 /// - `cgroup_skb:/path/to/cgroup:egress`
 /// - `cgroup_sock:/path/to/cgroup:sock_create`

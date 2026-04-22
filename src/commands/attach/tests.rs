@@ -7764,6 +7764,35 @@ fn test_compile_tc_action_ctx_packet_pointer_counter_programs() {
 }
 
 #[test]
+fn test_compile_tcx_ctx_scalar_and_packet_pointer_programs() {
+    for (members, context) in [
+        (
+            vec![string_member("packet_len")],
+            "tcx ingress ctx.packet_len count",
+        ),
+        (
+            vec![string_member("data"), int_member(0)],
+            "tcx ingress ctx.data[0] count",
+        ),
+        (
+            vec![string_member("data_meta"), int_member(0)],
+            "tcx ingress ctx.data_meta[0] count",
+        ),
+        (
+            vec![string_member("sk"), string_member("family")],
+            "tcx ingress ctx.sk.family count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Tcx,
+            "lo:ingress",
+            CellPath { members },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_tc_action_ctx_socket_projection_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::TcAction,

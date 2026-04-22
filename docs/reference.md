@@ -33,32 +33,32 @@ The closure receives a context parameter with these fields:
 | `perf_counter` | Perf event counter value from `bpf_perf_prog_read_value` | perf_event |
 | `perf_enabled` | Perf event enabled time from `bpf_perf_prog_read_value` | perf_event |
 | `perf_running` | Perf event running time from `bpf_perf_prog_read_value` | perf_event |
-| `packet_len` / `len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `sk_reuseport_md.len` on sk_reuseport, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks); `ctx.size` is also accepted on sk_msg | xdp, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `packet_len` / `len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `sk_reuseport_md.len` on sk_reuseport, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks); `ctx.size` is also accepted on sk_msg | xdp, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `xdp_buff_len` / `xdp_buffer_len` | Total XDP buffer length from `bpf_xdp_get_buff_len`, including paged fragments | xdp |
-| `pkt_type` | skb pkt_type | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `queue_mapping` | skb queue_mapping | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
-| `vlan_present` | Whether skb VLAN metadata is present | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `vlan_tci` | skb VLAN TCI | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `cb` | skb control-block words as five host-order `u32` values | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tc_classid` | skb tc_classid | tc_action, tc |
-| `cgroup_classid` | skb cgroup class ID from `bpf_get_cgroup_classid` | lwt_*, tc_action, tc egress |
-| `route_realm` | skb route realm from `bpf_get_route_realm` | lwt_*, tc_action, tc egress |
-| `csum_level` | skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`; returns a negative error if the kernel cannot query it | lwt_xmit, tc_action, tc, sk_skb, sk_skb_parser |
-| `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc_action, tc egress |
-| `skb_ancestor_cgroup_id.N` | skb ancestor cgroup ID at constant numeric level `N` from `bpf_skb_ancestor_cgroup_id` | tc_action, tc egress |
-| `napi_id` | skb napi_id | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `wire_len` | skb wire_len | tc_action, tc |
-| `gso_segs` | skb GSO segment count | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `gso_size` | skb GSO segment size | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tstamp` | skb timestamp | tc_action, tc, cgroup_skb |
-| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | tc_action, tc |
-| `hwtstamp` | skb hardware timestamp | tc_action, tc, cgroup_skb |
-| `data` | Packet data pointer | xdp, flow_dissector, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `data_meta` | Packet metadata pointer | xdp, tc_action, tc |
-| `data_end` | Packet end pointer | xdp, flow_dissector, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
-| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
+| `pkt_type` | skb pkt_type | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `queue_mapping` | skb queue_mapping | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
+| `vlan_present` | Whether skb VLAN metadata is present | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_tci` | skb VLAN TCI | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `cb` | skb control-block words as five host-order `u32` values | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `tc_classid` | skb tc_classid | tc_action, tc, tcx |
+| `cgroup_classid` | skb cgroup class ID from `bpf_get_cgroup_classid` | lwt_*, tc_action, tc egress, tcx egress |
+| `route_realm` | skb route realm from `bpf_get_route_realm` | lwt_*, tc_action, tc egress, tcx egress |
+| `csum_level` | skb checksum level query from `bpf_csum_level(..., BPF_CSUM_LEVEL_QUERY)`; returns a negative error if the kernel cannot query it | lwt_xmit, tc_action, tc, tcx, sk_skb, sk_skb_parser |
+| `skb_cgroup_id` | skb cgroup ID from `bpf_skb_cgroup_id` | tc_action, tc egress, tcx egress |
+| `skb_ancestor_cgroup_id.N` | skb ancestor cgroup ID at constant numeric level `N` from `bpf_skb_ancestor_cgroup_id` | tc_action, tc egress, tcx egress |
+| `napi_id` | skb napi_id | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `wire_len` | skb wire_len | tc_action, tc, tcx |
+| `gso_segs` | skb GSO segment count | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `gso_size` | skb GSO segment size | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `tstamp` | skb timestamp | tc_action, tc, tcx, cgroup_skb |
+| `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | tc_action, tc, tcx |
+| `hwtstamp` | skb hardware timestamp | tc_action, tc, tcx, cgroup_skb |
+| `data` | Packet data pointer | xdp, flow_dissector, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `data_meta` | Packet metadata pointer | xdp, tc_action, tc, tcx |
+| `data_end` | Packet end pointer | xdp, flow_dissector, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `ingress_ifindex` | Ingress interface index | xdp, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
 | `sample` / `raw` | Raw lirc mode2 sample word | lirc_mode2 |
 | `value` | Low 24-bit lirc mode2 payload value | lirc_mode2 |
 | `mode` | High-byte lirc mode2 event kind mask | lirc_mode2 |
@@ -67,13 +67,13 @@ The closure receives a context parameter with these fields:
 | `device_type` | cgroup device kind (`access_type & 0xffff`) | cgroup_device |
 | `major` | Requested device major number | cgroup_device |
 | `minor` | Requested device minor number | cgroup_device |
-| `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `tc_index` | skb tc_index | socket_filter, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `hash` | skb hash, or sk_reuseport selection hash on sk_reuseport | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
-| `hash_recalc` / `recalc_hash` | skb hash from `bpf_get_hash_recalc`, recomputing it if needed | lwt_*, tc_action, tc, sk_skb, sk_skb_parser |
-| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_reuseport, sk_skb, sk_skb_parser, sock_ops |
-| `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
+| `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `tc_index` | skb tc_index | socket_filter, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `hash` | skb hash, or sk_reuseport selection hash on sk_reuseport | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
+| `hash_recalc` / `recalc_hash` | skb hash from `bpf_get_hash_recalc`, recomputing it if needed | lwt_*, tc_action, tc, tcx, sk_skb, sk_skb_parser |
+| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_reuseport, sk_skb, sk_skb_parser, sock_ops |
+| `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
+| `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
 | `rx_queue_index` | XDP receive queue index | xdp |
 | `egress_ifindex` | XDP egress interface index | xdp |
 | `user_family` | Userspace-requested socket family | cgroup_sock_addr |
@@ -82,10 +82,10 @@ The closure receives a context parameter with these fields:
 | `user_port` | Requested port in host byte order | cgroup_sock_addr (*4/*6 hooks) |
 | `family` | Kernel socket family | cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
-| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts; IP protocol on sk_reuseport | socket_filter, lwt_*, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_skb, sk_skb_parser |
+| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts; IP protocol on sk_reuseport | socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_skb, sk_skb_parser |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock (sock_create, sock_release) |
-| `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, lwt_*, tc_action, tc, cgroup_skb |
-| `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb |
+| `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, sk_skb_parser |
 | `state` | Current socket or TCP state | cgroup_sock, sock_ops |
 | `op` | sock_ops callback opcode | sock_ops |
 | `args` | sock_ops callback argument words as four host-order `u32` values | sock_ops |
@@ -126,7 +126,7 @@ The closure receives a context parameter with these fields:
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | cgroup_sock (post_bind6), cgroup_sock_addr (bind6, getsockname6, sendmsg6), cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | cgroup_sock (post_bind4, post_bind6), cgroup_sock_addr (bind4/bind6, getsockname4/getsockname6), cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `rx_queue_mapping` | Socket receive-queue mapping (`-1` if unset) | cgroup_sock |
-| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4`, `src_ip6`, `src_port`, `dst_port` (raw network byte order), `dst_ip4`, `dst_ip6`, `state`, `rx_queue_mapping`, plus `cgroup_id` and `ancestor_cgroup_id.N` (`cgroup_skb` only). On program types where the corresponding helpers are valid, `$ctx.sk.tcp.<field>` exposes null-safe TCP metrics from `struct bpf_tcp_sock`, while `$ctx.sk.full.<field>` and `$ctx.sk.listener.<field>` expose fields from `bpf_sk_fullsock` / `bpf_get_listener_sock`; these projections also work after binding `$ctx.sk` to a local and return `0` when there is no socket or the helper returns null | socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4`, `src_ip6`, `src_port`, `dst_port` (raw network byte order), `dst_ip4`, `dst_ip6`, `state`, `rx_queue_mapping`, plus `cgroup_id` and `ancestor_cgroup_id.N` (`cgroup_skb` only). On program types where the corresponding helpers are valid, `$ctx.sk.tcp.<field>` exposes null-safe TCP metrics from `struct bpf_tcp_sock`, while `$ctx.sk.full.<field>` and `$ctx.sk.listener.<field>` expose fields from `bpf_sk_fullsock` / `bpf_get_listener_sock`; these projections also work after binding `$ctx.sk` to a local and return `0` when there is no socket or the helper returns null | socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `flow_keys` | Typed `bpf_flow_keys *` pointer for flow-dissector projection such as `$ctx.flow_keys.ip_proto`, `$ctx.flow_keys.sport`, `$ctx.flow_keys.dport`, `$ctx.flow_keys.ipv4_src`, or `$ctx.flow_keys.ipv6_dst.3` | flow_dissector |
 | `nf_state` | Typed `nf_hook_state *` pointer for netfilter projection such as `$ctx.nf_state.hook`, `$ctx.nf_state.pf`, `$ctx.nf_state.in.ifindex`, or `$ctx.nf_state.out.ifindex`; `ctx.state` is also accepted as a netfilter-specific alias | netfilter |
 | `skb` | Typed `sk_buff *` pointer for netfilter projection such as `$ctx.skb.len` | netfilter |
@@ -190,7 +190,7 @@ syscall-program helpers `bpf_sys_bpf`, `bpf_btf_find_by_name_kind`,
 `bpf_sys_close`, and `bpf_kallsyms_lookup_name`; other raw helpers are
 rejected on `syscall:*` until they have an explicit policy.
 
-`xdp`, `tc_action`, `tc`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
+`xdp`, `tc_action`, `tc`, `tcx`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
 packet pointers `ctx.data` / `ctx.data_end`. `sk_msg`, `sk_skb`, and
 `sk_skb_parser` also expose `ctx.data` / `ctx.data_end` on their
@@ -201,7 +201,7 @@ work through normal Nushell indexing such as `($ctx.data | get 0)`,
 and fixed-width big-endian scalars can be read directly through cell
 paths such as `$ctx.data.u16be.6` or `$ctx.data.u32be.0`. These lower
 to data_end-guarded packet loads. On `xdp`, `lwt_xmit`,
-`tc_action`, `tc`, `sk_msg`, `sk_skb`, and `sk_skb_parser`, the same
+`tc_action`, `tc`, `tcx`, `sk_msg`, `sk_skb`, and `sk_skb_parser`, the same
 scalar/header packet paths are also writable through ordinary
 cell-path updates
 after shadowing the immutable closure parameter as mutable, for
@@ -234,7 +234,7 @@ additionally exposes `ctx.data_meta`, `ctx.ifindex`,
 `ctx.rx_queue_index`, and `ctx.egress_ifindex`. `ctx.data_meta` is a
 packet-metadata pointer: scalar reads such as `($ctx.data_meta | get 0)`
 use the same packet address space as `ctx.data`, but they are guarded
-against `ctx.data` rather than `ctx.data_end`. `tc_action` and `tc` also expose
+against `ctx.data` rather than `ctx.data_end`. `tc_action`, `tc`, and `tcx` also expose
 `ctx.data_meta` with the same `ctx.data`-guarded packet semantics,
 which is useful for consuming metadata carried forward from earlier
 packet-processing stages. `tc_action:LABEL` and its `action:LABEL`
@@ -244,11 +244,16 @@ kernel TC cls_act helper family for first-class packet redirects,
 skb relayout/edit helpers, cgroup-array membership, and helper-backed
 skb metadata fields; live attach is intentionally rejected until the
 loader grows an explicit tc-action attach path.
+`tcx:IFACE:ingress|egress` emits `tcx/ingress` or `tcx/egress` sections
+using the same SCHED_CLS skb context family as TC. It is compile/dry-run
+only for now; live attach is rejected until the loader has an explicit
+TCX attach path. Return aliases are `"next"` for `-1`, `"pass"` / `"ok"`
+for `0`, `"drop"` for `2`, and `"redirect"` for `7`.
 `adjust-packet --head|--meta|--tail DELTA`
 is the preferred first-class XDP relayout surface; it lowers to
 `bpf_xdp_adjust_head`, `bpf_xdp_adjust_meta`, or `bpf_xdp_adjust_tail`
 and materializes the XDP context pointer automatically. On `tc_action`, `tc`,
-`sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`,
+`tcx`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`,
 `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]`
 are the preferred first-class skb relayout surfaces; `lwt_*` programs
 also support the `--pull` form. These lower to `bpf_skb_change_head`,
@@ -260,12 +265,12 @@ access. After skb relayout helpers, reload `ctx.data` and
 `ctx.data_end` before further packet access. The raw
 `helper-call "bpf_xdp_adjust_*" $ctx DELTA` and `helper-call "bpf_skb_*" ...`
 forms are still modeled when you need the escape hatch. `lwt_xmit`,
-`tc_action`, `tc`, `sk_skb`, and `sk_skb_parser` also model the shared skb
+`tc_action`, `tc`, `tcx`, `sk_skb`, and `sk_skb_parser` also model the shared skb
 packet-edit helpers through the ordinary helper surface, including
 `bpf_skb_store_bytes`, `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
 `bpf_clone_redirect`, `bpf_get_hash_recalc`, `bpf_csum_update`,
-`bpf_csum_level`, and `bpf_set_hash_invalid`. `tc_action`, `tc`, `sk_skb`, and
-`sk_skb_parser` additionally model `bpf_skb_vlan_push`,
+`bpf_csum_level`, and `bpf_set_hash_invalid`. `tc_action`, `tc`, `tcx`,
+`sk_skb`, and `sk_skb_parser` additionally model `bpf_skb_vlan_push`,
 `bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`.
 `bpf_skb_store_bytes` flags may contain only `BPF_F_RECOMPUTE_CSUM` and
 `BPF_F_INVALIDATE_HASH`.
@@ -273,29 +278,29 @@ These skb mutation helpers invalidate guarded
 direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_skb_load_bytes` works on `flow_dissector`, `socket_filter`, `lwt_*`,
-`tc`, `cgroup_skb`, `sk_reuseport`, `sk_skb`, and `sk_skb_parser`;
-`bpf_skb_load_bytes_relative` works on `socket_filter`, `tc`, `cgroup_skb`,
+`tc`, `tcx`, `cgroup_skb`, `sk_reuseport`, `sk_skb`, and `sk_skb_parser`;
+`bpf_skb_load_bytes_relative` works on `socket_filter`, `tc`, `tcx`, `cgroup_skb`,
 and `sk_reuseport`, with `start_header` limited to `BPF_HDR_START_MAC` or
 `BPF_HDR_START_NET`; and `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
 `bpf_xdp_store_bytes` are XDP-only. XDP targets default to SKB/generic
 attach mode for safer development attaches; use `xdp:IFACE:drv` or
 `xdp:IFACE:hw` when driver or hardware mode is intentional. Append
 `:frags`, for example `xdp:IFACE:drv:frags`, when the program needs the
-kernel `xdp.frags` section for multi-buffer packets. XDP, TC, and LWT also
+kernel `xdp.frags` section for multi-buffer packets. XDP, TC, TCX, and LWT also
 model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
 multiples of four, and a null `from` or `to` buffer is accepted only
 when the paired size is zero. `ctx.xdp_buff_len` exposes
 `bpf_xdp_get_buff_len` directly for XDP programs that need total
 multi-buffer packet size rather than the linear `ctx.packet_len`. XDP,
-tc_action, and TC also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;
+tc_action, TC, and TCX also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;
 `MTU_LEN_PTR` must be a stack/map-backed `u32` pointer, and XDP requires
-`FLAGS = 0`. TC flag combinations that depend on runtime `mtu_len` /
-`len_diff` values remain kernel-enforced. XDP, tc_action, and TC also
+`FLAGS = 0`. TC/TCX flag combinations that depend on runtime `mtu_len` /
+`len_diff` values remain kernel-enforced. XDP, tc_action, TC, and TCX also
 model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
 `PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
 accessible size covers `PLEN`; `FLAGS` may contain only modeled
 `BPF_FIB_LOOKUP_*` bits (`0x3f`), while the kernel still enforces minimum
-struct size and flag-combination rules. `tc_action`, TC, and `lwt_xmit` model
+struct size and flag-combination rules. `tc_action`, TC, TCX, and `lwt_xmit` model
 the skb tunnel metadata helpers:
 `helper-call "bpf_skb_get_tunnel_key" $ctx KEY_PTR SIZE FLAGS`,
 `helper-call "bpf_skb_set_tunnel_key" $ctx KEY_PTR SIZE FLAGS`,
@@ -305,23 +310,23 @@ the skb tunnel metadata helpers:
 `SIZE`; `bpf_skb_get_tunnel_key` accepts only `BPF_F_TUNINFO_IPV6` and
 `BPF_F_TUNINFO_FLAGS`, while `bpf_skb_set_tunnel_key` accepts only the
 kernel's tunnel-key flag bits through `0x1f`. Detailed tunnel-key struct
-sizes remain kernel-enforced. `tc_action` and TC also model
+sizes remain kernel-enforced. `tc_action`, TC, and TCX also model
 `helper-call "bpf_skb_get_xfrm_state" $ctx INDEX XFRM_STATE_PTR SIZE 0`;
 `XFRM_STATE_PTR` must be a stack/map-backed output buffer whose
 accessible size covers `SIZE`, and the final reserved flags argument
 must be zero.
-`tc_action` and TC egress expose skb cgroup/classifier
+`tc_action`, TC egress, and TCX egress expose skb cgroup/classifier
 metadata as ordinary `ctx.skb_cgroup_id`, `ctx.cgroup_classid`, and
 `ctx.route_realm` fields; LWT programs expose `ctx.cgroup_classid` and
 `ctx.route_realm` through the same helper surface. `ctx.skb_ancestor_cgroup_id.N` exposes the
 parameterized skb ancestor cgroup helper with a constant numeric
 ancestor level. `ctx.csum_level` exposes the checksum-level query form
-of `bpf_csum_level` on `lwt_xmit`, tc_action, TC, `sk_skb`, and `sk_skb_parser`
+of `bpf_csum_level` on `lwt_xmit`, tc_action, TC, TCX, `sk_skb`, and `sk_skb_parser`
 programs; inc/dec/reset remain helper-call operations because they mutate skb metadata.
 `ctx.hash_recalc` exposes `bpf_get_hash_recalc` on LWT and the same
-tc_action/TC/`sk_skb` surface when a valid skb hash is needed after packet edits. The
+tc_action/TC/TCX/`sk_skb` surface when a valid skb hash is needed after packet edits. The
 skb-backed packet contexts
-(`socket_filter`, `tc_action`, `tc`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
+(`socket_filter`, `tc_action`, `tc`, `tcx`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
 also expose `ctx.sk` for typed `bpf_sock` projection such as
 `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or
 `$ctx.sk.mark`; `cgroup_skb` also exposes `$ctx.sk.cgroup_id` and
@@ -331,10 +336,10 @@ returning `0` when no socket is present. Common skb metadata includes `ctx.pkt_t
 `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.napi_id`,
 `ctx.gso_segs`, `ctx.gso_size`, `ctx.tc_index`, and `ctx.hash`.
 Additional metadata is family-specific: `ctx.tc_classid`,
-`ctx.wire_len`, and `ctx.tstamp_type` are available on tc_action and
-tc; `ctx.tstamp` and `ctx.hwtstamp` are available on tc_action, tc,
+`ctx.wire_len`, and `ctx.tstamp_type` are available on tc_action,
+tc, and tcx; `ctx.tstamp` and `ctx.hwtstamp` are available on tc_action, tc, tcx,
 and cgroup_skb; `ctx.mark` is available on cgroup_sock `sock_create` /
-`sock_release`, socket_filter, lwt_*, tc_action, tc, and cgroup_skb;
+`sock_release`, socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb;
 and `ctx.priority` is available on cgroup_sock `sock_create` /
 `sock_release` and across the skb-backed packet families. `cgroup_skb`,
 `sk_skb`, and `sk_skb_parser` also
@@ -348,7 +353,7 @@ normalized to host byte order, and `ctx.cb` follows the same
 fixed-array model as `ctx.args`. Writable skb
 metadata is attach-sensitive. On `socket_filter`, fixed `ctx.cb.N`
 is writable. On `lwt_*`, `ctx.mark`, `ctx.priority`, and fixed
-`ctx.cb.N` are writable. On `tc_action` and `tc`, `ctx.mark`,
+`ctx.cb.N` are writable. On `tc_action`, `tc`, and `tcx`, `ctx.mark`,
 `ctx.queue_mapping`, `ctx.priority`, `ctx.tc_index`,
 `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are writable.
 On `cgroup_skb`, `ctx.mark`, `ctx.priority`, and fixed `ctx.cb.N`
@@ -360,13 +365,13 @@ for example `mut ctx = $ctx; $ctx.mark = 7`, `mut ctx = $ctx;
 $ctx.cb.0 = 1`, `mut ctx = $ctx; $ctx.priority = 3`, `mut ctx = $ctx;
 $ctx.tc_index = 5`, or `mut ctx = $ctx; $ctx.tstamp = 123`. Other
 skb-backed metadata fields remain read-only on the remaining hooks.
-When the timestamp type must also change, `tc_action` and `tc` model
+When the timestamp type must also change, `tc_action`, `tc`, and `tcx` model
 `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`; the
 current kernel UAPI uses `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
 `BPF_SKB_TSTAMP_DELIVERY_MONO`, and the compiler rejects other values.
-`tc_action`, TC, and `cgroup_skb` also
+`tc_action`, TC, TCX, and `cgroup_skb` also
 model `helper-call "bpf_skb_ecn_set_ce" $ctx` for setting IPv4/IPv6 ECN
-CE when the packet is ECN-capable. `tc_action` and TC model
+CE when the packet is ECN-capable. `tc_action`, TC, and TCX model
 `helper-call "bpf_skb_change_proto" $ctx PROTO 0` and
 `helper-call "bpf_skb_change_type" $ctx TYPE`; protocol changes can resize
 the skb, so packet pointers must be reloaded and re-guarded afterward.
@@ -382,28 +387,29 @@ deeper TCP option parsing, ICMP subtype-specific body decoding,
 uncommon IPv6 extension headers, and named packet-program action
 helpers are still not modeled, but compile-time action aliases are
 available in return position. XDP closures can return strings like
-`"pass"` / `"drop"`, and TC / tc_action closures can return strings like `"ok"` /
-`"shot"`. Raw numeric return codes still work. `redirect IFINDEX` is
-the preferred first-class surface for `bpf_redirect` on XDP and tc,
+`"pass"` / `"drop"`, TC / tc_action closures can return strings like `"ok"` /
+`"shot"`, and TCX closures can return strings like `"next"` / `"pass"` /
+`"ok"` / `"drop"` / `"redirect"`. Raw numeric return codes still work. `redirect IFINDEX` is
+the preferred first-class surface for `bpf_redirect` on XDP, tc, and tcx,
 and `redirect --flags N IFINDEX` exposes the helper flags argument
-directly; XDP still requires `FLAGS = 0`. On `tc:...:ingress`,
+directly; XDP still requires `FLAGS = 0`. On `tc:...:ingress` and `tcx:...:ingress`,
 `redirect --peer IFINDEX` is the preferred first-class surface for
-`bpf_redirect_peer` and still requires `FLAGS = 0`. On tc,
+`bpf_redirect_peer` and still requires `FLAGS = 0`. On tc/tcx,
 `redirect --neigh IFINDEX` is the preferred first-class surface for
 the default-neighbor form of `bpf_redirect_neigh`, lowering to
 `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
 `0`. The raw `helper-call "bpf_redirect*" ...` forms are still
 modeled when you need the escape hatch.
 
-On XDP, `adjust-packet --head|--meta|--tail DELTA` is the preferred first-class surface for packet relayout. It selects the corresponding `bpf_xdp_adjust_*` helper, materializes the ambient context pointer automatically, and returns the helper result directly. On `tc`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` do the same for `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room`; LWT programs also support `adjust-packet --pull LEN`.
+On XDP, `adjust-packet --head|--meta|--tail DELTA` is the preferred first-class surface for packet relayout. It selects the corresponding `bpf_xdp_adjust_*` helper, materializes the ambient context pointer automatically, and returns the helper result directly. On `tc`, `tcx`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` do the same for `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room`; LWT programs also support `adjust-packet --pull LEN`.
 
-On XDP and tc, `redirect IFINDEX` is the preferred first-class surface for packet redirection. `redirect --peer IFINDEX` selects `bpf_redirect_peer` on `tc:...:ingress`, and `redirect --neigh IFINDEX` selects the default-neighbor form of `bpf_redirect_neigh` on tc. All three forms return the helper result directly so a closure can end with `redirect ...`.
+On XDP, tc, and tcx, `redirect IFINDEX` is the preferred first-class surface for packet redirection. `redirect --peer IFINDEX` selects `bpf_redirect_peer` on `tc:...:ingress` or `tcx:...:ingress`, and `redirect --neigh IFINDEX` selects the default-neighbor form of `bpf_redirect_neigh` on tc/tcx. All three forms return the helper result directly so a closure can end with `redirect ...`.
 
 On XDP, `redirect-map MAP KEY --kind devmap|devmap-hash|cpumap|xskmap` is the preferred first-class surface for `bpf_redirect_map`. It returns the helper result directly, so a closure can end with `redirect-map ...` instead of spelling the helper name through `helper-call`. Its `--flags` value is limited to the two fallback return-code bits plus `BPF_F_BROADCAST` and `BPF_F_EXCLUDE_INGRESS`.
 
 On `sk_msg`, `sk_skb`, and `sk_skb_parser`, `redirect-socket MAP KEY --kind sockmap|sockhash` is the preferred first-class surface for the socket redirect helpers. It picks `bpf_msg_redirect_{map,hash}` or `bpf_sk_redirect_{map,hash}` from the current program type, materializes the ambient context pointer automatically, and returns the helper result directly so a closure can end with `redirect-socket ...`. On `sk_reuseport`, `redirect-socket MAP KEY --kind reuseport-sockarray` selects `bpf_sk_select_reuseport` and materializes the `u32` key pointer required by the helper.
 
-On `tc:...:ingress` and `sk_lookup`, ordinary assignment to `ctx.sk` is the preferred zero-flag surface for `bpf_sk_assign`: `mut ctx = $ctx; $ctx.sk = $sk`, or `$ctx.sk = 0` on `sk_lookup` to clear a previous selection. `assign-socket SK [--flags FLAGS]` remains available when the program needs the helper status or explicit flags. TC ingress requires zero flags. `sk_lookup` accepts `--replace` and `--no-reuseport` for `BPF_SK_LOOKUP_F_REPLACE` and `BPF_SK_LOOKUP_F_NO_REUSEPORT`.
+On `tc:...:ingress`, `tcx:...:ingress`, and `sk_lookup`, ordinary assignment to `ctx.sk` is the preferred zero-flag surface for `bpf_sk_assign`: `mut ctx = $ctx; $ctx.sk = $sk`, or `$ctx.sk = 0` on `sk_lookup` to clear a previous selection. `assign-socket SK [--flags FLAGS]` remains available when the program needs the helper status or explicit flags. TC/TCX ingress requires zero flags. `sk_lookup` accepts `--replace` and `--no-reuseport` for `BPF_SK_LOOKUP_F_REPLACE` and `BPF_SK_LOOKUP_F_NO_REUSEPORT`.
 
 On `sock_ops`, `$ctx | map-put MAP KEY --kind sockmap|sockhash` is the preferred first-class surface for `bpf_sock_{map,hash}_update`. The pipeline input is the current `sock_ops` context, `KEY` is materialized as the map key pointer, and `--flags` is limited to `BPF_ANY`, `BPF_NOEXIST`, or `BPF_EXIST`.
 
@@ -453,7 +459,7 @@ Leading annotated `mut` bindings at the top of an attached eBPF closure now lowe
 
 Compiler-managed named globals are still available through `global-define`, `global-get`, and `global-set` when you need an explicit shared name or source-order-independent declaration. Leading typed `mut` bindings remain the preferred private-state path when ordinary variable syntax is enough. These named globals are compiler-managed per-program globals backed by `.data` or `.bss`. `global-define` is declarative: by default a compile-time constant input establishes the fixed layout and initial contents without doing a runtime store, so source order does not matter. `global-define --zero` takes the next step and uses the input only for layout inference, allocating a zero-initialized `.bss` global without a runtime store. If you use `global-define --type`, no exemplar is needed for the layout: with no pipeline input it declares a zero-initialized global directly, and with a compile-time constant input it combines the explicit fixed layout with explicit initial contents. Currently `i8` / `i16` / `i32` / `int` (alias `i64`), `u8` / `u16` / `u32` / `u64`, `bool`, and `bytes:N` are supported as direct typed declarations, and that now also extends to `string:N`, `list:int:N` (alias `list:i64:N`), and fixed arrays such as `array{u32:4}` or `array{record{pid:int,cpu:u32}:2}`, plus nested `record{field:type,...}` declarations whose fields can themselves be scalars, fixed `bytes:N` / `binary:N`, `string:N`, `list:int:N`, `array{type:N}`, or further `record{...}` layouts. Typed initializers are zero-padded within those declared capacities, and typed record initializers may omit fields that should start zeroed, so forms like `"bash" | global-define --type string:16 seen_comm`, `[11 22] | global-define --type 'array{u32:4}' seen_ports`, `[{pid: 7 cpu: 2} {pid: 9 cpu: 3}] | global-define --type 'array{record{pid:int,cpu:u32}:2}' seen_entries`, `{ entries: [{pid: 7 cpu: 2} {pid: 9 cpu: 3}] } | global-define --type 'record{entries:array{record{pid:int,cpu:u32}:2}}' seen_state`, `{ pid: 7, samples: [11 22] } | global-define --type 'record{pid:int,samples:list:int:4}' seen_state`, and `{ pid: 7 } | global-define --type 'record{pid:int,samples:list:int:4}' seen_state` are valid. `global-get` preserves those typed string/list/array field semantics too, so projections like `$state.msg`, `($state.vals | get 1)`, `($ports | get 0)`, `($entries | get 1).cpu`, or `($state.entries | get 1).cpu` behave the same way as the ordinary typed mutable global path. If you skip `global-define`, the first `global-set` for a given name still establishes the fixed layout used by later `global-get` and `global-set` calls in the same closure; when that first write is a compile-time constant the global is initialized from it, otherwise it starts zeroed. That same first-write inference now also works for metadata-built record values, including nested record builders, when every field already has a truthful fixed layout and tracked semantics, so ordinary record construction can seed named globals without an intermediate local materialization step. They are best suited for small per-program state without the overhead of an explicit map. Like the current mutable-capture path, they only support values with a truthful fixed layout.
 
-Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`, `bloom-filter`, `cgroup-array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `queue` and `stack` use `map-push`, `map-peek`, and `map-pop` instead of `map-put` / `map-get`. Lookup-capable generic maps use `map-get` for pointer reads and `map-contains` for boolean membership checks; `map-contains` defaults to `--kind hash` and also accepts `array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `map-put` flags are limited to `BPF_ANY`, `BPF_NOEXIST`, or `BPF_EXIST`; queue/stack `map-push` flags are limited to `0` or `BPF_EXIST`. `bloom-filter` uses first-class `map-push` to insert values and `map-contains --kind bloom-filter` for membership probes. It does not support first-class `map-peek`, `map-pop`, `map-get`, `map-put`, or `map-delete`. Per-cpu maps use the ordinary `map-get` surface for current-CPU/default lookups; explicit CPU reads can use the modeled escape hatch `helper-call "bpf_map_lookup_percpu_elem" MAP KEY_PTR CPU --kind per-cpu-hash|per-cpu-array|lru-per-cpu-hash`, where `KEY_PTR` must already be a stack/map-backed key pointer. Socket map kinds (`sockmap` and `sockhash`) use `map-put` on `sock_ops` programs for updates and `redirect-socket` on message/SKB stream programs for redirects. `reuseport-sockarray` is reserved for `redirect-socket` on `sk_reuseport`, where it emits a `BPF_MAP_TYPE_REUSEPORT_SOCKARRAY` map and selects `bpf_sk_select_reuseport`. Local-storage map kinds (`sk-storage`, `task-storage`, `inode-storage`, and `cgrp-storage`) use `map-get` / `map-contains` / `map-delete` over an owning object pointer instead of generic key/value update helpers. Special map families such as `ringbuf`, `perf-event-array`, `stack-trace`, and `prog-array` are selected by their owning surfaces (`emit`, perf-event output helpers, `ctx.kstack` / `ctx.ustack`, and `tail-call`) rather than generic map commands. Raw ring-buffer helpers enforce the kernel flag contracts too: reserve flags must be `0`, output/submit/discard flags may contain only `BPF_RB_NO_WAKEUP` / `BPF_RB_FORCE_WAKEUP`, and query flags must be one of the kernel `BPF_RB_*` selectors. `cgroup-array` maps use `map-contains --kind cgroup-array` with a cgroup-array slot index; tc_action, tc, and lwt_* programs lower to `bpf_skb_under_cgroup(ctx, map, index)` for the current packet, while other programs lower to the base helper `bpf_current_task_under_cgroup(map, index)` for the current task. The raw helper spelling remains available as an escape hatch. `lpm-trie` uses the kernel's raw trie-key layout, so the key bytes must already begin with a `u32` prefix length followed by the trie payload.
+Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`, `bloom-filter`, `cgroup-array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `queue` and `stack` use `map-push`, `map-peek`, and `map-pop` instead of `map-put` / `map-get`. Lookup-capable generic maps use `map-get` for pointer reads and `map-contains` for boolean membership checks; `map-contains` defaults to `--kind hash` and also accepts `array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `map-put` flags are limited to `BPF_ANY`, `BPF_NOEXIST`, or `BPF_EXIST`; queue/stack `map-push` flags are limited to `0` or `BPF_EXIST`. `bloom-filter` uses first-class `map-push` to insert values and `map-contains --kind bloom-filter` for membership probes. It does not support first-class `map-peek`, `map-pop`, `map-get`, `map-put`, or `map-delete`. Per-cpu maps use the ordinary `map-get` surface for current-CPU/default lookups; explicit CPU reads can use the modeled escape hatch `helper-call "bpf_map_lookup_percpu_elem" MAP KEY_PTR CPU --kind per-cpu-hash|per-cpu-array|lru-per-cpu-hash`, where `KEY_PTR` must already be a stack/map-backed key pointer. Socket map kinds (`sockmap` and `sockhash`) use `map-put` on `sock_ops` programs for updates and `redirect-socket` on message/SKB stream programs for redirects. `reuseport-sockarray` is reserved for `redirect-socket` on `sk_reuseport`, where it emits a `BPF_MAP_TYPE_REUSEPORT_SOCKARRAY` map and selects `bpf_sk_select_reuseport`. Local-storage map kinds (`sk-storage`, `task-storage`, `inode-storage`, and `cgrp-storage`) use `map-get` / `map-contains` / `map-delete` over an owning object pointer instead of generic key/value update helpers. Special map families such as `ringbuf`, `perf-event-array`, `stack-trace`, and `prog-array` are selected by their owning surfaces (`emit`, perf-event output helpers, `ctx.kstack` / `ctx.ustack`, and `tail-call`) rather than generic map commands. Raw ring-buffer helpers enforce the kernel flag contracts too: reserve flags must be `0`, output/submit/discard flags may contain only `BPF_RB_NO_WAKEUP` / `BPF_RB_FORCE_WAKEUP`, and query flags must be one of the kernel `BPF_RB_*` selectors. `cgroup-array` maps use `map-contains --kind cgroup-array` with a cgroup-array slot index; tc_action, tc, tcx, and lwt_* programs lower to `bpf_skb_under_cgroup(ctx, map, index)` for the current packet, while other programs lower to the base helper `bpf_current_task_under_cgroup(map, index)` for the current task. The raw helper spelling remains available as an escape hatch. `lpm-trie` uses the kernel's raw trie-key layout, so the key bytes must already begin with a `u32` prefix length followed by the trie payload.
 
 The current-task cgroup ID is available as the ordinary `ctx.cgroup_id`
 field. Ancestor IDs use a constant numeric cell-path level, for example
@@ -467,11 +473,11 @@ The corresponding modeled helper escape hatch forms remain available.
 
 `redirect-map` is the first-class XDP surface for `bpf_redirect_map`. It takes a literal map name plus a key, requires `--kind devmap`, `--kind devmap-hash`, `--kind cpumap`, or `--kind xskmap`, and returns the helper result directly so it can be the closure's final XDP action. `--flags` stays available for the helper's fallback return-code bits when the map lookup misses plus broadcast/exclude-ingress bits.
 
-`adjust-packet` is the first-class packet-relayout surface. On XDP it takes a delta from pipeline input or a positional argument, requires exactly one of `--head`, `--meta`, or `--tail`, and lowers to the corresponding `bpf_xdp_adjust_*` helper while materializing the ambient context pointer automatically. On `tc`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` do the same for the skb relayout helpers.
+`adjust-packet` is the first-class packet-relayout surface. On XDP it takes a delta from pipeline input or a positional argument, requires exactly one of `--head`, `--meta`, or `--tail`, and lowers to the corresponding `bpf_xdp_adjust_*` helper while materializing the ambient context pointer automatically. On `tc`, `tcx`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` do the same for the skb relayout helpers.
 
 `adjust-message` is the first-class `sk_msg` byte-window and reshaping surface. `adjust-message --apply BYTES` and `adjust-message --cork BYTES` lower to `bpf_msg_apply_bytes` and `bpf_msg_cork_bytes`. `adjust-message --pull START END [--flags N]`, `adjust-message --push START LEN [--flags N]`, and `adjust-message --pop START LEN [--flags N]` lower to `bpf_msg_pull_data`, `bpf_msg_push_data`, and `bpf_msg_pop_data`; pull flags are reserved and must be `0`. The ambient message context pointer is materialized automatically and the helper result is returned directly.
 
-`redirect` is the first-class packet redirect surface for XDP and tc. It takes an ifindex from pipeline input or a positional argument and returns the helper result directly. Plain `redirect IFINDEX` lowers to `bpf_redirect`. `redirect --peer IFINDEX` lowers to `bpf_redirect_peer` on `tc:...:ingress`, and `redirect --neigh IFINDEX` lowers to the default-neighbor `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)` form on tc. `--flags` stays available for the helper's flags argument.
+`redirect` is the first-class packet redirect surface for XDP, tc, and tcx. It takes an ifindex from pipeline input or a positional argument and returns the helper result directly. Plain `redirect IFINDEX` lowers to `bpf_redirect`. `redirect --peer IFINDEX` lowers to `bpf_redirect_peer` on `tc:...:ingress` or `tcx:...:ingress`, and `redirect --neigh IFINDEX` lowers to the default-neighbor `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)` form on tc/tcx. `--flags` stays available for the helper's flags argument.
 
 `redirect-socket` is the first-class socket redirect/selection surface for `sk_msg`, `sk_skb`, `sk_skb_parser`, and `sk_reuseport`. It takes a literal map name plus a key, requires `--kind sockmap` / `--kind sockhash` on message/SKB stream programs or `--kind reuseport-sockarray` on `sk_reuseport`, selects the appropriate helper from the current program type, and returns that helper result directly. On message/SKB stream programs, `--flags` is limited to `0` or `BPF_F_INGRESS`; reuseport selection leaves helper-specific flags to the kernel.
 
@@ -511,9 +517,9 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
 | `read-kernel-str` | Read string from kernel memory (`--max-len` to cap, default 128) |
-| `adjust-packet` | Packet relayout (`xdp`: `--head` / `--meta` / `--tail`; `tc_action` / `tc` / `sk_skb` / `sk_skb_parser`: `--head` / `--tail` / `--pull` / `--room`) |
+| `adjust-packet` | Packet relayout (`xdp`: `--head` / `--meta` / `--tail`; `tc_action` / `tc` / `tcx` / `sk_skb` / `sk_skb_parser`: `--head` / `--tail` / `--pull` / `--room`) |
 | `adjust-message` | `sk_msg` byte-window and reshaping control (`--apply`, `--cork`, `--pull`, `--push`, or `--pop`) |
-| `redirect` | XDP/tc_action/tc redirect by ifindex (`--peer` and `--neigh` select cls_act helper variants; optional `--flags`) |
+| `redirect` | XDP/tc_action/tc/tcx redirect by ifindex (`--peer` and `--neigh` select cls_act helper variants; optional `--flags`) |
 | `redirect-map` | XDP redirect through a named devmap/devmap-hash/cpumap/xskmap (`--kind` required; optional `--flags`) |
 | `redirect-socket` | `sk_msg`/`sk_skb`/`sk_skb_parser` redirect through a named sockmap/sockhash, or `sk_reuseport` selection through a reuseport-sockarray (`--kind` required; optional `--flags`) |
 | `helper-call` | Escape hatch: call a modeled BPF helper by literal name, such as `bpf_get_current_pid_tgid` |

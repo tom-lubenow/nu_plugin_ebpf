@@ -92,10 +92,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "tc_action, tc, sk_skb, and sk_skb_parser",
+        label: "tc_action, tc, tcx, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcSkSkbLwt,
@@ -106,10 +107,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtSeg6Local,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "lwt_*, tc_action, tc, sk_skb, and sk_skb_parser",
+        label: "lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcSkSkbLwtXmit,
@@ -117,10 +119,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtXmit,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser",
+        label: "lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::XdpTc,
@@ -128,8 +131,9 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Xdp,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
         ],
-        label: "xdp, tc_action, and tc",
+        label: "xdp, tc_action, tc, and tcx",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::XdpTcLwt,
@@ -137,12 +141,13 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Xdp,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::LwtIn,
             EbpfProgramType::LwtOut,
             EbpfProgramType::LwtXmit,
             EbpfProgramType::LwtSeg6Local,
         ],
-        label: "xdp, tc_action, tc, and lwt_*",
+        label: "xdp, tc_action, tc, tcx, and lwt_*",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::XdpTcLwtXmit,
@@ -150,35 +155,42 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Xdp,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::LwtXmit,
         ],
-        label: "xdp, tc_action, tc, and lwt_xmit",
+        label: "xdp, tc_action, tc, tcx, and lwt_xmit",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Tc,
-        program_types: &[EbpfProgramType::TcAction, EbpfProgramType::Tc],
-        label: "tc_action and tc",
+        program_types: &[
+            EbpfProgramType::TcAction,
+            EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
+        ],
+        label: "tc_action, tc, and tcx",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcLwt,
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::LwtIn,
             EbpfProgramType::LwtOut,
             EbpfProgramType::LwtXmit,
             EbpfProgramType::LwtSeg6Local,
         ],
-        label: "tc_action, tc, and lwt_*",
+        label: "tc_action, tc, tcx, and lwt_*",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcLwtXmit,
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::LwtXmit,
         ],
-        label: "tc_action, tc, and lwt_xmit",
+        label: "tc_action, tc, tcx, and lwt_xmit",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::LwtInXmit,
@@ -201,12 +213,13 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtSeg6Local,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::SkReuseport,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser",
+        label: "flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,
@@ -214,10 +227,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SocketFilter,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::SkReuseport,
         ],
-        label: "socket_filter, tc_action, tc, cgroup_skb, and sk_reuseport",
+        label: "socket_filter, tc_action, tc, tcx, cgroup_skb, and sk_reuseport",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::PerfEventOutput,
@@ -253,6 +267,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtSeg6Local,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::SkLookup,
             EbpfProgramType::SkMsg,
             EbpfProgramType::SkSkb,
@@ -260,7 +275,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SockOps,
             EbpfProgramType::Xdp,
         ],
-        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
+        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, lwt_*, tc_action, tc, tcx, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::PerfEvent,
@@ -336,6 +351,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SocketFilter,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSock,
             EbpfProgramType::CgroupSockAddr,
@@ -344,7 +360,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser",
+        label: "fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketUid,
@@ -352,11 +368,12 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SocketFilter,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+        label: "socket_filter, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::NetnsCookie,
@@ -364,6 +381,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SocketFilter,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSock,
             EbpfProgramType::CgroupSockopt,
@@ -371,7 +389,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SockOps,
             EbpfProgramType::SkMsg,
         ],
-        label: "socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg",
+        label: "socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sock_ops, and sk_msg",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::CgroupSkb,
@@ -399,11 +417,12 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Xdp,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockAddr,
             EbpfProgramType::SkSkb,
         ],
-        label: "xdp, tc_action, tc, cgroup_skb, cgroup_sock_addr, and sk_skb",
+        label: "xdp, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, and sk_skb",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketRelease,
@@ -411,41 +430,45 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Xdp,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockAddr,
             EbpfProgramType::SkLookup,
             EbpfProgramType::SkSkb,
         ],
-        label: "xdp, tc_action, tc, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb",
+        label: "xdp, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, sk_lookup, and sk_skb",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcSkLookup,
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::SkLookup,
         ],
-        label: "tc_action, tc, and sk_lookup",
+        label: "tc_action, tc, tcx, and sk_lookup",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcCgroupSkb,
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
         ],
-        label: "tc_action, tc, and cgroup_skb",
+        label: "tc_action, tc, tcx, and cgroup_skb",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcpSock,
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockopt,
             EbpfProgramType::SockOps,
         ],
-        label: "tc_action, tc, cgroup_skb, cgroup_sockopt, and sock_ops",
+        label: "tc_action, tc, tcx, cgroup_skb, cgroup_sockopt, and sock_ops",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcpCongestionStructOps,
@@ -464,6 +487,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::LwtSeg6Local,
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockAddr,
             EbpfProgramType::Fentry,
@@ -476,7 +500,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SkSkbParser,
             EbpfProgramType::SockOps,
         ],
-        label: "xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
+        label: "xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TaskStorage,
@@ -531,6 +555,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSock,
             EbpfProgramType::CgroupSockAddr,
@@ -545,13 +570,14 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Lsm,
             EbpfProgramType::LsmCgroup,
         ],
-        label: "tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup",
+        label: "tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkStorageDelete,
         program_types: &[
             EbpfProgramType::TcAction,
             EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
             EbpfProgramType::CgroupSkb,
             EbpfProgramType::CgroupSockAddr,
             EbpfProgramType::CgroupSockopt,
@@ -565,7 +591,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Lsm,
             EbpfProgramType::LsmCgroup,
         ],
-        label: "tc_action, tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup",
+        label: "tc_action, tc, tcx, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TracingSocket,
@@ -691,6 +717,12 @@ const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
         program_type: EbpfProgramType::Tc,
         arg_idx: 2,
         error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs",
+    },
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::SkAssign,
+        program_type: EbpfProgramType::Tcx,
+        arg_idx: 2,
+        error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tcx programs",
     },
     HelperZeroArgRequirementSpec {
         helper: BpfHelper::CheckMtu,
@@ -963,6 +995,7 @@ impl EbpfProgramType {
             EbpfProgramType::SocketFilter
                 | EbpfProgramType::TcAction
                 | EbpfProgramType::Tc
+                | EbpfProgramType::Tcx
                 | EbpfProgramType::CgroupSkb
                 | EbpfProgramType::CgroupSockAddr
                 | EbpfProgramType::SockOps
@@ -1094,7 +1127,7 @@ impl ProgramSpec {
                 && helper_list_contains(TC_INGRESS_ONLY_HELPERS, helper) =>
             {
                 Some(format!(
-                    "helper '{}' is only valid in tc ingress programs",
+                    "helper '{}' is only valid in tc/tcx ingress programs",
                     helper.name()
                 ))
             }
@@ -1102,7 +1135,7 @@ impl ProgramSpec {
                 && helper_list_contains(TC_EGRESS_ONLY_HELPERS, helper) =>
             {
                 Some(format!(
-                    "helper '{}' is only valid in tc egress programs",
+                    "helper '{}' is only valid in tc/tcx egress programs",
                     helper.name()
                 ))
             }

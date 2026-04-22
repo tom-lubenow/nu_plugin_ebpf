@@ -48,7 +48,7 @@ impl ContextFieldAccessRequirement {
         let attach_shape = spec.attach_shape();
         match self {
             Self::TcEgressOnly => attach_shape.is_tc_ingress().then(|| {
-                format!("ctx.{field_name} is only available on tc egress programs")
+                format!("ctx.{field_name} is only available on tc/tcx egress programs")
             }),
             Self::CgroupSockCreateReleaseOnly => {
                 attach_shape.is_cgroup_sock_post_bind().then(|| {
@@ -280,30 +280,30 @@ const SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] 
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Tstamp,
         "tstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "tc_action, tc, and cgroup_skb programs",
+            "tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Hwtstamp,
         "hwtstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "tc_action, tc, and cgroup_skb programs",
+            "tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
 ];
@@ -330,17 +330,17 @@ const CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
 ];
 
@@ -348,37 +348,37 @@ const SK_SKB_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Tstamp,
         "tstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "tc_action, tc, and cgroup_skb programs",
+            "tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Hwtstamp,
         "hwtstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "tc_action, tc, and cgroup_skb programs",
+            "tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::SockMark,
         "mark",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "cgroup_sock, socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs",
+            "cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
 ];
@@ -387,30 +387,30 @@ const LWT_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TcClassid,
         "tc_classid",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::WireLen,
         "wire_len",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Tstamp,
         "tstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "tc_action, tc, and cgroup_skb programs",
+            "tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::TstampType,
         "tstamp_type",
-        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action and tc programs"),
+        ContextFieldAccessRequirement::AllowedProgramsLabel("tc_action, tc, and tcx programs"),
     ),
     ContextFieldAccessSurfaceSpec::new(
         CtxField::Hwtstamp,
         "hwtstamp",
         ContextFieldAccessRequirement::AllowedProgramsLabel(
-            "tc_action, tc, and cgroup_skb programs",
+            "tc_action, tc, tcx, and cgroup_skb programs",
         ),
     ),
 ];
@@ -422,6 +422,10 @@ const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec]
     },
     ProgramContextFieldAccessSurfaceSpec {
         program_type: EbpfProgramType::Tc,
+        surfaces: TC_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::Tcx,
         surfaces: TC_CTX_FIELD_ACCESS_SURFACES,
     },
     ProgramContextFieldAccessSurfaceSpec {
@@ -894,7 +898,7 @@ fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) ->
         )
     } else {
         format!(
-            "ctx.{} is only available on packet-context programs (xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
+            "ctx.{} is only available on packet-context programs (xdp, flow_dissector, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
             field.display_name()
         )
     }
@@ -961,6 +965,7 @@ const SKB_CHECKSUM_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtXmit,
     EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
 ];
@@ -972,6 +977,7 @@ const SKB_HASH_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
 ];
@@ -979,6 +985,7 @@ const SKB_HASH_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 const TC_LWT_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::LwtIn,
     EbpfProgramType::LwtOut,
     EbpfProgramType::LwtXmit,
@@ -1056,6 +1063,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkbParser,
     EbpfProgramType::SockOps,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::CgroupSock,
@@ -1078,6 +1086,7 @@ const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkbParser,
     EbpfProgramType::SockOps,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
 ];
@@ -1095,6 +1104,7 @@ const PACKET_DATA_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkbParser,
     EbpfProgramType::SockOps,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
 ];
@@ -1110,6 +1120,7 @@ const INGRESS_IFINDEX_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
 ];
@@ -1144,6 +1155,7 @@ const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtXmit,
     EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1157,6 +1169,7 @@ const ETH_PROTOCOL_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtXmit,
     EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1171,6 +1184,7 @@ const PACKET_HASH_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LwtXmit,
     EbpfProgramType::LwtSeg6Local,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1259,7 +1273,11 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::TcEgressHelperFields,
-        program_types: &[EbpfProgramType::TcAction, EbpfProgramType::Tc],
+        program_types: &[
+            EbpfProgramType::TcAction,
+            EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
+        ],
     },
     BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::ArgCountField,
@@ -1476,26 +1494,26 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SkbChecksumHelperFields => format!(
-                "ctx.{} is only available on lwt_xmit, tc_action, tc, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on lwt_xmit, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::SkbHashHelperFields => format!(
-                "ctx.{} is only available on lwt_*, tc_action, tc, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on lwt_*, tc_action, tc, tcx, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::TcLwtHelperFields => format!(
-                "ctx.{} is only available on tc_action, tc, and lwt_* programs",
+                "ctx.{} is only available on tc_action, tc, tcx, and lwt_* programs",
                 field.display_name()
             ),
             Self::SkbFields => {
                 let label = match field {
                     CtxField::TcClassid | CtxField::WireLen | CtxField::TstampType => {
-                        "tc_action and tc programs"
+                        "tc_action, tc, and tcx programs"
                     }
                     CtxField::Tstamp | CtxField::Hwtstamp => {
-                        "tc_action, tc, and cgroup_skb programs"
+                        "tc_action, tc, tcx, and cgroup_skb programs"
                     }
-                    _ => "socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                    _ => "socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs",
                 };
                 format!(
                     "ctx.{} is only available on {label}",
@@ -1504,12 +1522,12 @@ impl BaseContextFieldAccessRequirement {
             }
             Self::DataMetaField => {
                 format!(
-                    "ctx.{} is only available on xdp, tc_action, and tc programs",
+                    "ctx.{} is only available on xdp, tc_action, tc, and tcx programs",
                     field.display_name()
                 )
             }
             Self::TcEgressHelperFields => format!(
-                "ctx.{} is only available on tc_action and tc egress programs",
+                "ctx.{} is only available on tc_action, tc:egress, and tcx:egress programs",
                 field.display_name()
             ),
             Self::SocketTupleFields => format!(
@@ -1517,7 +1535,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SocketRefField => format!(
-                "ctx.{} is only available on socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
+                "ctx.{} is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs",
                 field.display_name()
             ),
             Self::LookupCookieField => {
@@ -1528,11 +1546,11 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SocketUidField => format!(
-                "ctx.{} is only available on socket_filter, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::NetnsCookieField => format!(
-                "ctx.{} is only available on socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs",
+                "ctx.{} is only available on socket_filter, tc_action, tc, tcx, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, and sock_ops programs",
                 field.display_name()
             ),
             Self::DeviceFields => format!(
@@ -1568,7 +1586,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::SockMarkPriorityFields => format!(
-                "ctx.{} is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+                "ctx.{} is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs",
                 field.display_name()
             ),
             Self::CgroupSysctlFields => format!(

@@ -1222,7 +1222,7 @@ fn test_lower_kprobe_ifindex_alias_reports_packet_context_error() {
 
     assert!(err
         .to_string()
-        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"));
+        .contains("ctx.ifindex is only available on socket_filter, lwt_*, tc_action, tc, tcx, cgroup_skb, sk_skb, and sk_skb_parser programs"));
 }
 
 #[test]
@@ -2736,7 +2736,7 @@ fn test_lower_tc_egress_ctx_sk_assignment_rejects_sk_assign() {
 
     assert!(
         err.to_string()
-            .contains("helper 'bpf_sk_assign' is only valid in tc ingress programs")
+            .contains("helper 'bpf_sk_assign' is only valid in tc/tcx ingress programs")
     );
 }
 
@@ -3972,8 +3972,9 @@ fn test_lower_tc_ingress_skb_ancestor_cgroup_id_projection_rejected() {
     .expect_err("tc ingress ctx.skb_ancestor_cgroup_id.0 should be rejected");
 
     assert!(
-        err.to_string()
-            .contains("helper 'bpf_skb_ancestor_cgroup_id' is only valid in tc egress programs")
+        err.to_string().contains(
+            "helper 'bpf_skb_ancestor_cgroup_id' is only valid in tc/tcx egress programs"
+        )
     );
 }
 
@@ -4950,11 +4951,9 @@ fn test_lower_cgroup_skb_ingress_ctx_tstamp_assignment_is_rejected() {
     )
     .expect_err("cgroup_skb ingress ctx.tstamp assignment should be rejected");
 
-    assert!(
-        err.to_string().contains(
-            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs"
-        )
-    );
+    assert!(err.to_string().contains(
+        "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs"
+    ));
 }
 
 #[test]

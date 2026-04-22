@@ -104,6 +104,12 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         true,
     ),
     ProgramContextLayoutSpec::skb_backed(
+        EbpfProgramType::Tcx,
+        Some(PacketContextKind::SkBuff),
+        None,
+        true,
+    ),
+    ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::TcAction,
         Some(PacketContextKind::SkBuff),
         None,
@@ -281,6 +287,7 @@ const DIRECT_PACKET_WRITE_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
     EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::LwtXmit,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,

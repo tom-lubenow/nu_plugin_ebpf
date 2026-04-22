@@ -1846,6 +1846,9 @@ pub enum ProgramSpec {
     Tc {
         target: TcTarget,
     },
+    Tcx {
+        target: TcTarget,
+    },
     TcAction {
         target: TcActionTarget,
     },
@@ -2204,6 +2207,9 @@ impl ProgramSpec {
             EbpfProgramType::Tc => Ok(ProgramSpec::Tc {
                 target: TcTarget::parse(target)?,
             }),
+            EbpfProgramType::Tcx => Ok(ProgramSpec::Tcx {
+                target: TcTarget::parse(target)?,
+            }),
             EbpfProgramType::TcAction => Ok(ProgramSpec::TcAction {
                 target: TcActionTarget::parse(target)?,
             }),
@@ -2271,6 +2277,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupDevice { .. } => EbpfProgramType::CgroupDevice,
             ProgramSpec::SockOps { .. } => EbpfProgramType::SockOps,
             ProgramSpec::Tc { .. } => EbpfProgramType::Tc,
+            ProgramSpec::Tcx { .. } => EbpfProgramType::Tcx,
             ProgramSpec::TcAction { .. } => EbpfProgramType::TcAction,
             ProgramSpec::CgroupSkb { .. } => EbpfProgramType::CgroupSkb,
             ProgramSpec::CgroupSock { .. } => EbpfProgramType::CgroupSock,
@@ -2327,6 +2334,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupDevice { target } => target.target_string(),
             ProgramSpec::SockOps { target } => target.target_string(),
             ProgramSpec::Tc { target } => target.target_string(),
+            ProgramSpec::Tcx { target } => target.target_string(),
             ProgramSpec::TcAction { target } => target.target_string(),
             ProgramSpec::CgroupSkb { target } => target.target_string(),
             ProgramSpec::CgroupSock { target } => target.target_string(),
@@ -2428,7 +2436,7 @@ impl ProgramSpec {
 
     pub(crate) fn tc_target(&self) -> Option<&TcTarget> {
         match self {
-            ProgramSpec::Tc { target } => Some(target),
+            ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => Some(target),
             _ => None,
         }
     }
@@ -2526,6 +2534,7 @@ impl ProgramSpec {
             ProgramSpec::CgroupSockAddr { target } => target.section_name(),
             ProgramSpec::CgroupDevice { target } => target.section_name().to_string(),
             ProgramSpec::Xdp { target } => target.section_name().to_string(),
+            ProgramSpec::Tcx { target } => format!("tcx/{}", target.attach_type_name()),
             ProgramSpec::SkReuseport { target } => target.section_name().to_string(),
             ProgramSpec::StructOpsCallback { callback_name, .. } => {
                 let sleepable = self
@@ -2551,7 +2560,7 @@ impl ProgramSpec {
 
     pub(crate) fn attach_shape(&self) -> ProgramAttachShape {
         match self {
-            ProgramSpec::Tc { target } => ProgramAttachShape::Tc {
+            ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => ProgramAttachShape::Tc {
                 ingress: target.is_ingress(),
             },
             ProgramSpec::CgroupSkb { target } => ProgramAttachShape::CgroupSkb {
@@ -2684,6 +2693,8 @@ mod tests {
     fn test_program_spec_attach_shape_tracks_typed_targets() {
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("tc target should parse");
+        let tcx = ProgramSpec::from_program_type_target(EbpfProgramType::Tcx, "lo:egress")
+            .expect("tcx target should parse");
         let cgroup_skb = ProgramSpec::from_program_type_target(
             EbpfProgramType::CgroupSkb,
             "/sys/fs/cgroup:egress",
@@ -2721,6 +2732,12 @@ mod tests {
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
         assert!(tc.attach_shape().is_tc_ingress());
         assert!(!tc.attach_shape().is_tc_egress());
+        assert_eq!(
+            tcx.attach_shape(),
+            ProgramAttachShape::Tc { ingress: false }
+        );
+        assert!(tcx.attach_shape().is_tc_egress());
+        assert_eq!(tcx.section_name(), "tcx/egress");
         assert_eq!(
             cgroup_skb.attach_shape(),
             ProgramAttachShape::CgroupSkb { ingress: false }
@@ -2854,6 +2871,7 @@ mod tests {
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
+        let tcx = ProgramSpec::parse("tcx:lo:egress").expect("tcx spec should parse");
         let tc_action =
             ProgramSpec::parse("tc_action:demo-action").expect("tc_action spec should parse");
         let cgroup_skb = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:egress")
@@ -3039,6 +3057,10 @@ mod tests {
             tc.tc_target().map(|target| target.interface.as_str()),
             Some("lo")
         );
+        assert_eq!(tcx.program_type(), EbpfProgramType::Tcx);
+        assert_eq!(tcx.target_string(), "lo:egress");
+        assert_eq!(tcx.section_name(), "tcx/egress");
+        assert_eq!(tcx.to_string(), "tcx:lo:egress");
         assert_eq!(tc_action.target_string(), "demo-action");
         assert_eq!(tc_action.section_name(), "action");
         assert_eq!(

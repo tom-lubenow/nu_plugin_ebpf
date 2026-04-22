@@ -18,6 +18,7 @@ const XDP_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp]
 const SKB_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,

@@ -1078,7 +1078,7 @@ fn test_verify_mir_for_probe_context_rejects_lwt_restricted_skb_metadata_load() 
         .expect_err("expected lwt tstamp read to be rejected");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
+            .contains("ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs")
     }));
 }
 
@@ -1137,7 +1137,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_non_skb_program
         .expect_err("expected skb tstamp store to be rejected outside skb-backed programs");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
+            .contains("ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs")
     }));
 }
 
@@ -1158,7 +1158,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_socket_filter()
         .expect_err("expected skb tstamp store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.tstamp is only available on tc_action, tc, and cgroup_skb programs")
+            .contains("ctx.tstamp is only available on tc_action, tc, tcx, and cgroup_skb programs")
     }));
 }
 
@@ -1179,7 +1179,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_tstamp_store_on_cgroup_skb_ingr
         .expect_err("expected skb tstamp store to be rejected on cgroup_skb ingress");
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.tstamp is only writable on tc_action, tc, and cgroup_skb:egress programs",
+            "ctx.tstamp is only writable on tc_action, tc, tcx, and cgroup_skb:egress programs",
         )
     }));
 }
@@ -1200,8 +1200,9 @@ fn test_verify_mir_for_probe_context_rejects_skb_mark_store_on_socket_filter() {
     let err = verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
         .expect_err("expected skb mark store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
-        e.message
-            .contains("ctx.mark is only writable on lwt_*, tc_action, tc, and cgroup_skb programs")
+        e.message.contains(
+            "ctx.mark is only writable on lwt_*, tc_action, tc, tcx, and cgroup_skb programs",
+        )
     }));
 }
 
@@ -1243,7 +1244,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_tc_index_store_on_socket_filter
         .expect_err("expected skb tc_index store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
         e.message.contains(
-            "ctx.tc_index is only writable on tc_action, tc, sk_skb, and sk_skb_parser programs",
+            "ctx.tc_index is only writable on tc_action, tc, tcx, sk_skb, and sk_skb_parser programs",
         )
     }));
 }

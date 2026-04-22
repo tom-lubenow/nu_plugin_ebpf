@@ -859,7 +859,7 @@ With `--kind bloom-filter`, the value is a bloom-filter probe value. This wraps
 the kernel `bpf_map_peek_elem` membership probe and returns a boolean. Bloom
 filters can have false positives but not false negatives.
 
-With `--kind cgroup-array`, the value is a cgroup-array index. On tc_action, tc, and lwt_*
+With `--kind cgroup-array`, the value is a cgroup-array index. On tc_action, tc, tcx, and lwt_*
 programs this wraps `bpf_skb_under_cgroup` for the current packet; on other
 programs it wraps the base `bpf_current_task_under_cgroup` helper for the
 current task.
