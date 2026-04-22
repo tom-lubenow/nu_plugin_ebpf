@@ -802,8 +802,11 @@ Context parameter syntax (recommended):
 
   sk_reuseport fields:
     {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.eth_protocol } - Get Ethernet protocol in host byte order
     {|ctx| $ctx.ip_protocol } - Get IP protocol
+    {|ctx| $ctx.protocol } - Alias for ctx.ip_protocol
+    {|ctx| $ctx.data[0] } - Read a packet byte
     {|ctx| $ctx.hash } - Get the reuseport selection hash
     {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current reuseport context
     {|ctx| $ctx.bind_inany } - Get bind-in-any state
