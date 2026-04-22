@@ -2100,6 +2100,14 @@ fn test_read_branch_records_zero_size_pointer_contract() {
         Some(2)
     );
     assert_eq!(
+        BpfHelper::ReadBranchRecords.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            1,
+            "helper 'bpf_read_branch_records' requires arg3 flags to contain only BPF_F_GET_BRANCH_RECORDS_SIZE (0x01)"
+        ))
+    );
+    assert_eq!(
         BpfHelper::ReadBranchRecords.zero_size_pointer_arg_size_arg(0),
         None
     );

@@ -890,6 +890,11 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_sysctl_get_name' requires arg3 flags to contain only BPF_F_SYSCTL_* bits (0x01)",
             )),
+            (Self::ReadBranchRecords, 3) => Some((
+                0,
+                1,
+                "helper 'bpf_read_branch_records' requires arg3 flags to contain only BPF_F_GET_BRANCH_RECORDS_SIZE (0x01)",
+            )),
             _ => None,
         }
     }

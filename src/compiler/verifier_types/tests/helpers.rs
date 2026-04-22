@@ -3633,6 +3633,61 @@ fn test_verify_mir_read_branch_records_rejects_null_nonzero_buffer() {
     );
 }
 
+#[test]
+fn test_verify_mir_read_branch_records_rejects_invalid_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf = func.alloc_stack_slot(24, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ReadBranchRecords as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf),
+                MirValue::Const(24),
+                MirValue::Const(2),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected read_branch_records to reject invalid flags");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_read_branch_records' requires arg3 flags")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_get_branch_snapshot_verify_call(
     size: i64,
     buf_size: usize,

@@ -3262,6 +3262,62 @@ fn test_type_error_packet_output_helper_rejects_small_data_buffer() {
     );
 }
 
+fn make_read_branch_records_call(flags: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(24, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ReadBranchRecords as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(24),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_read_branch_records_accepts_size_flag() {
+    let (func, dst) = make_read_branch_records_call(1);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_read_branch_records helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_read_branch_records_rejects_invalid_flags() {
+    let (func, _) = make_read_branch_records_call(2);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_read_branch_records flags error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_read_branch_records' requires arg3 flags")
+    }));
+}
+
 fn make_get_branch_snapshot_call(size: i64, buf_size: usize, flags: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
