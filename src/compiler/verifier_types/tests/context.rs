@@ -922,6 +922,23 @@ fn test_verify_mir_for_probe_context_accepts_skb_queue_mapping_store_on_tc_actio
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_skb_cb_store_on_lwt_xmit() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbCbWord(1),
+            val: MirValue::Const(123),
+            ty: MirType::U32,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    verify_mir_for_probe_context(&func, &HashMap::new(), &probe_ctx)
+        .expect("expected skb cb store to be accepted on lwt_xmit");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_accepts_skb_mark_store_on_cgroup_skb() {
     let (mut func, entry) = new_mir_function();
     func.block_mut(entry)
@@ -1110,7 +1127,7 @@ fn test_verify_mir_for_probe_context_rejects_skb_mark_store_on_socket_filter() {
         .expect_err("expected skb mark store to be rejected on socket_filter");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("ctx.mark is only writable on tc_action, tc, and cgroup_skb programs")
+            .contains("ctx.mark is only writable on lwt_*, tc_action, tc, and cgroup_skb programs")
     }));
 }
 

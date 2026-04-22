@@ -3104,6 +3104,23 @@ fn test_type_infer_accepts_store_skb_queue_mapping_on_tc_action() {
 }
 
 #[test]
+fn test_type_infer_accepts_store_skb_cb_on_lwt_xmit() {
+    let mut func = make_test_function();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::StoreCtxField {
+        target: CtxStoreTarget::SkbCbWord(1),
+        val: MirValue::Const(7),
+        ty: MirType::U32,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("skb cb store should type-check on lwt_xmit");
+}
+
+#[test]
 fn test_type_infer_accepts_store_skb_mark_on_cgroup_skb() {
     let mut func = make_test_function();
     let block = func.block_mut(BlockId(0));
@@ -3275,7 +3292,7 @@ fn test_type_error_store_skb_mark_rejects_socket_filter_context() {
         .expect_err("skb mark store should be rejected on socket_filter");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.mark is only writable on tc_action, tc, and cgroup_skb programs")
+            .contains("ctx.mark is only writable on lwt_*, tc_action, tc, and cgroup_skb programs")
     }));
 }
 

@@ -1280,19 +1280,19 @@ impl CtxStoreTarget {
                 "writable cgroup_sock priority is only supported on cgroup_sock programs"
             }
             CtxStoreTarget::SkbMark => {
-                "ctx.mark is only writable on tc_action, tc, and cgroup_skb programs"
+                "ctx.mark is only writable on lwt_*, tc_action, tc, and cgroup_skb programs"
             }
             CtxStoreTarget::SkbQueueMapping => {
                 "ctx.queue_mapping is only writable on tc_action and tc programs"
             }
             CtxStoreTarget::SkbPriority => {
-                "ctx.priority is only writable on tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+                "ctx.priority is only writable on lwt_*, tc_action, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
             }
             CtxStoreTarget::SkbTcIndex => {
                 "ctx.tc_index is only writable on tc_action, tc, sk_skb, and sk_skb_parser programs"
             }
             CtxStoreTarget::SkbCbWord(_) => {
-                "ctx.cb is only writable on socket_filter, tc_action, tc, and cgroup_skb programs"
+                "ctx.cb is only writable on socket_filter, lwt_*, tc_action, tc, and cgroup_skb programs"
             }
             CtxStoreTarget::SkbTcClassid => {
                 "ctx.tc_classid is only writable on tc_action and tc programs"

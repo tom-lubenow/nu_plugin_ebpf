@@ -5105,6 +5105,35 @@ fn test_probe_context_resolves_tc_action_skb_metadata_store_targets() {
 }
 
 #[test]
+fn test_probe_context_resolves_lwt_skb_metadata_store_targets() {
+    let ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    for (field, target) in [
+        ("mark", CtxStoreTarget::SkbMark),
+        ("priority", CtxStoreTarget::SkbPriority),
+    ] {
+        assert_eq!(
+            ctx.resolve_ctx_store_target(field, None)
+                .unwrap_or_else(|err| panic!("lwt_xmit ctx.{field} target should resolve: {err}")),
+            target
+        );
+        assert!(
+            ctx.validate_ctx_store_target(&target).is_ok(),
+            "lwt_xmit ctx.{field} target should validate"
+        );
+    }
+
+    assert_eq!(
+        ctx.resolve_ctx_store_target("cb", Some(1))
+            .expect("lwt_xmit cb target should resolve"),
+        CtxStoreTarget::SkbCbWord(1)
+    );
+    assert!(
+        ctx.validate_ctx_store_target(&CtxStoreTarget::SkbCbWord(1))
+            .is_ok()
+    );
+}
+
+#[test]
 fn test_probe_context_resolves_skb_mark_store_target_on_cgroup_skb() {
     let ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
     assert_eq!(
@@ -5239,7 +5268,7 @@ fn test_probe_context_rejects_skb_mark_store_target_on_socket_filter() {
         .expect_err("skb mark store target should be rejected outside tc");
     assert!(
         err.to_string()
-            .contains("ctx.mark is only writable on tc_action, tc, and cgroup_skb programs")
+            .contains("ctx.mark is only writable on lwt_*, tc_action, tc, and cgroup_skb programs")
     );
 }
 

@@ -5051,6 +5051,37 @@ fn test_lower_cgroup_skb_ctx_mark_assignment() {
 }
 
 #[test]
+fn test_lower_lwt_xmit_ctx_cb_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("cb"), int_member(1)],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lwt_xmit ctx.cb[1] assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SkbCbWord(1),
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_cgroup_sock_ctx_mark_assignment_on_sock_create() {
     let hir = make_ctx_upsert_program(
         CellPath {

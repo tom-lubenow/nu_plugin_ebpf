@@ -8691,6 +8691,46 @@ fn test_compile_remaining_skb_metadata_store_programs() {
         "cgroup_skb:ingress ctx.mark store",
     );
     assert_ctx_path_store_program_compiles(
+        EbpfProgramType::LwtIn,
+        "demo-route",
+        CellPath {
+            members: vec![string_member("mark")],
+        },
+        HirLiteral::Int(5),
+        HirLiteral::String(b"ok".to_vec()),
+        "lwt_in ctx.mark store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::LwtOut,
+        "demo-route",
+        CellPath {
+            members: vec![string_member("priority")],
+        },
+        HirLiteral::Int(6),
+        HirLiteral::String(b"ok".to_vec()),
+        "lwt_out ctx.priority store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::LwtXmit,
+        "demo-route",
+        CellPath {
+            members: vec![string_member("cb"), int_member(1)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::String(b"ok".to_vec()),
+        "lwt_xmit ctx.cb[1] store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::LwtSeg6Local,
+        "demo-route",
+        CellPath {
+            members: vec![string_member("cb"), int_member(4)],
+        },
+        HirLiteral::Int(8),
+        HirLiteral::String(b"ok".to_vec()),
+        "lwt_seg6local ctx.cb[4] store",
+    );
+    assert_ctx_path_store_program_compiles(
         EbpfProgramType::SkSkb,
         "/sys/fs/bpf/demo_sockmap",
         CellPath {

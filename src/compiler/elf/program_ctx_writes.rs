@@ -380,6 +380,20 @@ const SK_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
 ];
 
+const LWT_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::store_field(
+        "mark",
+        CtxField::SockMark,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbMark),
+    ),
+    ContextWriteSurfaceSpec::store_field(
+        "priority",
+        CtxField::SockPriority,
+        ContextStoreTargetSpec::Fixed(CtxStoreTarget::SkbPriority),
+    ),
+    ContextWriteSurfaceSpec::store_field("cb", CtxField::SkbCb, ContextStoreTargetSpec::SkbCbWord),
+];
+
 const CGROUP_SKB_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ContextWriteSurfaceSpec::store_field(
         "mark",
@@ -556,6 +570,22 @@ const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::TcAction,
         surfaces: TC_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::LwtIn,
+        surfaces: LWT_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::LwtOut,
+        surfaces: LWT_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::LwtXmit,
+        surfaces: LWT_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::LwtSeg6Local,
+        surfaces: LWT_CTX_WRITE_SURFACES,
     },
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::SkSkb,

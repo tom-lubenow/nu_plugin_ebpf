@@ -256,7 +256,8 @@ Context parameter syntax (recommended):
     IPv4/TCP options, ICMP subtype-specific body decoding, and uncommon
     IPv6 extension headers are still not modeled.
     Writable skb metadata is attach-sensitive. On `socket_filter`,
-    fixed `ctx.cb.N` is writable. On `tc_action` and `tc`, `ctx.mark`,
+    fixed `ctx.cb.N` is writable. On `lwt_*`, `ctx.mark`,
+    `ctx.priority`, and fixed `ctx.cb.N` are writable. On `tc_action` and `tc`, `ctx.mark`,
     `ctx.queue_mapping`, `ctx.priority`, `ctx.tc_index`,
     `ctx.tc_classid`, fixed `ctx.cb.N`, and `ctx.tstamp` are writable.
     On `cgroup_skb`,
