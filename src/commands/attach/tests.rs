@@ -11505,7 +11505,7 @@ fn test_compile_sock_ops_socket_map_update_programs() {
             "sockmap",
             MapKind::SockMap,
             BpfHelper::SockMapUpdate,
-            7,
+            2,
         ),
         (
             "sock_ops sockhash",

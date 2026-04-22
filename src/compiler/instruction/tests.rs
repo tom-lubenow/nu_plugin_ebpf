@@ -689,6 +689,13 @@ fn test_helper_signature_map_queue_helpers() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::MapPushElem.scalar_arg_allowed_values_requirement(2),
+        Some((
+            &[0, 2][..],
+            "helper 'bpf_map_push_elem' requires arg2 flags to be 0 or BPF_EXIST"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::MapPopElem as u32)
         .expect("expected bpf_map_pop_elem helper signature");
@@ -705,6 +712,28 @@ fn test_helper_signature_map_queue_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_map_update_helper_flag_contracts() {
+    assert_eq!(
+        BpfHelper::MapUpdateElem.scalar_arg_allowed_values_requirement(3),
+        Some((
+            &[0, 1, 2][..],
+            "helper 'bpf_map_update_elem' requires arg3 flags to be BPF_ANY, BPF_NOEXIST, or BPF_EXIST"
+        ))
+    );
+    for helper in [BpfHelper::SockMapUpdate, BpfHelper::SockHashUpdate] {
+        assert_eq!(
+            helper.scalar_arg_allowed_values_requirement(3),
+            Some((
+                &[0, 1, 2][..],
+                "socket map update helpers require arg3 flags to be BPF_ANY, BPF_NOEXIST, or BPF_EXIST"
+            )),
+            "missing socket map update flag contract for {}",
+            helper.name()
+        );
+    }
 }
 
 #[test]

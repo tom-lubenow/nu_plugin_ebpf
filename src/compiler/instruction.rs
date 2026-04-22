@@ -11,6 +11,8 @@ use crate::compiler::mir::MapKind;
 
 const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
 const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
+const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
+const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 
 pub(crate) fn scalar_range_contains_only_allowed_values(
     min: i64,
@@ -1015,6 +1017,18 @@ impl BpfHelper {
             (Self::SkbGetTunnelKey, 3) => Some((
                 SKB_GET_TUNNEL_KEY_FLAGS,
                 "helper 'bpf_skb_get_tunnel_key' requires arg3 flags to be one of 0, BPF_F_TUNINFO_IPV6, BPF_F_TUNINFO_FLAGS, or both",
+            )),
+            (Self::MapUpdateElem, 3) => Some((
+                MAP_UPDATE_FLAGS,
+                "helper 'bpf_map_update_elem' requires arg3 flags to be BPF_ANY, BPF_NOEXIST, or BPF_EXIST",
+            )),
+            (Self::SockMapUpdate | Self::SockHashUpdate, 3) => Some((
+                MAP_UPDATE_FLAGS,
+                "socket map update helpers require arg3 flags to be BPF_ANY, BPF_NOEXIST, or BPF_EXIST",
+            )),
+            (Self::MapPushElem, 2) => Some((
+                MAP_PUSH_FLAGS,
+                "helper 'bpf_map_push_elem' requires arg2 flags to be 0 or BPF_EXIST",
             )),
             _ => None,
         }

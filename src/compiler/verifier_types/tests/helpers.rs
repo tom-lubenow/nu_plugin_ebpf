@@ -8960,6 +8960,44 @@ fn test_helper_map_update_rejects_map_lookup_value_as_map_arg() {
 }
 
 #[test]
+fn test_helper_map_update_rejects_invalid_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let value_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let update_ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: update_ret,
+            helper: BpfHelper::MapUpdateElem as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::StackSlot(value_slot),
+                MirValue::Const(3),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(update_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected map update invalid flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_map_update_elem' requires arg3 flags")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_map_queue_rejects_map_lookup_value_as_map_arg() {
     let helpers = [
         (
@@ -9045,6 +9083,42 @@ fn test_helper_map_queue_rejects_map_lookup_value_as_map_arg() {
             err
         );
     }
+}
+
+#[test]
+fn test_helper_map_push_rejects_invalid_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let value_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let helper_ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::MapPushElem as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(value_slot),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected map push invalid flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_map_push_elem' requires arg2 flags")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
