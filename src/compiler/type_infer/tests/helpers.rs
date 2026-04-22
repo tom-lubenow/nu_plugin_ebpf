@@ -7083,6 +7083,98 @@ fn test_type_error_bprm_opts_set_rejects_stack_bprm() {
     }));
 }
 
+fn make_ima_hash_call(
+    helper: BpfHelper,
+    object_type_name: &str,
+    size: i64,
+    buf_size: usize,
+) -> (MirFunction, VReg, VReg, HashMap<VReg, MirType>) {
+    let mut func = make_test_function();
+    let object = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(object),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(object, MirType::named_kernel_struct_ptr(object_type_name))]);
+    (func, object, dst, hints)
+}
+
+#[test]
+fn test_infer_helper_ima_hash_helpers_return_i64() {
+    for (helper, object_type_name) in [
+        (BpfHelper::ImaInodeHash, "inode"),
+        (BpfHelper::ImaFileHash, "file"),
+    ] {
+        let (func, _, dst, hints) = make_ima_hash_call(helper, object_type_name, 16, 16);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+        let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+        let types = ti.infer(&func).expect("expected IMA helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_ima_inode_hash_rejects_small_buffer() {
+    let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaInodeHash, "inode", 16, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected IMA inode hash buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper ima_inode_hash dst requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_ima_file_hash_requires_positive_size() {
+    let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "file", 0, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected IMA file hash positive-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 193 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_ima_file_hash_rejects_inode_arg() {
+    let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "inode", 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected IMA file hash file-ref mismatch");
+    assert!(
+        errs.iter().any(|e| {
+            e.message
+                .contains("helper 'bpf_ima_file_hash' arg0 expects file pointer")
+        }),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_copy_from_user_call(size: i64, buf_size: usize, with_task: bool) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let src = func.alloc_vreg();

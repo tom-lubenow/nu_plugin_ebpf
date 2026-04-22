@@ -166,6 +166,8 @@ pub enum BpfHelper {
     SkbAdjustRoom = 50,
     /// long bpf_skb_set_tstamp(skb, tstamp, tstamp_type)
     SkbSetTstamp = 192,
+    /// long bpf_ima_file_hash(file, dst, size)
+    ImaFileHash = 193,
     /// long bpf_copy_from_user_task(dst, size, user_ptr, task, flags)
     CopyFromUserTask = 191,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
@@ -334,6 +336,8 @@ pub enum BpfHelper {
     GetCurrentTaskBtf = 158,
     /// long bpf_bprm_opts_set(bprm, flags)
     BprmOptsSet = 159,
+    /// long bpf_ima_inode_hash(inode, dst, size)
+    ImaInodeHash = 161,
     /// struct tcp6_sock *bpf_skc_to_tcp6_sock(sk)
     SkcToTcp6Sock = 136,
     /// struct tcp_sock *bpf_skc_to_tcp_sock(sk)
@@ -447,6 +451,7 @@ impl BpfHelper {
             BpfHelper::GetSocketUid => "bpf_get_socket_uid",
             BpfHelper::SkbAdjustRoom => "bpf_skb_adjust_room",
             BpfHelper::SkbSetTstamp => "bpf_skb_set_tstamp",
+            BpfHelper::ImaFileHash => "bpf_ima_file_hash",
             BpfHelper::CopyFromUserTask => "bpf_copy_from_user_task",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
@@ -531,6 +536,7 @@ impl BpfHelper {
             BpfHelper::TaskStorageDelete => "bpf_task_storage_delete",
             BpfHelper::GetCurrentTaskBtf => "bpf_get_current_task_btf",
             BpfHelper::BprmOptsSet => "bpf_bprm_opts_set",
+            BpfHelper::ImaInodeHash => "bpf_ima_inode_hash",
             BpfHelper::SkcToTcp6Sock => "bpf_skc_to_tcp6_sock",
             BpfHelper::SkcToTcpSock => "bpf_skc_to_tcp_sock",
             BpfHelper::SkcToTcpTimewaitSock => "bpf_skc_to_tcp_timewait_sock",
@@ -624,6 +630,7 @@ impl BpfHelper {
             "get_socket_uid" => Some(Self::GetSocketUid),
             "skb_adjust_room" => Some(Self::SkbAdjustRoom),
             "skb_set_tstamp" => Some(Self::SkbSetTstamp),
+            "ima_file_hash" => Some(Self::ImaFileHash),
             "copy_from_user_task" => Some(Self::CopyFromUserTask),
             "setsockopt" => Some(Self::SetSockOpt),
             "sk_redirect_map" => Some(Self::SkRedirectMap),
@@ -708,6 +715,7 @@ impl BpfHelper {
             "task_storage_delete" => Some(Self::TaskStorageDelete),
             "get_current_task_btf" => Some(Self::GetCurrentTaskBtf),
             "bprm_opts_set" => Some(Self::BprmOptsSet),
+            "ima_inode_hash" => Some(Self::ImaInodeHash),
             "skc_to_tcp6_sock" => Some(Self::SkcToTcp6Sock),
             "skc_to_tcp_sock" => Some(Self::SkcToTcpSock),
             "skc_to_tcp_timewait_sock" => Some(Self::SkcToTcpTimewaitSock),

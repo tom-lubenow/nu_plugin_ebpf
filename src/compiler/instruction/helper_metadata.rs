@@ -155,6 +155,7 @@ impl BpfHelper {
             157 => Some(Self::TaskStorageDelete),
             158 => Some(Self::GetCurrentTaskBtf),
             159 => Some(Self::BprmOptsSet),
+            161 => Some(Self::ImaInodeHash),
             162 => Some(Self::SockFromFile),
             175 => Some(Self::TaskPtRegs),
             183 => Some(Self::GetFuncArg),
@@ -163,6 +164,7 @@ impl BpfHelper {
             178 => Some(Self::SkcToUnixSock),
             208 => Some(Self::KtimeGetTaiNs),
             191 => Some(Self::CopyFromUserTask),
+            193 => Some(Self::ImaFileHash),
             210 => Some(Self::CgrpStorageGet),
             211 => Some(Self::CgrpStorageDelete),
             114 => Some(Self::ProbeReadUserStr),
@@ -395,6 +397,12 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::ImaInodeHash | BpfHelper::ImaFileHash => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::GetFuncIp | BpfHelper::GetAttachCookie => HelperSignature {

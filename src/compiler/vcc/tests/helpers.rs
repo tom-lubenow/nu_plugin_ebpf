@@ -12639,6 +12639,110 @@ fn test_verify_mir_helper_bprm_opts_set_rejects_stack_bprm() {
     );
 }
 
+fn make_ima_hash_vcc_call(
+    helper: BpfHelper,
+    object_type_name: &str,
+    size: i64,
+    buf_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let object = func.alloc_vreg();
+    let object_non_null = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: object_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(object),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: object_non_null,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(object),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+        ],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(object, MirType::named_kernel_struct_ptr(object_type_name));
+    types.insert(object_non_null, MirType::Bool);
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_ima_hash_helpers_accept_typed_args() {
+    for (helper, object_type_name) in [
+        (BpfHelper::ImaInodeHash, "inode"),
+        (BpfHelper::ImaFileHash, "file"),
+    ] {
+        let (func, types) = make_ima_hash_vcc_call(helper, object_type_name, 16, 16);
+        verify_mir(&func, &types).expect("expected IMA helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_helper_ima_inode_hash_rejects_small_buffer() {
+    let (func, types) = make_ima_hash_vcc_call(BpfHelper::ImaInodeHash, "inode", 16, 8);
+    let err = verify_mir(&func, &types).expect_err("expected IMA inode bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper ima_inode_hash dst out of bounds")
+            || e.message.contains("pointer access out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_ima_file_hash_requires_positive_size() {
+    let (func, types) = make_ima_hash_vcc_call(BpfHelper::ImaFileHash, "file", 0, 16);
+    let err = verify_mir(&func, &types).expect_err("expected IMA file positive-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 193 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_ima_file_hash_rejects_inode_arg() {
+    let (func, types) = make_ima_hash_vcc_call(BpfHelper::ImaFileHash, "inode", 16, 16);
+    let err = verify_mir(&func, &types).expect_err("expected IMA file ref mismatch");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("helper 'bpf_ima_file_hash' arg0 expects file pointer")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_copy_from_user_vcc_call(
     size: i64,
     buf_size: usize,

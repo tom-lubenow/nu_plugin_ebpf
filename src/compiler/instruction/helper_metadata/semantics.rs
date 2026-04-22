@@ -1249,6 +1249,38 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const IMA_INODE_HASH_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper ima_inode_hash inode",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper ima_inode_hash dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+        const IMA_FILE_HASH_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper ima_file_hash file",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper ima_file_hash dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
         const GET_TASK_STACK_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2025,6 +2057,16 @@ impl BpfHelper {
             BpfHelper::BprmOptsSet => HelperSemantics {
                 ptr_arg_rules: BPRM_OPTS_SET_RULES,
                 positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ImaInodeHash => HelperSemantics {
+                ptr_arg_rules: IMA_INODE_HASH_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ImaFileHash => HelperSemantics {
+                ptr_arg_rules: IMA_FILE_HASH_RULES,
+                positive_size_args: &[2],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::GetTaskStack => HelperSemantics {

@@ -451,6 +451,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::BprmOptsSet)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_ima_inode_hash"),
+        Some(BpfHelper::ImaInodeHash)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("ima_file_hash"),
+        Some(BpfHelper::ImaFileHash)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("rc_repeat"),
         Some(BpfHelper::RcRepeat)
     ));
@@ -1096,6 +1104,19 @@ fn test_helper_signature_bprm_opts_set() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_ima_hash_helpers() {
+    for helper in [BpfHelper::ImaInodeHash, BpfHelper::ImaFileHash] {
+        let sig = HelperSignature::for_id(helper as u32).expect("expected IMA helper signature");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
 }
 
 #[test]
@@ -2196,6 +2217,39 @@ fn test_bprm_opts_set_helper_contract() {
 }
 
 #[test]
+fn test_ima_hash_helper_contracts() {
+    let inode_semantics = BpfHelper::ImaInodeHash.semantics();
+    assert_eq!(inode_semantics.positive_size_args, &[2]);
+    assert_eq!(inode_semantics.ptr_arg_rules.len(), 2);
+
+    let inode = inode_semantics.ptr_arg_rules[0];
+    assert_eq!(inode.arg_idx, 0);
+    assert_eq!(inode.op, "helper ima_inode_hash inode");
+    assert!(inode.allowed.allow_kernel);
+    assert!(!inode.allowed.allow_stack);
+
+    let inode_dst = inode_semantics.ptr_arg_rules[1];
+    assert_eq!(inode_dst.arg_idx, 1);
+    assert_eq!(inode_dst.op, "helper ima_inode_hash dst");
+    assert!(inode_dst.allowed.allow_stack);
+    assert!(inode_dst.allowed.allow_map);
+    assert_eq!(inode_dst.size_from_arg, Some(2));
+
+    let file_semantics = BpfHelper::ImaFileHash.semantics();
+    assert_eq!(file_semantics.positive_size_args, &[2]);
+    assert_eq!(file_semantics.ptr_arg_rules.len(), 2);
+    assert_eq!(
+        file_semantics.ptr_arg_rules[0].op,
+        "helper ima_file_hash file"
+    );
+    assert_eq!(
+        file_semantics.ptr_arg_rules[1].op,
+        "helper ima_file_hash dst"
+    );
+    assert_eq!(file_semantics.ptr_arg_rules[1].size_from_arg, Some(2));
+}
+
+#[test]
 fn test_trampoline_arg_helper_contracts() {
     let arg = BpfHelper::GetFuncArg.semantics();
     assert_eq!(arg.ptr_arg_rules.len(), 2);
@@ -2546,6 +2600,14 @@ fn test_helper_ref_kind_mappings() {
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::SockFromFile, 0),
         Some(KfuncRefKind::File)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::ImaFileHash, 0),
+        Some(KfuncRefKind::File)
+    );
+    assert_eq!(
+        helper_pointer_arg_ref_kind(BpfHelper::ImaInodeHash, 0),
+        Some(KfuncRefKind::Inode)
     );
     assert_eq!(
         helper_pointer_arg_ref_kind(BpfHelper::TaskPtRegs, 0),
