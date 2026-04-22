@@ -568,6 +568,71 @@ fn test_type_error_snprintf_size_and_alignment() {
 }
 
 #[test]
+fn test_infer_snprintf_btf_helper_accepts_stack_buffers() {
+    let mut func = make_test_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SnprintfBtf as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(32),
+            MirValue::StackSlot(btf_ptr_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_snprintf_btf stack buffers to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_snprintf_btf_size_and_shape() {
+    let mut func = make_test_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SnprintfBtf as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(-1),
+            MirValue::StackSlot(btf_ptr_slot),
+            MirValue::Const(8),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_snprintf_btf size/shape errors");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 149 arg1 must be >= 0"))
+    );
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper snprintf_btf ptr requires 16 bytes")
+    }));
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_snprintf_btf' requires arg3 = 16")
+    }));
+}
+
+#[test]
 fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

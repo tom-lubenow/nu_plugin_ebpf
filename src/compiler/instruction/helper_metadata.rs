@@ -157,6 +157,7 @@ impl BpfHelper {
             146 => Some(Self::InodeStorageDelete),
             147 => Some(Self::DPath),
             148 => Some(Self::CopyFromUser),
+            149 => Some(Self::SnprintfBtf),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
             158 => Some(Self::GetCurrentTaskBtf),
@@ -374,6 +375,12 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, P, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SnprintfBtf => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::KtimeGetNs

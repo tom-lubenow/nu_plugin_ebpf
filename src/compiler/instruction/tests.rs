@@ -287,6 +287,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Snprintf)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_snprintf_btf"),
+        Some(BpfHelper::SnprintfBtf)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_sys_bpf"),
         Some(BpfHelper::SysBpf)
     ));
@@ -562,6 +566,20 @@ fn test_helper_signature_copy_from_user_task() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_snprintf_btf() {
+    let sig = HelperSignature::for_id(BpfHelper::SnprintfBtf as u32)
+        .expect("expected bpf_snprintf_btf helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
@@ -2017,6 +2035,40 @@ fn test_snprintf_helper_contract() {
     assert!(data.allowed.allow_stack);
     assert!(data.allowed.allow_map);
     assert_eq!(data.size_from_arg, Some(4));
+}
+
+#[test]
+fn test_snprintf_btf_helper_contract() {
+    assert_eq!(
+        BpfHelper::SnprintfBtf.scalar_arg_nonnegative_requirement(1),
+        Some("helper 'bpf_snprintf_btf' requires arg1 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::SnprintfBtf.scalar_arg_const_requirement(),
+        Some((3, 16, "helper 'bpf_snprintf_btf' requires arg3 = 16"))
+    );
+
+    let semantics = BpfHelper::SnprintfBtf.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let out = semantics.ptr_arg_rules[0];
+    assert_eq!(out.arg_idx, 0);
+    assert_eq!(out.op, "helper snprintf_btf str");
+    assert!(out.allowed.allow_stack);
+    assert!(out.allowed.allow_map);
+    assert_eq!(out.fixed_size, None);
+    assert_eq!(out.size_from_arg, Some(1));
+
+    let ptr = semantics.ptr_arg_rules[1];
+    assert_eq!(ptr.arg_idx, 2);
+    assert_eq!(ptr.op, "helper snprintf_btf ptr");
+    assert!(ptr.allowed.allow_stack);
+    assert!(ptr.allowed.allow_map);
+    assert!(!ptr.allowed.allow_kernel);
+    assert!(!ptr.allowed.allow_user);
+    assert_eq!(ptr.fixed_size, Some(16));
+    assert_eq!(ptr.size_from_arg, None);
 }
 
 #[test]

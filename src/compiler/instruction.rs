@@ -180,6 +180,8 @@ pub enum BpfHelper {
     ImaFileHash = 193,
     /// long bpf_copy_from_user_task(dst, size, user_ptr, task, flags)
     CopyFromUserTask = 191,
+    /// long bpf_snprintf_btf(str, str_size, ptr, btf_ptr_size, flags)
+    SnprintfBtf = 149,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
     SetSockOpt = 49,
     /// long bpf_sk_redirect_map(skb, map, key, flags)
@@ -480,6 +482,7 @@ impl BpfHelper {
             BpfHelper::SkbCgroupClassid => "bpf_skb_cgroup_classid",
             BpfHelper::ImaFileHash => "bpf_ima_file_hash",
             BpfHelper::CopyFromUserTask => "bpf_copy_from_user_task",
+            BpfHelper::SnprintfBtf => "bpf_snprintf_btf",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
@@ -670,6 +673,7 @@ impl BpfHelper {
             "skb_cgroup_classid" => Some(Self::SkbCgroupClassid),
             "ima_file_hash" => Some(Self::ImaFileHash),
             "copy_from_user_task" => Some(Self::CopyFromUserTask),
+            "snprintf_btf" => Some(Self::SnprintfBtf),
             "setsockopt" => Some(Self::SetSockOpt),
             "sk_redirect_map" => Some(Self::SkRedirectMap),
             "sock_map_update" => Some(Self::SockMapUpdate),
@@ -832,6 +836,7 @@ impl BpfHelper {
             (Self::CopyFromUserTask, 1) => {
                 Some("helper 'bpf_copy_from_user_task' requires arg1 to be >= 0")
             }
+            (Self::SnprintfBtf, 1) => Some("helper 'bpf_snprintf_btf' requires arg1 to be >= 0"),
             (Self::Snprintf, 1) => Some("helper 'bpf_snprintf' requires arg1 to be >= 0"),
             (Self::Snprintf, 4) => Some("helper 'bpf_snprintf' requires arg4 to be >= 0"),
             _ => None,
@@ -850,6 +855,7 @@ impl BpfHelper {
                 8,
                 "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8",
             )),
+            Self::SnprintfBtf => Some((3, 16, "helper 'bpf_snprintf_btf' requires arg3 = 16")),
             _ => None,
         }
     }

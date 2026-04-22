@@ -1276,6 +1276,23 @@ impl BpfHelper {
             },
         ];
 
+        const SNPRINTF_BTF_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper snprintf_btf str",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper snprintf_btf ptr",
+                allowed: STACK_MAP,
+                fixed_size: Some(16),
+                size_from_arg: None,
+            },
+        ];
+
         const SYS_BPF_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 1,
             op: "helper sys_bpf attr",
@@ -2156,6 +2173,11 @@ impl BpfHelper {
             },
             BpfHelper::Snprintf => HelperSemantics {
                 ptr_arg_rules: SNPRINTF_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SnprintfBtf => HelperSemantics {
+                ptr_arg_rules: SNPRINTF_BTF_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

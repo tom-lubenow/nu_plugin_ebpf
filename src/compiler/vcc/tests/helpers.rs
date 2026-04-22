@@ -267,6 +267,125 @@ fn test_verify_mir_helper_snprintf_rejects_unaligned_data_len() {
 }
 
 #[test]
+fn test_verify_mir_helper_snprintf_btf_accepts_stack_buffers() {
+    let (mut func, entry) = new_mir_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SnprintfBtf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    verify_mir(&func, &types).expect("expected bpf_snprintf_btf stack buffers to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_btf_rejects_negative_size() {
+    let (mut func, entry) = new_mir_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SnprintfBtf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(-1),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected negative snprintf_btf size rejection");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 149 arg1 must be >= 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_btf_rejects_bad_btf_ptr_size() {
+    let (mut func, entry) = new_mir_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SnprintfBtf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected snprintf_btf ptr-size rejection");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_snprintf_btf' requires arg3 = 16")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_btf_rejects_small_btf_ptr_buffer() {
+    let (mut func, entry) = new_mir_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SnprintfBtf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected snprintf_btf pointer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sys_bpf_requires_positive_attr_size() {
     let (mut func, entry) = new_mir_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
