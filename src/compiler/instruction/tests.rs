@@ -2625,6 +2625,50 @@ fn test_helper_signature_ringbuf_query() {
 }
 
 #[test]
+fn test_ringbuf_helper_flag_contracts() {
+    assert_eq!(
+        BpfHelper::RingbufOutput.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            3,
+            "helper 'bpf_ringbuf_output' requires arg3 flags to contain only BPF_RB_* wakeup bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufReserve.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            0,
+            "helper 'bpf_ringbuf_reserve' requires arg2 flags to be 0"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufSubmit.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            3,
+            "helper 'bpf_ringbuf_submit' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufDiscard.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            3,
+            "helper 'bpf_ringbuf_discard' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufQuery.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            3,
+            "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)"
+        ))
+    );
+}
+
+#[test]
 fn test_helper_signature_socket_helpers() {
     let sig = HelperSignature::for_id(BpfHelper::SkLookupTcp as u32)
         .expect("expected bpf_sk_lookup_tcp helper signature");

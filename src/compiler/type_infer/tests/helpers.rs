@@ -5911,6 +5911,76 @@ fn test_type_error_helper_ringbuf_query_rejects_non_stack_map_arg() {
 }
 
 #[test]
+fn test_type_error_helper_ringbuf_rejects_invalid_flags() {
+    let cases = [
+        (
+            BpfHelper::RingbufOutput,
+            "helper 'bpf_ringbuf_output' requires arg3 flags",
+        ),
+        (
+            BpfHelper::RingbufReserve,
+            "helper 'bpf_ringbuf_reserve' requires arg2 flags",
+        ),
+        (
+            BpfHelper::RingbufSubmit,
+            "helper 'bpf_ringbuf_submit' requires arg1 flags",
+        ),
+        (
+            BpfHelper::RingbufDiscard,
+            "helper 'bpf_ringbuf_discard' requires arg1 flags",
+        ),
+        (
+            BpfHelper::RingbufQuery,
+            "helper 'bpf_ringbuf_query' requires arg1 flags",
+        ),
+    ];
+
+    for (helper, expected) in cases {
+        let mut func = make_test_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        let args = match helper {
+            BpfHelper::RingbufOutput => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+                MirValue::Const(4),
+            ],
+            BpfHelper::RingbufReserve => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(1),
+            ],
+            BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
+                vec![MirValue::StackSlot(data_slot), MirValue::Const(4)]
+            }
+            BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],
+            _ => unreachable!(),
+        };
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected ringbuf flag validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_helper_tcp_check_syncookie_rejects_non_kernel_sk_pointer() {
     let mut func = make_test_function();
     let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

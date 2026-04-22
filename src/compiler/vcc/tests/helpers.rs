@@ -625,6 +625,64 @@ fn test_verify_mir_helper_ringbuf_output_checks_data_bounds() {
 }
 
 #[test]
+fn test_verify_mir_helper_ringbuf_rejects_invalid_flags() {
+    let cases = [
+        (
+            BpfHelper::RingbufOutput,
+            "helper 'bpf_ringbuf_output' requires arg3 flags",
+        ),
+        (
+            BpfHelper::RingbufReserve,
+            "helper 'bpf_ringbuf_reserve' requires arg2 flags",
+        ),
+        (
+            BpfHelper::RingbufQuery,
+            "helper 'bpf_ringbuf_query' requires arg1 flags",
+        ),
+    ];
+
+    for (helper, expected) in cases {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::RingbufOutput => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+                MirValue::Const(4),
+            ],
+            BpfHelper::RingbufReserve => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(1),
+            ],
+            BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected ringbuf flag validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_ringbuf_reserve_vreg_size_positive_required() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -7919,6 +7977,49 @@ fn test_verify_mir_helper_ringbuf_submit_requires_null_check() {
         "unexpected error messages: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_helper_ringbuf_submit_discard_reject_invalid_flags() {
+    for helper in [BpfHelper::RingbufSubmit, BpfHelper::RingbufDiscard] {
+        let (mut func, entry) = new_mir_function();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let record = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: record,
+                helper: BpfHelper::RingbufReserve as u32,
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![MirValue::VReg(record), MirValue::Const(4)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected ringbuf flag validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(match helper {
+                BpfHelper::RingbufSubmit => "helper 'bpf_ringbuf_submit' requires arg1 flags",
+                BpfHelper::RingbufDiscard => "helper 'bpf_ringbuf_discard' requires arg1 flags",
+                _ => unreachable!(),
+            })),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]

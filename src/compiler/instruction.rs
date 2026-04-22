@@ -895,6 +895,31 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_read_branch_records' requires arg3 flags to contain only BPF_F_GET_BRANCH_RECORDS_SIZE (0x01)",
             )),
+            (Self::RingbufOutput, 3) => Some((
+                0,
+                3,
+                "helper 'bpf_ringbuf_output' requires arg3 flags to contain only BPF_RB_* wakeup bits (0x03)",
+            )),
+            (Self::RingbufReserve, 2) => Some((
+                0,
+                0,
+                "helper 'bpf_ringbuf_reserve' requires arg2 flags to be 0",
+            )),
+            (Self::RingbufSubmit, 1) => Some((
+                0,
+                3,
+                "helper 'bpf_ringbuf_submit' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)",
+            )),
+            (Self::RingbufDiscard, 1) => Some((
+                0,
+                3,
+                "helper 'bpf_ringbuf_discard' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)",
+            )),
+            (Self::RingbufQuery, 1) => Some((
+                0,
+                3,
+                "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)",
+            )),
             _ => None,
         }
     }
