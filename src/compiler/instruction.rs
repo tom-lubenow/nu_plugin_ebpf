@@ -10,6 +10,7 @@
 use crate::compiler::mir::MapKind;
 
 const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
+const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
 
 pub(crate) fn scalar_range_contains_only_allowed_values(
     min: i64,
@@ -920,6 +921,11 @@ impl BpfHelper {
                 3,
                 "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)",
             )),
+            (Self::SkbSetTunnelKey, 3) => Some((
+                0,
+                31,
+                "helper 'bpf_skb_set_tunnel_key' requires arg3 flags to contain only BPF_F_TUNINFO_IPV6/BPF_F_ZERO_CSUM_TX/BPF_F_DONT_FRAGMENT/BPF_F_SEQ_NUMBER/BPF_F_NO_TUNNEL_KEY bits (0x1f)",
+            )),
             _ => None,
         }
     }
@@ -936,6 +942,10 @@ impl BpfHelper {
             (Self::Strtoul, 2) => Some((
                 STRTOX_BASE_FLAGS,
                 "helper 'bpf_strtoul' requires arg2 flags to be one of 0, 8, 10, or 16",
+            )),
+            (Self::SkbGetTunnelKey, 3) => Some((
+                SKB_GET_TUNNEL_KEY_FLAGS,
+                "helper 'bpf_skb_get_tunnel_key' requires arg3 flags to be one of 0, BPF_F_TUNINFO_IPV6, BPF_F_TUNINFO_FLAGS, or both",
             )),
             _ => None,
         }

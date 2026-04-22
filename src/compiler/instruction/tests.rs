@@ -1825,6 +1825,23 @@ fn test_skb_tunnel_helpers_contract() {
         assert_eq!(buffer.fixed_size, None);
         assert_eq!(buffer.size_from_arg, Some(2));
     }
+
+    let (allowed_get_flags, get_flags_message) = BpfHelper::SkbGetTunnelKey
+        .scalar_arg_allowed_values_requirement(3)
+        .expect("expected skb_get_tunnel_key flags requirement");
+    assert_eq!(allowed_get_flags, &[0, 1, 16, 17]);
+    assert_eq!(
+        get_flags_message,
+        "helper 'bpf_skb_get_tunnel_key' requires arg3 flags to be one of 0, BPF_F_TUNINFO_IPV6, BPF_F_TUNINFO_FLAGS, or both"
+    );
+    assert_eq!(
+        BpfHelper::SkbSetTunnelKey.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            31,
+            "helper 'bpf_skb_set_tunnel_key' requires arg3 flags to contain only BPF_F_TUNINFO_IPV6/BPF_F_ZERO_CSUM_TX/BPF_F_DONT_FRAGMENT/BPF_F_SEQ_NUMBER/BPF_F_NO_TUNNEL_KEY bits (0x1f)"
+        ))
+    );
 }
 
 #[test]

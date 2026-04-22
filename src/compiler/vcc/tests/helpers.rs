@@ -7101,6 +7101,7 @@ fn make_skb_tunnel_vcc_call(
     helper: BpfHelper,
     size: i64,
     buffer_size: usize,
+    flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
@@ -7114,7 +7115,7 @@ fn make_skb_tunnel_vcc_call(
             MirValue::VReg(ctx),
             MirValue::StackSlot(buffer),
             MirValue::Const(size),
-            MirValue::Const(0),
+            MirValue::Const(flags),
         ]
     } else {
         vec![
@@ -7166,7 +7167,7 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helpers_accept_tc_and_lwt_xmit_p
             ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
             ProbeContext::new(EbpfProgramType::LwtXmit, "lwt-xmit"),
         ] {
-            let (func, types) = make_skb_tunnel_vcc_call(helper, 16, 16);
+            let (func, types) = make_skb_tunnel_vcc_call(helper, 16, 16, 0);
             verify_mir_for_probe_context(&func, &types, &probe_ctx)
                 .expect("expected skb tunnel helper to verify");
         }
@@ -7175,7 +7176,7 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helpers_accept_tc_and_lwt_xmit_p
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_tunnel_helpers_reject_non_tc_lwt_xmit_program() {
-    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbSetTunnelOpt, 16, 16);
+    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbSetTunnelOpt, 16, 16, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "lwt-out");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected skb tunnel helper to be rejected outside tc/lwt_xmit");
@@ -7186,7 +7187,7 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helpers_reject_non_tc_lwt_xmit_p
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_tunnel_helper_rejects_small_buffer() {
-    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbGetTunnelKey, 16, 8);
+    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbGetTunnelKey, 16, 8, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected skb tunnel buffer bounds error");
@@ -7195,6 +7196,32 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helper_rejects_small_buffer() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_flags() {
+    for (helper, flags, expected) in [
+        (
+            BpfHelper::SkbGetTunnelKey,
+            2,
+            "helper 'bpf_skb_get_tunnel_key' requires arg3 flags",
+        ),
+        (
+            BpfHelper::SkbSetTunnelKey,
+            32,
+            "helper 'bpf_skb_set_tunnel_key' requires arg3 flags",
+        ),
+    ] {
+        let (func, types) = make_skb_tunnel_vcc_call(helper, 16, 16, flags);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb tunnel flag validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
 }
 
 fn make_skb_get_xfrm_state_vcc_call(
