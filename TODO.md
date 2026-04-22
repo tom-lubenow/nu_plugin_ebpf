@@ -44,6 +44,7 @@ Last updated: 2026-04-22.
   - Perf-event counter snapshots are now modeled as ordinary context fields too: `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running` lower through `bpf_perf_prog_read_value`, with internal helper signature/semantics/program policy coverage.
   - Perf-event branch-record helper coverage now includes `bpf_read_branch_records`, with perf_event-only helper policy plus stack/map buffer semantics and zero-size/null-buffer verifier allowance.
   - Base branch-snapshot helper coverage now includes `bpf_get_branch_snapshot`, with stack/map entry-buffer semantics, zero-size/null-buffer query allowance, and reserved zero-flag validation.
+  - Signal helper coverage now includes scalar-only signatures for `bpf_send_signal` and `bpf_send_signal_thread`, keeping them as explicit escape-hatch calls because they affect the current process/thread.
   - BTF-backed tracing argument-count support is now exposed as `ctx.arg_count` and backed by `bpf_get_func_arg_cnt`; the related `bpf_get_func_arg` / `bpf_get_func_ret` helpers are also modeled internally for escape-hatch calls with fixed-size stack/map out-pointer semantics.
   - Added initial helper ref-lifetime/provenance tracking in both verifier and VCC for ringbuf reserve/submit/discard (including branch-aware null-check refinement, leak detection at function exit, and pointer invalidation after release).
   - VCC now tracks nullable pointer returns for map/ringbuf helper results and rejects dereference paths that skip a null check.

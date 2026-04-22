@@ -132,8 +132,10 @@ impl BpfHelper {
             106 => Some(Self::Strtoul),
             107 => Some(Self::SkStorageGet),
             108 => Some(Self::SkStorageDelete),
+            109 => Some(Self::SendSignal),
             110 => Some(Self::TcpGenSyncookie),
             111 => Some(Self::SkbOutput),
+            117 => Some(Self::SendSignalThread),
             121 => Some(Self::XdpOutput),
             124 => Some(Self::SkAssign),
             128 => Some(Self::SkCgroupId),
@@ -215,6 +217,12 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SendSignal | BpfHelper::SendSignalThread => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkbStoreBytes => HelperSignature {

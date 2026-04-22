@@ -263,6 +263,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Strtoul)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_send_signal"),
+        Some(BpfHelper::SendSignal)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("send_signal_thread"),
+        Some(BpfHelper::SendSignalThread)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -1010,6 +1018,18 @@ fn test_helper_signature_read_branch_records() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_signal_helpers() {
+    for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
+        let sig = HelperSignature::for_id(helper as u32).expect("expected signal helper signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+        assert_eq!(helper.semantics().ptr_arg_rules.len(), 0);
+    }
 }
 
 #[test]

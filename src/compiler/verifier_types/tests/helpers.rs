@@ -66,6 +66,29 @@ fn test_unknown_helper_rejects_more_than_five_args() {
 }
 
 #[test]
+fn test_verify_mir_signal_helpers() {
+    for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![MirValue::Const(9)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        verify_mir(&func, &types).expect("expected signal helper to verify");
+    }
+}
+
+#[test]
 fn test_verify_mir_rejects_more_than_five_params() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -3364,6 +3364,25 @@ fn test_infer_get_ns_current_pid_tgid_helper_returns_i64() {
 }
 
 #[test]
+fn test_infer_signal_helpers_return_i64() {
+    for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::Const(9)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti.infer(&func).expect("expected signal helper to infer");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_get_ns_current_pid_tgid_requires_exact_size() {
     let (func, _) = make_get_ns_current_pid_tgid_call(4, 8);
     let mut ti = TypeInference::new(None);

@@ -8,6 +8,26 @@ const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
 #[test]
+fn test_verify_mir_signal_helpers() {
+    for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![MirValue::Const(9)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        verify_mir(&func, &types).expect("expected signal helper to verify");
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
