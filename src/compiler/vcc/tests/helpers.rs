@@ -2212,7 +2212,7 @@ fn test_verify_mir_for_program_probe_read_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected probe_read helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -4258,7 +4258,7 @@ fn test_verify_mir_for_probe_context_task_storage_get_rejects_xdp() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected task_storage_get xdp program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 
@@ -4388,7 +4388,7 @@ fn test_verify_mir_for_probe_context_inode_storage_get_rejects_kprobe() {
         .expect_err("expected inode_storage_get kprobe program-surface error");
     assert!(err.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_inode_storage_get' is only valid in lsm programs")
+            .contains("helper 'bpf_inode_storage_get' is only valid in lsm and lsm_cgroup programs")
     }));
 }
 
@@ -4443,7 +4443,7 @@ fn test_verify_mir_for_probe_context_sk_storage_get_rejects_xdp() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_storage_get xdp program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+        "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 
@@ -4551,7 +4551,7 @@ fn test_verify_mir_for_probe_context_sk_storage_delete_rejects_cgroup_sock() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_storage_delete cgroup_sock program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+        "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
     )));
 }
 

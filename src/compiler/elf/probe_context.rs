@@ -343,7 +343,9 @@ impl ProbeContext {
                 self.target
             ),
             Some(ProgramBtfCallableSurface::TpBtf) => format!("tp_btf:{}", self.target),
-            Some(ProgramBtfCallableSurface::LsmHook) => format!("lsm:{}", self.target),
+            Some(ProgramBtfCallableSurface::LsmHook) => {
+                format!("{}:{}", self.program_type().canonical_prefix(), self.target)
+            }
             _ => format!("{}:{}", self.program_type().section_prefix(), self.target),
         }
     }
@@ -400,8 +402,10 @@ impl ProbeContext {
                 .lsm_hook_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
                     format!(
-                        "failed to resolve ctx.arg.{} for lsm:{}: {}",
-                        arg_name, self.target, e
+                        "failed to resolve ctx.arg.{} for {}: {}",
+                        arg_name,
+                        self.btf_context_label(),
+                        e
                     )
                 }),
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
@@ -450,8 +454,10 @@ impl ProbeContext {
             Some(ProgramBtfCallableSurface::LsmHook) => {
                 btf.lsm_hook_arg(&self.target, arg_idx).map_err(|e| {
                     format!(
-                        "failed to resolve ctx.arg{} for lsm:{}: {}",
-                        arg_idx, self.target, e
+                        "failed to resolve ctx.arg{} for {}: {}",
+                        arg_idx,
+                        self.btf_context_label(),
+                        e
                     )
                 })
             }
@@ -499,8 +505,10 @@ impl ProbeContext {
                 .lsm_hook_arg_type_info(&self.target, arg_idx)
                 .map_err(|e| {
                     format!(
-                        "failed to resolve ctx.arg{} type for lsm:{}: {}",
-                        arg_idx, self.target, e
+                        "failed to resolve ctx.arg{} type for {}: {}",
+                        arg_idx,
+                        self.btf_context_label(),
+                        e
                     )
                 }),
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
@@ -557,8 +565,11 @@ impl ProbeContext {
                 .lsm_hook_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
                     format!(
-                        "failed to resolve ctx.arg{}.{} for lsm:{}: {}",
-                        arg_idx, path_desc, self.target, e
+                        "failed to resolve ctx.arg{}.{} for {}: {}",
+                        arg_idx,
+                        path_desc,
+                        self.btf_context_label(),
+                        e
                     )
                 }),
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf

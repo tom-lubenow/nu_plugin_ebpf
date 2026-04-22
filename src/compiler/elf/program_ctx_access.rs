@@ -899,6 +899,7 @@ const BTF_ARG_COUNT_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::FmodRet,
     EbpfProgramType::TpBtf,
     EbpfProgramType::Lsm,
+    EbpfProgramType::LsmCgroup,
 ];
 
 const PERF_EVENT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::PerfEvent];
@@ -922,6 +923,7 @@ const TASK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::UprobeMulti,
     EbpfProgramType::UretprobeMulti,
     EbpfProgramType::Lsm,
+    EbpfProgramType::LsmCgroup,
     EbpfProgramType::PerfEvent,
 ];
 
@@ -944,6 +946,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::UprobeMulti,
     EbpfProgramType::UretprobeMulti,
     EbpfProgramType::Lsm,
+    EbpfProgramType::LsmCgroup,
     EbpfProgramType::Xdp,
     EbpfProgramType::PerfEvent,
     EbpfProgramType::SocketFilter,
@@ -1474,11 +1477,11 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::ArgFields => format!(
-                "ctx.{} is only available on contexts with argument access (kprobe, kprobe.multi, ksyscall, uprobe, uprobe.multi, fentry, fexit, fmod_ret, tp_btf, lsm, struct_ops, and raw_tracepoint)",
+                "ctx.{} is only available on contexts with argument access (kprobe, kprobe.multi, ksyscall, uprobe, uprobe.multi, fentry, fexit, fmod_ret, tp_btf, lsm, lsm_cgroup, struct_ops, and raw_tracepoint)",
                 field.display_name()
             ),
             Self::ArgCountField => {
-                "ctx.arg_count is only available on BTF-backed tracing contexts (fentry, fexit, fmod_ret, tp_btf, and lsm)".to_string()
+                "ctx.arg_count is only available on BTF-backed tracing contexts (fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup)".to_string()
             }
             Self::RetvalField => "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit, fmod_ret)".to_string(),
             Self::TracepointFields => match field {

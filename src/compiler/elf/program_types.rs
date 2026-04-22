@@ -64,6 +64,7 @@ pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe", "uretprobe.s"]
 pub(super) const UPROBE_MULTI_SPEC_ALIASES: &[&str] = &["uprobe.multi", "uprobe.multi.s"];
 pub(super) const URETPROBE_MULTI_SPEC_ALIASES: &[&str] = &["uretprobe.multi", "uretprobe.multi.s"];
 pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
+pub(super) const LSM_CGROUP_SPEC_ALIASES: &[&str] = &["lsm_cgroup"];
 pub(super) const EXTENSION_SPEC_ALIASES: &[&str] = &["freplace", "extension", "ext"];
 pub(super) const SYSCALL_SPEC_ALIASES: &[&str] = &["syscall"];
 pub(super) const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
@@ -397,6 +398,22 @@ pub(super) const LSM_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_uses_target: true,
     context_family: ProgramContextFamily::Probe,
     attach_kind: ProgramAttachKind::Lsm,
+    target_kind: ProgramTargetKind::LsmHook,
+    kernel_target_validation: Some(KernelTargetValidationKind::LsmHook),
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const LSM_CGROUP_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::LsmCgroup,
+    kernel_prog_type: "BPF_PROG_TYPE_LSM",
+    canonical_prefix: "lsm_cgroup",
+    spec_aliases: LSM_CGROUP_SPEC_ALIASES,
+    section_prefix: "lsm_cgroup",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::LsmCgroup,
     target_kind: ProgramTargetKind::LsmHook,
     kernel_target_validation: Some(KernelTargetValidationKind::LsmHook),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
@@ -867,6 +884,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::UprobeMulti,
     EbpfProgramType::UretprobeMulti,
     EbpfProgramType::Lsm,
+    EbpfProgramType::LsmCgroup,
     EbpfProgramType::Extension,
     EbpfProgramType::Syscall,
     EbpfProgramType::Xdp,
@@ -912,6 +930,7 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "tp_btf",
     "lsm",
     "lsm.s",
+    "lsm_cgroup",
     "freplace",
     "extension",
     "ext",

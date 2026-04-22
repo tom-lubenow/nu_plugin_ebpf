@@ -5,7 +5,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Features
 
 - **Compile Nushell to eBPF**: write tracing and packet logic in familiar Nushell syntax
-- **Attach families**: kprobe/kretprobe/kprobe.multi/kretprobe.multi/ksyscall/kretsyscall/uprobe/uretprobe/uprobe.multi/uretprobe.multi, fentry/fexit/fmod_ret/tp_btf/raw_tracepoint/raw_tracepoint.w/tracepoint/lsm (including sleepable `.s` BTF and user-probe sections), perf_event, XDP/TC/socket_filter/cgroup and `sk_*` packet paths, compile-only `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `sk_reuseport`, `freplace`/extension, and `syscall` sections, `lirc_mode2`, and `struct_ops`
+- **Attach families**: kprobe/kretprobe/kprobe.multi/kretprobe.multi/ksyscall/kretsyscall/uprobe/uretprobe/uprobe.multi/uretprobe.multi, fentry/fexit/fmod_ret/tp_btf/raw_tracepoint/raw_tracepoint.w/tracepoint/lsm (including sleepable `.s` BTF and user-probe sections), perf_event, XDP/TC/socket_filter/cgroup and `sk_*` packet paths, compile-only `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `sk_reuseport`, `lsm_cgroup`, `freplace`/extension, and `syscall` sections, `lirc_mode2`, and `struct_ops`
 - **Typed kernel-BTF contexts**: named `ctx.arg.<name>` aliases, typed field projection, typed map round-tripping, and typed `struct_ops` callbacks
 - **Small-state and aggregation tools**: leading typed `mut` bindings, named globals, generic maps, counters, histograms, timers, stacks, and event streaming
 
@@ -19,7 +19,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Requirements
 
 - Linux kernel 4.18+ for the basic tracing paths
-- Linux kernel 5.5+ with `/sys/kernel/btf/vmlinux` for the kernel-BTF-backed paths (`fentry`, `fexit`, `fmod_ret`, `tp_btf`, named BTF args, `lsm`, and `struct_ops`)
+- Linux kernel 5.5+ with `/sys/kernel/btf/vmlinux` for the kernel-BTF-backed paths (`fentry`, `fexit`, `fmod_ret`, `tp_btf`, named BTF args, `lsm`, `lsm_cgroup`, and `struct_ops`)
 - Rust 2024 edition
 - Root access or CAP_BPF capability
 

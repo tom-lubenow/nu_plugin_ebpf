@@ -6475,6 +6475,25 @@ fn test_compile_lsm_named_projected_ctx_arg_program() {
 }
 
 #[test]
+fn test_compile_lsm_cgroup_ctx_arg_program() {
+    if KernelBtf::get()
+        .validate_lsm_hook_target("socket_bind")
+        .is_err()
+    {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::LsmCgroup,
+        "socket_bind",
+        CellPath {
+            members: vec![string_member("arg2")],
+        },
+        "lsm_cgroup ctx.arg2 count",
+    );
+}
+
+#[test]
 fn test_compile_fexit_ctx_retval_program() {
     let Some(function_name) = find_fexit_ret_candidate() else {
         return;

@@ -31,6 +31,9 @@ ebpf attach 'tp_btf:sys_enter' {|ctx| $ctx.arg.regs.orig_ax | count; 0 }
 # Dry-run an LSM file_open hook using BTF-backed hook arguments
 ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg.file.f_flags | count; 0 }
 
+# Dry-run a cgroup LSM hook section using BTF-backed hook arguments
+ebpf attach --dry-run 'lsm_cgroup:socket_bind' {|ctx| $ctx.arg2 | count; 1 }
+
 # Count software cpu-clock samples by CPU
 let id = ebpf attach 'perf_event:software:cpu-clock:period=100000' {|ctx| $ctx.cpu | count; 0 }
 

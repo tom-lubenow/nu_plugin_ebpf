@@ -784,6 +784,13 @@ fn test_parse_probe_spec_lsm_file_open() {
 }
 
 #[test]
+fn test_parse_probe_spec_lsm_cgroup_socket_bind() {
+    let (prog_type, target) = parse_probe_spec("lsm_cgroup:socket_bind").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::LsmCgroup);
+    assert_eq!(target, "socket_bind");
+}
+
+#[test]
 fn test_parse_probe_spec_lirc_mode2_dev_null() {
     let (prog_type, target) = parse_probe_spec("lirc_mode2:/dev/null").unwrap();
     assert_eq!(prog_type, EbpfProgramType::LircMode2);
@@ -801,6 +808,19 @@ fn test_parse_program_spec_lsm_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "lsm:file_open");
+}
+
+#[test]
+fn test_parse_program_spec_lsm_cgroup_is_structured() {
+    let spec = parse_program_spec("lsm_cgroup:socket_bind").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::LsmCgroup {
+            hook: "socket_bind".to_string(),
+        }
+    );
+    assert_eq!(spec.section_name(), "lsm_cgroup/socket_bind");
+    assert_eq!(spec.to_string(), "lsm_cgroup:socket_bind");
 }
 
 #[test]
@@ -1307,6 +1327,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "/bin/bash:read*",
             "uretprobe.multi",
         ),
+        (EbpfProgramType::LsmCgroup, "socket_bind", "lsm_cgroup"),
         (EbpfProgramType::Ksyscall, "nanosleep", "ksyscall"),
         (EbpfProgramType::KretSyscall, "nanosleep", "kretsyscall"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),

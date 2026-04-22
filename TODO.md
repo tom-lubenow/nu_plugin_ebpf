@@ -214,6 +214,7 @@ Near-term priority order:
   - Recent progress: supported program-type enumeration now lives in one registry used by spec-prefix parsing, with regression coverage that every advertised prefix and every per-program alias round-trips through `EbpfProgramType` metadata.
   - Recent progress: `ProbeContext::new` now also accepts full canonical probe spec strings as a fallback (not just raw targets), canonicalizing matching inputs back to structured `ProgramSpec` metadata instead of silently dropping attach-kind information.
   - Recent progress: sleepable BTF attach specs (`fentry.s`, `fexit.s`, `fmod_ret.s`, and `lsm.s`) now preserve their `.s` section spelling through typed `ProgramSpec` parsing, dry-run ELF emission, and loader attach compilation instead of being collapsed to non-sleepable section names.
+  - Recent progress: `lsm_cgroup` is now a modeled compile/dry-run section family, sharing LSM hook BTF argument resolution and base LSM helper surfaces while rejecting live attach until the loader can safely handle cgroup LSM attachment.
 
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.
@@ -256,7 +257,7 @@ Near-term priority order:
   - Recent progress: named tracepoint payload fields now use the same context-access surface table instead of a one-off `ProgramTypeInfo` flag.
   - Recent progress: packet context shape (`xdp_md`, `__sk_buff`, `sk_msg_md`, `bpf_sock_ops`) now lives in the context layout schema instead of duplicated generic program metadata.
   - Recent progress: userspace-probe detection now derives from the modeled target kind instead of a repeated `ProgramTypeInfo` boolean.
-  - Recent progress: BTF-backed callable metadata now routes through explicit `EbpfProgramType` callable-surface modeling, so `ProbeContext` no longer open-codes `fentry`/`fexit` vs `tp_btf` vs `lsm` vs `struct_ops` when resolving `ctx.arg*` names/types/specs/field projections or deciding when the main callback return type should come from kernel BTF.
+  - Recent progress: BTF-backed callable metadata now routes through explicit `EbpfProgramType` callable-surface modeling, so `ProbeContext` no longer open-codes `fentry`/`fexit` vs `tp_btf` vs `lsm` / `lsm_cgroup` vs `struct_ops` when resolving `ctx.arg*` names/types/specs/field projections or deciding when the main callback return type should come from kernel BTF.
   - Recent progress: the last caller-side `ProgramSpec` metadata destructuring is now exposed through modeled accessors (`tracepoint_parts`, `struct_ops_value_type_name`) so attach paths and `ProbeContext` reuse typed program metadata directly instead of re-matching those variants.
   - Recent progress: modeled helper-surface legality now also recognizes `bpf_getsockopt` / `bpf_setsockopt` on `cgroup_sockopt` programs instead of only `sock_ops` and `cgroup_sock_addr`.
   - Recent progress: confirmed from local kernel sources that `cgroup_sysctl` helper mode checks and `sock_ops` header-option helper callback checks are helper-body/runtime behavior, not verifier preconditions, so the shared helper policy no longer over-models them as mandatory static proofs.
@@ -453,7 +454,7 @@ Near-term priority order:
   - Recent progress: explicit `global-define --type ...` declarations now accept Nushell-style `int` and `list:int:N` aliases in addition to the underlying `i64` / `list:i64:N` spellings, so user-facing global declarations no longer need to leak the backend slot representation.
   - Recent progress: explicit `global-define --type ...` declarations now also expose fixed arrays with `array{type:N}`, including scalar and nested homogeneous aggregate list initializers that are zero-padded to the declared length and zero-initialized fixed-layout aggregate elements such as records.
   - Recent progress: helper program-surface validation now constrains `bpf_sock_from_file` to tracing-style probe programs (`fentry`, `fexit`, `fmod_ret`, `tp_btf`) across ELF policy, type inference, verifier_types, and VCC coverage.
-  - Recent progress: helper program-surface validation now constrains `bpf_task_storage_get/delete` to tracing/tracepoint/perf-event/lsm/kprobe-family programs and `bpf_inode_storage_get/delete` to `lsm`, with matching ELF/type/verifier/VCC coverage.
+  - Recent progress: helper program-surface validation now constrains `bpf_task_storage_get/delete` to tracing/tracepoint/perf-event/lsm/kprobe-family programs and `bpf_inode_storage_get/delete` to `lsm` / `lsm_cgroup`, with matching ELF/type/verifier/VCC coverage.
   - Recent progress: helper program-surface validation now constrains `bpf_sk_storage_get/delete`, including the `cgroup_sock` asymmetry (`get` allowed, `delete` rejected), across ELF policy, type inference, verifier_types, and VCC coverage.
   - Remaining: broaden mutable globals beyond current scalar/string/binary/list/record cases and add richer explicit global declarations/initializers.
 

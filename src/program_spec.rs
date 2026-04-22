@@ -1681,6 +1681,9 @@ pub enum ProgramSpec {
         hook: String,
         sleepable: bool,
     },
+    LsmCgroup {
+        hook: String,
+    },
     Extension {
         target: ExtensionTarget,
     },
@@ -2022,6 +2025,9 @@ impl ProgramSpec {
                 hook: target.to_string(),
                 sleepable,
             }),
+            EbpfProgramType::LsmCgroup => Ok(ProgramSpec::LsmCgroup {
+                hook: target.to_string(),
+            }),
             EbpfProgramType::Extension => Ok(ProgramSpec::Extension {
                 target: ExtensionTarget::parse(target)?,
             }),
@@ -2152,6 +2158,7 @@ impl ProgramSpec {
             ProgramSpec::FmodRet { .. } => EbpfProgramType::FmodRet,
             ProgramSpec::TpBtf { .. } => EbpfProgramType::TpBtf,
             ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
+            ProgramSpec::LsmCgroup { .. } => EbpfProgramType::LsmCgroup,
             ProgramSpec::Extension { .. } => EbpfProgramType::Extension,
             ProgramSpec::Syscall { .. } => EbpfProgramType::Syscall,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
@@ -2206,6 +2213,7 @@ impl ProgramSpec {
             }
             ProgramSpec::TpBtf { name } => name.clone(),
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
+            ProgramSpec::LsmCgroup { hook } => hook.clone(),
             ProgramSpec::Extension { target } => target.target_string(),
             ProgramSpec::Syscall { target } => target.target_string(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
@@ -2703,6 +2711,8 @@ mod tests {
             .expect("fmod_ret spec should parse");
         let sleepable_fmod_ret = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test")
             .expect("sleepable fmod_ret spec should parse");
+        let lsm_cgroup =
+            ProgramSpec::parse("lsm_cgroup:socket_bind").expect("lsm_cgroup spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
         let uprobe =
@@ -2788,6 +2798,10 @@ mod tests {
             sleepable_fmod_ret.to_string(),
             "fmod_ret.s:bpf_modify_return_test"
         );
+        assert_eq!(lsm_cgroup.program_type(), EbpfProgramType::LsmCgroup);
+        assert_eq!(lsm_cgroup.target_string(), "socket_bind");
+        assert_eq!(lsm_cgroup.section_name(), "lsm_cgroup/socket_bind");
+        assert_eq!(lsm_cgroup.to_string(), "lsm_cgroup:socket_bind");
         assert_eq!(tracepoint.struct_ops_value_type_name(), None);
         assert_eq!(struct_ops.tracepoint_parts(), None);
         assert_eq!(

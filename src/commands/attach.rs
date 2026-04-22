@@ -64,6 +64,7 @@ Supported attach types:
   - uprobe / uprobe.s, uretprobe / uretprobe.s
   - uprobe.multi / uprobe.multi.s, uretprobe.multi / uretprobe.multi.s (dry-run compile support; live attach is not implemented yet)
   - lsm
+  - lsm_cgroup (dry-run compile support; live attach is not implemented yet)
   - freplace / extension (dry-run compile support; live attach is not implemented yet)
   - syscall (dry-run compile support; live attach is not implemented yet)
   - perf_event
@@ -335,8 +336,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.comm }   - Get current command name at hook time
     {|ctx| $ctx.arg.file }   - Get a named BTF-typed LSM hook argument
     {|ctx| $ctx.arg.file.f_flags } - Project through named BTF-backed LSM hook arguments
-    Note: initial LSM support uses `lsm:<hook_name>` targets such as
-    `lsm:file_open`. Live loading requires a kernel with BPF LSM enabled;
+    Note: LSM support uses `lsm:<hook_name>` targets such as
+    `lsm:file_open`. Cgroup LSM sections use `lsm_cgroup:<hook_name>` and
+    currently compile in dry-run mode only. Live LSM loading requires a
+    kernel with BPF LSM enabled;
     `--dry-run` is the safest way to validate object construction and BTF
     argument access on a development machine.
 
@@ -768,7 +771,7 @@ Context parameter syntax (recommended):
     as `kprobe.multi:vfs_*` or `uprobe.multi:/bin/bash:read*`, but live
     attach is not implemented yet.
     raw_tracepoint and raw_tracepoint.w expose raw positional ctx.argN slots.
-    fentry/fexit/fmod_ret/tp_btf/lsm/struct_ops use
+    fentry/fexit/fmod_ret/tp_btf/lsm/lsm_cgroup/struct_ops use
     kernel BTF, and those kernel-BTF-backed contexts also expose named
     parameter aliases through ctx.arg.<name> when names are available.
     Scalar/pointer trampoline args and returns work directly. By-value
@@ -1053,6 +1056,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'lsm:file_open' {|ctx| $ctx.arg.file.f_flags | count; 0 }",
                 description: "Dry-run an LSM file_open hook using BTF-backed hook arguments",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'lsm_cgroup:socket_bind' {|ctx| $ctx.arg2 | count; 1 }",
+                description: "Dry-run a cgroup LSM hook section using BTF-backed hook arguments",
                 result: None,
             },
             Example {

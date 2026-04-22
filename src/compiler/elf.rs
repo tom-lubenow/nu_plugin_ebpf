@@ -828,6 +828,8 @@ pub enum EbpfProgramType {
     UretprobeMulti,
     /// Linux security module hook program
     Lsm,
+    /// Cgroup-scoped Linux security module hook program (`lsm_cgroup`)
+    LsmCgroup,
     /// Extension program replacing a global function in another loaded BPF program (`freplace`)
     Extension,
     /// Syscall-capable BPF program (`BPF_PROG_TYPE_SYSCALL`)
@@ -897,7 +899,8 @@ const FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[
 
 const TP_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::TpBtf];
 
-const LSM_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Lsm];
+const LSM_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Lsm, EbpfProgramType::LsmCgroup];
 
 const STRUCT_OPS_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::StructOps];
 
@@ -941,6 +944,7 @@ impl EbpfProgramType {
             EbpfProgramType::UprobeMulti => &UPROBE_MULTI_INFO,
             EbpfProgramType::UretprobeMulti => &URETPROBE_MULTI_INFO,
             EbpfProgramType::Lsm => &LSM_INFO,
+            EbpfProgramType::LsmCgroup => &LSM_CGROUP_INFO,
             EbpfProgramType::Extension => &EXTENSION_INFO,
             EbpfProgramType::Syscall => &SYSCALL_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
@@ -1109,6 +1113,7 @@ pub enum ProgramAttachKind {
     UprobeMulti,
     UretprobeMulti,
     Lsm,
+    LsmCgroup,
     Extension,
     Syscall,
     Xdp,

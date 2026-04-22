@@ -219,7 +219,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
         ProgramSpec::KprobeMulti { pattern } | ProgramSpec::KretprobeMulti { pattern } => {
             validate_kprobe_multi_pattern(pattern)
         }
-        ProgramSpec::Lsm { hook, .. } => {
+        ProgramSpec::Lsm { hook, .. } | ProgramSpec::LsmCgroup { hook } => {
             if hook.is_empty() {
                 return Err(LoadError::Load(
                     "LSM hook target cannot be empty".to_string(),
@@ -370,6 +370,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `fexit:function_name`
 /// - `fmod_ret:function_name`
 /// - `lsm:hook_name`
+/// - `lsm_cgroup:hook_name`
 /// - `freplace:function_name` (or `extension:function_name`)
 /// - `syscall:label`
 /// - `tracepoint:category/name`
