@@ -2916,6 +2916,65 @@ fn test_type_error_probe_read_helper_rejects_xdp_program() {
 }
 
 #[test]
+fn test_infer_probe_read_str_helper_accepts_kprobe() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeReadStr as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(16),
+            MirValue::StackSlot(src_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_probe_read_str to infer on kprobe");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_probe_read_str_helper_rejects_xdp_program() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeReadStr as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(8),
+            MirValue::VReg(ctx),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_probe_read_str to be rejected on xdp");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_probe_read_str' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+    )));
+}
+
+#[test]
 fn test_type_error_store_hdr_opt_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

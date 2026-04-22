@@ -2265,6 +2265,77 @@ fn test_verify_mir_for_program_probe_read_helper_rejects_xdp() {
 }
 
 #[test]
+fn test_verify_mir_for_program_probe_read_str_helper_accepts_kprobe() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ProbeReadStr as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(16),
+                MirValue::StackSlot(src_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect("expected probe_read_str helper in kprobe program");
+}
+
+#[test]
+fn test_verify_mir_for_program_probe_read_str_helper_rejects_xdp() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    func.param_count = 1;
+    let dst = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ProbeReadStr as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(8),
+                MirValue::VReg(ctx),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected probe_read_str helper program-surface error");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_probe_read_str' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
+    )));
+}
+
+#[test]
 fn test_verify_mir_for_program_skb_packet_edit_helpers_reject_invalid_programs() {
     for helper in [
         BpfHelper::SkbStoreBytes,

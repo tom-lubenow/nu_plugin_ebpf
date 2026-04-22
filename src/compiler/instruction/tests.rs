@@ -436,6 +436,7 @@ fn test_helper_signature_kptr_xchg() {
 fn test_helper_signature_probe_read_helpers() {
     let helpers = [
         (BpfHelper::ProbeRead, "bpf_probe_read"),
+        (BpfHelper::ProbeReadStr, "bpf_probe_read_str"),
         (BpfHelper::ProbeReadUser, "bpf_probe_read_user"),
         (BpfHelper::ProbeReadKernel, "bpf_probe_read_kernel"),
         (BpfHelper::ProbeReadUserStr, "bpf_probe_read_user_str"),

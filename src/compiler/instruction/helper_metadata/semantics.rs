@@ -1711,13 +1711,14 @@ impl BpfHelper {
                 positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
-            BpfHelper::ProbeRead | BpfHelper::ProbeReadKernel | BpfHelper::ProbeReadKernelStr => {
-                HelperSemantics {
-                    ptr_arg_rules: PROBE_READ_KERNEL_RULES,
-                    positive_size_args: &[1],
-                    ringbuf_record_arg0: false,
-                }
-            }
+            BpfHelper::ProbeRead
+            | BpfHelper::ProbeReadStr
+            | BpfHelper::ProbeReadKernel
+            | BpfHelper::ProbeReadKernelStr => HelperSemantics {
+                ptr_arg_rules: PROBE_READ_KERNEL_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::ProbeReadUser | BpfHelper::ProbeReadUserStr => HelperSemantics {
                 ptr_arg_rules: PROBE_READ_USER_RULES,
                 positive_size_args: &[1],

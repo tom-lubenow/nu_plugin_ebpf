@@ -60,6 +60,8 @@ pub enum BpfHelper {
     MapDeleteElem = 3,
     /// int bpf_probe_read(dst, size, src)
     ProbeRead = 4,
+    /// long bpf_probe_read_str(dst, size, unsafe_ptr)
+    ProbeReadStr = 45,
     /// long bpf_probe_read_user(dst, size, unsafe_ptr)
     ProbeReadUser = 112,
     /// long bpf_probe_read_kernel(dst, size, unsafe_ptr)
@@ -370,6 +372,7 @@ impl BpfHelper {
             BpfHelper::MapUpdateElem => "bpf_map_update_elem",
             BpfHelper::MapDeleteElem => "bpf_map_delete_elem",
             BpfHelper::ProbeRead => "bpf_probe_read",
+            BpfHelper::ProbeReadStr => "bpf_probe_read_str",
             BpfHelper::ProbeReadUser => "bpf_probe_read_user",
             BpfHelper::ProbeReadKernel => "bpf_probe_read_kernel",
             BpfHelper::KtimeGetNs => "bpf_ktime_get_ns",
@@ -535,6 +538,7 @@ impl BpfHelper {
             "map_update_elem" => Some(Self::MapUpdateElem),
             "map_delete_elem" => Some(Self::MapDeleteElem),
             "probe_read" => Some(Self::ProbeRead),
+            "probe_read_str" => Some(Self::ProbeReadStr),
             "probe_read_user" => Some(Self::ProbeReadUser),
             "probe_read_kernel" => Some(Self::ProbeReadKernel),
             "ktime_get_ns" => Some(Self::KtimeGetNs),

@@ -11,6 +11,7 @@ impl BpfHelper {
             2 => Some(Self::MapUpdateElem),
             3 => Some(Self::MapDeleteElem),
             4 => Some(Self::ProbeRead),
+            45 => Some(Self::ProbeReadStr),
             112 => Some(Self::ProbeReadUser),
             113 => Some(Self::ProbeReadKernel),
             5 => Some(Self::KtimeGetNs),
@@ -323,14 +324,15 @@ impl BpfHelper {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::ProbeRead | BpfHelper::ProbeReadUser | BpfHelper::ProbeReadKernel => {
-                HelperSignature {
-                    min_args: 3,
-                    max_args: 3,
-                    arg_kinds: [P, S, P, S, S],
-                    ret_kind: HelperRetKind::Scalar,
-                }
-            }
+            BpfHelper::ProbeRead
+            | BpfHelper::ProbeReadStr
+            | BpfHelper::ProbeReadUser
+            | BpfHelper::ProbeReadKernel => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::KtimeGetNs
             | BpfHelper::KtimeGetBootNs
             | BpfHelper::KtimeGetCoarseNs
