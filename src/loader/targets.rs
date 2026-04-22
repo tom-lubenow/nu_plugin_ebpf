@@ -31,6 +31,25 @@ fn validate_kprobe_target(func_name: &str) -> Result<(), LoadError> {
     }
 }
 
+fn validate_kprobe_multi_pattern(pattern: &str) -> Result<(), LoadError> {
+    if pattern.is_empty() {
+        return Err(LoadError::Load(
+            "kprobe multi pattern cannot be empty".to_string(),
+        ));
+    }
+
+    if pattern
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'*' | b'?'))
+    {
+        Ok(())
+    } else {
+        Err(LoadError::Load(format!(
+            "Invalid kprobe multi pattern: {pattern}. Allowed characters: ASCII letters, digits, '_', '.', '*', and '?'"
+        )))
+    }
+}
+
 /// Validate a tracepoint target exists
 ///
 /// Tracepoint format: category/name (e.g., syscalls/sys_enter_openat)
@@ -197,6 +216,9 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 Ok(())
             }
         }
+        ProgramSpec::KprobeMulti { pattern } | ProgramSpec::KretprobeMulti { pattern } => {
+            validate_kprobe_multi_pattern(pattern)
+        }
         ProgramSpec::Lsm { hook, .. } => {
             if hook.is_empty() {
                 return Err(LoadError::Load(
@@ -337,6 +359,8 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// Supported formats:
 /// - `kprobe:function_name`
 /// - `kretprobe:function_name`
+/// - `kprobe.multi:function_pattern`
+/// - `kretprobe.multi:function_pattern`
 /// - `ksyscall:syscall_name`
 /// - `kretsyscall:syscall_name`
 /// - `fentry:function_name`

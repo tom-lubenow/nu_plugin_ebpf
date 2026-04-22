@@ -6591,6 +6591,62 @@ fn test_compile_kretsyscall_ctx_retval_program() {
 }
 
 #[test]
+fn test_compile_kprobe_multi_full_spec_ctx_arg_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::KprobeMulti, "kprobe.multi:vfs_*");
+    assert_eq!(probe_ctx.target(), "vfs_*");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kprobe.multi ctx.arg0 should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("kprobe.multi ctx.arg0 should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kretprobe_multi_full_spec_ctx_retval_program() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::KretprobeMulti, "kretprobe.multi:vfs_*");
+    assert_eq!(probe_ctx.target(), "vfs_*");
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kretprobe.multi ctx.retval should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("kretprobe.multi ctx.retval should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_sleepable_uprobe_ctx_pid_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Uprobe,

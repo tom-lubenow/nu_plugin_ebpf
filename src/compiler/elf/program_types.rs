@@ -48,6 +48,8 @@ pub struct ProgramTypeInfo {
 
 pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
 pub(super) const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
+pub(super) const KPROBE_MULTI_SPEC_ALIASES: &[&str] = &["kprobe.multi"];
+pub(super) const KRETPROBE_MULTI_SPEC_ALIASES: &[&str] = &["kretprobe.multi"];
 pub(super) const KSYSCALL_SPEC_ALIASES: &[&str] = &["ksyscall"];
 pub(super) const KRET_SYSCALL_SPEC_ALIASES: &[&str] = &["kretsyscall"];
 pub(super) const FENTRY_SPEC_ALIASES: &[&str] = &["fentry", "fentry.s"];
@@ -139,6 +141,38 @@ pub(super) const KRETPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Kretprobe,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::SymbolOnly),
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::PtRegs,
+};
+
+pub(super) const KPROBE_MULTI_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::KprobeMulti,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
+    canonical_prefix: "kprobe.multi",
+    spec_aliases: KPROBE_MULTI_SPEC_ALIASES,
+    section_prefix: "kprobe.multi",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::KprobeMulti,
+    target_kind: ProgramTargetKind::KernelFunctionPattern,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::PtRegs,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const KRETPROBE_MULTI_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::KretprobeMulti,
+    kernel_prog_type: "BPF_PROG_TYPE_KPROBE",
+    canonical_prefix: "kretprobe.multi",
+    spec_aliases: KRETPROBE_MULTI_SPEC_ALIASES,
+    section_prefix: "kretprobe.multi",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::KretprobeMulti,
+    target_kind: ProgramTargetKind::KernelFunctionPattern,
+    kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::PtRegs,
@@ -783,6 +817,8 @@ pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
 pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::Kprobe,
     EbpfProgramType::Kretprobe,
+    EbpfProgramType::KprobeMulti,
+    EbpfProgramType::KretprobeMulti,
     EbpfProgramType::Ksyscall,
     EbpfProgramType::KretSyscall,
     EbpfProgramType::Fentry,
@@ -827,6 +863,8 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
 pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "kprobe",
     "kretprobe",
+    "kprobe.multi",
+    "kretprobe.multi",
     "ksyscall",
     "kretsyscall",
     "fentry",

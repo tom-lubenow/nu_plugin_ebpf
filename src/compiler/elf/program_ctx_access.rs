@@ -906,6 +906,8 @@ const PERF_EVENT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::PerfEve
 const TASK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Kprobe,
     EbpfProgramType::Kretprobe,
+    EbpfProgramType::KprobeMulti,
+    EbpfProgramType::KretprobeMulti,
     EbpfProgramType::Ksyscall,
     EbpfProgramType::KretSyscall,
     EbpfProgramType::Fentry,
@@ -924,6 +926,8 @@ const TASK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Kprobe,
     EbpfProgramType::Kretprobe,
+    EbpfProgramType::KprobeMulti,
+    EbpfProgramType::KretprobeMulti,
     EbpfProgramType::Ksyscall,
     EbpfProgramType::KretSyscall,
     EbpfProgramType::Fentry,
@@ -1017,6 +1021,8 @@ const XDP_MD_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
 const STACK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Kprobe,
     EbpfProgramType::Kretprobe,
+    EbpfProgramType::KprobeMulti,
+    EbpfProgramType::KretprobeMulti,
     EbpfProgramType::Ksyscall,
     EbpfProgramType::KretSyscall,
     EbpfProgramType::Fentry,
@@ -1095,6 +1101,8 @@ const LIRC_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::LircMode2];
 const TRACING_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Kprobe,
     EbpfProgramType::Kretprobe,
+    EbpfProgramType::KprobeMulti,
+    EbpfProgramType::KretprobeMulti,
     EbpfProgramType::Ksyscall,
     EbpfProgramType::KretSyscall,
     EbpfProgramType::Uprobe,
@@ -1321,7 +1329,7 @@ impl BaseContextFieldAccessRequirement {
                 )
             }
             Self::TracingHelperFields => format!(
-                "ctx.{} is only available on kprobe, kretprobe, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs",
+                "ctx.{} is only available on kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs",
                 field.display_name()
             ),
             Self::PerfEventField if !program_type.uses_perf_event_context() => {
@@ -1458,7 +1466,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::ArgFields => format!(
-                "ctx.{} is only available on contexts with argument access (kprobe, ksyscall, uprobe, fentry, fexit, fmod_ret, tp_btf, lsm, struct_ops, and raw_tracepoint)",
+                "ctx.{} is only available on contexts with argument access (kprobe, kprobe.multi, ksyscall, uprobe, fentry, fexit, fmod_ret, tp_btf, lsm, struct_ops, and raw_tracepoint)",
                 field.display_name()
             ),
             Self::ArgCountField => {

@@ -1609,6 +1609,12 @@ pub enum ProgramSpec {
     Kretprobe {
         function: String,
     },
+    KprobeMulti {
+        pattern: String,
+    },
+    KretprobeMulti {
+        pattern: String,
+    },
     Ksyscall {
         syscall: String,
     },
@@ -1929,6 +1935,12 @@ impl ProgramSpec {
             EbpfProgramType::Kretprobe => Ok(ProgramSpec::Kretprobe {
                 function: target.to_string(),
             }),
+            EbpfProgramType::KprobeMulti => Ok(ProgramSpec::KprobeMulti {
+                pattern: target.to_string(),
+            }),
+            EbpfProgramType::KretprobeMulti => Ok(ProgramSpec::KretprobeMulti {
+                pattern: target.to_string(),
+            }),
             EbpfProgramType::Ksyscall => Ok(ProgramSpec::Ksyscall {
                 syscall: target.to_string(),
             }),
@@ -2067,6 +2079,8 @@ impl ProgramSpec {
         match self {
             ProgramSpec::Kprobe { .. } => EbpfProgramType::Kprobe,
             ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
+            ProgramSpec::KprobeMulti { .. } => EbpfProgramType::KprobeMulti,
+            ProgramSpec::KretprobeMulti { .. } => EbpfProgramType::KretprobeMulti,
             ProgramSpec::Ksyscall { .. } => EbpfProgramType::Ksyscall,
             ProgramSpec::KretSyscall { .. } => EbpfProgramType::KretSyscall,
             ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
@@ -2118,6 +2132,9 @@ impl ProgramSpec {
             | ProgramSpec::Fentry { function, .. }
             | ProgramSpec::Fexit { function, .. }
             | ProgramSpec::FmodRet { function, .. } => function.clone(),
+            ProgramSpec::KprobeMulti { pattern } | ProgramSpec::KretprobeMulti { pattern } => {
+                pattern.clone()
+            }
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {
                 syscall.clone()
             }
@@ -2587,6 +2604,10 @@ mod tests {
             ProgramSpec::parse("ksyscall:nanosleep").expect("ksyscall spec should parse");
         let kretsyscall =
             ProgramSpec::parse("kretsyscall:nanosleep").expect("kretsyscall spec should parse");
+        let kprobe_multi =
+            ProgramSpec::parse("kprobe.multi:vfs_*").expect("kprobe.multi spec should parse");
+        let kretprobe_multi =
+            ProgramSpec::parse("kretprobe.multi:vfs_*").expect("kretprobe.multi spec should parse");
         let fmod_ret = ProgramSpec::parse("fmod_ret:bpf_modify_return_test")
             .expect("fmod_ret spec should parse");
         let sleepable_fmod_ret = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test")
@@ -2646,6 +2667,17 @@ mod tests {
         assert_eq!(kretsyscall.program_type(), EbpfProgramType::KretSyscall);
         assert_eq!(kretsyscall.target_string(), "nanosleep");
         assert_eq!(kretsyscall.section_name(), "kretsyscall/nanosleep");
+        assert_eq!(kprobe_multi.program_type(), EbpfProgramType::KprobeMulti);
+        assert_eq!(kprobe_multi.target_string(), "vfs_*");
+        assert_eq!(kprobe_multi.section_name(), "kprobe.multi/vfs_*");
+        assert_eq!(kprobe_multi.to_string(), "kprobe.multi:vfs_*");
+        assert_eq!(
+            kretprobe_multi.program_type(),
+            EbpfProgramType::KretprobeMulti
+        );
+        assert_eq!(kretprobe_multi.target_string(), "vfs_*");
+        assert_eq!(kretprobe_multi.section_name(), "kretprobe.multi/vfs_*");
+        assert_eq!(kretprobe_multi.to_string(), "kretprobe.multi:vfs_*");
         assert_eq!(fmod_ret.program_type(), EbpfProgramType::FmodRet);
         assert_eq!(fmod_ret.target_string(), "bpf_modify_return_test");
         assert_eq!(fmod_ret.section_name(), "fmod_ret/bpf_modify_return_test");

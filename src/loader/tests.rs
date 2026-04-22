@@ -123,6 +123,46 @@ fn test_parse_probe_spec_uretprobe() {
 }
 
 #[test]
+fn test_parse_probe_spec_kprobe_multi_sections() {
+    let (prog_type, target) = parse_probe_spec("kprobe.multi:vfs_*").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::KprobeMulti);
+    assert_eq!(target, "vfs_*");
+
+    let spec = parse_program_spec("kprobe.multi:vfs_*").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::KprobeMulti {
+            pattern: "vfs_*".to_string(),
+        }
+    );
+    assert_eq!(spec.section_name(), "kprobe.multi/vfs_*");
+
+    let (prog_type, target) = parse_probe_spec("kretprobe.multi:vfs_*").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::KretprobeMulti);
+    assert_eq!(target, "vfs_*");
+
+    let spec = parse_program_spec("kretprobe.multi:vfs_*").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::KretprobeMulti {
+            pattern: "vfs_*".to_string(),
+        }
+    );
+    assert_eq!(spec.section_name(), "kretprobe.multi/vfs_*");
+}
+
+#[test]
+fn test_parse_probe_spec_rejects_invalid_kprobe_multi_pattern() {
+    let err = parse_program_spec("kprobe.multi:vfs/read")
+        .expect_err("expected slash to be rejected in kprobe.multi pattern");
+
+    assert!(
+        matches!(err, LoadError::Load(ref msg) if msg.contains("Invalid kprobe multi pattern")),
+        "unexpected kprobe.multi validation error: {err:?}"
+    );
+}
+
+#[test]
 fn test_parse_probe_spec_fentry() {
     let result = parse_probe_spec("fentry:do_sys_openat2");
 
@@ -1211,6 +1251,8 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         ),
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
         (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
+        (EbpfProgramType::KprobeMulti, "vfs_*", "kprobe.multi"),
+        (EbpfProgramType::KretprobeMulti, "vfs_*", "kretprobe.multi"),
         (EbpfProgramType::Ksyscall, "nanosleep", "ksyscall"),
         (EbpfProgramType::KretSyscall, "nanosleep", "kretsyscall"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),

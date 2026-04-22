@@ -796,6 +796,10 @@ pub enum EbpfProgramType {
     Kprobe,
     /// Kernel return probe (kretprobe)
     Kretprobe,
+    /// Kernel multi-probe (`kprobe.multi`)
+    KprobeMulti,
+    /// Kernel multi-return probe (`kretprobe.multi`)
+    KretprobeMulti,
     /// Kernel syscall probe (`ksyscall`)
     Ksyscall,
     /// Kernel syscall return probe (`kretsyscall`)
@@ -917,6 +921,8 @@ impl EbpfProgramType {
         match self {
             EbpfProgramType::Kprobe => &KPROBE_INFO,
             EbpfProgramType::Kretprobe => &KRETPROBE_INFO,
+            EbpfProgramType::KprobeMulti => &KPROBE_MULTI_INFO,
+            EbpfProgramType::KretprobeMulti => &KRETPROBE_MULTI_INFO,
             EbpfProgramType::Ksyscall => &KSYSCALL_INFO,
             EbpfProgramType::KretSyscall => &KRET_SYSCALL_INFO,
             EbpfProgramType::Fentry => &FENTRY_INFO,
@@ -1081,6 +1087,8 @@ pub struct ProbeContext {
 pub enum ProgramAttachKind {
     Kprobe,
     Kretprobe,
+    KprobeMulti,
+    KretprobeMulti,
     Ksyscall,
     KretSyscall,
     Fentry,
@@ -1122,6 +1130,7 @@ pub enum ProgramAttachKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramTargetKind {
     KernelFunction,
+    KernelFunctionPattern,
     KernelSyscall,
     BtfTracepoint,
     LsmHook,
