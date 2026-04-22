@@ -33,11 +33,11 @@ The closure receives a context parameter with these fields:
 | `perf_counter` | Perf event counter value from `bpf_perf_prog_read_value` | perf_event |
 | `perf_enabled` | Perf event enabled time from `bpf_perf_prog_read_value` | perf_event |
 | `perf_running` | Perf event running time from `bpf_perf_prog_read_value` | perf_event |
-| `packet_len` / `len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks); `ctx.size` is also accepted on sk_msg | xdp, socket_filter, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `packet_len` / `len` | Packet length (`data_end - data` on XDP, `skb->len` on skb-backed packet programs, `sk_reuseport_md.len` on sk_reuseport, `size` on sk_msg, `skb_len` on packet-aware sock_ops callbacks); `ctx.size` is also accepted on sk_msg | xdp, flow_dissector, socket_filter, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `xdp_buff_len` / `xdp_buffer_len` | Total XDP buffer length from `bpf_xdp_get_buff_len`, including paged fragments | xdp |
 | `pkt_type` | skb pkt_type | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `queue_mapping` | skb queue_mapping | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `eth_protocol` | skb protocol / ethertype in host byte order; `protocol` is also accepted on skb-backed packet contexts to match the kernel field name | flow_dissector, socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
 | `vlan_present` | Whether skb VLAN metadata is present | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_tci` | skb VLAN TCI | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `vlan_proto` | skb VLAN ethertype in host byte order | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -55,9 +55,9 @@ The closure receives a context parameter with these fields:
 | `tstamp` | skb timestamp | tc, cgroup_skb |
 | `tstamp_type` | skb timestamp type (`0 = UNSPEC`, `1 = DELIVERY_MONO`) | tc |
 | `hwtstamp` | skb hardware timestamp | tc, cgroup_skb |
-| `data` | Packet data pointer | xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `data` | Packet data pointer | xdp, flow_dissector, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `data_meta` | Packet metadata pointer | xdp, tc |
-| `data_end` | Packet end pointer | xdp, tc, cgroup_skb, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `data_end` | Packet end pointer | xdp, flow_dissector, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `ingress_ifindex` | Ingress interface index | xdp, socket_filter, tc, cgroup_skb, sk_lookup, sk_skb, sk_skb_parser |
 | `sample` / `raw` | Raw lirc mode2 sample word | lirc_mode2 |
 | `value` | Low 24-bit lirc mode2 payload value | lirc_mode2 |
@@ -69,7 +69,7 @@ The closure receives a context parameter with these fields:
 | `minor` | Requested device minor number | cgroup_device |
 | `ifindex` | Interface index (`xdp_md.ingress_ifindex` on XDP, `__sk_buff.ifindex` on skb-backed packet programs) | xdp, socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `tc_index` | skb tc_index | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
-| `hash` | skb hash | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
+| `hash` | skb hash, or sk_reuseport selection hash on sk_reuseport | socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
 | `hash_recalc` / `recalc_hash` | skb hash from `bpf_get_hash_recalc`, recomputing it if needed | tc, sk_skb, sk_skb_parser |
 | `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
 | `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -82,7 +82,7 @@ The closure receives a context parameter with these fields:
 | `user_port` | Requested port in host byte order | cgroup_sock_addr |
 | `family` | Kernel socket family | cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `sock_type` | Socket type | cgroup_sock, cgroup_sock_addr |
-| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_skb, sk_skb_parser |
+| `protocol` | Socket protocol on socket contexts; skb protocol / ethertype on skb-backed packet contexts; IP protocol on sk_reuseport | flow_dissector, socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_skb, sk_skb_parser |
 | `bound_dev_if` | Bound device ifindex | cgroup_sock (sock_create, sock_release) |
 | `mark` | Socket or skb mark | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb |
 | `priority` | Socket or skb priority | cgroup_sock (sock_create, sock_release), socket_filter, tc, cgroup_skb, sk_skb, sk_skb_parser |
@@ -127,7 +127,10 @@ The closure receives a context parameter with these fields:
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | cgroup_sock (post_bind6), cgroup_sock_addr (bind6, getsockname6, sendmsg6), cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | cgroup_sock (post_bind4, post_bind6), cgroup_sock_addr (bind4/bind6, getsockname4/getsockname6), cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `rx_queue_mapping` | Socket receive-queue mapping (`-1` if unset) | cgroup_sock |
-| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4`, `src_ip6`, `src_port`, `dst_port` (raw network byte order), `dst_ip4`, `dst_ip6`, `state`, `rx_queue_mapping`, plus `cgroup_id` and `ancestor_cgroup_id.N` (`cgroup_skb` only). On program types where the corresponding helpers are valid, `$ctx.sk.tcp.<field>` exposes null-safe TCP metrics from `struct bpf_tcp_sock`, while `$ctx.sk.full.<field>` and `$ctx.sk.listener.<field>` expose fields from `bpf_sk_fullsock` / `bpf_get_listener_sock`; these projections also work after binding `$ctx.sk` to a local and return `0` when there is no socket or the helper returns null | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `sk` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family` or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4`, `src_ip6`, `src_port`, `dst_port` (raw network byte order), `dst_ip4`, `dst_ip6`, `state`, `rx_queue_mapping`, plus `cgroup_id` and `ancestor_cgroup_id.N` (`cgroup_skb` only). On program types where the corresponding helpers are valid, `$ctx.sk.tcp.<field>` exposes null-safe TCP metrics from `struct bpf_tcp_sock`, while `$ctx.sk.full.<field>` and `$ctx.sk.listener.<field>` expose fields from `bpf_sk_fullsock` / `bpf_get_listener_sock`; these projections also work after binding `$ctx.sk` to a local and return `0` when there is no socket or the helper returns null | socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `flow_keys` | Typed `bpf_flow_keys *` pointer for flow-dissector projection such as `$ctx.flow_keys.ip_proto`, `$ctx.flow_keys.sport`, `$ctx.flow_keys.dport`, `$ctx.flow_keys.ipv4_src`, or `$ctx.flow_keys.ipv6_dst.3` | flow_dissector |
+| `bind_inany` | sk_reuseport bind-in-any state | sk_reuseport |
+| `migrating_sk` | Typed migrating `bpf_sock *` pointer on sk_reuseport migration programs | sk_reuseport |
 | `task` | Current `task_struct *` from `bpf_get_current_task_btf`; BTF-backed fields such as `$ctx.task.pid` can be projected when kernel BTF is available. `$ctx.task.pt_regs.arg0` through `.arg5` and `$ctx.task.pt_regs.retval` expose `bpf_task_pt_regs` register slots through the same architecture-aware pt_regs offset model used by kprobe args | kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, tp_btf, lsm |
 | `cookie` | Socket lookup cookie | sk_lookup |
 | `level` | Socket-option level | cgroup_sockopt |
