@@ -716,6 +716,60 @@ fn test_verify_mir_for_probe_context_task_is_non_null_task_pointer() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sk_reuseport_socket_is_non_null() {
+    let (mut func, entry) = new_mir_function();
+    let bad = func.alloc_block();
+    let done = func.alloc_block();
+    let sk = func.alloc_vreg();
+    let is_null = func.alloc_vreg();
+    let load_dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: is_null,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(sk),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: is_null,
+        if_true: bad,
+        if_false: done,
+    };
+
+    // This path is unreachable: sk_reuseport_md.sk is PTR_TO_SOCKET.
+    func.block_mut(bad).instructions.push(MirInst::Load {
+        dst: load_dst,
+        ptr: sk,
+        offset: 0,
+        ty: MirType::U32,
+    });
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(is_null, MirType::Bool);
+    types.insert(load_dst, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected impossible null branch for sk_reuseport ctx.sk to be pruned");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_void_trampoline_retval_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

@@ -1522,6 +1522,10 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!EbpfProgramType::Xdp.ctx_field_pointer_is_non_null(&CtxField::Task));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
+    assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
+    assert!(
+        !EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::MigratingSocket)
+    );
 
     let kprobe = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
     assert!(kprobe.ctx_field_pointer_is_non_null(&CtxField::Task));
@@ -1529,6 +1533,10 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
         Some(&kprobe),
         &CtxField::Task
     ));
+
+    let reuseport = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+    assert!(reuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
+    assert!(!reuseport.ctx_field_pointer_is_non_null(&CtxField::MigratingSocket));
 }
 
 #[test]
