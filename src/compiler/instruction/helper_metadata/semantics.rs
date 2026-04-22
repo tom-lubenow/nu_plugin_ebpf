@@ -757,6 +757,13 @@ impl BpfHelper {
                 size_from_arg: Some(3),
             },
         ];
+        const NS_CURRENT_PID_TGID_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 2,
+            op: "helper get_ns_current_pid_tgid nsdata",
+            allowed: STACK_MAP,
+            fixed_size: None,
+            size_from_arg: Some(3),
+        }];
         const PACKET_OUTPUT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1697,6 +1704,11 @@ impl BpfHelper {
                     size_from_arg: None,
                 }],
                 positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetNsCurrentPidTgid => HelperSemantics {
+                ptr_arg_rules: NS_CURRENT_PID_TGID_RULES,
+                positive_size_args: &[3],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::RcRepeat | BpfHelper::RcKeydown | BpfHelper::RcPointerRel => {

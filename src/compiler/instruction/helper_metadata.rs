@@ -45,6 +45,7 @@ impl BpfHelper {
             14 => Some(Self::GetCurrentPidTgid),
             15 => Some(Self::GetCurrentUidGid),
             80 => Some(Self::GetCurrentCgroupId),
+            120 => Some(Self::GetNsCurrentPidTgid),
             123 => Some(Self::GetCurrentAncestorCgroupId),
             16 => Some(Self::GetCurrentComm),
             17 => Some(Self::GetCgroupClassid),
@@ -347,6 +348,12 @@ impl BpfHelper {
                 min_args: 0,
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::GetNsCurrentPidTgid => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [S, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::GetCurrentAncestorCgroupId => HelperSignature {

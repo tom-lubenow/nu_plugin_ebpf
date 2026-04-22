@@ -1875,6 +1875,68 @@ fn test_verify_mir_perf_event_read_value_rejects_small_buffer() {
     );
 }
 
+fn make_get_ns_current_pid_tgid_verify_call(
+    size: i64,
+    buf_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    let nsdata_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetNsCurrentPidTgid as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::Const(2),
+                MirValue::StackSlot(nsdata_slot),
+                MirValue::Const(size),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_get_ns_current_pid_tgid_helper() {
+    let (func, types) = make_get_ns_current_pid_tgid_verify_call(8, 8);
+    verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect("expected bpf_get_ns_current_pid_tgid helper to verify");
+}
+
+#[test]
+fn test_verify_mir_get_ns_current_pid_tgid_requires_exact_size() {
+    let (func, types) = make_get_ns_current_pid_tgid_verify_call(4, 8);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_ns_current_pid_tgid size error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8")
+    }));
+}
+
+#[test]
+fn test_verify_mir_get_ns_current_pid_tgid_rejects_small_buffer() {
+    let (func, types) = make_get_ns_current_pid_tgid_verify_call(8, 4);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_ns_current_pid_tgid bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper get_ns_current_pid_tgid nsdata out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_packet_output_verify_call(
     helper: BpfHelper,
     size: i64,

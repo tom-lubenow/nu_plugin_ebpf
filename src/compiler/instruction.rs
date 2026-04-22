@@ -128,6 +128,8 @@ pub enum BpfHelper {
     GetCurrentUidGid = 15,
     /// u64 bpf_get_current_cgroup_id(void)
     GetCurrentCgroupId = 80,
+    /// long bpf_get_ns_current_pid_tgid(dev, ino, nsdata, size)
+    GetNsCurrentPidTgid = 120,
     /// u64 bpf_get_current_ancestor_cgroup_id(int ancestor_level)
     GetCurrentAncestorCgroupId = 123,
     /// int bpf_get_current_comm(buf, size)
@@ -406,6 +408,7 @@ impl BpfHelper {
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
+            BpfHelper::GetNsCurrentPidTgid => "bpf_get_ns_current_pid_tgid",
             BpfHelper::GetCurrentAncestorCgroupId => "bpf_get_current_ancestor_cgroup_id",
             BpfHelper::GetCurrentComm => "bpf_get_current_comm",
             BpfHelper::GetCgroupClassid => "bpf_get_cgroup_classid",
@@ -572,6 +575,7 @@ impl BpfHelper {
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
+            "get_ns_current_pid_tgid" => Some(Self::GetNsCurrentPidTgid),
             "get_current_ancestor_cgroup_id" => Some(Self::GetCurrentAncestorCgroupId),
             "get_current_comm" => Some(Self::GetCurrentComm),
             "get_cgroup_classid" => Some(Self::GetCgroupClassid),
@@ -732,6 +736,11 @@ impl BpfHelper {
                 3,
                 24,
                 "helper 'bpf_perf_event_read_value' requires arg3 = 24",
+            )),
+            Self::GetNsCurrentPidTgid => Some((
+                3,
+                8,
+                "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8",
             )),
             _ => None,
         }

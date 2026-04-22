@@ -3211,6 +3211,64 @@ fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_get_ns_current_pid_tgid_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let nsdata_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetNsCurrentPidTgid as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::Const(2),
+            MirValue::StackSlot(nsdata_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_get_ns_current_pid_tgid_helper_returns_i64() {
+    let (func, dst) = make_get_ns_current_pid_tgid_call(8, 8);
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_ns_current_pid_tgid to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_ns_current_pid_tgid_requires_exact_size() {
+    let (func, _) = make_get_ns_current_pid_tgid_call(4, 8);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_ns_current_pid_tgid size error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8")
+    }));
+}
+
+#[test]
+fn test_type_error_get_ns_current_pid_tgid_rejects_small_buffer() {
+    let (func, _) = make_get_ns_current_pid_tgid_call(8, 4);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_ns_current_pid_tgid bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper get_ns_current_pid_tgid nsdata requires 8 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_infer_no_arg_scalar_helpers_return_i64() {
     for (helper, name) in [

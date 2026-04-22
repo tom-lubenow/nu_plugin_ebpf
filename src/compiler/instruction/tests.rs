@@ -251,6 +251,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::PerfEventReadValue)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_ns_current_pid_tgid"),
+        Some(BpfHelper::GetNsCurrentPidTgid)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_stack"),
         Some(BpfHelper::GetStack)
     ));
@@ -851,6 +855,16 @@ fn test_helper_signature_get_current_cgroup_id() {
     assert_eq!(sig.min_args, 1);
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    let sig = HelperSignature::for_id(BpfHelper::GetNsCurrentPidTgid as u32)
+        .expect("expected bpf_get_ns_current_pid_tgid helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
@@ -1818,6 +1832,28 @@ fn test_perf_event_read_helper_contracts() {
             3,
             24,
             "helper 'bpf_perf_event_read_value' requires arg3 = 24"
+        ))
+    );
+}
+
+#[test]
+fn test_get_ns_current_pid_tgid_helper_contract() {
+    let semantics = BpfHelper::GetNsCurrentPidTgid.semantics();
+    assert_eq!(semantics.positive_size_args, &[3]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+    let nsdata = semantics.ptr_arg_rules[0];
+    assert_eq!(nsdata.arg_idx, 2);
+    assert_eq!(nsdata.op, "helper get_ns_current_pid_tgid nsdata");
+    assert!(nsdata.allowed.allow_stack);
+    assert!(nsdata.allowed.allow_map);
+    assert!(!nsdata.allowed.allow_kernel);
+    assert_eq!(nsdata.size_from_arg, Some(3));
+    assert_eq!(
+        BpfHelper::GetNsCurrentPidTgid.scalar_arg_const_requirement(),
+        Some((
+            3,
+            8,
+            "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8"
         ))
     );
 }

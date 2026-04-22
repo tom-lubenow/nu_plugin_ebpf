@@ -144,6 +144,7 @@ Last updated: 2026-04-22.
   - Ordinary context access now exposes those time/counter helpers without raw helper spelling as `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
   - Attach-flow compile fixtures now cover those ordinary time/counter fields plus the `ctx.numa_node` alias through the public context path.
   - Typed helper scalar coverage now includes `bpf_get_numa_node_id` as a broad no-arg scalar-return helper.
+  - Typed helper PID namespace coverage now includes `bpf_get_ns_current_pid_tgid`, with stack/map output-buffer bounds and exact `struct bpf_pidns_info` size validation.
   - Ordinary context access now exposes the NUMA node helper without raw helper spelling as `ctx.numa_node` / `ctx.numa_node_id`.
   - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` / `bpf_skc_to_tcp_sock` / `bpf_skc_to_tcp6_sock` / `bpf_skc_to_tcp_timewait_sock` / `bpf_skc_to_tcp_request_sock` / `bpf_skc_to_udp6_sock` / `bpf_skc_to_unix_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
   - Type inference now preserves precise socket-helper return types for those casts instead of collapsing everything to `bpf_sock *`, including a synthetic `bpf_tcp_sock` layout for projected TCP metrics.
