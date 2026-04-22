@@ -163,6 +163,7 @@ impl BpfHelper {
             159 => Some(Self::BprmOptsSet),
             161 => Some(Self::ImaInodeHash),
             162 => Some(Self::SockFromFile),
+            165 => Some(Self::Snprintf),
             166 => Some(Self::SysBpf),
             167 => Some(Self::BtfFindByNameKind),
             168 => Some(Self::SysClose),
@@ -830,6 +831,12 @@ impl BpfHelper {
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::Snprintf => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, S, P, P, S],
+                ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SysBpf => HelperSignature {
                 min_args: 3,

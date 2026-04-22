@@ -117,6 +117,156 @@ fn test_verify_mir_for_probe_context_syscall_program_rejects_unmodeled_helper() 
 }
 
 #[test]
+fn test_verify_mir_helper_snprintf_accepts_rodata_format() {
+    let (mut func, entry) = new_mir_function();
+    let fmt = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadGlobal {
+            dst: fmt,
+            symbol: "__nu_rodata_fmt".to_string(),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Snprintf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::VReg(fmt),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    verify_mir(&func, &types).expect("expected bpf_snprintf with map format to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_rejects_stack_format() {
+    let (mut func, entry) = new_mir_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let fmt_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Snprintf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(fmt_slot),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected stack fmt rejection");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper snprintf fmt expects pointer in [Map]")
+    }));
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_rejects_negative_size() {
+    let (mut func, entry) = new_mir_function();
+    let fmt = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadGlobal {
+            dst: fmt,
+            symbol: "__nu_rodata_fmt".to_string(),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Snprintf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(-1),
+                MirValue::VReg(fmt),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected negative snprintf size rejection");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 165 arg1 must be >= 0"))
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_snprintf_rejects_unaligned_data_len() {
+    let (mut func, entry) = new_mir_function();
+    let fmt = func.alloc_vreg();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadGlobal {
+            dst: fmt,
+            symbol: "__nu_rodata_fmt".to_string(),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Snprintf as u32,
+            args: vec![
+                MirValue::StackSlot(out_slot),
+                MirValue::Const(32),
+                MirValue::VReg(fmt),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(10),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("expected unaligned data_len rejection");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_snprintf' requires arg4 to be a multiple of 8")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sys_bpf_requires_positive_attr_size() {
     let (mut func, entry) = new_mir_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

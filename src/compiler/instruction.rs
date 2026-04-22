@@ -374,6 +374,8 @@ pub enum BpfHelper {
     CgrpStorageDelete = 211,
     /// struct socket *bpf_sock_from_file(file)
     SockFromFile = 162,
+    /// long bpf_snprintf(str, str_size, fmt, data, data_len)
+    Snprintf = 165,
     /// long bpf_sys_bpf(cmd, attr, attr_size)
     SysBpf = 166,
     /// long bpf_btf_find_by_name_kind(name, name_sz, kind, flags)
@@ -575,6 +577,7 @@ impl BpfHelper {
             BpfHelper::CgrpStorageGet => "bpf_cgrp_storage_get",
             BpfHelper::CgrpStorageDelete => "bpf_cgrp_storage_delete",
             BpfHelper::SockFromFile => "bpf_sock_from_file",
+            BpfHelper::Snprintf => "bpf_snprintf",
             BpfHelper::SysBpf => "bpf_sys_bpf",
             BpfHelper::BtfFindByNameKind => "bpf_btf_find_by_name_kind",
             BpfHelper::SysClose => "bpf_sys_close",
@@ -764,6 +767,7 @@ impl BpfHelper {
             "cgrp_storage_get" | "cgroup_storage_get" => Some(Self::CgrpStorageGet),
             "cgrp_storage_delete" | "cgroup_storage_delete" => Some(Self::CgrpStorageDelete),
             "sock_from_file" => Some(Self::SockFromFile),
+            "snprintf" => Some(Self::Snprintf),
             "sys_bpf" => Some(Self::SysBpf),
             "btf_find_by_name_kind" => Some(Self::BtfFindByNameKind),
             "sys_close" => Some(Self::SysClose),
@@ -811,6 +815,10 @@ impl BpfHelper {
                 4,
                 "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4",
             )),
+            (Self::Snprintf, 4) => Some((
+                8,
+                "helper 'bpf_snprintf' requires arg4 to be a multiple of 8",
+            )),
             _ => None,
         }
     }
@@ -824,6 +832,8 @@ impl BpfHelper {
             (Self::CopyFromUserTask, 1) => {
                 Some("helper 'bpf_copy_from_user_task' requires arg1 to be >= 0")
             }
+            (Self::Snprintf, 1) => Some("helper 'bpf_snprintf' requires arg1 to be >= 0"),
+            (Self::Snprintf, 4) => Some("helper 'bpf_snprintf' requires arg4 to be >= 0"),
             _ => None,
         }
     }

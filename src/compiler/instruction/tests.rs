@@ -283,6 +283,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::TcpSendAck)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_snprintf"),
+        Some(BpfHelper::Snprintf)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_sys_bpf"),
         Some(BpfHelper::SysBpf)
     ));
@@ -1955,6 +1959,64 @@ fn test_helper_csum_diff_zero_size_pointer_contract() {
             "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4"
         ))
     );
+}
+
+#[test]
+fn test_snprintf_helper_contract() {
+    let sig = HelperSignature::for_id(BpfHelper::Snprintf as u32)
+        .expect("expected bpf_snprintf helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    assert_eq!(
+        BpfHelper::Snprintf.scalar_arg_nonnegative_requirement(1),
+        Some("helper 'bpf_snprintf' requires arg1 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::Snprintf.scalar_arg_nonnegative_requirement(4),
+        Some("helper 'bpf_snprintf' requires arg4 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::Snprintf.scalar_arg_multiple_of_requirement(4),
+        Some((
+            8,
+            "helper 'bpf_snprintf' requires arg4 to be a multiple of 8"
+        ))
+    );
+
+    let semantics = BpfHelper::Snprintf.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.ptr_arg_rules.len(), 3);
+
+    let out = semantics.ptr_arg_rules[0];
+    assert_eq!(out.arg_idx, 0);
+    assert_eq!(out.op, "helper snprintf str");
+    assert!(out.allowed.allow_stack);
+    assert!(out.allowed.allow_map);
+    assert_eq!(out.size_from_arg, Some(1));
+
+    let fmt = semantics.ptr_arg_rules[1];
+    assert_eq!(fmt.arg_idx, 2);
+    assert_eq!(fmt.op, "helper snprintf fmt");
+    assert!(!fmt.allowed.allow_stack);
+    assert!(fmt.allowed.allow_map);
+    assert!(!fmt.allowed.allow_kernel);
+    assert!(!fmt.allowed.allow_user);
+    assert_eq!(fmt.fixed_size, None);
+    assert_eq!(fmt.size_from_arg, None);
+
+    let data = semantics.ptr_arg_rules[2];
+    assert_eq!(data.arg_idx, 3);
+    assert_eq!(data.op, "helper snprintf data");
+    assert!(data.allowed.allow_stack);
+    assert!(data.allowed.allow_map);
+    assert_eq!(data.size_from_arg, Some(4));
 }
 
 #[test]
