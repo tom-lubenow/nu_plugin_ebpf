@@ -6561,6 +6561,18 @@ fn test_compile_extension_return_program() {
 }
 
 #[test]
+fn test_compile_syscall_return_program() {
+    let hir = make_int_return_program(0);
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Syscall,
+        "demo",
+        &HashMap::new(),
+        "syscall return 0",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_ctx_tid_alias_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,

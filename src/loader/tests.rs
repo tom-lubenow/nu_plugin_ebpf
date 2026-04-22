@@ -203,6 +203,18 @@ fn test_parse_program_spec_extension_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_syscall_is_structured() {
+    let (prog_type, target) = parse_probe_spec("syscall:demo").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Syscall);
+    assert_eq!(target, "demo");
+
+    let spec = parse_program_spec("syscall:demo").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::Syscall);
+    assert_eq!(spec.target_string(), "demo");
+    assert_eq!(spec.section_name(), "syscall");
+}
+
+#[test]
 fn test_parse_probe_spec_xdp() {
     let (prog_type, target) = parse_probe_spec("xdp:lo").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Xdp);
@@ -1143,6 +1155,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
         (EbpfProgramType::LwtXmit, "demo-route", "lwt_xmit"),
         (EbpfProgramType::LwtSeg6Local, "demo-route", "lwt_seg6local"),
         (EbpfProgramType::Extension, "replace_me", "freplace"),
+        (EbpfProgramType::Syscall, "demo", "syscall"),
     ] {
         let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();
         let err = state

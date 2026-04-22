@@ -223,6 +223,15 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 Ok(())
             }
         }
+        ProgramSpec::Syscall { target } => {
+            if target.label.is_empty() {
+                Err(LoadError::Load(
+                    "syscall target label cannot be empty".to_string(),
+                ))
+            } else {
+                Ok(())
+            }
+        }
         ProgramSpec::Uprobe { .. } | ProgramSpec::Uretprobe { .. } => Ok(()),
         ProgramSpec::Xdp { target } => validate_network_interface_target(&target.interface),
         ProgramSpec::PerfEvent { target } => {
@@ -321,6 +330,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `fexit:function_name`
 /// - `lsm:hook_name`
 /// - `freplace:function_name` (or `extension:function_name`)
+/// - `syscall:label`
 /// - `tracepoint:category/name`
 /// - `raw_tracepoint:name` or `raw_tp:name`
 /// - `uprobe:/path/to/binary:function_name`

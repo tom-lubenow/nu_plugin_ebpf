@@ -373,6 +373,32 @@ impl ExtensionTarget {
     }
 }
 
+/// Parsed syscall program target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyscallTarget {
+    /// Descriptive label. The emitted ELF section is always `syscall`.
+    pub label: String,
+}
+
+impl SyscallTarget {
+    /// Parse a syscall program metadata label.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "syscall target label cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            label: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.label.clone()
+    }
+}
+
 /// Parsed cgroup_skb target information.
 #[derive(Debug, Clone)]
 pub struct CgroupSkbTarget {
@@ -1601,6 +1627,9 @@ pub enum ProgramSpec {
     Extension {
         target: ExtensionTarget,
     },
+    Syscall {
+        target: SyscallTarget,
+    },
     Tracepoint {
         category: String,
         name: String,
@@ -1903,6 +1932,9 @@ impl ProgramSpec {
             EbpfProgramType::Extension => Ok(ProgramSpec::Extension {
                 target: ExtensionTarget::parse(target)?,
             }),
+            EbpfProgramType::Syscall => Ok(ProgramSpec::Syscall {
+                target: SyscallTarget::parse(target)?,
+            }),
             EbpfProgramType::Tracepoint => {
                 let (category, name) = target.split_once('/').ok_or_else(|| {
                     ProgramSpecParseError::new(format!(
@@ -2013,6 +2045,7 @@ impl ProgramSpec {
             ProgramSpec::TpBtf { .. } => EbpfProgramType::TpBtf,
             ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
             ProgramSpec::Extension { .. } => EbpfProgramType::Extension,
+            ProgramSpec::Syscall { .. } => EbpfProgramType::Syscall,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
             ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
             ProgramSpec::RawTracepointWritable { .. } => EbpfProgramType::RawTracepointWritable,
@@ -2057,6 +2090,7 @@ impl ProgramSpec {
             ProgramSpec::TpBtf { name } => name.clone(),
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
             ProgramSpec::Extension { target } => target.target_string(),
+            ProgramSpec::Syscall { target } => target.target_string(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
             ProgramSpec::RawTracepointWritable { name } => name.clone(),
@@ -2511,6 +2545,7 @@ mod tests {
             ProgramSpec::parse("lwt_xmit:demo-route").expect("lwt_xmit spec should parse");
         let extension =
             ProgramSpec::parse("freplace:replace_me").expect("freplace spec should parse");
+        let syscall = ProgramSpec::parse("syscall:demo").expect("syscall spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
@@ -2601,6 +2636,9 @@ mod tests {
         assert_eq!(extension.program_type(), EbpfProgramType::Extension);
         assert_eq!(extension.target_string(), "replace_me");
         assert_eq!(extension.section_name(), "freplace/replace_me");
+        assert_eq!(syscall.program_type(), EbpfProgramType::Syscall);
+        assert_eq!(syscall.target_string(), "demo");
+        assert_eq!(syscall.section_name(), "syscall");
         assert_eq!(
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),
@@ -2679,6 +2717,15 @@ mod tests {
 
         let err = ExtensionTarget::parse("").expect_err("empty freplace target should be rejected");
         assert_eq!(err.to_string(), "freplace target function cannot be empty");
+    }
+
+    #[test]
+    fn test_syscall_target_requires_non_empty_label() {
+        let target = SyscallTarget::parse("demo").expect("syscall target should parse");
+        assert_eq!(target.target_string(), "demo");
+
+        let err = SyscallTarget::parse("").expect_err("empty syscall target should be rejected");
+        assert_eq!(err.to_string(), "syscall target label cannot be empty");
     }
 
     #[test]

@@ -816,6 +816,8 @@ pub enum EbpfProgramType {
     Lsm,
     /// Extension program replacing a global function in another loaded BPF program (`freplace`)
     Extension,
+    /// Syscall-capable BPF program (`BPF_PROG_TYPE_SYSCALL`)
+    Syscall,
     /// XDP program attached to a network interface
     Xdp,
     /// Perf event program attached to software or hardware perf counters
@@ -916,6 +918,7 @@ impl EbpfProgramType {
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
             EbpfProgramType::Lsm => &LSM_INFO,
             EbpfProgramType::Extension => &EXTENSION_INFO,
+            EbpfProgramType::Syscall => &SYSCALL_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
             EbpfProgramType::SocketFilter => &SOCKET_FILTER_INFO,
@@ -1071,6 +1074,7 @@ pub enum ProgramAttachKind {
     Uretprobe,
     Lsm,
     Extension,
+    Syscall,
     Xdp,
     PerfEvent,
     SocketFilter,
@@ -1101,6 +1105,7 @@ pub enum ProgramTargetKind {
     BtfTracepoint,
     LsmHook,
     ExtensionFunction,
+    SyscallProgram,
     Tracepoint,
     RawTracepoint,
     UserFunction,

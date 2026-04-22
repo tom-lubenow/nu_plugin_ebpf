@@ -170,6 +170,12 @@ now: live loading requires a target program FD and BTF-compatible target
 function at load time, so the current model intentionally exposes no
 target-function argument context.
 
+`syscall:LABEL` emits a `syscall` section for `BPF_PROG_TYPE_SYSCALL`.
+Local kernel headers describe this as a program type that can execute
+syscalls through dedicated helpers. Because that is a high-risk surface,
+the current model is compile/dry-run only and intentionally exposes no
+context or syscall-helper surface.
+
 `xdp`, `tc_action`, `tc`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
 packet pointers `ctx.data` / `ctx.data_end`. `sk_msg`, `sk_skb`, and

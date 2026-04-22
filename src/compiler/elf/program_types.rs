@@ -20,6 +20,7 @@ pub enum ProgramContextFamily {
     LircMode2,
     StructOps,
     Extension,
+    Syscall,
 }
 
 impl ProgramContextFamily {
@@ -56,6 +57,7 @@ pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
 pub(super) const EXTENSION_SPEC_ALIASES: &[&str] = &["freplace", "extension", "ext"];
+pub(super) const SYSCALL_SPEC_ALIASES: &[&str] = &["syscall"];
 pub(super) const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 pub(super) const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 pub(super) const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
@@ -284,6 +286,23 @@ pub(super) const EXTENSION_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::ExtensionFunction,
     kernel_target_validation: None,
     supported_capabilities: EXTENSION_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const SYSCALL_CAPABILITIES: &[ProgramCapability] = &[];
+
+pub(super) const SYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Syscall,
+    canonical_prefix: "syscall",
+    spec_aliases: SYSCALL_SPEC_ALIASES,
+    section_prefix: "syscall",
+    section_uses_target: false,
+    context_family: ProgramContextFamily::Syscall,
+    attach_kind: ProgramAttachKind::Syscall,
+    target_kind: ProgramTargetKind::SyscallProgram,
+    kernel_target_validation: None,
+    supported_capabilities: SYSCALL_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -684,6 +703,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::Uretprobe,
     EbpfProgramType::Lsm,
     EbpfProgramType::Extension,
+    EbpfProgramType::Syscall,
     EbpfProgramType::Xdp,
     EbpfProgramType::PerfEvent,
     EbpfProgramType::SocketFilter,
@@ -724,6 +744,7 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "freplace",
     "extension",
     "ext",
+    "syscall",
     "tracepoint",
     "raw_tracepoint",
     "raw_tp",

@@ -11,6 +11,7 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
             | ProgramAttachKind::Netfilter
             | ProgramAttachKind::Lwt
             | ProgramAttachKind::Extension
+            | ProgramAttachKind::Syscall
     )
 }
 
@@ -811,7 +812,8 @@ impl EbpfState {
             | ProgramAttachKind::FlowDissector
             | ProgramAttachKind::Netfilter
             | ProgramAttachKind::Lwt
-            | ProgramAttachKind::Extension => {
+            | ProgramAttachKind::Extension
+            | ProgramAttachKind::Syscall => {
                 return Err(unsupported_live_attach_error(program.prog_type));
             }
             ProgramAttachKind::StructOps => {

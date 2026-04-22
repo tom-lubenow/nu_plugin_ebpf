@@ -224,6 +224,16 @@ fn test_extension_section_name() {
 }
 
 #[test]
+fn test_syscall_section_name() {
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Syscall, "demo", "test", vec![]);
+    assert_eq!(
+        prog.section_name()
+            .expect("syscall section name should build"),
+        "syscall"
+    );
+}
+
+#[test]
 fn test_program_type_metadata_for_fexit() {
     let info = EbpfProgramType::Fexit.info();
     assert_eq!(info.canonical_prefix, "fexit");
@@ -776,6 +786,20 @@ fn test_program_type_metadata_for_extension() {
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(!EbpfProgramType::Extension.supports_capability(ProgramCapability::Counters));
     assert!(!EbpfProgramType::Extension.supports_capability(ProgramCapability::HelperCalls));
+}
+
+#[test]
+fn test_program_type_metadata_for_syscall() {
+    let info = EbpfProgramType::Syscall.info();
+    assert_eq!(info.canonical_prefix, "syscall");
+    assert_eq!(info.section_prefix, "syscall");
+    assert_eq!(info.attach_kind, ProgramAttachKind::Syscall);
+    assert_eq!(info.target_kind, ProgramTargetKind::SyscallProgram);
+    assert_eq!(info.context_family, ProgramContextFamily::Syscall);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(!EbpfProgramType::Syscall.supports_capability(ProgramCapability::Counters));
+    assert!(!EbpfProgramType::Syscall.supports_capability(ProgramCapability::HelperCalls));
 }
 
 #[test]
@@ -2400,6 +2424,10 @@ fn test_program_type_supports_raw_tracepoint_alias() {
     assert_eq!(
         EbpfProgramType::from_spec_prefix("extension"),
         Some(EbpfProgramType::Extension)
+    );
+    assert_eq!(
+        EbpfProgramType::from_spec_prefix("syscall"),
+        Some(EbpfProgramType::Syscall)
     );
     assert_eq!(
         EbpfProgramType::from_spec_prefix("sock_ops"),
