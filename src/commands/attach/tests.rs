@@ -7312,9 +7312,20 @@ fn test_compile_lwt_ctx_scalar_counter_programs() {
 fn test_compile_tc_action_ctx_scalar_counter_programs() {
     for (field, context) in [
         ("packet_len", "tc_action ctx.packet_len count"),
+        ("len", "tc_action ctx.len count"),
         ("eth_protocol", "tc_action ctx.eth_protocol count"),
+        ("protocol", "tc_action ctx.protocol count"),
         ("hash", "tc_action ctx.hash count"),
         ("ifindex", "tc_action ctx.ifindex count"),
+        ("ingress_ifindex", "tc_action ctx.ingress_ifindex count"),
+        ("mark", "tc_action ctx.mark count"),
+        ("priority", "tc_action ctx.priority count"),
+        ("tc_classid", "tc_action ctx.tc_classid count"),
+        ("wire_len", "tc_action ctx.wire_len count"),
+        ("tstamp_type", "tc_action ctx.tstamp_type count"),
+        ("pkt_type", "tc_action ctx.pkt_type count"),
+        ("vlan_tci", "tc_action ctx.vlan_tci count"),
+        ("napi_id", "tc_action ctx.napi_id count"),
         ("socket_cookie", "tc_action ctx.socket_cookie count"),
         ("socket_uid", "tc_action ctx.socket_uid count"),
         ("netns_cookie", "tc_action ctx.netns_cookie count"),
@@ -7328,6 +7339,39 @@ fn test_compile_tc_action_ctx_scalar_counter_programs() {
             context,
         );
     }
+}
+
+#[test]
+fn test_compile_tc_action_ctx_packet_pointer_counter_programs() {
+    for (members, context) in [
+        (
+            vec![string_member("data"), int_member(0)],
+            "tc_action ctx.data[0] count",
+        ),
+        (
+            vec![string_member("data_meta"), int_member(0)],
+            "tc_action ctx.data_meta[0] count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath { members },
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_tc_action_ctx_socket_projection_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::TcAction,
+        "demo-action",
+        CellPath {
+            members: vec![string_member("sk"), string_member("family")],
+        },
+        "tc_action ctx.sk.family count",
+    );
 }
 
 #[test]
