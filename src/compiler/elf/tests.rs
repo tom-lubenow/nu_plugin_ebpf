@@ -655,13 +655,17 @@ fn test_program_type_direct_packet_write_support_follows_program_model() {
     assert!(EbpfProgramType::Xdp.supports_direct_packet_writes());
     assert!(EbpfProgramType::TcAction.supports_direct_packet_writes());
     assert!(EbpfProgramType::Tc.supports_direct_packet_writes());
+    assert!(EbpfProgramType::LwtXmit.supports_direct_packet_writes());
+    assert!(EbpfProgramType::SkMsg.supports_direct_packet_writes());
     assert!(EbpfProgramType::SkSkb.supports_direct_packet_writes());
     assert!(EbpfProgramType::SkSkbParser.supports_direct_packet_writes());
 
     assert!(!EbpfProgramType::SocketFilter.supports_direct_packet_writes());
     assert!(!EbpfProgramType::FlowDissector.supports_direct_packet_writes());
     assert!(!EbpfProgramType::CgroupSkb.supports_direct_packet_writes());
-    assert!(!EbpfProgramType::SkMsg.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::LwtIn.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::LwtOut.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::LwtSeg6Local.supports_direct_packet_writes());
     assert!(!EbpfProgramType::SockOps.supports_direct_packet_writes());
 }
 

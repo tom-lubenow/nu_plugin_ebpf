@@ -5263,7 +5263,41 @@ fn test_lower_sk_skb_ctx_tc_index_assignment() {
 }
 
 #[test]
-fn test_lower_sk_msg_ctx_data_byte_assignment_is_rejected() {
+fn test_lower_lwt_xmit_ctx_data_byte_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("lwt_xmit ctx.data byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )
+        })
+    }));
+}
+
+#[test]
+fn test_lower_sk_msg_ctx_data_byte_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {
             members: vec![string_member("data"), int_member(0)],
@@ -5272,7 +5306,7 @@ fn test_lower_sk_msg_ctx_data_byte_assignment_is_rejected() {
     );
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &HashMap::new(),
@@ -5280,10 +5314,18 @@ fn test_lower_sk_msg_ctx_data_byte_assignment_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("sk_msg ctx.data byte assignment should be rejected");
+    .expect("sk_msg ctx.data byte assignment should lower");
 
-    assert!(
-        err.to_string()
-            .contains("direct packet writes are not supported on sk_msg programs")
-    );
+    let blocks = &result.program.main.blocks;
+    assert!(blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )
+        })
+    }));
 }

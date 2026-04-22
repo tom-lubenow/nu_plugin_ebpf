@@ -8831,6 +8831,26 @@ fn test_compile_additional_direct_packet_write_programs() {
         "tc ctx.data_meta[0] store",
     );
     assert_ctx_path_store_program_compiles(
+        EbpfProgramType::LwtXmit,
+        "demo-route",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::String(b"ok".to_vec()),
+        "lwt_xmit ctx.data[0] store",
+    );
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::SkMsg,
+        "/sys/fs/bpf/demo_sockmap",
+        CellPath {
+            members: vec![string_member("data"), int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::String(b"pass".to_vec()),
+        "sk_msg ctx.data[0] store",
+    );
+    assert_ctx_path_store_program_compiles(
         EbpfProgramType::SkSkb,
         "/sys/fs/bpf/demo_sockmap",
         CellPath {

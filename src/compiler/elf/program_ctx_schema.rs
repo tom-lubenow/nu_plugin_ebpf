@@ -281,6 +281,8 @@ const DIRECT_PACKET_WRITE_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
     EbpfProgramType::TcAction,
     EbpfProgramType::Tc,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
     EbpfProgramType::SkSkbParser,
 ];

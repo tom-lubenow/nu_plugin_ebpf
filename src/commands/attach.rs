@@ -236,9 +236,9 @@ Context parameter syntax (recommended):
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
     `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,
-    `tc_action`, `tc`, `sk_skb`, and `sk_skb_parser`, those same
-    scalar/header paths are also writable after shadowing the closure
-    parameter as mutable, for
+    `lwt_xmit`, `tc_action`, `tc`, `sk_msg`, `sk_skb`, and
+    `sk_skb_parser`, those same scalar/header paths are also writable
+    after shadowing the closure parameter as mutable, for
     example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
     $ctx.data.u16be.6 = 0x86dd`, or `mut ctx = $ctx;
     $ctx.data.eth.ethertype = 0x86dd`. These lower to guarded packet
@@ -520,11 +520,11 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_port } - Get the local port in host byte order
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current sk_msg context
     Note: sk_msg programs attach to a pinned sockmap or sockhash path such as
-    `/sys/fs/bpf/demo_sockmap`. Initial sk_msg support is read-only and uses
-    raw integer verdict codes; observation-only examples should return `pass`
-    or `1`. `ctx.data` / `ctx.data_end` use the same guarded packet access
-    model as XDP and tc, so forms like `($ctx.data | get 0)` are valid. IPv6
-    addresses are exposed as fixed arrays of four host-order u32 words, for
+    `/sys/fs/bpf/demo_sockmap`. sk_msg uses raw integer verdict codes;
+    observation-only examples should return `pass` or `1`. `ctx.data` /
+    `ctx.data_end` use the same guarded packet access model as XDP and tc,
+    so forms like `($ctx.data | get 0)` and `mut ctx = $ctx; $ctx.data.0 = 1`
+    are valid. IPv6 addresses are exposed as fixed arrays of four host-order u32 words, for
     example `($ctx.remote_ip6 | get 3)`. Message-byte helpers are available
     through the first-class `adjust-message` surface:
     `adjust-message --apply BYTES`, `adjust-message --cork BYTES`,
