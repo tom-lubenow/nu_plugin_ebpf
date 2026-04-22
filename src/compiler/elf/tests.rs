@@ -1877,6 +1877,27 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::OverrideReturn),
+        Some(
+            "helper 'bpf_override_return' is only valid in kprobe, kprobe.multi, and ksyscall programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Kretprobe.helper_call_error(BpfHelper::OverrideReturn),
+        Some(
+            "helper 'bpf_override_return' is only valid in kprobe, kprobe.multi, and ksyscall programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        EbpfProgramType::Uprobe.helper_call_error(BpfHelper::OverrideReturn),
+        Some(
+            "helper 'bpf_override_return' is only valid in kprobe, kprobe.multi, and ksyscall programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
             "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser programs"
@@ -2259,6 +2280,18 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::ProbeWriteUser),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::OverrideReturn),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::KprobeMulti.helper_call_error(BpfHelper::OverrideReturn),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Ksyscall.helper_call_error(BpfHelper::OverrideReturn),
         None
     );
     assert_eq!(

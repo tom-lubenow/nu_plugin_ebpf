@@ -1259,6 +1259,13 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const OVERRIDE_RETURN_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper override_return ctx",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
         const BPRM_OPTS_SET_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper bprm_opts_set bprm",
@@ -2084,6 +2091,11 @@ impl BpfHelper {
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
                 ptr_arg_rules: TASK_PT_REGS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::OverrideReturn => HelperSemantics {
+                ptr_arg_rules: OVERRIDE_RETURN_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

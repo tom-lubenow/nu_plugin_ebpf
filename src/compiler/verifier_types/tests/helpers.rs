@@ -5575,6 +5575,38 @@ fn make_probe_write_user_verify_call(
     (func, types)
 }
 
+fn make_override_return_verify_call(use_stack_ctx: bool) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let ctx_slot = use_stack_ctx.then(|| func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer));
+
+    let block = func.block_mut(entry);
+    let ctx_arg = if let Some(ctx_slot) = ctx_slot {
+        MirValue::StackSlot(ctx_slot)
+    } else {
+        block.instructions.push(MirInst::CallHelper {
+            dst: ctx,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+        MirValue::VReg(ctx)
+    };
+    block.instructions.push(MirInst::CallHelper {
+        dst: ret,
+        helper: BpfHelper::OverrideReturn as u32,
+        args: vec![ctx_arg, MirValue::Const(-1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_helper_copy_from_user_accepts_user_src() {
     let (func, types) = make_copy_from_user_verify_call(16, 16, false, 0);
@@ -5594,6 +5626,12 @@ fn test_verify_mir_helper_probe_write_user_accepts_user_dst() {
 }
 
 #[test]
+fn test_verify_mir_helper_override_return_accepts_ctx() {
+    let (func, types) = make_override_return_verify_call(false);
+    verify_mir(&func, &types).expect("expected bpf_override_return helper to verify");
+}
+
+#[test]
 fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
     let (func, types) = make_copy_from_user_verify_call(16, 8, false, 0);
     let err = verify_mir(&func, &types).expect_err("expected copy_from_user bounds error");
@@ -5601,6 +5639,19 @@ fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
         err.iter().any(|e| e
             .message
             .contains("helper copy_from_user dst out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_override_return_rejects_stack_ctx() {
+    let (func, types) = make_override_return_verify_call(true);
+    let err = verify_mir(&func, &types).expect_err("expected override_return ctx error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper override_return ctx expects pointer in [Kernel]")),
         "unexpected errors: {:?}",
         err
     );

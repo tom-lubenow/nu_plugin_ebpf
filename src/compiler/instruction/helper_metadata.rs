@@ -25,6 +25,7 @@ impl BpfHelper {
             33 => Some(Self::SkbUnderCgroup),
             34 => Some(Self::GetHashRecalc),
             35 => Some(Self::GetCurrentTask),
+            58 => Some(Self::OverrideReturn),
             37 => Some(Self::CurrentTaskUnderCgroup),
             38 => Some(Self::SkbChangeTail),
             39 => Some(Self::SkbPullData),
@@ -414,6 +415,12 @@ impl BpfHelper {
                 max_args: 0,
                 arg_kinds: [S, S, S, S, S],
                 ret_kind: HelperRetKind::PointerNonNull,
+            },
+            BpfHelper::OverrideReturn => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::BprmOptsSet => HelperSignature {
                 min_args: 2,

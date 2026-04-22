@@ -7362,6 +7362,32 @@ fn make_probe_write_user_call(size: i64, src_size: usize) -> (MirFunction, VReg)
     (func, dst)
 }
 
+fn make_override_return_call(use_stack_ctx: bool) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let ctx_slot = use_stack_ctx.then(|| func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer));
+
+    let block = func.block_mut(BlockId(0));
+    let ctx_arg = if let Some(ctx_slot) = ctx_slot {
+        MirValue::StackSlot(ctx_slot)
+    } else {
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        MirValue::VReg(ctx)
+    };
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::OverrideReturn as u32,
+        args: vec![ctx_arg, MirValue::Const(-1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 #[test]
 fn test_infer_helper_copy_from_user_returns_i64() {
     let (func, dst) = make_copy_from_user_call(16, 16, false);
@@ -7392,6 +7418,17 @@ fn test_infer_helper_probe_write_user_returns_i64() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_probe_write_user helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_helper_override_return_returns_i64() {
+    let (func, dst) = make_override_return_call(false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "should_fail_bio");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_override_return helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
@@ -7456,6 +7493,33 @@ fn test_type_error_probe_write_user_rejects_stack_dst() {
         e.message
             .contains("helper probe_write_user dst expects pointer in [User]")
     }));
+}
+
+#[test]
+fn test_type_error_override_return_rejects_stack_ctx() {
+    let (func, _) = make_override_return_call(true);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "should_fail_bio");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected override_return context pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper override_return ctx expects pointer in [Kernel]")
+    }));
+}
+
+#[test]
+fn test_type_error_override_return_rejects_invalid_program() {
+    let (func, _) = make_override_return_call(false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "xdp");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected override_return program error");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_override_return' is only valid in kprobe, kprobe.multi, and ksyscall programs"
+    )));
 }
 
 #[test]

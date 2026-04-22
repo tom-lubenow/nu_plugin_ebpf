@@ -37,6 +37,7 @@ enum HelperProgramSurfaceFamily {
     PerfEvent,
     GetStackId,
     LegacyProbeRead,
+    KprobeOverride,
     SocketCookie,
     SocketUid,
     NetnsCookie,
@@ -311,6 +312,15 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::TpBtf,
         ],
         label: "kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::KprobeOverride,
+        program_types: &[
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::KprobeMulti,
+            EbpfProgramType::Ksyscall,
+        ],
+        label: "kprobe, kprobe.multi, and ksyscall",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketCookie,
@@ -774,6 +784,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
                 family: HelperProgramSurfaceFamily::LegacyProbeRead,
             }
         }
+        BpfHelper::OverrideReturn => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::KprobeOverride,
+        },
         BpfHelper::GetSocketCookie => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketCookie,
         },

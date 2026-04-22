@@ -407,6 +407,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetCurrentTask)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_override_return"),
+        Some(BpfHelper::OverrideReturn)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("ktime_get_boot_ns"),
         Some(BpfHelper::KtimeGetBootNs)
     ));
@@ -1009,6 +1013,17 @@ fn test_helper_signature_get_current_task_btf() {
         assert_eq!(sig.max_args, 0);
         assert_eq!(sig.ret_kind, HelperRetKind::PointerNonNull);
     }
+}
+
+#[test]
+fn test_helper_signature_override_return() {
+    let sig = HelperSignature::for_id(BpfHelper::OverrideReturn as u32)
+        .expect("expected bpf_override_return helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 }
 
 #[test]
@@ -2267,6 +2282,18 @@ fn test_d_path_helper_contract() {
 
 #[test]
 fn test_bprm_opts_set_helper_contract() {
+    let override_semantics = BpfHelper::OverrideReturn.semantics();
+    assert!(override_semantics.positive_size_args.is_empty());
+    assert_eq!(override_semantics.ptr_arg_rules.len(), 1);
+
+    let ctx = override_semantics.ptr_arg_rules[0];
+    assert_eq!(ctx.arg_idx, 0);
+    assert_eq!(ctx.op, "helper override_return ctx");
+    assert!(ctx.allowed.allow_kernel);
+    assert!(!ctx.allowed.allow_stack);
+    assert!(!ctx.allowed.allow_user);
+    assert_eq!(ctx.size_from_arg, None);
+
     let semantics = BpfHelper::BprmOptsSet.semantics();
     assert!(semantics.positive_size_args.is_empty());
     assert_eq!(semantics.ptr_arg_rules.len(), 1);
