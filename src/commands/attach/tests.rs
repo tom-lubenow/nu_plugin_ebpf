@@ -7781,8 +7781,20 @@ fn test_compile_netfilter_ctx_typed_pointer_counter_programs() {
             "netfilter ctx.state.hook count",
         ),
         (
+            vec![string_member("state"), string_member("pf")],
+            "netfilter ctx.state.pf count",
+        ),
+        (
             vec![string_member("nf_state"), string_member("pf")],
             "netfilter ctx.nf_state.pf count",
+        ),
+        (
+            vec![
+                string_member("state"),
+                string_member("in"),
+                string_member("ifindex"),
+            ],
+            "netfilter ctx.state.in.ifindex count",
         ),
         (
             vec![
@@ -7791,6 +7803,14 @@ fn test_compile_netfilter_ctx_typed_pointer_counter_programs() {
                 string_member("ifindex"),
             ],
             "netfilter ctx.nf_state.in.ifindex count",
+        ),
+        (
+            vec![
+                string_member("state"),
+                string_member("out"),
+                string_member("ifindex"),
+            ],
+            "netfilter ctx.state.out.ifindex count",
         ),
         (
             vec![string_member("skb"), string_member("len")],

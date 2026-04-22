@@ -754,6 +754,9 @@ Context parameter syntax (recommended):
 
   netfilter fields:
     {|ctx| $ctx.state.hook } - Project the trusted nf_hook_state pointer
+    {|ctx| $ctx.state.in.ifindex } - Project the input net_device pointer
+    {|ctx| $ctx.state.out.ifindex } - Project the output net_device pointer
+    {|ctx| $ctx.nf_state.pf } - Use the nf_state alias for the same pointer
     {|ctx| $ctx.skb.len } - Project the trusted sk_buff pointer
     {|ctx| $ctx.hook } - Get nf_hook_state hook number
     {|ctx| $ctx.pf } - Get nf_hook_state protocol family
