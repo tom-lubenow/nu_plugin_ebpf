@@ -115,6 +115,12 @@ impl KfuncSignature {
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_sock_ops_enable_tx_tstamp" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_copy_from_user_str" => Some(Self {
                 min_args: 4,
                 max_args: 4,

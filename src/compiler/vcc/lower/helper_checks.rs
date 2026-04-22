@@ -232,7 +232,10 @@ impl<'a> VccLowerer<'a> {
         if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
             return Ok(());
         }
-        if space != VccAddrSpace::Kernel {
+        if space != VccAddrSpace::Kernel
+            && !(space == VccAddrSpace::Context
+                && Self::kfunc_pointer_arg_allows_context_as_kernel(kfunc, arg_idx))
+        {
             return Err(VccError::new(
                 VccErrorKind::PointerBounds,
                 format!(
@@ -244,6 +247,13 @@ impl<'a> VccLowerer<'a> {
             ));
         }
         Ok(())
+    }
+
+    pub(super) fn kfunc_pointer_arg_allows_context_as_kernel(
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> bool {
+        matches!((kfunc, arg_idx), ("bpf_sock_ops_enable_tx_tstamp", 0))
     }
 
     pub(super) fn effective_ptr_space(&self, reg: VReg) -> Option<VccAddrSpace> {

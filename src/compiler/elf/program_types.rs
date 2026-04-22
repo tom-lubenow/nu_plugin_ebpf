@@ -127,6 +127,17 @@ pub(super) const CGROUP_SOCK_ADDR_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,
 ];
+pub(super) const SOCK_OPS_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::HelperCalls,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::Globals,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
 
 pub(super) const KPROBE_INFO: ProgramTypeInfo = ProgramTypeInfo {
     program_type: EbpfProgramType::Kprobe,
@@ -719,7 +730,7 @@ pub(super) const SOCK_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::SockOps,
     target_kind: ProgramTargetKind::CgroupPath,
     kernel_target_validation: None,
-    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
+    supported_capabilities: SOCK_OPS_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };

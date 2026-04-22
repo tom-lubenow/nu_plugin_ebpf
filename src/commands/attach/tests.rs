@@ -9066,6 +9066,63 @@ fn test_compile_sock_ops_ctx_sk_txhash_store_program() {
 }
 
 #[test]
+fn test_compile_sock_ops_enable_tx_tstamp_kfunc_program() {
+    let ctx_var = VarId::new(0);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"bpf_sock_ops_enable_tx_tstamp".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 5],
+            ast: vec![None; 5],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let decl_names = HashMap::from([(DeclId::new(42), "kfunc-call".to_string())]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        &decl_names,
+        "sock_ops bpf_sock_ops_enable_tx_tstamp kfunc",
+    );
+}
+
+#[test]
 fn test_compile_cgroup_sock_addr_connect6_ctx_user_ip6_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::CgroupSockAddr,

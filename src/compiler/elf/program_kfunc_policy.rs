@@ -48,6 +48,23 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
 
 impl ProgramSpec {
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
+        if kfunc == "bpf_sock_ops_enable_tx_tstamp"
+            && self.program_type() != EbpfProgramType::SockOps
+        {
+            return Some(
+                "kfunc 'bpf_sock_ops_enable_tx_tstamp' is only valid in sock_ops programs"
+                    .to_string(),
+            );
+        }
+        if self.program_type() == EbpfProgramType::SockOps
+            && kfunc != "bpf_sock_ops_enable_tx_tstamp"
+        {
+            return Some(format!(
+                "kfunc '{}' is not modeled for sock_ops programs",
+                kfunc
+            ));
+        }
+
         if kfunc == "bpf_sock_addr_set_sun_path"
             && self.program_type() != EbpfProgramType::CgroupSockAddr
         {
@@ -166,6 +183,31 @@ mod tests {
                 "kfunc 'bpf_task_from_pid' is not modeled for cgroup_sock_addr programs"
                     .to_string()
             )
+        );
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_policy_limits_enable_tx_tstamp_to_sock_ops() {
+        let sock_ops =
+            ProgramSpec::from_program_type_target(EbpfProgramType::SockOps, "/sys/fs/cgroup")
+                .expect("expected sock_ops spec");
+        assert_eq!(
+            sock_ops.kfunc_call_error("bpf_sock_ops_enable_tx_tstamp"),
+            None
+        );
+
+        let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
+            .expect("expected xdp spec");
+        assert_eq!(
+            xdp.kfunc_call_error("bpf_sock_ops_enable_tx_tstamp"),
+            Some(
+                "kfunc 'bpf_sock_ops_enable_tx_tstamp' is only valid in sock_ops programs"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            sock_ops.kfunc_call_error("bpf_task_from_pid"),
+            Some("kfunc 'bpf_task_from_pid' is not modeled for sock_ops programs".to_string())
         );
     }
 }

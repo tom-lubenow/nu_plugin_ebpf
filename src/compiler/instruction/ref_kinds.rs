@@ -858,6 +858,7 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_rbtree_root", 0)
             | ("bpf_rbtree_left", 0)
             | ("bpf_rbtree_right", 0)
+            | ("bpf_sock_ops_enable_tx_tstamp", 0)
     ) {
         return true;
     }

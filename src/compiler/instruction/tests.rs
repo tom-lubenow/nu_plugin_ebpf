@@ -2236,6 +2236,17 @@ fn test_kfunc_signature_sock_addr_set_sun_path() {
 }
 
 #[test]
+fn test_kfunc_signature_sock_ops_enable_tx_tstamp() {
+    let sig = KfuncSignature::for_name("bpf_sock_ops_enable_tx_tstamp")
+        .expect("expected bpf_sock_ops_enable_tx_tstamp kfunc signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+}
+
+#[test]
 fn test_kfunc_signature_copy_from_user_strs() {
     let sig = KfuncSignature::for_name("bpf_copy_from_user_str")
         .expect("expected bpf_copy_from_user_str kfunc signature");
@@ -2884,6 +2895,10 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_left", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_right", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_path_d_path", 0));
+    assert!(kfunc_pointer_arg_requires_kernel(
+        "bpf_sock_ops_enable_tx_tstamp",
+        0
+    ));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_map_sum_elem_count",
         0

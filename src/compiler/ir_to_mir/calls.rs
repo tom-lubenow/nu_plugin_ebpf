@@ -762,18 +762,46 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
 
+                let positional_args: Vec<_> =
+                    self.positional_args.iter().skip(1).copied().collect();
+                let has_explicit_context_arg = positional_args
+                    .iter()
+                    .any(|(_, arg_reg)| self.is_context_reg(*arg_reg));
                 let mut args = Vec::new();
                 let is_known_zero_arg = KfuncSignature::for_name_or_kernel_btf(&kfunc)
                     .map(|sig| sig.max_args == 0)
                     .unwrap_or(false);
                 if let Some(input) = self.pipeline_input {
-                    args.push((input, self.pipeline_input_reg));
+                    if has_explicit_context_arg {
+                        // Match helper-call behavior: an explicit `$ctx` should
+                        // not be duplicated by the ambient pipeline input.
+                    } else {
+                        let arg_vreg = if self
+                            .pipeline_input_reg
+                            .is_some_and(|reg| self.is_context_reg(reg))
+                        {
+                            self.materialize_context_pointer_arg()
+                        } else {
+                            input
+                        };
+                        args.push((arg_vreg, self.pipeline_input_reg));
+                    }
                 } else if src_dst_had_value && !is_known_zero_arg {
-                    args.push((dst_vreg, Some(src_dst)));
+                    let arg_vreg = if self.is_context_reg(src_dst) {
+                        self.materialize_context_pointer_arg()
+                    } else {
+                        dst_vreg
+                    };
+                    args.push((arg_vreg, Some(src_dst)));
                 }
 
-                for (arg_vreg, arg_reg) in self.positional_args.iter().skip(1) {
-                    args.push((*arg_vreg, Some(*arg_reg)));
+                for (arg_vreg, arg_reg) in positional_args {
+                    let call_arg_vreg = if self.is_context_reg(arg_reg) {
+                        self.materialize_context_pointer_arg()
+                    } else {
+                        arg_vreg
+                    };
+                    args.push((call_arg_vreg, Some(arg_reg)));
                 }
 
                 if args.len() > 5 {

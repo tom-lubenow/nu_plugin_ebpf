@@ -1099,6 +1099,7 @@ fn test_program_type_metadata_for_sock_ops() {
     assert_eq!(info.target_kind, ProgramTargetKind::CgroupPath);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(EbpfProgramType::SockOps.supports_capability(ProgramCapability::KfuncCalls));
 }
 
 #[test]

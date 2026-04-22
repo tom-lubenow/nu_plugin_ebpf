@@ -497,6 +497,10 @@ Context parameter syntax (recommended):
     surface here, including `bpf_getsockopt`, `bpf_setsockopt`,
     `bpf_sock_ops_cb_flags_set`, and the TCP header-option helpers
     `bpf_load_hdr_opt`, `bpf_store_hdr_opt`, and `bpf_reserve_hdr_opt`.
+    The sock_ops kfunc escape hatch is intentionally narrow; currently
+    `kfunc-call "bpf_sock_ops_enable_tx_tstamp" $ctx 0` is modeled for
+    `BPF_SOCK_OPS_TSTAMP_SENDMSG_CB`, with callback/flag details still
+    enforced by the kernel.
     Those helpers still follow the kernel's ordinary callback-sensitive
     runtime rules, so unsupported `ctx.op` combinations can return `-EPERM`.
     Packet-data and packet-metadata fields likewise require a proven
