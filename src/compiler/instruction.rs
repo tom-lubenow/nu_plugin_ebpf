@@ -885,6 +885,11 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits (0x01)",
             )),
+            (Self::SysctlGetName, 3) => Some((
+                0,
+                1,
+                "helper 'bpf_sysctl_get_name' requires arg3 flags to contain only BPF_F_SYSCTL_* bits (0x01)",
+            )),
             _ => None,
         }
     }

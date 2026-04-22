@@ -607,6 +607,14 @@ fn test_helper_signatures_sysctl_helpers() {
     assert_eq!(get_name.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(get_name.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(get_name.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SysctlGetName.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            1,
+            "helper 'bpf_sysctl_get_name' requires arg3 flags to contain only BPF_F_SYSCTL_* bits (0x01)"
+        ))
+    );
 
     for helper in [
         BpfHelper::SysctlGetCurrentValue,
