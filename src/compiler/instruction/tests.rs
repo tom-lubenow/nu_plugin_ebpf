@@ -642,6 +642,12 @@ fn test_helper_signature_strtox_helpers() {
 #[test]
 fn test_strtox_helper_contracts() {
     for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
+        let (allowed_flags, message) = helper
+            .scalar_arg_allowed_values_requirement(2)
+            .expect("expected strtox flags requirement");
+        assert_eq!(allowed_flags, &[0, 8, 10, 16]);
+        assert!(message.contains("requires arg2 flags to be one of 0, 8, 10, or 16"));
+
         let semantics = helper.semantics();
         assert_eq!(semantics.positive_size_args, &[1]);
         assert_eq!(semantics.ptr_arg_rules.len(), 2);

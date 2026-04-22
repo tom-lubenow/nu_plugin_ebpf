@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
-use crate::compiler::instruction::{KfuncRefKind, helper_pointer_arg_ref_kind};
+use crate::compiler::instruction::{
+    KfuncRefKind, helper_pointer_arg_ref_kind, scalar_range_contains_only_allowed_values,
+};
 use crate::kernel_btf::KernelBtf;
 
 impl<'a> TypeInference<'a> {
@@ -293,6 +295,25 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn validate_helper_scalar_allowed_values(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some((allowed_values, message)) = helper.scalar_arg_allowed_values_requirement(arg_idx)
+        else {
+            return;
+        };
+        if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
+            && !scalar_range_contains_only_allowed_values(min, max, allowed_values)
+        {
+            errors.push(TypeError::new(message));
+        }
+    }
+
     fn known_const_vreg(
         &self,
         vreg: VReg,
@@ -354,6 +375,13 @@ impl<'a> TypeInference<'a> {
         for (arg_idx, value) in args.iter().enumerate().take(5) {
             self.validate_helper_scalar_multiple_of(helper, arg_idx, value, value_ranges, errors);
             self.validate_helper_scalar_range(helper, arg_idx, value, value_ranges, errors);
+            self.validate_helper_scalar_allowed_values(
+                helper,
+                arg_idx,
+                value,
+                value_ranges,
+                errors,
+            );
         }
 
         for rule in semantics.ptr_arg_rules {

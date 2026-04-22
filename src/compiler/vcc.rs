@@ -252,6 +252,11 @@ pub enum VccInst {
         max: i64,
         message: String,
     },
+    AssertAllowedValues {
+        value: VccValue,
+        allowed: Vec<i64>,
+        message: String,
+    },
     AssertConstEqIfConstEq {
         value: VccValue,
         expected: i64,

@@ -9,6 +9,33 @@
 
 use crate::compiler::mir::MapKind;
 
+const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
+
+pub(crate) fn scalar_range_contains_only_allowed_values(
+    min: i64,
+    max: i64,
+    allowed_values: &[i64],
+) -> bool {
+    if min > max {
+        return false;
+    }
+    let range_len = i128::from(max) - i128::from(min) + 1;
+    if range_len > allowed_values.len() as i128 {
+        return false;
+    }
+
+    let mut value = min;
+    loop {
+        if !allowed_values.contains(&value) {
+            return false;
+        }
+        if value == max {
+            return true;
+        }
+        value += 1;
+    }
+}
+
 /// eBPF register identifiers (r0-r10)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -852,6 +879,23 @@ impl BpfHelper {
                 0,
                 15,
                 "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits (0x0f)",
+            )),
+            _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_allowed_values_requirement(
+        self,
+        arg_idx: usize,
+    ) -> Option<(&'static [i64], &'static str)> {
+        match (self, arg_idx) {
+            (Self::Strtol, 2) => Some((
+                STRTOX_BASE_FLAGS,
+                "helper 'bpf_strtol' requires arg2 flags to be one of 0, 8, 10, or 16",
+            )),
+            (Self::Strtoul, 2) => Some((
+                STRTOX_BASE_FLAGS,
+                "helper 'bpf_strtoul' requires arg2 flags to be one of 0, 8, 10, or 16",
             )),
             _ => None,
         }

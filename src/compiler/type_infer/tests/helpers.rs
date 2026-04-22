@@ -2196,7 +2196,12 @@ fn test_type_error_sockopt_helpers_reject_invalid_program() {
     }
 }
 
-fn make_strtox_call(helper: BpfHelper, buf_len: i64, buf_size: usize) -> (MirFunction, VReg) {
+fn make_strtox_call(
+    helper: BpfHelper,
+    buf_len: i64,
+    flags: i64,
+    buf_size: usize,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
     let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
@@ -2208,7 +2213,7 @@ fn make_strtox_call(helper: BpfHelper, buf_len: i64, buf_size: usize) -> (MirFun
         args: vec![
             MirValue::StackSlot(buf_slot),
             MirValue::Const(buf_len),
-            MirValue::Const(0),
+            MirValue::Const(flags),
             MirValue::StackSlot(res_slot),
         ],
     });
@@ -2219,7 +2224,7 @@ fn make_strtox_call(helper: BpfHelper, buf_len: i64, buf_size: usize) -> (MirFun
 #[test]
 fn test_infer_strtox_helpers() {
     for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
-        let (func, dst) = make_strtox_call(helper, 8, 8);
+        let (func, dst) = make_strtox_call(helper, 8, 16, 8);
         let mut ti = TypeInference::new(None);
         let types = ti
             .infer(&func)
@@ -2230,7 +2235,7 @@ fn test_infer_strtox_helpers() {
 
 #[test]
 fn test_type_error_strtox_helper_rejects_small_buffer() {
-    let (func, _) = make_strtox_call(BpfHelper::Strtol, 16, 8);
+    let (func, _) = make_strtox_call(BpfHelper::Strtol, 16, 0, 8);
     let mut ti = TypeInference::new(None);
     let errs = ti
         .infer(&func)
@@ -2241,6 +2246,24 @@ fn test_type_error_strtox_helper_rejects_small_buffer() {
         "unexpected errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_type_error_strtox_helper_rejects_invalid_flags() {
+    for (helper, flags) in [(BpfHelper::Strtol, 2), (BpfHelper::Strtoul, 32)] {
+        let (func, _) = make_strtox_call(helper, 8, flags, 8);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected string conversion flags error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("requires arg2 flags to be one of 0, 8, 10, or 16")),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
 }
 
 #[test]

@@ -2764,6 +2764,7 @@ fn test_verify_mir_get_ns_current_pid_tgid_rejects_small_buffer() {
 fn make_strtox_vcc_call(
     helper: BpfHelper,
     buf_len: i64,
+    flags: i64,
     buf_size: usize,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
@@ -2779,7 +2780,7 @@ fn make_strtox_vcc_call(
             args: vec![
                 MirValue::StackSlot(buf_slot),
                 MirValue::Const(buf_len),
-                MirValue::Const(0),
+                MirValue::Const(flags),
                 MirValue::StackSlot(res_slot),
             ],
         });
@@ -2794,7 +2795,7 @@ fn make_strtox_vcc_call(
 #[test]
 fn test_verify_mir_strtox_helpers() {
     for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
-        let (func, types) = make_strtox_vcc_call(helper, 8, 8);
+        let (func, types) = make_strtox_vcc_call(helper, 8, 16, 8);
         verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
             .expect("expected string conversion helper to verify");
     }
@@ -2802,7 +2803,7 @@ fn test_verify_mir_strtox_helpers() {
 
 #[test]
 fn test_verify_mir_strtox_helper_rejects_small_buffer() {
-    let (func, types) = make_strtox_vcc_call(BpfHelper::Strtol, 16, 8);
+    let (func, types) = make_strtox_vcc_call(BpfHelper::Strtol, 16, 0, 8);
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected string conversion buffer bounds error");
     assert!(
@@ -2810,6 +2811,22 @@ fn test_verify_mir_strtox_helper_rejects_small_buffer() {
         "expected pointer bounds error, got {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_strtox_helper_rejects_invalid_flags() {
+    for (helper, flags) in [(BpfHelper::Strtol, 2), (BpfHelper::Strtoul, 32)] {
+        let (func, types) = make_strtox_vcc_call(helper, 8, flags, 8);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+            .expect_err("expected string conversion flags error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("requires arg2 flags to be one of 0, 8, 10, or 16")),
+            "unexpected errors: {:?}",
+            err
+        );
+    }
 }
 
 fn make_packet_output_vcc_call(

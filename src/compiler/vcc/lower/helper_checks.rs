@@ -991,6 +991,49 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    fn verify_helper_scalar_allowed_values(
+        &mut self,
+        helper_id: u32,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let Some((allowed_values, message)) =
+            helper.scalar_arg_allowed_values_requirement(arg_idx)
+        else {
+            return Ok(());
+        };
+        match value {
+            MirValue::Const(actual) => {
+                if allowed_values.contains(actual) {
+                    Ok(())
+                } else {
+                    Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message,
+                    ))
+                }
+            }
+            MirValue::VReg(vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                out.push(VccInst::AssertAllowedValues {
+                    value: VccValue::Reg(VccReg(vreg.0)),
+                    allowed: allowed_values.to_vec(),
+                    message: message.to_string(),
+                });
+                Ok(())
+            }
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
     pub(super) fn verify_helper_semantics(
         &mut self,
         helper_id: u32,
@@ -1012,6 +1055,7 @@ impl<'a> VccLowerer<'a> {
         for (arg_idx, value) in args.iter().enumerate().take(5) {
             self.verify_helper_scalar_multiple_of(helper, arg_idx, value)?;
             self.verify_helper_scalar_range(helper_id, helper, arg_idx, value, out)?;
+            self.verify_helper_scalar_allowed_values(helper_id, helper, arg_idx, value, out)?;
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {
