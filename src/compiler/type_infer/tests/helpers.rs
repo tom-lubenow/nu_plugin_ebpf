@@ -312,7 +312,7 @@ fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
         .infer(&func)
         .expect_err("expected bpf_get_socket_cookie to be rejected on sk_lookup");
     assert!(errs.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser programs"
     )));
 }
 
@@ -3435,6 +3435,18 @@ fn test_infer_packet_byte_helpers_follow_program_surface() {
             "/sys/fs/cgroup:ingress",
             5,
         ),
+        (
+            BpfHelper::SkbLoadBytes,
+            EbpfProgramType::SkReuseport,
+            "select",
+            4,
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            EbpfProgramType::SkReuseport,
+            "select",
+            5,
+        ),
         (BpfHelper::XdpLoadBytes, EbpfProgramType::Xdp, "lo", 4),
         (BpfHelper::XdpStoreBytes, EbpfProgramType::Xdp, "lo", 4),
     ] {
@@ -3480,13 +3492,13 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe,
             "ksys_read",
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,
             EbpfProgramType::SkSkb,
             "/sys/fs/bpf/demo_sockmap",
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, and cgroup_skb programs",
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, cgroup_skb, and sk_reuseport programs",
         ),
         (
             BpfHelper::XdpStoreBytes,

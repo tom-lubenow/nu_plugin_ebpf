@@ -760,6 +760,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.eth_protocol } - Get Ethernet protocol in host byte order
     {|ctx| $ctx.ip_protocol } - Get IP protocol
     {|ctx| $ctx.hash } - Get the reuseport selection hash
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the current reuseport context
     {|ctx| $ctx.bind_inany } - Get bind-in-any state
     {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer
     {|ctx| $ctx.migrating_sk.bound_dev_if } - Project the migrating socket on sk_reuseport:migrate

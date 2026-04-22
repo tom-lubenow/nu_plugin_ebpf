@@ -98,10 +98,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SocketFilter,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
+            EbpfProgramType::SkReuseport,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser",
+        label: "socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkbLoadBytesRelative,
@@ -109,8 +110,9 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SocketFilter,
             EbpfProgramType::Tc,
             EbpfProgramType::CgroupSkb,
+            EbpfProgramType::SkReuseport,
         ],
-        label: "socket_filter, tc, and cgroup_skb",
+        label: "socket_filter, tc, cgroup_skb, and sk_reuseport",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::PerfEventOutput,
@@ -219,10 +221,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::CgroupSock,
             EbpfProgramType::CgroupSockAddr,
             EbpfProgramType::SockOps,
+            EbpfProgramType::SkReuseport,
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
+        label: "fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketUid,
@@ -721,6 +724,7 @@ impl EbpfProgramType {
                 | EbpfProgramType::CgroupSkb
                 | EbpfProgramType::CgroupSockAddr
                 | EbpfProgramType::SockOps
+                | EbpfProgramType::SkReuseport
                 | EbpfProgramType::SkSkb
                 | EbpfProgramType::SkSkbParser
         ) {

@@ -337,7 +337,7 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_sk_lookup() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected get_socket_cookie sk_lookup program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser programs"
     )));
 }
 
@@ -2635,13 +2635,13 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs
             BpfHelper::SkbLoadBytes,
             EbpfProgramType::Kprobe,
             "ksys_read",
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs",
+            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs",
         ),
         (
             BpfHelper::SkbLoadBytesRelative,
             EbpfProgramType::SkSkb,
             "/sys/fs/bpf/demo_sockmap",
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, and cgroup_skb programs",
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, cgroup_skb, and sk_reuseport programs",
         ),
         (
             BpfHelper::XdpLoadBytes,
@@ -2690,6 +2690,59 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs
             "unexpected errors: {:?}",
             err
         );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_sk_reuseport() {
+    for (helper, args_len) in [
+        (BpfHelper::SkbLoadBytes, 4),
+        (BpfHelper::SkbLoadBytesRelative, 5),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(entry);
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        let mut args = vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(16),
+        ];
+        if args_len == 5 {
+            args.push(MirValue::Const(0));
+        }
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+        verify_mir_for_probe_context(&func, &types, &probe_ctx).unwrap_or_else(|errs| {
+            panic!(
+                "expected {} to verify in sk_reuseport: {:?}",
+                helper.name(),
+                errs
+            )
+        });
     }
 }
 

@@ -232,7 +232,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         ingress_ifindex: None,
         sock_mark_priority: None,
         sock_state: None,
-        socket_cookie: false,
+        socket_cookie: true,
         socket_uid: false,
         netns_cookie: false,
         lookup_cookie: false,

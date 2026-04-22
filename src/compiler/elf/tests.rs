@@ -1488,6 +1488,7 @@ fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
 fn test_program_type_helper_backed_cookie_field_surfaces_follow_program_model() {
     assert!(EbpfProgramType::SocketFilter.supports_socket_cookie_ctx_field());
     assert!(EbpfProgramType::CgroupSock.supports_socket_cookie_ctx_field());
+    assert!(EbpfProgramType::SkReuseport.supports_socket_cookie_ctx_field());
     assert!(!EbpfProgramType::SkLookup.supports_socket_cookie_ctx_field());
 
     assert!(EbpfProgramType::SocketFilter.supports_socket_uid_ctx_field());
@@ -1764,7 +1765,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
-            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_reuseport, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -1786,14 +1787,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbLoadBytes),
         Some(
-            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_skb_load_bytes' is only valid in socket_filter, tc, cgroup_skb, sk_reuseport, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkSkb.helper_call_error(BpfHelper::SkbLoadBytesRelative),
         Some(
-            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, and cgroup_skb programs"
+            "helper 'bpf_skb_load_bytes_relative' is only valid in socket_filter, tc, cgroup_skb, and sk_reuseport programs"
                 .to_string()
         )
     );
@@ -2095,6 +2096,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         None
     );
     assert_eq!(
+        EbpfProgramType::SkReuseport.helper_call_error(BpfHelper::GetSocketCookie),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::GetSocketUid),
         None
     );
@@ -2160,6 +2165,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::CgroupSkb.helper_call_error(BpfHelper::SkbLoadBytesRelative),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkReuseport.helper_call_error(BpfHelper::SkbLoadBytes),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::SkReuseport.helper_call_error(BpfHelper::SkbLoadBytesRelative),
         None
     );
     assert_eq!(
@@ -2509,6 +2522,10 @@ fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
     );
     assert_eq!(
         EbpfProgramType::TcAction.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Context)
+    );
+    assert_eq!(
+        EbpfProgramType::SkReuseport.get_socket_cookie_arg_policy(),
         Some(GetSocketCookieArgPolicy::Context)
     );
     assert_eq!(
@@ -5568,6 +5585,10 @@ fn test_probe_context_allows_sk_reuseport_fields() {
     assert!(ctx.ctx_field_access_error(&CtxField::EthProtocol).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::SkbHash).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SocketCookie)
+            .is_none()
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::Socket).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::BindInany).is_none());
     assert!(

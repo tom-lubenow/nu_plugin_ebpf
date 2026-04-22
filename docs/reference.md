@@ -71,7 +71,7 @@ The closure receives a context parameter with these fields:
 | `tc_index` | skb tc_index | socket_filter, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `hash` | skb hash, or sk_reuseport selection hash on sk_reuseport | socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_reuseport, sk_skb, sk_skb_parser |
 | `hash_recalc` / `recalc_hash` | skb hash from `bpf_get_hash_recalc`, recomputing it if needed | tc, sk_skb, sk_skb_parser |
-| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_skb, sk_skb_parser, sock_ops |
+| `socket_cookie` | Stable kernel socket cookie, or `0` when an skb has no known socket | socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_reuseport, sk_skb, sk_skb_parser, sock_ops |
 | `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc_action, tc, cgroup_skb, sk_skb, sk_skb_parser |
 | `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
 | `rx_queue_index` | XDP receive queue index | xdp |
