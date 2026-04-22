@@ -57,6 +57,7 @@ Supported attach types:
   - kprobe, kretprobe
   - fentry, fexit, tp_btf
   - tracepoint, raw_tracepoint
+  - raw_tracepoint.w / raw_tp.w (dry-run compile support; live attach is not implemented yet)
   - uprobe, uretprobe
   - lsm
   - perf_event
@@ -740,8 +741,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.arg1 }    - Get function argument 1
     {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit)
 
-    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. raw_tracepoint exposes
-    raw positional ctx.argN slots. fentry/fexit/tp_btf/lsm/struct_ops use
+    Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. raw_tracepoint and
+    raw_tracepoint.w expose raw positional ctx.argN slots. fentry/fexit/tp_btf/lsm/struct_ops use
     kernel BTF, and those kernel-BTF-backed contexts also expose named
     parameter aliases through ctx.arg.<name> when names are available.
     Scalar/pointer trampoline args and returns work directly. By-value
@@ -894,7 +895,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'raw_tracepoint.w:sys_enter', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -936,6 +937,10 @@ Requirements:
             "fexit",
             "tp_btf",
             "tracepoint",
+            "raw_tracepoint",
+            "raw_tracepoint.w",
+            "raw_tp",
+            "raw_tp.w",
             "uprobe",
             "uretprobe",
             "userspace",
@@ -981,6 +986,11 @@ Requirements:
             Example {
                 example: "ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx| $ctx.filename | emit }",
                 description: "Stream filenames from openat syscalls using tracepoint",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'raw_tracepoint.w:sys_enter' {|ctx| $ctx.arg0 | count }",
+                description: "Compile a writable raw tracepoint program using raw positional arguments",
                 result: None,
             },
             Example {

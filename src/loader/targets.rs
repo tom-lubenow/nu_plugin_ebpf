@@ -213,7 +213,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
             })
         }
         ProgramSpec::Tracepoint { .. } => validate_tracepoint_target(&spec.target_string()),
-        ProgramSpec::RawTracepoint { .. } => Ok(()),
+        ProgramSpec::RawTracepoint { .. } | ProgramSpec::RawTracepointWritable { .. } => Ok(()),
         ProgramSpec::Uprobe { .. } | ProgramSpec::Uretprobe { .. } => Ok(()),
         ProgramSpec::Xdp { target } => validate_network_interface_target(&target.interface),
         ProgramSpec::PerfEvent { target } => {

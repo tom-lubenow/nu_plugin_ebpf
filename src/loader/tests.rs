@@ -179,6 +179,18 @@ fn test_parse_probe_spec_raw_tracepoint_alias() {
 }
 
 #[test]
+fn test_parse_probe_spec_raw_tracepoint_writable_alias() {
+    let (prog_type, target) = parse_probe_spec("raw_tp.w:sys_enter").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::RawTracepointWritable);
+    assert_eq!(target, "sys_enter");
+
+    let spec = ProgramSpec::parse("raw_tracepoint.w:sys_enter").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::RawTracepointWritable);
+    assert_eq!(spec.target_string(), "sys_enter");
+    assert_eq!(spec.section_name(), "raw_tracepoint.w/sys_enter");
+}
+
+#[test]
 fn test_parse_probe_spec_xdp() {
     let (prog_type, target) = parse_probe_spec("xdp:lo").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Xdp);

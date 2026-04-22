@@ -1553,6 +1553,9 @@ pub enum ProgramSpec {
     RawTracepoint {
         name: String,
     },
+    RawTracepointWritable {
+        name: String,
+    },
     Uprobe {
         target: UprobeTarget,
     },
@@ -1853,6 +1856,9 @@ impl ProgramSpec {
             EbpfProgramType::RawTracepoint => Ok(ProgramSpec::RawTracepoint {
                 name: target.to_string(),
             }),
+            EbpfProgramType::RawTracepointWritable => Ok(ProgramSpec::RawTracepointWritable {
+                name: target.to_string(),
+            }),
             EbpfProgramType::Uprobe => Ok(ProgramSpec::Uprobe {
                 target: UprobeTarget::parse(target)?,
             }),
@@ -1944,6 +1950,7 @@ impl ProgramSpec {
             ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
             ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
+            ProgramSpec::RawTracepointWritable { .. } => EbpfProgramType::RawTracepointWritable,
             ProgramSpec::Uprobe { .. } => EbpfProgramType::Uprobe,
             ProgramSpec::Uretprobe { .. } => EbpfProgramType::Uretprobe,
             ProgramSpec::Xdp { .. } => EbpfProgramType::Xdp,
@@ -1985,6 +1992,7 @@ impl ProgramSpec {
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
+            ProgramSpec::RawTracepointWritable { name } => name.clone(),
             ProgramSpec::Uprobe { target } | ProgramSpec::Uretprobe { target } => {
                 target.target_string()
             }
@@ -2414,6 +2422,8 @@ mod tests {
     fn test_program_spec_modeled_metadata_accessors() {
         let tracepoint = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
             .expect("tracepoint spec should parse");
+        let raw_tracepoint_writable = ProgramSpec::parse("raw_tracepoint.w:sys_enter")
+            .expect("writable raw tracepoint spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
         let uprobe =
@@ -2448,6 +2458,11 @@ mod tests {
         assert_eq!(
             tracepoint.tracepoint_parts(),
             Some(("syscalls", "sys_enter_openat"))
+        );
+        assert_eq!(raw_tracepoint_writable.target_string(), "sys_enter");
+        assert_eq!(
+            raw_tracepoint_writable.section_name(),
+            "raw_tracepoint.w/sys_enter"
         );
         assert_eq!(tracepoint.struct_ops_value_type_name(), None);
         assert_eq!(struct_ops.tracepoint_parts(), None);

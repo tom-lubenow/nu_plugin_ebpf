@@ -493,6 +493,7 @@ Near-term priority order:
   - Recent progress: `flow_dissector` now has compile/dry-run program-model support for network-namespace targets, covering the narrow `__sk_buff` packet fields (`ctx.data`, `ctx.data_end`, `ctx.packet_len`, `ctx.eth_protocol` / `ctx.protocol`) plus direct `ctx.flow_keys.*` projections and flow-dissector-specific return aliases; live attach intentionally returns an explicit unsupported error until the loader has a safe attach implementation.
   - Recent progress: `netfilter` now has compile/dry-run program-model support for `family:hook[:priority=N][:defrag]` targets, covering safe scalar `bpf_nf_ctx.state` fields (`ctx.hook`, `ctx.pf` / `ctx.protocol_family`) and netfilter verdict aliases while live attach remains explicitly unsupported until the loader grows BPF-link netfilter attach support.
   - Recent progress: `lwt_in`, `lwt_out`, `lwt_xmit`, and `lwt_seg6local` now have compile/dry-run program-model support, covering conservative read-only `__sk_buff` packet fields plus LWT return aliases (`ok`/`pass`, `drop`, `redirect`, and `reroute` on in/xmit) while live route attach remains explicitly unsupported.
+  - Recent progress: `raw_tracepoint.w` / `raw_tp.w` now has compile/dry-run program-model support, reusing raw tracepoint positional `ctx.argN` access while live attach remains explicitly unsupported because Aya does not parse writable raw-tracepoint sections.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

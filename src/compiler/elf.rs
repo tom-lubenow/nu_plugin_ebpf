@@ -806,6 +806,8 @@ pub enum EbpfProgramType {
     Tracepoint,
     /// Raw tracepoint
     RawTracepoint,
+    /// Writable raw tracepoint
+    RawTracepointWritable,
     /// User-space probe (uprobe)
     Uprobe,
     /// User-space return probe (uretprobe)
@@ -905,6 +907,7 @@ impl EbpfProgramType {
             EbpfProgramType::TpBtf => &TP_BTF_INFO,
             EbpfProgramType::Tracepoint => &TRACEPOINT_INFO,
             EbpfProgramType::RawTracepoint => &RAW_TRACEPOINT_INFO,
+            EbpfProgramType::RawTracepointWritable => &RAW_TRACEPOINT_WRITABLE_INFO,
             EbpfProgramType::Uprobe => &UPROBE_INFO,
             EbpfProgramType::Uretprobe => &URETPROBE_INFO,
             EbpfProgramType::Lsm => &LSM_INFO,
@@ -1057,6 +1060,7 @@ pub enum ProgramAttachKind {
     TpBtf,
     Tracepoint,
     RawTracepoint,
+    RawTracepointWritable,
     Uprobe,
     Uretprobe,
     Lsm,

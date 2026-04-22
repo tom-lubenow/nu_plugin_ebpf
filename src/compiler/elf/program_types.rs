@@ -50,6 +50,7 @@ pub(super) const FEXIT_SPEC_ALIASES: &[&str] = &["fexit", "fexit.s"];
 pub(super) const TP_BTF_SPEC_ALIASES: &[&str] = &["tp_btf"];
 pub(super) const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 pub(super) const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
+pub(super) const RAW_TRACEPOINT_WRITABLE_SPEC_ALIASES: &[&str] = &["raw_tracepoint.w", "raw_tp.w"];
 pub(super) const UPROBE_SPEC_ALIASES: &[&str] = &["uprobe"];
 pub(super) const URETPROBE_SPEC_ALIASES: &[&str] = &["uretprobe"];
 pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
@@ -200,6 +201,21 @@ pub(super) const RAW_TRACEPOINT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_uses_target: true,
     context_family: ProgramContextFamily::Probe,
     attach_kind: ProgramAttachKind::RawTracepoint,
+    target_kind: ProgramTargetKind::RawTracepoint,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::RawTracepoint,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const RAW_TRACEPOINT_WRITABLE_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::RawTracepointWritable,
+    canonical_prefix: "raw_tracepoint.w",
+    spec_aliases: RAW_TRACEPOINT_WRITABLE_SPEC_ALIASES,
+    section_prefix: "raw_tracepoint.w",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::RawTracepointWritable,
     target_kind: ProgramTargetKind::RawTracepoint,
     kernel_target_validation: None,
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
@@ -628,6 +644,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::TpBtf,
     EbpfProgramType::Tracepoint,
     EbpfProgramType::RawTracepoint,
+    EbpfProgramType::RawTracepointWritable,
     EbpfProgramType::Uprobe,
     EbpfProgramType::Uretprobe,
     EbpfProgramType::Lsm,
@@ -670,6 +687,8 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "tracepoint",
     "raw_tracepoint",
     "raw_tp",
+    "raw_tracepoint.w",
+    "raw_tp.w",
     "uprobe",
     "uretprobe",
     "perf_event",

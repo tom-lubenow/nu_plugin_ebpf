@@ -1280,6 +1280,33 @@ fn test_lower_raw_tracepoint_ctx_arg_field() {
 }
 
 #[test]
+fn test_lower_raw_tracepoint_writable_ctx_arg_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("arg0")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::RawTracepointWritable, "sys_enter");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("writable raw tracepoint ctx.arg0 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Arg(0),
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_perf_event_ctx_arg_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0")],

@@ -902,6 +902,7 @@ const TASK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TpBtf,
     EbpfProgramType::Tracepoint,
     EbpfProgramType::RawTracepoint,
+    EbpfProgramType::RawTracepointWritable,
     EbpfProgramType::Uprobe,
     EbpfProgramType::Uretprobe,
     EbpfProgramType::Lsm,
@@ -916,6 +917,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TpBtf,
     EbpfProgramType::Tracepoint,
     EbpfProgramType::RawTracepoint,
+    EbpfProgramType::RawTracepointWritable,
     EbpfProgramType::Uprobe,
     EbpfProgramType::Uretprobe,
     EbpfProgramType::Lsm,
@@ -1001,6 +1003,7 @@ const STACK_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TpBtf,
     EbpfProgramType::Tracepoint,
     EbpfProgramType::RawTracepoint,
+    EbpfProgramType::RawTracepointWritable,
     EbpfProgramType::Uprobe,
     EbpfProgramType::Uretprobe,
     EbpfProgramType::PerfEvent,
@@ -1071,6 +1074,7 @@ const TRACING_HELPER_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Uretprobe,
     EbpfProgramType::PerfEvent,
     EbpfProgramType::RawTracepoint,
+    EbpfProgramType::RawTracepointWritable,
     EbpfProgramType::Tracepoint,
     EbpfProgramType::Fentry,
     EbpfProgramType::Fexit,
@@ -1289,7 +1293,7 @@ impl BaseContextFieldAccessRequirement {
                 )
             }
             Self::TracingHelperFields => format!(
-                "ctx.{} is only available on kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, tracepoint, fentry, fexit, and tp_btf programs",
+                "ctx.{} is only available on kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs",
                 field.display_name()
             ),
             Self::PerfEventField if !program_type.uses_perf_event_context() => {

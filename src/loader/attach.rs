@@ -47,6 +47,7 @@ impl EbpfState {
                 | ProgramAttachKind::FlowDissector
                 | ProgramAttachKind::Netfilter
                 | ProgramAttachKind::Lwt
+                | ProgramAttachKind::RawTracepointWritable
         ) {
             return Err(LoadError::Attach(format!(
                 "live attach for {} programs is not supported by this loader yet; use --dry-run to compile",
@@ -196,6 +197,12 @@ impl EbpfState {
                 raw_tp.attach(&program.target).map_err(|e| {
                     LoadError::Attach(format!("Failed to attach raw_tracepoint: {e}"))
                 })?;
+            }
+            ProgramAttachKind::RawTracepointWritable => {
+                return Err(LoadError::Attach(
+                    "live attach for raw_tracepoint.w programs is not supported by this loader yet; use --dry-run to compile"
+                        .to_string(),
+                ));
             }
             ProgramAttachKind::Uprobe | ProgramAttachKind::Uretprobe => {
                 let target = spec.uprobe_target().unwrap_or_else(|| {
