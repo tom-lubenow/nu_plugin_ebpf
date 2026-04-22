@@ -397,7 +397,7 @@ available in return position. XDP closures can return strings like
 `"ok"` / `"drop"` / `"redirect"`. Raw numeric return codes still work. `redirect IFINDEX` is
 the preferred first-class surface for `bpf_redirect` on XDP, tc, tcx, and netkit,
 and `redirect --flags N IFINDEX` exposes the helper flags argument
-directly; XDP still requires `FLAGS = 0`. On `tc:...:ingress` and `tcx:...:ingress`,
+directly; XDP still requires `FLAGS = 0`. On `tc:...:ingress`, `tcx:...:ingress`, and netkit,
 `redirect --peer IFINDEX` is the preferred first-class surface for
 `bpf_redirect_peer` and still requires `FLAGS = 0`. On tc/tcx/netkit,
 `redirect --neigh IFINDEX` is the preferred first-class surface for
@@ -482,7 +482,7 @@ The corresponding modeled helper escape hatch forms remain available.
 
 `adjust-message` is the first-class `sk_msg` byte-window and reshaping surface. `adjust-message --apply BYTES` and `adjust-message --cork BYTES` lower to `bpf_msg_apply_bytes` and `bpf_msg_cork_bytes`. `adjust-message --pull START END [--flags N]`, `adjust-message --push START LEN [--flags N]`, and `adjust-message --pop START LEN [--flags N]` lower to `bpf_msg_pull_data`, `bpf_msg_push_data`, and `bpf_msg_pop_data`; pull flags are reserved and must be `0`. The ambient message context pointer is materialized automatically and the helper result is returned directly.
 
-`redirect` is the first-class packet redirect surface for XDP, tc, tcx, and netkit. It takes an ifindex from pipeline input or a positional argument and returns the helper result directly. Plain `redirect IFINDEX` lowers to `bpf_redirect`. `redirect --peer IFINDEX` lowers to `bpf_redirect_peer` on `tc:...:ingress` or `tcx:...:ingress`, and `redirect --neigh IFINDEX` lowers to the default-neighbor `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)` form on tc/tcx/netkit. `--flags` stays available for the helper's flags argument.
+`redirect` is the first-class packet redirect surface for XDP, tc, tcx, and netkit. It takes an ifindex from pipeline input or a positional argument and returns the helper result directly. Plain `redirect IFINDEX` lowers to `bpf_redirect`. `redirect --peer IFINDEX` lowers to `bpf_redirect_peer` on `tc:...:ingress`, `tcx:...:ingress`, or netkit, and `redirect --neigh IFINDEX` lowers to the default-neighbor `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)` form on tc/tcx/netkit. `--flags` stays available for the helper's flags argument.
 
 `redirect-socket` is the first-class socket redirect/selection surface for `sk_msg`, `sk_skb`, `sk_skb_parser`, and `sk_reuseport`. It takes a literal map name plus a key, requires `--kind sockmap` / `--kind sockhash` on message/SKB stream programs or `--kind reuseport-sockarray` on `sk_reuseport`, selects the appropriate helper from the current program type, and returns that helper result directly. On message/SKB stream programs, `--flags` is limited to `0` or `BPF_F_INGRESS`; reuseport selection leaves helper-specific flags to the kernel.
 

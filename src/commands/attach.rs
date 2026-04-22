@@ -218,8 +218,8 @@ Context parameter syntax (recommended):
     `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
     `bpf_get_hash_recalc`, `bpf_csum_update`, and
     `bpf_set_hash_invalid`.
-    `redirect --peer IFINDEX` is modeled on `tc:...:ingress` and `tcx:...:ingress`, and also
-    requires `FLAGS = 0`. `redirect --neigh IFINDEX` is modeled on tc/tcx/netkit
+    `redirect --peer IFINDEX` is modeled on `tc:...:ingress`, `tcx:...:ingress`, and netkit,
+    and requires `FLAGS = 0`. `redirect --neigh IFINDEX` is modeled on tc/tcx/netkit
     paths for the default neighbor-resolution form, lowering to
     `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
     `0`. The raw `helper-call "bpf_redirect*"` forms remain available as

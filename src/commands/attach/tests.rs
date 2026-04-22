@@ -8,7 +8,7 @@ use crate::compiler::hir_to_mir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
-    AddressSpace, KSTACK_MAP_NAME, MapKind, MapRef, MirInst, StructField, USTACK_MAP_NAME,
+    AddressSpace, KSTACK_MAP_NAME, MapKind, MapRef, MirInst, MirValue, StructField, USTACK_MAP_NAME,
 };
 use crate::compiler::passes::{ListLowering, MirPass, optimize_with_ssa_hints};
 use crate::compiler::{
@@ -3047,6 +3047,74 @@ fn make_intrinsic_call_return_program(
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+struct ExpectedHelperCall {
+    helper: BpfHelper,
+    arg_count: usize,
+    const_args: &'static [(usize, i64)],
+}
+
+fn compile_intrinsic_call_expect_helper(
+    context: &str,
+    command_name: &str,
+    program_type: EbpfProgramType,
+    target: &str,
+    positional: Vec<HirLiteral>,
+    named: Vec<(Vec<u8>, HirLiteral)>,
+    flags: Vec<Vec<u8>>,
+    return_value: HirLiteral,
+    expected: ExpectedHelperCall,
+) {
+    let hir =
+        make_intrinsic_call_return_program(DeclId::new(42), positional, named, flags, return_value);
+    let probe_ctx = ProbeContext::new(program_type, target);
+    let decl_names = HashMap::from([(DeclId::new(42), command_name.to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} {command_name} should lower: {err}"));
+
+    let block = lowering.program.main.block(lowering.program.main.entry);
+    assert!(
+        block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper {
+                helper,
+                args,
+                ..
+            } if *helper == expected.helper as u32
+                && args.len() == expected.arg_count
+                && expected.const_args.iter().all(|(idx, value)| {
+                    matches!(args.get(*idx), Some(MirValue::Const(actual)) if *actual == *value)
+                })
+        )),
+        "{context} {command_name} should call {} with expected arguments",
+        expected.helper.name()
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} {command_name} should compile: {err}"));
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 fn make_list_iterate_count_program(count_decl_id: DeclId) -> HirProgram {
@@ -10831,467 +10899,175 @@ fn test_compile_sk_lookup_ctx_sk_assignment_null_program() {
 }
 
 #[test]
-fn test_compile_xdp_adjust_packet_meta_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(-4)],
-        vec![],
-        vec![b"meta".to_vec()],
-        HirLiteral::Int(2),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
-    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("xdp adjust-packet --meta should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::XdpAdjustMeta as u32 && args.len() == 2
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("xdp adjust-packet --meta should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_lwt_adjust_packet_pull_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(64)],
-        vec![],
-        vec![b"pull".to_vec()],
-        HirLiteral::Int(2),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
-    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("lwt adjust-packet --pull should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::SkbPullData as u32 && args.len() == 2
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("lwt adjust-packet --pull should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_lwt_xmit_adjust_packet_head_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(8)],
-        vec![],
-        vec![b"head".to_vec()],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
-    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("lwt_xmit adjust-packet --head should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::SkbChangeHead as u32
-            && args.len() == 3
-            && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("lwt_xmit adjust-packet --head should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_tc_action_adjust_packet_head_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(8)],
-        vec![],
-        vec![b"head".to_vec()],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
-    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("tc_action adjust-packet --head should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::SkbChangeHead as u32
-            && args.len() == 3
-            && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("tc_action adjust-packet --head should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_netkit_adjust_packet_head_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(8)],
-        vec![],
-        vec![b"head".to_vec()],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
-    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("netkit adjust-packet --head should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::SkbChangeHead as u32
-            && args.len() == 3
-            && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("netkit adjust-packet --head should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_tc_redirect_peer_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(9)],
-        vec![],
-        vec![b"peer".to_vec()],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
-    let decl_names = HashMap::from([(DeclId::new(42), "redirect".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("tc redirect --peer should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::RedirectPeer as u32
-            && args.len() == 2
-            && matches!(args.get(1), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("tc redirect --peer should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_lwt_xmit_redirect_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(9)],
-        vec![],
-        vec![],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
-    let decl_names = HashMap::from([(DeclId::new(42), "redirect".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("lwt_xmit redirect should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::Redirect as u32
-            && args.len() == 2
-            && matches!(args.get(1), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("lwt_xmit redirect should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_tc_action_redirect_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(9)],
-        vec![],
-        vec![],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
-    let decl_names = HashMap::from([(DeclId::new(42), "redirect".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("tc_action redirect should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::Redirect as u32
-            && args.len() == 2
-            && matches!(args.get(1), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("tc_action redirect should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
-}
-
-#[test]
-fn test_compile_netkit_redirect_program() {
-    let hir = make_intrinsic_call_return_program(
-        DeclId::new(42),
-        vec![HirLiteral::Int(9)],
-        vec![],
-        vec![],
-        HirLiteral::Int(0),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Netkit, "nk0:primary");
-    let decl_names = HashMap::from([(DeclId::new(42), "redirect".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("netkit redirect should lower through attach flow");
-
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::Redirect as u32
-            && args.len() == 2
-            && matches!(args.get(1), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("netkit redirect should compile through attach flow");
-
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+fn test_compile_packet_intrinsic_programs() {
+    for (context, command_name, program_type, target, positional, flags, return_value, expected) in [
+        (
+            "xdp adjust-packet --meta",
+            "adjust-packet",
+            EbpfProgramType::Xdp,
+            "lo",
+            vec![HirLiteral::Int(-4)],
+            vec![b"meta".to_vec()],
+            HirLiteral::Int(2),
+            ExpectedHelperCall {
+                helper: BpfHelper::XdpAdjustMeta,
+                arg_count: 2,
+                const_args: &[],
+            },
+        ),
+        (
+            "lwt adjust-packet --pull",
+            "adjust-packet",
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            vec![HirLiteral::Int(64)],
+            vec![b"pull".to_vec()],
+            HirLiteral::Int(2),
+            ExpectedHelperCall {
+                helper: BpfHelper::SkbPullData,
+                arg_count: 2,
+                const_args: &[],
+            },
+        ),
+        (
+            "lwt_xmit adjust-packet --head",
+            "adjust-packet",
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            vec![HirLiteral::Int(8)],
+            vec![b"head".to_vec()],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::SkbChangeHead,
+                arg_count: 3,
+                const_args: &[(2, 0)],
+            },
+        ),
+        (
+            "tc_action adjust-packet --head",
+            "adjust-packet",
+            EbpfProgramType::TcAction,
+            "demo-action",
+            vec![HirLiteral::Int(8)],
+            vec![b"head".to_vec()],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::SkbChangeHead,
+                arg_count: 3,
+                const_args: &[(2, 0)],
+            },
+        ),
+        (
+            "netkit adjust-packet --head",
+            "adjust-packet",
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            vec![HirLiteral::Int(8)],
+            vec![b"head".to_vec()],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::SkbChangeHead,
+                arg_count: 3,
+                const_args: &[(2, 0)],
+            },
+        ),
+        (
+            "tc redirect --peer",
+            "redirect",
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            vec![HirLiteral::Int(9)],
+            vec![b"peer".to_vec()],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::RedirectPeer,
+                arg_count: 2,
+                const_args: &[(1, 0)],
+            },
+        ),
+        (
+            "lwt_xmit redirect",
+            "redirect",
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            vec![HirLiteral::Int(9)],
+            vec![],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::Redirect,
+                arg_count: 2,
+                const_args: &[(1, 0)],
+            },
+        ),
+        (
+            "tc_action redirect",
+            "redirect",
+            EbpfProgramType::TcAction,
+            "demo-action",
+            vec![HirLiteral::Int(9)],
+            vec![],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::Redirect,
+                arg_count: 2,
+                const_args: &[(1, 0)],
+            },
+        ),
+        (
+            "netkit redirect",
+            "redirect",
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            vec![HirLiteral::Int(9)],
+            vec![],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::Redirect,
+                arg_count: 2,
+                const_args: &[(1, 0)],
+            },
+        ),
+        (
+            "netkit redirect --peer",
+            "redirect",
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            vec![HirLiteral::Int(9)],
+            vec![b"peer".to_vec()],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::RedirectPeer,
+                arg_count: 2,
+                const_args: &[(1, 0)],
+            },
+        ),
+        (
+            "netkit redirect --neigh",
+            "redirect",
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            vec![HirLiteral::Int(9)],
+            vec![b"neigh".to_vec()],
+            HirLiteral::Int(0),
+            ExpectedHelperCall {
+                helper: BpfHelper::RedirectNeigh,
+                arg_count: 4,
+                const_args: &[(1, 0), (2, 0), (3, 0)],
+            },
+        ),
+    ] {
+        compile_intrinsic_call_expect_helper(
+            context,
+            command_name,
+            program_type,
+            target,
+            positional,
+            vec![],
+            flags,
+            return_value,
+            expected,
+        );
+    }
 }
 
 #[test]
