@@ -1113,6 +1113,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
+            CtxField::FlowKeys => {
+                let offset = Self::sk_buff_flow_keys_offset();
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            }
             CtxField::BindInany => {
                 let offset = Self::sk_reuseport_md_offsets().5;
                 self.instructions

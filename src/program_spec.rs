@@ -952,6 +952,32 @@ impl SkLookupTarget {
     }
 }
 
+/// Parsed flow_dissector target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlowDissectorTarget {
+    /// Filesystem path to the network namespace file.
+    pub netns_path: String,
+}
+
+impl FlowDissectorTarget {
+    /// Parse a flow_dissector target string of the form `/proc/self/ns/net`.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "flow_dissector network namespace path cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            netns_path: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.netns_path.clone()
+    }
+}
+
 /// Supported sk_reuseport section modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkReuseportMode {
@@ -1376,6 +1402,9 @@ pub enum ProgramSpec {
     SkLookup {
         target: SkLookupTarget,
     },
+    FlowDissector {
+        target: FlowDissectorTarget,
+    },
     SkReuseport {
         target: SkReuseportTarget,
     },
@@ -1658,6 +1687,9 @@ impl ProgramSpec {
             EbpfProgramType::SkLookup => Ok(ProgramSpec::SkLookup {
                 target: SkLookupTarget::parse(target)?,
             }),
+            EbpfProgramType::FlowDissector => Ok(ProgramSpec::FlowDissector {
+                target: FlowDissectorTarget::parse(target)?,
+            }),
             EbpfProgramType::SkReuseport => Ok(ProgramSpec::SkReuseport {
                 target: SkReuseportTarget::parse(target)?,
             }),
@@ -1719,6 +1751,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { .. } => EbpfProgramType::PerfEvent,
             ProgramSpec::SocketFilter { .. } => EbpfProgramType::SocketFilter,
             ProgramSpec::SkLookup { .. } => EbpfProgramType::SkLookup,
+            ProgramSpec::FlowDissector { .. } => EbpfProgramType::FlowDissector,
             ProgramSpec::SkReuseport { .. } => EbpfProgramType::SkReuseport,
             ProgramSpec::SkMsg { .. } => EbpfProgramType::SkMsg,
             ProgramSpec::SkSkb { .. } => EbpfProgramType::SkSkb,
@@ -1755,6 +1788,7 @@ impl ProgramSpec {
             ProgramSpec::PerfEvent { target } => target.target_string(),
             ProgramSpec::SocketFilter { target } => target.target_string(),
             ProgramSpec::SkLookup { target } => target.target_string(),
+            ProgramSpec::FlowDissector { target } => target.target_string(),
             ProgramSpec::SkReuseport { target } => target.target_string(),
             ProgramSpec::SkMsg { target } => target.target_string(),
             ProgramSpec::SkSkb { target } => target.target_string(),
@@ -1811,6 +1845,14 @@ impl ProgramSpec {
     pub(crate) fn sk_lookup_target(&self) -> Option<&SkLookupTarget> {
         match self {
             ProgramSpec::SkLookup { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flow_dissector_target(&self) -> Option<&FlowDissectorTarget> {
+        match self {
+            ProgramSpec::FlowDissector { target } => Some(target),
             _ => None,
         }
     }
@@ -2155,6 +2197,8 @@ mod tests {
             .expect("socket_filter spec should parse");
         let sk_lookup =
             ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("sk_lookup spec should parse");
+        let flow_dissector = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
+            .expect("flow_dissector spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
@@ -2206,6 +2250,13 @@ mod tests {
                 .map(|target| target.netns_path.as_str()),
             Some("/proc/self/ns/net")
         );
+        assert_eq!(
+            flow_dissector
+                .flow_dissector_target()
+                .map(|target| target.netns_path.as_str()),
+            Some("/proc/self/ns/net")
+        );
+        assert_eq!(flow_dissector.section_name(), "flow_dissector");
         assert_eq!(
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),

@@ -408,6 +408,53 @@ pub(crate) fn synthetic_bpf_tcp_sock_type() -> MirType {
     }
 }
 
+pub(crate) fn synthetic_bpf_flow_keys_type() -> MirType {
+    let field = |name: &str, ty: MirType, offset| StructField {
+        name: name.to_string(),
+        ty,
+        offset,
+        synthetic: false,
+        bitfield: None,
+    };
+
+    MirType::Struct {
+        name: Some("bpf_flow_keys".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            field("nhoff", MirType::U16, 0),
+            field("thoff", MirType::U16, 2),
+            field("addr_proto", MirType::U16, 4),
+            field("is_frag", MirType::U8, 6),
+            field("is_first_frag", MirType::U8, 7),
+            field("is_encap", MirType::U8, 8),
+            field("ip_proto", MirType::U8, 9),
+            field("n_proto", MirType::U16, 10),
+            field("sport", MirType::U16, 12),
+            field("dport", MirType::U16, 14),
+            field("ipv4_src", MirType::U32, 16),
+            field("ipv4_dst", MirType::U32, 20),
+            field(
+                "ipv6_src",
+                MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                },
+                16,
+            ),
+            field(
+                "ipv6_dst",
+                MirType::Array {
+                    elem: Box::new(MirType::U32),
+                    len: 4,
+                },
+                32,
+            ),
+            field("flags", MirType::U32, 48),
+            field("flow_label", MirType::U32, 52),
+        ],
+    }
+}
+
 fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchemaSpec> {
     Some(match field {
         CtxField::Pid
@@ -567,6 +614,16 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
                     address_space: AddressSpace::Kernel,
                 },
             ))
+        }
+        CtxField::FlowKeys => {
+            // The verifier treats __sk_buff::flow_keys as a trusted direct-access
+            // pointer for flow_dissector; use Map space so projections emit direct
+            // loads instead of probe-read helper calls.
+            BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(synthetic_bpf_flow_keys_type()),
+                address_space: AddressSpace::Map,
+            }))
+            .non_null_pointer()
         }
         CtxField::SockoptOptval | CtxField::SockoptOptvalEnd => {
             BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {

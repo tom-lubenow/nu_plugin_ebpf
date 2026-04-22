@@ -138,6 +138,7 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("protocol", CtxField::Protocol),
     ("ip_protocol", CtxField::Protocol),
     ("sk", CtxField::Socket),
+    ("flow_keys", CtxField::FlowKeys),
     ("bind_inany", CtxField::BindInany),
     ("migrating_sk", CtxField::MigratingSocket),
     ("migrating_socket", CtxField::MigratingSocket),

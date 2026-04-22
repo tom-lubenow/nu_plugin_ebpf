@@ -822,6 +822,8 @@ pub enum EbpfProgramType {
     CgroupDevice,
     /// Socket lookup program attached to a network namespace
     SkLookup,
+    /// Flow dissector program attached to a network namespace
+    FlowDissector,
     /// Socket reuseport selector/migration program
     SkReuseport,
     /// Socket message verdict program attached to a pinned sockmap or sockhash
@@ -901,6 +903,7 @@ impl EbpfProgramType {
             EbpfProgramType::SocketFilter => &SOCKET_FILTER_INFO,
             EbpfProgramType::CgroupDevice => &CGROUP_DEVICE_INFO,
             EbpfProgramType::SkLookup => &SK_LOOKUP_INFO,
+            EbpfProgramType::FlowDissector => &FLOW_DISSECTOR_INFO,
             EbpfProgramType::SkReuseport => &SK_REUSEPORT_INFO,
             EbpfProgramType::SkMsg => &SK_MSG_INFO,
             EbpfProgramType::SkSkb => &SK_SKB_INFO,
@@ -1047,6 +1050,7 @@ pub enum ProgramAttachKind {
     SocketFilter,
     CgroupDevice,
     SkLookup,
+    FlowDissector,
     SkReuseport,
     SkMsg,
     SkSkb,

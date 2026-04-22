@@ -490,6 +490,7 @@ Near-term priority order:
   - Recent progress: attach-flow compile fixtures now cover the full direct packet-write allowlist, including `tc.data_meta[0]`, `sk_skb.data[0]`, and `sk_skb_parser.data[0]` stores in addition to the existing XDP/TC packet stores.
   - Recent progress: `lirc_mode2` context docs and attach-flow fixtures now cover the full modeled raw sample surface (`ctx.sample` / `ctx.raw`, `ctx.value`, and `ctx.mode`).
   - Recent progress: `sk_reuseport` now has compile/dry-run program-model support for `select` and `migrate` sections, covering `sk_reuseport_md` packet fields (`ctx.data`, `ctx.data_end`, `ctx.packet_len`, `ctx.eth_protocol`, `ctx.ip_protocol`, `ctx.hash`, `ctx.bind_inany`) plus `ctx.sk` / `ctx.migrating_sk` typed socket projections; live attach intentionally returns an explicit unsupported error until the loader has a safe attach implementation.
+  - Recent progress: `flow_dissector` now has compile/dry-run program-model support for network-namespace targets, covering the narrow `__sk_buff` packet fields (`ctx.data`, `ctx.data_end`, `ctx.packet_len`, `ctx.eth_protocol` / `ctx.protocol`) plus direct `ctx.flow_keys.*` projections and flow-dissector-specific return aliases; live attach intentionally returns an explicit unsupported error until the loader has a safe attach implementation.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

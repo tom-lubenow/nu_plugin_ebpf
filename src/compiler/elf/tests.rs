@@ -351,6 +351,7 @@ fn test_program_type_direct_packet_write_support_follows_program_model() {
     assert!(EbpfProgramType::SkSkbParser.supports_direct_packet_writes());
 
     assert!(!EbpfProgramType::SocketFilter.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::FlowDissector.supports_direct_packet_writes());
     assert!(!EbpfProgramType::CgroupSkb.supports_direct_packet_writes());
     assert!(!EbpfProgramType::SkMsg.supports_direct_packet_writes());
     assert!(!EbpfProgramType::SockOps.supports_direct_packet_writes());
@@ -365,6 +366,14 @@ fn test_program_type_return_action_aliases_cover_const_families() {
     assert_eq!(
         EbpfProgramType::Tc.return_action_alias("trap"),
         Some(ProgramReturnAlias::Const(8))
+    );
+    assert_eq!(
+        EbpfProgramType::FlowDissector.return_action_alias("fallback"),
+        Some(ProgramReturnAlias::Const(129))
+    );
+    assert_eq!(
+        EbpfProgramType::FlowDissector.return_action_alias("parsed"),
+        Some(ProgramReturnAlias::Const(0))
     );
     assert_eq!(
         EbpfProgramType::CgroupSock.return_action_alias("reject"),
@@ -504,6 +513,14 @@ fn test_program_type_socket_layouts_follow_program_model() {
         Some(SocketContextLayout::SkReuseport)
     );
     assert_eq!(
+        EbpfProgramType::FlowDissector.protocol_context_layout(),
+        Some(SocketContextLayout::SkBuff)
+    );
+    assert_eq!(
+        EbpfProgramType::FlowDissector.socket_tuple_context_layout(),
+        None
+    );
+    assert_eq!(
         EbpfProgramType::SocketFilter.socket_family_context_layout(),
         None
     );
@@ -630,6 +647,22 @@ fn test_program_type_metadata_for_sk_reuseport() {
     assert_eq!(info.attach_kind, ProgramAttachKind::SkReuseport);
     assert_eq!(info.target_kind, ProgramTargetKind::SocketReuseportMode);
     assert_eq!(info.context_family, ProgramContextFamily::SkReuseport);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(
+        info.supported_capabilities
+            .contains(&ProgramCapability::Counters)
+    );
+}
+
+#[test]
+fn test_program_type_metadata_for_flow_dissector() {
+    let info = EbpfProgramType::FlowDissector.info();
+    assert_eq!(info.canonical_prefix, "flow_dissector");
+    assert_eq!(info.section_prefix, "flow_dissector");
+    assert_eq!(info.attach_kind, ProgramAttachKind::FlowDissector);
+    assert_eq!(info.target_kind, ProgramTargetKind::NetworkNamespacePath);
+    assert_eq!(info.context_family, ProgramContextFamily::FlowDissector);
     assert_eq!(info.arg_access, ProgramValueAccess::None);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(
@@ -4925,6 +4958,30 @@ fn test_probe_context_allows_sk_reuseport_fields() {
             .contains(
                 "ctx.vlan_tci is only available on socket_filter, tc, cgroup_skb, sk_skb, and sk_skb_parser programs"
             )
+    );
+}
+
+#[test]
+fn test_probe_context_allows_flow_dissector_fields() {
+    let ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    assert!(ctx.ctx_field_access_error(&CtxField::PacketLen).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Data).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::DataEnd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::EthProtocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Protocol).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::FlowKeys).is_none());
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::Socket)
+            .expect("expected flow_dissector sk access error")
+            .contains(
+                "ctx.sk is only available on socket_filter, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            )
+    );
+    assert!(
+        ctx.ctx_field_access_error(&CtxField::SkbHash)
+            .expect("expected flow_dissector hash access error")
+            .contains("ctx.hash is not available on flow_dissector programs")
     );
 }
 

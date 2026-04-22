@@ -69,6 +69,7 @@ Supported attach types:
   - sk_msg
   - sk_skb
   - sk_skb_parser
+  - flow_dissector (dry-run compile support; live attach is not implemented yet)
   - sk_reuseport (dry-run compile support; live attach is not implemented yet)
   - cgroup_sysctl
   - cgroup_sockopt
@@ -142,8 +143,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.tstamp } - Get the skb timestamp on tc and cgroup_skb programs
     {|ctx| $ctx.tstamp_type } - Get the skb timestamp type on tc programs
     {|ctx| $ctx.hwtstamp } - Get the skb hardware timestamp on tc and cgroup_skb programs
-    {|ctx| $ctx.data }    - Get packet data pointer on xdp, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
-    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.data }    - Get packet data pointer on xdp, flow_dissector, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
+    {|ctx| $ctx.data_end } - Get packet end pointer on xdp, flow_dissector, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks
     {|ctx| $ctx.ingress_ifindex } - Get ingress interface index
     {|ctx| $ctx.ifindex } - Get the XDP ingress ifindex or skb ifindex, depending on program type
     {|ctx| $ctx.tc_index } - Get the skb tc_index on skb-backed packet programs
@@ -674,6 +675,20 @@ Context parameter syntax (recommended):
     `bpf_sk_assign`; `$ctx.sk = 0` clears an earlier selection.
     `assign-socket` remains available when explicit flags are needed.
 
+  flow_dissector fields:
+    {|ctx| $ctx.packet_len } - Get packet length from __sk_buff.len
+    {|ctx| $ctx.eth_protocol } - Get skb protocol / ethertype in host byte order
+    {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol
+    {|ctx| $ctx.flow_keys.nhoff } - Project the flow dissector keys pointer
+    {|ctx| $ctx.flow_keys.ip_proto } - Get the dissected IP protocol byte
+    {|ctx| $ctx.flow_keys.sport } - Get the dissected source port
+    {|ctx| $ctx.flow_keys.dport } - Get the dissected destination port
+    Note: `flow_dissector:/proc/self/ns/net` emits a `flow_dissector`
+    section. Current Aya loader support is compile/dry-run only, so live
+    attach returns a clear unsupported error instead of attempting to load
+    the unsupported object section. Return aliases are `ok` / `parsed` for
+    `0`, `drop` for `2`, and `continue` / `fallback` for `129`.
+
   sk_reuseport fields:
     {|ctx| $ctx.packet_len } - Get packet length from sk_reuseport_md.len
     {|ctx| $ctx.eth_protocol } - Get Ethernet protocol in host byte order
@@ -846,7 +861,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -902,6 +917,7 @@ Requirements:
             "sk_msg",
             "sk_skb",
             "sk_skb_parser",
+            "flow_dissector",
             "sk_reuseport",
             "cgroup_sysctl",
             "cgroup_sockopt",
@@ -1042,6 +1058,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'sk_reuseport:select' {|ctx| $ctx.hash | count; 'pass' }",
                 description: "Compile a sk_reuseport selector that counts reuseport selection hashes",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'flow_dissector:/proc/self/ns/net' {|ctx| $ctx.flow_keys.ip_proto | count; 'ok' }",
+                description: "Compile a flow dissector that counts dissected IP protocol values",
                 result: None,
             },
             Example {

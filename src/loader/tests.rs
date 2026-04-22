@@ -462,6 +462,13 @@ fn test_parse_probe_spec_sk_lookup_root_netns() {
 }
 
 #[test]
+fn test_parse_probe_spec_flow_dissector_root_netns() {
+    let (prog_type, target) = parse_probe_spec("flow_dissector:/proc/self/ns/net").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::FlowDissector);
+    assert_eq!(target, "/proc/self/ns/net");
+}
+
+#[test]
 fn test_parse_probe_spec_sk_reuseport_select() {
     let (prog_type, target) = parse_probe_spec("sk_reuseport:select").unwrap();
     assert_eq!(prog_type, EbpfProgramType::SkReuseport);
@@ -701,6 +708,21 @@ fn test_parse_program_spec_sk_lookup_is_structured() {
         }
     );
     assert_eq!(spec.to_string(), "sk_lookup:/proc/self/ns/net");
+}
+
+#[test]
+fn test_parse_program_spec_flow_dissector_is_structured() {
+    let spec = parse_program_spec("flow_dissector:/proc/self/ns/net").unwrap();
+    assert_eq!(
+        spec,
+        ProgramSpec::FlowDissector {
+            target: FlowDissectorTarget {
+                netns_path: "/proc/self/ns/net".to_string(),
+            }
+        }
+    );
+    assert_eq!(spec.to_string(), "flow_dissector:/proc/self/ns/net");
+    assert_eq!(spec.section_name(), "flow_dissector");
 }
 
 #[test]

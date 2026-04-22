@@ -790,6 +790,8 @@ pub enum CtxField {
     Protocol,
     /// current bpf_sock pointer on sk_lookup/sk_msg
     Socket,
+    /// __sk_buff::flow_keys pointer on flow_dissector programs
+    FlowKeys,
     /// sk_reuseport_md::bind_inany
     BindInany,
     /// sk_reuseport_md::migrating_sk
@@ -1006,6 +1008,7 @@ impl CtxField {
             CtxField::SockType => "sock_type".to_string(),
             CtxField::Protocol => "protocol".to_string(),
             CtxField::Socket => "sk".to_string(),
+            CtxField::FlowKeys => "flow_keys".to_string(),
             CtxField::BindInany => "bind_inany".to_string(),
             CtxField::MigratingSocket => "migrating_sk".to_string(),
             CtxField::BoundDevIf => "bound_dev_if".to_string(),

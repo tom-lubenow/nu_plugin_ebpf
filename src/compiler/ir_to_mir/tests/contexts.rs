@@ -2472,6 +2472,30 @@ fn test_lower_sk_lookup_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_flow_dissector_action_alias_return_to_const() {
+    let hir = make_return_literal_program(HirLiteral::String(b"fallback".to_vec()));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("flow_dissector action alias should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(matches!(
+        block.terminator,
+        MirInst::Return {
+            val: Some(MirValue::Const(129))
+        }
+    ));
+}
+
+#[test]
 fn test_lower_sk_lookup_ctx_local_port_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("local_port")],

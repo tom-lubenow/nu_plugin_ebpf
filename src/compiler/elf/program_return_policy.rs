@@ -147,11 +147,36 @@ const ALLOW_DENY_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
     },
 ];
 
+const FLOW_DISSECTOR_RETURN_ALIAS_ENTRIES: &[ReturnActionAliasEntry] = &[
+    ReturnActionAliasEntry {
+        alias: "ok",
+        value: ProgramReturnAlias::Const(0),
+    },
+    ReturnActionAliasEntry {
+        alias: "parsed",
+        value: ProgramReturnAlias::Const(0),
+    },
+    ReturnActionAliasEntry {
+        alias: "drop",
+        value: ProgramReturnAlias::Const(2),
+    },
+    ReturnActionAliasEntry {
+        alias: "continue",
+        value: ProgramReturnAlias::Const(129),
+    },
+    ReturnActionAliasEntry {
+        alias: "fallback",
+        value: ProgramReturnAlias::Const(129),
+    },
+];
+
 const XDP_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Xdp];
 
 const SOCKET_FILTER_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SocketFilter];
 
 const TC_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Tc];
+
+const FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
 
 const ALLOW_DENY_RETURN_ALIAS_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::CgroupSkb,
@@ -178,6 +203,10 @@ const RETURN_ACTION_ALIAS_SURFACES: &[ReturnActionAliasSurface] = &[
     ReturnActionAliasSurface {
         program_types: TC_RETURN_ALIAS_PROGRAMS,
         entries: TC_RETURN_ALIAS_ENTRIES,
+    },
+    ReturnActionAliasSurface {
+        program_types: FLOW_DISSECTOR_RETURN_ALIAS_PROGRAMS,
+        entries: FLOW_DISSECTOR_RETURN_ALIAS_ENTRIES,
     },
     ReturnActionAliasSurface {
         program_types: ALLOW_DENY_RETURN_ALIAS_PROGRAMS,

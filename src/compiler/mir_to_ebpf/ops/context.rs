@@ -108,6 +108,15 @@ impl<'a> MirToEbpfCompiler<'a> {
         152
     }
 
+    pub(super) fn sk_buff_flow_keys_offset() -> i16 {
+        // struct __sk_buff {
+        //     ...
+        //     __u32 data_meta;
+        //     struct bpf_flow_keys *flow_keys;
+        // };
+        144
+    }
+
     pub(super) fn sk_buff_tstamp_type_offset() -> i16 {
         // struct __sk_buff {
         //     ...

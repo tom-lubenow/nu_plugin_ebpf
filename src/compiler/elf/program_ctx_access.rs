@@ -515,6 +515,7 @@ const SKB_CTX_FIELDS: &[CtxField] = &[
     CtxField::TcIndex,
 ];
 const REUSEPORT_CTX_FIELDS: &[CtxField] = &[CtxField::BindInany, CtxField::MigratingSocket];
+const FLOW_DISSECTOR_CTX_FIELDS: &[CtxField] = &[CtxField::FlowKeys];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
     CtxField::RemoteIp6,
@@ -668,6 +669,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::ReuseportFields,
     ),
     (
+        FLOW_DISSECTOR_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::FlowDissectorFields,
+    ),
+    (
         &[CtxField::DataMeta],
         BaseContextFieldAccessRequirement::DataMetaField,
     ),
@@ -806,7 +811,7 @@ fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) ->
         )
     } else {
         format!(
-            "ctx.{} is only available on packet-context programs (xdp, socket_filter, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
+            "ctx.{} is only available on packet-context programs (xdp, flow_dissector, socket_filter, tc, cgroup_skb, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and packet-aware sock_ops callbacks)",
             field.display_name()
         )
     }
@@ -828,6 +833,7 @@ enum BaseContextFieldAccessRequirement {
     PacketHashField,
     PacketDataFields,
     ReuseportFields,
+    FlowDissectorFields,
     DataMetaField,
     IngressIfindexField,
     RxQueueIndexField,
@@ -911,6 +917,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
     EbpfProgramType::CgroupDevice,
     EbpfProgramType::SkLookup,
+    EbpfProgramType::FlowDissector,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -927,6 +934,7 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
+    EbpfProgramType::FlowDissector,
     EbpfProgramType::SocketFilter,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
@@ -939,6 +947,7 @@ const PACKET_LEN_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const PACKET_DATA_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Xdp,
+    EbpfProgramType::FlowDissector,
     EbpfProgramType::SkReuseport,
     EbpfProgramType::SkMsg,
     EbpfProgramType::SkSkb,
@@ -983,6 +992,7 @@ const SKB_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 
 const ETH_PROTOCOL_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::SocketFilter,
+    EbpfProgramType::FlowDissector,
     EbpfProgramType::Tc,
     EbpfProgramType::CgroupSkb,
     EbpfProgramType::SkSkb,
@@ -1000,6 +1010,8 @@ const PACKET_HASH_FIELD_PROGRAMS: &[EbpfProgramType] = &[
 ];
 
 const REUSEPORT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkReuseport];
+
+const FLOW_DISSECTOR_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
 
 const DEVICE_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupDevice];
 
@@ -1096,6 +1108,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: REUSEPORT_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::FlowDissectorFields,
+        program_types: FLOW_DISSECTOR_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::IngressIfindexField,
         program_types: INGRESS_IFINDEX_FIELD_PROGRAMS,
     },
@@ -1186,6 +1202,7 @@ impl BaseContextFieldAccessRequirement {
             Self::PacketHashField => self.allowed_by_program_surface(program_type),
             Self::PacketDataFields => self.allowed_by_program_surface(program_type),
             Self::ReuseportFields => self.allowed_by_program_surface(program_type),
+            Self::FlowDissectorFields => self.allowed_by_program_surface(program_type),
             Self::DataMetaField => program_type.supports_data_meta_ctx_field(),
             Self::IngressIfindexField => self.allowed_by_program_surface(program_type),
             Self::RxQueueIndexField => self.allowed_by_program_surface(program_type),
@@ -1260,6 +1277,10 @@ impl BaseContextFieldAccessRequirement {
             | Self::EgressIfindexField => packet_field_access_error(program_type, field),
             Self::ReuseportFields => format!(
                 "ctx.{} is only available on sk_reuseport programs",
+                field.display_name()
+            ),
+            Self::FlowDissectorFields => format!(
+                "ctx.{} is only available on flow_dissector programs",
                 field.display_name()
             ),
             Self::SkbChecksumHelperFields => format!(
