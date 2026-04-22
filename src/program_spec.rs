@@ -1617,6 +1617,10 @@ pub enum ProgramSpec {
         function: String,
         sleepable: bool,
     },
+    FmodRet {
+        function: String,
+        sleepable: bool,
+    },
     TpBtf {
         name: String,
     },
@@ -1891,7 +1895,7 @@ impl ProgramSpec {
         Self::from_program_type_target_with_sleepable(
             prog_type,
             target,
-            matches!(prefix, "fentry.s" | "fexit.s" | "lsm.s"),
+            matches!(prefix, "fentry.s" | "fexit.s" | "fmod_ret.s" | "lsm.s"),
         )
     }
 
@@ -1919,6 +1923,10 @@ impl ProgramSpec {
                 sleepable,
             }),
             EbpfProgramType::Fexit => Ok(ProgramSpec::Fexit {
+                function: target.to_string(),
+                sleepable,
+            }),
+            EbpfProgramType::FmodRet => Ok(ProgramSpec::FmodRet {
                 function: target.to_string(),
                 sleepable,
             }),
@@ -2042,6 +2050,7 @@ impl ProgramSpec {
             ProgramSpec::Kretprobe { .. } => EbpfProgramType::Kretprobe,
             ProgramSpec::Fentry { .. } => EbpfProgramType::Fentry,
             ProgramSpec::Fexit { .. } => EbpfProgramType::Fexit,
+            ProgramSpec::FmodRet { .. } => EbpfProgramType::FmodRet,
             ProgramSpec::TpBtf { .. } => EbpfProgramType::TpBtf,
             ProgramSpec::Lsm { .. } => EbpfProgramType::Lsm,
             ProgramSpec::Extension { .. } => EbpfProgramType::Extension,
@@ -2086,7 +2095,8 @@ impl ProgramSpec {
             ProgramSpec::Kprobe { function }
             | ProgramSpec::Kretprobe { function }
             | ProgramSpec::Fentry { function, .. }
-            | ProgramSpec::Fexit { function, .. } => function.clone(),
+            | ProgramSpec::Fexit { function, .. }
+            | ProgramSpec::FmodRet { function, .. } => function.clone(),
             ProgramSpec::TpBtf { name } => name.clone(),
             ProgramSpec::Lsm { hook, .. } => hook.clone(),
             ProgramSpec::Extension { target } => target.target_string(),
@@ -2271,6 +2281,10 @@ impl ProgramSpec {
                 function,
                 sleepable: true,
             } => format!("fexit.s/{function}"),
+            ProgramSpec::FmodRet {
+                function,
+                sleepable: true,
+            } => format!("fmod_ret.s/{function}"),
             ProgramSpec::Lsm {
                 hook,
                 sleepable: true,
@@ -2353,6 +2367,9 @@ impl fmt::Display for ProgramSpec {
             ProgramSpec::Fexit {
                 sleepable: true, ..
             } => "fexit.s",
+            ProgramSpec::FmodRet {
+                sleepable: true, ..
+            } => "fmod_ret.s",
             ProgramSpec::Lsm {
                 sleepable: true, ..
             } => "lsm.s",
@@ -2526,6 +2543,10 @@ mod tests {
             .expect("tracepoint spec should parse");
         let raw_tracepoint_writable = ProgramSpec::parse("raw_tracepoint.w:sys_enter")
             .expect("writable raw tracepoint spec should parse");
+        let fmod_ret = ProgramSpec::parse("fmod_ret:bpf_modify_return_test")
+            .expect("fmod_ret spec should parse");
+        let sleepable_fmod_ret = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test")
+            .expect("sleepable fmod_ret spec should parse");
         let struct_ops =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
         let uprobe =
@@ -2570,6 +2591,17 @@ mod tests {
         assert_eq!(
             raw_tracepoint_writable.section_name(),
             "raw_tracepoint.w/sys_enter"
+        );
+        assert_eq!(fmod_ret.program_type(), EbpfProgramType::FmodRet);
+        assert_eq!(fmod_ret.target_string(), "bpf_modify_return_test");
+        assert_eq!(fmod_ret.section_name(), "fmod_ret/bpf_modify_return_test");
+        assert_eq!(
+            sleepable_fmod_ret.section_name(),
+            "fmod_ret.s/bpf_modify_return_test"
+        );
+        assert_eq!(
+            sleepable_fmod_ret.to_string(),
+            "fmod_ret.s:bpf_modify_return_test"
         );
         assert_eq!(tracepoint.struct_ops_value_type_name(), None);
         assert_eq!(struct_ops.tracepoint_parts(), None);

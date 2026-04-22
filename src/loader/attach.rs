@@ -5,6 +5,7 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
     matches!(
         kind,
         ProgramAttachKind::RawTracepointWritable
+            | ProgramAttachKind::FmodRet
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector
@@ -807,6 +808,7 @@ impl EbpfState {
                     .map_err(|e| LoadError::Attach(format!("Failed to attach lirc_mode2: {e}")))?;
             }
             ProgramAttachKind::RawTracepointWritable
+            | ProgramAttachKind::FmodRet
             | ProgramAttachKind::TcAction
             | ProgramAttachKind::SkReuseport
             | ProgramAttachKind::FlowDissector

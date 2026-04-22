@@ -42,6 +42,21 @@ fn test_fentry_section_name() {
 }
 
 #[test]
+fn test_fmod_ret_section_name() {
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::FmodRet,
+        "bpf_modify_return_test",
+        "test",
+        vec![],
+    );
+    assert_eq!(
+        prog.section_name()
+            .expect("fmod_ret section name should build"),
+        "fmod_ret/bpf_modify_return_test"
+    );
+}
+
+#[test]
 fn test_sleepable_btf_program_section_name_uses_program_spec() {
     let spec = ProgramSpec::parse("fentry.s:ksys_read").expect("sleepable fentry spec");
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::Fentry, "ksys_read", "test", vec![])
@@ -70,6 +85,21 @@ fn test_sleepable_btf_program_section_name_uses_program_spec() {
             .section_name()
             .expect("sleepable full-spec section name should build"),
         "fentry.s/ksys_read"
+    );
+
+    let fmod_ret =
+        ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test").expect("sleepable fmod_ret spec");
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::FmodRet,
+        "bpf_modify_return_test",
+        "test",
+        vec![],
+    )
+    .with_program_spec(fmod_ret);
+    assert_eq!(
+        prog.section_name()
+            .expect("sleepable fmod_ret section name should build"),
+        "fmod_ret.s/bpf_modify_return_test"
     );
 }
 
@@ -247,6 +277,26 @@ fn test_program_type_metadata_for_fexit() {
     assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
     assert!(!EbpfProgramType::Fexit.is_userspace());
     assert!(EbpfProgramType::Uprobe.is_userspace());
+}
+
+#[test]
+fn test_program_type_metadata_for_fmod_ret() {
+    let info = EbpfProgramType::FmodRet.info();
+    assert_eq!(info.canonical_prefix, "fmod_ret");
+    assert_eq!(info.kernel_prog_type, "BPF_PROG_TYPE_TRACING");
+    assert_eq!(info.attach_kind, ProgramAttachKind::FmodRet);
+    assert_eq!(info.target_kind, ProgramTargetKind::KernelFunction);
+    assert_eq!(
+        info.kernel_target_validation,
+        Some(KernelTargetValidationKind::FmodRetTrampoline)
+    );
+    assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
+    assert_eq!(info.retval_access, ProgramValueAccess::Trampoline);
+    assert_eq!(
+        EbpfProgramType::FmodRet.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::FunctionTrampoline)
+    );
+    assert!(!EbpfProgramType::FmodRet.is_userspace());
 }
 
 #[test]
@@ -1265,6 +1315,10 @@ fn test_program_type_btf_callable_surface_follows_program_model() {
         Some(ProgramBtfCallableSurface::FunctionTrampoline)
     );
     assert_eq!(
+        EbpfProgramType::FmodRet.btf_callable_surface(),
+        Some(ProgramBtfCallableSurface::FunctionTrampoline)
+    );
+    assert_eq!(
         EbpfProgramType::TpBtf.btf_callable_surface(),
         Some(ProgramBtfCallableSurface::TpBtf)
     );
@@ -1397,7 +1451,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::PerfEventOutput),
         Some(
-            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+            "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
                 .to_string()
         )
     );
@@ -1412,60 +1466,60 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncArg),
         Some(
-            "helper 'bpf_get_func_arg' is only valid in fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_get_func_arg' is only valid in fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncArgCnt),
         Some(
-            "helper 'bpf_get_func_arg_cnt' is only valid in fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_get_func_arg_cnt' is only valid in fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Fentry.helper_call_error(BpfHelper::GetFuncRet),
-        Some("helper 'bpf_get_func_ret' is only valid in fexit programs".to_string())
+        Some("helper 'bpf_get_func_ret' is only valid in fexit and fmod_ret programs".to_string())
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStackId),
         Some(
-            "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+            "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetStack),
         Some(
-            "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+            "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncIp),
         Some(
-            "helper 'bpf_get_func_ip' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+            "helper 'bpf_get_func_ip' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetAttachCookie),
         Some(
-            "helper 'bpf_get_attach_cookie' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+            "helper 'bpf_get_attach_cookie' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::ProbeRead),
         Some(
-            "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+            "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::SkLookup.helper_call_error(BpfHelper::GetSocketCookie),
         Some(
-            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+            "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
                 .to_string()
         )
     );
@@ -1615,21 +1669,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToTcpSock),
         Some(
-            "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkcToUnixSock),
         Some(
-            "helper 'bpf_skc_to_unix_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+            "helper 'bpf_skc_to_unix_sock' is only valid in fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SockFromFile),
         Some(
-            "helper 'bpf_sock_from_file' is only valid in fentry, fexit, and tp_btf programs"
+            "helper 'bpf_sock_from_file' is only valid in fentry, fexit, fmod_ret, and tp_btf programs"
                 .to_string()
         )
     );
@@ -1660,35 +1714,35 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageGet),
         Some(
-            "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageDelete),
         Some(
-            "helper 'bpf_task_storage_delete' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_task_storage_delete' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCurrentTaskBtf),
         Some(
-            "helper 'bpf_get_current_task_btf' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_get_current_task_btf' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetCurrentTask),
         Some(
-            "helper 'bpf_get_current_task' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_get_current_task' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskPtRegs),
         Some(
-            "helper 'bpf_task_pt_regs' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_task_pt_regs' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
@@ -1703,21 +1757,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageGet),
         Some(
-            "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::SkStorageDelete),
         Some(
-            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
     assert_eq!(
         EbpfProgramType::CgroupSock.helper_call_error(BpfHelper::SkStorageDelete),
         Some(
-            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+            "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
@@ -2193,6 +2247,10 @@ fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
         Some(GetSocketCookieArgPolicy::Socket)
     );
     assert_eq!(
+        EbpfProgramType::FmodRet.get_socket_cookie_arg_policy(),
+        Some(GetSocketCookieArgPolicy::Socket)
+    );
+    assert_eq!(
         EbpfProgramType::SkLookup.get_socket_cookie_arg_policy(),
         None
     );
@@ -2523,6 +2581,10 @@ fn test_program_type_registry_covers_current_kernel_uapi_program_types() {
     );
     assert_eq!(
         EbpfProgramType::Fentry.kernel_prog_type(),
+        "BPF_PROG_TYPE_TRACING"
+    );
+    assert_eq!(
+        EbpfProgramType::FmodRet.kernel_prog_type(),
         "BPF_PROG_TYPE_TRACING"
     );
     assert_eq!(

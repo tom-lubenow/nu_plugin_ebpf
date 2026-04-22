@@ -71,6 +71,7 @@ fn validate_trampoline_target(
     let result = match validation {
         KernelTargetValidationKind::FentryTrampoline => btf.validate_fentry_target(func_name),
         KernelTargetValidationKind::FexitTrampoline => btf.validate_fexit_target(func_name),
+        KernelTargetValidationKind::FmodRetTrampoline => btf.validate_fmod_ret_target(func_name),
         KernelTargetValidationKind::LsmHook => btf.validate_lsm_hook_target(func_name),
         KernelTargetValidationKind::SymbolOnly => return Ok(()),
     };
@@ -172,7 +173,8 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
         ProgramSpec::Kprobe { function }
         | ProgramSpec::Kretprobe { function }
         | ProgramSpec::Fentry { function, .. }
-        | ProgramSpec::Fexit { function, .. } => {
+        | ProgramSpec::Fexit { function, .. }
+        | ProgramSpec::FmodRet { function, .. } => {
             let prog_type = spec.program_type();
             let validation = prog_type.kernel_target_validation().ok_or_else(|| {
                 LoadError::Load(format!(
@@ -328,6 +330,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `kretprobe:function_name`
 /// - `fentry:function_name`
 /// - `fexit:function_name`
+/// - `fmod_ret:function_name`
 /// - `lsm:hook_name`
 /// - `freplace:function_name` (or `extension:function_name`)
 /// - `syscall:label`

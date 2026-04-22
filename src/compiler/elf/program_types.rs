@@ -50,6 +50,7 @@ pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
 pub(super) const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
 pub(super) const FENTRY_SPEC_ALIASES: &[&str] = &["fentry", "fentry.s"];
 pub(super) const FEXIT_SPEC_ALIASES: &[&str] = &["fexit", "fexit.s"];
+pub(super) const FMOD_RET_SPEC_ALIASES: &[&str] = &["fmod_ret", "fmod_ret.s"];
 pub(super) const TP_BTF_SPEC_ALIASES: &[&str] = &["tp_btf"];
 pub(super) const TRACEPOINT_SPEC_ALIASES: &[&str] = &["tracepoint"];
 pub(super) const RAW_TRACEPOINT_SPEC_ALIASES: &[&str] = &["raw_tracepoint", "raw_tp"];
@@ -168,6 +169,22 @@ pub(super) const FEXIT_INFO: ProgramTypeInfo = ProgramTypeInfo {
     attach_kind: ProgramAttachKind::Fexit,
     target_kind: ProgramTargetKind::KernelFunction,
     kernel_target_validation: Some(KernelTargetValidationKind::FexitTrampoline),
+    supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
+    arg_access: ProgramValueAccess::Trampoline,
+    retval_access: ProgramValueAccess::Trampoline,
+};
+
+pub(super) const FMOD_RET_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::FmodRet,
+    kernel_prog_type: "BPF_PROG_TYPE_TRACING",
+    canonical_prefix: "fmod_ret",
+    spec_aliases: FMOD_RET_SPEC_ALIASES,
+    section_prefix: "fmod_ret",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Probe,
+    attach_kind: ProgramAttachKind::FmodRet,
+    target_kind: ProgramTargetKind::KernelFunction,
+    kernel_target_validation: Some(KernelTargetValidationKind::FmodRetTrampoline),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::Trampoline,
@@ -734,6 +751,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::Kretprobe,
     EbpfProgramType::Fentry,
     EbpfProgramType::Fexit,
+    EbpfProgramType::FmodRet,
     EbpfProgramType::TpBtf,
     EbpfProgramType::Tracepoint,
     EbpfProgramType::RawTracepoint,
@@ -777,6 +795,8 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "fentry.s",
     "fexit",
     "fexit.s",
+    "fmod_ret",
+    "fmod_ret.s",
     "tp_btf",
     "lsm",
     "lsm.s",

@@ -909,6 +909,15 @@ impl KernelBtf {
         Ok(())
     }
 
+    /// Validate the BTF slot layout needed by an fmod_ret trampoline.
+    ///
+    /// The kernel also restricts `BPF_MODIFY_RETURN` to allow-error-injection
+    /// functions or registered modify-return kfuncs; live attach is not exposed
+    /// yet, so this check only proves the compiler can model args and retval.
+    pub fn validate_fmod_ret_target(&self, function_name: &str) -> Result<(), BtfError> {
+        self.validate_fexit_target(function_name)
+    }
+
     /// Resolve a named field path within a by-value trampoline argument.
     ///
     /// Returns `Ok(None)` when the function exists but does not have that argument.

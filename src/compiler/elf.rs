@@ -800,6 +800,8 @@ pub enum EbpfProgramType {
     Fentry,
     /// BTF function exit probe (fexit)
     Fexit,
+    /// BTF modify-return probe (`fmod_ret`)
+    FmodRet,
     /// BTF-enabled raw tracepoint (`tp_btf`)
     TpBtf,
     /// Tracepoint
@@ -875,8 +877,11 @@ struct ProgramBtfCallableSurfaceSpec {
     surface: ProgramBtfCallableSurface,
 }
 
-const FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] =
-    &[EbpfProgramType::Fentry, EbpfProgramType::Fexit];
+const FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::FmodRet,
+];
 
 const TP_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::TpBtf];
 
@@ -910,6 +915,7 @@ impl EbpfProgramType {
             EbpfProgramType::Kretprobe => &KRETPROBE_INFO,
             EbpfProgramType::Fentry => &FENTRY_INFO,
             EbpfProgramType::Fexit => &FEXIT_INFO,
+            EbpfProgramType::FmodRet => &FMOD_RET_INFO,
             EbpfProgramType::TpBtf => &TP_BTF_INFO,
             EbpfProgramType::Tracepoint => &TRACEPOINT_INFO,
             EbpfProgramType::RawTracepoint => &RAW_TRACEPOINT_INFO,
@@ -1071,6 +1077,7 @@ pub enum ProgramAttachKind {
     Kretprobe,
     Fentry,
     Fexit,
+    FmodRet,
     TpBtf,
     Tracepoint,
     RawTracepoint,
@@ -1165,6 +1172,7 @@ pub enum KernelTargetValidationKind {
     SymbolOnly,
     FentryTrampoline,
     FexitTrampoline,
+    FmodRetTrampoline,
     LsmHook,
 }
 

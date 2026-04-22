@@ -208,7 +208,7 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_sk_lookup() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected get_socket_cookie sk_lookup program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
+        "helper 'bpf_get_socket_cookie' is only valid in fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser programs"
     )));
 }
 
@@ -1659,7 +1659,7 @@ fn test_verify_mir_for_program_perf_event_output_helper_rejects_lsm() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Lsm.info())
         .expect_err("expected perf_event_output helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
+        "helper 'bpf_perf_event_output' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp programs"
     )));
 }
 
@@ -1710,7 +1710,7 @@ fn test_verify_mir_for_program_get_stackid_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected get_stackid helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+        "helper 'bpf_get_stackid' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -1758,7 +1758,7 @@ fn test_verify_mir_for_program_get_stack_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected get_stack helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+        "helper 'bpf_get_stack' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -1940,7 +1940,7 @@ fn test_verify_mir_for_program_probe_read_helper_rejects_xdp() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected probe_read helper program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf programs"
+        "helper 'bpf_probe_read' is only valid in kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -3414,7 +3414,7 @@ fn test_verify_mir_for_probe_context_skc_to_tcp_sock_rejects_cgroup_sockopt() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected skc_to_tcp_sock cgroup_sockopt program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+        "helper 'bpf_skc_to_tcp_sock' is only valid in fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
     )));
 }
 
@@ -3597,7 +3597,7 @@ fn test_verify_mir_for_probe_context_sock_from_file_rejects_kprobe() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sock_from_file kprobe program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sock_from_file' is only valid in fentry, fexit, and tp_btf programs"
+        "helper 'bpf_sock_from_file' is only valid in fentry, fexit, fmod_ret, and tp_btf programs"
     )));
 }
 
@@ -4032,7 +4032,7 @@ fn test_verify_mir_for_probe_context_task_storage_get_rejects_xdp() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected task_storage_get xdp program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm programs"
+        "helper 'bpf_task_storage_get' is only valid in kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
     )));
 }
 
@@ -4226,7 +4226,7 @@ fn test_verify_mir_for_probe_context_sk_storage_get_rejects_xdp() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_storage_get xdp program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+        "helper 'bpf_sk_storage_get' is only valid in tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
     )));
 }
 
@@ -4340,7 +4340,7 @@ fn test_verify_mir_for_probe_context_sk_storage_delete_rejects_cgroup_sock() {
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected sk_storage_delete cgroup_sock program-surface error");
     assert!(err.iter().any(|e| e.message.contains(
-        "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm programs"
+        "helper 'bpf_sk_storage_delete' is only valid in tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm programs"
     )));
 }
 

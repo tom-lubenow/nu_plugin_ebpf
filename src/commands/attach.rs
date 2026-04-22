@@ -56,6 +56,7 @@ the probe point is hit.
 Supported attach types:
   - kprobe, kretprobe
   - fentry, fexit, tp_btf
+  - fmod_ret / fmod_ret.s (dry-run compile support; live attach is not implemented yet)
   - tracepoint, raw_tracepoint
   - raw_tracepoint.w / raw_tp.w (dry-run compile support; live attach is not implemented yet)
   - uprobe, uretprobe
@@ -754,10 +755,10 @@ Context parameter syntax (recommended):
   Function fields:
     {|ctx| $ctx.arg0 }    - Get function argument 0
     {|ctx| $ctx.arg1 }    - Get function argument 1
-    {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit)
+    {|ctx| $ctx.retval }  - Get return value (kretprobe/uretprobe/fexit/fmod_ret)
 
     Note: kprobe/uprobe expose pt_regs-style ctx.arg0-5. raw_tracepoint and
-    raw_tracepoint.w expose raw positional ctx.argN slots. fentry/fexit/tp_btf/lsm/struct_ops use
+    raw_tracepoint.w expose raw positional ctx.argN slots. fentry/fexit/fmod_ret/tp_btf/lsm/struct_ops use
     kernel BTF, and those kernel-BTF-backed contexts also expose named
     parameter aliases through ctx.arg.<name> when names are available.
     Scalar/pointer trampoline args and returns work directly. By-value

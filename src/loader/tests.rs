@@ -129,6 +129,24 @@ fn test_parse_probe_spec_fexit() {
 }
 
 #[test]
+fn test_parse_probe_spec_fmod_ret() {
+    let result = parse_probe_spec("fmod_ret:do_sys_openat2");
+
+    match result {
+        Ok((prog_type, target)) => {
+            assert!(matches!(prog_type, EbpfProgramType::FmodRet));
+            assert_eq!(target, "do_sys_openat2");
+        }
+        Err(LoadError::NeedsSudo) => {}
+        Err(LoadError::FunctionNotFound { .. }) => {}
+        Err(LoadError::UnsupportedTrampolineTarget { probe_type, .. }) => {
+            assert_eq!(probe_type, "fmod_ret");
+        }
+        Err(e) => panic!("Unexpected error: {:?}", e),
+    }
+}
+
+#[test]
 fn test_parse_probe_spec_tp_btf() {
     let result = parse_probe_spec("tp_btf:sys_enter");
 
@@ -666,6 +684,10 @@ fn test_parse_program_spec_sleepable_btf_sections_are_structured() {
     assert_eq!(fexit.section_name(), "fexit.s/do_sys_openat2");
     assert_eq!(fexit.to_string(), "fexit.s:do_sys_openat2");
 
+    let fmod_ret = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test").unwrap();
+    assert_eq!(fmod_ret.section_name(), "fmod_ret.s/bpf_modify_return_test");
+    assert_eq!(fmod_ret.to_string(), "fmod_ret.s:bpf_modify_return_test");
+
     let lsm = ProgramSpec::parse("lsm.s:file_open").unwrap();
     assert_eq!(
         lsm,
@@ -1143,6 +1165,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "raw_tracepoint.w",
         ),
         (EbpfProgramType::TcAction, "demo-action", "tc_action"),
+        (EbpfProgramType::FmodRet, "do_sys_openat2", "fmod_ret"),
         (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
         (
             EbpfProgramType::FlowDissector,

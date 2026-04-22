@@ -130,6 +130,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Tracepoint,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::SocketFilter,
             EbpfProgramType::Tc,
@@ -140,7 +141,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SockOps,
             EbpfProgramType::Xdp,
         ],
-        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
+        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, cgroup_sysctl, kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, socket_filter, tc, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops, and xdp",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::PerfEvent,
@@ -160,9 +161,10 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Tracepoint,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
         ],
-        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf",
+        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::LegacyProbeRead,
@@ -178,15 +180,17 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Tracepoint,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
         ],
-        label: "kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, and tp_btf",
+        label: "kprobe, kretprobe, uprobe, uretprobe, lsm, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketCookie,
         program_types: &[
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::SocketFilter,
             EbpfProgramType::TcAction,
@@ -198,7 +202,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SkSkb,
             EbpfProgramType::SkSkbParser,
         ],
-        label: "fentry, fexit, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
+        label: "fentry, fexit, fmod_ret, tp_btf, socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, sock_ops, sk_skb, and sk_skb_parser",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SocketUid,
@@ -290,6 +294,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::SkLookup,
             EbpfProgramType::SkMsg,
@@ -297,7 +302,7 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::SkSkbParser,
             EbpfProgramType::SockOps,
         ],
-        label: "fentry, fexit, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
+        label: "fentry, fexit, fmod_ret, tp_btf, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TaskStorage,
@@ -312,10 +317,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::Tracepoint,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::Lsm,
         ],
-        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, tp_btf, and lsm",
+        label: "kprobe, kretprobe, uprobe, uretprobe, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, and lsm",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Lsm,
@@ -327,15 +333,16 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         program_types: &[
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::Lsm,
         ],
-        label: "fentry, fexit, tp_btf, and lsm",
+        label: "fentry, fexit, fmod_ret, tp_btf, and lsm",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Fexit,
-        program_types: &[EbpfProgramType::Fexit],
-        label: "fexit",
+        program_types: &[EbpfProgramType::Fexit, EbpfProgramType::FmodRet],
+        label: "fexit and fmod_ret",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkStorageGet,
@@ -350,10 +357,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::StructOps,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::Lsm,
         ],
-        label: "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm",
+        label: "tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SkStorageDelete,
@@ -367,19 +375,21 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
             EbpfProgramType::StructOps,
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
             EbpfProgramType::Lsm,
         ],
-        label: "tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, tp_btf, and lsm",
+        label: "tc, cgroup_skb, cgroup_sock_addr, cgroup_sockopt, sock_ops, sk_msg, struct_ops, fentry, fexit, fmod_ret, tp_btf, and lsm",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TracingSocket,
         program_types: &[
             EbpfProgramType::Fentry,
             EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
             EbpfProgramType::TpBtf,
         ],
-        label: "fentry, fexit, and tp_btf",
+        label: "fentry, fexit, fmod_ret, and tp_btf",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Sockopt,
@@ -685,7 +695,10 @@ impl EbpfProgramType {
             Some(GetSocketCookieArgPolicy::ContextOrSocket)
         } else if matches!(
             self,
-            EbpfProgramType::Fentry | EbpfProgramType::Fexit | EbpfProgramType::TpBtf
+            EbpfProgramType::Fentry
+                | EbpfProgramType::Fexit
+                | EbpfProgramType::FmodRet
+                | EbpfProgramType::TpBtf
         ) {
             Some(GetSocketCookieArgPolicy::Socket)
         } else {

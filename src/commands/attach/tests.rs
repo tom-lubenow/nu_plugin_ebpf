@@ -6352,6 +6352,48 @@ fn test_compile_fentry_named_projected_ctx_arg_program() {
 }
 
 #[test]
+fn test_compile_fmod_ret_named_projected_ctx_arg_program() {
+    let Some((function_name, arg_name, field_name)) =
+        find_function_trampoline_named_projection_candidate()
+    else {
+        return;
+    };
+
+    let hir = make_ctx_path_call_program(
+        CellPath {
+            members: vec![
+                string_member("arg"),
+                string_member(&arg_name),
+                string_member(&field_name),
+            ],
+        },
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FmodRet, &function_name);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fmod_ret named ctx.arg field count should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("fmod_ret named ctx.arg field count should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_tp_btf_named_projected_ctx_arg_program() {
     let Some((tracepoint_name, arg_name, field_name)) = find_tp_btf_named_projection_candidate()
     else {
@@ -6459,6 +6501,37 @@ fn test_compile_fexit_ctx_retval_program() {
         Some(&lowering.type_hints),
     )
     .expect("fexit ctx.retval should compile");
+
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fmod_ret_ctx_retval_program() {
+    let Some(function_name) = find_fexit_ret_candidate() else {
+        return;
+    };
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("retval")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FmodRet, &function_name);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fmod_ret ctx.retval should lower");
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("fmod_ret ctx.retval should compile");
 
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }

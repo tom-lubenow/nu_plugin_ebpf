@@ -366,8 +366,8 @@ impl ProbeContext {
 
     pub(crate) fn btf_ret_unavailable_error(&self) -> String {
         format!(
-            "ctx.retval is not available on fexit:{} because the target returns void",
-            self.target
+            "ctx.retval is not available on {} because the target returns void",
+            self.btf_context_label()
         )
     }
 
@@ -586,8 +586,9 @@ impl ProbeContext {
             .function_trampoline_ret(&self.target)
             .map_err(|e| {
                 format!(
-                    "failed to resolve ctx.retval for fexit:{}: {}",
-                    self.target, e
+                    "failed to resolve ctx.retval for {}: {}",
+                    self.btf_context_label(),
+                    e
                 )
             })
     }
@@ -601,8 +602,9 @@ impl ProbeContext {
             .function_trampoline_ret_type_info(&self.target)
             .map_err(|e| {
                 format!(
-                    "failed to resolve ctx.retval type for fexit:{}: {}",
-                    self.target, e
+                    "failed to resolve ctx.retval type for {}: {}",
+                    self.btf_context_label(),
+                    e
                 )
             })
     }
@@ -696,8 +698,10 @@ impl ProbeContext {
             .function_trampoline_ret_field(&self.target, field_path)
             .map_err(|e| {
                 format!(
-                    "failed to resolve ctx.retval.{} for fexit:{}: {}",
-                    path_desc, self.target, e
+                    "failed to resolve ctx.retval.{} for {}: {}",
+                    path_desc,
+                    self.btf_context_label(),
+                    e
                 )
             })
     }
