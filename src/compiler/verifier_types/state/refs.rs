@@ -29,6 +29,47 @@ impl VerifierState {
         self.dynptr_initialized_slots.remove(&slot);
     }
 
+    pub(in crate::compiler::verifier_types) fn acquire_ringbuf_dynptr_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        increment_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_ringbuf_dynptr_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        decrement_slot_depth(&mut self.ringbuf_dynptr_slots, slot)
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_ringbuf_dynptr_slot(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.ringbuf_dynptr_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_ringbuf_dynptr_slot(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.ringbuf_dynptr_slots
+            .get(&slot)
+            .is_some_and(|(_, max_depth)| *max_depth > 0)
+    }
+
+    pub(in crate::compiler::verifier_types) fn first_live_ringbuf_dynptr_slot(
+        &self,
+    ) -> Option<StackSlotId> {
+        self.ringbuf_dynptr_slots
+            .iter()
+            .find(|(_, (_, max_depth))| *max_depth > 0)
+            .map(|(slot, _)| *slot)
+    }
+
     pub(in crate::compiler::verifier_types) fn initialize_unknown_stack_object_slot(
         &mut self,
         slot: StackSlotId,

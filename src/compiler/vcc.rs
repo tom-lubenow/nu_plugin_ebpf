@@ -481,6 +481,16 @@ pub enum VccInst {
         helper: String,
         arg_idx: usize,
     },
+    HelperRingbufDynptrAcquire {
+        ptr: VccReg,
+        helper: String,
+        arg_idx: usize,
+    },
+    HelperRingbufDynptrRelease {
+        ptr: VccReg,
+        helper: String,
+        arg_idx: usize,
+    },
     DynptrCopy {
         src: VccReg,
         dst: VccReg,

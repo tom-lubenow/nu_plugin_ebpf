@@ -496,6 +496,12 @@ pub enum BpfHelper {
     KptrXchg = 194,
     /// long bpf_dynptr_from_mem(data, size, flags, ptr)
     DynptrFromMem = 197,
+    /// long bpf_ringbuf_reserve_dynptr(ringbuf, size, flags, ptr)
+    RingbufReserveDynptr = 198,
+    /// void bpf_ringbuf_submit_dynptr(ptr, flags)
+    RingbufSubmitDynptr = 199,
+    /// void bpf_ringbuf_discard_dynptr(ptr, flags)
+    RingbufDiscardDynptr = 200,
     /// long bpf_dynptr_read(dst, len, src, offset, flags)
     DynptrRead = 201,
     /// long bpf_dynptr_write(dst, offset, src, len, flags)
@@ -512,6 +518,8 @@ pub enum BpfHelper {
 pub enum HelperDynptrArgRole {
     In,
     Out,
+    RingbufReservationOut,
+    RingbufReservationRelease,
 }
 
 impl BpfHelper {
@@ -712,6 +720,9 @@ impl BpfHelper {
             BpfHelper::CsumLevel => "bpf_csum_level",
             BpfHelper::KptrXchg => "bpf_kptr_xchg",
             BpfHelper::DynptrFromMem => "bpf_dynptr_from_mem",
+            BpfHelper::RingbufReserveDynptr => "bpf_ringbuf_reserve_dynptr",
+            BpfHelper::RingbufSubmitDynptr => "bpf_ringbuf_submit_dynptr",
+            BpfHelper::RingbufDiscardDynptr => "bpf_ringbuf_discard_dynptr",
             BpfHelper::DynptrRead => "bpf_dynptr_read",
             BpfHelper::DynptrWrite => "bpf_dynptr_write",
             BpfHelper::DynptrData => "bpf_dynptr_data",
@@ -922,6 +933,9 @@ impl BpfHelper {
             "csum_level" => Some(Self::CsumLevel),
             "kptr_xchg" => Some(Self::KptrXchg),
             "dynptr_from_mem" => Some(Self::DynptrFromMem),
+            "ringbuf_reserve_dynptr" => Some(Self::RingbufReserveDynptr),
+            "ringbuf_submit_dynptr" => Some(Self::RingbufSubmitDynptr),
+            "ringbuf_discard_dynptr" => Some(Self::RingbufDiscardDynptr),
             "dynptr_read" => Some(Self::DynptrRead),
             "dynptr_write" => Some(Self::DynptrWrite),
             "dynptr_data" => Some(Self::DynptrData),
@@ -1036,6 +1050,11 @@ impl BpfHelper {
                 0,
                 "helper 'bpf_ringbuf_reserve' requires arg2 flags to be 0",
             )),
+            (Self::RingbufReserveDynptr, 2) => Some((
+                0,
+                0,
+                "helper 'bpf_ringbuf_reserve_dynptr' requires arg2 flags to be 0",
+            )),
             (Self::RingbufSubmit, 1) => Some((
                 0,
                 3,
@@ -1045,6 +1064,16 @@ impl BpfHelper {
                 0,
                 3,
                 "helper 'bpf_ringbuf_discard' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)",
+            )),
+            (Self::RingbufSubmitDynptr, 1) => Some((
+                0,
+                3,
+                "helper 'bpf_ringbuf_submit_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)",
+            )),
+            (Self::RingbufDiscardDynptr, 1) => Some((
+                0,
+                3,
+                "helper 'bpf_ringbuf_discard_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)",
             )),
             (Self::RingbufQuery, 1) => Some((
                 0,
@@ -1221,6 +1250,10 @@ impl BpfHelper {
     pub const fn dynptr_arg_role(self, arg_idx: usize) -> Option<HelperDynptrArgRole> {
         match (self, arg_idx) {
             (Self::DynptrFromMem, 3) => Some(HelperDynptrArgRole::Out),
+            (Self::RingbufReserveDynptr, 3) => Some(HelperDynptrArgRole::RingbufReservationOut),
+            (Self::RingbufSubmitDynptr | Self::RingbufDiscardDynptr, 0) => {
+                Some(HelperDynptrArgRole::RingbufReservationRelease)
+            }
             (Self::DynptrRead, 2) | (Self::DynptrWrite, 0) | (Self::DynptrData, 0) => {
                 Some(HelperDynptrArgRole::In)
             }
@@ -1239,9 +1272,13 @@ impl BpfHelper {
             (Self::SkbUnderCgroup, 1) | (Self::CurrentTaskUnderCgroup, 0) => {
                 Some(MapKind::CgroupArray)
             }
-            (Self::RingbufOutput | Self::RingbufReserve | Self::RingbufQuery, 0) => {
-                Some(MapKind::RingBuf)
-            }
+            (
+                Self::RingbufOutput
+                | Self::RingbufReserve
+                | Self::RingbufReserveDynptr
+                | Self::RingbufQuery,
+                0,
+            ) => Some(MapKind::RingBuf),
             (Self::SkRedirectMap | Self::SockMapUpdate | Self::MsgRedirectMap, 1) => {
                 Some(MapKind::SockMap)
             }
@@ -1269,6 +1306,7 @@ impl BpfHelper {
             Self::CurrentTaskUnderCgroup => Some(0),
             Self::RingbufOutput
             | Self::RingbufReserve
+            | Self::RingbufReserveDynptr
             | Self::RingbufQuery
             | Self::MapLookupPercpuElem
             | Self::MapPushElem

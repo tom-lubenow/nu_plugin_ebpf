@@ -726,6 +726,25 @@ impl<'a> VccLowerer<'a> {
                                     arg_idx,
                                 });
                             }
+                            HelperDynptrArgRole::RingbufReservationOut => {
+                                out.push(VccInst::HelperRingbufDynptrAcquire {
+                                    ptr,
+                                    helper: helper.name().to_string(),
+                                    arg_idx,
+                                });
+                            }
+                            HelperDynptrArgRole::RingbufReservationRelease => {
+                                out.push(VccInst::HelperDynptrRequireInitialized {
+                                    ptr,
+                                    helper: helper.name().to_string(),
+                                    arg_idx,
+                                });
+                                out.push(VccInst::HelperRingbufDynptrRelease {
+                                    ptr,
+                                    helper: helper.name().to_string(),
+                                    arg_idx,
+                                });
+                            }
                         }
                     }
                 }

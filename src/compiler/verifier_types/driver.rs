@@ -256,6 +256,12 @@ fn verify_mir_with_subfunction_summaries_impl(
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
                 }
+                if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
+                    errors.push(VerifierTypeError::new(format!(
+                        "unreleased ringbuf dynptr reservation at function exit: stack slot {}",
+                        slot.0
+                    )));
+                }
                 if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
                     errors.push(VerifierTypeError::new(format!(
                         "unreleased unknown stack object at function exit: {} in stack slot {}",
@@ -361,6 +367,12 @@ fn verify_mir_with_subfunction_summaries_impl(
                     errors.push(VerifierTypeError::new(
                         "unreleased iter_kmem_cache iterator at function exit",
                     ));
+                }
+                if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
+                    errors.push(VerifierTypeError::new(format!(
+                        "unreleased ringbuf dynptr reservation at function exit: stack slot {}",
+                        slot.0
+                    )));
                 }
                 if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
                     errors.push(VerifierTypeError::new(format!(

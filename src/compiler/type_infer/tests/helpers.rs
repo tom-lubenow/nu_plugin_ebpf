@@ -6805,12 +6805,24 @@ fn test_type_error_helper_ringbuf_rejects_invalid_flags() {
             "helper 'bpf_ringbuf_reserve' requires arg2 flags",
         ),
         (
+            BpfHelper::RingbufReserveDynptr,
+            "helper 'bpf_ringbuf_reserve_dynptr' requires arg2 flags",
+        ),
+        (
             BpfHelper::RingbufSubmit,
             "helper 'bpf_ringbuf_submit' requires arg1 flags",
         ),
         (
             BpfHelper::RingbufDiscard,
             "helper 'bpf_ringbuf_discard' requires arg1 flags",
+        ),
+        (
+            BpfHelper::RingbufSubmitDynptr,
+            "helper 'bpf_ringbuf_submit_dynptr' requires arg1 flags",
+        ),
+        (
+            BpfHelper::RingbufDiscardDynptr,
+            "helper 'bpf_ringbuf_discard_dynptr' requires arg1 flags",
         ),
         (
             BpfHelper::RingbufQuery,
@@ -6836,7 +6848,16 @@ fn test_type_error_helper_ringbuf_rejects_invalid_flags() {
                 MirValue::Const(8),
                 MirValue::Const(1),
             ],
+            BpfHelper::RingbufReserveDynptr => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(1),
+                MirValue::StackSlot(data_slot),
+            ],
             BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
+                vec![MirValue::StackSlot(data_slot), MirValue::Const(4)]
+            }
+            BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => {
                 vec![MirValue::StackSlot(data_slot), MirValue::Const(4)]
             }
             BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],

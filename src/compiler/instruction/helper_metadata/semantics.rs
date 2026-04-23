@@ -778,6 +778,31 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const RINGBUF_RESERVE_DYNPTR_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper ringbuf_reserve_dynptr map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper ringbuf_reserve_dynptr ptr",
+                allowed: STACK_ONLY,
+                fixed_size: Some(16),
+                size_from_arg: None,
+            },
+        ];
+
+        const RINGBUF_RELEASE_DYNPTR_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper ringbuf_release_dynptr ptr",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        }];
+
         const RINGBUF_OUTPUT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2278,6 +2303,16 @@ impl BpfHelper {
             BpfHelper::RingbufReserve => HelperSemantics {
                 ptr_arg_rules: RINGBUF_RESERVE_RULES,
                 positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RingbufReserveDynptr => HelperSemantics {
+                ptr_arg_rules: RINGBUF_RESERVE_DYNPTR_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => HelperSemantics {
+                ptr_arg_rules: RINGBUF_RELEASE_DYNPTR_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::RingbufOutput => HelperSemantics {

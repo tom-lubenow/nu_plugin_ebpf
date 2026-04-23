@@ -379,6 +379,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::DynptrFromMem)
     ));
     assert!(matches!(
+        BpfHelper::from_name("ringbuf_reserve_dynptr"),
+        Some(BpfHelper::RingbufReserveDynptr)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_ringbuf_submit_dynptr"),
+        Some(BpfHelper::RingbufSubmitDynptr)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("dynptr_data"),
         Some(BpfHelper::DynptrData)
     ));
@@ -2955,6 +2963,32 @@ fn test_helper_signature_dynptr_helpers() {
         BpfHelper::DynptrFromMem.dynptr_arg_role(3),
         Some(HelperDynptrArgRole::Out)
     );
+    let reserve_dynptr = HelperSignature::for_id(BpfHelper::RingbufReserveDynptr as u32)
+        .expect("expected ringbuf_reserve_dynptr signature");
+    assert_eq!(reserve_dynptr.min_args, 4);
+    assert_eq!(reserve_dynptr.max_args, 4);
+    assert_eq!(reserve_dynptr.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(reserve_dynptr.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(reserve_dynptr.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::RingbufReserveDynptr.dynptr_arg_role(3),
+        Some(HelperDynptrArgRole::RingbufReservationOut)
+    );
+    for helper in [
+        BpfHelper::RingbufSubmitDynptr,
+        BpfHelper::RingbufDiscardDynptr,
+    ] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected ringbuf dynptr release sig");
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+        assert_eq!(
+            helper.dynptr_arg_role(0),
+            Some(HelperDynptrArgRole::RingbufReservationRelease)
+        );
+    }
 
     for helper in [BpfHelper::DynptrRead, BpfHelper::DynptrWrite] {
         let sig = HelperSignature::for_id(helper as u32).expect("expected dynptr I/O signature");
@@ -3155,6 +3189,14 @@ fn test_ringbuf_helper_flag_contracts() {
         ))
     );
     assert_eq!(
+        BpfHelper::RingbufReserveDynptr.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            0,
+            "helper 'bpf_ringbuf_reserve_dynptr' requires arg2 flags to be 0"
+        ))
+    );
+    assert_eq!(
         BpfHelper::RingbufSubmit.scalar_arg_range_requirement(1),
         Some((
             0,
@@ -3168,6 +3210,22 @@ fn test_ringbuf_helper_flag_contracts() {
             0,
             3,
             "helper 'bpf_ringbuf_discard' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufSubmitDynptr.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            3,
+            "helper 'bpf_ringbuf_submit_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufDiscardDynptr.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            3,
+            "helper 'bpf_ringbuf_discard_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)"
         ))
     );
     assert_eq!(

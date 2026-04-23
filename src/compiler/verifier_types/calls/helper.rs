@@ -711,6 +711,40 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                 }
                 state.initialize_dynptr_slot(slot);
             }
+            HelperDynptrArgRole::RingbufReservationOut => {
+                if state.is_dynptr_slot_initialized(slot)
+                    || state.has_live_ringbuf_dynptr_slot(slot)
+                {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} requires uninitialized dynptr stack object slot",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    continue;
+                }
+                state.initialize_dynptr_slot(slot);
+                state.acquire_ringbuf_dynptr_slot(slot);
+            }
+            HelperDynptrArgRole::RingbufReservationRelease => {
+                if !state.is_dynptr_slot_initialized(slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} requires initialized dynptr stack object",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    continue;
+                }
+                if !state.has_ringbuf_dynptr_slot(slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} requires live ringbuf dynptr reservation",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    continue;
+                }
+                state.release_ringbuf_dynptr_slot(slot);
+                state.deinitialize_dynptr_slot(slot);
+            }
         }
     }
 

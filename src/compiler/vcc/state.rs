@@ -56,6 +56,7 @@ struct VccState {
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
+    ringbuf_dynptr_slots: HashMap<StackSlotId, (u32, u32)>,
     unknown_stack_object_slots: HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
     reachable: bool,
@@ -141,6 +142,7 @@ impl VccState {
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
             dynptr_initialized_slots: HashSet::new(),
+            ringbuf_dynptr_slots: HashMap::new(),
             unknown_stack_object_slots: HashMap::new(),
             cond_refinements: HashMap::new(),
             reachable: true,
@@ -753,6 +755,33 @@ impl VccState {
         self.dynptr_initialized_slots.remove(&slot);
     }
 
+    fn acquire_ringbuf_dynptr_slot(&mut self, slot: StackSlotId) {
+        increment_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
+    }
+
+    fn release_ringbuf_dynptr_slot(&mut self, slot: StackSlotId) -> bool {
+        decrement_slot_depth(&mut self.ringbuf_dynptr_slots, slot)
+    }
+
+    fn has_ringbuf_dynptr_slot(&self, slot: StackSlotId) -> bool {
+        self.ringbuf_dynptr_slots
+            .get(&slot)
+            .is_some_and(|(min_depth, _)| *min_depth > 0)
+    }
+
+    fn has_live_ringbuf_dynptr_slot(&self, slot: StackSlotId) -> bool {
+        self.ringbuf_dynptr_slots
+            .get(&slot)
+            .is_some_and(|(_, max_depth)| *max_depth > 0)
+    }
+
+    fn first_live_ringbuf_dynptr_slot(&self) -> Option<StackSlotId> {
+        self.ringbuf_dynptr_slots
+            .iter()
+            .find(|(_, (_, max_depth))| *max_depth > 0)
+            .map(|(slot, _)| *slot)
+    }
+
     fn initialize_unknown_stack_object_slot(
         &mut self,
         slot: StackSlotId,
@@ -931,6 +960,8 @@ impl VccState {
             &self.unknown_stack_object_slots,
             &other.unknown_stack_object_slots,
         );
+        let ringbuf_dynptr_slots =
+            merge_slot_depths(&self.ringbuf_dynptr_slots, &other.ringbuf_dynptr_slots);
         VccState {
             reg_types: merged,
             ctx_field_sources,
@@ -1022,6 +1053,7 @@ impl VccState {
                 &other.res_spin_lock_irqsave_slots,
             ),
             dynptr_initialized_slots,
+            ringbuf_dynptr_slots,
             unknown_stack_object_slots,
             cond_refinements,
             reachable: true,
@@ -1100,6 +1132,7 @@ impl VccState {
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
             dynptr_initialized_slots: self.dynptr_initialized_slots.clone(),
+            ringbuf_dynptr_slots: self.ringbuf_dynptr_slots.clone(),
             unknown_stack_object_slots: self.unknown_stack_object_slots.clone(),
             cond_refinements: HashMap::new(),
             reachable: self.reachable,

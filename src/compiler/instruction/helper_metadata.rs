@@ -193,6 +193,9 @@ impl BpfHelper {
             191 => Some(Self::CopyFromUserTask),
             193 => Some(Self::ImaFileHash),
             197 => Some(Self::DynptrFromMem),
+            198 => Some(Self::RingbufReserveDynptr),
+            199 => Some(Self::RingbufSubmitDynptr),
+            200 => Some(Self::RingbufDiscardDynptr),
             201 => Some(Self::DynptrRead),
             202 => Some(Self::DynptrWrite),
             203 => Some(Self::DynptrData),
@@ -1048,6 +1051,18 @@ impl BpfHelper {
                 min_args: 4,
                 max_args: 4,
                 arg_kinds: [P, S, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RingbufReserveDynptr => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::DynptrRead => HelperSignature {

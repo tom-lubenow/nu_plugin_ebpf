@@ -1755,8 +1755,63 @@ impl VccVerifier {
                             "helper '{}' arg{} requires initialized dynptr stack object",
                             helper, arg_idx
                         ),
-                    ));
+                        ));
                 }
+            }
+            VccInst::HelperRingbufDynptrAcquire {
+                ptr,
+                helper,
+                arg_idx,
+            } => {
+                let op = format!("helper '{}' arg{}", helper, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if state.is_dynptr_slot_initialized(slot) || state.has_live_ringbuf_dynptr_slot(slot)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} requires uninitialized dynptr stack object slot",
+                            helper, arg_idx
+                        ),
+                    ));
+                    return;
+                }
+                state.initialize_dynptr_slot(slot);
+                state.acquire_ringbuf_dynptr_slot(slot);
+            }
+            VccInst::HelperRingbufDynptrRelease {
+                ptr,
+                helper,
+                arg_idx,
+            } => {
+                let op = format!("helper '{}' arg{}", helper, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if !state.is_dynptr_slot_initialized(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} requires initialized dynptr stack object",
+                            helper, arg_idx
+                        ),
+                    ));
+                    return;
+                }
+                if !state.has_ringbuf_dynptr_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} requires live ringbuf dynptr reservation",
+                            helper, arg_idx
+                        ),
+                    ));
+                    return;
+                }
+                state.release_ringbuf_dynptr_slot(slot);
+                state.deinitialize_dynptr_slot(slot);
             }
             VccInst::DynptrCopy {
                 src,
@@ -2228,6 +2283,15 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased iter_kmem_cache iterator at function exit",
+                    ));
+                }
+                if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "unreleased ringbuf dynptr reservation at function exit: stack slot {}",
+                            slot.0
+                        ),
                     ));
                 }
                 if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
