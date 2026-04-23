@@ -2,8 +2,9 @@ use super::*;
 use crate::compiler::hir::lower_ir_to_hir;
 use crate::compiler::mir::{BinOpKind, MirInst, MirValue};
 use crate::compiler::verifier_types::verify_mir;
-use nu_protocol::RegId;
+use nu_protocol::ast::{Comparison, Operator};
 use nu_protocol::ir::{Instruction, IrBlock, Literal};
+use nu_protocol::{RegId, VarId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -145,6 +146,103 @@ fn test_hir_to_mir_for_loop_cleanup_return_stays_initialized() {
 
     verify_mir(&mir.main, &HashMap::new())
         .expect("for-loop cleanup return lowered through an exit epilogue should stay initialized");
+}
+
+#[test]
+fn test_hir_to_mir_source_break_does_not_disable_continue_backedge() {
+    let ir = make_ir_block(vec![
+        Instruction::Drop { src: RegId::new(0) },
+        Instruction::LoadLiteral {
+            dst: RegId::new(2),
+            lit: Literal::Int(0),
+        },
+        Instruction::LoadLiteral {
+            dst: RegId::new(3),
+            lit: Literal::Nothing,
+        },
+        Instruction::LoadLiteral {
+            dst: RegId::new(4),
+            lit: Literal::Int(3),
+        },
+        Instruction::LoadLiteral {
+            dst: RegId::new(1),
+            lit: Literal::Range {
+                start: RegId::new(2),
+                step: RegId::new(3),
+                end: RegId::new(4),
+                inclusion: nu_protocol::ast::RangeInclusion::Inclusive,
+            },
+        },
+        Instruction::Iterate {
+            dst: RegId::new(0),
+            stream: RegId::new(1),
+            end_index: 21,
+        },
+        Instruction::StoreVariable {
+            var_id: VarId::new(80),
+            src: RegId::new(0),
+        },
+        Instruction::Drop { src: RegId::new(0) },
+        Instruction::LoadVariable {
+            dst: RegId::new(2),
+            var_id: VarId::new(80),
+        },
+        Instruction::LoadLiteral {
+            dst: RegId::new(3),
+            lit: Literal::Int(1),
+        },
+        Instruction::BinaryOp {
+            lhs_dst: RegId::new(2),
+            op: Operator::Comparison(Comparison::Equal),
+            rhs: RegId::new(3),
+        },
+        Instruction::Span {
+            src_dst: RegId::new(2),
+        },
+        Instruction::Not {
+            src_dst: RegId::new(2),
+        },
+        Instruction::BranchIf {
+            cond: RegId::new(2),
+            index: 17,
+        },
+        Instruction::Drop { src: RegId::new(0) },
+        Instruction::Jump { index: 21 },
+        Instruction::Jump { index: 19 },
+        Instruction::Drop { src: RegId::new(0) },
+        Instruction::Jump { index: 5 },
+        Instruction::Drain { src: RegId::new(0) },
+        Instruction::Jump { index: 5 },
+        Instruction::Drop { src: RegId::new(0) },
+        Instruction::Drain { src: RegId::new(0) },
+        Instruction::LoadLiteral {
+            dst: RegId::new(0),
+            lit: Literal::Int(9),
+        },
+        Instruction::Return { src: RegId::new(0) },
+    ]);
+
+    let hir = lower_ir_to_hir(ir, HashMap::new(), Vec::new(), None).unwrap();
+    let mir = lower_hir_to_mir(&hir, None, &HashMap::new()).unwrap();
+    let header_block = mir
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| {
+            matches!(block.terminator, MirInst::LoopHeader { .. }).then_some(block.id)
+        })
+        .expect("expected source for-loop to lower to a loop header");
+
+    assert!(
+        mir.main.blocks.iter().any(|block| {
+            matches!(
+                block.terminator,
+                MirInst::LoopBack { header, .. } if header == header_block
+            )
+        }),
+        "source continue edge should remain a LoopBack after a sibling break edge"
+    );
+    verify_mir(&mir.main, &HashMap::new()).expect("source break/continue loop should verify");
 }
 
 #[test]
