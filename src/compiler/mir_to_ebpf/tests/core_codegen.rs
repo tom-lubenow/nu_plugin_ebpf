@@ -3025,6 +3025,33 @@ fn test_compile_iter_cgroup_load_uses_ctx_cgroup_offset() {
 }
 
 #[test]
+fn test_compile_iter_bpf_map_load_uses_ctx_map_offset() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterMap, "bpf_map", opcode::BPF_DW, 8);
+}
+
+#[test]
+fn test_compile_iter_bpf_map_elem_loads_use_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterMap, "bpf_map_elem", opcode::BPF_DW, 8);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterMapKey, "bpf_map_elem", opcode::BPF_DW, 16);
+    assert_iter_ctx_load_uses_ctx_offset(
+        CtxField::IterMapValue,
+        "bpf_map_elem",
+        opcode::BPF_DW,
+        24,
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_prog_load_uses_ctx_prog_offset() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterProg, "bpf_prog", opcode::BPF_DW, 8);
+}
+
+#[test]
+fn test_compile_iter_bpf_link_load_uses_ctx_link_offset() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterLink, "bpf_link", opcode::BPF_DW, 8);
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_compile_perf_event_sample_period_load_uses_ctx_dword_offset_168() {
     let ctx = ProbeContext::new(

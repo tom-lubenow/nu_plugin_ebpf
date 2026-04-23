@@ -700,6 +700,16 @@ pub enum CtxField {
     IterVma,
     /// Current cgroup iterator cgroup pointer
     IterCgroup,
+    /// Current BPF map iterator map pointer
+    IterMap,
+    /// Current BPF map-element iterator key pointer
+    IterMapKey,
+    /// Current BPF map-element iterator value pointer
+    IterMapValue,
+    /// Current BPF program iterator program pointer
+    IterProg,
+    /// Current BPF link iterator link pointer
+    IterLink,
     /// Current task default cgroup pointer
     Cgroup,
     /// CPU ID
@@ -992,6 +1002,11 @@ impl CtxField {
             CtxField::IterFile => "iter_file".to_string(),
             CtxField::IterVma => "iter_vma".to_string(),
             CtxField::IterCgroup => "iter_cgroup".to_string(),
+            CtxField::IterMap => "iter_map".to_string(),
+            CtxField::IterMapKey => "iter_key".to_string(),
+            CtxField::IterMapValue => "iter_value".to_string(),
+            CtxField::IterProg => "iter_prog".to_string(),
+            CtxField::IterLink => "iter_link".to_string(),
             CtxField::Cgroup => "cgroup".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),

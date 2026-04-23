@@ -65,6 +65,16 @@ const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("iter_vma", CtxField::IterVma),
     ("cgroup", CtxField::IterCgroup),
     ("iter_cgroup", CtxField::IterCgroup),
+    ("map", CtxField::IterMap),
+    ("iter_map", CtxField::IterMap),
+    ("key", CtxField::IterMapKey),
+    ("iter_key", CtxField::IterMapKey),
+    ("value", CtxField::IterMapValue),
+    ("iter_value", CtxField::IterMapValue),
+    ("prog", CtxField::IterProg),
+    ("iter_prog", CtxField::IterProg),
+    ("link", CtxField::IterLink),
+    ("iter_link", CtxField::IterLink),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -577,6 +587,16 @@ mod tests {
             ("iter_vma", CtxField::IterVma),
             ("cgroup", CtxField::IterCgroup),
             ("iter_cgroup", CtxField::IterCgroup),
+            ("map", CtxField::IterMap),
+            ("iter_map", CtxField::IterMap),
+            ("key", CtxField::IterMapKey),
+            ("iter_key", CtxField::IterMapKey),
+            ("value", CtxField::IterMapValue),
+            ("iter_value", CtxField::IterMapValue),
+            ("prog", CtxField::IterProg),
+            ("iter_prog", CtxField::IterProg),
+            ("link", CtxField::IterLink),
+            ("iter_link", CtxField::IterLink),
         ] {
             assert_eq!(
                 EbpfProgramType::Iter

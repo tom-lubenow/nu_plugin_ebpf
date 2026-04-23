@@ -23,6 +23,11 @@ The closure receives a context parameter with these fields:
 | `file` / `iter_file` | Nullable iterated `file *` pointer from `struct bpf_iter__task_file`; BTF-backed fields such as `file.f_mode` can be projected when kernel BTF is available. | `iter:task_file` |
 | `vma` / `iter_vma` | Nullable iterated `vm_area_struct *` pointer from `struct bpf_iter__task_vma`; BTF-backed fields such as `vma.vm_start` can be projected when kernel BTF is available. | `iter:task_vma` |
 | `cgroup` / `iter_cgroup` | Nullable iterated `cgroup *` pointer from `struct bpf_iter__cgroup`; BTF-backed fields such as `cgroup.level` can be projected when kernel BTF is available. This shadows the current-task cgroup alias only on iterator programs; use `current_cgroup` for the helper-backed current-task cgroup meaning on other tracing families. | `iter:cgroup` |
+| `map` / `iter_map` | Nullable iterated `bpf_map *` pointer from BPF map iterator contexts; BTF-backed fields such as `map.id` can be projected when kernel BTF is available. | `iter:bpf_map`, `iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, `iter:sockmap` |
+| `key` / `iter_key` | Nullable map key pointer from BPF map-element iterator contexts. | `iter:bpf_map_elem`, `iter:sockmap` |
+| `value` / `iter_value` | Nullable map value pointer from BPF map-element and BPF socket-storage iterator contexts. | `iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, `iter:sockmap` |
+| `prog` / `iter_prog` | Nullable iterated `bpf_prog *` pointer from `struct bpf_iter__bpf_prog`; BTF-backed fields such as `prog.len` can be projected when kernel BTF is available. | `iter:bpf_prog` |
+| `link` / `iter_link` | Nullable iterated `bpf_link *` pointer from `struct bpf_iter__bpf_link`; BTF-backed fields such as `link.id` can be projected when kernel BTF is available. | `iter:bpf_link` |
 | `cgroup` / `current_cgroup` | Current task default `cgroup *` pointer, available for cgroup-local-storage ownership and BTF-backed cgroup projections such as `current_cgroup.kn.id`; follow-up projections also work after binding the pointer to a local. On tracepoints, use `current_cgroup` when you need the builtin rather than a payload field named `cgroup`. | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `cgroup_id` | Current task cgroup ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
@@ -208,10 +213,14 @@ Task-bearing iterators (`iter:task`, `iter:task_file`, and `iter:task_vma`)
 also expose the nullable iterated task through `$ctx.task` / `$ctx.iter_task`.
 `iter:task_file` exposes `$ctx.fd` / `$ctx.iter_fd` and `$ctx.file` /
 `$ctx.iter_file`, `iter:task_vma` exposes `$ctx.vma` / `$ctx.iter_vma`, and
-`iter:cgroup` exposes `$ctx.cgroup` / `$ctx.iter_cgroup`. `$ctx.current_task`
-and `$ctx.current_cgroup` remain reserved for helper-backed current-task
-semantics on task-aware tracing families. Live attach is rejected until the
-loader grows BPF iterator link/seq-file support.
+`iter:cgroup` exposes `$ctx.cgroup` / `$ctx.iter_cgroup`. BPF object
+iterators expose their natural roots too: `$ctx.map` on `iter:bpf_map`,
+`iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, and `iter:sockmap`;
+`$ctx.key` / `$ctx.value` on map-element iterators where those payload slots
+exist; `$ctx.prog` on `iter:bpf_prog`; and `$ctx.link` on `iter:bpf_link`.
+`$ctx.current_task` and `$ctx.current_cgroup` remain reserved for helper-backed
+current-task semantics on task-aware tracing families. Live attach is rejected
+until the loader grows BPF iterator link/seq-file support.
 
 `xdp`, `tc_action`, `tc`, `tcx`, `netkit`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw

@@ -7,6 +7,11 @@ const ITER_TASK_PAYLOAD_TARGETS: &[&str] = &["task", "task_file", "task_vma"];
 const ITER_TASK_FILE_TARGETS: &[&str] = &["task_file"];
 const ITER_TASK_VMA_TARGETS: &[&str] = &["task_vma"];
 const ITER_CGROUP_TARGETS: &[&str] = &["cgroup"];
+const ITER_MAP_TARGETS: &[&str] = &["bpf_map", "bpf_map_elem", "bpf_sk_storage_map", "sockmap"];
+const ITER_MAP_KEY_TARGETS: &[&str] = &["bpf_map_elem", "sockmap"];
+const ITER_MAP_VALUE_TARGETS: &[&str] = &["bpf_map_elem", "bpf_sk_storage_map", "sockmap"];
+const ITER_PROG_TARGETS: &[&str] = &["bpf_prog"];
+const ITER_LINK_TARGETS: &[&str] = &["bpf_link"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
@@ -481,6 +486,40 @@ const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
         "iter_cgroup",
         ContextFieldAccessRequirement::IterTargetsOnly(ITER_CGROUP_TARGETS, "iter:cgroup"),
     ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterMap,
+        "iter_map",
+        ContextFieldAccessRequirement::IterTargetsOnly(
+            ITER_MAP_TARGETS,
+            "iter:bpf_map, iter:bpf_map_elem, iter:bpf_sk_storage_map, and iter:sockmap",
+        ),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterMapKey,
+        "iter_key",
+        ContextFieldAccessRequirement::IterTargetsOnly(
+            ITER_MAP_KEY_TARGETS,
+            "iter:bpf_map_elem and iter:sockmap",
+        ),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterMapValue,
+        "iter_value",
+        ContextFieldAccessRequirement::IterTargetsOnly(
+            ITER_MAP_VALUE_TARGETS,
+            "iter:bpf_map_elem, iter:bpf_sk_storage_map, and iter:sockmap",
+        ),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterProg,
+        "iter_prog",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_PROG_TARGETS, "iter:bpf_prog"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterLink,
+        "iter_link",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_LINK_TARGETS, "iter:bpf_link"),
+    ),
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
@@ -681,6 +720,11 @@ const ITER_CTX_FIELDS: &[CtxField] = &[
     CtxField::IterFile,
     CtxField::IterVma,
     CtxField::IterCgroup,
+    CtxField::IterMap,
+    CtxField::IterMapKey,
+    CtxField::IterMapValue,
+    CtxField::IterProg,
+    CtxField::IterLink,
 ];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
@@ -1983,6 +2027,11 @@ mod tests {
             CtxField::IterFile,
             CtxField::IterVma,
             CtxField::IterCgroup,
+            CtxField::IterMap,
+            CtxField::IterMapKey,
+            CtxField::IterMapValue,
+            CtxField::IterProg,
+            CtxField::IterLink,
         ] {
             assert_eq!(
                 find_base_ctx_field_access_requirement(&field),
@@ -2046,6 +2095,58 @@ mod tests {
         );
         assert!(cgroup.ctx_field_access_error(&CtxField::IterTask).is_some());
 
+        let bpf_map = ProgramSpec::parse("iter:bpf_map").expect("iter bpf_map spec should parse");
+        assert!(bpf_map.ctx_field_access_error(&CtxField::IterMap).is_none());
+        assert!(
+            bpf_map
+                .ctx_field_access_error(&CtxField::IterMapKey)
+                .is_some()
+        );
+
+        let bpf_map_elem =
+            ProgramSpec::parse("iter:bpf_map_elem").expect("iter bpf_map_elem spec should parse");
+        assert!(
+            bpf_map_elem
+                .ctx_field_access_error(&CtxField::IterMap)
+                .is_none()
+        );
+        assert!(
+            bpf_map_elem
+                .ctx_field_access_error(&CtxField::IterMapKey)
+                .is_none()
+        );
+        assert!(
+            bpf_map_elem
+                .ctx_field_access_error(&CtxField::IterMapValue)
+                .is_none()
+        );
+
+        let bpf_prog =
+            ProgramSpec::parse("iter:bpf_prog").expect("iter bpf_prog spec should parse");
+        assert!(
+            bpf_prog
+                .ctx_field_access_error(&CtxField::IterProg)
+                .is_none()
+        );
+        assert!(
+            bpf_prog
+                .ctx_field_access_error(&CtxField::IterMap)
+                .is_some()
+        );
+
+        let bpf_link =
+            ProgramSpec::parse("iter:bpf_link").expect("iter bpf_link spec should parse");
+        assert!(
+            bpf_link
+                .ctx_field_access_error(&CtxField::IterLink)
+                .is_none()
+        );
+        assert!(
+            bpf_link
+                .ctx_field_access_error(&CtxField::IterProg)
+                .is_some()
+        );
+
         let map = ProgramSpec::parse("iter:map").expect("iter map spec should parse");
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterTask),
@@ -2058,6 +2159,10 @@ mod tests {
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterCgroup),
             Some("ctx.iter_cgroup is only available on iter:cgroup programs".to_string())
+        );
+        assert_eq!(
+            map.ctx_field_access_error(&CtxField::IterProg),
+            Some("ctx.iter_prog is only available on iter:bpf_prog programs".to_string())
         );
     }
 

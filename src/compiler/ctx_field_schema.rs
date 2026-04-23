@@ -644,6 +644,24 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
                 .with_kernel_btf_runtime_type("cgroup"),
         ),
+        CtxField::IterMap => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("bpf_map"))
+                .with_kernel_btf_runtime_type("bpf_map"),
+        ),
+        CtxField::IterMapKey | CtxField::IterMapValue => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            }))
+        }
+        CtxField::IterProg => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("bpf_prog"))
+                .with_kernel_btf_runtime_type("bpf_prog"),
+        ),
+        CtxField::IterLink => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("bpf_link"))
+                .with_kernel_btf_runtime_type("bpf_link"),
+        ),
         CtxField::Cgroup => BaseContextFieldSchemaSpec::value(
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
                 .with_kernel_btf_runtime_type("cgroup"),

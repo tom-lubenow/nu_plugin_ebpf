@@ -1632,6 +1632,11 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterFile));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterVma));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterCgroup));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterMap));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterMapKey));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterMapValue));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterProg));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterLink));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1655,6 +1660,9 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     let iter_task_file = ProbeContext::new(EbpfProgramType::Iter, "task_file");
     assert!(!iter_task_file.ctx_field_pointer_is_non_null(&CtxField::IterFile));
 
+    let iter_bpf_map = ProbeContext::new(EbpfProgramType::Iter, "bpf_map");
+    assert!(!iter_bpf_map.ctx_field_pointer_is_non_null(&CtxField::IterMap));
+
     let reuseport = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
     assert!(reuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!reuseport.ctx_field_pointer_is_non_null(&CtxField::MigratingSocket));
@@ -1669,6 +1677,13 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterFile));
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterVma));
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterCgroup));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterMap));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterMapKey));
+    assert!(
+        !EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterMapValue)
+    );
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterProg));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterLink));
     assert!(
         EbpfProgramType::Netfilter
             .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
@@ -1733,6 +1748,28 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
     assert_eq!(
         iter_cgroup_spec.kernel_btf_runtime_type_name,
         Some("cgroup")
+    );
+
+    let iter_map_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterMap)
+        .expect("expected ctx.iter_map type spec");
+    assert_eq!(iter_map_spec.kernel_btf_runtime_type_name, Some("bpf_map"));
+
+    let iter_key_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterMapKey)
+        .expect("expected ctx.iter_key type spec");
+    assert_eq!(iter_key_spec.kernel_btf_runtime_type_name, None);
+
+    let iter_prog_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterProg)
+        .expect("expected ctx.iter_prog type spec");
+    assert_eq!(
+        iter_prog_spec.kernel_btf_runtime_type_name,
+        Some("bpf_prog")
+    );
+
+    let iter_link_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterLink)
+        .expect("expected ctx.iter_link type spec");
+    assert_eq!(
+        iter_link_spec.kernel_btf_runtime_type_name,
+        Some("bpf_link")
     );
 
     let nf_state_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterState)
@@ -7266,6 +7303,40 @@ fn test_probe_context_allows_cgroup_iterator_payload_root() {
 }
 
 #[test]
+fn test_probe_context_allows_bpf_object_iterator_payload_roots() {
+    let map = ProbeContext::new(EbpfProgramType::Iter, "bpf_map");
+    assert_eq!(
+        map.resolve_ctx_field_name("map")
+            .expect("iter map alias should resolve"),
+        CtxField::IterMap
+    );
+    assert!(map.ctx_field_access_error(&CtxField::IterMap).is_none());
+    assert!(map.ctx_field_access_error(&CtxField::IterMapKey).is_some());
+
+    let elem = ProbeContext::new(EbpfProgramType::Iter, "bpf_map_elem");
+    assert!(elem.ctx_field_access_error(&CtxField::IterMap).is_none());
+    assert!(elem.ctx_field_access_error(&CtxField::IterMapKey).is_none());
+    assert!(
+        elem.ctx_field_access_error(&CtxField::IterMapValue)
+            .is_none()
+    );
+    assert!(elem.validate_load_ctx_field(&CtxField::IterMap).is_ok());
+    assert!(elem.validate_load_ctx_field(&CtxField::IterMapKey).is_ok());
+    assert!(
+        elem.validate_load_ctx_field(&CtxField::IterMapValue)
+            .is_ok()
+    );
+
+    let prog = ProbeContext::new(EbpfProgramType::Iter, "bpf_prog");
+    assert!(prog.ctx_field_access_error(&CtxField::IterProg).is_none());
+    assert!(prog.validate_load_ctx_field(&CtxField::IterProg).is_ok());
+
+    let link = ProbeContext::new(EbpfProgramType::Iter, "bpf_link");
+    assert!(link.ctx_field_access_error(&CtxField::IterLink).is_none());
+    assert!(link.validate_load_ctx_field(&CtxField::IterLink).is_ok());
+}
+
+#[test]
 fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
     let ctx = ProbeContext::new(EbpfProgramType::Iter, "map");
     let err = ctx
@@ -7285,6 +7356,11 @@ fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
         ctx.ctx_field_access_error(&CtxField::IterCgroup)
             .expect("expected iter cgroup field access error"),
         "ctx.iter_cgroup is only available on iter:cgroup programs"
+    );
+    assert_eq!(
+        ctx.ctx_field_access_error(&CtxField::IterMap)
+            .expect("expected iter map field access error"),
+        "ctx.iter_map is only available on iter:bpf_map, iter:bpf_map_elem, iter:bpf_sk_storage_map, and iter:sockmap programs"
     );
 }
 

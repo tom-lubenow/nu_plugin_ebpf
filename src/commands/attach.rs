@@ -319,8 +319,9 @@ Context parameter syntax (recommended):
     `$ctx.task` / `$ctx.iter_task`; `iter:task_file` also exposes `$ctx.fd` /
     `$ctx.iter_fd` and `$ctx.file` / `$ctx.iter_file`; `iter:task_vma` exposes
     `$ctx.vma` / `$ctx.iter_vma`; and `iter:cgroup` exposes `$ctx.cgroup` /
-    `$ctx.iter_cgroup`. Live iterator attach is rejected until the loader
-    supports iterator links.
+    `$ctx.iter_cgroup`. BPF object iterators expose `$ctx.map`, `$ctx.key`,
+    `$ctx.value`, `$ctx.prog`, or `$ctx.link` where those payload slots exist.
+    Live iterator attach is rejected until the loader supports iterator links.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

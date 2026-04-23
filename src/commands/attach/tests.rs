@@ -8353,6 +8353,141 @@ fn test_compile_iter_cgroup_payload_roots_programs() {
     }
 }
 
+#[test]
+fn test_compile_iter_bpf_map_payload_root_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("map")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "bpf_map",
+        &HashMap::new(),
+        "iter:bpf_map ctx.map nullable check",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_map_elem_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("map")],
+            },
+            "iter:bpf_map_elem ctx.map nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("key")],
+            },
+            "iter:bpf_map_elem ctx.key nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("value")],
+            },
+            "iter:bpf_map_elem ctx.value nullable check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "bpf_map_elem",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_sockmap_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("map")],
+            },
+            "iter:sockmap ctx.map nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("key")],
+            },
+            "iter:sockmap ctx.key nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("value")],
+            },
+            "iter:sockmap ctx.value nullable check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "sockmap",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_bpf_sk_storage_map_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("map")],
+            },
+            "iter:bpf_sk_storage_map ctx.map nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("value")],
+            },
+            "iter:bpf_sk_storage_map ctx.value nullable check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "bpf_sk_storage_map",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_bpf_prog_payload_root_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("prog")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "bpf_prog",
+        &HashMap::new(),
+        "iter:bpf_prog ctx.prog nullable check",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_link_payload_root_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("link")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "bpf_link",
+        &HashMap::new(),
+        "iter:bpf_link ctx.link nullable check",
+    );
+}
+
 fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     matches!(
@@ -8393,6 +8528,30 @@ fn cgroup_level_projection_available() -> bool {
     )
 }
 
+fn bpf_map_id_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("id".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("bpf_map", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn bpf_prog_len_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("len".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("bpf_prog", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn bpf_link_id_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("id".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("bpf_link", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
 fn ctx_task_pid_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("pid")],
@@ -8420,6 +8579,24 @@ fn ctx_vma_vm_start_path(root: &str) -> CellPath {
 fn ctx_cgroup_level_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("level")],
+    }
+}
+
+fn ctx_bpf_map_id_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("id")],
+    }
+}
+
+fn ctx_bpf_prog_len_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("len")],
+    }
+}
+
+fn ctx_bpf_link_id_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("id")],
     }
 }
 
@@ -8577,6 +8754,62 @@ fn test_compile_iter_cgroup_ctx_cgroup_level_counter_program() {
         "cgroup",
         ctx_cgroup_level_path("cgroup"),
         "iter:cgroup ctx.cgroup.level count",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_map_ctx_map_id_counter_program() {
+    if !bpf_map_id_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "bpf_map",
+        ctx_bpf_map_id_path("map"),
+        "iter:bpf_map ctx.map.id count",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_map_elem_ctx_map_id_counter_program() {
+    if !bpf_map_id_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "bpf_map_elem",
+        ctx_bpf_map_id_path("map"),
+        "iter:bpf_map_elem ctx.map.id count",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_prog_ctx_prog_len_counter_program() {
+    if !bpf_prog_len_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "bpf_prog",
+        ctx_bpf_prog_len_path("prog"),
+        "iter:bpf_prog ctx.prog.len count",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_link_ctx_link_id_counter_program() {
+    if !bpf_link_id_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "bpf_link",
+        ctx_bpf_link_id_path("link"),
+        "iter:bpf_link ctx.link.id count",
     );
 }
 
