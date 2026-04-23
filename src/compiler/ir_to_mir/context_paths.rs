@@ -5,7 +5,7 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
-    fn ctx_path_member_name(member: &PathMember) -> Result<String, CompileError> {
+    pub(super) fn ctx_path_member_name(member: &PathMember) -> Result<String, CompileError> {
         match member {
             PathMember::String { val, .. } => Ok(val.clone()),
             PathMember::Int { val, .. } => Ok(format!("arg{}", val)),

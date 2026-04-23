@@ -538,6 +538,7 @@ Near-term priority order:
   - Replace generic "unsupported" failures with actionable messages that include rewrites/workarounds.
   - Emit diagnostics at the highest possible level (HIR/MIR) before backend failure.
   - Recent progress: socket tuple context diagnostics now match the expanded modeled surface, including `cgroup_sock` and `cgroup_sock_addr` alongside skb/socket-message/socket-lookup/sock_ops families.
+  - Recent progress: context access errors now preserve the source alias where possible, so an invalid `$ctx.current_task` reports `ctx.current_task` rather than the canonical `ctx.task`.
   - Recent progress: unknown-kfunc diagnostics now indicate when the symbol exists in kernel BTF but lacks a compiler-side typed signature.
   - Recent progress: annotated mutable-global failures now explain when `null` cannot honestly fix string/list/binary capacity, and point users toward concrete exemplars or `global-define --type ...` instead of reporting a generic unsupported-type error.
   - Recent progress: compile-only live-attach rejections now include attach-family-specific blocker details for raw_tracepoint.w, fmod_ret, lsm_cgroup, netkit, tc_action, sk_reuseport, flow_dissector, netfilter, lwt_*, freplace, syscall, and cgroup_sock_addr UNIX hooks instead of only a generic unsupported-loader message.

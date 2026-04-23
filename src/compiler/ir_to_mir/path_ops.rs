@@ -657,10 +657,20 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        let source_ctx_field_name = Self::ctx_path_member_name(&path.members[0])?;
         let (ctx_field, root_members_consumed) = self.resolve_ctx_field_from_path(&path)?;
         let remaining_members = &path.members[root_members_consumed..];
         if let Some(ctx) = self.probe_ctx {
-            ctx.validate_ctx_field_access(&ctx_field)?;
+            if let Some(message) = ctx.ctx_field_access_error(&ctx_field) {
+                let canonical = format!("ctx.{}", ctx_field.display_name());
+                let source = format!("ctx.{source_ctx_field_name}");
+                let message = if source_ctx_field_name != "arg" && source != canonical {
+                    message.replace(&canonical, &source)
+                } else {
+                    message
+                };
+                return Err(CompileError::UnsupportedInstruction(message));
+            }
         }
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
         let ctx_projection_spec =

@@ -4161,6 +4161,30 @@ fn test_lower_packet_program_rejects_ctx_cgroup_alias() {
 }
 
 #[test]
+fn test_lower_packet_program_rejects_current_task_alias_with_source_name() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("current_task")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("packet programs should reject ctx.current_task alias");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.current_task is not available on xdp programs"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_contextless_program_rejects_current_task_cgroup_fields() {
     for path in [
         CellPath {
