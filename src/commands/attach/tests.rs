@@ -7283,6 +7283,35 @@ fn test_compile_kprobe_ctx_tgid_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_uid_gid_counter_programs() {
+    for (field, context) in [
+        ("uid", "kprobe ctx.uid count"),
+        ("gid", "kprobe ctx.gid count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_kprobe_ctx_comm_byte_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        CellPath {
+            members: vec![string_member("comm"), int_member(0)],
+        },
+        "kprobe ctx.comm[0] count",
+    );
+}
+
+#[test]
 fn test_compile_kprobe_ctx_ancestor_cgroup_id_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,
