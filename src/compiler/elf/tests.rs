@@ -3486,6 +3486,7 @@ fn test_tracing_helper_ctx_field_surface_follows_program_model() {
             "software:cpu-clock:period=100000",
         ),
         (EbpfProgramType::RawTracepoint, "sched_switch"),
+        (EbpfProgramType::RawTracepointWritable, "sched_switch"),
         (EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat"),
         (EbpfProgramType::Fentry, "vfs_read"),
         (EbpfProgramType::Fexit, "vfs_read"),

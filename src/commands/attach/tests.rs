@@ -2963,14 +2963,14 @@ fn make_ctx_path_store_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_int_return_program(value: i64) -> HirProgram {
+fn make_literal_return_program(lit: HirLiteral) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
             stmts: vec![HirStmt::LoadLiteral {
                 dst: RegId::new(0),
-                lit: HirLiteral::Int(value),
+                lit,
             }],
             terminator: HirTerminator::Return { src: RegId::new(0) },
         }],
@@ -2982,6 +2982,10 @@ fn make_int_return_program(value: i64) -> HirProgram {
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_int_return_program(value: i64) -> HirProgram {
+    make_literal_return_program(HirLiteral::Int(value))
 }
 
 fn make_intrinsic_call_return_program(
@@ -7171,6 +7175,87 @@ fn test_compile_syscall_return_program() {
         &HashMap::new(),
         "syscall return 0",
     );
+}
+
+#[test]
+fn test_compile_action_alias_return_programs() {
+    for (program_type, target, alias, context) in [
+        (
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            "fallback",
+            "flow_dissector fallback return alias",
+        ),
+        (
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            "parsed",
+            "flow_dissector parsed return alias",
+        ),
+        (
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            "queue",
+            "netfilter queue return alias",
+        ),
+        (
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            "accept",
+            "netfilter accept return alias",
+        ),
+        (
+            EbpfProgramType::LwtIn,
+            "demo-route",
+            "reroute",
+            "lwt_in reroute return alias",
+        ),
+        (
+            EbpfProgramType::LwtOut,
+            "demo-route",
+            "redirect",
+            "lwt_out redirect return alias",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            "reroute",
+            "lwt_xmit reroute return alias",
+        ),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            "pass",
+            "lwt_seg6local pass return alias",
+        ),
+        (
+            EbpfProgramType::Tcx,
+            "lo:ingress",
+            "next",
+            "tcx next return alias",
+        ),
+        (
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            "redirect",
+            "netkit redirect return alias",
+        ),
+        (
+            EbpfProgramType::SkReuseport,
+            "select",
+            "pass",
+            "sk_reuseport select pass return alias",
+        ),
+        (
+            EbpfProgramType::SkReuseport,
+            "migrate",
+            "drop",
+            "sk_reuseport migrate drop return alias",
+        ),
+    ] {
+        let hir = make_literal_return_program(HirLiteral::String(alias.as_bytes().to_vec()));
+        assert_attach_program_compiles(&hir, program_type, target, &HashMap::new(), context);
+    }
 }
 
 #[test]
