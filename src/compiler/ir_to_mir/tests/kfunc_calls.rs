@@ -177,6 +177,59 @@ fn test_helper_call_with_ctx_variable_lowers_real_context_pointer() {
 }
 
 #[test]
+fn test_helper_call_rejects_callback_subprogram_helpers() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_loop".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("expected callback helper-call to be rejected");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => assert!(
+            msg.contains("bpf_loop")
+                && msg.contains("requires callback subprogram pointer support"),
+            "unexpected error: {msg}"
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_kfunc_call_without_pipeline_does_not_inject_src_dst() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId};

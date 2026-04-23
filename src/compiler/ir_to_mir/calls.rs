@@ -857,6 +857,12 @@ impl<'a> HirToMirLowering<'a> {
                         helper.name()
                     ))
                 })?;
+                if helper.requires_callback_subprogram() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' requires callback subprogram pointer support, which is not modeled yet",
+                        helper.name()
+                    )));
+                }
                 self.require_only_named_args("helper-call", &["kind"])?;
                 if self.named_args.contains_key("kind")
                     && !helper.helper_requires_explicit_map_kind(0)

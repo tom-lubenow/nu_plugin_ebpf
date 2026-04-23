@@ -398,6 +398,33 @@ fn test_type_error_syscall_program_rejects_unmodeled_helper() {
 }
 
 #[test]
+fn test_type_error_callback_helpers_require_modeled_subprogram_pointers() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::BpfLoop as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected callback helper to be rejected");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_loop' requires callback subprogram pointer support")
+    }));
+}
+
+#[test]
 fn test_type_error_syscall_helpers_enforce_size_and_flags() {
     let mut func = make_test_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

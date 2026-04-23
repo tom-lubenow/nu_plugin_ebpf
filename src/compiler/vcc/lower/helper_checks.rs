@@ -11,16 +11,29 @@ impl<'a> VccLowerer<'a> {
         args: &[MirValue],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
-        if let Some(helper) = BpfHelper::from_u32(helper_id)
-            && let Some(message) = self
+        if let Some(helper) = BpfHelper::from_u32(helper_id) {
+            if helper.requires_callback_subprogram() {
+                return Err(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
+                        helper.name()
+                    ),
+                ));
+            }
+            if let Some(message) = self
                 .probe_ctx
                 .and_then(|ctx| ctx.helper_call_error(helper))
-                .or_else(|| self.program.and_then(|program| program.program_type.helper_call_error(helper)))
-        {
-            return Err(VccError::new(
-                VccErrorKind::UnsupportedInstruction,
-                message,
-            ));
+                .or_else(|| {
+                    self.program
+                        .and_then(|program| program.program_type.helper_call_error(helper))
+                })
+            {
+                return Err(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    message,
+                ));
+            }
         }
 
         if let Some(sig) = HelperSignature::for_id(helper_id) {

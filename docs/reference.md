@@ -568,6 +568,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 - Treat `map-*` and `global-*` as convenience surface around concrete eBPF capabilities, not as a goal to invent a second parallel language when plain Nushell syntax would be clearer. They are justified when they name a real map/global resource directly; they are not a template for growing new wrappers by default.
 - Treat `helper-call` and `kfunc-call` as escape hatches for kernel ABI surface we have not yet lifted into a smaller, more idiomatic language primitive.
 - Compiler-internal helper and kfunc modeling is permanent even if escape-hatch commands shrink later. The compiler still has to know signatures, legal program families, pointer/ref semantics, and verifier-facing rules.
+- Callback-taking helper escape hatches (`bpf_for_each_map_elem`, `bpf_timer_set_callback`, `bpf_find_vma`, `bpf_loop`, and `bpf_user_ringbuf_drain`) are intentionally rejected until the compiler can lower real BPF subprogram pointers instead of ordinary data pointers.
 
 ## Commands
 

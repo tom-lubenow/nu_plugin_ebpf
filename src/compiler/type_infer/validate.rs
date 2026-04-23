@@ -11,6 +11,13 @@ impl<'a> TypeInference<'a> {
         let Some(helper) = BpfHelper::from_u32(helper_id) else {
             return;
         };
+        if helper.requires_callback_subprogram() {
+            errors.push(TypeError::new(format!(
+                "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
+                helper.name()
+            )));
+            return;
+        }
         let Some(ctx) = self.probe_ctx.as_ref() else {
             return;
         };

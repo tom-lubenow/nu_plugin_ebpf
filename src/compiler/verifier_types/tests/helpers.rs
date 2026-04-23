@@ -30,6 +30,39 @@ fn test_helper_pointer_arg_required() {
     );
 }
 
+#[test]
+fn test_verify_mir_callback_helpers_require_modeled_subprogram_pointers() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::BpfLoop as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    let err = verify_mir(&func, &types).expect_err("expected callback helper error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_loop' requires callback subprogram pointer support")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn bpf_spin_lock_types(lock: VReg, extra: &[(VReg, MirType)]) -> HashMap<VReg, MirType> {
     let mut types = HashMap::new();
     types.insert(

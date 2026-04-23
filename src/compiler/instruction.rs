@@ -13,6 +13,7 @@ const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
 const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
 const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
 const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
+const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
 
 pub(crate) fn scalar_range_contains_only_allowed_values(
     min: i64,
@@ -286,6 +287,8 @@ pub enum BpfHelper {
     KtimeGetCoarseNs = 160,
     /// long bpf_check_mtu(ctx, ifindex, mtu_len, len_diff, flags)
     CheckMtu = 163,
+    /// long bpf_for_each_map_elem(map, callback_fn, callback_ctx, flags)
+    ForEachMapElem = 164,
     /// u64 bpf_ktime_get_tai_ns(void)
     KtimeGetTaiNs = 208,
     /// u64 bpf_jiffies64(void)
@@ -470,10 +473,22 @@ pub enum BpfHelper {
     BtfFindByNameKind = 167,
     /// long bpf_sys_close(fd)
     SysClose = 168,
+    /// long bpf_timer_init(timer, map, flags)
+    TimerInit = 169,
+    /// long bpf_timer_set_callback(timer, callback_fn)
+    TimerSetCallback = 170,
+    /// long bpf_timer_start(timer, nsecs, flags)
+    TimerStart = 171,
+    /// long bpf_timer_cancel(timer)
+    TimerCancel = 172,
     /// struct pt_regs *bpf_task_pt_regs(task)
     TaskPtRegs = 175,
     /// long bpf_kallsyms_lookup_name(name, name_sz, flags, res)
     KallsymsLookupName = 179,
+    /// long bpf_find_vma(task, addr, callback_fn, callback_ctx, flags)
+    FindVma = 180,
+    /// long bpf_loop(nr_loops, callback_fn, callback_ctx, flags)
+    BpfLoop = 181,
     /// long bpf_get_func_arg(ctx, n, value)
     GetFuncArg = 183,
     /// long bpf_get_func_ret(ctx, value)
@@ -508,6 +523,8 @@ pub enum BpfHelper {
     DynptrWrite = 202,
     /// void *bpf_dynptr_data(ptr, offset, len)
     DynptrData = 203,
+    /// long bpf_user_ringbuf_drain(map, callback_fn, ctx, flags)
+    UserRingbufDrain = 209,
     /// long bpf_probe_read_user_str(dst, size, unsafe_ptr)
     ProbeReadUserStr = 114,
     /// long bpf_probe_read_kernel_str(dst, size, unsafe_ptr)
@@ -615,6 +632,7 @@ impl BpfHelper {
             BpfHelper::SeqWrite => "bpf_seq_write",
             BpfHelper::KtimeGetCoarseNs => "bpf_ktime_get_coarse_ns",
             BpfHelper::CheckMtu => "bpf_check_mtu",
+            BpfHelper::ForEachMapElem => "bpf_for_each_map_elem",
             BpfHelper::KtimeGetTaiNs => "bpf_ktime_get_tai_ns",
             BpfHelper::Jiffies64 => "bpf_jiffies64",
             BpfHelper::ReadBranchRecords => "bpf_read_branch_records",
@@ -707,8 +725,14 @@ impl BpfHelper {
             BpfHelper::SysBpf => "bpf_sys_bpf",
             BpfHelper::BtfFindByNameKind => "bpf_btf_find_by_name_kind",
             BpfHelper::SysClose => "bpf_sys_close",
+            BpfHelper::TimerInit => "bpf_timer_init",
+            BpfHelper::TimerSetCallback => "bpf_timer_set_callback",
+            BpfHelper::TimerStart => "bpf_timer_start",
+            BpfHelper::TimerCancel => "bpf_timer_cancel",
             BpfHelper::TaskPtRegs => "bpf_task_pt_regs",
             BpfHelper::KallsymsLookupName => "bpf_kallsyms_lookup_name",
+            BpfHelper::FindVma => "bpf_find_vma",
+            BpfHelper::BpfLoop => "bpf_loop",
             BpfHelper::GetFuncArg => "bpf_get_func_arg",
             BpfHelper::GetFuncRet => "bpf_get_func_ret",
             BpfHelper::GetFuncArgCnt => "bpf_get_func_arg_cnt",
@@ -726,6 +750,7 @@ impl BpfHelper {
             BpfHelper::DynptrRead => "bpf_dynptr_read",
             BpfHelper::DynptrWrite => "bpf_dynptr_write",
             BpfHelper::DynptrData => "bpf_dynptr_data",
+            BpfHelper::UserRingbufDrain => "bpf_user_ringbuf_drain",
             BpfHelper::ProbeReadUserStr => "bpf_probe_read_user_str",
             BpfHelper::ProbeReadKernelStr => "bpf_probe_read_kernel_str",
         }
@@ -828,6 +853,7 @@ impl BpfHelper {
             "seq_write" => Some(Self::SeqWrite),
             "ktime_get_coarse_ns" => Some(Self::KtimeGetCoarseNs),
             "check_mtu" => Some(Self::CheckMtu),
+            "for_each_map_elem" => Some(Self::ForEachMapElem),
             "ktime_get_tai_ns" => Some(Self::KtimeGetTaiNs),
             "jiffies64" => Some(Self::Jiffies64),
             "read_branch_records" => Some(Self::ReadBranchRecords),
@@ -920,8 +946,14 @@ impl BpfHelper {
             "sys_bpf" => Some(Self::SysBpf),
             "btf_find_by_name_kind" => Some(Self::BtfFindByNameKind),
             "sys_close" => Some(Self::SysClose),
+            "timer_init" => Some(Self::TimerInit),
+            "timer_set_callback" => Some(Self::TimerSetCallback),
+            "timer_start" => Some(Self::TimerStart),
+            "timer_cancel" => Some(Self::TimerCancel),
             "task_pt_regs" => Some(Self::TaskPtRegs),
             "kallsyms_lookup_name" => Some(Self::KallsymsLookupName),
+            "find_vma" => Some(Self::FindVma),
+            "loop" => Some(Self::BpfLoop),
             "get_func_arg" => Some(Self::GetFuncArg),
             "get_func_ret" => Some(Self::GetFuncRet),
             "get_func_arg_cnt" => Some(Self::GetFuncArgCnt),
@@ -939,10 +971,22 @@ impl BpfHelper {
             "dynptr_read" => Some(Self::DynptrRead),
             "dynptr_write" => Some(Self::DynptrWrite),
             "dynptr_data" => Some(Self::DynptrData),
+            "user_ringbuf_drain" => Some(Self::UserRingbufDrain),
             "probe_read_user_str" => Some(Self::ProbeReadUserStr),
             "probe_read_kernel_str" => Some(Self::ProbeReadKernelStr),
             _ => None,
         }
+    }
+
+    pub const fn requires_callback_subprogram(self) -> bool {
+        matches!(
+            self,
+            Self::ForEachMapElem
+                | Self::TimerSetCallback
+                | Self::FindVma
+                | Self::BpfLoop
+                | Self::UserRingbufDrain
+        )
     }
 
     pub const fn zero_size_pointer_arg_size_arg(self, arg_idx: usize) -> Option<usize> {
@@ -1030,6 +1074,18 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits (0x01)",
             )),
+            (Self::ForEachMapElem, 3) => Some((
+                0,
+                0,
+                "helper 'bpf_for_each_map_elem' requires arg3 flags to be 0",
+            )),
+            (Self::TimerStart, 2) => Some((
+                0,
+                3,
+                "helper 'bpf_timer_start' requires arg2 flags to contain only BPF_F_TIMER_* bits (0x03)",
+            )),
+            (Self::FindVma, 4) => Some((0, 0, "helper 'bpf_find_vma' requires arg4 flags to be 0")),
+            (Self::BpfLoop, 3) => Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0")),
             (Self::SysctlGetName, 3) => Some((
                 0,
                 1,
@@ -1074,6 +1130,11 @@ impl BpfHelper {
                 0,
                 3,
                 "helper 'bpf_ringbuf_discard_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits (0x03)",
+            )),
+            (Self::UserRingbufDrain, 3) => Some((
+                0,
+                3,
+                "helper 'bpf_user_ringbuf_drain' requires arg3 flags to contain only BPF_RB_* wakeup bits (0x03)",
             )),
             (Self::RingbufQuery, 1) => Some((
                 0,
@@ -1213,6 +1274,10 @@ impl BpfHelper {
                 MAP_PUSH_FLAGS,
                 "helper 'bpf_map_push_elem' requires arg2 flags to be 0 or BPF_EXIST",
             )),
+            (Self::TimerInit, 2) => Some((
+                TIMER_INIT_FLAGS,
+                "helper 'bpf_timer_init' requires arg2 flags to be CLOCK_REALTIME, CLOCK_MONOTONIC, or CLOCK_BOOTTIME",
+            )),
             _ => None,
         }
     }
@@ -1279,6 +1344,7 @@ impl BpfHelper {
                 | Self::RingbufQuery,
                 0,
             ) => Some(MapKind::RingBuf),
+            (Self::UserRingbufDrain, 0) => Some(MapKind::UserRingBuf),
             (Self::SkRedirectMap | Self::SockMapUpdate | Self::MsgRedirectMap, 1) => {
                 Some(MapKind::SockMap)
             }
@@ -1308,6 +1374,7 @@ impl BpfHelper {
             | Self::RingbufReserve
             | Self::RingbufReserveDynptr
             | Self::RingbufQuery
+            | Self::UserRingbufDrain
             | Self::MapLookupPercpuElem
             | Self::MapPushElem
             | Self::MapPopElem

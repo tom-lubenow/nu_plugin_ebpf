@@ -5692,6 +5692,118 @@ fn test_kfunc_semantics_default_empty() {
 }
 
 #[test]
+fn test_callback_helper_signatures_and_names() {
+    for (helper, helper_id, name, min_args, max_args) in [
+        (
+            BpfHelper::ForEachMapElem,
+            164,
+            "bpf_for_each_map_elem",
+            4,
+            4,
+        ),
+        (BpfHelper::TimerInit, 169, "bpf_timer_init", 3, 3),
+        (
+            BpfHelper::TimerSetCallback,
+            170,
+            "bpf_timer_set_callback",
+            2,
+            2,
+        ),
+        (BpfHelper::TimerStart, 171, "bpf_timer_start", 3, 3),
+        (BpfHelper::TimerCancel, 172, "bpf_timer_cancel", 1, 1),
+        (BpfHelper::FindVma, 180, "bpf_find_vma", 5, 5),
+        (BpfHelper::BpfLoop, 181, "bpf_loop", 4, 4),
+        (
+            BpfHelper::UserRingbufDrain,
+            209,
+            "bpf_user_ringbuf_drain",
+            4,
+            4,
+        ),
+    ] {
+        assert!(matches!(
+            BpfHelper::from_u32(helper_id),
+            Some(candidate) if candidate as u32 == helper as u32
+        ));
+        assert!(matches!(
+            BpfHelper::from_name(name),
+            Some(candidate) if candidate as u32 == helper as u32
+        ));
+        assert_eq!(helper.name(), name);
+        let sig = HelperSignature::for_id(helper_id).expect("expected helper signature");
+        assert_eq!(sig.min_args, min_args);
+        assert_eq!(sig.max_args, max_args);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    for helper in [
+        BpfHelper::ForEachMapElem,
+        BpfHelper::TimerSetCallback,
+        BpfHelper::FindVma,
+        BpfHelper::BpfLoop,
+        BpfHelper::UserRingbufDrain,
+    ] {
+        assert!(helper.requires_callback_subprogram());
+    }
+    assert!(!BpfHelper::TimerInit.requires_callback_subprogram());
+    assert!(!BpfHelper::TimerStart.requires_callback_subprogram());
+    assert!(!BpfHelper::TimerCancel.requires_callback_subprogram());
+}
+
+#[test]
+fn test_callback_helper_flag_contracts() {
+    assert_eq!(
+        BpfHelper::ForEachMapElem.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            0,
+            "helper 'bpf_for_each_map_elem' requires arg3 flags to be 0"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::TimerInit
+            .scalar_arg_allowed_values_requirement(2)
+            .map(|(values, msg)| (values.to_vec(), msg)),
+        Some((
+            vec![0, 1, 7],
+            "helper 'bpf_timer_init' requires arg2 flags to be CLOCK_REALTIME, CLOCK_MONOTONIC, or CLOCK_BOOTTIME",
+        ))
+    );
+    assert_eq!(
+        BpfHelper::TimerStart.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            3,
+            "helper 'bpf_timer_start' requires arg2 flags to contain only BPF_F_TIMER_* bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::FindVma.scalar_arg_range_requirement(4),
+        Some((0, 0, "helper 'bpf_find_vma' requires arg4 flags to be 0"))
+    );
+    assert_eq!(
+        BpfHelper::BpfLoop.scalar_arg_range_requirement(3),
+        Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0"))
+    );
+    assert_eq!(
+        BpfHelper::UserRingbufDrain.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            3,
+            "helper 'bpf_user_ringbuf_drain' requires arg3 flags to contain only BPF_RB_* wakeup bits (0x03)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::UserRingbufDrain.helper_map_arg_kind(0),
+        Some(MapKind::UserRingBuf)
+    );
+    assert_eq!(
+        BpfHelper::UserRingbufDrain.local_helper_map_arg_index(),
+        Some(0)
+    );
+}
+
+#[test]
 fn test_builder() {
     let mut builder = EbpfBuilder::new();
     builder

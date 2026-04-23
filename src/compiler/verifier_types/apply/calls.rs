@@ -29,6 +29,21 @@ pub(super) fn apply_call_helper_inst(
         }
     }
 
+    if let Some(helper_kind) = BpfHelper::from_u32(helper) {
+        if helper_kind.requires_callback_subprogram() {
+            errors.push(VerifierTypeError::new(format!(
+                "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
+                helper_kind.name()
+            )));
+            let ty = types
+                .get(&dst)
+                .map(verifier_type_from_mir)
+                .unwrap_or(VerifierType::Scalar);
+            state.set_with_range(dst, ty, ValueRange::Unknown);
+            return;
+        }
+    }
+
     if let Some(helper_kind) = BpfHelper::from_u32(helper)
         && let Some(message) = probe_ctx
             .and_then(|ctx| ctx.helper_call_error(helper_kind))
