@@ -1745,6 +1745,7 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::instruction::BpfHelper;
     use std::collections::HashSet;
 
     fn assert_unique_context_access_surfaces(
@@ -1896,6 +1897,21 @@ mod tests {
         );
         assert!(BaseContextFieldAccessRequirement::TaskFields.is_allowed(EbpfProgramType::Kprobe));
         assert!(!BaseContextFieldAccessRequirement::TaskFields.is_allowed(EbpfProgramType::Xdp));
+    }
+
+    #[test]
+    fn test_task_context_surface_matches_current_task_helper_policy() {
+        for program_type in EbpfProgramType::supported_program_types() {
+            let task_ctx_allowed =
+                BaseContextFieldAccessRequirement::TaskFields.is_allowed(*program_type);
+            for helper in [BpfHelper::GetCurrentTask, BpfHelper::GetCurrentTaskBtf] {
+                assert_eq!(
+                    task_ctx_allowed,
+                    program_type.helper_call_error(helper).is_none(),
+                    "{program_type:?} ctx.task access should stay aligned with {helper:?} helper policy"
+                );
+            }
+        }
     }
 
     #[test]
