@@ -133,6 +133,78 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    fn assert_unique_kfunc_names(table_name: &str, kfuncs: &[&'static str]) {
+        let mut seen = HashSet::new();
+
+        for kfunc in kfuncs {
+            assert!(!kfunc.is_empty(), "empty kfunc name in {table_name}");
+            assert!(
+                seen.insert(*kfunc),
+                "duplicate kfunc '{kfunc}' in {table_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_kfunc_policy_tables_are_unique() {
+        let mut policy_program_types = HashSet::new();
+        let mut modeled_kfuncs = HashSet::new();
+
+        for policy in PROGRAM_SPECIFIC_KFUNC_POLICIES {
+            assert!(
+                policy_program_types.insert(policy.program_type),
+                "duplicate program-specific kfunc policy for {:?}",
+                policy.program_type
+            );
+            assert!(
+                !policy.label.is_empty(),
+                "program-specific kfunc policy for {:?} must have a diagnostic label",
+                policy.program_type
+            );
+            assert_unique_kfunc_names("program-specific kfunc policy", policy.modeled_kfuncs);
+            for kfunc in policy.modeled_kfuncs {
+                assert!(
+                    modeled_kfuncs.insert(*kfunc),
+                    "kfunc '{kfunc}' appears in multiple program-specific policies"
+                );
+            }
+        }
+
+        let mut sched_ext_kfuncs = HashSet::new();
+        for (table_name, kfuncs) in [
+            (
+                "sched_ext dispatch-only kfuncs",
+                SCHED_EXT_DISPATCH_ONLY_KFUNCS,
+            ),
+            (
+                "sched_ext cpu-release-only kfuncs",
+                SCHED_EXT_CPU_RELEASE_ONLY_KFUNCS,
+            ),
+            (
+                "sched_ext select-cpu-or-enqueue kfuncs",
+                SCHED_EXT_SELECT_CPU_OR_ENQUEUE_KFUNCS,
+            ),
+            (
+                "sched_ext dispatch/select-cpu/enqueue kfuncs",
+                SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS,
+            ),
+        ] {
+            assert_unique_kfunc_names(table_name, kfuncs);
+            for kfunc in kfuncs {
+                assert!(
+                    sched_ext_kfuncs.insert(*kfunc),
+                    "sched_ext kfunc '{kfunc}' appears in multiple callback policy tables"
+                );
+                assert!(
+                    sched_ext_kfunc_allowed_callbacks(kfunc)
+                        .is_some_and(|callbacks| !callbacks.is_empty()),
+                    "sched_ext kfunc '{kfunc}' must resolve to at least one allowed callback"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_struct_ops_callback_program_spec_kfunc_policy_uses_sched_ext_callback_rules() {
