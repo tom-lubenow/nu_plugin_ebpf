@@ -688,6 +688,8 @@ pub enum CtxField {
     Comm,
     /// Current task_struct pointer
     Task,
+    /// Current task default cgroup pointer
+    Cgroup,
     /// CPU ID
     Cpu,
     /// Current NUMA node ID
@@ -972,6 +974,7 @@ impl CtxField {
             CtxField::UidGid => "uid_gid".to_string(),
             CtxField::Comm => "comm".to_string(),
             CtxField::Task => "task".to_string(),
+            CtxField::Cgroup => "cgroup".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),
             CtxField::Random => "random".to_string(),

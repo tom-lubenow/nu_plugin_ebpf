@@ -619,6 +619,11 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         )
         .non_null_pointer()
         .trusted_btf_pointer(),
+        CtxField::Cgroup => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
+                .with_kernel_btf_runtime_type("cgroup"),
+        )
+        .trusted_btf_pointer(),
         CtxField::Context => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),

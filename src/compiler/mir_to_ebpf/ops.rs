@@ -458,6 +458,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::Cgroup => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.cgroup must be lowered through task_struct.cgroups.dfl_cgrp before codegen"
+                        .into(),
+                ));
+            }
             CtxField::Timestamp => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::KtimeGetNs));

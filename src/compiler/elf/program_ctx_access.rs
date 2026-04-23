@@ -597,6 +597,7 @@ const TASK_CTX_FIELDS: &[CtxField] = &[
     CtxField::UidGid,
     CtxField::Comm,
     CtxField::Task,
+    CtxField::Cgroup,
 ];
 const PERF_EVENT_CTX_FIELDS: &[CtxField] = &[CtxField::PerfSamplePeriod, CtxField::PerfAddr];
 const SKB_CTX_FIELDS: &[CtxField] = &[
@@ -1885,6 +1886,16 @@ mod tests {
             !BaseContextFieldAccessRequirement::CurrentTaskCgroupField
                 .is_allowed(EbpfProgramType::StructOps)
         );
+    }
+
+    #[test]
+    fn test_current_cgroup_pointer_field_uses_task_access_surface() {
+        assert_eq!(
+            find_base_ctx_field_access_requirement(&CtxField::Cgroup),
+            Some(BaseContextFieldAccessRequirement::TaskFields)
+        );
+        assert!(BaseContextFieldAccessRequirement::TaskFields.is_allowed(EbpfProgramType::Kprobe));
+        assert!(!BaseContextFieldAccessRequirement::TaskFields.is_allowed(EbpfProgramType::Xdp));
     }
 
     #[test]

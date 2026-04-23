@@ -395,13 +395,6 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
-    fn current_cgroup_alias_name(path: &CellPath) -> Option<&str> {
-        let Some(PathMember::String { val, .. }) = path.members.first() else {
-            return None;
-        };
-        matches!(val.as_str(), "cgroup" | "current_cgroup").then_some(val.as_str())
-    }
-
     fn lower_current_cgroup_btf_pointer_projection(
         &mut self,
         dst_vreg: VReg,
@@ -467,36 +460,26 @@ impl<'a> HirToMirLowering<'a> {
         Ok(projected_ty)
     }
 
-    fn lower_current_cgroup_context_alias(
+    fn lower_current_cgroup_context_field(
         &mut self,
         src_dst: RegId,
         dst_vreg: VReg,
         path: &CellPath,
-    ) -> Result<bool, CompileError> {
-        let Some(alias_name) = Self::current_cgroup_alias_name(path) else {
-            return Ok(false);
-        };
-
+        source_ctx_field_name: &str,
+        root_members_consumed: usize,
+    ) -> Result<(), CompileError> {
         let task_field = CtxField::Task;
-        if let Some(ctx) = self.probe_ctx
-            && let Some(err) = ctx.ctx_field_access_error(&task_field)
-        {
-            return Err(CompileError::UnsupportedInstruction(
-                err.replace("ctx.task", &format!("ctx.{alias_name}")),
-            ));
-        }
-
         let task_type_spec = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &task_field)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
-                    "ctx.{alias_name} requires typed ctx.task support"
+                    "ctx.{source_ctx_field_name} requires typed ctx.task support"
                 ))
             })?;
         let task_runtime_ty = self
             .ctx_field_kernel_btf_root_runtime_type(&task_field, &task_type_spec)?
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
-                    "ctx.{alias_name} requires kernel BTF for task_struct"
+                    "ctx.{source_ctx_field_name} requires kernel BTF for task_struct"
                 ))
             })?;
 
@@ -510,15 +493,24 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         let path_desc = Self::typed_value_path_desc(&path.members);
-        let remaining_members: Vec<PathMember> = path.members.iter().skip(1).cloned().collect();
+        let remaining_members: Vec<PathMember> = path
+            .members
+            .iter()
+            .skip(root_members_consumed)
+            .cloned()
+            .collect();
         let projected_ty = if remaining_members.is_empty() {
-            self.lower_current_cgroup_btf_pointer_projection(dst_vreg, task_vreg, alias_name)?
+            self.lower_current_cgroup_btf_pointer_projection(
+                dst_vreg,
+                task_vreg,
+                source_ctx_field_name,
+            )?
         } else {
             let cgroup_vreg = self.func.alloc_vreg();
             let cgroup_ty = self.lower_current_cgroup_btf_pointer_projection(
                 cgroup_vreg,
                 task_vreg,
-                alias_name,
+                source_ctx_field_name,
             )?;
             let projected_ty = self.lower_typed_value_projection(
                 src_dst,
@@ -545,7 +537,7 @@ impl<'a> HirToMirLowering<'a> {
             })
         );
         meta.source_var = None;
-        Ok(true)
+        Ok(())
     }
 
     /// Lower FollowCellPath instruction (context field access like $ctx.pid)
@@ -653,10 +645,6 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if self.lower_current_cgroup_context_alias(src_dst, dst_vreg, &path)? {
-            return Ok(());
-        }
-
         let source_ctx_field_name = Self::ctx_path_member_name(&path.members[0])?;
         let (ctx_field, root_members_consumed) = self.resolve_ctx_field_from_path(&path)?;
         let remaining_members = &path.members[root_members_consumed..];
@@ -671,6 +659,16 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 return Err(CompileError::UnsupportedInstruction(message));
             }
+        }
+        if matches!(ctx_field, CtxField::Cgroup) {
+            self.lower_current_cgroup_context_field(
+                src_dst,
+                dst_vreg,
+                &path,
+                &source_ctx_field_name,
+                root_members_consumed,
+            )?;
+            return Ok(());
         }
         let trampoline_value_spec = self.trampoline_value_spec(&ctx_field)?;
         let ctx_projection_spec =

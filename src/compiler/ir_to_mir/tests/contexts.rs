@@ -4137,6 +4137,62 @@ fn test_lower_kprobe_ctx_cgroup_alias_projects_current_task_default_cgroup() {
 }
 
 #[test]
+fn test_lower_tracepoint_current_cgroup_alias_projects_builtin_default_cgroup() {
+    let projection_path = [
+        TrampolineFieldSelector::Field("cgroups".to_string()),
+        TrampolineFieldSelector::Field("dfl_cgrp".to_string()),
+    ];
+    if !matches!(
+        KernelBtf::get().kernel_named_type_field_projection("task_struct", &projection_path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Ptr { .. })
+    ) {
+        return;
+    }
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("current_cgroup")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tracepoint ctx.current_cgroup should preserve builtin resolution");
+
+    let instructions: Vec<&MirInst> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Task,
+            ..
+        }
+    )));
+    assert!(
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper { helper, .. }
+                if *helper == BpfHelper::ProbeReadKernel as u32
+        )),
+        "expected tracepoint current_cgroup to preserve trusted BTF pointer provenance"
+    );
+    assert!(
+        result.type_hints.main.values().any(MirType::is_cgroup_ptr),
+        "expected current_cgroup to type as a cgroup pointer"
+    );
+}
+
+#[test]
 fn test_lower_packet_program_rejects_ctx_cgroup_alias() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("cgroup")],
@@ -4156,6 +4212,30 @@ fn test_lower_packet_program_rejects_ctx_cgroup_alias() {
     assert!(
         err.to_string()
             .contains("ctx.cgroup is not available on xdp programs"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_packet_program_rejects_current_cgroup_alias_with_source_name() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("current_cgroup")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("packet programs should reject ctx.current_cgroup pointer alias");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.current_cgroup is not available on xdp programs"),
         "unexpected error: {err}"
     );
 }

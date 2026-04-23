@@ -90,6 +90,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("comm", CtxField::Comm),
     ("task", CtxField::Task),
     ("current_task", CtxField::Task),
+    ("cgroup", CtxField::Cgroup),
+    ("current_cgroup", CtxField::Cgroup),
     ("cpu", CtxField::Cpu),
     ("numa_node", CtxField::NumaNode),
     ("numa_node_id", CtxField::NumaNode),
@@ -269,6 +271,7 @@ const TRACEPOINT_PRESERVED_CTX_FIELD_NAMES: &[&str] = &[
     "current_uid_gid",
     "comm",
     "current_task",
+    "current_cgroup",
     "cpu",
     "numa_node",
     "numa_node_id",
@@ -472,5 +475,21 @@ mod tests {
                 "tracepoint-preserved context field name '{name}' resolved to a payload field"
             );
         }
+    }
+
+    #[test]
+    fn test_tracepoint_cgroup_payload_name_is_not_stolen() {
+        assert_eq!(
+            EbpfProgramType::Tracepoint
+                .resolve_tracepoint_ctx_field_name("current_cgroup")
+                .expect("current_cgroup should resolve"),
+            CtxField::Cgroup
+        );
+        assert_eq!(
+            EbpfProgramType::Tracepoint
+                .resolve_tracepoint_ctx_field_name("cgroup")
+                .expect("cgroup should resolve as payload"),
+            CtxField::TracepointField("cgroup".to_string())
+        );
     }
 }
