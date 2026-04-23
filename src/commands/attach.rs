@@ -113,6 +113,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.task }    - Get current task_struct pointer
     {|ctx| $ctx.current_task } - Alias for ctx.task; preserved as a builtin on tracepoints
+    {|ctx| $ctx.task.pid } - Project through current task_struct with kernel BTF
+    {|ctx| $ctx.task.pt_regs.arg0 } - Read saved current-task pt_regs arg0
+    {|ctx| $ctx.current_cgroup } - Get current task default cgroup pointer
+    {|ctx| $ctx.current_cgroup.kn.id } - Project through current cgroup with kernel BTF
     {|ctx| $ctx.numa_node } - Get current NUMA node ID
     {|ctx| $ctx.numa_node_id } - Get current NUMA node ID
     {|ctx| $ctx.random } - Get a pseudo-random u32
@@ -128,6 +132,14 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.kstack }  - Collect kernel stack trace ID
     {|ctx| $ctx.ustack }  - Collect user stack trace ID
     {|ctx| $ctx.cgroup_id } - Get the current task cgroup ID
+    {|ctx| $ctx.ancestor_cgroup_id.0 } - Get current ancestor cgroup ID at constant level 0
+    Note: tracepoints preserve `ctx.current_task` and `ctx.current_cgroup`
+    as builtin names without stealing possible payload fields named `task` or
+    `cgroup`. On non-tracepoint task-aware programs, `ctx.task` and
+    `ctx.cgroup` are the shorter aliases. Bound pointers keep their BTF
+    provenance, so forms like `let task = $ctx.task; $task.pid` and
+    `let cg = $ctx.current_cgroup; $cg.kn.id` compile through the same typed
+    projection path.
 
   Packet-context fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
@@ -762,6 +774,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.state.out.ifindex } - Project the output net_device pointer
     {|ctx| $ctx.nf_state.pf } - Use the nf_state alias for the same pointer
     {|ctx| $ctx.skb.len } - Project the trusted sk_buff pointer
+    {|ctx| let state = $ctx.state; $state.in.ifindex } - Bind and reuse the trusted nf_hook_state pointer
+    {|ctx| let skb = $ctx.skb; $skb.len } - Bind and reuse the trusted sk_buff pointer
     {|ctx| $ctx.hook } - Get nf_hook_state hook number
     {|ctx| $ctx.pf } - Get nf_hook_state protocol family
     {|ctx| $ctx.protocol_family } - Alias for ctx.pf

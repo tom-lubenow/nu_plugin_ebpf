@@ -236,6 +236,7 @@ Last updated: 2026-04-22.
   - Recent progress: ordinary aggregate Nushell flows keep losing artificial “bind to a local first” requirements: metadata-built record values now seed globals and typed maps directly, and aggregate cell-path updates like `$state.inner = { ... }` now materialize metadata-built record rhs values on demand instead of rejecting them for lacking a preexisting pointer.
   - Recent progress: helper-free compile-time Nushell forms are now regression-covered across both leading typed `mut` state and explicit typed `global-define --type` initializers, including arithmetic, boolean `not`, plain cell-path projection, record/list construction, and string concatenation.
   - Recent progress: modeled helper-surface legality now also constrains `bpf_perf_event_output`, `bpf_get_stackid`, and legacy `bpf_probe_read` through the shared program model, so more invalid helper/program combinations fail in compiler stages instead of only at kernel load time.
+  - Recent progress: `ebpf attach` help now documents the helper-free task and cgroup BTF projection forms (`ctx.task.pid`, `ctx.task.pt_regs.arg0`, `ctx.current_cgroup.kn.id`) plus bound trusted netfilter roots, keeping the advertised surface aligned with the modeled context language.
 
 Near-term priority order:
 1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).
