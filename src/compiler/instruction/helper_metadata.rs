@@ -135,6 +135,7 @@ impl BpfHelper {
             104 => Some(Self::SysctlSetNewValue),
             105 => Some(Self::Strtol),
             106 => Some(Self::Strtoul),
+            182 => Some(Self::Strncmp),
             107 => Some(Self::SkStorageGet),
             108 => Some(Self::SkStorageDelete),
             109 => Some(Self::SendSignal),
@@ -777,6 +778,12 @@ impl BpfHelper {
                 min_args: 4,
                 max_args: 4,
                 arg_kinds: [P, S, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::Strncmp => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkAssign => HelperSignature {

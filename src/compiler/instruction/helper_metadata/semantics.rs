@@ -381,6 +381,23 @@ impl BpfHelper {
             },
         ];
 
+        const STRNCMP_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper strncmp s1",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper strncmp s2",
+                allowed: MAP_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
+
         const SET_SOCKOPT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1601,6 +1618,11 @@ impl BpfHelper {
             },
             BpfHelper::Strtol | BpfHelper::Strtoul => HelperSemantics {
                 ptr_arg_rules: STRTOX_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::Strncmp => HelperSemantics {
+                ptr_arg_rules: STRNCMP_RULES,
                 positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },

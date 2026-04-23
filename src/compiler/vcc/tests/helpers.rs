@@ -3002,6 +3002,46 @@ fn make_strtox_vcc_call(
     (func, types)
 }
 
+fn make_strncmp_vcc_call(
+    s1_len: i64,
+    s1_size: usize,
+    s2_on_stack: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    let s1_slot = func.alloc_stack_slot(s1_size, 8, StackSlotKind::StringBuffer);
+    let s2 = if s2_on_stack {
+        let s2_slot = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
+        MirValue::StackSlot(s2_slot)
+    } else {
+        let s2 = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadGlobal {
+                dst: s2,
+                symbol: "__nu_rodata_needle".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 8,
+                },
+            });
+        MirValue::VReg(s2)
+    };
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Strncmp as u32,
+            args: vec![MirValue::StackSlot(s1_slot), MirValue::Const(s1_len), s2],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_strtox_helpers() {
     for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
@@ -3009,6 +3049,39 @@ fn test_verify_mir_strtox_helpers() {
         verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
             .expect("expected string conversion helper to verify");
     }
+}
+
+#[test]
+fn test_verify_mir_strncmp_helper_accepts_rodata_s2() {
+    let (func, types) = make_strncmp_vcc_call(8, 8, false);
+    verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect("expected strncmp helper to verify");
+}
+
+#[test]
+fn test_verify_mir_strncmp_helper_rejects_small_s1_buffer() {
+    let (func, types) = make_strncmp_vcc_call(16, 8, false);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected strncmp buffer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_strncmp_helper_rejects_stack_s2() {
+    let (func, types) = make_strncmp_vcc_call(8, 8, true);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected strncmp read-only string error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper strncmp s2 expects pointer in [Map]")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

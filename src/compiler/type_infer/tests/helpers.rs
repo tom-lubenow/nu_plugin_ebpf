@@ -2431,6 +2431,37 @@ fn make_strtox_call(
     (func, dst)
 }
 
+fn make_strncmp_call(s1_len: i64, s1_size: usize, s2_on_stack: bool) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let s1_slot = func.alloc_stack_slot(s1_size, 8, StackSlotKind::StringBuffer);
+    let s2 = if s2_on_stack {
+        let s2_slot = func.alloc_stack_slot(8, 1, StackSlotKind::StringBuffer);
+        MirValue::StackSlot(s2_slot)
+    } else {
+        let s2 = func.alloc_vreg();
+        func.block_mut(BlockId(0))
+            .instructions
+            .push(MirInst::LoadGlobal {
+                dst: s2,
+                symbol: "__nu_rodata_needle".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 8,
+                },
+            });
+        MirValue::VReg(s2)
+    };
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Strncmp as u32,
+        args: vec![MirValue::StackSlot(s1_slot), MirValue::Const(s1_len), s2],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 #[test]
 fn test_infer_strtox_helpers() {
     for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
@@ -2441,6 +2472,45 @@ fn test_infer_strtox_helpers() {
             .expect("expected string conversion helper to infer");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
+}
+
+#[test]
+fn test_infer_strncmp_helper_accepts_rodata_s2() {
+    let (func, dst) = make_strncmp_call(8, 8, false);
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).expect("expected strncmp helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_strncmp_helper_rejects_small_s1_buffer() {
+    let (func, _) = make_strncmp_call(16, 8, false);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected strncmp buffer bounds error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper strncmp s1 requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_strncmp_helper_rejects_stack_s2() {
+    let (func, _) = make_strncmp_call(8, 8, true);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected strncmp read-only string error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper strncmp s2 expects pointer in [Map], got stack slot")),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

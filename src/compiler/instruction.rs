@@ -376,6 +376,8 @@ pub enum BpfHelper {
     Strtol = 105,
     /// long bpf_strtoul(buf, buf_len, flags, res)
     Strtoul = 106,
+    /// long bpf_strncmp(s1, s1_sz, s2)
+    Strncmp = 182,
     /// void *bpf_sk_storage_get(map, sk, value, flags)
     SkStorageGet = 107,
     /// long bpf_sk_storage_delete(map, sk)
@@ -608,6 +610,7 @@ impl BpfHelper {
             BpfHelper::SysctlSetNewValue => "bpf_sysctl_set_new_value",
             BpfHelper::Strtol => "bpf_strtol",
             BpfHelper::Strtoul => "bpf_strtoul",
+            BpfHelper::Strncmp => "bpf_strncmp",
             BpfHelper::SkStorageGet => "bpf_sk_storage_get",
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
@@ -799,6 +802,7 @@ impl BpfHelper {
             "sysctl_set_new_value" => Some(Self::SysctlSetNewValue),
             "strtol" => Some(Self::Strtol),
             "strtoul" => Some(Self::Strtoul),
+            "strncmp" => Some(Self::Strncmp),
             "sk_storage_get" => Some(Self::SkStorageGet),
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),

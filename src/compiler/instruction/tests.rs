@@ -263,6 +263,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::Strtoul)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_strncmp"),
+        Some(BpfHelper::Strncmp)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_send_signal"),
         Some(BpfHelper::SendSignal)
     ));
@@ -648,6 +652,18 @@ fn test_helper_signature_strtox_helpers() {
 }
 
 #[test]
+fn test_helper_signature_strncmp() {
+    let sig =
+        HelperSignature::for_id(BpfHelper::Strncmp as u32).expect("expected strncmp signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_strtox_helper_contracts() {
     for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
         let (allowed_flags, message) = helper
@@ -677,6 +693,29 @@ fn test_strtox_helper_contracts() {
         assert_eq!(res.fixed_size, Some(8));
         assert_eq!(res.size_from_arg, None);
     }
+}
+
+#[test]
+fn test_strncmp_helper_contracts() {
+    let semantics = BpfHelper::Strncmp.semantics();
+    assert_eq!(semantics.positive_size_args, &[1]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let s1 = semantics.ptr_arg_rules[0];
+    assert_eq!(s1.arg_idx, 0);
+    assert_eq!(s1.op, "helper strncmp s1");
+    assert!(s1.allowed.allow_stack);
+    assert!(s1.allowed.allow_map);
+    assert!(!s1.allowed.allow_kernel);
+    assert_eq!(s1.size_from_arg, Some(1));
+
+    let s2 = semantics.ptr_arg_rules[1];
+    assert_eq!(s2.arg_idx, 2);
+    assert_eq!(s2.op, "helper strncmp s2");
+    assert!(!s2.allowed.allow_stack);
+    assert!(s2.allowed.allow_map);
+    assert!(!s2.allowed.allow_kernel);
+    assert_eq!(s2.size_from_arg, None);
 }
 
 #[test]
