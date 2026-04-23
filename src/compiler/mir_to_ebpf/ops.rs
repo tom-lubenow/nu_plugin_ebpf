@@ -510,6 +510,21 @@ impl<'a> MirToEbpfCompiler<'a> {
             CtxField::IterBucket => {
                 self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 24));
             }
+            CtxField::IterDmabuf => {
+                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
+            CtxField::IterIpv6Route => {
+                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
+            CtxField::IterKmemCache => {
+                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
+            CtxField::IterKsym => {
+                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
+            CtxField::IterNetlinkSk => {
+                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
             CtxField::Cgroup => {
                 return Err(CompileError::UnsupportedInstruction(
                     "ctx.cgroup must be lowered through task_struct.cgroups.dfl_cgrp before codegen"

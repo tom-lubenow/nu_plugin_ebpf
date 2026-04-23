@@ -16,6 +16,11 @@ const ITER_TCP_TARGETS: &[&str] = &["tcp"];
 const ITER_UDP_TARGETS: &[&str] = &["udp"];
 const ITER_UNIX_TARGETS: &[&str] = &["unix"];
 const ITER_SOCKET_UID_TARGETS: &[&str] = &["tcp", "udp", "unix"];
+const ITER_DMABUF_TARGETS: &[&str] = &["dmabuf"];
+const ITER_IPV6_ROUTE_TARGETS: &[&str] = &["ipv6_route"];
+const ITER_KMEM_CACHE_TARGETS: &[&str] = &["kmem_cache"];
+const ITER_KSYM_TARGETS: &[&str] = &["ksym"];
+const ITER_NETLINK_TARGETS: &[&str] = &["netlink"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
@@ -552,6 +557,31 @@ const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
         "iter_bucket",
         ContextFieldAccessRequirement::IterTargetsOnly(ITER_UDP_TARGETS, "iter:udp"),
     ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterDmabuf,
+        "iter_dmabuf",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_DMABUF_TARGETS, "iter:dmabuf"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterIpv6Route,
+        "iter_ipv6_route",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_IPV6_ROUTE_TARGETS, "iter:ipv6_route"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterKmemCache,
+        "iter_kmem_cache",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_KMEM_CACHE_TARGETS, "iter:kmem_cache"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterKsym,
+        "iter_ksym",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_KSYM_TARGETS, "iter:ksym"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterNetlinkSk,
+        "iter_netlink_sk",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_NETLINK_TARGETS, "iter:netlink"),
+    ),
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
@@ -762,6 +792,11 @@ const ITER_CTX_FIELDS: &[CtxField] = &[
     CtxField::IterUnixSk,
     CtxField::IterUid,
     CtxField::IterBucket,
+    CtxField::IterDmabuf,
+    CtxField::IterIpv6Route,
+    CtxField::IterKmemCache,
+    CtxField::IterKsym,
+    CtxField::IterNetlinkSk,
 ];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
@@ -2074,6 +2109,11 @@ mod tests {
             CtxField::IterUnixSk,
             CtxField::IterUid,
             CtxField::IterBucket,
+            CtxField::IterDmabuf,
+            CtxField::IterIpv6Route,
+            CtxField::IterKmemCache,
+            CtxField::IterKsym,
+            CtxField::IterNetlinkSk,
         ] {
             assert_eq!(
                 find_base_ctx_field_access_requirement(&field),
@@ -2211,6 +2251,18 @@ mod tests {
         assert!(unix.ctx_field_access_error(&CtxField::IterUid).is_none());
         assert!(unix.ctx_field_access_error(&CtxField::IterBucket).is_some());
 
+        for (spec, field) in [
+            ("iter:dmabuf", CtxField::IterDmabuf),
+            ("iter:ipv6_route", CtxField::IterIpv6Route),
+            ("iter:kmem_cache", CtxField::IterKmemCache),
+            ("iter:ksym", CtxField::IterKsym),
+            ("iter:netlink", CtxField::IterNetlinkSk),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("iter spec should parse");
+            assert!(spec.ctx_field_access_error(&field).is_none());
+            assert!(spec.ctx_field_access_error(&CtxField::IterTask).is_some());
+        }
+
         let map = ProgramSpec::parse("iter:map").expect("iter map spec should parse");
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterTask),
@@ -2234,6 +2286,10 @@ mod tests {
                 "ctx.iter_uid is only available on iter:tcp, iter:udp, and iter:unix programs"
                     .to_string()
             )
+        );
+        assert_eq!(
+            map.ctx_field_access_error(&CtxField::IterDmabuf),
+            Some("ctx.iter_dmabuf is only available on iter:dmabuf programs".to_string())
         );
     }
 

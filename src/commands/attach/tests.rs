@@ -8581,6 +8581,32 @@ fn test_compile_iter_unix_payload_roots_programs() {
     }
 }
 
+#[test]
+fn test_compile_iter_misc_single_pointer_payload_roots_programs() {
+    for (target, root, context) in [
+        ("dmabuf", "dmabuf", "iter:dmabuf ctx.dmabuf nullable check"),
+        ("ipv6_route", "rt", "iter:ipv6_route ctx.rt nullable check"),
+        (
+            "kmem_cache",
+            "kmem_cache",
+            "iter:kmem_cache ctx.kmem_cache nullable check",
+        ),
+        ("ksym", "ksym", "iter:ksym ctx.ksym nullable check"),
+        ("netlink", "sk", "iter:netlink ctx.sk nullable check"),
+    ] {
+        let hir = make_ctx_path_non_null_program(CellPath {
+            members: vec![string_member(root)],
+        });
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            target,
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
 fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     matches!(

@@ -1640,6 +1640,11 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterSkCommon));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterUdpSk));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterUnixSk));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterDmabuf));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterIpv6Route));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterKmemCache));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterKsym));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterNetlinkSk));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1692,6 +1697,17 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
     );
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterUdpSk));
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterUnixSk));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterDmabuf));
+    assert!(
+        !EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterIpv6Route)
+    );
+    assert!(
+        !EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterKmemCache)
+    );
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterKsym));
+    assert!(
+        !EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterNetlinkSk)
+    );
     assert!(
         EbpfProgramType::Netfilter
             .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
@@ -1800,6 +1816,18 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
         iter_unix_sk_spec.kernel_btf_runtime_type_name,
         Some("unix_sock")
     );
+
+    for (field, expected) in [
+        (CtxField::IterDmabuf, "dma_buf"),
+        (CtxField::IterIpv6Route, "fib6_info"),
+        (CtxField::IterKmemCache, "kmem_cache"),
+        (CtxField::IterKsym, "kallsym_iter"),
+        (CtxField::IterNetlinkSk, "netlink_sock"),
+    ] {
+        let spec = ProbeContext::static_ctx_field_type_spec(&field)
+            .unwrap_or_else(|| panic!("expected {field:?} type spec"));
+        assert_eq!(spec.kernel_btf_runtime_type_name, Some(expected));
+    }
 
     let nf_state_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterState)
         .expect("expected ctx.state type spec");
@@ -7406,6 +7434,27 @@ fn test_probe_context_allows_network_iterator_payload_roots() {
 }
 
 #[test]
+fn test_probe_context_allows_misc_single_pointer_iterator_payload_roots() {
+    for (target, alias, field) in [
+        ("dmabuf", "dmabuf", CtxField::IterDmabuf),
+        ("ipv6_route", "rt", CtxField::IterIpv6Route),
+        ("kmem_cache", "kmem_cache", CtxField::IterKmemCache),
+        ("ksym", "ksym", CtxField::IterKsym),
+        ("netlink", "sk", CtxField::IterNetlinkSk),
+    ] {
+        let ctx = ProbeContext::new(EbpfProgramType::Iter, target);
+        assert_eq!(
+            ctx.resolve_ctx_field_name(alias)
+                .unwrap_or_else(|_| panic!("{target} alias should resolve")),
+            field
+        );
+        assert!(ctx.ctx_field_access_error(&field).is_none());
+        assert!(ctx.validate_load_ctx_field(&field).is_ok());
+        assert!(ctx.ctx_field_access_error(&CtxField::IterTask).is_some());
+    }
+}
+
+#[test]
 fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
     let ctx = ProbeContext::new(EbpfProgramType::Iter, "map");
     let err = ctx
@@ -7435,6 +7484,11 @@ fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
         ctx.ctx_field_access_error(&CtxField::IterUid)
             .expect("expected iter uid field access error"),
         "ctx.iter_uid is only available on iter:tcp, iter:udp, and iter:unix programs"
+    );
+    assert_eq!(
+        ctx.ctx_field_access_error(&CtxField::IterDmabuf)
+            .expect("expected iter dmabuf field access error"),
+        "ctx.iter_dmabuf is only available on iter:dmabuf programs"
     );
 }
 

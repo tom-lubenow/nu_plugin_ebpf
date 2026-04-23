@@ -3071,6 +3071,19 @@ fn test_compile_iter_unix_loads_use_ctx_offsets() {
 }
 
 #[test]
+fn test_compile_iter_misc_single_pointer_loads_use_ctx_offsets() {
+    for (field, target) in [
+        (CtxField::IterDmabuf, "dmabuf"),
+        (CtxField::IterIpv6Route, "ipv6_route"),
+        (CtxField::IterKmemCache, "kmem_cache"),
+        (CtxField::IterKsym, "ksym"),
+        (CtxField::IterNetlinkSk, "netlink"),
+    ] {
+        assert_iter_ctx_load_uses_ctx_offset(field, target, opcode::BPF_DW, 8);
+    }
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_compile_perf_event_sample_period_load_uses_ctx_dword_offset_168() {
     let ctx = ProbeContext::new(

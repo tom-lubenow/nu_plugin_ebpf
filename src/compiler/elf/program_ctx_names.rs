@@ -86,6 +86,20 @@ const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("iter_uid", CtxField::IterUid),
     ("bucket", CtxField::IterBucket),
     ("iter_bucket", CtxField::IterBucket),
+    ("dmabuf", CtxField::IterDmabuf),
+    ("iter_dmabuf", CtxField::IterDmabuf),
+    ("rt", CtxField::IterIpv6Route),
+    ("route", CtxField::IterIpv6Route),
+    ("ipv6_route", CtxField::IterIpv6Route),
+    ("iter_ipv6_route", CtxField::IterIpv6Route),
+    ("cache", CtxField::IterKmemCache),
+    ("kmem_cache", CtxField::IterKmemCache),
+    ("iter_kmem_cache", CtxField::IterKmemCache),
+    ("ksym", CtxField::IterKsym),
+    ("iter_ksym", CtxField::IterKsym),
+    ("sk", CtxField::IterNetlinkSk),
+    ("netlink_sk", CtxField::IterNetlinkSk),
+    ("iter_netlink_sk", CtxField::IterNetlinkSk),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -619,6 +633,20 @@ mod tests {
             ("iter_uid", CtxField::IterUid),
             ("bucket", CtxField::IterBucket),
             ("iter_bucket", CtxField::IterBucket),
+            ("dmabuf", CtxField::IterDmabuf),
+            ("iter_dmabuf", CtxField::IterDmabuf),
+            ("rt", CtxField::IterIpv6Route),
+            ("route", CtxField::IterIpv6Route),
+            ("ipv6_route", CtxField::IterIpv6Route),
+            ("iter_ipv6_route", CtxField::IterIpv6Route),
+            ("cache", CtxField::IterKmemCache),
+            ("kmem_cache", CtxField::IterKmemCache),
+            ("iter_kmem_cache", CtxField::IterKmemCache),
+            ("ksym", CtxField::IterKsym),
+            ("iter_ksym", CtxField::IterKsym),
+            ("sk", CtxField::IterNetlinkSk),
+            ("netlink_sk", CtxField::IterNetlinkSk),
+            ("iter_netlink_sk", CtxField::IterNetlinkSk),
         ] {
             assert_eq!(
                 EbpfProgramType::Iter

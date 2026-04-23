@@ -33,6 +33,11 @@ The closure receives a context parameter with these fields:
 | `unix_sk` / `iter_unix_sk` | Nullable iterated `unix_sock *` pointer from `struct bpf_iter__unix`. | `iter:unix` |
 | `uid` / `iter_uid` | Socket owner uid emitted by TCP, UDP, and UNIX socket iterators. | `iter:tcp`, `iter:udp`, `iter:unix` |
 | `bucket` / `iter_bucket` | UDP iterator hash bucket. | `iter:udp` |
+| `dmabuf` / `iter_dmabuf` | Nullable iterated `dma_buf *` pointer from `struct bpf_iter__dmabuf`. | `iter:dmabuf` |
+| `rt` / `route` / `ipv6_route` / `iter_ipv6_route` | Nullable iterated `fib6_info *` pointer from `struct bpf_iter__ipv6_route`. | `iter:ipv6_route` |
+| `cache` / `kmem_cache` / `iter_kmem_cache` | Nullable iterated `kmem_cache *` pointer from `struct bpf_iter__kmem_cache`. | `iter:kmem_cache` |
+| `ksym` / `iter_ksym` | Nullable iterated `kallsym_iter *` pointer from `struct bpf_iter__ksym`. | `iter:ksym` |
+| `sk` / `netlink_sk` / `iter_netlink_sk` | Nullable iterated `netlink_sock *` pointer from `struct bpf_iter__netlink`. | `iter:netlink` |
 | `cgroup` / `current_cgroup` | Current task default `cgroup *` pointer, available for cgroup-local-storage ownership and BTF-backed cgroup projections such as `current_cgroup.kn.id`; follow-up projections also work after binding the pointer to a local. On tracepoints, use `current_cgroup` when you need the builtin rather than a payload field named `cgroup`. | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `cgroup_id` | Current task cgroup ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
@@ -226,6 +231,10 @@ exist; `$ctx.prog` on `iter:bpf_prog`; and `$ctx.link` on `iter:bpf_link`.
 Network iterators expose `$ctx.sk_common` plus `$ctx.uid` on `iter:tcp`,
 `$ctx.udp_sk` / `$ctx.uid` / `$ctx.bucket` on `iter:udp`, and
 `$ctx.unix_sk` / `$ctx.uid` on `iter:unix`.
+Other simple single-pointer iterator contexts expose their kernel-native roots:
+`$ctx.dmabuf`, `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`, and `$ctx.sk` for
+`iter:dmabuf`, `iter:ipv6_route`, `iter:kmem_cache`, `iter:ksym`, and
+`iter:netlink`, respectively.
 `$ctx.current_task` and `$ctx.current_cgroup` remain reserved for helper-backed
 current-task semantics on task-aware tracing families. Live attach is rejected
 until the loader grows BPF iterator link/seq-file support.

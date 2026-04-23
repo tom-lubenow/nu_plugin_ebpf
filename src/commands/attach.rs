@@ -323,6 +323,8 @@ Context parameter syntax (recommended):
     `$ctx.value`, `$ctx.prog`, or `$ctx.link` where those payload slots exist.
     Network iterators expose `$ctx.sk_common`, `$ctx.udp_sk`, `$ctx.unix_sk`,
     `$ctx.uid`, and UDP `$ctx.bucket` where those payload slots exist.
+    Other simple single-pointer iterators expose roots such as `$ctx.dmabuf`,
+    `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`, and netlink `$ctx.sk`.
     Live iterator attach is rejected until the loader supports iterator links.
 
   perf_event targets:

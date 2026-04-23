@@ -263,6 +263,7 @@ Near-term priority order:
   - Recent progress: common iterator payload roots now cover task-bearing iterators (`ctx.task` on `iter:task_file`/`iter:task_vma`), `iter:task_file` file descriptor/file roots, `iter:task_vma` VMA roots, and `iter:cgroup` cgroup roots with conservative nullable pointer typing.
   - Recent progress: BPF object iterator payload roots now cover map, map element key/value, sockmap, socket-storage-map value, program, and link iterators with direct context loads plus BTF-backed projections for map/prog/link roots.
   - Recent progress: network iterator payload roots now cover TCP `sock_common`, UDP `udp_sock` plus bucket, UNIX `unix_sock`, and shared iterator owner uid fields using direct context loads and attach-target gates.
+  - Recent progress: simple single-pointer iterator payload roots now cover dmabuf, IPv6 route, kmem_cache, ksym, and netlink iterators with nullable BTF-backed context roots.
   - Recent progress: all BPF iterator sections now expose iterator metadata through `ctx.meta` / `ctx.iter_meta`, including BTF-backed `bpf_iter_meta.seq_num` projection coverage across task and map iterator targets.
 
 - [~] Generalize context modeling by program type.

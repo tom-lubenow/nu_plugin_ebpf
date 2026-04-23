@@ -677,6 +677,26 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         CtxField::IterUid | CtxField::IterBucket => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
         }
+        CtxField::IterDmabuf => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("dma_buf"))
+                .with_kernel_btf_runtime_type("dma_buf"),
+        ),
+        CtxField::IterIpv6Route => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("fib6_info"))
+                .with_kernel_btf_runtime_type("fib6_info"),
+        ),
+        CtxField::IterKmemCache => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("kmem_cache"))
+                .with_kernel_btf_runtime_type("kmem_cache"),
+        ),
+        CtxField::IterKsym => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("kallsym_iter"))
+                .with_kernel_btf_runtime_type("kallsym_iter"),
+        ),
+        CtxField::IterNetlinkSk => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("netlink_sock"))
+                .with_kernel_btf_runtime_type("netlink_sock"),
+        ),
         CtxField::Cgroup => BaseContextFieldSchemaSpec::value(
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
                 .with_kernel_btf_runtime_type("cgroup"),

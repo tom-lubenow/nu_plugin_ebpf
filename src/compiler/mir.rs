@@ -720,6 +720,16 @@ pub enum CtxField {
     IterUid,
     /// Current UDP iterator hash bucket
     IterBucket,
+    /// Current DMA-BUF iterator dma_buf pointer
+    IterDmabuf,
+    /// Current IPv6 route iterator fib6_info pointer
+    IterIpv6Route,
+    /// Current kmem_cache iterator kmem_cache pointer
+    IterKmemCache,
+    /// Current ksymbol iterator kallsym_iter pointer
+    IterKsym,
+    /// Current netlink iterator netlink_sock pointer
+    IterNetlinkSk,
     /// Current task default cgroup pointer
     Cgroup,
     /// CPU ID
@@ -1022,6 +1032,11 @@ impl CtxField {
             CtxField::IterUnixSk => "iter_unix_sk".to_string(),
             CtxField::IterUid => "iter_uid".to_string(),
             CtxField::IterBucket => "iter_bucket".to_string(),
+            CtxField::IterDmabuf => "iter_dmabuf".to_string(),
+            CtxField::IterIpv6Route => "iter_ipv6_route".to_string(),
+            CtxField::IterKmemCache => "iter_kmem_cache".to_string(),
+            CtxField::IterKsym => "iter_ksym".to_string(),
+            CtxField::IterNetlinkSk => "iter_netlink_sk".to_string(),
             CtxField::Cgroup => "cgroup".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),
