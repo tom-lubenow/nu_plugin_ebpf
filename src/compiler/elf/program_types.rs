@@ -46,6 +46,53 @@ pub struct ProgramTypeInfo {
     pub retval_access: ProgramValueAccess,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ProgramBtfCallableSurfaceSpec {
+    program_types: &'static [EbpfProgramType],
+    surface: ProgramBtfCallableSurface,
+}
+
+const FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::FmodRet,
+];
+
+const TP_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::TpBtf];
+
+const LSM_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] =
+    &[EbpfProgramType::Lsm, EbpfProgramType::LsmCgroup];
+
+const STRUCT_OPS_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::StructOps];
+
+const BTF_CALLABLE_SURFACES: &[ProgramBtfCallableSurfaceSpec] = &[
+    ProgramBtfCallableSurfaceSpec {
+        program_types: FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::FunctionTrampoline,
+    },
+    ProgramBtfCallableSurfaceSpec {
+        program_types: TP_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::TpBtf,
+    },
+    ProgramBtfCallableSurfaceSpec {
+        program_types: LSM_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::LsmHook,
+    },
+    ProgramBtfCallableSurfaceSpec {
+        program_types: STRUCT_OPS_BTF_CALLABLE_PROGRAMS,
+        surface: ProgramBtfCallableSurface::StructOpsCallback,
+    },
+];
+
+pub(super) fn btf_callable_surface_for(
+    program_type: EbpfProgramType,
+) -> Option<ProgramBtfCallableSurface> {
+    BTF_CALLABLE_SURFACES
+        .iter()
+        .find(|surface| surface.program_types.contains(&program_type))
+        .map(|surface| surface.surface)
+}
+
 pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
 pub(super) const KRETPROBE_SPEC_ALIASES: &[&str] = &["kretprobe"];
 pub(super) const KPROBE_MULTI_SPEC_ALIASES: &[&str] = &["kprobe.multi"];
@@ -1132,6 +1179,45 @@ mod tests {
             listed_prefixes, alias_prefixes,
             "PROGRAM_SPEC_PREFIXES must exactly match per-program aliases"
         );
+    }
+
+    #[test]
+    fn test_btf_callable_surface_table_is_unique_and_complete() {
+        let mut surface_programs = HashSet::new();
+
+        for spec in BTF_CALLABLE_SURFACES {
+            assert!(
+                !spec.program_types.is_empty(),
+                "BTF callable surface {:?} must list at least one program type",
+                spec.surface
+            );
+            for program_type in spec.program_types {
+                assert!(
+                    ALL_PROGRAM_TYPES.contains(program_type),
+                    "BTF callable surface {:?} contains unsupported program type {:?}",
+                    spec.surface,
+                    program_type
+                );
+                assert!(
+                    surface_programs.insert(*program_type),
+                    "program type {:?} appears in more than one BTF callable surface",
+                    program_type
+                );
+                assert_eq!(
+                    btf_callable_surface_for(*program_type),
+                    Some(spec.surface),
+                    "program type {:?} should resolve to BTF callable surface {:?}",
+                    program_type,
+                    spec.surface
+                );
+            }
+        }
+
+        for program_type in ALL_PROGRAM_TYPES {
+            if !surface_programs.contains(program_type) {
+                assert_eq!(btf_callable_surface_for(*program_type), None);
+            }
+        }
     }
 
     #[test]

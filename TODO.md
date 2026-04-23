@@ -252,6 +252,7 @@ Near-term priority order:
   - Recent progress: attach-flow fixtures now cover TCX first-class packet relayout and redirect helper selection (`adjust-packet --head`, `redirect --peer`, and `redirect --neigh`) through the same public lowering/codegen path as TC.
   - Recent progress: `netkit` is now a modeled compile/dry-run SCHED_CLS-style section family, emitting `netkit/primary` / `netkit/peer` sections with typed interface targets, skb context support, TC-style helper surfaces, and TCX-style return aliases while rejecting live attach until the loader has an explicit Netkit attach path.
   - Recent progress: `ProgramSpec` now has a registry-wide representative-spec invariant, ensuring every advertised `EbpfProgramType` can be reconstructed through both canonical string parsing and typed target construction.
+  - Recent progress: BTF-callable program surfaces (function trampoline, tp_btf, LSM hook, and struct_ops callback) now live in the same program-model metadata module as section/target/context/capability policy, with uniqueness coverage for the surface table.
 
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.
