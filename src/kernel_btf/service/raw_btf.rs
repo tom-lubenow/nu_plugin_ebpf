@@ -138,6 +138,51 @@ pub(super) fn parse_declared_type_sizes_from_raw_btf(raw: &[u8]) -> Option<HashM
     Some(out)
 }
 
+pub(super) fn parse_pointer_target_type_ids_from_raw_btf(raw: &[u8]) -> Option<HashMap<u32, u32>> {
+    let endianness = detect_btf_endianness(raw)?;
+    let hdr_len = read_u32(raw, 4, endianness)?;
+    let type_off = read_u32(raw, 8, endianness)?;
+    let type_len = read_u32(raw, 12, endianness)?;
+
+    let type_start = hdr_len.checked_add(type_off)?;
+    let type_end = type_start.checked_add(type_len)?;
+    if type_end as usize > raw.len() {
+        return None;
+    }
+
+    let mut out = HashMap::new();
+    let mut type_id: u32 = 1;
+    let mut cursor: u32 = type_start;
+
+    while cursor < type_end {
+        let header_end = cursor.checked_add(12)?;
+        if header_end > type_end {
+            return None;
+        }
+        let info = read_u32(raw, cursor as usize + 4, endianness)?;
+        let size_type = read_u32(raw, cursor as usize + 8, endianness)?;
+        let kind = (info >> 24) & 0x1f;
+        let vlen = info & 0xffff;
+
+        if kind == 2 {
+            out.insert(type_id, size_type);
+        }
+
+        let payload_len = btf_kind_payload_len(kind, vlen)?;
+        cursor = header_end.checked_add(payload_len)?;
+        if cursor > type_end {
+            return None;
+        }
+        type_id = type_id.checked_add(1)?;
+    }
+
+    if cursor != type_end {
+        return None;
+    }
+
+    Some(out)
+}
+
 fn detect_btf_endianness(raw: &[u8]) -> Option<BtfEndianness> {
     if raw.len() < 2 {
         return None;

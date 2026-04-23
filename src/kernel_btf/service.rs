@@ -29,7 +29,7 @@ mod trampoline;
 use raw_btf::BtfEndianness;
 use raw_btf::{
     parse_declared_type_sizes_from_raw_btf, parse_function_proto_return_type_ids_from_raw_btf,
-    parse_function_return_type_ids_from_raw_btf,
+    parse_function_return_type_ids_from_raw_btf, parse_pointer_target_type_ids_from_raw_btf,
 };
 
 /// Global kernel BTF instance
@@ -212,6 +212,8 @@ pub struct KernelBtf {
     pt_regs_cache: RwLock<Option<Result<PtRegsOffsets, PtRegsError>>>,
     /// Cached raw BTF declared sizes for aggregate type IDs.
     raw_type_size_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
+    /// Cached raw BTF pointer target IDs.
+    raw_pointer_target_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
     /// Cached per-function trampoline layouts for BTF-backed tracing programs.
     trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
     /// Cached per-callback trampoline layouts for struct_ops callbacks.
@@ -339,6 +341,7 @@ impl KernelBtf {
                 function_cache: RwLock::new(None),
                 pt_regs_cache: RwLock::new(None),
                 raw_type_size_cache: RwLock::new(None),
+                raw_pointer_target_cache: RwLock::new(None),
                 trampoline_layout_cache: RwLock::new(HashMap::new()),
                 struct_ops_layout_cache: RwLock::new(HashMap::new()),
                 kfunc_nullable_arg_cache: RwLock::new(None),
@@ -448,6 +451,26 @@ impl KernelBtf {
         });
 
         let mut cache = self.raw_type_size_cache.write().unwrap();
+        *cache = Some(map.clone());
+        map
+    }
+
+    fn load_raw_pointer_target_map(&self) -> Result<HashMap<u32, u32>, BtfError> {
+        {
+            let cache = self.raw_pointer_target_cache.read().unwrap();
+            if let Some(map) = cache.as_ref() {
+                return map.clone();
+            }
+        }
+
+        let raw = fs::read(Self::KERNEL_BTF_PATH).map_err(|e| {
+            BtfError::KernelBtfError(format!("failed to read {}: {e}", Self::KERNEL_BTF_PATH))
+        })?;
+        let map = parse_pointer_target_type_ids_from_raw_btf(&raw).ok_or_else(|| {
+            BtfError::KernelBtfError("failed to parse raw kernel BTF pointer targets".into())
+        });
+
+        let mut cache = self.raw_pointer_target_cache.write().unwrap();
         *cache = Some(map.clone());
         map
     }
@@ -569,13 +592,15 @@ impl KernelBtf {
         };
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
         let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
             BtfError::KernelBtfError(format!(
                 "failed to resolve kernel BTF type {}: {}",
                 param.type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
+        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes, &raw_pointer_targets)
+            .map(Some)
     }
 
     /// Resolve the exact kernel-BTF type for an LSM hook argument.
@@ -671,13 +696,15 @@ impl KernelBtf {
         };
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
         let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
             BtfError::KernelBtfError(format!(
                 "failed to resolve kernel BTF type {}: {}",
                 param.type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes).map(Some)
+        Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes, &raw_pointer_targets)
+            .map(Some)
     }
 
     fn resolve_struct_ops_callback_named_function<'a>(
@@ -743,13 +770,15 @@ impl KernelBtf {
         }
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
         let ret_ty = btf.get_type_by_id(ret_type_id).map_err(|e| {
             BtfError::KernelBtfError(format!(
                 "failed to resolve kernel BTF type {}: {}",
                 ret_type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes).map(Some)
+        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes, &raw_pointer_targets)
+            .map(Some)
     }
 
     /// Resolve a typed trampoline return-value slot for an attached function.
@@ -795,13 +824,15 @@ impl KernelBtf {
         }
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
         let ret_ty = btf.get_type_by_id(ret_type_id).map_err(|e| {
             BtfError::KernelBtfError(format!(
                 "failed to resolve kernel BTF type {}: {}",
                 ret_type_id, e
             ))
         })?;
-        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes).map(Some)
+        Self::type_info_from_btf_type(&btf, &ret_ty, &raw_type_sizes, &raw_pointer_targets)
+            .map(Some)
     }
 
     /// Validate that a function target is attachable via an fentry trampoline.
@@ -946,8 +977,15 @@ impl KernelBtf {
         };
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
-        self.resolve_trampoline_field_projection(&btf, param.type_id, field_path, &raw_type_sizes)
-            .map(Some)
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(
+            &btf,
+            param.type_id,
+            field_path,
+            &raw_type_sizes,
+            &raw_pointer_targets,
+        )
+        .map(Some)
     }
 
     /// Resolve a named field path within an LSM hook argument.
@@ -1008,8 +1046,15 @@ impl KernelBtf {
         };
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
-        self.resolve_trampoline_field_projection(&btf, param.type_id, field_path, &raw_type_sizes)
-            .map(Some)
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(
+            &btf,
+            param.type_id,
+            field_path,
+            &raw_type_sizes,
+            &raw_pointer_targets,
+        )
+        .map(Some)
     }
 
     /// Resolve a named field path within a by-value trampoline return value.
@@ -1031,8 +1076,15 @@ impl KernelBtf {
         }
 
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
-        self.resolve_trampoline_field_projection(&btf, ret_type_id, field_path, &raw_type_sizes)
-            .map(Some)
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(
+            &btf,
+            ret_type_id,
+            field_path,
+            &raw_type_sizes,
+            &raw_pointer_targets,
+        )
+        .map(Some)
     }
 
     /// Resolve a field path from an arbitrary kernel BTF type id.
@@ -1043,7 +1095,14 @@ impl KernelBtf {
     ) -> Result<TrampolineFieldProjection, BtfError> {
         let btf = self.load_kernel_btf_for_query()?;
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
-        self.resolve_trampoline_field_projection(&btf, root_type_id, field_path, &raw_type_sizes)
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(
+            &btf,
+            root_type_id,
+            field_path,
+            &raw_type_sizes,
+            &raw_pointer_targets,
+        )
     }
 
     /// Resolve a field path from an arbitrary named kernel BTF type.
@@ -1057,7 +1116,14 @@ impl KernelBtf {
             .get_type_by_name(type_name)
             .map_err(|_| BtfError::TypeNotFound(type_name.to_string()))?;
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
-        self.resolve_trampoline_field_projection(&btf, ty.type_id, field_path, &raw_type_sizes)
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        self.resolve_trampoline_field_projection(
+            &btf,
+            ty.type_id,
+            field_path,
+            &raw_type_sizes,
+            &raw_pointer_targets,
+        )
     }
 
     /// Resolve the recursive representable type layout for a named kernel BTF type.
@@ -1067,7 +1133,8 @@ impl KernelBtf {
             .get_type_by_name(type_name)
             .map_err(|_| BtfError::TypeNotFound(type_name.to_string()))?;
         let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
-        Self::type_info_from_btf_type(&btf, &ty, &raw_type_sizes)
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        Self::type_info_from_btf_type(&btf, &ty, &raw_type_sizes, &raw_pointer_targets)
     }
 
     /// Resolve the size in bytes of a named kernel BTF type.

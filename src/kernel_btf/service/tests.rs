@@ -8,6 +8,7 @@ fn make_test_service() -> KernelBtf {
         function_cache: RwLock::new(None),
         pt_regs_cache: RwLock::new(None),
         raw_type_size_cache: RwLock::new(None),
+        raw_pointer_target_cache: RwLock::new(None),
         trampoline_layout_cache: RwLock::new(HashMap::new()),
         struct_ops_layout_cache: RwLock::new(HashMap::new()),
         kfunc_nullable_arg_cache: RwLock::new(None),
@@ -948,6 +949,35 @@ fn test_kernel_named_type_info_resolves_common_struct() {
 }
 
 #[test]
+fn test_kernel_named_type_field_projection_preserves_cgroup_pointer_target_name() {
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "task_struct",
+            &[
+                TrampolineFieldSelector::Field("cgroups".to_string()),
+                TrampolineFieldSelector::Field("dfl_cgrp".to_string()),
+            ],
+        )
+        .expect("expected task_struct.cgroups.dfl_cgrp projection");
+
+    let TypeInfo::Ptr { target, .. } = projection.type_info else {
+        panic!("expected task_struct.cgroups.dfl_cgrp to resolve to a pointer");
+    };
+    let TypeInfo::Struct {
+        name, btf_type_id, ..
+    } = target.as_ref()
+    else {
+        panic!("expected task_struct.cgroups.dfl_cgrp target to resolve to a struct");
+    };
+
+    assert_eq!(name, "cgroup");
+    assert!(
+        btf_type_id.is_some(),
+        "expected cgroup target to preserve canonical kernel BTF type id"
+    );
+}
+
+#[test]
 fn test_kernel_named_type_size_bytes_resolves_common_struct() {
     let size = KernelBtf::get()
         .kernel_named_type_size_bytes("file")
@@ -1111,6 +1141,19 @@ fn test_parse_raw_btf_function_return_type_ids_pointer_return() {
     let parsed = parse_function_return_type_ids_from_raw_btf(&raw)
         .expect("expected return-type map from raw BTF");
     assert_eq!(parsed.get(&1).copied(), Some(3));
+}
+
+#[test]
+fn test_parse_raw_btf_pointer_target_type_ids_little_endian() {
+    let type_headers = [
+        (4u32 << 24, 8), // BTF_KIND_STRUCT, size 8, vlen 0
+        (2u32 << 24, 1), // BTF_KIND_PTR -> struct id 1
+    ];
+    let raw = make_minimal_raw_btf_with_type_headers(BtfEndianness::Little, &type_headers);
+    let parsed = parse_pointer_target_type_ids_from_raw_btf(&raw)
+        .expect("expected pointer target map from raw BTF");
+    assert_eq!(parsed.get(&2).copied(), Some(1));
+    assert_eq!(parsed.get(&1).copied(), None);
 }
 
 #[test]

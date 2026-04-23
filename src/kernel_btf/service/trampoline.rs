@@ -342,6 +342,7 @@ impl KernelBtf {
         root_type_id: u32,
         field_path: &[TrampolineFieldSelector],
         raw_type_sizes: &HashMap<u32, u32>,
+        raw_pointer_targets: &HashMap<u32, u32>,
     ) -> Result<TrampolineFieldProjection, BtfError> {
         if field_path.is_empty() {
             return Err(BtfError::KernelBtfError(
@@ -367,7 +368,12 @@ impl KernelBtf {
                 deref_ty.num_refs -= 1;
                 path.push(TrampolineFieldPathSegment {
                     offset_bytes: 0,
-                    type_info: Self::type_info_from_btf_type(btf, &deref_ty, raw_type_sizes)?,
+                    type_info: Self::type_info_from_btf_type(
+                        btf,
+                        &deref_ty,
+                        raw_type_sizes,
+                        raw_pointer_targets,
+                    )?,
                     bitfield: None,
                 });
                 current_ty = deref_ty;
@@ -399,8 +405,12 @@ impl KernelBtf {
                             ))
                         })?
                         .clone();
-                    let member_type_info =
-                        Self::type_info_from_btf_type(btf, &member_ty, raw_type_sizes)?;
+                    let member_type_info = Self::type_info_from_btf_type(
+                        btf,
+                        &member_ty,
+                        raw_type_sizes,
+                        raw_pointer_targets,
+                    )?;
 
                     let (offset_bytes, bitfield) = if let Some(bit_size) =
                         member.bits.filter(|bits| *bits != 0)
@@ -569,7 +579,12 @@ impl KernelBtf {
                 offset_bytes,
                 type_info: match next_type_info {
                     Some(type_info) => type_info,
-                    None => Self::type_info_from_btf_type(btf, &next_ty, raw_type_sizes)?,
+                    None => Self::type_info_from_btf_type(
+                        btf,
+                        &next_ty,
+                        raw_type_sizes,
+                        raw_pointer_targets,
+                    )?,
                 },
                 bitfield,
             });
@@ -604,12 +619,14 @@ impl KernelBtf {
         btf: &Btf,
         ty: &FlattenedType,
         raw_type_sizes: &HashMap<u32, u32>,
+        raw_pointer_targets: &HashMap<u32, u32>,
     ) -> Result<TypeInfo, BtfError> {
         let mut active_type_ids = HashSet::new();
         Self::type_info_from_btf_type_inner(
             btf,
             ty,
             raw_type_sizes,
+            raw_pointer_targets,
             &mut active_type_ids,
             Self::TRAMPOLINE_POINTER_TYPE_DEPTH,
         )
@@ -639,6 +656,7 @@ impl KernelBtf {
         btf: &Btf,
         ty: &FlattenedType,
         raw_type_sizes: &HashMap<u32, u32>,
+        raw_pointer_targets: &HashMap<u32, u32>,
         active_type_ids: &mut HashSet<u32>,
         pointer_type_depth: usize,
     ) -> Result<TypeInfo, BtfError> {
@@ -647,8 +665,15 @@ impl KernelBtf {
             .copied()
             .map(|size| size as usize);
         if ty.num_refs > 0 {
-            let mut pointee_ty = ty.clone();
-            pointee_ty.num_refs -= 1;
+            let pointee_ty = raw_pointer_targets
+                .get(&ty.type_id)
+                .and_then(|target_id| btf.get_type_by_id(*target_id).ok())
+                .cloned()
+                .unwrap_or_else(|| {
+                    let mut pointee_ty = ty.clone();
+                    pointee_ty.num_refs -= 1;
+                    pointee_ty
+                });
             let target = if pointer_type_depth == 0
                 || (pointee_ty.num_refs == 0 && active_type_ids.contains(&pointee_ty.type_id))
             {
@@ -658,6 +683,7 @@ impl KernelBtf {
                     btf,
                     &pointee_ty,
                     raw_type_sizes,
+                    raw_pointer_targets,
                     active_type_ids,
                     pointer_type_depth - 1,
                 )?
@@ -702,6 +728,7 @@ impl KernelBtf {
                         btf,
                         &elem_ty,
                         raw_type_sizes,
+                        raw_pointer_targets,
                         active_type_ids,
                         pointer_type_depth,
                     )?),
@@ -719,6 +746,7 @@ impl KernelBtf {
                         struct_ty,
                         size,
                         raw_type_sizes,
+                        raw_pointer_targets,
                         active_type_ids,
                         pointer_type_depth,
                     )?,
@@ -755,6 +783,7 @@ impl KernelBtf {
         struct_ty: &btf::btf::Struct,
         struct_size: usize,
         raw_type_sizes: &HashMap<u32, u32>,
+        raw_pointer_targets: &HashMap<u32, u32>,
         active_type_ids: &mut HashSet<u32>,
         pointer_type_depth: usize,
     ) -> Result<Vec<FieldInfo>, BtfError> {
@@ -776,6 +805,7 @@ impl KernelBtf {
                 btf,
                 &member_ty,
                 raw_type_sizes,
+                raw_pointer_targets,
                 active_type_ids,
                 pointer_type_depth,
             )?;

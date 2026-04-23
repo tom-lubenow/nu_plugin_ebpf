@@ -4957,47 +4957,85 @@ fn make_local_storage_map_contains_program(
     map_contains_decl: DeclId,
 ) -> HirProgram {
     let ctx_var = VarId::new(0);
+    let owner_var = VarId::new(1);
     let func = HirFunction {
-        blocks: vec![HirBlock {
-            id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadVariable {
-                    dst: RegId::new(0),
-                    var_id: ctx_var,
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::CellPath(Box::new(owner_path)),
-                },
-                HirStmt::FollowCellPath {
-                    src_dst: RegId::new(0),
-                    path: RegId::new(1),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::String(map_name.to_vec()),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(3),
-                    lit: HirLiteral::String(kind_arg.to_vec()),
-                },
-                HirStmt::Call {
-                    decl_id: map_contains_decl,
-                    src_dst: RegId::new(0),
-                    args: HirCallArgs {
-                        positional: vec![RegId::new(2)],
-                        named: vec![(b"kind".to_vec(), RegId::new(3))],
-                        ..Default::default()
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
                     },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(owner_path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: owner_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
                 },
-            ],
-            terminator: HirTerminator::Return { src: RegId::new(0) },
-        }],
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: owner_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(map_name.to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(kind_arg.to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_contains_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
         entry: HirBlockId(0),
-        spans: vec![Span::test_data(); 6],
-        ast: vec![None; 6],
+        spans: vec![Span::test_data(); 12],
+        ast: vec![None; 12],
         comments: vec![],
-        register_count: 4,
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
@@ -5025,6 +5063,25 @@ fn make_sk_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram
     )
 }
 
+fn current_task_cgroup_path() -> CellPath {
+    CellPath {
+        members: vec![
+            string_member("task"),
+            string_member("cgroups"),
+            string_member("dfl_cgrp"),
+        ],
+    }
+}
+
+fn make_cgrp_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    make_local_storage_map_contains_program(
+        current_task_cgroup_path(),
+        b"cgrp_state",
+        b"cgrp-storage",
+        map_contains_decl,
+    )
+}
+
 fn make_local_storage_map_get_program(
     owner_path: CellPath,
     map_name: &[u8],
@@ -5033,6 +5090,7 @@ fn make_local_storage_map_get_program(
 ) -> HirProgram {
     let ctx_var = VarId::new(0);
     let lookup_var = VarId::new(1);
+    let owner_var = VarId::new(2);
     let func = HirFunction {
         blocks: vec![
             HirBlock {
@@ -5049,6 +5107,33 @@ fn make_local_storage_map_get_program(
                     HirStmt::FollowCellPath {
                         src_dst: RegId::new(0),
                         path: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: owner_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(8),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(8),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: owner_var,
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(2),
@@ -5108,12 +5193,12 @@ fn make_local_storage_map_get_program(
                 ],
                 terminator: HirTerminator::BranchIf {
                     cond: RegId::new(0),
-                    if_true: HirBlockId(1),
-                    if_false: HirBlockId(2),
+                    if_true: HirBlockId(2),
+                    if_false: HirBlockId(3),
                 },
             },
             HirBlock {
-                id: HirBlockId(1),
+                id: HirBlockId(2),
                 stmts: vec![
                     HirStmt::LoadVariable {
                         dst: RegId::new(0),
@@ -5133,7 +5218,7 @@ fn make_local_storage_map_get_program(
                 terminator: HirTerminator::Return { src: RegId::new(0) },
             },
             HirBlock {
-                id: HirBlockId(2),
+                id: HirBlockId(3),
                 stmts: vec![HirStmt::LoadLiteral {
                     dst: RegId::new(0),
                     lit: HirLiteral::Int(0),
@@ -5142,8 +5227,8 @@ fn make_local_storage_map_get_program(
             },
         ],
         entry: HirBlockId(0),
-        spans: vec![Span::test_data(); 20],
-        ast: vec![None; 20],
+        spans: vec![Span::test_data(); 28],
+        ast: vec![None; 28],
         comments: vec![],
         register_count: 9,
         file_count: 0,
@@ -5169,6 +5254,15 @@ fn make_sk_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
         },
         b"sock_state",
         b"sk-storage",
+        map_get_decl,
+    )
+}
+
+fn make_cgrp_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
+    make_local_storage_map_get_program(
+        current_task_cgroup_path(),
+        b"cgrp_state",
+        b"cgrp-storage",
         map_get_decl,
     )
 }
@@ -5282,6 +5376,15 @@ fn make_sk_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
         },
         b"sock_state",
         b"sk-storage",
+        map_delete_decl,
+    )
+}
+
+fn make_cgrp_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+    make_local_storage_map_delete_program(
+        current_task_cgroup_path(),
+        b"cgrp_state",
+        b"cgrp-storage",
         map_delete_decl,
     )
 }
@@ -11561,6 +11664,262 @@ fn test_compile_cgroup_sock_sk_storage_map_contains_program() {
         .find(|map| map.name == "sock_state")
         .expect("expected sk-storage runtime map artifact");
     assert_eq!(map.def.map_type, BpfMapDef::sk_storage(8).map_type);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kprobe_cgrp_storage_map_get_program() {
+    let hir = make_cgrp_storage_map_get_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgrp-storage map-get should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::CgrpStorage,
+                    },
+                    ..
+                } if name == "cgrp_state"
+            )),
+        "expected cgrp-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(1))
+            )),
+        "expected cgrp-storage get helper call with explicit flags"
+    );
+    let cgroup_arg_ty = lowering
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. }
+                if *helper == BpfHelper::CgrpStorageGet as u32 =>
+            {
+                match args.get(1) {
+                    Some(MirValue::VReg(vreg)) => lowering.type_hints.main.get(vreg),
+                    _ => None,
+                }
+            }
+            _ => None,
+        });
+    assert!(
+        cgroup_arg_ty.is_some_and(MirType::is_cgroup_ptr),
+        "expected cgrp-storage owner to type as cgroup pointer, got {:?}",
+        cgroup_arg_ty
+    );
+    assert!(matches!(
+        lowering.type_hints.generic_map_value_types.get(&MapRef {
+            name: "cgrp_state".to_string(),
+            kind: MapKind::CgrpStorage,
+        }),
+        Some(MirType::Struct { fields, .. })
+            if fields.len() == 1 && fields[0].name == "hits" && fields[0].ty == MirType::I64
+    ));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized cgrp-storage map-get should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kprobe_cgrp_storage_map_delete_program() {
+    let hir = make_cgrp_storage_map_delete_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgrp-storage map-delete should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::CgrpStorage,
+                    },
+                    ..
+                } if name == "cgrp_state"
+            )),
+        "expected cgrp-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageDelete as u32 && args.len() == 2
+            )),
+        "expected cgrp-storage delete helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized cgrp-storage map-delete should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kprobe_cgrp_storage_map_contains_program() {
+    let hir = make_cgrp_storage_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgrp-storage map-contains should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[2], MirValue::Const(0))
+                        && matches!(args[3], MirValue::Const(0))
+            )),
+        "expected lookup-only cgrp-storage get helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized cgrp-storage map-contains should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    assert_eq!(map.def.map_type, BpfMapDef::cgrp_storage(8).map_type);
     assert!(
         result
             .relocations
