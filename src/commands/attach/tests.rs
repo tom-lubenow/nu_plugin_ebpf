@@ -12366,14 +12366,18 @@ fn current_cgroup_kn_id_projection_available() -> bool {
     )
 }
 
-fn current_cgroup_kn_id_path() -> CellPath {
+fn cgroup_kn_id_path(root: &str) -> CellPath {
     CellPath {
         members: vec![
-            string_member("current_cgroup"),
+            string_member(root),
             string_member("kn"),
             string_member("id"),
         ],
     }
+}
+
+fn current_cgroup_kn_id_path() -> CellPath {
+    cgroup_kn_id_path("current_cgroup")
 }
 
 #[test]
@@ -12431,6 +12435,43 @@ fn test_compile_task_context_current_cgroup_btf_projection_programs() {
             program_type,
             target,
             current_cgroup_kn_id_path(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_task_context_cgroup_alias_btf_projection_programs() {
+    if !current_cgroup_kn_id_projection_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "kprobe cgroup alias BTF field projection",
+        ),
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "fentry cgroup alias BTF field projection",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w cgroup alias BTF field projection",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup cgroup alias BTF field projection",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            program_type,
+            target,
+            cgroup_kn_id_path("cgroup"),
             context,
         );
     }
@@ -12508,6 +12549,46 @@ fn test_compile_task_context_bound_current_cgroup_btf_projection_programs() {
         let hir = make_bound_ctx_path_program(
             CellPath {
                 members: vec![string_member("current_cgroup")],
+            },
+            CellPath {
+                members: vec![string_member("kn"), string_member("id")],
+            },
+        );
+        assert_attach_program_compiles(&hir, program_type, target, &HashMap::new(), context);
+    }
+}
+
+#[test]
+fn test_compile_task_context_bound_cgroup_alias_btf_projection_programs() {
+    if !current_cgroup_kn_id_projection_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            "kprobe bound cgroup alias BTF field projection",
+        ),
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "fentry bound cgroup alias BTF field projection",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w bound cgroup alias BTF field projection",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup bound cgroup alias BTF field projection",
+        ),
+    ] {
+        let hir = make_bound_ctx_path_program(
+            CellPath {
+                members: vec![string_member("cgroup")],
             },
             CellPath {
                 members: vec![string_member("kn"), string_member("id")],
