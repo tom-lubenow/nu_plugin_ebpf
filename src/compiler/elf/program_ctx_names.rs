@@ -29,6 +29,7 @@ const CGROUP_SYSCTL_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgram
 const CGROUP_SOCKOPT_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::CgroupSockopt];
 const NETFILTER_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Netfilter];
+const ITER_CTX_FIELD_ALIAS_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Iter];
 const TRACEPOINT_PRESERVE_BUILTIN_CTX_FIELD_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::Tracepoint];
 
@@ -50,6 +51,10 @@ const NETFILTER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("hook", CtxField::NetfilterHook),
     ("pf", CtxField::NetfilterProtocolFamily),
     ("protocol_family", CtxField::NetfilterProtocolFamily),
+];
+const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
+    ("task", CtxField::IterTask),
+    ("iter_task", CtxField::IterTask),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -75,6 +80,10 @@ const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
         program_types: NETFILTER_CTX_FIELD_ALIAS_PROGRAMS,
         entries: NETFILTER_CTX_FIELD_ALIAS_ENTRIES,
+    },
+    CtxFieldAliasSurface {
+        program_types: ITER_CTX_FIELD_ALIAS_PROGRAMS,
+        entries: ITER_CTX_FIELD_ALIAS_ENTRIES,
     },
 ];
 const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
@@ -506,6 +515,28 @@ mod tests {
                 .resolve_tracepoint_ctx_field_name("task")
                 .expect("task should resolve as payload"),
             CtxField::TracepointField("task".to_string())
+        );
+    }
+
+    #[test]
+    fn test_iterator_task_alias_does_not_steal_current_task() {
+        assert_eq!(
+            EbpfProgramType::Iter
+                .resolve_ctx_field_name("task")
+                .expect("iter task alias should resolve"),
+            CtxField::IterTask
+        );
+        assert_eq!(
+            EbpfProgramType::Iter
+                .resolve_ctx_field_name("iter_task")
+                .expect("iter_task alias should resolve"),
+            CtxField::IterTask
+        );
+        assert_eq!(
+            EbpfProgramType::Iter
+                .resolve_ctx_field_name("current_task")
+                .expect("current_task should keep current-task semantics"),
+            CtxField::Task
         );
     }
 }

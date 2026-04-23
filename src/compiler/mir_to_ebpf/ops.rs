@@ -458,6 +458,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::IterTask => {
+                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
             CtxField::Cgroup => {
                 return Err(CompileError::UnsupportedInstruction(
                     "ctx.cgroup must be lowered through task_struct.cgroups.dfl_cgrp before codegen"

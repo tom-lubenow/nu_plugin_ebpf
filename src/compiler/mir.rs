@@ -688,6 +688,8 @@ pub enum CtxField {
     Comm,
     /// Current task_struct pointer
     Task,
+    /// Current element task_struct pointer on iter:task programs
+    IterTask,
     /// Current task default cgroup pointer
     Cgroup,
     /// CPU ID
@@ -974,6 +976,7 @@ impl CtxField {
             CtxField::UidGid => "uid_gid".to_string(),
             CtxField::Comm => "comm".to_string(),
             CtxField::Task => "task".to_string(),
+            CtxField::IterTask => "iter_task".to_string(),
             CtxField::Cgroup => "cgroup".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),

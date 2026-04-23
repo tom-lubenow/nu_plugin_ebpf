@@ -6,6 +6,7 @@ type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldA
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
     TcEgressOnly,
+    IterTaskOnly,
     CgroupSockCreateReleaseOnly,
     CgroupSockPostBindOnly,
     CgroupSockPostBindIpv4Only,
@@ -50,6 +51,13 @@ impl ContextFieldAccessRequirement {
             Self::TcEgressOnly => attach_shape.is_tc_ingress().then(|| {
                 format!("ctx.{field_name} is only available on tc/tcx egress programs")
             }),
+            Self::IterTaskOnly => match spec {
+                ProgramSpec::Iter { target } if target.name == "task" => None,
+                ProgramSpec::Iter { .. } => Some(format!(
+                    "ctx.{field_name} is only available on iter:task programs"
+                )),
+                _ => None,
+            },
             Self::CgroupSockCreateReleaseOnly => {
                 attach_shape.is_cgroup_sock_post_bind().then(|| {
                     format!(
@@ -439,6 +447,13 @@ const LWT_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ),
 ];
 
+const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] =
+    &[ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterTask,
+        "iter_task",
+        ContextFieldAccessRequirement::IterTaskOnly,
+    )];
+
 const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
     ProgramContextFieldAccessSurfaceSpec {
         program_type: EbpfProgramType::SocketFilter,
@@ -479,6 +494,10 @@ const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec]
     ProgramContextFieldAccessSurfaceSpec {
         program_type: EbpfProgramType::LwtSeg6Local,
         surfaces: LWT_CTX_FIELD_ACCESS_SURFACES,
+    },
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::Iter,
+        surfaces: ITER_CTX_FIELD_ACCESS_SURFACES,
     },
 ];
 
@@ -626,6 +645,7 @@ const NETFILTER_CTX_FIELDS: &[CtxField] = &[
     CtxField::NetfilterHook,
     CtxField::NetfilterProtocolFamily,
 ];
+const ITER_CTX_FIELDS: &[CtxField] = &[CtxField::IterTask];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
     CtxField::RemoteIp6,
@@ -795,6 +815,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::NetfilterFields,
     ),
     (
+        ITER_CTX_FIELDS,
+        BaseContextFieldAccessRequirement::IterFields,
+    ),
+    (
         &[CtxField::DataMeta],
         BaseContextFieldAccessRequirement::DataMetaField,
     ),
@@ -960,6 +984,7 @@ enum BaseContextFieldAccessRequirement {
     ReuseportFields,
     FlowDissectorFields,
     NetfilterFields,
+    IterFields,
     DataMetaField,
     IngressIfindexField,
     RxQueueIndexField,
@@ -1243,6 +1268,7 @@ const REUSEPORT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::SkReusep
 
 const FLOW_DISSECTOR_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::FlowDissector];
 const NETFILTER_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Netfilter];
+const ITER_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::Iter];
 
 const DEVICE_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::CgroupDevice];
 
@@ -1371,6 +1397,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: NETFILTER_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::IterFields,
+        program_types: ITER_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::IngressIfindexField,
         program_types: INGRESS_IFINDEX_FIELD_PROGRAMS,
     },
@@ -1466,6 +1496,7 @@ impl BaseContextFieldAccessRequirement {
             Self::ReuseportFields => self.allowed_by_program_surface(program_type),
             Self::FlowDissectorFields => self.allowed_by_program_surface(program_type),
             Self::NetfilterFields => self.allowed_by_program_surface(program_type),
+            Self::IterFields => self.allowed_by_program_surface(program_type),
             Self::DataMetaField => program_type.supports_data_meta_ctx_field(),
             Self::IngressIfindexField => self.allowed_by_program_surface(program_type),
             Self::RxQueueIndexField => self.allowed_by_program_surface(program_type),
@@ -1551,6 +1582,10 @@ impl BaseContextFieldAccessRequirement {
             ),
             Self::NetfilterFields => format!(
                 "ctx.{} is only available on netfilter programs",
+                field.display_name()
+            ),
+            Self::IterFields => format!(
+                "ctx.{} is only available on iter programs",
                 field.display_name()
             ),
             Self::SkbChecksumHelperFields => format!(
@@ -1811,6 +1846,10 @@ mod tests {
                 "cgroup_sock_addr context access surfaces",
                 CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES,
             ),
+            (
+                "iter context access surfaces",
+                ITER_CTX_FIELD_ACCESS_SURFACES,
+            ),
         ] {
             assert_unique_context_access_surfaces(table_name, surfaces);
         }
@@ -1897,6 +1936,25 @@ mod tests {
         );
         assert!(BaseContextFieldAccessRequirement::TaskFields.is_allowed(EbpfProgramType::Kprobe));
         assert!(!BaseContextFieldAccessRequirement::TaskFields.is_allowed(EbpfProgramType::Xdp));
+    }
+
+    #[test]
+    fn test_iter_task_field_has_explicit_access_surface() {
+        assert_eq!(
+            find_base_ctx_field_access_requirement(&CtxField::IterTask),
+            Some(BaseContextFieldAccessRequirement::IterFields)
+        );
+        assert!(BaseContextFieldAccessRequirement::IterFields.is_allowed(EbpfProgramType::Iter));
+        assert!(!BaseContextFieldAccessRequirement::IterFields.is_allowed(EbpfProgramType::Kprobe));
+
+        let task = ProgramSpec::parse("iter:task").expect("iter task spec should parse");
+        assert!(task.ctx_field_access_error(&CtxField::IterTask).is_none());
+
+        let map = ProgramSpec::parse("iter:map").expect("iter map spec should parse");
+        assert_eq!(
+            map.ctx_field_access_error(&CtxField::IterTask),
+            Some("ctx.iter_task is only available on iter:task programs".to_string())
+        );
     }
 
     #[test]

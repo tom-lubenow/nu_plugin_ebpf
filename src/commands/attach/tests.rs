@@ -8212,6 +8212,20 @@ fn test_compile_kprobe_ctx_task_non_null_program() {
     );
 }
 
+#[test]
+fn test_compile_iter_task_ctx_task_nullable_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("task")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "task",
+        &HashMap::new(),
+        "iter:task ctx.task nullable check",
+    );
+}
+
 fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     matches!(
@@ -8282,6 +8296,34 @@ fn test_compile_kprobe_ctx_task_pid_counter_program() {
         "ksys_read",
         ctx_task_pid_path("task"),
         "kprobe ctx.task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_ctx_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task",
+        ctx_task_pid_path("task"),
+        "iter:task ctx.task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_ctx_iter_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task",
+        ctx_task_pid_path("iter_task"),
+        "iter:task ctx.iter_task.pid count",
     );
 }
 

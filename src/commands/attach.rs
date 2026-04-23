@@ -313,6 +313,10 @@ Context parameter syntax (recommended):
     This program type can execute syscalls through dedicated helpers, so the
     current model is deliberately compile/dry-run only and exposes no context.
     Raw helper calls are limited to explicitly modeled syscall-program helpers.
+    `iter:TARGET` emits BPF iterator sections such as `iter/task`.
+    `iter:task` exposes the nullable iterated task through `$ctx.task` and
+    `$ctx.iter_task`; other iterator targets do not have modeled context yet.
+    Live iterator attach is rejected until the loader supports iterator links.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event
@@ -1286,8 +1290,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'iter:task' {|| 0 }",
-                description: "Compile a BPF iterator section without live-loading it",
+                example: "ebpf attach --dry-run 'iter:task' {|ctx| if $ctx.task != 0 { 1 } else { 0 } }",
+                description: "Compile a BPF task iterator section using the iterated task pointer",
                 result: None,
             },
             Example {
