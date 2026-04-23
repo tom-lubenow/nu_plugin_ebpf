@@ -8153,6 +8153,37 @@ fn ctx_task_pt_regs_arg0_path(root: &str) -> CellPath {
     }
 }
 
+type AttachProgramFixture = (EbpfProgramType, &'static str, &'static str);
+
+fn representative_task_context_programs() -> [AttachProgramFixture; 3] {
+    [
+        (EbpfProgramType::Fentry, "security_file_open", "fentry"),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w",
+        ),
+        (EbpfProgramType::LsmCgroup, "socket_bind", "lsm_cgroup"),
+    ]
+}
+
+fn representative_task_context_programs_with_kprobe() -> [AttachProgramFixture; 4] {
+    [
+        (EbpfProgramType::Kprobe, "ksys_read", "kprobe"),
+        (EbpfProgramType::Fentry, "security_file_open", "fentry"),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w",
+        ),
+        (EbpfProgramType::LsmCgroup, "socket_bind", "lsm_cgroup"),
+    ]
+}
+
+fn count_decl_names() -> HashMap<DeclId, String> {
+    HashMap::from([(DeclId::new(42), "count".to_string())])
+}
+
 #[test]
 fn test_compile_kprobe_ctx_task_pid_counter_program() {
     if !task_struct_pid_projection_available() {
@@ -8187,28 +8218,12 @@ fn test_compile_task_context_ctx_task_pid_counter_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "fentry ctx.task.pid count",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w ctx.task.pid count",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "lsm_cgroup ctx.task.pid count",
-        ),
-    ] {
+    for (program_type, target, label) in representative_task_context_programs() {
         assert_ctx_path_count_program_compiles(
             program_type,
             target,
             ctx_task_pid_path("task"),
-            context,
+            &format!("{label} ctx.task.pid count"),
         );
     }
 }
@@ -8247,28 +8262,12 @@ fn test_compile_task_context_ctx_task_pt_regs_arg_counter_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "fentry ctx.task.pt_regs.arg0 count",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w ctx.task.pt_regs.arg0 count",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "lsm_cgroup ctx.task.pt_regs.arg0 count",
-        ),
-    ] {
+    for (program_type, target, label) in representative_task_context_programs() {
         assert_ctx_path_count_program_compiles(
             program_type,
             target,
             ctx_task_pt_regs_arg0_path("task"),
-            context,
+            &format!("{label} ctx.task.pt_regs.arg0 count"),
         );
     }
 }
@@ -8288,8 +8287,7 @@ fn test_compile_kprobe_bound_ctx_task_pid_counter_program() {
         },
         DeclId::new(42),
     );
-    let mut decl_names = HashMap::new();
-    decl_names.insert(DeclId::new(42), "count".to_string());
+    let decl_names = count_decl_names();
     assert_attach_program_compiles(
         &hir,
         EbpfProgramType::Kprobe,
@@ -8314,8 +8312,7 @@ fn test_compile_tracepoint_bound_ctx_current_task_pid_counter_program() {
         },
         DeclId::new(42),
     );
-    let mut decl_names = HashMap::new();
-    decl_names.insert(DeclId::new(42), "count".to_string());
+    let decl_names = count_decl_names();
     assert_attach_program_compiles(
         &hir,
         EbpfProgramType::Tracepoint,
@@ -8331,23 +8328,8 @@ fn test_compile_task_context_bound_ctx_task_pid_counter_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "bound fentry ctx.task.pid count",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "bound raw_tracepoint.w ctx.task.pid count",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "bound lsm_cgroup ctx.task.pid count",
-        ),
-    ] {
+    let decl_names = count_decl_names();
+    for (program_type, target, label) in representative_task_context_programs() {
         let hir = make_bound_ctx_path_projection_call_program(
             CellPath {
                 members: vec![string_member("task")],
@@ -8357,9 +8339,13 @@ fn test_compile_task_context_bound_ctx_task_pid_counter_programs() {
             },
             DeclId::new(42),
         );
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "count".to_string());
-        assert_attach_program_compiles(&hir, program_type, target, &decl_names, context);
+        assert_attach_program_compiles(
+            &hir,
+            program_type,
+            target,
+            &decl_names,
+            &format!("bound {label} ctx.task.pid count"),
+        );
     }
 }
 
@@ -8378,8 +8364,7 @@ fn test_compile_kprobe_bound_ctx_task_pt_regs_arg_counter_program() {
         },
         DeclId::new(42),
     );
-    let mut decl_names = HashMap::new();
-    decl_names.insert(DeclId::new(42), "count".to_string());
+    let decl_names = count_decl_names();
     assert_attach_program_compiles(
         &hir,
         EbpfProgramType::Kprobe,
@@ -8404,8 +8389,7 @@ fn test_compile_tracepoint_bound_ctx_current_task_pt_regs_arg_counter_program() 
         },
         DeclId::new(42),
     );
-    let mut decl_names = HashMap::new();
-    decl_names.insert(DeclId::new(42), "count".to_string());
+    let decl_names = count_decl_names();
     assert_attach_program_compiles(
         &hir,
         EbpfProgramType::Tracepoint,
@@ -8421,23 +8405,8 @@ fn test_compile_task_context_bound_ctx_task_pt_regs_arg_counter_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "bound fentry ctx.task.pt_regs.arg0 count",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "bound raw_tracepoint.w ctx.task.pt_regs.arg0 count",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "bound lsm_cgroup ctx.task.pt_regs.arg0 count",
-        ),
-    ] {
+    let decl_names = count_decl_names();
+    for (program_type, target, label) in representative_task_context_programs() {
         let hir = make_bound_ctx_path_projection_call_program(
             CellPath {
                 members: vec![string_member("task")],
@@ -8447,9 +8416,13 @@ fn test_compile_task_context_bound_ctx_task_pt_regs_arg_counter_programs() {
             },
             DeclId::new(42),
         );
-        let mut decl_names = HashMap::new();
-        decl_names.insert(DeclId::new(42), "count".to_string());
-        assert_attach_program_compiles(&hir, program_type, target, &decl_names, context);
+        assert_attach_program_compiles(
+            &hir,
+            program_type,
+            target,
+            &decl_names,
+            &format!("bound {label} ctx.task.pt_regs.arg0 count"),
+        );
     }
 }
 
@@ -12414,28 +12387,12 @@ fn test_compile_task_context_current_cgroup_btf_projection_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "fentry current_cgroup BTF field projection",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w current_cgroup BTF field projection",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "lsm_cgroup current_cgroup BTF field projection",
-        ),
-    ] {
+    for (program_type, target, label) in representative_task_context_programs() {
         assert_ctx_path_count_program_compiles(
             program_type,
             target,
             current_cgroup_kn_id_path(),
-            context,
+            &format!("{label} current_cgroup BTF field projection"),
         );
     }
 }
@@ -12446,33 +12403,12 @@ fn test_compile_task_context_cgroup_alias_btf_projection_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Kprobe,
-            "ksys_read",
-            "kprobe cgroup alias BTF field projection",
-        ),
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "fentry cgroup alias BTF field projection",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w cgroup alias BTF field projection",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "lsm_cgroup cgroup alias BTF field projection",
-        ),
-    ] {
+    for (program_type, target, label) in representative_task_context_programs_with_kprobe() {
         assert_ctx_path_count_program_compiles(
             program_type,
             target,
             cgroup_kn_id_path("cgroup"),
-            context,
+            &format!("{label} cgroup alias BTF field projection"),
         );
     }
 }
@@ -12529,23 +12465,7 @@ fn test_compile_task_context_bound_current_cgroup_btf_projection_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "fentry bound current_cgroup BTF field projection",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w bound current_cgroup BTF field projection",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "lsm_cgroup bound current_cgroup BTF field projection",
-        ),
-    ] {
+    for (program_type, target, label) in representative_task_context_programs() {
         let hir = make_bound_ctx_path_program(
             CellPath {
                 members: vec![string_member("current_cgroup")],
@@ -12554,7 +12474,13 @@ fn test_compile_task_context_bound_current_cgroup_btf_projection_programs() {
                 members: vec![string_member("kn"), string_member("id")],
             },
         );
-        assert_attach_program_compiles(&hir, program_type, target, &HashMap::new(), context);
+        assert_attach_program_compiles(
+            &hir,
+            program_type,
+            target,
+            &HashMap::new(),
+            &format!("{label} bound current_cgroup BTF field projection"),
+        );
     }
 }
 
@@ -12564,28 +12490,7 @@ fn test_compile_task_context_bound_cgroup_alias_btf_projection_programs() {
         return;
     }
 
-    for (program_type, target, context) in [
-        (
-            EbpfProgramType::Kprobe,
-            "ksys_read",
-            "kprobe bound cgroup alias BTF field projection",
-        ),
-        (
-            EbpfProgramType::Fentry,
-            "security_file_open",
-            "fentry bound cgroup alias BTF field projection",
-        ),
-        (
-            EbpfProgramType::RawTracepointWritable,
-            "sys_enter",
-            "raw_tracepoint.w bound cgroup alias BTF field projection",
-        ),
-        (
-            EbpfProgramType::LsmCgroup,
-            "socket_bind",
-            "lsm_cgroup bound cgroup alias BTF field projection",
-        ),
-    ] {
+    for (program_type, target, label) in representative_task_context_programs_with_kprobe() {
         let hir = make_bound_ctx_path_program(
             CellPath {
                 members: vec![string_member("cgroup")],
@@ -12594,7 +12499,13 @@ fn test_compile_task_context_bound_cgroup_alias_btf_projection_programs() {
                 members: vec![string_member("kn"), string_member("id")],
             },
         );
-        assert_attach_program_compiles(&hir, program_type, target, &HashMap::new(), context);
+        assert_attach_program_compiles(
+            &hir,
+            program_type,
+            target,
+            &HashMap::new(),
+            &format!("{label} bound cgroup alias BTF field projection"),
+        );
     }
 }
 
