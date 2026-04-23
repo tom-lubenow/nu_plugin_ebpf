@@ -3052,6 +3052,25 @@ fn test_compile_iter_bpf_link_load_uses_ctx_link_offset() {
 }
 
 #[test]
+fn test_compile_iter_tcp_loads_use_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterSkCommon, "tcp", opcode::BPF_DW, 8);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterUid, "tcp", opcode::BPF_W, 16);
+}
+
+#[test]
+fn test_compile_iter_udp_loads_use_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterUdpSk, "udp", opcode::BPF_DW, 8);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterUid, "udp", opcode::BPF_W, 16);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterBucket, "udp", opcode::BPF_W, 24);
+}
+
+#[test]
+fn test_compile_iter_unix_loads_use_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterUnixSk, "unix", opcode::BPF_DW, 8);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterUid, "unix", opcode::BPF_W, 16);
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_compile_perf_event_sample_period_load_uses_ctx_dword_offset_168() {
     let ctx = ProbeContext::new(

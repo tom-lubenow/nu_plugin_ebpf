@@ -28,6 +28,11 @@ The closure receives a context parameter with these fields:
 | `value` / `iter_value` | Nullable map value pointer from BPF map-element and BPF socket-storage iterator contexts. | `iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, `iter:sockmap` |
 | `prog` / `iter_prog` | Nullable iterated `bpf_prog *` pointer from `struct bpf_iter__bpf_prog`; BTF-backed fields such as `prog.len` can be projected when kernel BTF is available. | `iter:bpf_prog` |
 | `link` / `iter_link` | Nullable iterated `bpf_link *` pointer from `struct bpf_iter__bpf_link`; BTF-backed fields such as `link.id` can be projected when kernel BTF is available. | `iter:bpf_link` |
+| `sk_common` / `sock_common` / `iter_sk_common` | Nullable iterated `sock_common *` pointer from `struct bpf_iter__tcp`. | `iter:tcp` |
+| `udp_sk` / `iter_udp_sk` | Nullable iterated `udp_sock *` pointer from `struct bpf_iter__udp`. | `iter:udp` |
+| `unix_sk` / `iter_unix_sk` | Nullable iterated `unix_sock *` pointer from `struct bpf_iter__unix`. | `iter:unix` |
+| `uid` / `iter_uid` | Socket owner uid emitted by TCP, UDP, and UNIX socket iterators. | `iter:tcp`, `iter:udp`, `iter:unix` |
+| `bucket` / `iter_bucket` | UDP iterator hash bucket. | `iter:udp` |
 | `cgroup` / `current_cgroup` | Current task default `cgroup *` pointer, available for cgroup-local-storage ownership and BTF-backed cgroup projections such as `current_cgroup.kn.id`; follow-up projections also work after binding the pointer to a local. On tracepoints, use `current_cgroup` when you need the builtin rather than a payload field named `cgroup`. | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `cgroup_id` | Current task cgroup ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
@@ -218,6 +223,9 @@ iterators expose their natural roots too: `$ctx.map` on `iter:bpf_map`,
 `iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, and `iter:sockmap`;
 `$ctx.key` / `$ctx.value` on map-element iterators where those payload slots
 exist; `$ctx.prog` on `iter:bpf_prog`; and `$ctx.link` on `iter:bpf_link`.
+Network iterators expose `$ctx.sk_common` plus `$ctx.uid` on `iter:tcp`,
+`$ctx.udp_sk` / `$ctx.uid` / `$ctx.bucket` on `iter:udp`, and
+`$ctx.unix_sk` / `$ctx.uid` on `iter:unix`.
 `$ctx.current_task` and `$ctx.current_cgroup` remain reserved for helper-backed
 current-task semantics on task-aware tracing families. Live attach is rejected
 until the loader grows BPF iterator link/seq-file support.

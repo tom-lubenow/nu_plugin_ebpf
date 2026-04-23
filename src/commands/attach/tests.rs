@@ -8488,6 +8488,99 @@ fn test_compile_iter_bpf_link_payload_root_program() {
     );
 }
 
+#[test]
+fn test_compile_iter_tcp_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("sk_common")],
+            },
+            "iter:tcp ctx.sk_common nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("sock_common")],
+            },
+            "iter:tcp ctx.sock_common nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("uid")],
+            },
+            "iter:tcp ctx.uid scalar check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "tcp",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_udp_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("udp_sk")],
+            },
+            "iter:udp ctx.udp_sk nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("uid")],
+            },
+            "iter:udp ctx.uid scalar check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("bucket")],
+            },
+            "iter:udp ctx.bucket scalar check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "udp",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_unix_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("unix_sk")],
+            },
+            "iter:unix ctx.unix_sk nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("uid")],
+            },
+            "iter:unix ctx.uid scalar check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "unix",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
 fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     matches!(
@@ -8810,6 +8903,42 @@ fn test_compile_iter_bpf_link_ctx_link_id_counter_program() {
         "bpf_link",
         ctx_bpf_link_id_path("link"),
         "iter:bpf_link ctx.link.id count",
+    );
+}
+
+#[test]
+fn test_compile_iter_tcp_ctx_uid_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "tcp",
+        CellPath {
+            members: vec![string_member("uid")],
+        },
+        "iter:tcp ctx.uid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_udp_ctx_bucket_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "udp",
+        CellPath {
+            members: vec![string_member("bucket")],
+        },
+        "iter:udp ctx.bucket count",
+    );
+}
+
+#[test]
+fn test_compile_iter_unix_ctx_uid_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "unix",
+        CellPath {
+            members: vec![string_member("uid")],
+        },
+        "iter:unix ctx.uid count",
     );
 }
 

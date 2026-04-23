@@ -1637,6 +1637,9 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterMapValue));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterProg));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterLink));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterSkCommon));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterUdpSk));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterUnixSk));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1684,6 +1687,11 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
     );
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterProg));
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterLink));
+    assert!(
+        !EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterSkCommon)
+    );
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterUdpSk));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterUnixSk));
     assert!(
         EbpfProgramType::Netfilter
             .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
@@ -1770,6 +1778,27 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
     assert_eq!(
         iter_link_spec.kernel_btf_runtime_type_name,
         Some("bpf_link")
+    );
+
+    let iter_sk_common_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterSkCommon)
+        .expect("expected ctx.iter_sk_common type spec");
+    assert_eq!(
+        iter_sk_common_spec.kernel_btf_runtime_type_name,
+        Some("sock_common")
+    );
+
+    let iter_udp_sk_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterUdpSk)
+        .expect("expected ctx.iter_udp_sk type spec");
+    assert_eq!(
+        iter_udp_sk_spec.kernel_btf_runtime_type_name,
+        Some("udp_sock")
+    );
+
+    let iter_unix_sk_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterUnixSk)
+        .expect("expected ctx.iter_unix_sk type spec");
+    assert_eq!(
+        iter_unix_sk_spec.kernel_btf_runtime_type_name,
+        Some("unix_sock")
     );
 
     let nf_state_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterState)
@@ -7337,6 +7366,46 @@ fn test_probe_context_allows_bpf_object_iterator_payload_roots() {
 }
 
 #[test]
+fn test_probe_context_allows_network_iterator_payload_roots() {
+    let tcp = ProbeContext::new(EbpfProgramType::Iter, "tcp");
+    assert_eq!(
+        tcp.resolve_ctx_field_name("sk_common")
+            .expect("iter tcp sk_common alias should resolve"),
+        CtxField::IterSkCommon
+    );
+    assert_eq!(
+        tcp.resolve_ctx_field_name("uid")
+            .expect("iter uid alias should resolve"),
+        CtxField::IterUid
+    );
+    assert!(
+        tcp.ctx_field_access_error(&CtxField::IterSkCommon)
+            .is_none()
+    );
+    assert!(tcp.ctx_field_access_error(&CtxField::IterUid).is_none());
+    assert!(tcp.validate_load_ctx_field(&CtxField::IterSkCommon).is_ok());
+    assert!(tcp.validate_load_ctx_field(&CtxField::IterUid).is_ok());
+    assert!(tcp.ctx_field_access_error(&CtxField::IterUdpSk).is_some());
+
+    let udp = ProbeContext::new(EbpfProgramType::Iter, "udp");
+    assert!(udp.ctx_field_access_error(&CtxField::IterUdpSk).is_none());
+    assert!(udp.ctx_field_access_error(&CtxField::IterUid).is_none());
+    assert!(udp.ctx_field_access_error(&CtxField::IterBucket).is_none());
+    assert!(udp.validate_load_ctx_field(&CtxField::IterUdpSk).is_ok());
+    assert!(udp.validate_load_ctx_field(&CtxField::IterBucket).is_ok());
+    assert!(
+        udp.ctx_field_access_error(&CtxField::IterSkCommon)
+            .is_some()
+    );
+
+    let unix = ProbeContext::new(EbpfProgramType::Iter, "unix");
+    assert!(unix.ctx_field_access_error(&CtxField::IterUnixSk).is_none());
+    assert!(unix.ctx_field_access_error(&CtxField::IterUid).is_none());
+    assert!(unix.validate_load_ctx_field(&CtxField::IterUnixSk).is_ok());
+    assert!(unix.ctx_field_access_error(&CtxField::IterBucket).is_some());
+}
+
+#[test]
 fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
     let ctx = ProbeContext::new(EbpfProgramType::Iter, "map");
     let err = ctx
@@ -7361,6 +7430,11 @@ fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
         ctx.ctx_field_access_error(&CtxField::IterMap)
             .expect("expected iter map field access error"),
         "ctx.iter_map is only available on iter:bpf_map, iter:bpf_map_elem, iter:bpf_sk_storage_map, and iter:sockmap programs"
+    );
+    assert_eq!(
+        ctx.ctx_field_access_error(&CtxField::IterUid)
+            .expect("expected iter uid field access error"),
+        "ctx.iter_uid is only available on iter:tcp, iter:udp, and iter:unix programs"
     );
 }
 

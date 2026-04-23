@@ -662,6 +662,21 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("bpf_link"))
                 .with_kernel_btf_runtime_type("bpf_link"),
         ),
+        CtxField::IterSkCommon => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("sock_common"))
+                .with_kernel_btf_runtime_type("sock_common"),
+        ),
+        CtxField::IterUdpSk => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("udp_sock"))
+                .with_kernel_btf_runtime_type("udp_sock"),
+        ),
+        CtxField::IterUnixSk => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("unix_sock"))
+                .with_kernel_btf_runtime_type("unix_sock"),
+        ),
+        CtxField::IterUid | CtxField::IterBucket => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
+        }
         CtxField::Cgroup => BaseContextFieldSchemaSpec::value(
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
                 .with_kernel_btf_runtime_type("cgroup"),

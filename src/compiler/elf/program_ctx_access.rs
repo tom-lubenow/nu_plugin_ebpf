@@ -12,6 +12,10 @@ const ITER_MAP_KEY_TARGETS: &[&str] = &["bpf_map_elem", "sockmap"];
 const ITER_MAP_VALUE_TARGETS: &[&str] = &["bpf_map_elem", "bpf_sk_storage_map", "sockmap"];
 const ITER_PROG_TARGETS: &[&str] = &["bpf_prog"];
 const ITER_LINK_TARGETS: &[&str] = &["bpf_link"];
+const ITER_TCP_TARGETS: &[&str] = &["tcp"];
+const ITER_UDP_TARGETS: &[&str] = &["udp"];
+const ITER_UNIX_TARGETS: &[&str] = &["unix"];
+const ITER_SOCKET_UID_TARGETS: &[&str] = &["tcp", "udp", "unix"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
@@ -520,6 +524,34 @@ const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
         "iter_link",
         ContextFieldAccessRequirement::IterTargetsOnly(ITER_LINK_TARGETS, "iter:bpf_link"),
     ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterSkCommon,
+        "iter_sk_common",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_TCP_TARGETS, "iter:tcp"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterUdpSk,
+        "iter_udp_sk",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_UDP_TARGETS, "iter:udp"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterUnixSk,
+        "iter_unix_sk",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_UNIX_TARGETS, "iter:unix"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterUid,
+        "iter_uid",
+        ContextFieldAccessRequirement::IterTargetsOnly(
+            ITER_SOCKET_UID_TARGETS,
+            "iter:tcp, iter:udp, and iter:unix",
+        ),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterBucket,
+        "iter_bucket",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_UDP_TARGETS, "iter:udp"),
+    ),
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
@@ -725,6 +757,11 @@ const ITER_CTX_FIELDS: &[CtxField] = &[
     CtxField::IterMapValue,
     CtxField::IterProg,
     CtxField::IterLink,
+    CtxField::IterSkCommon,
+    CtxField::IterUdpSk,
+    CtxField::IterUnixSk,
+    CtxField::IterUid,
+    CtxField::IterBucket,
 ];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
@@ -2032,6 +2069,11 @@ mod tests {
             CtxField::IterMapValue,
             CtxField::IterProg,
             CtxField::IterLink,
+            CtxField::IterSkCommon,
+            CtxField::IterUdpSk,
+            CtxField::IterUnixSk,
+            CtxField::IterUid,
+            CtxField::IterBucket,
         ] {
             assert_eq!(
                 find_base_ctx_field_access_requirement(&field),
@@ -2147,6 +2189,28 @@ mod tests {
                 .is_some()
         );
 
+        let tcp = ProgramSpec::parse("iter:tcp").expect("iter tcp spec should parse");
+        assert!(
+            tcp.ctx_field_access_error(&CtxField::IterSkCommon)
+                .is_none()
+        );
+        assert!(tcp.ctx_field_access_error(&CtxField::IterUid).is_none());
+        assert!(tcp.ctx_field_access_error(&CtxField::IterUdpSk).is_some());
+
+        let udp = ProgramSpec::parse("iter:udp").expect("iter udp spec should parse");
+        assert!(udp.ctx_field_access_error(&CtxField::IterUdpSk).is_none());
+        assert!(udp.ctx_field_access_error(&CtxField::IterUid).is_none());
+        assert!(udp.ctx_field_access_error(&CtxField::IterBucket).is_none());
+        assert!(
+            udp.ctx_field_access_error(&CtxField::IterSkCommon)
+                .is_some()
+        );
+
+        let unix = ProgramSpec::parse("iter:unix").expect("iter unix spec should parse");
+        assert!(unix.ctx_field_access_error(&CtxField::IterUnixSk).is_none());
+        assert!(unix.ctx_field_access_error(&CtxField::IterUid).is_none());
+        assert!(unix.ctx_field_access_error(&CtxField::IterBucket).is_some());
+
         let map = ProgramSpec::parse("iter:map").expect("iter map spec should parse");
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterTask),
@@ -2163,6 +2227,13 @@ mod tests {
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterProg),
             Some("ctx.iter_prog is only available on iter:bpf_prog programs".to_string())
+        );
+        assert_eq!(
+            map.ctx_field_access_error(&CtxField::IterUid),
+            Some(
+                "ctx.iter_uid is only available on iter:tcp, iter:udp, and iter:unix programs"
+                    .to_string()
+            )
         );
     }
 

@@ -321,6 +321,8 @@ Context parameter syntax (recommended):
     `$ctx.vma` / `$ctx.iter_vma`; and `iter:cgroup` exposes `$ctx.cgroup` /
     `$ctx.iter_cgroup`. BPF object iterators expose `$ctx.map`, `$ctx.key`,
     `$ctx.value`, `$ctx.prog`, or `$ctx.link` where those payload slots exist.
+    Network iterators expose `$ctx.sk_common`, `$ctx.udp_sk`, `$ctx.unix_sk`,
+    `$ctx.uid`, and UDP `$ctx.bucket` where those payload slots exist.
     Live iterator attach is rejected until the loader supports iterator links.
 
   perf_event targets:

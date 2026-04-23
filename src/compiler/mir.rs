@@ -710,6 +710,16 @@ pub enum CtxField {
     IterProg,
     /// Current BPF link iterator link pointer
     IterLink,
+    /// Current TCP iterator sock_common pointer
+    IterSkCommon,
+    /// Current UDP iterator udp_sock pointer
+    IterUdpSk,
+    /// Current UNIX iterator unix_sock pointer
+    IterUnixSk,
+    /// Current socket iterator owner uid
+    IterUid,
+    /// Current UDP iterator hash bucket
+    IterBucket,
     /// Current task default cgroup pointer
     Cgroup,
     /// CPU ID
@@ -1007,6 +1017,11 @@ impl CtxField {
             CtxField::IterMapValue => "iter_value".to_string(),
             CtxField::IterProg => "iter_prog".to_string(),
             CtxField::IterLink => "iter_link".to_string(),
+            CtxField::IterSkCommon => "iter_sk_common".to_string(),
+            CtxField::IterUdpSk => "iter_udp_sk".to_string(),
+            CtxField::IterUnixSk => "iter_unix_sk".to_string(),
+            CtxField::IterUid => "iter_uid".to_string(),
+            CtxField::IterBucket => "iter_bucket".to_string(),
             CtxField::Cgroup => "cgroup".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),

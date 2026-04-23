@@ -75,6 +75,17 @@ const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("iter_prog", CtxField::IterProg),
     ("link", CtxField::IterLink),
     ("iter_link", CtxField::IterLink),
+    ("sk_common", CtxField::IterSkCommon),
+    ("sock_common", CtxField::IterSkCommon),
+    ("iter_sk_common", CtxField::IterSkCommon),
+    ("udp_sk", CtxField::IterUdpSk),
+    ("iter_udp_sk", CtxField::IterUdpSk),
+    ("unix_sk", CtxField::IterUnixSk),
+    ("iter_unix_sk", CtxField::IterUnixSk),
+    ("uid", CtxField::IterUid),
+    ("iter_uid", CtxField::IterUid),
+    ("bucket", CtxField::IterBucket),
+    ("iter_bucket", CtxField::IterBucket),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -597,6 +608,17 @@ mod tests {
             ("iter_prog", CtxField::IterProg),
             ("link", CtxField::IterLink),
             ("iter_link", CtxField::IterLink),
+            ("sk_common", CtxField::IterSkCommon),
+            ("sock_common", CtxField::IterSkCommon),
+            ("iter_sk_common", CtxField::IterSkCommon),
+            ("udp_sk", CtxField::IterUdpSk),
+            ("iter_udp_sk", CtxField::IterUdpSk),
+            ("unix_sk", CtxField::IterUnixSk),
+            ("iter_unix_sk", CtxField::IterUnixSk),
+            ("uid", CtxField::IterUid),
+            ("iter_uid", CtxField::IterUid),
+            ("bucket", CtxField::IterBucket),
+            ("iter_bucket", CtxField::IterBucket),
         ] {
             assert_eq!(
                 EbpfProgramType::Iter
