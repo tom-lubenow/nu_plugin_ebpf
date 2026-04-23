@@ -21,6 +21,7 @@ pub enum ProgramContextFamily {
     StructOps,
     Extension,
     Syscall,
+    Iter,
 }
 
 impl ProgramContextFamily {
@@ -114,6 +115,7 @@ pub(super) const LSM_SPEC_ALIASES: &[&str] = &["lsm", "lsm.s"];
 pub(super) const LSM_CGROUP_SPEC_ALIASES: &[&str] = &["lsm_cgroup"];
 pub(super) const EXTENSION_SPEC_ALIASES: &[&str] = &["freplace", "extension", "ext"];
 pub(super) const SYSCALL_SPEC_ALIASES: &[&str] = &["syscall"];
+pub(super) const ITER_SPEC_ALIASES: &[&str] = &["iter"];
 pub(super) const XDP_SPEC_ALIASES: &[&str] = &["xdp"];
 pub(super) const PERF_EVENT_SPEC_ALIASES: &[&str] = &["perf_event"];
 pub(super) const SOCKET_FILTER_SPEC_ALIASES: &[&str] = &["socket_filter", "sock_filter"];
@@ -525,6 +527,22 @@ pub(super) const SYSCALL_INFO: ProgramTypeInfo = ProgramTypeInfo {
     target_kind: ProgramTargetKind::SyscallProgram,
     kernel_target_validation: None,
     supported_capabilities: SYSCALL_CAPABILITIES,
+    arg_access: ProgramValueAccess::None,
+    retval_access: ProgramValueAccess::None,
+};
+
+pub(super) const ITER_INFO: ProgramTypeInfo = ProgramTypeInfo {
+    program_type: EbpfProgramType::Iter,
+    kernel_prog_type: "BPF_PROG_TYPE_TRACING",
+    canonical_prefix: "iter",
+    spec_aliases: ITER_SPEC_ALIASES,
+    section_prefix: "iter",
+    section_uses_target: true,
+    context_family: ProgramContextFamily::Iter,
+    attach_kind: ProgramAttachKind::Iter,
+    target_kind: ProgramTargetKind::BpfIteratorTarget,
+    kernel_target_validation: None,
+    supported_capabilities: DEFAULT_XDP_CAPABILITIES,
     arg_access: ProgramValueAccess::None,
     retval_access: ProgramValueAccess::None,
 };
@@ -991,6 +1009,7 @@ pub(super) const ALL_PROGRAM_TYPES: &[EbpfProgramType] = &[
     EbpfProgramType::LsmCgroup,
     EbpfProgramType::Extension,
     EbpfProgramType::Syscall,
+    EbpfProgramType::Iter,
     EbpfProgramType::Xdp,
     EbpfProgramType::PerfEvent,
     EbpfProgramType::SocketFilter,
@@ -1041,6 +1060,7 @@ pub(super) const PROGRAM_SPEC_PREFIXES: &[&str] = &[
     "extension",
     "ext",
     "syscall",
+    "iter",
     "tracepoint",
     "raw_tracepoint",
     "raw_tp",

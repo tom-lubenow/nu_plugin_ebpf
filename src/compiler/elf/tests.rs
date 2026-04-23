@@ -1166,6 +1166,20 @@ fn test_program_type_metadata_for_syscall() {
 }
 
 #[test]
+fn test_program_type_metadata_for_iter() {
+    let info = EbpfProgramType::Iter.info();
+    assert_eq!(info.canonical_prefix, "iter");
+    assert_eq!(info.section_prefix, "iter");
+    assert_eq!(info.attach_kind, ProgramAttachKind::Iter);
+    assert_eq!(info.target_kind, ProgramTargetKind::BpfIteratorTarget);
+    assert_eq!(info.context_family, ProgramContextFamily::Iter);
+    assert_eq!(info.arg_access, ProgramValueAccess::None);
+    assert_eq!(info.retval_access, ProgramValueAccess::None);
+    assert!(EbpfProgramType::Iter.supports_capability(ProgramCapability::Counters));
+    assert!(!EbpfProgramType::Iter.supports_capability(ProgramCapability::ReadUserString));
+}
+
+#[test]
 fn test_bpf_map_type_constants_match_kernel_uapi() {
     assert_eq!(BpfMapType::CgroupArray as u32, 8);
     assert_eq!(BpfMapType::DevMap as u32, 14);
@@ -3809,6 +3823,10 @@ fn test_program_type_registry_covers_current_kernel_uapi_program_types() {
     assert_eq!(
         EbpfProgramType::Syscall.kernel_prog_type(),
         "BPF_PROG_TYPE_SYSCALL"
+    );
+    assert_eq!(
+        EbpfProgramType::Iter.kernel_prog_type(),
+        "BPF_PROG_TYPE_TRACING"
     );
 }
 

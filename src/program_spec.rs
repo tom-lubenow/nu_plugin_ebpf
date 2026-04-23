@@ -503,6 +503,32 @@ impl SyscallTarget {
     }
 }
 
+/// Parsed BPF iterator target information.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IterTarget {
+    /// Kernel iterator target, for example `task`.
+    pub name: String,
+}
+
+impl IterTarget {
+    /// Parse a BPF iterator target name.
+    pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "BPF iterator target cannot be empty",
+            ));
+        }
+
+        Ok(Self {
+            name: target.to_string(),
+        })
+    }
+
+    pub fn target_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
 /// Parsed cgroup_skb target information.
 #[derive(Debug, Clone)]
 pub struct CgroupSkbTarget {
@@ -1832,6 +1858,9 @@ pub enum ProgramSpec {
     Syscall {
         target: SyscallTarget,
     },
+    Iter {
+        target: IterTarget,
+    },
     Tracepoint {
         category: String,
         name: String,
@@ -2196,6 +2225,9 @@ impl ProgramSpec {
             EbpfProgramType::Syscall => Ok(ProgramSpec::Syscall {
                 target: SyscallTarget::parse(target)?,
             }),
+            EbpfProgramType::Iter => Ok(ProgramSpec::Iter {
+                target: IterTarget::parse(target)?,
+            }),
             EbpfProgramType::Tracepoint => {
                 let (category, name) = target.split_once('/').ok_or_else(|| {
                     ProgramSpecParseError::new(format!(
@@ -2329,6 +2361,7 @@ impl ProgramSpec {
             ProgramSpec::LsmCgroup { .. } => EbpfProgramType::LsmCgroup,
             ProgramSpec::Extension { .. } => EbpfProgramType::Extension,
             ProgramSpec::Syscall { .. } => EbpfProgramType::Syscall,
+            ProgramSpec::Iter { .. } => EbpfProgramType::Iter,
             ProgramSpec::Tracepoint { .. } => EbpfProgramType::Tracepoint,
             ProgramSpec::RawTracepoint { .. } => EbpfProgramType::RawTracepoint,
             ProgramSpec::RawTracepointWritable { .. } => EbpfProgramType::RawTracepointWritable,
@@ -2386,6 +2419,7 @@ impl ProgramSpec {
             ProgramSpec::LsmCgroup { hook } => hook.clone(),
             ProgramSpec::Extension { target } => target.target_string(),
             ProgramSpec::Syscall { target } => target.target_string(),
+            ProgramSpec::Iter { target } => target.target_string(),
             ProgramSpec::Tracepoint { category, name } => format!("{category}/{name}"),
             ProgramSpec::RawTracepoint { name } => name.clone(),
             ProgramSpec::RawTracepointWritable { name } => name.clone(),
@@ -2957,6 +2991,7 @@ mod tests {
         let extension =
             ProgramSpec::parse("freplace:replace_me").expect("freplace spec should parse");
         let syscall = ProgramSpec::parse("syscall:demo").expect("syscall spec should parse");
+        let iter = ProgramSpec::parse("iter:task").expect("iter spec should parse");
         let lirc =
             ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
         let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
@@ -3138,6 +3173,9 @@ mod tests {
         assert_eq!(syscall.program_type(), EbpfProgramType::Syscall);
         assert_eq!(syscall.target_string(), "demo");
         assert_eq!(syscall.section_name(), "syscall");
+        assert_eq!(iter.program_type(), EbpfProgramType::Iter);
+        assert_eq!(iter.target_string(), "task");
+        assert_eq!(iter.section_name(), "iter/task");
         assert_eq!(
             lirc.lirc_mode2_target()
                 .map(|target| target.device_path.as_str()),
@@ -3218,6 +3256,7 @@ mod tests {
             EbpfProgramType::LsmCgroup => "socket_bind",
             EbpfProgramType::Extension => "replace_me",
             EbpfProgramType::Syscall => "demo",
+            EbpfProgramType::Iter => "task",
             EbpfProgramType::Tracepoint => "syscalls/sys_enter_openat",
             EbpfProgramType::RawTracepoint => "sys_enter",
             EbpfProgramType::RawTracepointWritable => "sys_enter",
@@ -3334,6 +3373,15 @@ mod tests {
 
         let err = SyscallTarget::parse("").expect_err("empty syscall target should be rejected");
         assert_eq!(err.to_string(), "syscall target label cannot be empty");
+    }
+
+    #[test]
+    fn test_iter_target_requires_non_empty_name() {
+        let target = IterTarget::parse("task").expect("BPF iterator target should parse");
+        assert_eq!(target.target_string(), "task");
+
+        let err = IterTarget::parse("").expect_err("empty BPF iterator target should be rejected");
+        assert_eq!(err.to_string(), "BPF iterator target cannot be empty");
     }
 
     #[test]

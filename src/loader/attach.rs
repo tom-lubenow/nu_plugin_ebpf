@@ -17,6 +17,7 @@ fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
             | ProgramAttachKind::Lwt
             | ProgramAttachKind::Extension
             | ProgramAttachKind::Syscall
+            | ProgramAttachKind::Iter
     )
 }
 
@@ -50,6 +51,9 @@ fn unsupported_live_attach_detail(kind: ProgramAttachKind) -> &'static str {
         }
         ProgramAttachKind::Syscall => {
             "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
+        }
+        ProgramAttachKind::Iter => {
+            "the loader still needs BPF iterator link/seq-file attach support"
         }
         _ => "this attach kind has no live attach implementation",
     }
@@ -1254,7 +1258,8 @@ impl EbpfState {
             | ProgramAttachKind::Netfilter
             | ProgramAttachKind::Lwt
             | ProgramAttachKind::Extension
-            | ProgramAttachKind::Syscall => {
+            | ProgramAttachKind::Syscall
+            | ProgramAttachKind::Iter => {
                 return Err(unsupported_live_attach_error(program.prog_type));
             }
             ProgramAttachKind::StructOps => {

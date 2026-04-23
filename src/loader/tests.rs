@@ -363,6 +363,18 @@ fn test_parse_program_spec_syscall_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_iter_is_structured() {
+    let (prog_type, target) = parse_probe_spec("iter:task").unwrap();
+    assert_eq!(prog_type, EbpfProgramType::Iter);
+    assert_eq!(target, "task");
+
+    let spec = parse_program_spec("iter:task").unwrap();
+    assert_eq!(spec.program_type(), EbpfProgramType::Iter);
+    assert_eq!(spec.target_string(), "task");
+    assert_eq!(spec.section_name(), "iter/task");
+}
+
+#[test]
 fn test_parse_probe_spec_xdp() {
     let (prog_type, target) = parse_probe_spec("xdp:lo").unwrap();
     assert_eq!(prog_type, EbpfProgramType::Xdp);
@@ -1451,6 +1463,12 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             "demo",
             "syscall",
             "has no ordinary hook attach in this loader",
+        ),
+        (
+            EbpfProgramType::Iter,
+            "task",
+            "iter",
+            "needs BPF iterator link/seq-file attach support",
         ),
     ] {
         let object = EbpfProgram::from_bytecode(prog_type, target, "main", vec![]).into_object();

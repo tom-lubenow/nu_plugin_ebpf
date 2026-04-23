@@ -265,6 +265,15 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 Ok(())
             }
         }
+        ProgramSpec::Iter { target } => {
+            if target.name.is_empty() {
+                Err(LoadError::Load(
+                    "BPF iterator target cannot be empty".to_string(),
+                ))
+            } else {
+                Ok(())
+            }
+        }
         ProgramSpec::Uprobe { .. }
         | ProgramSpec::Uretprobe { .. }
         | ProgramSpec::UprobeMulti { .. }
@@ -381,6 +390,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `lsm_cgroup:hook_name`
 /// - `freplace:function_name` (or `extension:function_name`)
 /// - `syscall:label`
+/// - `iter:target`
 /// - `tracepoint:category/name`
 /// - `raw_tracepoint:name` or `raw_tp:name`
 /// - `uprobe:/path/to/binary:function_name`

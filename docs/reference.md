@@ -195,6 +195,12 @@ syscall-program helpers `bpf_sys_bpf`, `bpf_btf_find_by_name_kind`,
 `bpf_sys_close`, and `bpf_kallsyms_lookup_name`; other raw helpers are
 rejected on `syscall:*` until they have an explicit policy.
 
+`iter:TARGET` currently has compile/dry-run support for BPF iterator
+sections such as `iter:task`, emitting `iter/task`. Iterator-specific
+context arguments are not modeled yet, so use this surface for
+constant/global/map/control-flow compile checks for now. Live attach is
+rejected until the loader grows BPF iterator link/seq-file support.
+
 `xdp`, `tc_action`, `tc`, `tcx`, `netkit`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
 packet pointers `ctx.data` / `ctx.data_end`. `sk_msg`, `sk_skb`, and

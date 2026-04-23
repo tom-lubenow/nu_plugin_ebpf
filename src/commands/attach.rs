@@ -65,6 +65,7 @@ Supported attach types:
   - lsm_cgroup (dry-run compile support; live attach is not implemented yet)
   - freplace / extension (dry-run compile support; live attach is not implemented yet)
   - syscall (dry-run compile support; live attach is not implemented yet)
+  - iter (dry-run compile support; live attach is not implemented yet)
   - perf_event
   - socket_filter
   - xdp, tc, tcx
@@ -1002,7 +1003,7 @@ Requirements:
             .required(
                 "probe",
                 SyntaxShape::String,
-                "The probe point (e.g., 'kprobe:sys_clone', 'kprobe.multi:vfs_*', 'kretprobe.multi:vfs_*', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'uprobe.multi:/usr/bin/app:main*', 'uretprobe.multi:/usr/bin/app:main*', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc:lo:ingress', 'tcx:lo:ingress', 'netkit:nk0:primary', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
+                "The probe point (e.g., 'kprobe:sys_clone', 'kprobe.multi:vfs_*', 'kretprobe.multi:vfs_*', 'ksyscall:nanosleep', 'kretsyscall:nanosleep', 'uprobe.s:/usr/bin/app:main', 'uprobe.multi:/usr/bin/app:main*', 'uretprobe.multi:/usr/bin/app:main*', 'raw_tracepoint.w:sys_enter', 'freplace:replace_me', 'syscall:demo', 'iter:task', 'xdp:lo', 'xdp:lo:frags', 'xdp:lo:drv:frags', 'tc:lo:ingress', 'tcx:lo:ingress', 'netkit:nk0:primary', 'tc_action:demo-action', 'socket_filter:udp4:127.0.0.1:31337', 'socket_filter:udp6:[::1]:31337', 'socket_filter:tcp4:127.0.0.1:31337', 'socket_filter:tcp6:[::1]:31337', 'cgroup_skb:/sys/fs/cgroup:egress', 'cgroup_device:/sys/fs/cgroup', 'cgroup_sock:/sys/fs/cgroup:sock_create', 'sock_ops:/sys/fs/cgroup', 'sk_msg:/sys/fs/bpf/demo_sockmap', 'sk_skb:/sys/fs/bpf/demo_sockmap', 'sk_skb_parser:/sys/fs/bpf/demo_sockmap', 'flow_dissector:/proc/self/ns/net', 'netfilter:ipv4:pre_routing', 'lwt_xmit:demo-route', 'sk_reuseport:select', 'cgroup_sysctl:/sys/fs/cgroup', 'cgroup_sockopt:/sys/fs/cgroup:get', 'cgroup_sock_addr:/sys/fs/cgroup:connect4', 'cgroup_sock_addr:/sys/fs/cgroup:connect_unix', 'sk_lookup:/proc/self/ns/net', or 'lirc_mode2:/dev/lirc0').",
             )
             .required(
                 "body",
@@ -1056,6 +1057,7 @@ Requirements:
             "extension",
             "ext",
             "syscall",
+            "iter",
             "uprobe",
             "uprobe.s",
             "uretprobe",
@@ -1281,6 +1283,11 @@ Requirements:
             Example {
                 example: "ebpf attach --dry-run 'syscall:demo' {|| 0 }",
                 description: "Compile a BPF syscall program section without live-loading it",
+                result: None,
+            },
+            Example {
+                example: "ebpf attach --dry-run 'iter:task' {|| 0 }",
+                description: "Compile a BPF iterator section without live-loading it",
                 result: None,
             },
             Example {

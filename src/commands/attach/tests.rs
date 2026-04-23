@@ -7772,6 +7772,18 @@ fn test_compile_syscall_return_program() {
 }
 
 #[test]
+fn test_compile_iter_return_program() {
+    let hir = make_int_return_program(0);
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "task",
+        &HashMap::new(),
+        "iter return 0",
+    );
+}
+
+#[test]
 fn test_compile_action_alias_return_programs() {
     for (program_type, target, alias, context) in [
         (

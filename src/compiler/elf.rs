@@ -1074,6 +1074,8 @@ pub enum EbpfProgramType {
     Extension,
     /// Syscall-capable BPF program (`BPF_PROG_TYPE_SYSCALL`)
     Syscall,
+    /// BPF iterator program (`iter/*` section)
+    Iter,
     /// XDP program attached to a network interface
     Xdp,
     /// Perf event program attached to software or hardware perf counters
@@ -1154,6 +1156,7 @@ impl EbpfProgramType {
             EbpfProgramType::LsmCgroup => &LSM_CGROUP_INFO,
             EbpfProgramType::Extension => &EXTENSION_INFO,
             EbpfProgramType::Syscall => &SYSCALL_INFO,
+            EbpfProgramType::Iter => &ITER_INFO,
             EbpfProgramType::Xdp => &XDP_INFO,
             EbpfProgramType::PerfEvent => &PERF_EVENT_INFO,
             EbpfProgramType::SocketFilter => &SOCKET_FILTER_INFO,
@@ -1322,6 +1325,7 @@ pub enum ProgramAttachKind {
     LsmCgroup,
     Extension,
     Syscall,
+    Iter,
     Xdp,
     PerfEvent,
     SocketFilter,
@@ -1357,6 +1361,7 @@ pub enum ProgramTargetKind {
     LsmHook,
     ExtensionFunction,
     SyscallProgram,
+    BpfIteratorTarget,
     Tracepoint,
     RawTracepoint,
     UserFunction,
