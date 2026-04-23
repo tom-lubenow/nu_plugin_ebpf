@@ -13129,6 +13129,105 @@ fn test_compile_xdp_cgroup_array_map_contains_program() {
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
+fn assert_cgroup_array_map_contains_program_uses_helper(
+    program_type: EbpfProgramType,
+    target: &str,
+    context: &str,
+    expected_helper: BpfHelper,
+    expected_arg_count: usize,
+) {
+    let hir = make_cgroup_array_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(program_type, target);
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower through attach flow: {err}"));
+
+    let expected_helper_id = expected_helper as u32;
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == expected_helper_id && args.len() == expected_arg_count
+            )),
+        "{context} should lower through the expected cgroup-array membership helper"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("optimized {context} should compile: {err}"));
+
+    assert!(
+        result.maps.iter().any(|map| map.name == "tracked_cgroups"),
+        "{context} should emit the cgroup-array runtime map artifact"
+    );
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+}
+
+#[test]
+fn test_compile_tcx_netkit_cgroup_array_map_contains_programs() {
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Tcx,
+            "lo:ingress",
+            "tcx cgroup-array map-contains",
+        ),
+        (
+            EbpfProgramType::Netkit,
+            "nk0:primary",
+            "netkit cgroup-array map-contains",
+        ),
+    ] {
+        assert_cgroup_array_map_contains_program_uses_helper(
+            program_type,
+            target,
+            context,
+            BpfHelper::SkbUnderCgroup,
+            3,
+        );
+    }
+}
+
+#[test]
+fn test_compile_task_context_cgroup_array_map_contains_programs() {
+    for (program_type, target, label) in representative_task_context_programs() {
+        assert_cgroup_array_map_contains_program_uses_helper(
+            program_type,
+            target,
+            &format!("{label} cgroup-array map-contains"),
+            BpfHelper::CurrentTaskUnderCgroup,
+            2,
+        );
+    }
+}
+
 #[test]
 fn test_compile_optimized_queue_map_peek_count_program() {
     let hir = make_seeded_map_take_count_program(
