@@ -314,30 +314,6 @@ impl EbpfProgram {
             )))
         }
 
-        fn map_type_name(map_type: u32) -> &'static str {
-            match map_type {
-                x if x == BpfMapType::Hash as u32 => "Hash",
-                x if x == BpfMapType::Array as u32 => "Array",
-                x if x == BpfMapType::ProgArray as u32 => "ProgArray",
-                x if x == BpfMapType::PerfEventArray as u32 => "PerfEventArray",
-                x if x == BpfMapType::PerCpuHash as u32 => "PerCpuHash",
-                x if x == BpfMapType::PerCpuArray as u32 => "PerCpuArray",
-                x if x == BpfMapType::CgroupArray as u32 => "CgroupArray",
-                x if x == BpfMapType::LruHash as u32 => "LruHash",
-                x if x == BpfMapType::LruPerCpuHash as u32 => "LruPerCpuHash",
-                x if x == BpfMapType::LpmTrie as u32 => "LpmTrie",
-                x if x == BpfMapType::ReuseportSockArray as u32 => "ReuseportSockArray",
-                x if x == BpfMapType::StackTrace as u32 => "StackTrace",
-                x if x == BpfMapType::BloomFilter as u32 => "BloomFilter",
-                x if x == BpfMapType::RingBuf as u32 => "RingBuf",
-                x if x == BpfMapType::SkStorage as u32 => "SkStorage",
-                x if x == BpfMapType::InodeStorage as u32 => "InodeStorage",
-                x if x == BpfMapType::TaskStorage as u32 => "TaskStorage",
-                x if x == BpfMapType::CgrpStorage as u32 => "CgrpStorage",
-                _ => "Unknown",
-            }
-        }
-
         fn is_hash_runtime_map(map_type: u32) -> bool {
             map_type == BpfMapType::Hash as u32 || map_type == BpfMapType::PerCpuHash as u32
         }
@@ -413,6 +389,7 @@ impl EbpfProgram {
                     map.name
                 )));
             }
+            map.def.validate_common_shape(&map.name)?;
 
             match map.name.as_str() {
                 RINGBUF_MAP_NAME => {
@@ -421,7 +398,7 @@ impl EbpfProgram {
                         return Err(invalid(format!(
                             "runtime map '{}' must be a RingBuf, got {}",
                             map.name,
-                            map_type_name(map.def.map_type)
+                            BpfMapType::name_for_raw(map.def.map_type)
                         )));
                     }
                     events_map = Some(map);
@@ -519,7 +496,7 @@ impl EbpfProgram {
                         return Err(invalid(format!(
                             "runtime map '{}' must be a StackTrace map, got {}",
                             map.name,
-                            map_type_name(map.def.map_type)
+                            BpfMapType::name_for_raw(map.def.map_type)
                         )));
                     }
                 }

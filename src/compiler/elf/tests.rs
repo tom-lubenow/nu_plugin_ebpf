@@ -8297,3 +8297,94 @@ fn test_validate_runtime_artifacts_accepts_arbitrary_maps_with_generic_maps() {
         .validate_runtime_artifacts()
         .expect("generic-map-capable program should accept arbitrary runtime maps");
 }
+
+#[test]
+fn test_bpf_map_def_reports_modeled_map_kind() {
+    assert_eq!(BpfMapDef::hash(8, 8, 16).map_kind(), Some(MapKind::Hash));
+    assert_eq!(
+        BpfMapDef::dev_map_hash(8, 16).map_kind(),
+        Some(MapKind::DevMapHash)
+    );
+    assert_eq!(
+        BpfMapDef::reuseport_sockarray(16).map_kind(),
+        Some(MapKind::ReuseportSockArray)
+    );
+
+    let unknown = BpfMapDef {
+        map_type: 999,
+        key_size: 4,
+        value_size: 4,
+        max_entries: 1,
+        map_flags: 0,
+        pinning: BpfPinningType::None,
+    };
+    assert_eq!(unknown.map_kind(), None);
+    assert_eq!(unknown.map_type_name(), "Unknown");
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_unknown_runtime_map_type() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "scratch".to_string(),
+            def: BpfMapDef {
+                map_type: 999,
+                key_size: 4,
+                value_size: 4,
+                max_entries: 1,
+                map_flags: 0,
+                pinning: BpfPinningType::None,
+            },
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("expected unknown map type validation error");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("runtime map 'scratch' uses unsupported map type 999"))
+    );
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_malformed_runtime_map_shape() {
+    let mut def = BpfMapDef::queue(8, 16);
+    def.key_size = 4;
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "work".to_string(),
+            def,
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("expected malformed map definition validation error");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("runtime map 'work' (Queue) must have key_size 0, got 4"))
+    );
+}

@@ -21,7 +21,7 @@ use super::instruction::EbpfBuilder;
 use super::mir::CtxStoreTarget;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
-    KSTACK_MAP_NAME, MapRef, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    KSTACK_MAP_NAME, MapKind, MapRef, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
 use crate::program_spec::{
@@ -156,7 +156,7 @@ impl GetSocketCookieArgPolicy {
 }
 
 /// BPF map types (subset of types we might use)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 #[allow(dead_code)]
 pub enum BpfMapType {
@@ -188,6 +188,106 @@ pub enum BpfMapType {
     CgrpStorage = 32,
 }
 
+impl BpfMapType {
+    pub(crate) fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            x if x == Self::Hash as u32 => Some(Self::Hash),
+            x if x == Self::Array as u32 => Some(Self::Array),
+            x if x == Self::ProgArray as u32 => Some(Self::ProgArray),
+            x if x == Self::PerfEventArray as u32 => Some(Self::PerfEventArray),
+            x if x == Self::PerCpuHash as u32 => Some(Self::PerCpuHash),
+            x if x == Self::PerCpuArray as u32 => Some(Self::PerCpuArray),
+            x if x == Self::StackTrace as u32 => Some(Self::StackTrace),
+            x if x == Self::CgroupArray as u32 => Some(Self::CgroupArray),
+            x if x == Self::LruHash as u32 => Some(Self::LruHash),
+            x if x == Self::LruPerCpuHash as u32 => Some(Self::LruPerCpuHash),
+            x if x == Self::LpmTrie as u32 => Some(Self::LpmTrie),
+            x if x == Self::DevMap as u32 => Some(Self::DevMap),
+            x if x == Self::SockMap as u32 => Some(Self::SockMap),
+            x if x == Self::CpuMap as u32 => Some(Self::CpuMap),
+            x if x == Self::XskMap as u32 => Some(Self::XskMap),
+            x if x == Self::SockHash as u32 => Some(Self::SockHash),
+            x if x == Self::ReuseportSockArray as u32 => Some(Self::ReuseportSockArray),
+            x if x == Self::Queue as u32 => Some(Self::Queue),
+            x if x == Self::Stack as u32 => Some(Self::Stack),
+            x if x == Self::SkStorage as u32 => Some(Self::SkStorage),
+            x if x == Self::DevMapHash as u32 => Some(Self::DevMapHash),
+            x if x == Self::RingBuf as u32 => Some(Self::RingBuf),
+            x if x == Self::InodeStorage as u32 => Some(Self::InodeStorage),
+            x if x == Self::TaskStorage as u32 => Some(Self::TaskStorage),
+            x if x == Self::BloomFilter as u32 => Some(Self::BloomFilter),
+            x if x == Self::CgrpStorage as u32 => Some(Self::CgrpStorage),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn name_for_raw(raw: u32) -> &'static str {
+        Self::from_raw(raw).map(Self::name).unwrap_or("Unknown")
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Hash => "Hash",
+            Self::Array => "Array",
+            Self::ProgArray => "ProgArray",
+            Self::PerfEventArray => "PerfEventArray",
+            Self::PerCpuHash => "PerCpuHash",
+            Self::PerCpuArray => "PerCpuArray",
+            Self::StackTrace => "StackTrace",
+            Self::CgroupArray => "CgroupArray",
+            Self::LruHash => "LruHash",
+            Self::LruPerCpuHash => "LruPerCpuHash",
+            Self::LpmTrie => "LpmTrie",
+            Self::DevMap => "DevMap",
+            Self::SockMap => "SockMap",
+            Self::CpuMap => "CpuMap",
+            Self::XskMap => "XskMap",
+            Self::SockHash => "SockHash",
+            Self::ReuseportSockArray => "ReuseportSockArray",
+            Self::Queue => "Queue",
+            Self::Stack => "Stack",
+            Self::SkStorage => "SkStorage",
+            Self::DevMapHash => "DevMapHash",
+            Self::RingBuf => "RingBuf",
+            Self::InodeStorage => "InodeStorage",
+            Self::TaskStorage => "TaskStorage",
+            Self::BloomFilter => "BloomFilter",
+            Self::CgrpStorage => "CgrpStorage",
+        }
+    }
+
+    pub(crate) fn map_kind(self) -> MapKind {
+        match self {
+            Self::Hash => MapKind::Hash,
+            Self::Array => MapKind::Array,
+            Self::ProgArray => MapKind::ProgArray,
+            Self::PerfEventArray => MapKind::PerfEventArray,
+            Self::PerCpuHash => MapKind::PerCpuHash,
+            Self::PerCpuArray => MapKind::PerCpuArray,
+            Self::StackTrace => MapKind::StackTrace,
+            Self::CgroupArray => MapKind::CgroupArray,
+            Self::LruHash => MapKind::LruHash,
+            Self::LruPerCpuHash => MapKind::LruPerCpuHash,
+            Self::LpmTrie => MapKind::LpmTrie,
+            Self::DevMap => MapKind::DevMap,
+            Self::SockMap => MapKind::SockMap,
+            Self::CpuMap => MapKind::CpuMap,
+            Self::XskMap => MapKind::XskMap,
+            Self::SockHash => MapKind::SockHash,
+            Self::ReuseportSockArray => MapKind::ReuseportSockArray,
+            Self::Queue => MapKind::Queue,
+            Self::Stack => MapKind::Stack,
+            Self::SkStorage => MapKind::SkStorage,
+            Self::DevMapHash => MapKind::DevMapHash,
+            Self::RingBuf => MapKind::RingBuf,
+            Self::InodeStorage => MapKind::InodeStorage,
+            Self::TaskStorage => MapKind::TaskStorage,
+            Self::BloomFilter => MapKind::BloomFilter,
+            Self::CgrpStorage => MapKind::CgrpStorage,
+        }
+    }
+}
+
 /// Pinning type for BPF maps (libbpf convention)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -212,6 +312,130 @@ pub struct BpfMapDef {
 }
 
 impl BpfMapDef {
+    pub(crate) fn map_kind(&self) -> Option<MapKind> {
+        BpfMapType::from_raw(self.map_type).map(BpfMapType::map_kind)
+    }
+
+    pub(crate) fn map_type_name(&self) -> &'static str {
+        BpfMapType::name_for_raw(self.map_type)
+    }
+
+    fn require_field(
+        &self,
+        map_name: &str,
+        field_name: &str,
+        actual: u32,
+        expected: u32,
+    ) -> Result<(), CompileError> {
+        if actual == expected {
+            return Ok(());
+        }
+        Err(CompileError::InvalidProgram(format!(
+            "runtime map '{}' ({}) must have {} {}, got {}",
+            map_name,
+            self.map_type_name(),
+            field_name,
+            expected,
+            actual
+        )))
+    }
+
+    fn require_nonzero_field(
+        &self,
+        map_name: &str,
+        field_name: &str,
+        actual: u32,
+    ) -> Result<(), CompileError> {
+        if actual != 0 {
+            return Ok(());
+        }
+        Err(CompileError::InvalidProgram(format!(
+            "runtime map '{}' ({}) must have non-zero {}",
+            map_name,
+            self.map_type_name(),
+            field_name
+        )))
+    }
+
+    pub(crate) fn validate_common_shape(&self, map_name: &str) -> Result<(), CompileError> {
+        let Some(map_type) = BpfMapType::from_raw(self.map_type) else {
+            return Err(CompileError::InvalidProgram(format!(
+                "runtime map '{}' uses unsupported map type {}",
+                map_name, self.map_type
+            )));
+        };
+
+        match map_type {
+            BpfMapType::Hash
+            | BpfMapType::LruHash
+            | BpfMapType::PerCpuHash
+            | BpfMapType::LruPerCpuHash
+            | BpfMapType::LpmTrie => {
+                self.require_nonzero_field(map_name, "key_size", self.key_size)?;
+                self.require_nonzero_field(map_name, "value_size", self.value_size)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::Array | BpfMapType::PerCpuArray => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_nonzero_field(map_name, "value_size", self.value_size)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::CgroupArray
+            | BpfMapType::ProgArray
+            | BpfMapType::SockMap
+            | BpfMapType::ReuseportSockArray
+            | BpfMapType::XskMap => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_field(map_name, "value_size", self.value_size, 4)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::PerfEventArray => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_field(map_name, "value_size", self.value_size, 4)?;
+            }
+            BpfMapType::StackTrace => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_nonzero_field(map_name, "value_size", self.value_size)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::DevMap | BpfMapType::CpuMap => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_field(map_name, "value_size", self.value_size, 8)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::DevMapHash => {
+                self.require_nonzero_field(map_name, "key_size", self.key_size)?;
+                self.require_field(map_name, "value_size", self.value_size, 8)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::SockHash => {
+                self.require_nonzero_field(map_name, "key_size", self.key_size)?;
+                self.require_field(map_name, "value_size", self.value_size, 4)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::Queue | BpfMapType::Stack | BpfMapType::BloomFilter => {
+                self.require_field(map_name, "key_size", self.key_size, 0)?;
+                self.require_nonzero_field(map_name, "value_size", self.value_size)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::RingBuf => {
+                self.require_field(map_name, "key_size", self.key_size, 0)?;
+                self.require_field(map_name, "value_size", self.value_size, 0)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::SkStorage
+            | BpfMapType::InodeStorage
+            | BpfMapType::TaskStorage
+            | BpfMapType::CgrpStorage => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_nonzero_field(map_name, "value_size", self.value_size)?;
+                self.require_field(map_name, "max_entries", self.max_entries, 0)?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Create a generic hash map definition.
     pub fn hash(key_size: u32, value_size: u32, max_entries: u32) -> Self {
         Self {
