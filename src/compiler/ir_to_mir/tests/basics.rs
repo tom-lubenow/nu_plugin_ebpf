@@ -763,6 +763,116 @@ fn test_lower_bounded_list_iterate_uses_runtime_length_guard() {
 }
 
 #[test]
+fn test_loop_break_edge_does_not_disable_sibling_continue_backedge() {
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Nothing,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Range {
+                            start: RegId::new(0),
+                            step: RegId::new(1),
+                            end: RegId::new(2),
+                            inclusion: RangeInclusion::Inclusive,
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(4),
+                    stream: RegId::new(3),
+                    body: HirBlockId(1),
+                    end: HirBlockId(4),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Bool(true),
+                }],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(5),
+                    if_true: HirBlockId(2),
+                    if_false: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(4),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(0),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(4),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(9),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(6) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 7],
+        ast: vec![None; 7],
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("loop with break and continue edges should lower");
+
+    let header_block = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| {
+            matches!(block.terminator, MirInst::LoopHeader { .. }).then_some(block.id)
+        })
+        .expect("expected loop header block");
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            matches!(
+                block.terminator,
+                MirInst::LoopBack { header, .. } if header == header_block
+            )
+        }),
+        "continue edge should lower to LoopBack even when a sibling block breaks"
+    );
+}
+
+#[test]
 fn test_lower_fentry_aggregate_scalar_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("tv_nsec")],

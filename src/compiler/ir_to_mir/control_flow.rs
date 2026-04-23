@@ -164,6 +164,16 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    fn prune_completed_loop_contexts_for_current_block(&mut self) {
+        while self
+            .loop_contexts
+            .last()
+            .is_some_and(|loop_ctx| loop_ctx.exit_block == self.current_block)
+        {
+            self.loop_contexts.pop();
+        }
+    }
+
     fn is_terminal_cleanup_stmt(stmt: &HirStmt) -> bool {
         matches!(
             stmt,
@@ -464,6 +474,7 @@ impl<'a> HirToMirLowering<'a> {
             self.current_block = *self.hir_block_map.get(&block.id).ok_or_else(|| {
                 CompileError::UnsupportedInstruction("HIR block mapping missing".into())
             })?;
+            self.prune_completed_loop_contexts_for_current_block();
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
                 for inst in inits {
@@ -1176,7 +1187,6 @@ impl<'a> HirToMirLowering<'a> {
                         return Ok(());
                     }
                     if target_block == loop_ctx.exit_block {
-                        self.loop_contexts.pop();
                         self.terminate(MirInst::Jump {
                             target: target_block,
                         });
