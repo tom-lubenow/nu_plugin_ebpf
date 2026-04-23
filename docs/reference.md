@@ -474,16 +474,23 @@ Compiler-managed named globals are still available through `global-define`, `glo
 
 Generic map `--kind` now supports `hash`, `array`, `queue`, `stack`, `bloom-filter`, `cgroup-array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `queue` and `stack` use `map-push`, `map-peek`, and `map-pop` instead of `map-put` / `map-get`. Lookup-capable generic maps use `map-get` for pointer reads and `map-contains` for boolean membership checks; `map-contains` defaults to `--kind hash` and also accepts `array`, `lpm-trie`, `lru-hash`, `per-cpu-hash`, `per-cpu-array`, and `lru-per-cpu-hash`. `map-put` flags are limited to `BPF_ANY`, `BPF_NOEXIST`, or `BPF_EXIST`; queue/stack `map-push` flags are limited to `0` or `BPF_EXIST`. `bloom-filter` uses first-class `map-push` to insert values and `map-contains --kind bloom-filter` for membership probes. It does not support first-class `map-peek`, `map-pop`, `map-get`, `map-put`, or `map-delete`. Per-cpu maps use the ordinary `map-get` surface for current-CPU/default lookups; explicit CPU reads can use the modeled escape hatch `helper-call "bpf_map_lookup_percpu_elem" MAP KEY_PTR CPU --kind per-cpu-hash|per-cpu-array|lru-per-cpu-hash`, where `KEY_PTR` must already be a stack/map-backed key pointer. Socket map kinds (`sockmap` and `sockhash`) use `map-put` on `sock_ops` programs for updates and `redirect-socket` on message/SKB stream programs for redirects. `reuseport-sockarray` is reserved for `redirect-socket` on `sk_reuseport`, where it emits a `BPF_MAP_TYPE_REUSEPORT_SOCKARRAY` map and selects `bpf_sk_select_reuseport`. Local-storage map kinds (`sk-storage`, `task-storage`, `inode-storage`, and `cgrp-storage`) use `map-get` / `map-contains` / `map-delete` over an owning object pointer instead of generic key/value update helpers. Special map families such as `ringbuf`, `perf-event-array`, `stack-trace`, and `prog-array` are selected by their owning surfaces (`emit`, perf-event output helpers, `ctx.kstack` / `ctx.ustack`, and `tail-call`) rather than generic map commands. Raw ring-buffer helpers enforce the kernel flag contracts too: reserve flags must be `0`, output/submit/discard flags may contain only `BPF_RB_NO_WAKEUP` / `BPF_RB_FORCE_WAKEUP`, and query flags must be one of the kernel `BPF_RB_*` selectors. `cgroup-array` maps use `map-contains --kind cgroup-array` with a cgroup-array slot index; tc_action, tc, tcx, netkit, and lwt_* programs lower to `bpf_skb_under_cgroup(ctx, map, index)` for the current packet, while other programs lower to the base helper `bpf_current_task_under_cgroup(map, index)` for the current task. The raw helper spelling remains available as an escape hatch. `lpm-trie` uses the kernel's raw trie-key layout, so the key bytes must already begin with a `u32` prefix length followed by the trie payload.
 
-The current-task cgroup ID is available as the ordinary `ctx.cgroup_id`
-field on runtime-context programs. Ancestor IDs use a constant numeric
-cell-path level, for example `ctx.ancestor_cgroup_id.0`, and return the
-same scalar ID shape as `bpf_get_current_cgroup_id`. Extension, syscall,
-and `struct_ops` callback specs do not expose this field surface.
+The current-task identity helpers are available as ordinary context fields on
+tracing-style runtime contexts: `ctx.pid` / `ctx.tid`, `ctx.tgid`,
+`ctx.uid`, and `ctx.gid` expose the split halves, while `ctx.pid_tgid` and
+`ctx.uid_gid` expose the kernel-packed `u64` helper values directly. The
+current-task cgroup ID is available as the ordinary `ctx.cgroup_id` field on
+runtime-context programs. Ancestor IDs use a constant numeric cell-path level,
+for example `ctx.ancestor_cgroup_id.0`, and return the same scalar ID shape as
+`bpf_get_current_cgroup_id`. Extension, syscall, and `struct_ops` callback
+specs do not expose this field surface.
 
 `ctx.ktime` remains the preferred ordinary timestamp surface. Specific
 kernel clocks/counters are also available as ordinary fields:
 `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
 The corresponding modeled helper escape hatch forms remain available.
+Pseudo-randomness is also available without raw helper spelling as either the
+ordinary Nushell primitive `random int` or the context fields `ctx.random` /
+`ctx.prandom_u32`.
 
 `redirect-map` is the first-class XDP surface for `bpf_redirect_map`. It takes a literal map name plus a key, requires `--kind devmap`, `--kind devmap-hash`, `--kind cpumap`, or `--kind xskmap`, and returns the helper result directly so it can be the closure's final XDP action. `--flags` stays available for the helper's fallback return-code bits when the map lookup misses plus broadcast/exclude-ingress bits.
 

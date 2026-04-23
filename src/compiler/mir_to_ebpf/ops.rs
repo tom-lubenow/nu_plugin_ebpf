@@ -426,6 +426,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::PidTgid => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetCurrentPidTgid));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::Uid => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetCurrentUidGid));
@@ -437,6 +443,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetCurrentUidGid));
                 self.instructions.push(EbpfInsn::rsh64_imm(EbpfReg::R0, 32));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
+            CtxField::UidGid => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetCurrentUidGid));
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }

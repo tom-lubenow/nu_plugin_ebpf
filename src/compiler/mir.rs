@@ -676,10 +676,14 @@ pub enum CtxField {
     Pid,
     /// Thread-group ID / userspace process ID (high 32 bits of bpf_get_current_pid_tgid)
     Tgid,
+    /// Packed `(tgid << 32) | pid` value from bpf_get_current_pid_tgid
+    PidTgid,
     /// User ID
     Uid,
     /// Group ID
     Gid,
+    /// Packed `(gid << 32) | uid` value from bpf_get_current_uid_gid
+    UidGid,
     /// Process name (comm)
     Comm,
     /// Current task_struct pointer
@@ -962,8 +966,10 @@ impl CtxField {
             CtxField::Context => "ctx".to_string(),
             CtxField::Pid => "pid".to_string(),
             CtxField::Tgid => "tgid".to_string(),
+            CtxField::PidTgid => "pid_tgid".to_string(),
             CtxField::Uid => "uid".to_string(),
             CtxField::Gid => "gid".to_string(),
+            CtxField::UidGid => "uid_gid".to_string(),
             CtxField::Comm => "comm".to_string(),
             CtxField::Task => "task".to_string(),
             CtxField::Cpu => "cpu".to_string(),

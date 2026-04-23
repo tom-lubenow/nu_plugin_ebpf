@@ -213,6 +213,36 @@ fn test_verify_mir_for_probe_context_allows_random_field_load() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_allows_packed_identity_field_loads() {
+    let (mut func, entry) = new_mir_function();
+    let pid_tgid = func.alloc_vreg();
+    let uid_gid = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: pid_tgid,
+            field: CtxField::PidTgid,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: uid_gid,
+            field: CtxField::UidGid,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid_tgid, MirType::U64);
+    types.insert(uid_gid, MirType::U64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected kprobe packed identity ctx fields to verify");
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_verify_mir_for_probe_context_allows_perf_event_specific_field_loads() {
     let (mut func, entry) = new_mir_function();

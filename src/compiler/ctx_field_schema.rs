@@ -575,6 +575,8 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::CoarseTimestamp
         | CtxField::TaiTimestamp
         | CtxField::Jiffies
+        | CtxField::PidTgid
+        | CtxField::UidGid
         | CtxField::FuncIp
         | CtxField::AttachCookie
         | CtxField::ArgCount

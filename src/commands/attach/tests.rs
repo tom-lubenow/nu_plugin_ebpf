@@ -7826,6 +7826,25 @@ fn test_compile_kprobe_ctx_tgid_counter_program() {
 }
 
 #[test]
+fn test_compile_kprobe_ctx_packed_identity_counter_programs() {
+    for (field, context) in [
+        ("pid_tgid", "kprobe ctx.pid_tgid count"),
+        ("current_pid_tgid", "kprobe ctx.current_pid_tgid count"),
+        ("uid_gid", "kprobe ctx.uid_gid count"),
+        ("current_uid_gid", "kprobe ctx.current_uid_gid count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_kprobe_ctx_uid_gid_counter_programs() {
     for (field, context) in [
         ("uid", "kprobe ctx.uid count"),

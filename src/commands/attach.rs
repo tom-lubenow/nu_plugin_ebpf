@@ -106,8 +106,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.pid }     - Get kernel PID / thread ID
     {|ctx| $ctx.tid }     - Alias for ctx.pid
     {|ctx| $ctx.tgid }    - Get thread group ID (process ID)
+    {|ctx| $ctx.pid_tgid } - Get packed (tgid << 32) | pid
     {|ctx| $ctx.uid }     - Get user ID
     {|ctx| $ctx.gid }     - Get group ID
+    {|ctx| $ctx.uid_gid } - Get packed (gid << 32) | uid
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.task }    - Get current task_struct pointer
     {|ctx| $ctx.numa_node } - Get current NUMA node ID

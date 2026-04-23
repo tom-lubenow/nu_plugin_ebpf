@@ -591,8 +591,10 @@ const CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpe
 const TASK_CTX_FIELDS: &[CtxField] = &[
     CtxField::Pid,
     CtxField::Tgid,
+    CtxField::PidTgid,
     CtxField::Uid,
     CtxField::Gid,
+    CtxField::UidGid,
     CtxField::Comm,
     CtxField::Task,
 ];
