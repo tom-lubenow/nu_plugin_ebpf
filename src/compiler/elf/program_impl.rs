@@ -12,9 +12,7 @@ fn parsed_program_spec_for_program(
     prog_type: EbpfProgramType,
     target: &str,
 ) -> Option<ProgramSpec> {
-    if let Ok(program_spec) = ProgramSpec::parse(target)
-        && program_spec.program_type() == prog_type
-    {
+    if let Some(program_spec) = ProgramSpec::parse_matching_program_type(target, prog_type) {
         return Some(program_spec);
     }
     ProgramSpec::from_program_type_target(prog_type, target).ok()
@@ -24,9 +22,7 @@ fn require_program_spec_for_program(
     prog_type: EbpfProgramType,
     target: &str,
 ) -> Result<ProgramSpec, CompileError> {
-    if let Ok(program_spec) = ProgramSpec::parse(target)
-        && program_spec.program_type() == prog_type
-    {
+    if let Some(program_spec) = ProgramSpec::parse_matching_program_type(target, prog_type) {
         return Ok(program_spec);
     }
     ProgramSpec::from_program_type_target(prog_type, target)

@@ -272,10 +272,8 @@ impl ProbeContext {
     /// Create a new probe context
     pub fn new(probe_type: EbpfProgramType, target: impl Into<String>) -> Self {
         let target = target.into();
-        if let Ok(program_spec) = ProgramSpec::parse(&target) {
-            if program_spec.program_type() == probe_type {
-                return Self::from_program_spec(program_spec);
-            }
+        if let Some(program_spec) = ProgramSpec::parse_matching_program_type(&target, probe_type) {
+            return Self::from_program_spec(program_spec);
         }
         if let Ok(program_spec) = ProgramSpec::from_program_type_target(probe_type, &target) {
             return Self::from_program_spec_parts(program_spec, target);

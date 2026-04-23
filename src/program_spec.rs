@@ -2130,6 +2130,13 @@ impl ProgramSpec {
         )
     }
 
+    /// Parse a full `type:target` string only when it names the requested program type.
+    pub fn parse_matching_program_type(spec: &str, prog_type: EbpfProgramType) -> Option<Self> {
+        Self::parse(spec)
+            .ok()
+            .filter(|program_spec| program_spec.program_type() == prog_type)
+    }
+
     pub fn from_program_type_target(
         prog_type: EbpfProgramType,
         target: &str,
@@ -3271,6 +3278,23 @@ mod tests {
             assert_eq!(parsed, direct);
             assert_eq!(parsed.program_type(), program_type);
         }
+    }
+
+    #[test]
+    fn test_parse_matching_program_type_accepts_only_requested_program_type() {
+        let xdp = ProgramSpec::parse_matching_program_type("xdp:lo:drv", EbpfProgramType::Xdp)
+            .expect("matching xdp spec should parse");
+
+        assert_eq!(xdp.program_type(), EbpfProgramType::Xdp);
+        assert_eq!(xdp.target_string(), "lo:drv");
+        assert_eq!(
+            ProgramSpec::parse_matching_program_type("xdp:lo", EbpfProgramType::Kprobe),
+            None
+        );
+        assert_eq!(
+            ProgramSpec::parse_matching_program_type("lo", EbpfProgramType::Xdp),
+            None
+        );
     }
 
     #[test]
