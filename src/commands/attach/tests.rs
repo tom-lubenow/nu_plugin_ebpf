@@ -2663,6 +2663,34 @@ fn find_tp_btf_named_projection_candidate() -> Option<(String, String, String)> 
     None
 }
 
+fn tracepoint_field_matches(
+    target: &str,
+    field_name: &str,
+    predicate: impl FnOnce(&TypeInfo) -> bool,
+) -> bool {
+    let Some((category, name)) = target.split_once('/') else {
+        return false;
+    };
+    let Ok(ctx) = KernelBtf::get().get_tracepoint_context(category, name) else {
+        return false;
+    };
+    ctx.get_field(field_name)
+        .is_some_and(|field| predicate(&field.type_info))
+}
+
+fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
+    for (target, field_name) in [
+        ("syscalls/sys_enter_openat", "filename"),
+        ("syscalls/sys_enter_openat2", "filename"),
+        ("syscalls/sys_enter_execve", "filename"),
+    ] {
+        if tracepoint_field_matches(target, field_name, TypeInfo::is_ptr) {
+            return Some((target.to_string(), field_name.to_string()));
+        }
+    }
+    None
+}
+
 fn find_lsm_named_projection_candidate() -> Option<(String, String, String)> {
     for (hook_name, arg_name, field_name) in [("file_open", "file", "f_flags")] {
         let path = [TrampolineFieldSelector::Field(field_name.to_string())];
@@ -6675,6 +6703,56 @@ fn test_compile_tracepoint_builtin_ctx_counter_programs() {
             &format!("tracepoint ctx.{field} count"),
         );
     }
+}
+
+#[test]
+fn test_compile_tracepoint_payload_scalar_ctx_counter_program() {
+    let target = "syscalls/sys_enter_openat";
+    if !tracepoint_field_matches(target, "id", TypeInfo::is_int) {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tracepoint,
+        target,
+        CellPath {
+            members: vec![string_member("id")],
+        },
+        "tracepoint ctx.id count",
+    );
+}
+
+#[test]
+fn test_compile_tracepoint_payload_args_index_ctx_counter_program() {
+    let target = "syscalls/sys_enter_openat";
+    if !tracepoint_field_matches(target, "args", |ty| matches!(ty, TypeInfo::Array { .. })) {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tracepoint,
+        target,
+        CellPath {
+            members: vec![string_member("args"), int_member(0)],
+        },
+        "tracepoint ctx.args[0] count",
+    );
+}
+
+#[test]
+fn test_compile_tracepoint_payload_pointer_index_ctx_counter_program() {
+    let Some((target, field_name)) = find_tracepoint_pointer_field_candidate() else {
+        return;
+    };
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tracepoint,
+        &target,
+        CellPath {
+            members: vec![string_member(&field_name), int_member(0)],
+        },
+        &format!("tracepoint ctx.{field_name}[0] count"),
+    );
 }
 
 #[test]
