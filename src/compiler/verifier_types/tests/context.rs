@@ -172,6 +172,52 @@ fn test_verify_mir_for_probe_context_rejects_invalid_tracepoint_field_load() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_allows_iter_sock_on_sockmap() {
+    let (mut func, entry) = new_mir_function();
+    let sk = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::IterSock,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(sk, MirType::named_kernel_struct_ptr("sock"));
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "sockmap");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected iter:sockmap ctx.sk to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_rejects_sockmap_iter_value() {
+    let (mut func, entry) = new_mir_function();
+    let value = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: value,
+            field: CtxField::IterMapValue,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(value, kernel_u8_ptr());
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "sockmap");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected iter:sockmap ctx.value to be rejected");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("ctx.iter_value is only available on iter:bpf_map_elem and iter:bpf_sk_storage_map programs")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_out_of_range_pt_regs_arg_load() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
