@@ -363,3 +363,43 @@ impl EbpfProgramType {
             .map(|entry| entry.value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_return_action_alias_surfaces_are_unique() {
+        let mut surfaced_program_types = HashSet::new();
+
+        for (index, surface) in RETURN_ACTION_ALIAS_SURFACES.iter().enumerate() {
+            let mut aliases = HashSet::new();
+            for entry in surface.entries {
+                assert_eq!(
+                    entry.alias,
+                    entry.alias.to_ascii_lowercase(),
+                    "return alias '{}' in surface #{index} must be lowercase",
+                    entry.alias
+                );
+                assert!(
+                    aliases.insert(entry.alias),
+                    "duplicate return alias '{}' in surface #{index}",
+                    entry.alias
+                );
+            }
+
+            let mut local_program_types = HashSet::new();
+            for program_type in surface.program_types {
+                assert!(
+                    local_program_types.insert(*program_type),
+                    "duplicate program type {program_type:?} in return alias surface #{index}"
+                );
+                assert!(
+                    surfaced_program_types.insert(*program_type),
+                    "program type {program_type:?} appears in multiple return alias surfaces"
+                );
+            }
+        }
+    }
+}
