@@ -6645,6 +6645,18 @@ fn test_compile_fentry_named_projected_ctx_arg_program() {
 }
 
 #[test]
+fn test_compile_fentry_ctx_arg_count_counter_program() {
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Fentry,
+        "vfs_read",
+        CellPath {
+            members: vec![string_member("arg_count")],
+        },
+        "fentry ctx.arg_count count",
+    );
+}
+
+#[test]
 fn test_compile_fmod_ret_named_projected_ctx_arg_program() {
     let Some((function_name, arg_name, field_name)) =
         find_function_trampoline_named_projection_candidate()
