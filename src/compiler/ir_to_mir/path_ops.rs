@@ -351,6 +351,11 @@ impl<'a> HirToMirLowering<'a> {
                 level
             )));
         };
+        if !uses_ctx_arg {
+            if let Some(ctx) = self.probe_ctx {
+                ctx.validate_ctx_field_access(&CtxField::CgroupId)?;
+            }
+        }
         if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
             return Err(CompileError::UnsupportedInstruction(message));
         }

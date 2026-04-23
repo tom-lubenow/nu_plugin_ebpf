@@ -6664,6 +6664,7 @@ fn test_compile_tracepoint_builtin_ctx_counter_programs() {
         "ktime_tai",
         "tai_time",
         "jiffies",
+        "cgroup_id",
     ] {
         assert_ctx_path_count_program_compiles(
             EbpfProgramType::Tracepoint,

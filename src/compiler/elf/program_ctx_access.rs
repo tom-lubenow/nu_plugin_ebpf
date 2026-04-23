@@ -717,6 +717,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::CpuField,
     ),
     (
+        &[CtxField::CgroupId],
+        BaseContextFieldAccessRequirement::CurrentTaskCgroupField,
+    ),
+    (
         &[
             CtxField::Timestamp,
             CtxField::BootTimestamp,
@@ -932,6 +936,7 @@ fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) ->
 enum BaseContextFieldAccessRequirement {
     TaskFields,
     CpuField,
+    CurrentTaskCgroupField,
     TimestampField,
     PerfEventField,
     PerfEventHelperFields,
@@ -1278,6 +1283,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: BASE_RUNTIME_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::CurrentTaskCgroupField,
+        program_types: BASE_RUNTIME_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::TimestampField,
         program_types: BASE_RUNTIME_FIELD_PROGRAMS,
     },
@@ -1426,6 +1435,7 @@ impl BaseContextFieldAccessRequirement {
         match self {
             Self::TaskFields => self.allowed_by_program_surface(program_type),
             Self::CpuField => self.allowed_by_program_surface(program_type),
+            Self::CurrentTaskCgroupField => self.allowed_by_program_surface(program_type),
             Self::TimestampField => self.allowed_by_program_surface(program_type),
             Self::PerfEventField => {
                 self.allowed_by_program_surface(program_type) && cfg!(target_arch = "x86_64")
@@ -1479,13 +1489,15 @@ impl BaseContextFieldAccessRequirement {
 
     fn error(self, program_type: EbpfProgramType, field: &CtxField) -> String {
         match self {
-            Self::TaskFields | Self::CpuField | Self::TimestampField | Self::StackFields => {
-                format!(
-                    "ctx.{} is not available on {} programs",
-                    field.display_name(),
-                    program_type.canonical_prefix()
-                )
-            }
+            Self::TaskFields
+            | Self::CpuField
+            | Self::CurrentTaskCgroupField
+            | Self::TimestampField
+            | Self::StackFields => format!(
+                "ctx.{} is not available on {} programs",
+                field.display_name(),
+                program_type.canonical_prefix()
+            ),
             Self::TracingHelperFields => format!(
                 "ctx.{} is only available on kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, and tp_btf programs",
                 field.display_name()
@@ -1832,6 +1844,34 @@ mod tests {
                 surface.program_types,
             );
         }
+    }
+
+    #[test]
+    fn test_current_task_cgroup_field_has_explicit_access_surface() {
+        assert_eq!(
+            find_base_ctx_field_access_requirement(&CtxField::CgroupId),
+            Some(BaseContextFieldAccessRequirement::CurrentTaskCgroupField)
+        );
+        assert!(
+            BaseContextFieldAccessRequirement::CurrentTaskCgroupField
+                .is_allowed(EbpfProgramType::Kprobe)
+        );
+        assert!(
+            BaseContextFieldAccessRequirement::CurrentTaskCgroupField
+                .is_allowed(EbpfProgramType::Xdp)
+        );
+        assert!(
+            !BaseContextFieldAccessRequirement::CurrentTaskCgroupField
+                .is_allowed(EbpfProgramType::Extension)
+        );
+        assert!(
+            !BaseContextFieldAccessRequirement::CurrentTaskCgroupField
+                .is_allowed(EbpfProgramType::Syscall)
+        );
+        assert!(
+            !BaseContextFieldAccessRequirement::CurrentTaskCgroupField
+                .is_allowed(EbpfProgramType::StructOps)
+        );
     }
 
     #[test]

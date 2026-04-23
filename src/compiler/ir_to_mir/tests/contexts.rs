@@ -4060,6 +4060,44 @@ fn test_lower_kprobe_ctx_cgroup_id_field() {
 }
 
 #[test]
+fn test_lower_contextless_program_rejects_current_task_cgroup_fields() {
+    for path in [
+        CellPath {
+            members: vec![string_member("cgroup_id")],
+        },
+        CellPath {
+            members: vec![string_member("ancestor_cgroup_id"), int_member(0)],
+        },
+    ] {
+        for (program_type, target) in [
+            (EbpfProgramType::Extension, "replace_me"),
+            (EbpfProgramType::StructOps, "sched_ext_ops"),
+        ] {
+            let hir = make_ctx_path_program(path.clone());
+            let probe_ctx = ProbeContext::new(program_type, target);
+
+            let err = lower_hir_to_mir_with_hints(
+                &hir,
+                Some(&probe_ctx),
+                &HashMap::new(),
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .expect_err("contextless programs should reject current-task cgroup fields");
+
+            assert!(
+                err.to_string().contains(&format!(
+                    "ctx.cgroup_id is not available on {} programs",
+                    program_type.canonical_prefix()
+                )),
+                "unexpected error for {program_type:?}: {err}"
+            );
+        }
+    }
+}
+
+#[test]
 fn test_lower_kprobe_ctx_ancestor_cgroup_id_projection_calls_helper() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("ancestor_cgroup_id"), int_member(2)],

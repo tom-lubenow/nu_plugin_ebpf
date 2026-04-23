@@ -6932,6 +6932,27 @@ fn test_probe_context_allows_cgroup_id_on_xdp() {
 }
 
 #[test]
+fn test_probe_context_rejects_cgroup_id_on_contextless_programs() {
+    for (program_type, target) in [
+        (EbpfProgramType::Extension, "replace_me"),
+        (EbpfProgramType::Syscall, "demo"),
+        (EbpfProgramType::StructOps, "sched_ext_ops"),
+    ] {
+        let ctx = ProbeContext::new(program_type, target);
+        let err = ctx
+            .ctx_field_access_error(&CtxField::CgroupId)
+            .expect("expected ctx.cgroup_id field access error");
+        assert!(
+            err.contains(&format!(
+                "ctx.cgroup_id is not available on {} programs",
+                program_type.canonical_prefix()
+            )),
+            "unexpected error for {program_type:?}: {err}"
+        );
+    }
+}
+
+#[test]
 fn test_probe_context_allows_task_on_task_aware_programs() {
     let ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
     assert!(ctx.ctx_field_access_error(&CtxField::Task).is_none());
