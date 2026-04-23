@@ -247,6 +247,7 @@ Near-term priority order:
   - Recent progress: sleepable BTF attach specs (`fentry.s`, `fexit.s`, `fmod_ret.s`, and `lsm.s`) now preserve their `.s` section spelling through typed `ProgramSpec` parsing, dry-run ELF emission, and loader attach compilation instead of being collapsed to non-sleepable section names.
   - Recent progress: `lsm_cgroup` is now a modeled compile/dry-run section family, sharing LSM hook BTF argument resolution and base LSM helper surfaces while rejecting live attach until the loader can safely handle cgroup LSM attachment.
   - Recent progress: `tcx` is now a modeled live SCHED_CLS-style section family, emitting `tcx/ingress` / `tcx/egress` sections with TC-style interface targets and attaching through an explicit TCX BPF link path.
+  - Recent progress: attach-flow fixtures now cover TCX first-class packet relayout and redirect helper selection (`adjust-packet --head`, `redirect --peer`, and `redirect --neigh`) through the same public lowering/codegen path as TC.
   - Recent progress: `netkit` is now a modeled compile/dry-run SCHED_CLS-style section family, emitting `netkit/primary` / `netkit/peer` sections with typed interface targets, skb context support, TC-style helper surfaces, and TCX-style return aliases while rejecting live attach until the loader has an explicit Netkit attach path.
 
 - [~] Generalize context modeling by program type.
