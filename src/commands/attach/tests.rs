@@ -12164,6 +12164,36 @@ fn test_compile_kprobe_current_cgroup_btf_projection_program() {
 }
 
 #[test]
+fn test_compile_kprobe_bound_current_cgroup_btf_projection_program() {
+    let projection_path = [
+        TrampolineFieldSelector::Field("kn".to_string()),
+        TrampolineFieldSelector::Field("id".to_string()),
+    ];
+    if !matches!(
+        KernelBtf::get().kernel_named_type_field_projection("cgroup", &projection_path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { size: 8, .. })
+    ) {
+        return;
+    }
+
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("current_cgroup")],
+        },
+        CellPath {
+            members: vec![string_member("kn"), string_member("id")],
+        },
+    );
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        &HashMap::new(),
+        "bound current_cgroup BTF field projection",
+    );
+}
+
+#[test]
 fn test_compile_lsm_inode_storage_map_get_program() {
     let hir = make_inode_storage_map_get_program(DeclId::new(42));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");

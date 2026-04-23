@@ -4193,6 +4193,96 @@ fn test_lower_tracepoint_current_cgroup_alias_projects_builtin_default_cgroup() 
 }
 
 #[test]
+fn test_lower_bound_current_cgroup_btf_projection_preserves_trusted_provenance() {
+    let task_projection_path = [
+        TrampolineFieldSelector::Field("cgroups".to_string()),
+        TrampolineFieldSelector::Field("dfl_cgrp".to_string()),
+    ];
+    if !matches!(
+        KernelBtf::get().kernel_named_type_field_projection("task_struct", &task_projection_path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Ptr { .. })
+    ) {
+        return;
+    }
+    let cgroup_projection_path = [
+        TrampolineFieldSelector::Field("kn".to_string()),
+        TrampolineFieldSelector::Field("id".to_string()),
+    ];
+    let expected_ty = match KernelBtf::get()
+        .kernel_named_type_field_projection("cgroup", &cgroup_projection_path)
+    {
+        Ok(projection) => match projection.type_info {
+            TypeInfo::Int {
+                size: 8,
+                signed: false,
+            } => MirType::U64,
+            TypeInfo::Int {
+                size: 8,
+                signed: true,
+            } => MirType::I64,
+            _ => return,
+        },
+        Err(_) => return,
+    };
+
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("current_cgroup")],
+        },
+        CellPath {
+            members: vec![string_member("kn"), string_member("id")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound current_cgroup BTF projection should lower");
+
+    let instructions: Vec<&MirInst> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Task,
+            ..
+        }
+    )));
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    },
+                    ..
+                }
+            ))
+            .count()
+            >= 3,
+        "expected bound current_cgroup projection to preserve trusted BTF provenance through the follow-up cgroup.kn pointer load"
+    );
+    assert!(
+        result.type_hints.main.values().any(|ty| ty == &expected_ty),
+        "expected bound current_cgroup projection to type as {expected_ty:?}"
+    );
+}
+
+#[test]
 fn test_lower_packet_program_rejects_ctx_cgroup_alias() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("cgroup")],
