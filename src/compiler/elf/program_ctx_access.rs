@@ -804,7 +804,7 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::SocketTupleFields,
     ),
     (
-        &[CtxField::Socket, CtxField::MigratingSocket],
+        &[CtxField::Socket],
         BaseContextFieldAccessRequirement::SocketRefField,
     ),
     (
@@ -1713,5 +1713,158 @@ impl ProgramSpec {
         self.program_type()
             .base_ctx_field_access_error(field)
             .or_else(|| self.attach_ctx_field_access_error(field))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn assert_unique_context_access_surfaces(
+        table_name: &str,
+        surfaces: &[ContextFieldAccessSurfaceSpec],
+    ) {
+        let mut fields = Vec::new();
+        let mut names = HashSet::new();
+
+        for surface in surfaces {
+            assert!(
+                !fields.contains(&surface.field),
+                "duplicate context access field {:?} in {table_name}",
+                surface.field
+            );
+            fields.push(surface.field.clone());
+
+            assert!(
+                names.insert(surface.field_name),
+                "duplicate context access diagnostic name '{}' in {table_name}",
+                surface.field_name
+            );
+        }
+    }
+
+    fn assert_unique_program_types(table_name: &str, program_types: &[EbpfProgramType]) {
+        let mut seen = HashSet::new();
+
+        for program_type in program_types {
+            assert!(
+                seen.insert(*program_type),
+                "duplicate program type {program_type:?} in {table_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_context_access_surface_tables_are_unique() {
+        for (table_name, surfaces) in [
+            (
+                "socket_filter context access surfaces",
+                SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            ("tc context access surfaces", TC_CTX_FIELD_ACCESS_SURFACES),
+            (
+                "cgroup_skb context access surfaces",
+                CGROUP_SKB_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            (
+                "sk_skb context access surfaces",
+                SK_SKB_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            ("lwt context access surfaces", LWT_CTX_FIELD_ACCESS_SURFACES),
+            (
+                "cgroup_sock context access surfaces",
+                CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            (
+                "cgroup_sockopt context access surfaces",
+                CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            (
+                "cgroup_sock_addr context access surfaces",
+                CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES,
+            ),
+        ] {
+            assert_unique_context_access_surfaces(table_name, surfaces);
+        }
+
+        let mut program_surface_types = HashSet::new();
+        for surface in PROGRAM_CTX_FIELD_ACCESS_SURFACES {
+            assert!(
+                program_surface_types.insert(surface.program_type),
+                "duplicate program access surface for {:?}",
+                surface.program_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_base_context_access_tables_are_unique() {
+        let mut fields = Vec::new();
+        let mut requirements = Vec::new();
+
+        for (surface_fields, requirement) in BASE_CONTEXT_FIELD_ACCESS_SURFACES {
+            assert!(
+                !requirements.contains(requirement),
+                "duplicate base context access requirement {requirement:?}"
+            );
+            requirements.push(*requirement);
+
+            for field in *surface_fields {
+                assert!(
+                    !fields.contains(field),
+                    "duplicate base context access field {field:?}"
+                );
+                fields.push(field.clone());
+            }
+        }
+
+        let mut program_surface_requirements = Vec::new();
+        for surface in BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES {
+            assert!(
+                !program_surface_requirements.contains(&surface.requirement),
+                "duplicate base context access program surface for {:?}",
+                surface.requirement
+            );
+            program_surface_requirements.push(surface.requirement);
+            assert_unique_program_types(
+                "base context access program surface",
+                surface.program_types,
+            );
+        }
+    }
+
+    #[test]
+    fn test_cgroup_sock_addr_tuple_aliases_do_not_overlap() {
+        let families = [
+            ProgramAttachAddressFamily::Ipv4,
+            ProgramAttachAddressFamily::Ipv6,
+            ProgramAttachAddressFamily::Unix,
+        ];
+        let hooks = [
+            ProgramAttachSockAddrHook::Bind,
+            ProgramAttachSockAddrHook::Connect,
+            ProgramAttachSockAddrHook::GetPeerName,
+            ProgramAttachSockAddrHook::GetSockName,
+            ProgramAttachSockAddrHook::SendMsg,
+            ProgramAttachSockAddrHook::RecvMsg,
+        ];
+        let mut seen = Vec::new();
+
+        for family in families {
+            for hook in hooks {
+                for alias in CGROUP_SOCK_ADDR_TUPLE_ALIAS_FIELDS {
+                    if alias.matches(&alias.field, hook, family) {
+                        let key = (alias.field.clone(), hook, family);
+                        assert!(
+                            !seen.contains(&key),
+                            "overlapping cgroup_sock_addr tuple alias for {:?} on {family:?}/{hook:?}",
+                            alias.field
+                        );
+                        seen.push(key);
+                    }
+                }
+            }
+        }
     }
 }
