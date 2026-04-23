@@ -595,6 +595,7 @@ Near-term priority order:
   - Recent progress: the manual Nu integration harness now includes dry-run-only smoke coverage for compile-only context surfaces (`sk_reuseport`, `flow_dissector`, `netfilter`, `lwt_xmit`, and `lirc_mode2`) without loading those program types into the host kernel.
   - Recent progress: LWT attach-flow fixtures now cover the broader modeled read surface through the public compile path, including packet-length/protocol aliases, ingress/interface metadata, helper-backed classid/realm/hash/csum reads, writable skb metadata reads, fixed `ctx.cb.N`, and `ctx.data[N]` packet byte access.
   - Recent progress: `raw_tracepoint.w` / `raw_tp.w` now has compile/dry-run program-model support, reusing raw tracepoint positional `ctx.argN` access while live attach remains explicitly unsupported because Aya does not parse writable raw-tracepoint sections.
+  - Recent progress: the manual Nu integration harness now includes a dry-run-only smoke for `raw_tracepoint.w` positional `ctx.argN` access, keeping writable raw tracepoint coverage safe from live attach limitations.
 
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.

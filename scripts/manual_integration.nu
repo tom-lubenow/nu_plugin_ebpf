@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 80
+const TOTAL_STEPS = 81
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -1225,7 +1225,12 @@ step 79 "lirc_mode2 dry-run raw sample context surface" {
     }
 }
 
-step 80 "verify no leaked probes" {
+step 80 "raw_tracepoint.w dry-run positional arg surface" {
+    let code = 'ebpf attach --dry-run "raw_tracepoint.w:sys_enter" {|ctx| ($ctx.arg0 + $ctx.arg1) | count; 0 } | describe'
+    expect-dry-run-binary $plugin_bin $code "raw_tracepoint.w positional args"
+}
+
+step 81 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"
