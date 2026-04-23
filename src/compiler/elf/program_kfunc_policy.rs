@@ -305,6 +305,17 @@ mod tests {
     }
 
     #[test]
+    fn test_program_spec_kfunc_policy_leaves_generic_kfuncs_to_broad_surfaces() {
+        let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
+            .expect("expected xdp spec");
+        let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
+            .expect("expected tc spec");
+
+        assert_eq!(xdp.kfunc_call_error("bpf_task_from_pid"), None);
+        assert_eq!(tc.kfunc_call_error("bpf_task_from_pid"), None);
+    }
+
+    #[test]
     fn test_program_specific_kfunc_policy_is_table_driven() {
         assert_eq!(
             modeled_kfunc_policy("bpf_sock_ops_enable_tx_tstamp").map(|policy| policy.program_type),

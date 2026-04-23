@@ -3934,6 +3934,10 @@ fn test_program_type_supports_probe_intrinsics() {
     assert!(EbpfProgramType::Tracepoint.supports_intrinsic(ProgramIntrinsic::Emit));
     assert!(EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::HelperCall));
     assert!(EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(EbpfProgramType::Tc.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(!EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(!EbpfProgramType::Extension.supports_intrinsic(ProgramIntrinsic::KfuncCall));
 }
 
 #[test]
@@ -3943,6 +3947,7 @@ fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Fentry.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Kprobe.supports_capability(ProgramCapability::StackTraces));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::HelperCalls));
+    assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::KfuncCalls));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::Globals));
     assert!(!EbpfProgramType::Xdp.supports_capability(ProgramCapability::ReadUserString));
 }

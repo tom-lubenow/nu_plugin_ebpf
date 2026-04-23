@@ -114,6 +114,7 @@ pub(super) const DEFAULT_XDP_CAPABILITIES: &[ProgramCapability] = &[
     ProgramCapability::Histograms,
     ProgramCapability::Timers,
     ProgramCapability::HelperCalls,
+    ProgramCapability::KfuncCalls,
     ProgramCapability::Globals,
     ProgramCapability::GenericMaps,
     ProgramCapability::TailCalls,

@@ -478,6 +478,7 @@ Near-term priority order:
   - Extended pointer-access size inference to consult local kernel BTF pointee sizes for pointer args without `*__sz`/`*__szk` partners, with shared type inference/verifier_types/VCC bounds checks when explicit static kfunc semantics are absent.
   - Added coarse kernel-BTF fallback kfunc signatures for unknown symbols (arity plus pointer/scalar argument kinds) and wired them through type inference, verifier_types, VCC, and codegen validation.
   - Coarse kernel-BTF fallback now also infers return kind (`void` / scalar / pointer-maybe-null) from function prototype return type IDs in raw kernel BTF.
+  - Recent progress: `kfunc-call` capability is now available on the broad helper-capable non-tracing program surface while modeled narrow kfuncs (`sock_ops`, `cgroup_sock_addr`, and sched_ext callback families) still use explicit program-specific policy; kernel-version-specific unmodeled kfunc allowlists remain verifier-enforced.
   - Remaining: expand signature coverage and pointer/ref-lifetime semantics from richer BTF metadata.
   - Remaining: model richer by-reference out-parameter semantics (aliasing/copy semantics and typed stack object identity) for additional stack-object families beyond current iter/dynptr/lock/irq patterns.
 

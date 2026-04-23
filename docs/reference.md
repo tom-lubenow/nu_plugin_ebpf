@@ -549,6 +549,11 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `map-peek` | Peek a maybe-null value pointer from a named queue or stack map |
 | `map-pop` | Pop a maybe-null value pointer from a named queue or stack map |
 
+`kfunc-call` is intentionally an escape hatch. The compiler models signatures,
+pointer/ref semantics, and the program-specific kfunc surfaces it knows about,
+but exact kfunc availability is still kernel-version and program-type specific;
+the kernel verifier remains the final authority for unmodeled kfunc allowlists.
+
 Stack trace ID collection should normally use first-class context fields: `$ctx.kstack` for kernel stacks and `$ctx.ustack` for user stacks. The backing `bpf_get_stackid` helper is constrained to tracing/perf-style program families and stack-trace maps, with flags limited to the skip field plus `BPF_F_USER_STACK`, `BPF_F_FAST_STACK_CMP`, and `BPF_F_REUSE_STACKID`. `bpf_get_stack` remains available through `helper-call` for custom buffers, maps, and flags, and accepts a stack/map buffer with a nonnegative size, including `0`. `bpf_get_task_stack` is also modeled for task-pointer inputs such as `ctx.task`, with the same stack/map output-buffer and nonnegative-size checks. Stack-copy helper flags are limited to the skip field plus `BPF_F_USER_STACK` and `BPF_F_USER_BUILD_ID`.
 Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.
 Perf-event-array counter reads are also modeled through `helper-call "bpf_perf_event_read" MAP FLAGS` and `helper-call "bpf_perf_event_read_value" MAP FLAGS BUF 24`; both require perf-event-array maps, require flags to fit `BPF_F_INDEX_MASK` / `BPF_F_CURRENT_CPU` (`0xffffffff`), and the value form requires a 24-byte `struct bpf_perf_event_value` buffer.
