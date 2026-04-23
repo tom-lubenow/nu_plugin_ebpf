@@ -385,3 +385,74 @@ impl ProgramSpec {
         self.program_type().resolve_ctx_field_name(field_name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn assert_unique_ctx_field_entry_names(table_name: &str, entries: &[CtxFieldNameEntry]) {
+        let mut seen = HashSet::new();
+
+        for (name, field) in entries {
+            assert!(
+                seen.insert(*name),
+                "duplicate context field alias '{name}' in {table_name} for {field:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_context_field_name_tables_are_unique() {
+        assert_unique_ctx_field_entry_names(
+            "generic context field names",
+            GENERIC_CTX_FIELD_NAME_ENTRIES,
+        );
+        assert_unique_ctx_field_entry_names(
+            "non-tracepoint context field names",
+            NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES,
+        );
+
+        let mut preserved_names = HashSet::new();
+        for name in TRACEPOINT_PRESERVED_CTX_FIELD_NAMES {
+            assert!(
+                preserved_names.insert(*name),
+                "duplicate tracepoint-preserved context field name '{name}'"
+            );
+        }
+
+        let mut surfaced_program_types = HashSet::new();
+        for (index, surface) in CTX_FIELD_ALIAS_SURFACES.iter().enumerate() {
+            assert_unique_ctx_field_entry_names(
+                &format!("context alias surface #{index}"),
+                surface.entries,
+            );
+
+            let mut local_program_types = HashSet::new();
+            for program_type in surface.program_types {
+                assert!(
+                    local_program_types.insert(*program_type),
+                    "duplicate program type {program_type:?} in context alias surface #{index}"
+                );
+                assert!(
+                    surfaced_program_types.insert(*program_type),
+                    "program type {program_type:?} appears in multiple context alias surfaces"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_tracepoint_preserved_names_resolve_to_builtins() {
+        for name in TRACEPOINT_PRESERVED_CTX_FIELD_NAMES {
+            let field = EbpfProgramType::Tracepoint
+                .resolve_tracepoint_ctx_field_name(name)
+                .expect("tracepoint builtin name should resolve");
+
+            assert!(
+                !matches!(field, CtxField::TracepointField(_)),
+                "tracepoint-preserved context field name '{name}' resolved to a payload field"
+            );
+        }
+    }
+}
