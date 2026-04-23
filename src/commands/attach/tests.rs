@@ -4,7 +4,7 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::hir_to_mir::{
-    lower_hir_to_mir_with_hints, lower_hir_to_mir_with_hints_and_maps,
+    MirLoweringResult, lower_hir_to_mir_with_hints, lower_hir_to_mir_with_hints_and_maps,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
@@ -11828,11 +11828,15 @@ fn test_compile_cgroup_sock_sk_storage_map_contains_program() {
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
-#[test]
-fn test_compile_kprobe_cgrp_storage_map_get_program() {
-    let hir = make_cgrp_storage_map_get_program(DeclId::new(42));
+fn assert_kprobe_cgrp_storage_program_compiles(
+    hir: HirProgram,
+    decl_name: &str,
+    context: &str,
+    assert_exact_map_def: bool,
+    check_lowering: impl FnOnce(&MirLoweringResult),
+) {
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
-    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
+    let decl_names = HashMap::from([(DeclId::new(42), decl_name.to_string())]);
 
     let mut lowering = lower_hir_to_mir_with_hints(
         &hir,
@@ -11842,7 +11846,7 @@ fn test_compile_kprobe_cgrp_storage_map_get_program() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("cgrp-storage map-get should lower through attach flow");
+    .unwrap_or_else(|err| panic!("{context} should lower through attach flow: {err:?}"));
 
     assert!(
         lowering
@@ -11861,24 +11865,58 @@ fn test_compile_kprobe_cgrp_storage_map_get_program() {
                     ..
                 } if name == "cgrp_state"
             )),
-        "expected cgrp-storage map fd load"
+        "{context} should load cgrp-storage map fd"
     );
+    check_lowering(&lowering);
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("optimized {context} should compile: {err:?}"));
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    let expected_def = BpfMapDef::cgrp_storage(8);
+    if assert_exact_map_def {
+        assert_eq!(map.def, expected_def);
+    } else {
+        assert_eq!(map.def.map_type, expected_def.map_type);
+    }
     assert!(
-        lowering
-            .program
-            .main
-            .blocks
+        result
+            .relocations
             .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::CallHelper { helper, args, .. }
-                    if *helper == BpfHelper::CgrpStorageGet as u32
-                        && args.len() == 4
-                        && matches!(args[3], MirValue::Const(1))
-            )),
-        "expected cgrp-storage get helper call with explicit flags"
+            .any(|reloc| reloc.symbol_name == map.name),
+        "{context} should emit a map relocation"
     );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+fn assert_cgrp_storage_value_type(lowering: &MirLoweringResult) {
+    assert!(matches!(
+        lowering.type_hints.generic_map_value_types.get(&MapRef {
+            name: "cgrp_state".to_string(),
+            kind: MapKind::CgrpStorage,
+        }),
+        Some(MirType::Struct { fields, .. })
+            if fields.len() == 1 && fields[0].name == "hits" && fields[0].ty == MirType::I64
+    ));
+}
+
+fn assert_cgrp_storage_owner_is_cgroup_ptr(lowering: &MirLoweringResult) {
     let cgroup_arg_ty = lowering
         .program
         .main
@@ -11901,64 +11939,9 @@ fn test_compile_kprobe_cgrp_storage_map_get_program() {
         "expected cgrp-storage owner to type as cgroup pointer, got {:?}",
         cgroup_arg_ty
     );
-    assert!(matches!(
-        lowering.type_hints.generic_map_value_types.get(&MapRef {
-            name: "cgrp_state".to_string(),
-            kind: MapKind::CgrpStorage,
-        }),
-        Some(MirType::Struct { fields, .. })
-            if fields.len() == 1 && fields[0].name == "hits" && fields[0].ty == MirType::I64
-    ));
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized cgrp-storage map-get should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cgrp_state")
-        .expect("expected cgrp-storage runtime map artifact");
-    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
-    assert!(
-        result
-            .relocations
-            .iter()
-            .any(|reloc| reloc.symbol_name == map.name)
-    );
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
-#[test]
-fn test_compile_kprobe_current_cgroup_storage_map_get_program() {
-    let hir = make_cgrp_storage_map_get_program_with_owner(
-        current_task_cgroup_alias_path(),
-        DeclId::new(42),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
-    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("current_cgroup cgrp-storage map-get should lower through attach flow");
-
+fn assert_cgrp_storage_get_helper_call(lowering: &MirLoweringResult) {
     assert!(
         lowering
             .program
@@ -11975,66 +11958,9 @@ fn test_compile_kprobe_current_cgroup_storage_map_get_program() {
             )),
         "expected cgrp-storage get helper call with explicit create flag"
     );
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized current_cgroup cgrp-storage map-get should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cgrp_state")
-        .expect("expected cgrp-storage runtime map artifact");
-    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
-#[test]
-fn test_compile_kprobe_cgrp_storage_map_delete_program() {
-    let hir = make_cgrp_storage_map_delete_program(DeclId::new(42));
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
-    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("cgrp-storage map-delete should lower through attach flow");
-
-    assert!(
-        lowering
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::LoadMapFd {
-                    map: MapRef {
-                        name,
-                        kind: MapKind::CgrpStorage,
-                    },
-                    ..
-                } if name == "cgrp_state"
-            )),
-        "expected cgrp-storage map fd load"
-    );
+fn assert_cgrp_storage_delete_helper_call(lowering: &MirLoweringResult) {
     assert!(
         lowering
             .program
@@ -12049,35 +11975,73 @@ fn test_compile_kprobe_cgrp_storage_map_delete_program() {
             )),
         "expected cgrp-storage delete helper call"
     );
+}
 
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized cgrp-storage map-delete should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cgrp_state")
-        .expect("expected cgrp-storage runtime map artifact");
-    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
+fn assert_cgrp_storage_contains_helper_call(lowering: &MirLoweringResult) {
     assert!(
-        result
-            .relocations
+        lowering
+            .program
+            .main
+            .blocks
             .iter()
-            .any(|reloc| reloc.symbol_name == map.name)
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[2], MirValue::Const(0))
+                        && matches!(args[3], MirValue::Const(0))
+            )),
+        "expected lookup-only cgrp-storage get helper call"
     );
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kprobe_cgrp_storage_map_get_program() {
+    let hir = make_cgrp_storage_map_get_program(DeclId::new(42));
+    assert_kprobe_cgrp_storage_program_compiles(
+        hir,
+        "map-get",
+        "cgrp-storage map-get",
+        true,
+        |lowering| {
+            assert_cgrp_storage_get_helper_call(lowering);
+            assert_cgrp_storage_owner_is_cgroup_ptr(lowering);
+            assert_cgrp_storage_value_type(lowering);
+        },
+    );
+}
+
+#[test]
+fn test_compile_kprobe_current_cgroup_storage_map_get_program() {
+    let hir = make_cgrp_storage_map_get_program_with_owner(
+        current_task_cgroup_alias_path(),
+        DeclId::new(42),
+    );
+    assert_kprobe_cgrp_storage_program_compiles(
+        hir,
+        "map-get",
+        "current_cgroup cgrp-storage map-get",
+        true,
+        |lowering| {
+            assert_cgrp_storage_get_helper_call(lowering);
+            assert_cgrp_storage_owner_is_cgroup_ptr(lowering);
+            assert_cgrp_storage_value_type(lowering);
+        },
+    );
+}
+
+#[test]
+fn test_compile_kprobe_cgrp_storage_map_delete_program() {
+    let hir = make_cgrp_storage_map_delete_program(DeclId::new(42));
+    assert_kprobe_cgrp_storage_program_compiles(
+        hir,
+        "map-delete",
+        "cgrp-storage map-delete",
+        true,
+        assert_cgrp_storage_delete_helper_call,
+    );
 }
 
 #[test]
@@ -12086,120 +12050,25 @@ fn test_compile_kprobe_current_cgroup_storage_map_delete_program() {
         current_task_cgroup_alias_path(),
         DeclId::new(42),
     );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
-    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("current_cgroup cgrp-storage map-delete should lower through attach flow");
-
-    assert!(
-        lowering
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::CallHelper { helper, args, .. }
-                    if *helper == BpfHelper::CgrpStorageDelete as u32 && args.len() == 2
-            )),
-        "expected cgrp-storage delete helper call"
+    assert_kprobe_cgrp_storage_program_compiles(
+        hir,
+        "map-delete",
+        "current_cgroup cgrp-storage map-delete",
+        true,
+        assert_cgrp_storage_delete_helper_call,
     );
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized current_cgroup cgrp-storage map-delete should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cgrp_state")
-        .expect("expected cgrp-storage runtime map artifact");
-    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
 fn test_compile_kprobe_cgrp_storage_map_contains_program() {
     let hir = make_cgrp_storage_map_contains_program(DeclId::new(42));
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
-    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("cgrp-storage map-contains should lower through attach flow");
-
-    assert!(
-        lowering
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::CallHelper { helper, args, .. }
-                    if *helper == BpfHelper::CgrpStorageGet as u32
-                        && args.len() == 4
-                        && matches!(args[2], MirValue::Const(0))
-                        && matches!(args[3], MirValue::Const(0))
-            )),
-        "expected lookup-only cgrp-storage get helper call"
+    assert_kprobe_cgrp_storage_program_compiles(
+        hir,
+        "map-contains",
+        "cgrp-storage map-contains",
+        false,
+        assert_cgrp_storage_contains_helper_call,
     );
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized cgrp-storage map-contains should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cgrp_state")
-        .expect("expected cgrp-storage runtime map artifact");
-    assert_eq!(map.def.map_type, BpfMapDef::cgrp_storage(8).map_type);
-    assert!(
-        result
-            .relocations
-            .iter()
-            .any(|reloc| reloc.symbol_name == map.name)
-    );
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
@@ -12208,59 +12077,13 @@ fn test_compile_kprobe_current_cgroup_storage_map_contains_program() {
         current_task_cgroup_alias_path(),
         DeclId::new(42),
     );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
-    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
-
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("current_cgroup cgrp-storage map-contains should lower through attach flow");
-
-    assert!(
-        lowering
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::CallHelper { helper, args, .. }
-                    if *helper == BpfHelper::CgrpStorageGet as u32
-                        && args.len() == 4
-                        && matches!(args[2], MirValue::Const(0))
-                        && matches!(args[3], MirValue::Const(0))
-            )),
-        "expected lookup-only cgrp-storage get helper call"
+    assert_kprobe_cgrp_storage_program_compiles(
+        hir,
+        "map-contains",
+        "current_cgroup cgrp-storage map-contains",
+        false,
+        assert_cgrp_storage_contains_helper_call,
     );
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized current_cgroup cgrp-storage map-contains should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cgrp_state")
-        .expect("expected cgrp-storage runtime map artifact");
-    assert_eq!(map.def.map_type, BpfMapDef::cgrp_storage(8).map_type);
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
 #[test]
