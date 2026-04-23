@@ -491,6 +491,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetBranchSnapshot)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_trace_vprintk"),
+        Some(BpfHelper::TraceVPrintk)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_task_stack"),
         Some(BpfHelper::GetTaskStack)
     ));
@@ -2232,6 +2236,51 @@ fn test_snprintf_helper_contract() {
     assert!(data.allowed.allow_stack);
     assert!(data.allowed.allow_map);
     assert_eq!(data.size_from_arg, Some(4));
+}
+
+#[test]
+fn test_trace_vprintk_helper_contract() {
+    let sig = HelperSignature::for_id(BpfHelper::TraceVPrintk as u32)
+        .expect("expected bpf_trace_vprintk helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    assert_eq!(
+        BpfHelper::TraceVPrintk.scalar_arg_nonnegative_requirement(3),
+        Some("helper 'bpf_trace_vprintk' requires arg3 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::TraceVPrintk.scalar_arg_multiple_of_requirement(3),
+        Some((
+            8,
+            "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8"
+        ))
+    );
+
+    let semantics = BpfHelper::TraceVPrintk.semantics();
+    assert_eq!(semantics.positive_size_args, &[1]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+
+    let fmt = semantics.ptr_arg_rules[0];
+    assert_eq!(fmt.arg_idx, 0);
+    assert_eq!(fmt.op, "helper trace_vprintk fmt");
+    assert!(fmt.allowed.allow_stack);
+    assert!(fmt.allowed.allow_map);
+    assert!(!fmt.allowed.allow_kernel);
+    assert_eq!(fmt.size_from_arg, Some(1));
+
+    let data = semantics.ptr_arg_rules[1];
+    assert_eq!(data.arg_idx, 2);
+    assert_eq!(data.op, "helper trace_vprintk data");
+    assert!(data.allowed.allow_stack);
+    assert!(data.allowed.allow_map);
+    assert!(!data.allowed.allow_kernel);
+    assert_eq!(data.size_from_arg, Some(3));
 }
 
 #[test]

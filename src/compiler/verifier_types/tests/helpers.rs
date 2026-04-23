@@ -12078,6 +12078,71 @@ fn test_helper_trace_printk_rejects_user_fmt_pointer() {
     );
 }
 
+fn make_trace_vprintk_verify_call(
+    fmt_size: i64,
+    fmt_slot_size: usize,
+    data_len: i64,
+    data_slot_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let fmt = func.alloc_stack_slot(fmt_slot_size, 8, StackSlotKind::StringBuffer);
+    let data = func.alloc_stack_slot(data_slot_size, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TraceVPrintk as u32,
+            args: vec![
+                MirValue::StackSlot(fmt),
+                MirValue::Const(fmt_size),
+                MirValue::StackSlot(data),
+                MirValue::Const(data_len),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_helper_trace_vprintk_verifies() {
+    let (func, types) = make_trace_vprintk_verify_call(8, 8, 16, 16);
+    verify_mir(&func, &types).expect("expected trace_vprintk helper to verify");
+}
+
+#[test]
+fn test_helper_trace_vprintk_checks_data_bounds() {
+    let (func, types) = make_trace_vprintk_verify_call(8, 8, 16, 8);
+    let err = verify_mir(&func, &types).expect_err("expected trace_vprintk data bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper trace_vprintk data out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_trace_vprintk_rejects_invalid_data_len() {
+    let (func, types) = make_trace_vprintk_verify_call(8, 8, 10, 16);
+    let err = verify_mir(&func, &types).expect_err("expected trace_vprintk data-len error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_helper_get_current_comm_variable_size_range_checks_bounds() {
     let mut func = MirFunction::new();

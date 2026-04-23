@@ -286,6 +286,8 @@ pub enum BpfHelper {
     GetAttachCookie = 174,
     /// long bpf_get_branch_snapshot(entries, size, flags)
     GetBranchSnapshot = 176,
+    /// long bpf_trace_vprintk(fmt, fmt_size, data, data_len)
+    TraceVPrintk = 177,
     /// long bpf_load_hdr_opt(skops, searchby_res, len, flags)
     LoadHdrOpt = 142,
     /// long bpf_store_hdr_opt(skops, from, len, flags)
@@ -565,6 +567,7 @@ impl BpfHelper {
             BpfHelper::GetFuncIp => "bpf_get_func_ip",
             BpfHelper::GetAttachCookie => "bpf_get_attach_cookie",
             BpfHelper::GetBranchSnapshot => "bpf_get_branch_snapshot",
+            BpfHelper::TraceVPrintk => "bpf_trace_vprintk",
             BpfHelper::LoadHdrOpt => "bpf_load_hdr_opt",
             BpfHelper::StoreHdrOpt => "bpf_store_hdr_opt",
             BpfHelper::ReserveHdrOpt => "bpf_reserve_hdr_opt",
@@ -757,6 +760,7 @@ impl BpfHelper {
             "get_func_ip" => Some(Self::GetFuncIp),
             "get_attach_cookie" => Some(Self::GetAttachCookie),
             "get_branch_snapshot" => Some(Self::GetBranchSnapshot),
+            "trace_vprintk" => Some(Self::TraceVPrintk),
             "load_hdr_opt" => Some(Self::LoadHdrOpt),
             "store_hdr_opt" => Some(Self::StoreHdrOpt),
             "reserve_hdr_opt" => Some(Self::ReserveHdrOpt),
@@ -883,6 +887,10 @@ impl BpfHelper {
                 8,
                 "helper 'bpf_snprintf' requires arg4 to be a multiple of 8",
             )),
+            (Self::TraceVPrintk, 3) => Some((
+                8,
+                "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8",
+            )),
             _ => None,
         }
     }
@@ -899,6 +907,7 @@ impl BpfHelper {
             (Self::SnprintfBtf, 1) => Some("helper 'bpf_snprintf_btf' requires arg1 to be >= 0"),
             (Self::Snprintf, 1) => Some("helper 'bpf_snprintf' requires arg1 to be >= 0"),
             (Self::Snprintf, 4) => Some("helper 'bpf_snprintf' requires arg4 to be >= 0"),
+            (Self::TraceVPrintk, 3) => Some("helper 'bpf_trace_vprintk' requires arg3 to be >= 0"),
             _ => None,
         }
     }

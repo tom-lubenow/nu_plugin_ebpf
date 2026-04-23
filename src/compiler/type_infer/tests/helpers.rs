@@ -5749,6 +5749,73 @@ fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
     );
 }
 
+fn make_trace_vprintk_call(
+    fmt_size: i64,
+    fmt_slot_size: usize,
+    data_len: i64,
+    data_slot_size: usize,
+) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let fmt_slot = func.alloc_stack_slot(fmt_slot_size, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(data_slot_size, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TraceVPrintk as u32,
+        args: vec![
+            MirValue::StackSlot(fmt_slot),
+            MirValue::Const(fmt_size),
+            MirValue::StackSlot(data_slot),
+            MirValue::Const(data_len),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_trace_vprintk_helper() {
+    let (func, dst) = make_trace_vprintk_call(8, 8, 16, 16);
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected trace_vprintk helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_trace_vprintk_helper_rejects_small_data_buffer() {
+    let (func, _) = make_trace_vprintk_call(8, 8, 16, 8);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected trace_vprintk data bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper trace_vprintk data requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_trace_vprintk_helper_rejects_invalid_data_len() {
+    let (func, _) = make_trace_vprintk_call(8, 8, 10, 16);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected trace_vprintk data-len error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_infer_packet_byte_helpers_follow_program_surface() {
     for (helper, program_type, target, args_len) in [

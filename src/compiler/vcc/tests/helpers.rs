@@ -9422,6 +9422,67 @@ fn test_verify_mir_helper_trace_printk_rejects_user_fmt_pointer() {
     );
 }
 
+fn make_trace_vprintk_vcc_call(
+    fmt_size: i64,
+    fmt_slot_size: usize,
+    data_len: i64,
+    data_slot_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let fmt = func.alloc_stack_slot(fmt_slot_size, 8, StackSlotKind::StringBuffer);
+    let data = func.alloc_stack_slot(data_slot_size, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TraceVPrintk as u32,
+            args: vec![
+                MirValue::StackSlot(fmt),
+                MirValue::Const(fmt_size),
+                MirValue::StackSlot(data),
+                MirValue::Const(data_len),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_trace_vprintk() {
+    let (func, types) = make_trace_vprintk_vcc_call(8, 8, 16, 16);
+    verify_mir(&func, &types).expect("expected trace_vprintk helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_trace_vprintk_bounds() {
+    let (func, types) = make_trace_vprintk_vcc_call(8, 8, 16, 8);
+    let err = verify_mir(&func, &types).expect_err("expected trace_vprintk bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_trace_vprintk_rejects_invalid_data_len() {
+    let (func, types) = make_trace_vprintk_vcc_call(8, 8, 10, 16);
+    let err = verify_mir(&func, &types).expect_err("expected trace_vprintk data-len error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_helper_get_current_comm_variable_size_range_checks_bounds() {
     let (mut func, entry) = new_mir_function();

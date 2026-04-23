@@ -91,6 +91,7 @@ impl BpfHelper {
             173 => Some(Self::GetFuncIp),
             174 => Some(Self::GetAttachCookie),
             176 => Some(Self::GetBranchSnapshot),
+            177 => Some(Self::TraceVPrintk),
             142 => Some(Self::LoadHdrOpt),
             143 => Some(Self::StoreHdrOpt),
             144 => Some(Self::ReserveHdrOpt),
@@ -649,6 +650,12 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 5,
                 arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::TraceVPrintk => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::TailCall => HelperSignature {

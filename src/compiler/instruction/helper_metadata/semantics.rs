@@ -653,6 +653,23 @@ impl BpfHelper {
             size_from_arg: Some(1),
         }];
 
+        const TRACE_VPRINTK_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper trace_vprintk fmt",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper trace_vprintk data",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
+
         const PROBE_READ_KERNEL_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2000,6 +2017,11 @@ impl BpfHelper {
             }
             BpfHelper::TracePrintk => HelperSemantics {
                 ptr_arg_rules: TRACE_PRINTK_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TraceVPrintk => HelperSemantics {
+                ptr_arg_rules: TRACE_VPRINTK_RULES,
                 positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },

@@ -31,7 +31,7 @@ Last updated: 2026-04-22.
 - [~] Replace opaque helper handling with typed helper semantics.
   - Added shared helper signatures for known helper IDs and wired signature-aware arg-count/type checks through type inference, VCC, and codegen.
   - Added shared helper pointer-argument semantics metadata (allowed spaces and size-arg relationships), with verifier_types/VCC enforcement and type-inference pointer-space/size diagnostics (including bounded stack/map access checks) for earlier failures.
-  - Extended typed helper semantics coverage to `trace_printk` pointer-space/size/bounds checks through the shared metadata path.
+  - Extended typed helper semantics coverage to `trace_printk` / `trace_vprintk` pointer-space/size/bounds checks through the shared metadata path.
   - Extended typed helper probe-read coverage to include `bpf_probe_read_user` / `bpf_probe_read_kernel` signatures and source-pointer space checks (`User` vs non-`User`) across type inference, verifier_types, and VCC.
   - Legacy typed probe-read string coverage now includes `bpf_probe_read_str` on the same modeled program surface as `bpf_probe_read`, while ordinary language string reads continue to lower to explicit user/kernel helpers.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
@@ -162,7 +162,7 @@ Last updated: 2026-04-22.
   - Typed helper scalar coverage now includes `bpf_get_numa_node_id` as a broad no-arg scalar-return helper.
   - Ordinary context access now exposes the pseudo-random helper without raw helper spelling as `ctx.random` / `ctx.prandom_u32`.
   - Typed helper PID namespace coverage now includes `bpf_get_ns_current_pid_tgid`, with stack/map output-buffer bounds and exact `struct bpf_pidns_info` size validation.
-  - Typed helper string-format coverage now includes `bpf_snprintf` and `bpf_snprintf_btf`, with stack/map output and data buffers, map/rodata-only format strings for plain `snprintf`, fixed `struct btf_ptr` sizing and `BTF_F_*` flag-mask validation for BTF formatting, nonnegative sizes, and 8-byte-aligned format-argument data where applicable.
+  - Typed helper string-format coverage now includes `bpf_snprintf`, `bpf_snprintf_btf`, and `bpf_trace_vprintk`, with stack/map output and data buffers, map/rodata-only format strings for plain `snprintf`, fixed `struct btf_ptr` sizing and `BTF_F_*` flag-mask validation for BTF formatting, nonnegative sizes, and 8-byte-aligned format-argument data where applicable.
   - Typed helper string parsing/comparison coverage now includes `bpf_strtol`, `bpf_strtoul`, and `bpf_strncmp`, with stack/map input bounds, read-only/map-backed comparison strings, fixed 8-byte result-slot validation, and base-selector flag validation.
   - Ordinary context access now exposes the NUMA node helper without raw helper spelling as `ctx.numa_node` / `ctx.numa_node_id`.
   - Typed helper socket coverage now also includes `bpf_sk_fullsock` / `bpf_tcp_sock` / `bpf_skc_to_tcp_sock` / `bpf_skc_to_tcp6_sock` / `bpf_skc_to_tcp_timewait_sock` / `bpf_skc_to_tcp_request_sock` / `bpf_skc_to_udp6_sock` / `bpf_skc_to_unix_sock` pointer-space and nullable kernel-pointer return modeling across type inference, verifier_types, and VCC.
