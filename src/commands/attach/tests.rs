@@ -7389,10 +7389,13 @@ fn test_compile_kprobe_ctx_clock_counter_programs() {
         "ktime",
         "timestamp",
         "ktime_boot",
+        "boot_ktime",
         "boot_time",
         "ktime_coarse",
+        "coarse_ktime",
         "coarse_time",
         "ktime_tai",
+        "tai_ktime",
         "tai_time",
         "jiffies",
     ] {
@@ -7408,27 +7411,31 @@ fn test_compile_kprobe_ctx_clock_counter_programs() {
 }
 
 #[test]
-fn test_compile_kprobe_ctx_function_ip_alias_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::Kprobe,
-        "ksys_read",
-        CellPath {
-            members: vec![string_member("function_ip")],
-        },
-        "kprobe ctx.function_ip count",
-    );
+fn test_compile_kprobe_ctx_function_ip_counter_programs() {
+    for field in ["func_ip", "function_ip"] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            &format!("kprobe ctx.{field} count"),
+        );
+    }
 }
 
 #[test]
-fn test_compile_kprobe_ctx_bpf_cookie_alias_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::Kprobe,
-        "ksys_read",
-        CellPath {
-            members: vec![string_member("bpf_cookie")],
-        },
-        "kprobe ctx.bpf_cookie count",
-    );
+fn test_compile_kprobe_ctx_attach_cookie_counter_programs() {
+    for field in ["attach_cookie", "bpf_cookie"] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            &format!("kprobe ctx.{field} count"),
+        );
+    }
 }
 
 #[test]
