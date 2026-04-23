@@ -309,6 +309,7 @@ Near-term priority order:
   - Recent progress: context-name registry tables are now guarded by set-like invariants for duplicate aliases, duplicate tracepoint-preserved names, and accidental multi-surface program ownership.
   - Recent progress: context-access registry tables are now guarded against duplicate per-program fields, duplicate base-field ownership, duplicate program-surface rows, and overlapping cgroup_sock_addr tuple alias shapes.
   - Recent progress: context-layout schema tables are now guarded against duplicate program rows and inconsistent packet/socket metadata, including direct-packet-write entries that lack packet contexts.
+  - Recent progress: context-write registry tables are now guarded against duplicate source field names and duplicate program write-surface rows while still allowing intentional store-target aliases.
   - Recent progress: return-action alias registries are now guarded against duplicate aliases, non-lowercase spellings, and accidental multi-surface program ownership.
   - Recent progress: program-specific context aliases now preserve kernel-native field spelling where it helps readability without stealing generic meanings: `sk_msg` accepts `ctx.size` for `ctx.packet_len`, while `cgroup_sockopt` accepts `ctx.retval` for `ctx.sockopt_retval`.
   - Recent progress: skb-backed packet programs now accept kernel-native `ctx.protocol` as an alias for `ctx.eth_protocol`, while socket contexts keep their existing socket-protocol meaning.

@@ -794,3 +794,73 @@ impl ProgramSpec {
             .base_ctx_store_target_error(store_target)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn assert_unique_write_surface_names(table_name: &str, surfaces: &[ContextWriteSurfaceSpec]) {
+        let mut names = HashSet::new();
+
+        for surface in surfaces {
+            assert!(
+                names.insert(surface.field_name),
+                "duplicate writable context field '{}' in {table_name}",
+                surface.field_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_context_write_surface_tables_are_unique() {
+        for (table_name, surfaces) in [
+            (
+                "socket_filter context write surfaces",
+                SOCKET_FILTER_CTX_WRITE_SURFACES,
+            ),
+            ("tc context write surfaces", TC_CTX_WRITE_SURFACES),
+            ("sk_skb context write surfaces", SK_SKB_CTX_WRITE_SURFACES),
+            ("lwt context write surfaces", LWT_CTX_WRITE_SURFACES),
+            (
+                "cgroup_skb context write surfaces",
+                CGROUP_SKB_CTX_WRITE_SURFACES,
+            ),
+            (
+                "cgroup_sock context write surfaces",
+                CGROUP_SOCK_CTX_WRITE_SURFACES,
+            ),
+            (
+                "cgroup_sysctl context write surfaces",
+                CGROUP_SYSCTL_CTX_WRITE_SURFACES,
+            ),
+            (
+                "sock_ops context write surfaces",
+                SOCK_OPS_CTX_WRITE_SURFACES,
+            ),
+            (
+                "cgroup_sockopt context write surfaces",
+                CGROUP_SOCKOPT_CTX_WRITE_SURFACES,
+            ),
+            (
+                "cgroup_sock_addr context write surfaces",
+                CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES,
+            ),
+            (
+                "sk_lookup context write surfaces",
+                SK_LOOKUP_CTX_WRITE_SURFACES,
+            ),
+        ] {
+            assert_unique_write_surface_names(table_name, surfaces);
+        }
+
+        let mut program_types = HashSet::new();
+        for surface in PROGRAM_CTX_WRITE_SURFACES {
+            assert!(
+                program_types.insert(surface.program_type),
+                "duplicate program write surface for {:?}",
+                surface.program_type
+            );
+        }
+    }
+}
