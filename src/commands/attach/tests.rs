@@ -5000,6 +5000,181 @@ fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgr
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let lookup_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("task")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"task_state".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"task-storage".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::String(b"hits".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(4),
+                        key: RegId::new(5),
+                        val: RegId::new(6),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_get_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![
+                                (b"kind".to_vec(), RegId::new(3)),
+                                (b"init".to_vec(), RegId::new(4)),
+                                (b"flags".to_vec(), RegId::new(7)),
+                            ],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(8),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(8),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("hits")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 20],
+        ast: vec![None; 20],
+        comments: vec![],
+        register_count: 9,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_task_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("task")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(b"task_state".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::String(b"task-storage".to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: map_delete_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                named: vec![(b"kind".to_vec(), RegId::new(3))],
+                ..Default::default()
+            },
+        },
+    ];
+    let spans_len = stmts.len() + 1;
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); spans_len],
+        ast: vec![None; spans_len],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_cgroup_array_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -10825,6 +11000,176 @@ fn test_compile_bloom_filter_map_contains_program() {
         .expect("expected bloom-filter runtime map artifact");
     assert_eq!(map.def.key_size, 0);
     assert_eq!(map.def.value_size, 4);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_task_storage_map_get_program() {
+    let hir = make_task_storage_map_get_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("task-storage map-get should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::TaskStorage,
+                    },
+                    ..
+                } if name == "task_state"
+            )),
+        "expected task-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::TaskStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(1))
+            )),
+        "expected task-storage get helper call with explicit flags"
+    );
+    assert!(matches!(
+        lowering.type_hints.generic_map_value_types.get(&MapRef {
+            name: "task_state".to_string(),
+            kind: MapKind::TaskStorage,
+        }),
+        Some(MirType::Struct { fields, .. })
+            if fields.len() == 1 && fields[0].name == "hits" && fields[0].ty == MirType::I64
+    ));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized task-storage map-get should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "task_state")
+        .expect("expected task-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::task_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_fentry_task_storage_map_delete_program() {
+    let hir = make_task_storage_map_delete_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("task-storage map-delete should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::TaskStorage,
+                    },
+                    ..
+                } if name == "task_state"
+            )),
+        "expected task-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::TaskStorageDelete as u32 && args.len() == 2
+            )),
+        "expected task-storage delete helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized task-storage map-delete should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "task_state")
+        .expect("expected task-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::task_storage(8));
     assert!(
         result
             .relocations
