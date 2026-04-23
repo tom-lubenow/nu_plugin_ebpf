@@ -1066,3 +1066,89 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::MapPeek,
     ProgramIntrinsic::MapPop,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_program_type_registry_prefixes_are_unique_and_complete() {
+        let mut program_types = HashSet::new();
+        let mut listed_prefixes = HashSet::new();
+
+        for prefix in PROGRAM_SPEC_PREFIXES {
+            assert!(
+                listed_prefixes.insert(*prefix),
+                "duplicate supported program spec prefix '{prefix}'"
+            );
+        }
+
+        let mut alias_prefixes = HashSet::new();
+        for program_type in ALL_PROGRAM_TYPES {
+            assert!(
+                program_types.insert(*program_type),
+                "duplicate program type {program_type:?} in ALL_PROGRAM_TYPES"
+            );
+
+            let info = program_type.info();
+            assert_eq!(
+                info.program_type, *program_type,
+                "program info for {program_type:?} reports a different program type"
+            );
+            assert!(
+                !info.kernel_prog_type.is_empty(),
+                "{program_type:?} must have a kernel program type label"
+            );
+            assert!(
+                !info.section_prefix.is_empty(),
+                "{program_type:?} must have an ELF section prefix"
+            );
+            assert!(
+                info.spec_aliases.contains(&info.canonical_prefix),
+                "{program_type:?} canonical prefix '{}' must be one of its aliases",
+                info.canonical_prefix
+            );
+
+            for alias in info.spec_aliases {
+                assert!(
+                    listed_prefixes.contains(alias),
+                    "{program_type:?} alias '{alias}' is missing from PROGRAM_SPEC_PREFIXES"
+                );
+                assert!(
+                    alias_prefixes.insert(*alias),
+                    "program spec alias '{alias}' appears on multiple program types"
+                );
+                assert_eq!(
+                    EbpfProgramType::from_spec_prefix(alias),
+                    Some(*program_type),
+                    "program spec alias '{alias}' should resolve back to {program_type:?}"
+                );
+            }
+        }
+
+        assert_eq!(
+            listed_prefixes, alias_prefixes,
+            "PROGRAM_SPEC_PREFIXES must exactly match per-program aliases"
+        );
+    }
+
+    #[test]
+    fn test_program_intrinsic_registry_is_unique_and_backed_by_capabilities() {
+        let mut intrinsics = HashSet::new();
+
+        for intrinsic in PROGRAM_INTRINSICS {
+            assert!(
+                intrinsics.insert(*intrinsic),
+                "duplicate program intrinsic {intrinsic:?}"
+            );
+            let capability = intrinsic.required_capability();
+            assert!(
+                ALL_PROGRAM_TYPES
+                    .iter()
+                    .any(|program_type| program_type.supports_capability(capability)),
+                "program intrinsic {intrinsic:?} requires unsupported capability {capability:?}"
+            );
+        }
+    }
+}
