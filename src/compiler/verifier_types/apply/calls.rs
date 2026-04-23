@@ -63,26 +63,36 @@ pub(super) fn apply_call_helper_inst(
                 .get(&dst)
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Scalar),
-            HelperRetKind::PointerNonNull => match types.get(&dst).map(verifier_type_from_mir) {
-                Some(VerifierType::Ptr {
-                    space,
-                    bounds,
-                    ringbuf_ref,
-                    kfunc_ref,
-                    ..
-                }) => VerifierType::Ptr {
-                    space,
+            HelperRetKind::PointerNonNull => match BpfHelper::from_u32(helper) {
+                Some(BpfHelper::GetLocalStorage) => VerifierType::Ptr {
+                    space: AddressSpace::Map,
                     nullability: Nullability::NonNull,
-                    bounds,
-                    ringbuf_ref,
-                    kfunc_ref,
-                },
-                _ => VerifierType::Ptr {
-                    space: AddressSpace::Kernel,
-                    nullability: Nullability::NonNull,
-                    bounds: None,
+                    bounds: map_value_limit_from_dst_type(types.get(&dst))
+                        .map(|limit| PtrBounds::new(PtrOrigin::Map, 0, 0, limit)),
                     ringbuf_ref: None,
                     kfunc_ref: None,
+                },
+                _ => match types.get(&dst).map(verifier_type_from_mir) {
+                    Some(VerifierType::Ptr {
+                        space,
+                        bounds,
+                        ringbuf_ref,
+                        kfunc_ref,
+                        ..
+                    }) => VerifierType::Ptr {
+                        space,
+                        nullability: Nullability::NonNull,
+                        bounds,
+                        ringbuf_ref,
+                        kfunc_ref,
+                    },
+                    _ => VerifierType::Ptr {
+                        space: AddressSpace::Kernel,
+                        nullability: Nullability::NonNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: None,
+                    },
                 },
             },
             HelperRetKind::PointerMaybeNull => match BpfHelper::from_u32(helper) {

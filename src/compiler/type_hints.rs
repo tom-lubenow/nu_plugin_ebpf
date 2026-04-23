@@ -236,7 +236,8 @@ fn storage_get_helper_return_type(
     if !matches!(
         BpfHelper::from_u32(helper_id),
         Some(
-            BpfHelper::SkStorageGet
+            BpfHelper::GetLocalStorage
+                | BpfHelper::SkStorageGet
                 | BpfHelper::TaskStorageGet
                 | BpfHelper::InodeStorageGet
                 | BpfHelper::CgrpStorageGet

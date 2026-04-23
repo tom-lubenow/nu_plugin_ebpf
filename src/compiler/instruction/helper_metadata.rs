@@ -81,6 +81,7 @@ impl BpfHelper {
             79 => Some(Self::SkbCgroupId),
             83 => Some(Self::SkbAncestorCgroupId),
             122 => Some(Self::GetNetnsCookie),
+            81 => Some(Self::GetLocalStorage),
             70 => Some(Self::SockHashUpdate),
             71 => Some(Self::MsgRedirectHash),
             72 => Some(Self::SkRedirectHash),
@@ -218,6 +219,12 @@ impl BpfHelper {
                 max_args: 3,
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::GetLocalStorage => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerNonNull,
             },
             BpfHelper::PerCpuPtr => HelperSignature {
                 min_args: 2,

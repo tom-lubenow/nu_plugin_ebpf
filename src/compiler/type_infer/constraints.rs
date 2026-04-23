@@ -490,6 +490,13 @@ impl<'a> TypeInference<'a> {
                 key_ty: Box::new(HMType::U32),
                 val_ty: Box::new(HMType::Unknown),
             },
+            BpfHelper::GetLocalStorage => HMType::MapRef {
+                key_ty: Box::new(HMType::Unknown),
+                val_ty: Box::new(
+                    self.hinted_map_ref_value_type(*map_vreg)
+                        .unwrap_or(HMType::Unknown),
+                ),
+            },
             BpfHelper::SkRedirectMap
             | BpfHelper::SockMapUpdate
             | BpfHelper::MsgRedirectMap
@@ -623,7 +630,8 @@ impl<'a> TypeInference<'a> {
     ) -> Option<HMType> {
         if !matches!(
             helper,
-            BpfHelper::SkStorageGet
+            BpfHelper::GetLocalStorage
+                | BpfHelper::SkStorageGet
                 | BpfHelper::TaskStorageGet
                 | BpfHelper::InodeStorageGet
                 | BpfHelper::CgrpStorageGet
@@ -631,12 +639,19 @@ impl<'a> TypeInference<'a> {
             return None;
         }
 
-        let value_ty = self.storage_helper_init_value_type(args).or_else(|| {
+        let value_ty = if matches!(helper, BpfHelper::GetLocalStorage) {
             let MirValue::VReg(map_vreg) = args.first()? else {
                 return None;
             };
-            self.hinted_map_ref_value_type(*map_vreg)
-        })?;
+            self.hinted_map_ref_value_type(*map_vreg)?
+        } else {
+            self.storage_helper_init_value_type(args).or_else(|| {
+                let MirValue::VReg(map_vreg) = args.first()? else {
+                    return None;
+                };
+                self.hinted_map_ref_value_type(*map_vreg)
+            })?
+        };
 
         Some(HMType::Ptr {
             pointee: Box::new(value_ty),

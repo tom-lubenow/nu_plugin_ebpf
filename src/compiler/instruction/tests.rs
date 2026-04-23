@@ -423,6 +423,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::GetCurrentAncestorCgroupId)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_get_local_storage"),
+        Some(BpfHelper::GetLocalStorage)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_get_retval"),
         Some(BpfHelper::GetRetval)
     ));
@@ -1163,6 +1167,17 @@ fn test_cgroup_membership_helper_signatures() {
 
 #[test]
 fn test_storage_helpers_use_fixed_local_storage_map_kinds() {
+    assert_eq!(
+        BpfHelper::GetLocalStorage.local_helper_map_arg_index(),
+        Some(0)
+    );
+    assert_eq!(
+        BpfHelper::GetLocalStorage.helper_map_arg_kind(0),
+        Some(MapKind::DeprecatedCgroupStorage)
+    );
+    assert!(BpfHelper::GetLocalStorage.supports_local_helper_map_fd(0));
+    assert!(!BpfHelper::GetLocalStorage.helper_requires_explicit_map_kind(0));
+
     for (helper, kind) in [
         (BpfHelper::SkStorageGet, MapKind::SkStorage),
         (BpfHelper::SkStorageDelete, MapKind::SkStorage),
@@ -2917,6 +2932,29 @@ fn test_trampoline_arg_helper_contracts() {
 
 #[test]
 fn test_helper_signature_sk_storage_helpers() {
+    let sig = HelperSignature::for_id(BpfHelper::GetLocalStorage as u32)
+        .expect("expected bpf_get_local_storage helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::PointerNonNull);
+    let semantics = BpfHelper::GetLocalStorage.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+    assert_eq!(
+        semantics.ptr_arg_rules[0].op,
+        "helper get_local_storage map"
+    );
+    assert!(semantics.ptr_arg_rules[0].allowed.allow_stack);
+    assert_eq!(
+        BpfHelper::GetLocalStorage.scalar_arg_const_requirement(),
+        Some((
+            1,
+            0,
+            "helper 'bpf_get_local_storage' requires arg1 flags to be 0"
+        ))
+    );
+
     let sig = HelperSignature::for_id(BpfHelper::SkStorageGet as u32)
         .expect("expected bpf_sk_storage_get helper signature");
     assert_eq!(sig.min_args, 4);

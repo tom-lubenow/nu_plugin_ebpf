@@ -85,6 +85,7 @@ enum HelperProgramSurfaceFamily {
     Sockopt,
     CgroupSockAddr,
     CgroupRetval,
+    CgroupLocalStorage,
     SockOps,
     CgroupSysctl,
     Syscall,
@@ -687,6 +688,19 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         label: "cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl",
     },
     HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::CgroupLocalStorage,
+        program_types: &[
+            EbpfProgramType::CgroupDevice,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::CgroupSysctl,
+            EbpfProgramType::SockOps,
+        ],
+        label: "cgroup_device, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, cgroup_sysctl, and sock_ops",
+    },
+    HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::SockOps,
         program_types: &[EbpfProgramType::SockOps],
         label: "sock_ops",
@@ -1078,6 +1092,9 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         },
         BpfHelper::GetRetval | BpfHelper::SetRetval => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::CgroupRetval,
+        },
+        BpfHelper::GetLocalStorage => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::CgroupLocalStorage,
         },
         BpfHelper::SockOpsCbFlagsSet
         | BpfHelper::SockMapUpdate

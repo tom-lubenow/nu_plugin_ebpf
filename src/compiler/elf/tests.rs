@@ -2463,6 +2463,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetLocalStorage),
+        Some(
+            "helper 'bpf_get_local_storage' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, cgroup_sysctl, and sock_ops programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::TaskStorageDelete),
         Some(
             "helper 'bpf_task_storage_delete' is only valid in kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
@@ -3115,6 +3122,21 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         EbpfProgramType::StructOps.helper_call_error(BpfHelper::SkStorageDelete),
         None
     );
+    for program_type in [
+        EbpfProgramType::CgroupDevice,
+        EbpfProgramType::CgroupSkb,
+        EbpfProgramType::CgroupSock,
+        EbpfProgramType::CgroupSockAddr,
+        EbpfProgramType::CgroupSockopt,
+        EbpfProgramType::CgroupSysctl,
+        EbpfProgramType::SockOps,
+    ] {
+        assert_eq!(
+            program_type.helper_call_error(BpfHelper::GetLocalStorage),
+            None,
+            "{program_type:?} should allow bpf_get_local_storage"
+        );
+    }
 
     for helper in [
         BpfHelper::Redirect,

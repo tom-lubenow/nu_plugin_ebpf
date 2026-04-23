@@ -196,6 +196,14 @@ impl BpfHelper {
             },
         ];
 
+        const GET_LOCAL_STORAGE_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper get_local_storage map",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const MAP_UPDATE_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -1722,6 +1730,11 @@ impl BpfHelper {
         match self {
             BpfHelper::MapLookupElem | BpfHelper::MapLookupPercpuElem => HelperSemantics {
                 ptr_arg_rules: MAP_LOOKUP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::GetLocalStorage => HelperSemantics {
+                ptr_arg_rules: GET_LOCAL_STORAGE_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

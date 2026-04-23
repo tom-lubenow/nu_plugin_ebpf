@@ -10480,6 +10480,107 @@ fn test_verify_mir_for_probe_context_tcp_raw_syncookie_rejects_kprobe() {
 }
 
 #[test]
+fn test_helper_get_local_storage_accepts_zero_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::GetLocalStorage as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected bpf_get_local_storage zero flags to verify");
+}
+
+#[test]
+fn test_helper_get_local_storage_rejects_nonzero_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::GetLocalStorage as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::Const(1)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected bpf_get_local_storage flags to be rejected");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_local_storage' requires arg1 flags to be 0")
+    }));
+}
+
+#[test]
+fn test_helper_get_local_storage_rejects_non_cgroup_program() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::GetLocalStorage as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_get_local_storage kprobe policy error");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_get_local_storage' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, cgroup_sysctl, and sock_ops programs",
+        )
+    }));
+}
+
+#[test]
 fn test_helper_sk_storage_get_allows_null_init_value() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

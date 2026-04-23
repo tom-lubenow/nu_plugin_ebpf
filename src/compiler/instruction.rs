@@ -194,6 +194,8 @@ pub enum BpfHelper {
     GetCurrentUidGid = 15,
     /// u64 bpf_get_current_cgroup_id(void)
     GetCurrentCgroupId = 80,
+    /// void *bpf_get_local_storage(map, flags)
+    GetLocalStorage = 81,
     /// long bpf_get_ns_current_pid_tgid(dev, ino, nsdata, size)
     GetNsCurrentPidTgid = 120,
     /// u64 bpf_get_current_ancestor_cgroup_id(int ancestor_level)
@@ -541,6 +543,7 @@ impl BpfHelper {
             BpfHelper::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
             BpfHelper::GetCurrentUidGid => "bpf_get_current_uid_gid",
             BpfHelper::GetCurrentCgroupId => "bpf_get_current_cgroup_id",
+            BpfHelper::GetLocalStorage => "bpf_get_local_storage",
             BpfHelper::GetNsCurrentPidTgid => "bpf_get_ns_current_pid_tgid",
             BpfHelper::GetCurrentAncestorCgroupId => "bpf_get_current_ancestor_cgroup_id",
             BpfHelper::GetRetval => "bpf_get_retval",
@@ -744,6 +747,7 @@ impl BpfHelper {
             "get_current_pid_tgid" => Some(Self::GetCurrentPidTgid),
             "get_current_uid_gid" => Some(Self::GetCurrentUidGid),
             "get_current_cgroup_id" => Some(Self::GetCurrentCgroupId),
+            "get_local_storage" => Some(Self::GetLocalStorage),
             "get_ns_current_pid_tgid" => Some(Self::GetNsCurrentPidTgid),
             "get_current_ancestor_cgroup_id" => Some(Self::GetCurrentAncestorCgroupId),
             "get_retval" => Some(Self::GetRetval),
@@ -1155,6 +1159,11 @@ impl BpfHelper {
             )),
             Self::SnprintfBtf => Some((3, 16, "helper 'bpf_snprintf_btf' requires arg3 = 16")),
             Self::SeqPrintfBtf => Some((2, 16, "helper 'bpf_seq_printf_btf' requires arg2 = 16")),
+            Self::GetLocalStorage => Some((
+                1,
+                0,
+                "helper 'bpf_get_local_storage' requires arg1 flags to be 0",
+            )),
             _ => None,
         }
     }
@@ -1184,6 +1193,7 @@ impl BpfHelper {
             (Self::TaskStorageGet | Self::TaskStorageDelete, 0) => Some(MapKind::TaskStorage),
             (Self::InodeStorageGet | Self::InodeStorageDelete, 0) => Some(MapKind::InodeStorage),
             (Self::CgrpStorageGet | Self::CgrpStorageDelete, 0) => Some(MapKind::CgrpStorage),
+            (Self::GetLocalStorage, 0) => Some(MapKind::DeprecatedCgroupStorage),
             _ => None,
         }
     }
@@ -1219,7 +1229,8 @@ impl BpfHelper {
             | Self::InodeStorageGet
             | Self::InodeStorageDelete
             | Self::CgrpStorageGet
-            | Self::CgrpStorageDelete => Some(0),
+            | Self::CgrpStorageDelete
+            | Self::GetLocalStorage => Some(0),
             Self::PerfEventRead | Self::PerfEventReadValue => Some(0),
             _ => None,
         }

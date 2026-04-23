@@ -7406,6 +7406,123 @@ fn test_type_error_tcp_raw_syncookie_helper_rejects_kprobe_program() {
 }
 
 #[test]
+fn test_infer_helper_get_local_storage_returns_map_pointer() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetLocalStorage as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_local_storage to infer");
+    match types.get(&dst) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Map);
+        }
+        other => panic!(
+            "Expected helper get_local_storage map pointer return, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn test_infer_helper_get_local_storage_return_uses_map_value_hint() {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetLocalStorage as u32,
+        args: vec![MirValue::VReg(map), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Array {
+        elem: Box::new(MirType::U8),
+        len: 16,
+    };
+    let hints = HashMap::from([(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::Unknown),
+            val_ty: Box::new(value_ty.clone()),
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_local_storage map hint to infer");
+    assert_eq!(
+        types.get(&dst),
+        Some(&MirType::Ptr {
+            pointee: Box::new(value_ty),
+            address_space: AddressSpace::Map,
+        })
+    );
+}
+
+#[test]
+fn test_type_error_helper_get_local_storage_rejects_nonzero_flags() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetLocalStorage as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::Const(1)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_local_storage flags to be rejected");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_local_storage' requires arg1 flags to be 0")
+    }));
+}
+
+#[test]
+fn test_type_error_helper_get_local_storage_rejects_non_cgroup_program() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetLocalStorage as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_local_storage kprobe policy error");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_get_local_storage' is only valid in cgroup_device, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, cgroup_sysctl, and sock_ops programs",
+        )
+    }));
+}
+
+#[test]
 fn test_infer_helper_sk_storage_get_returns_map_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
