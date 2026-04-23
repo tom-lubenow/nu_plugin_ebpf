@@ -86,6 +86,8 @@ impl BpfHelper {
             118 => Some(Self::Jiffies64),
             119 => Some(Self::ReadBranchRecords),
             125 => Some(Self::KtimeGetBootNs),
+            126 => Some(Self::SeqPrintf),
+            127 => Some(Self::SeqWrite),
             160 => Some(Self::KtimeGetCoarseNs),
             163 => Some(Self::CheckMtu),
             173 => Some(Self::GetFuncIp),
@@ -165,6 +167,7 @@ impl BpfHelper {
             147 => Some(Self::DPath),
             148 => Some(Self::CopyFromUser),
             149 => Some(Self::SnprintfBtf),
+            150 => Some(Self::SeqPrintfBtf),
             156 => Some(Self::TaskStorageGet),
             157 => Some(Self::TaskStorageDelete),
             158 => Some(Self::GetCurrentTaskBtf),
@@ -388,6 +391,12 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, P, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SeqPrintfBtf => HelperSignature {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::KtimeGetNs
@@ -878,6 +887,18 @@ impl BpfHelper {
                 min_args: 5,
                 max_args: 5,
                 arg_kinds: [P, S, P, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SeqPrintf => HelperSignature {
+                min_args: 5,
+                max_args: 5,
+                arg_kinds: [P, P, S, P, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SeqWrite => HelperSignature {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SysBpf => HelperSignature {

@@ -238,6 +238,8 @@ pub enum BpfHelper {
     CopyFromUserTask = 191,
     /// long bpf_snprintf_btf(str, str_size, ptr, btf_ptr_size, flags)
     SnprintfBtf = 149,
+    /// long bpf_seq_printf_btf(seq, ptr, ptr_size, flags)
+    SeqPrintfBtf = 150,
     /// long bpf_setsockopt(ctx, level, optname, optval, optlen)
     SetSockOpt = 49,
     /// long bpf_sk_redirect_map(skb, map, key, flags)
@@ -270,6 +272,10 @@ pub enum BpfHelper {
     SkSelectReuseport = 82,
     /// u64 bpf_ktime_get_boot_ns(void)
     KtimeGetBootNs = 125,
+    /// long bpf_seq_printf(seq, fmt, fmt_size, data, data_len)
+    SeqPrintf = 126,
+    /// long bpf_seq_write(seq, data, len)
+    SeqWrite = 127,
     /// u64 bpf_ktime_get_coarse_ns(void)
     KtimeGetCoarseNs = 160,
     /// long bpf_check_mtu(ctx, ifindex, mtu_len, len_diff, flags)
@@ -553,6 +559,7 @@ impl BpfHelper {
             BpfHelper::ImaFileHash => "bpf_ima_file_hash",
             BpfHelper::CopyFromUserTask => "bpf_copy_from_user_task",
             BpfHelper::SnprintfBtf => "bpf_snprintf_btf",
+            BpfHelper::SeqPrintfBtf => "bpf_seq_printf_btf",
             BpfHelper::SetSockOpt => "bpf_setsockopt",
             BpfHelper::SkRedirectMap => "bpf_sk_redirect_map",
             BpfHelper::SockMapUpdate => "bpf_sock_map_update",
@@ -569,6 +576,8 @@ impl BpfHelper {
             BpfHelper::SkRedirectHash => "bpf_sk_redirect_hash",
             BpfHelper::SkSelectReuseport => "bpf_sk_select_reuseport",
             BpfHelper::KtimeGetBootNs => "bpf_ktime_get_boot_ns",
+            BpfHelper::SeqPrintf => "bpf_seq_printf",
+            BpfHelper::SeqWrite => "bpf_seq_write",
             BpfHelper::KtimeGetCoarseNs => "bpf_ktime_get_coarse_ns",
             BpfHelper::CheckMtu => "bpf_check_mtu",
             BpfHelper::KtimeGetTaiNs => "bpf_ktime_get_tai_ns",
@@ -751,6 +760,7 @@ impl BpfHelper {
             "ima_file_hash" => Some(Self::ImaFileHash),
             "copy_from_user_task" => Some(Self::CopyFromUserTask),
             "snprintf_btf" => Some(Self::SnprintfBtf),
+            "seq_printf_btf" => Some(Self::SeqPrintfBtf),
             "setsockopt" => Some(Self::SetSockOpt),
             "sk_redirect_map" => Some(Self::SkRedirectMap),
             "sock_map_update" => Some(Self::SockMapUpdate),
@@ -767,6 +777,8 @@ impl BpfHelper {
             "sk_redirect_hash" => Some(Self::SkRedirectHash),
             "sk_select_reuseport" => Some(Self::SkSelectReuseport),
             "ktime_get_boot_ns" => Some(Self::KtimeGetBootNs),
+            "seq_printf" => Some(Self::SeqPrintf),
+            "seq_write" => Some(Self::SeqWrite),
             "ktime_get_coarse_ns" => Some(Self::KtimeGetCoarseNs),
             "check_mtu" => Some(Self::CheckMtu),
             "ktime_get_tai_ns" => Some(Self::KtimeGetTaiNs),
@@ -886,6 +898,7 @@ impl BpfHelper {
             (Self::GetTaskStack, 1) => Some(2),
             (Self::CopyFromUser | Self::CopyFromUserTask, 0) => Some(1),
             (Self::DPath, 1) => Some(2),
+            (Self::SeqPrintf, 3) => Some(4),
             _ => None,
         }
     }
@@ -907,6 +920,10 @@ impl BpfHelper {
                 8,
                 "helper 'bpf_snprintf' requires arg4 to be a multiple of 8",
             )),
+            (Self::SeqPrintf, 4) => Some((
+                8,
+                "helper 'bpf_seq_printf' requires arg4 to be a multiple of 8",
+            )),
             (Self::TraceVPrintk, 3) => Some((
                 8,
                 "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8",
@@ -927,6 +944,8 @@ impl BpfHelper {
             (Self::SnprintfBtf, 1) => Some("helper 'bpf_snprintf_btf' requires arg1 to be >= 0"),
             (Self::Snprintf, 1) => Some("helper 'bpf_snprintf' requires arg1 to be >= 0"),
             (Self::Snprintf, 4) => Some("helper 'bpf_snprintf' requires arg4 to be >= 0"),
+            (Self::SeqPrintf, 4) => Some("helper 'bpf_seq_printf' requires arg4 to be >= 0"),
+            (Self::SeqWrite, 2) => Some("helper 'bpf_seq_write' requires arg2 to be >= 0"),
             (Self::TraceVPrintk, 3) => Some("helper 'bpf_trace_vprintk' requires arg3 to be >= 0"),
             (Self::TcpRawGenSyncookieIpv4 | Self::TcpRawGenSyncookieIpv6, 2) => {
                 Some("raw syncookie helpers require arg2 to be >= 0")
@@ -944,6 +963,11 @@ impl BpfHelper {
                 0,
                 15,
                 "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits (0x0f)",
+            )),
+            (Self::SeqPrintfBtf, 3) => Some((
+                0,
+                15,
+                "helper 'bpf_seq_printf_btf' requires arg3 to contain only BTF_F_* bits (0x0f)",
             )),
             (Self::BprmOptsSet, 1) => Some((
                 0,
@@ -1122,6 +1146,7 @@ impl BpfHelper {
                 "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8",
             )),
             Self::SnprintfBtf => Some((3, 16, "helper 'bpf_snprintf_btf' requires arg3 = 16")),
+            Self::SeqPrintfBtf => Some((2, 16, "helper 'bpf_seq_printf_btf' requires arg2 = 16")),
             _ => None,
         }
     }

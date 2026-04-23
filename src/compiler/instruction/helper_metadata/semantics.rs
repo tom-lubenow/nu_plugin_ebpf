@@ -1395,6 +1395,64 @@ impl BpfHelper {
             },
         ];
 
+        const SEQ_PRINTF_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper seq_printf seq",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper seq_printf fmt",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper seq_printf data",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(4),
+            },
+        ];
+
+        const SEQ_WRITE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper seq_write seq",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper seq_write data",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const SEQ_PRINTF_BTF_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper seq_printf_btf seq",
+                allowed: KERNEL,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper seq_printf_btf ptr",
+                allowed: STACK_MAP,
+                fixed_size: Some(16),
+                size_from_arg: None,
+            },
+        ];
+
         const SYS_BPF_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 1,
             op: "helper sys_bpf attr",
@@ -2318,6 +2376,21 @@ impl BpfHelper {
             },
             BpfHelper::SnprintfBtf => HelperSemantics {
                 ptr_arg_rules: SNPRINTF_BTF_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SeqPrintf => HelperSemantics {
+                ptr_arg_rules: SEQ_PRINTF_RULES,
+                positive_size_args: &[2],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SeqWrite => HelperSemantics {
+                ptr_arg_rules: SEQ_WRITE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SeqPrintfBtf => HelperSemantics {
+                ptr_arg_rules: SEQ_PRINTF_BTF_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

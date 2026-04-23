@@ -88,6 +88,7 @@ enum HelperProgramSurfaceFamily {
     SockOps,
     CgroupSysctl,
     Syscall,
+    Iter,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -107,6 +108,11 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         family: HelperProgramSurfaceFamily::Xdp,
         program_types: &[EbpfProgramType::Xdp],
         label: "xdp",
+    },
+    HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::Iter,
+        program_types: &[EbpfProgramType::Iter],
+        label: "iter",
     },
     HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::TcSkSkb,
@@ -1093,6 +1099,11 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::KallsymsLookupName => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Syscall,
         },
+        BpfHelper::SeqPrintf | BpfHelper::SeqWrite | BpfHelper::SeqPrintfBtf => {
+            HelperProgramSurfaceSpec {
+                family: HelperProgramSurfaceFamily::Iter,
+            }
+        }
         _ => return None,
     })
 }

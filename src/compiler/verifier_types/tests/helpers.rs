@@ -333,6 +333,254 @@ fn test_verify_mir_helper_snprintf_btf_size_and_shape() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_seq_output_helpers_accept_iter_program() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let seq = func.alloc_vreg();
+    let fmt_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let write_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let printf_dst = func.alloc_vreg();
+    let printf_null_dst = func.alloc_vreg();
+    let write_dst = func.alloc_vreg();
+    let printf_btf_dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: printf_dst,
+            helper: BpfHelper::SeqPrintf as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(fmt_slot),
+                MirValue::Const(16),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: printf_null_dst,
+            helper: BpfHelper::SeqPrintf as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(fmt_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: write_dst,
+            helper: BpfHelper::SeqWrite as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(write_slot),
+                MirValue::Const(8),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: printf_btf_dst,
+            helper: BpfHelper::SeqPrintfBtf as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(16),
+                MirValue::Const(15),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            seq,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (printf_dst, MirType::I64),
+        (printf_null_dst, MirType::I64),
+        (write_dst, MirType::I64),
+        (printf_btf_dst, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected seq output helpers to verify in iter programs");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_seq_output_helpers_reject_non_iter_program() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let seq = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SeqWrite as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            seq,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (dst, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_open");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected seq output helper program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_seq_write' is only valid in iter programs")
+    }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_seq_output_helpers_reject_invalid_shapes() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let seq = func.alloc_vreg();
+    let fmt_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let write_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let printf_dst = func.alloc_vreg();
+    let write_dst = func.alloc_vreg();
+    let printf_btf_dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: printf_dst,
+            helper: BpfHelper::SeqPrintf as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(fmt_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(10),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: write_dst,
+            helper: BpfHelper::SeqWrite as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(write_slot),
+                MirValue::Const(-1),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: printf_btf_dst,
+            helper: BpfHelper::SeqPrintfBtf as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(btf_ptr_slot),
+                MirValue::Const(8),
+                MirValue::Const(16),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            seq,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (printf_dst, MirType::I64),
+        (write_dst, MirType::I64),
+        (printf_btf_dst, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected seq output helper shape errors");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper seq_printf fmt out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_seq_printf' requires arg4 to be a multiple of 8")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 127 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_seq_printf_btf' requires arg2 = 16")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_seq_printf_btf' requires arg3 to contain only BTF_F_* bits")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_syscall_helpers_enforce_size_and_flags() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

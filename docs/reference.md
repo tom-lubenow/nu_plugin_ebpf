@@ -238,8 +238,14 @@ kernel-native roots: `$ctx.dmabuf`, `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`,
 and `$ctx.netlink_sk` for `iter:dmabuf`, `iter:ipv6_route`,
 `iter:kmem_cache`, `iter:ksym`, and `iter:netlink`, respectively.
 `$ctx.current_task` and `$ctx.current_cgroup` remain reserved for helper-backed
-current-task semantics on task-aware tracing families. Live attach is rejected
-until the loader grows BPF iterator link/seq-file support.
+current-task semantics on task-aware tracing families. Iterator seq-file output
+helpers are modeled for explicit escape-hatch use: `helper-call "bpf_seq_write"
+SEQ DATA LEN`, `helper-call "bpf_seq_printf" SEQ FMT FMT_SIZE DATA DATA_LEN`,
+and `helper-call "bpf_seq_printf_btf" SEQ BTF_PTR 16 FLAGS` are iter-only,
+require a kernel `seq_file *` argument, and require stack/map-backed buffers.
+`bpf_seq_printf` may use `0` for `DATA` only when `DATA_LEN` is also `0`.
+Live attach is rejected until the loader grows BPF iterator link/seq-file
+support.
 
 `xdp`, `tc_action`, `tc`, `tcx`, `netkit`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw
@@ -621,6 +627,7 @@ Kprobe error injection is modeled through `helper-call "bpf_override_return" CTX
 TCP congestion-control struct_ops callbacks can use `helper-call "bpf_tcp_send_ack" TP RCV_NXT`, where `TP` must be a typed socket/TCP kernel pointer such as `struct tcp_sock *`. The generic program-type policy treats this as a `struct_ops` helper, and full `ProgramSpec` contexts further narrow it to `tcp_congestion_ops` callbacks; callback-specific availability remains kernel-enforced.
 Syscall programs can use the modeled syscall helper escape hatches `helper-call "bpf_sys_bpf" CMD ATTR ATTR_SIZE`, `helper-call "bpf_btf_find_by_name_kind" NAME NAME_SIZE KIND 0`, `helper-call "bpf_sys_close" FD`, and `helper-call "bpf_kallsyms_lookup_name" NAME NAME_SIZE 0 RES`. `ATTR`, `NAME`, and `RES` must be stack/map-backed buffers with positive modeled sizes where applicable, and `RES` must cover an 8-byte `u64`. Live attach for `syscall:*` remains unsupported.
 String formatting through `helper-call "bpf_snprintf" STR STR_SIZE FMT DATA DATA_LEN` is modeled as a raw escape hatch. `STR` and `DATA` must be stack/map-backed buffers, `FMT` must be a map/rodata-backed format string rather than a mutable stack string, `STR_SIZE` must be nonnegative, and `DATA_LEN` must be nonnegative and a multiple of 8. `helper-call "bpf_trace_vprintk" FMT FMT_SIZE DATA DATA_LEN` is also modeled for trace-debug formatting, with stack/map-backed format/data buffers, positive `FMT_SIZE`, and `DATA_LEN` as a nonnegative multiple of 8. BTF-backed formatting is modeled through `helper-call "bpf_snprintf_btf" STR STR_SIZE BTF_PTR 16 FLAGS`, where `BTF_PTR` is a stack/map-backed 16-byte `struct btf_ptr` record and `FLAGS` may only contain supported `BTF_F_*` bits (`0x0f`).
+Iterator seq-file output is modeled through `helper-call "bpf_seq_write" SEQ DATA LEN`, `helper-call "bpf_seq_printf" SEQ FMT FMT_SIZE DATA DATA_LEN`, and `helper-call "bpf_seq_printf_btf" SEQ BTF_PTR 16 FLAGS` on `iter:*` programs. `SEQ` must be a kernel `seq_file *` value, `FMT`, `DATA`, and `BTF_PTR` must be stack/map-backed buffers, except `bpf_seq_printf` may use `0` for `DATA` when `DATA_LEN` is also `0`. `DATA_LEN` must be nonnegative and a multiple of 8 for `bpf_seq_printf`, and `FLAGS` may only contain modeled `BTF_F_*` bits (`0x0f`).
 Path formatting through `helper-call "bpf_d_path" PATH BUF SIZE` is modeled for kernel `struct path *` inputs and stack/map output buffers. The compiler checks pointer spaces and nonnegative buffer sizes, including zero-size/null-buffer queries; the kernel still enforces the attach-target allowlist for this helper.
 LSM binary-parameter options can be set through `helper-call "bpf_bprm_opts_set" BPRM FLAGS` on LSM programs. `BPRM` must be a kernel `linux_binprm *` such as the argument exposed by `lsm:bprm_check_security`; `FLAGS` may only contain modeled `BPF_F_BPRM_*` bits (`0x01`, currently `BPF_F_BPRM_SECUREEXEC`).
 IMA hash helpers are modeled on the LSM helper surface: `helper-call "bpf_ima_inode_hash" INODE DST SIZE` accepts a kernel `inode *`, and `helper-call "bpf_ima_file_hash" FILE DST SIZE` accepts a kernel `file *`. `DST` must be a stack/map output buffer and `SIZE` must be positive; kernel sleepable-hook restrictions remain kernel-enforced.

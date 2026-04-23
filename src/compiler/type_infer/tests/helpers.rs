@@ -637,6 +637,205 @@ fn test_type_error_snprintf_btf_size_and_shape() {
 }
 
 #[test]
+fn test_infer_seq_output_helpers_in_iter_program() {
+    let cases = [
+        (
+            BpfHelper::SeqPrintf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(8),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(16),
+            ],
+            8,
+            16,
+        ),
+        (
+            BpfHelper::SeqPrintf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            8,
+            0,
+        ),
+        (
+            BpfHelper::SeqWrite,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(8),
+            ],
+            8,
+            0,
+        ),
+        (
+            BpfHelper::SeqPrintfBtf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(16),
+                MirValue::Const(15),
+            ],
+            16,
+            0,
+        ),
+    ];
+
+    for (helper, args, first_slot_size, second_slot_size) in cases {
+        let mut func = make_test_function();
+        let seq = func.alloc_vreg();
+        assert_eq!(seq, VReg(0));
+        let first_slot = func.alloc_stack_slot(first_slot_size, 8, StackSlotKind::StringBuffer);
+        assert_eq!(first_slot, StackSlotId(0));
+        if second_slot_size > 0 {
+            let second_slot =
+                func.alloc_stack_slot(second_slot_size, 8, StackSlotKind::StringBuffer);
+            assert_eq!(second_slot, StackSlotId(1));
+        }
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .unwrap_or_else(|errs| panic!("expected {helper:?} to infer: {errs:?}"));
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_seq_output_helpers_reject_invalid_shapes() {
+    let cases = [
+        (
+            BpfHelper::SeqPrintf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(8),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(10),
+            ],
+            8,
+            16,
+            "helper 'bpf_seq_printf' requires arg4 to be a multiple of 8",
+        ),
+        (
+            BpfHelper::SeqWrite,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(16),
+            ],
+            8,
+            0,
+            "helper seq_write data requires 16 bytes",
+        ),
+        (
+            BpfHelper::SeqPrintfBtf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(8),
+                MirValue::Const(16),
+            ],
+            8,
+            0,
+            "helper 'bpf_seq_printf_btf' requires arg2 = 16",
+        ),
+    ];
+
+    for (helper, args, first_slot_size, second_slot_size, expected) in cases {
+        let mut func = make_test_function();
+        let seq = func.alloc_vreg();
+        assert_eq!(seq, VReg(0));
+        let first_slot = func.alloc_stack_slot(first_slot_size, 8, StackSlotKind::StringBuffer);
+        assert_eq!(first_slot, StackSlotId(0));
+        if second_slot_size > 0 {
+            let second_slot =
+                func.alloc_stack_slot(second_slot_size, 8, StackSlotKind::StringBuffer);
+            assert_eq!(second_slot, StackSlotId(1));
+        }
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected seq helper shape error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn test_type_error_seq_output_helpers_reject_non_iter_program() {
+    let mut func = make_test_function();
+    let seq = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: seq,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SeqWrite as u32,
+        args: vec![
+            MirValue::VReg(seq),
+            MirValue::StackSlot(data_slot),
+            MirValue::Const(8),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected seq_write to be rejected outside iterator programs");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_seq_write' is only valid in iter programs")
+    }));
+}
+
+#[test]
 fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

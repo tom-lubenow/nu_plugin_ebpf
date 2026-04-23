@@ -75,6 +75,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::TcpRawGenSyncookieIpv4)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_seq_printf"),
+        Some(BpfHelper::SeqPrintf)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_redirect_neigh"),
         Some(BpfHelper::RedirectNeigh)
     ));
@@ -2289,6 +2293,72 @@ fn test_trace_vprintk_helper_contract() {
     assert!(data.allowed.allow_map);
     assert!(!data.allowed.allow_kernel);
     assert_eq!(data.size_from_arg, Some(3));
+}
+
+#[test]
+fn test_seq_output_helper_contracts() {
+    let sig = HelperSignature::for_id(BpfHelper::SeqPrintf as u32)
+        .expect("expected bpf_seq_printf helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(BpfHelper::SeqPrintf.semantics().positive_size_args, &[2]);
+    assert_eq!(
+        BpfHelper::SeqPrintf.scalar_arg_multiple_of_requirement(4),
+        Some((
+            8,
+            "helper 'bpf_seq_printf' requires arg4 to be a multiple of 8"
+        ))
+    );
+
+    let semantics = BpfHelper::SeqPrintf.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 3);
+    assert_eq!(semantics.ptr_arg_rules[0].op, "helper seq_printf seq");
+    assert!(semantics.ptr_arg_rules[0].allowed.allow_kernel);
+    assert_eq!(semantics.ptr_arg_rules[1].size_from_arg, Some(2));
+    assert_eq!(semantics.ptr_arg_rules[2].size_from_arg, Some(4));
+    assert_eq!(
+        BpfHelper::SeqPrintf.zero_size_pointer_arg_size_arg(3),
+        Some(4)
+    );
+
+    let sig = HelperSignature::for_id(BpfHelper::SeqWrite as u32)
+        .expect("expected bpf_seq_write helper signature");
+    assert_eq!(sig.min_args, 3);
+    assert_eq!(sig.max_args, 3);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(
+        BpfHelper::SeqWrite.scalar_arg_nonnegative_requirement(2),
+        Some("helper 'bpf_seq_write' requires arg2 to be >= 0")
+    );
+
+    let sig = HelperSignature::for_id(BpfHelper::SeqPrintfBtf as u32)
+        .expect("expected bpf_seq_printf_btf helper signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
+    assert_eq!(
+        BpfHelper::SeqPrintfBtf.scalar_arg_const_requirement(),
+        Some((2, 16, "helper 'bpf_seq_printf_btf' requires arg2 = 16"))
+    );
+    assert_eq!(
+        BpfHelper::SeqPrintfBtf.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            15,
+            "helper 'bpf_seq_printf_btf' requires arg3 to contain only BTF_F_* bits (0x0f)"
+        ))
+    );
 }
 
 #[test]
