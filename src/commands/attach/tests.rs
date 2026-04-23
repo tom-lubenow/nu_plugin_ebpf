@@ -8254,6 +8254,105 @@ fn test_compile_iter_map_ctx_meta_non_null_program() {
     );
 }
 
+#[test]
+fn test_compile_iter_task_file_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("task")],
+            },
+            "iter:task_file ctx.task nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("file")],
+            },
+            "iter:task_file ctx.file nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("iter_file")],
+            },
+            "iter:task_file ctx.iter_file nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("fd")],
+            },
+            "iter:task_file ctx.fd scalar check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "task_file",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_task_vma_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("task")],
+            },
+            "iter:task_vma ctx.task nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("vma")],
+            },
+            "iter:task_vma ctx.vma nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("iter_vma")],
+            },
+            "iter:task_vma ctx.iter_vma nullable check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "task_vma",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
+#[test]
+fn test_compile_iter_cgroup_payload_roots_programs() {
+    for (path, context) in [
+        (
+            CellPath {
+                members: vec![string_member("cgroup")],
+            },
+            "iter:cgroup ctx.cgroup nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("iter_cgroup")],
+            },
+            "iter:cgroup ctx.iter_cgroup nullable check",
+        ),
+    ] {
+        let hir = make_ctx_path_non_null_program(path);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Iter,
+            "cgroup",
+            &HashMap::new(),
+            context,
+        );
+    }
+}
+
 fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     matches!(
@@ -8270,6 +8369,30 @@ fn iter_meta_seq_num_projection_available() -> bool {
     )
 }
 
+fn file_f_mode_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("f_mode".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("file", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn vma_vm_start_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("vm_start".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("vm_area_struct", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn cgroup_level_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("level".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("cgroup", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
 fn ctx_task_pid_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("pid")],
@@ -8279,6 +8402,24 @@ fn ctx_task_pid_path(root: &str) -> CellPath {
 fn ctx_iter_meta_seq_num_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("seq_num")],
+    }
+}
+
+fn ctx_file_f_mode_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("f_mode")],
+    }
+}
+
+fn ctx_vma_vm_start_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("vm_start")],
+    }
+}
+
+fn ctx_cgroup_level_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("level")],
     }
 }
 
@@ -8366,6 +8507,76 @@ fn test_compile_iter_task_ctx_iter_task_pid_counter_program() {
         "task",
         ctx_task_pid_path("iter_task"),
         "iter:task ctx.iter_task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_file_ctx_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task_file",
+        ctx_task_pid_path("task"),
+        "iter:task_file ctx.task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_vma_ctx_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task_vma",
+        ctx_task_pid_path("task"),
+        "iter:task_vma ctx.task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_file_ctx_file_f_mode_counter_program() {
+    if !file_f_mode_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task_file",
+        ctx_file_f_mode_path("file"),
+        "iter:task_file ctx.file.f_mode count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_vma_ctx_vma_vm_start_counter_program() {
+    if !vma_vm_start_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task_vma",
+        ctx_vma_vm_start_path("vma"),
+        "iter:task_vma ctx.vma.vm_start count",
+    );
+}
+
+#[test]
+fn test_compile_iter_cgroup_ctx_cgroup_level_counter_program() {
+    if !cgroup_level_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "cgroup",
+        ctx_cgroup_level_path("cgroup"),
+        "iter:cgroup ctx.cgroup.level count",
     );
 }
 

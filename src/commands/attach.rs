@@ -314,11 +314,13 @@ Context parameter syntax (recommended):
     current model is deliberately compile/dry-run only and exposes no context.
     Raw helper calls are limited to explicitly modeled syscall-program helpers.
     `iter:TARGET` emits BPF iterator sections such as `iter/task`.
-    All iterator targets expose `$ctx.meta` / `$ctx.iter_meta`; `iter:task`
-    also exposes the nullable iterated task through `$ctx.task` and
-    `$ctx.iter_task`. Other iterator payload roots do not have modeled
-    context yet. Live iterator attach is rejected until the loader supports
-    iterator links.
+    All iterator targets expose `$ctx.meta` / `$ctx.iter_meta`. Task-bearing
+    iterators (`iter:task`, `iter:task_file`, `iter:task_vma`) expose
+    `$ctx.task` / `$ctx.iter_task`; `iter:task_file` also exposes `$ctx.fd` /
+    `$ctx.iter_fd` and `$ctx.file` / `$ctx.iter_file`; `iter:task_vma` exposes
+    `$ctx.vma` / `$ctx.iter_vma`; and `iter:cgroup` exposes `$ctx.cgroup` /
+    `$ctx.iter_cgroup`. Live iterator attach is rejected until the loader
+    supports iterator links.
 
   perf_event targets:
     {|ctx| $ctx.cpu }    - Get current CPU ID for the sampled event

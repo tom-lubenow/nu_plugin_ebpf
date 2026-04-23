@@ -3,10 +3,15 @@ use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachSockAddrHook,
 
 type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
 
+const ITER_TASK_PAYLOAD_TARGETS: &[&str] = &["task", "task_file", "task_vma"];
+const ITER_TASK_FILE_TARGETS: &[&str] = &["task_file"];
+const ITER_TASK_VMA_TARGETS: &[&str] = &["task_vma"];
+const ITER_CGROUP_TARGETS: &[&str] = &["cgroup"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
     TcEgressOnly,
-    IterTaskOnly,
+    IterTargetsOnly(&'static [&'static str], &'static str),
     CgroupSockCreateReleaseOnly,
     CgroupSockPostBindOnly,
     CgroupSockPostBindIpv4Only,
@@ -51,10 +56,10 @@ impl ContextFieldAccessRequirement {
             Self::TcEgressOnly => attach_shape.is_tc_ingress().then(|| {
                 format!("ctx.{field_name} is only available on tc/tcx egress programs")
             }),
-            Self::IterTaskOnly => match spec {
-                ProgramSpec::Iter { target } if target.name == "task" => None,
+            Self::IterTargetsOnly(targets, label) => match spec {
+                ProgramSpec::Iter { target } if targets.contains(&target.name.as_str()) => None,
                 ProgramSpec::Iter { .. } => Some(format!(
-                    "ctx.{field_name} is only available on iter:task programs"
+                    "ctx.{field_name} is only available on {label} programs"
                 )),
                 _ => None,
             },
@@ -447,12 +452,36 @@ const LWT_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ),
 ];
 
-const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] =
-    &[ContextFieldAccessSurfaceSpec::new(
+const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
+    ContextFieldAccessSurfaceSpec::new(
         CtxField::IterTask,
         "iter_task",
-        ContextFieldAccessRequirement::IterTaskOnly,
-    )];
+        ContextFieldAccessRequirement::IterTargetsOnly(
+            ITER_TASK_PAYLOAD_TARGETS,
+            "iter:task, iter:task_file, and iter:task_vma",
+        ),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterFd,
+        "iter_fd",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_TASK_FILE_TARGETS, "iter:task_file"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterFile,
+        "iter_file",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_TASK_FILE_TARGETS, "iter:task_file"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterVma,
+        "iter_vma",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_TASK_VMA_TARGETS, "iter:task_vma"),
+    ),
+    ContextFieldAccessSurfaceSpec::new(
+        CtxField::IterCgroup,
+        "iter_cgroup",
+        ContextFieldAccessRequirement::IterTargetsOnly(ITER_CGROUP_TARGETS, "iter:cgroup"),
+    ),
+];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
     ProgramContextFieldAccessSurfaceSpec {
@@ -645,7 +674,14 @@ const NETFILTER_CTX_FIELDS: &[CtxField] = &[
     CtxField::NetfilterHook,
     CtxField::NetfilterProtocolFamily,
 ];
-const ITER_CTX_FIELDS: &[CtxField] = &[CtxField::IterTask, CtxField::IterMeta];
+const ITER_CTX_FIELDS: &[CtxField] = &[
+    CtxField::IterTask,
+    CtxField::IterMeta,
+    CtxField::IterFd,
+    CtxField::IterFile,
+    CtxField::IterVma,
+    CtxField::IterCgroup,
+];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
     CtxField::RemoteIp6,
@@ -1939,28 +1975,90 @@ mod tests {
     }
 
     #[test]
-    fn test_iter_task_field_has_explicit_access_surface() {
-        assert_eq!(
-            find_base_ctx_field_access_requirement(&CtxField::IterTask),
-            Some(BaseContextFieldAccessRequirement::IterFields)
-        );
-        assert_eq!(
-            find_base_ctx_field_access_requirement(&CtxField::IterMeta),
-            Some(BaseContextFieldAccessRequirement::IterFields)
-        );
+    fn test_iter_payload_fields_have_explicit_access_surfaces() {
+        for field in [
+            CtxField::IterTask,
+            CtxField::IterMeta,
+            CtxField::IterFd,
+            CtxField::IterFile,
+            CtxField::IterVma,
+            CtxField::IterCgroup,
+        ] {
+            assert_eq!(
+                find_base_ctx_field_access_requirement(&field),
+                Some(BaseContextFieldAccessRequirement::IterFields)
+            );
+        }
         assert!(BaseContextFieldAccessRequirement::IterFields.is_allowed(EbpfProgramType::Iter));
         assert!(!BaseContextFieldAccessRequirement::IterFields.is_allowed(EbpfProgramType::Kprobe));
 
         let task = ProgramSpec::parse("iter:task").expect("iter task spec should parse");
         assert!(task.ctx_field_access_error(&CtxField::IterTask).is_none());
         assert!(task.ctx_field_access_error(&CtxField::IterMeta).is_none());
+        assert!(task.ctx_field_access_error(&CtxField::IterFile).is_some());
+
+        let task_file =
+            ProgramSpec::parse("iter:task_file").expect("iter task_file spec should parse");
+        assert!(
+            task_file
+                .ctx_field_access_error(&CtxField::IterTask)
+                .is_none()
+        );
+        assert!(
+            task_file
+                .ctx_field_access_error(&CtxField::IterFd)
+                .is_none()
+        );
+        assert!(
+            task_file
+                .ctx_field_access_error(&CtxField::IterFile)
+                .is_none()
+        );
+        assert!(
+            task_file
+                .ctx_field_access_error(&CtxField::IterVma)
+                .is_some()
+        );
+
+        let task_vma =
+            ProgramSpec::parse("iter:task_vma").expect("iter task_vma spec should parse");
+        assert!(
+            task_vma
+                .ctx_field_access_error(&CtxField::IterTask)
+                .is_none()
+        );
+        assert!(
+            task_vma
+                .ctx_field_access_error(&CtxField::IterVma)
+                .is_none()
+        );
+        assert!(
+            task_vma
+                .ctx_field_access_error(&CtxField::IterFile)
+                .is_some()
+        );
+
+        let cgroup = ProgramSpec::parse("iter:cgroup").expect("iter cgroup spec should parse");
+        assert!(
+            cgroup
+                .ctx_field_access_error(&CtxField::IterCgroup)
+                .is_none()
+        );
+        assert!(cgroup.ctx_field_access_error(&CtxField::IterTask).is_some());
 
         let map = ProgramSpec::parse("iter:map").expect("iter map spec should parse");
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterTask),
-            Some("ctx.iter_task is only available on iter:task programs".to_string())
+            Some(
+                "ctx.iter_task is only available on iter:task, iter:task_file, and iter:task_vma programs"
+                    .to_string()
+            )
         );
         assert!(map.ctx_field_access_error(&CtxField::IterMeta).is_none());
+        assert_eq!(
+            map.ctx_field_access_error(&CtxField::IterCgroup),
+            Some("ctx.iter_cgroup is only available on iter:cgroup programs".to_string())
+        );
     }
 
     #[test]

@@ -57,6 +57,14 @@ const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("iter_task", CtxField::IterTask),
     ("meta", CtxField::IterMeta),
     ("iter_meta", CtxField::IterMeta),
+    ("fd", CtxField::IterFd),
+    ("iter_fd", CtxField::IterFd),
+    ("file", CtxField::IterFile),
+    ("iter_file", CtxField::IterFile),
+    ("vma", CtxField::IterVma),
+    ("iter_vma", CtxField::IterVma),
+    ("cgroup", CtxField::IterCgroup),
+    ("iter_cgroup", CtxField::IterCgroup),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -555,6 +563,33 @@ mod tests {
                 .resolve_ctx_field_name("iter_meta")
                 .expect("iter_meta alias should resolve"),
             CtxField::IterMeta
+        );
+    }
+
+    #[test]
+    fn test_iterator_payload_aliases_resolve_to_payload_roots() {
+        for (name, expected) in [
+            ("fd", CtxField::IterFd),
+            ("iter_fd", CtxField::IterFd),
+            ("file", CtxField::IterFile),
+            ("iter_file", CtxField::IterFile),
+            ("vma", CtxField::IterVma),
+            ("iter_vma", CtxField::IterVma),
+            ("cgroup", CtxField::IterCgroup),
+            ("iter_cgroup", CtxField::IterCgroup),
+        ] {
+            assert_eq!(
+                EbpfProgramType::Iter
+                    .resolve_ctx_field_name(name)
+                    .unwrap_or_else(|_| panic!("{name} alias should resolve")),
+                expected
+            );
+        }
+        assert_eq!(
+            EbpfProgramType::Iter
+                .resolve_ctx_field_name("current_cgroup")
+                .expect("current_cgroup should keep current-task cgroup semantics"),
+            CtxField::Cgroup
         );
     }
 }

@@ -1629,6 +1629,9 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!EbpfProgramType::Xdp.ctx_field_pointer_is_non_null(&CtxField::Task));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterTask));
     assert!(EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterMeta));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterFile));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterVma));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterCgroup));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1649,6 +1652,9 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!iter_task.ctx_field_pointer_is_non_null(&CtxField::IterTask));
     assert!(iter_task.ctx_field_pointer_is_non_null(&CtxField::IterMeta));
 
+    let iter_task_file = ProbeContext::new(EbpfProgramType::Iter, "task_file");
+    assert!(!iter_task_file.ctx_field_pointer_is_non_null(&CtxField::IterFile));
+
     let reuseport = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
     assert!(reuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!reuseport.ctx_field_pointer_is_non_null(&CtxField::MigratingSocket));
@@ -1660,6 +1666,9 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
     assert!(!EbpfProgramType::Xdp.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::Task));
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterTask));
     assert!(EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterMeta));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterFile));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterVma));
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterCgroup));
     assert!(
         EbpfProgramType::Netfilter
             .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
@@ -1706,6 +1715,24 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
     assert_eq!(
         iter_meta_spec.kernel_btf_runtime_type_name,
         Some("bpf_iter_meta")
+    );
+
+    let iter_file_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterFile)
+        .expect("expected ctx.iter_file type spec");
+    assert_eq!(iter_file_spec.kernel_btf_runtime_type_name, Some("file"));
+
+    let iter_vma_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterVma)
+        .expect("expected ctx.iter_vma type spec");
+    assert_eq!(
+        iter_vma_spec.kernel_btf_runtime_type_name,
+        Some("vm_area_struct")
+    );
+
+    let iter_cgroup_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterCgroup)
+        .expect("expected ctx.iter_cgroup type spec");
+    assert_eq!(
+        iter_cgroup_spec.kernel_btf_runtime_type_name,
+        Some("cgroup")
     );
 
     let nf_state_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterState)
@@ -7190,16 +7217,75 @@ fn test_probe_context_allows_iter_task_only_on_task_iterator() {
     assert!(ctx.validate_load_ctx_field(&CtxField::IterTask).is_ok());
     assert!(ctx.validate_load_ctx_field(&CtxField::IterMeta).is_ok());
     assert!(ctx.ctx_field_access_error(&CtxField::Task).is_some());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterFile).is_some());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterVma).is_some());
 }
 
 #[test]
-fn test_probe_context_rejects_iter_task_on_other_iterators() {
+fn test_probe_context_allows_task_file_iterator_payload_roots() {
+    let ctx = ProbeContext::new(EbpfProgramType::Iter, "task_file");
+    assert!(ctx.ctx_field_access_error(&CtxField::IterTask).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterFd).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterFile).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterMeta).is_none());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterTask).is_ok());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterFd).is_ok());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterFile).is_ok());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterVma).is_some());
+}
+
+#[test]
+fn test_probe_context_allows_task_vma_iterator_payload_roots() {
+    let ctx = ProbeContext::new(EbpfProgramType::Iter, "task_vma");
+    assert!(ctx.ctx_field_access_error(&CtxField::IterTask).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterVma).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterMeta).is_none());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterTask).is_ok());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterVma).is_ok());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterFile).is_some());
+}
+
+#[test]
+fn test_probe_context_allows_cgroup_iterator_payload_root() {
+    let ctx = ProbeContext::new(EbpfProgramType::Iter, "cgroup");
+    assert_eq!(
+        ctx.resolve_ctx_field_name("cgroup")
+            .expect("iter cgroup alias should resolve"),
+        CtxField::IterCgroup
+    );
+    assert_eq!(
+        ctx.resolve_ctx_field_name("current_cgroup")
+            .expect("current_cgroup should resolve separately"),
+        CtxField::Cgroup
+    );
+    assert!(ctx.ctx_field_access_error(&CtxField::IterCgroup).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterMeta).is_none());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterCgroup).is_ok());
+    assert!(ctx.ctx_field_access_error(&CtxField::Cgroup).is_some());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterTask).is_some());
+}
+
+#[test]
+fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
     let ctx = ProbeContext::new(EbpfProgramType::Iter, "map");
     let err = ctx
         .ctx_field_access_error(&CtxField::IterTask)
         .expect("expected iter task field access error");
-    assert_eq!(err, "ctx.iter_task is only available on iter:task programs");
+    assert_eq!(
+        err,
+        "ctx.iter_task is only available on iter:task, iter:task_file, and iter:task_vma programs"
+    );
     assert!(ctx.ctx_field_access_error(&CtxField::IterMeta).is_none());
+    assert_eq!(
+        ctx.ctx_field_access_error(&CtxField::IterFile)
+            .expect("expected iter file field access error"),
+        "ctx.iter_file is only available on iter:task_file programs"
+    );
+    assert_eq!(
+        ctx.ctx_field_access_error(&CtxField::IterCgroup)
+            .expect("expected iter cgroup field access error"),
+        "ctx.iter_cgroup is only available on iter:cgroup programs"
+    );
 }
 
 #[test]

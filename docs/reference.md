@@ -17,8 +17,12 @@ The closure receives a context parameter with these fields:
 | `uid_gid` / `current_uid_gid` | Packed `(gid << 32) | uid` value from `bpf_get_current_uid_gid` | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `comm` | Process name (16 bytes) | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `task` / `current_task` | Current `task_struct *` pointer from `bpf_get_current_task_btf`; the legacy `bpf_get_current_task` helper is also modeled as a typed non-null task pointer. BTF-backed fields such as `task.pid` can be projected directly or after binding the pointer to a local when kernel BTF is available. On tracepoints, use `current_task` when you need the builtin rather than a payload field named `task`. | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
-| `task` / `iter_task` | Nullable iterated `task_struct *` pointer from `struct bpf_iter__task`; BTF-backed fields such as `task.pid` can be projected when kernel BTF is available. This is intentionally distinct from `current_task`. | `iter:task` |
+| `task` / `iter_task` | Nullable iterated `task_struct *` pointer from task-bearing iterator contexts; BTF-backed fields such as `task.pid` can be projected when kernel BTF is available. This is intentionally distinct from `current_task`. | `iter:task`, `iter:task_file`, `iter:task_vma` |
 | `meta` / `iter_meta` | Non-null `bpf_iter_meta *` pointer exposed by BPF iterator contexts; BTF-backed fields such as `meta.seq_num` can be projected when kernel BTF is available. | `iter:*` |
+| `fd` / `iter_fd` | File descriptor for the current `task_file` iterator element. | `iter:task_file` |
+| `file` / `iter_file` | Nullable iterated `file *` pointer from `struct bpf_iter__task_file`; BTF-backed fields such as `file.f_mode` can be projected when kernel BTF is available. | `iter:task_file` |
+| `vma` / `iter_vma` | Nullable iterated `vm_area_struct *` pointer from `struct bpf_iter__task_vma`; BTF-backed fields such as `vma.vm_start` can be projected when kernel BTF is available. | `iter:task_vma` |
+| `cgroup` / `iter_cgroup` | Nullable iterated `cgroup *` pointer from `struct bpf_iter__cgroup`; BTF-backed fields such as `cgroup.level` can be projected when kernel BTF is available. This shadows the current-task cgroup alias only on iterator programs; use `current_cgroup` for the helper-backed current-task cgroup meaning on other tracing families. | `iter:cgroup` |
 | `cgroup` / `current_cgroup` | Current task default `cgroup *` pointer, available for cgroup-local-storage ownership and BTF-backed cgroup projections such as `current_cgroup.kn.id`; follow-up projections also work after binding the pointer to a local. On tracepoints, use `current_cgroup` when you need the builtin rather than a payload field named `cgroup`. | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `cgroup_id` | Current task cgroup ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
@@ -200,11 +204,14 @@ rejected on `syscall:*` until they have an explicit policy.
 `iter:TARGET` currently has compile/dry-run support for BPF iterator
 sections such as `iter:task`, emitting `iter/task`. All iterator targets
 expose iterator metadata through `$ctx.meta` / `$ctx.iter_meta`.
-`iter:task` also exposes the nullable iterated task through `$ctx.task` /
-`$ctx.iter_task`, while `$ctx.current_task` remains reserved for
-helper-backed current-task semantics on task-aware tracing families.
-Other iterator payload roots are not modeled yet. Live attach is rejected
-until the loader grows BPF iterator link/seq-file support.
+Task-bearing iterators (`iter:task`, `iter:task_file`, and `iter:task_vma`)
+also expose the nullable iterated task through `$ctx.task` / `$ctx.iter_task`.
+`iter:task_file` exposes `$ctx.fd` / `$ctx.iter_fd` and `$ctx.file` /
+`$ctx.iter_file`, `iter:task_vma` exposes `$ctx.vma` / `$ctx.iter_vma`, and
+`iter:cgroup` exposes `$ctx.cgroup` / `$ctx.iter_cgroup`. `$ctx.current_task`
+and `$ctx.current_cgroup` remain reserved for helper-backed current-task
+semantics on task-aware tracing families. Live attach is rejected until the
+loader grows BPF iterator link/seq-file support.
 
 `xdp`, `tc_action`, `tc`, `tcx`, `netkit`, and `cgroup_skb` expose `ctx.cpu`, `ctx.ktime`,
 `ctx.packet_len`, `ctx.ingress_ifindex`, `ctx.ifindex`, and raw

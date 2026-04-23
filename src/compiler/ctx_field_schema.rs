@@ -629,6 +629,21 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         )
         .non_null_pointer()
         .trusted_btf_pointer(),
+        CtxField::IterFd => {
+            BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
+        }
+        CtxField::IterFile => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("file"))
+                .with_kernel_btf_runtime_type("file"),
+        ),
+        CtxField::IterVma => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("vm_area_struct"))
+                .with_kernel_btf_runtime_type("vm_area_struct"),
+        ),
+        CtxField::IterCgroup => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
+                .with_kernel_btf_runtime_type("cgroup"),
+        ),
         CtxField::Cgroup => BaseContextFieldSchemaSpec::value(
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
                 .with_kernel_btf_runtime_type("cgroup"),

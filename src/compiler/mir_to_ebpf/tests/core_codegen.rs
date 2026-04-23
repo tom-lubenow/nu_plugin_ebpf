@@ -2951,8 +2951,16 @@ fn test_compile_kprobe_task_load_calls_helper() {
 
 #[test]
 fn test_compile_iter_task_load_uses_ctx_task_offset() {
-    let ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterTask, "task", opcode::BPF_DW, 8);
+}
 
+fn assert_iter_ctx_load_uses_ctx_offset(
+    field: CtxField,
+    target: &str,
+    width_opcode: u8,
+    offset: i16,
+) {
+    let ctx = ProbeContext::new(EbpfProgramType::Iter, target);
     let mut func = LirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -2963,7 +2971,7 @@ fn test_compile_iter_task_load_uses_ctx_task_offset() {
         .instructions
         .push(LirInst::LoadCtxField {
             dst,
-            field: CtxField::IterTask,
+            field,
             slot: None,
         });
     func.block_mut(entry).terminator = LirInst::Return {
@@ -2983,9 +2991,9 @@ fn test_compile_iter_task_load_uses_ctx_task_offset() {
     compiler.fixup_jumps().unwrap();
 
     assert!(compiler.instructions.iter().any(|insn| {
-        insn.opcode == opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM
+        insn.opcode == opcode::BPF_LDX | width_opcode | opcode::BPF_MEM
             && insn.src_reg == EbpfReg::R9.as_u8()
-            && insn.offset == 8
+            && insn.offset == offset
     }));
     assert!(!compiler.instructions.iter().any(|insn| {
         insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
@@ -2995,42 +3003,25 @@ fn test_compile_iter_task_load_uses_ctx_task_offset() {
 
 #[test]
 fn test_compile_iter_meta_load_uses_ctx_meta_offset() {
-    let ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterMeta, "task", opcode::BPF_DW, 0);
+}
 
-    let mut func = LirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
+#[test]
+fn test_compile_iter_task_file_loads_use_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterTask, "task_file", opcode::BPF_DW, 8);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterFd, "task_file", opcode::BPF_W, 16);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterFile, "task_file", opcode::BPF_DW, 24);
+}
 
-    let dst = func.alloc_vreg();
+#[test]
+fn test_compile_iter_task_vma_loads_use_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterTask, "task_vma", opcode::BPF_DW, 8);
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterVma, "task_vma", opcode::BPF_DW, 16);
+}
 
-    func.block_mut(entry)
-        .instructions
-        .push(LirInst::LoadCtxField {
-            dst,
-            field: CtxField::IterMeta,
-            slot: None,
-        });
-    func.block_mut(entry).terminator = LirInst::Return {
-        val: Some(MirValue::VReg(dst)),
-    };
-
-    let program = LirProgram::new(func);
-    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
-    compiler
-        .prepare_function_state(
-            &program.main,
-            compiler.available_regs.clone(),
-            program.main.precolored.clone(),
-        )
-        .unwrap();
-    compiler.compile_function(&program.main).unwrap();
-    compiler.fixup_jumps().unwrap();
-
-    assert!(compiler.instructions.iter().any(|insn| {
-        insn.opcode == opcode::BPF_LDX | opcode::BPF_DW | opcode::BPF_MEM
-            && insn.src_reg == EbpfReg::R9.as_u8()
-            && insn.offset == 0
-    }));
+#[test]
+fn test_compile_iter_cgroup_load_uses_ctx_cgroup_offset() {
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterCgroup, "cgroup", opcode::BPF_DW, 8);
 }
 
 #[test]
