@@ -998,7 +998,12 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
                 family: HelperProgramSurfaceFamily::SocketLookup,
             }
         }
-        BpfHelper::TcpCheckSyncookie | BpfHelper::TcpGenSyncookie => HelperProgramSurfaceSpec {
+        BpfHelper::TcpCheckSyncookie
+        | BpfHelper::TcpGenSyncookie
+        | BpfHelper::TcpRawGenSyncookieIpv4
+        | BpfHelper::TcpRawGenSyncookieIpv6
+        | BpfHelper::TcpRawCheckSyncookieIpv4
+        | BpfHelper::TcpRawCheckSyncookieIpv6 => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::XdpTc,
         },
         BpfHelper::FibLookup => HelperProgramSurfaceSpec {

@@ -141,6 +141,10 @@ impl BpfHelper {
             108 => Some(Self::SkStorageDelete),
             109 => Some(Self::SendSignal),
             110 => Some(Self::TcpGenSyncookie),
+            204 => Some(Self::TcpRawGenSyncookieIpv4),
+            205 => Some(Self::TcpRawGenSyncookieIpv6),
+            206 => Some(Self::TcpRawCheckSyncookieIpv4),
+            207 => Some(Self::TcpRawCheckSyncookieIpv6),
             111 => Some(Self::SkbOutput),
             116 => Some(Self::TcpSendAck),
             117 => Some(Self::SendSignalThread),
@@ -762,6 +766,22 @@ impl BpfHelper {
                 arg_kinds: [P, P, S, P, S],
                 ret_kind: HelperRetKind::Scalar,
             },
+            BpfHelper::TcpRawGenSyncookieIpv4 | BpfHelper::TcpRawGenSyncookieIpv6 => {
+                HelperSignature {
+                    min_args: 3,
+                    max_args: 3,
+                    arg_kinds: [P, P, S, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
+            BpfHelper::TcpRawCheckSyncookieIpv4 | BpfHelper::TcpRawCheckSyncookieIpv6 => {
+                HelperSignature {
+                    min_args: 2,
+                    max_args: 2,
+                    arg_kinds: [P, P, S, S, S],
+                    ret_kind: HelperRetKind::Scalar,
+                }
+            }
             BpfHelper::TcpSendAck => HelperSignature {
                 min_args: 2,
                 max_args: 2,

@@ -1097,6 +1097,74 @@ impl BpfHelper {
             },
         ];
 
+        const TCP_RAW_GEN_SYNCOOKIE_IPV4_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tcp_raw_gen_syncookie_ipv4 iph",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: Some(20),
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tcp_raw_gen_syncookie_ipv4 th",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const TCP_RAW_GEN_SYNCOOKIE_IPV6_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tcp_raw_gen_syncookie_ipv6 iph",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: Some(40),
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tcp_raw_gen_syncookie_ipv6 th",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: None,
+                size_from_arg: Some(2),
+            },
+        ];
+
+        const TCP_RAW_CHECK_SYNCOOKIE_IPV4_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tcp_raw_check_syncookie_ipv4 iph",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: Some(20),
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tcp_raw_check_syncookie_ipv4 th",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: Some(20),
+                size_from_arg: None,
+            },
+        ];
+
+        const TCP_RAW_CHECK_SYNCOOKIE_IPV6_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper tcp_raw_check_syncookie_ipv6 iph",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: Some(40),
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 1,
+                op: "helper tcp_raw_check_syncookie_ipv6 th",
+                allowed: STACK_MAP_KERNEL,
+                fixed_size: Some(20),
+                size_from_arg: None,
+            },
+        ];
+
         const SK_ASSIGN_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2171,6 +2239,26 @@ impl BpfHelper {
             BpfHelper::TcpGenSyncookie => HelperSemantics {
                 ptr_arg_rules: TCP_GEN_SYNCOOKIE_RULES,
                 positive_size_args: &[2, 4],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TcpRawGenSyncookieIpv4 => HelperSemantics {
+                ptr_arg_rules: TCP_RAW_GEN_SYNCOOKIE_IPV4_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TcpRawGenSyncookieIpv6 => HelperSemantics {
+                ptr_arg_rules: TCP_RAW_GEN_SYNCOOKIE_IPV6_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TcpRawCheckSyncookieIpv4 => HelperSemantics {
+                ptr_arg_rules: TCP_RAW_CHECK_SYNCOOKIE_IPV4_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TcpRawCheckSyncookieIpv6 => HelperSemantics {
+                ptr_arg_rules: TCP_RAW_CHECK_SYNCOOKIE_IPV6_RULES,
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SkAssign => HelperSemantics {

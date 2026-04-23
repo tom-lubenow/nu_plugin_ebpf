@@ -386,6 +386,14 @@ pub enum BpfHelper {
     SkStorageDelete = 108,
     /// s64 bpf_tcp_gen_syncookie(sk, iph, iph_len, th, th_len)
     TcpGenSyncookie = 110,
+    /// s64 bpf_tcp_raw_gen_syncookie_ipv4(iph, th, th_len)
+    TcpRawGenSyncookieIpv4 = 204,
+    /// s64 bpf_tcp_raw_gen_syncookie_ipv6(iph, th, th_len)
+    TcpRawGenSyncookieIpv6 = 205,
+    /// long bpf_tcp_raw_check_syncookie_ipv4(iph, th)
+    TcpRawCheckSyncookieIpv4 = 206,
+    /// long bpf_tcp_raw_check_syncookie_ipv6(iph, th)
+    TcpRawCheckSyncookieIpv6 = 207,
     /// long bpf_send_signal(sig)
     SendSignal = 109,
     /// long bpf_tcp_send_ack(tp, rcv_nxt)
@@ -619,6 +627,10 @@ impl BpfHelper {
             BpfHelper::SkStorageGet => "bpf_sk_storage_get",
             BpfHelper::SkStorageDelete => "bpf_sk_storage_delete",
             BpfHelper::TcpGenSyncookie => "bpf_tcp_gen_syncookie",
+            BpfHelper::TcpRawGenSyncookieIpv4 => "bpf_tcp_raw_gen_syncookie_ipv4",
+            BpfHelper::TcpRawGenSyncookieIpv6 => "bpf_tcp_raw_gen_syncookie_ipv6",
+            BpfHelper::TcpRawCheckSyncookieIpv4 => "bpf_tcp_raw_check_syncookie_ipv4",
+            BpfHelper::TcpRawCheckSyncookieIpv6 => "bpf_tcp_raw_check_syncookie_ipv6",
             BpfHelper::SendSignal => "bpf_send_signal",
             BpfHelper::TcpSendAck => "bpf_tcp_send_ack",
             BpfHelper::SendSignalThread => "bpf_send_signal_thread",
@@ -813,6 +825,10 @@ impl BpfHelper {
             "sk_storage_get" => Some(Self::SkStorageGet),
             "sk_storage_delete" => Some(Self::SkStorageDelete),
             "tcp_gen_syncookie" => Some(Self::TcpGenSyncookie),
+            "tcp_raw_gen_syncookie_ipv4" => Some(Self::TcpRawGenSyncookieIpv4),
+            "tcp_raw_gen_syncookie_ipv6" => Some(Self::TcpRawGenSyncookieIpv6),
+            "tcp_raw_check_syncookie_ipv4" => Some(Self::TcpRawCheckSyncookieIpv4),
+            "tcp_raw_check_syncookie_ipv6" => Some(Self::TcpRawCheckSyncookieIpv6),
             "send_signal" => Some(Self::SendSignal),
             "tcp_send_ack" => Some(Self::TcpSendAck),
             "send_signal_thread" => Some(Self::SendSignalThread),
@@ -912,6 +928,9 @@ impl BpfHelper {
             (Self::Snprintf, 1) => Some("helper 'bpf_snprintf' requires arg1 to be >= 0"),
             (Self::Snprintf, 4) => Some("helper 'bpf_snprintf' requires arg4 to be >= 0"),
             (Self::TraceVPrintk, 3) => Some("helper 'bpf_trace_vprintk' requires arg3 to be >= 0"),
+            (Self::TcpRawGenSyncookieIpv4 | Self::TcpRawGenSyncookieIpv6, 2) => {
+                Some("raw syncookie helpers require arg2 to be >= 0")
+            }
             _ => None,
         }
     }

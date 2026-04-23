@@ -71,6 +71,10 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SkcToMptcpSock)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_tcp_raw_gen_syncookie_ipv4"),
+        Some(BpfHelper::TcpRawGenSyncookieIpv4)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_redirect_neigh"),
         Some(BpfHelper::RedirectNeigh)
     ));
@@ -3008,6 +3012,51 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    for helper in [
+        BpfHelper::TcpRawGenSyncookieIpv4,
+        BpfHelper::TcpRawGenSyncookieIpv6,
+    ] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {helper:?} helper signature"));
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    for helper in [
+        BpfHelper::TcpRawCheckSyncookieIpv4,
+        BpfHelper::TcpRawCheckSyncookieIpv6,
+    ] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .unwrap_or_else(|| panic!("expected {helper:?} helper signature"));
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+
+    let semantics = BpfHelper::TcpRawGenSyncookieIpv4.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+    assert_eq!(semantics.ptr_arg_rules[0].arg_idx, 0);
+    assert_eq!(semantics.ptr_arg_rules[0].fixed_size, Some(20));
+    assert_eq!(semantics.ptr_arg_rules[1].arg_idx, 1);
+    assert_eq!(semantics.ptr_arg_rules[1].size_from_arg, Some(2));
+    assert_eq!(
+        BpfHelper::TcpRawGenSyncookieIpv4.scalar_arg_nonnegative_requirement(2),
+        Some("raw syncookie helpers require arg2 to be >= 0")
+    );
+
+    let semantics = BpfHelper::TcpRawCheckSyncookieIpv6.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+    assert_eq!(semantics.ptr_arg_rules[0].arg_idx, 0);
+    assert_eq!(semantics.ptr_arg_rules[0].fixed_size, Some(40));
+    assert_eq!(semantics.ptr_arg_rules[1].arg_idx, 1);
+    assert_eq!(semantics.ptr_arg_rules[1].fixed_size, Some(20));
 
     let sig = HelperSignature::for_id(BpfHelper::TcpSendAck as u32)
         .expect("expected bpf_tcp_send_ack helper signature");

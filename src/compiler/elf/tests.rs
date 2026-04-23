@@ -2434,6 +2434,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         )
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpRawCheckSyncookieIpv4),
+        Some(
+            "helper 'bpf_tcp_raw_check_syncookie_ipv4' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
+                .to_string()
+        )
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::TcpSendAck),
         Some(
             "helper 'bpf_tcp_send_ack' is only valid in tcp_congestion_ops struct_ops programs"
@@ -3017,6 +3024,14 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_call_error(BpfHelper::TcpGenSyncookie),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Xdp.helper_call_error(BpfHelper::TcpRawGenSyncookieIpv4),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::TcpRawCheckSyncookieIpv6),
         None
     );
     assert_eq!(

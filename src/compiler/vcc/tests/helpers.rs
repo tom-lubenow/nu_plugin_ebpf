@@ -10444,6 +10444,93 @@ fn test_verify_mir_for_probe_context_tcp_gen_syncookie_accepts_tc() {
 }
 
 #[test]
+fn test_verify_mir_helper_tcp_raw_syncookie_checks_stack_header_bounds() {
+    let (mut func, entry) = new_mir_function();
+    let ip_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let th_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::TcpRawGenSyncookieIpv4 as u32,
+            args: vec![
+                MirValue::StackSlot(ip_slot),
+                MirValue::StackSlot(th_slot),
+                MirValue::Const(20),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected raw syncookie bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper tcp_raw_gen_syncookie_ipv4 th out of bounds")
+            || e.message.contains("pointer access out of bounds")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_tcp_raw_syncookie_accepts_xdp() {
+    let (mut func, entry) = new_mir_function();
+    let ip_slot = func.alloc_stack_slot(40, 8, StackSlotKind::StringBuffer);
+    let th_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::TcpRawCheckSyncookieIpv6 as u32,
+            args: vec![MirValue::StackSlot(ip_slot), MirValue::StackSlot(th_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected raw syncookie xdp context to verify");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_tcp_raw_syncookie_rejects_kprobe() {
+    let (mut func, entry) = new_mir_function();
+    let ip_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let th_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::TcpRawCheckSyncookieIpv4 as u32,
+            args: vec![MirValue::StackSlot(ip_slot), MirValue::StackSlot(th_slot)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected raw syncookie kprobe program-surface error");
+    assert!(err.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_tcp_raw_check_syncookie_ipv4' is only valid in xdp, tc_action, tc, tcx, and netkit programs",
+        )
+    }));
+}
+
+#[test]
 fn test_verify_mir_helper_sk_storage_get_allows_null_init_value() {
     let (mut func, entry) = new_mir_function();
     let call = func.alloc_block();

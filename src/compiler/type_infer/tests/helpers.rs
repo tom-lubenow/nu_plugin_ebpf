@@ -6952,6 +6952,184 @@ fn test_infer_tcp_gen_syncookie_helper_in_tc_program() {
 }
 
 #[test]
+fn test_infer_tcp_raw_syncookie_helpers_with_stack_headers() {
+    let cases = [
+        (
+            BpfHelper::TcpRawGenSyncookieIpv4,
+            20,
+            20,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(20),
+            ],
+        ),
+        (
+            BpfHelper::TcpRawGenSyncookieIpv6,
+            40,
+            20,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(20),
+            ],
+        ),
+        (
+            BpfHelper::TcpRawCheckSyncookieIpv4,
+            20,
+            20,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::StackSlot(StackSlotId(1)),
+            ],
+        ),
+        (
+            BpfHelper::TcpRawCheckSyncookieIpv6,
+            40,
+            20,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::StackSlot(StackSlotId(1)),
+            ],
+        ),
+    ];
+
+    for (helper, ip_size, th_size, args) in cases {
+        let mut func = make_test_function();
+        let ip_slot = func.alloc_stack_slot(ip_size, 8, StackSlotKind::StringBuffer);
+        let th_slot = func.alloc_stack_slot(th_size, 8, StackSlotKind::StringBuffer);
+        assert_eq!(ip_slot, StackSlotId(0));
+        assert_eq!(th_slot, StackSlotId(1));
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .unwrap_or_else(|errs| panic!("expected {helper:?} to infer: {errs:?}"));
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
+fn test_type_error_tcp_raw_syncookie_helpers_check_header_bounds() {
+    let cases = [
+        (
+            BpfHelper::TcpRawGenSyncookieIpv4,
+            20,
+            8,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(20),
+            ],
+            "helper tcp_raw_gen_syncookie_ipv4 th requires 20 bytes",
+        ),
+        (
+            BpfHelper::TcpRawCheckSyncookieIpv6,
+            20,
+            20,
+            vec![
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::StackSlot(StackSlotId(1)),
+            ],
+            "helper tcp_raw_check_syncookie_ipv6 iph requires 40 bytes",
+        ),
+    ];
+
+    for (helper, ip_size, th_size, args, expected) in cases {
+        let mut func = make_test_function();
+        let ip_slot = func.alloc_stack_slot(ip_size, 8, StackSlotKind::StringBuffer);
+        let th_slot = func.alloc_stack_slot(th_size, 8, StackSlotKind::StringBuffer);
+        assert_eq!(ip_slot, StackSlotId(0));
+        assert_eq!(th_slot, StackSlotId(1));
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected raw syncookie header bounds error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn test_type_error_tcp_raw_syncookie_gen_rejects_negative_len() {
+    let mut func = make_test_function();
+    let ip_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let th_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpRawGenSyncookieIpv4 as u32,
+        args: vec![
+            MirValue::StackSlot(ip_slot),
+            MirValue::StackSlot(th_slot),
+            MirValue::Const(-1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected raw syncookie len error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 204 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_tcp_raw_syncookie_helper_rejects_kprobe_program() {
+    let mut func = make_test_function();
+    let ip_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let th_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpRawCheckSyncookieIpv4 as u32,
+        args: vec![MirValue::StackSlot(ip_slot), MirValue::StackSlot(th_slot)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_tcp_raw_check_syncookie_ipv4 to be rejected on kprobe");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_tcp_raw_check_syncookie_ipv4' is only valid in xdp, tc_action, tc, tcx, and netkit programs",
+        )
+    }));
+}
+
+#[test]
 fn test_infer_helper_sk_storage_get_returns_map_pointer() {
     let mut func = make_test_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
