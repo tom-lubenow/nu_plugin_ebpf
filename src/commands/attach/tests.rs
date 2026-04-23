@@ -5041,15 +5041,22 @@ fn make_local_storage_map_contains_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+fn make_task_storage_map_contains_program_with_owner(
+    owner_field: &str,
+    map_contains_decl: DeclId,
+) -> HirProgram {
     make_local_storage_map_contains_program(
         CellPath {
-            members: vec![string_member("task")],
+            members: vec![string_member(owner_field)],
         },
         b"task_state",
         b"task-storage",
         map_contains_decl,
     )
+}
+
+fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    make_task_storage_map_contains_program_with_owner("task", map_contains_decl)
 }
 
 fn make_sk_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
@@ -5069,13 +5076,26 @@ fn current_task_cgroup_path() -> CellPath {
     }
 }
 
-fn make_cgrp_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+fn current_task_cgroup_alias_path() -> CellPath {
+    CellPath {
+        members: vec![string_member("current_cgroup")],
+    }
+}
+
+fn make_cgrp_storage_map_contains_program_with_owner(
+    owner_path: CellPath,
+    map_contains_decl: DeclId,
+) -> HirProgram {
     make_local_storage_map_contains_program(
-        current_task_cgroup_path(),
+        owner_path,
         b"cgrp_state",
         b"cgrp-storage",
         map_contains_decl,
     )
+}
+
+fn make_cgrp_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    make_cgrp_storage_map_contains_program_with_owner(current_task_cgroup_path(), map_contains_decl)
 }
 
 fn current_file_inode_path() -> CellPath {
@@ -11526,6 +11546,46 @@ fn test_compile_fentry_task_storage_map_contains_program() {
 }
 
 #[test]
+fn test_compile_tracepoint_current_task_storage_map_contains_program() {
+    let hir = make_task_storage_map_contains_program_with_owner("current_task", DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_openat");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("current_task task-storage map-contains should lower through attach flow");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized current_task task-storage map-contains should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "task_state")
+        .expect("expected task-storage runtime map artifact");
+    assert_eq!(map.def.map_type, BpfMapDef::task_storage(8).map_type);
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_cgroup_sock_sk_storage_map_get_program() {
     let hir = make_sk_storage_map_get_program(DeclId::new(42));
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
@@ -12012,6 +12072,67 @@ fn test_compile_kprobe_cgrp_storage_map_contains_program() {
             .iter()
             .any(|reloc| reloc.symbol_name == map.name)
     );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kprobe_current_cgroup_storage_map_contains_program() {
+    let hir = make_cgrp_storage_map_contains_program_with_owner(
+        current_task_cgroup_alias_path(),
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("current_cgroup cgrp-storage map-contains should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[2], MirValue::Const(0))
+                        && matches!(args[3], MirValue::Const(0))
+            )),
+        "expected lookup-only cgrp-storage get helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized current_cgroup cgrp-storage map-contains should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    assert_eq!(map.def.map_type, BpfMapDef::cgrp_storage(8).map_type);
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
