@@ -454,6 +454,17 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray => {
                 self.register_generic_map_spec(map, 4, Some(4))?;
             }
+            MapKind::ArrayOfMaps
+            | MapKind::HashOfMaps
+            | MapKind::DeprecatedCgroupStorage
+            | MapKind::DeprecatedPerCpuCgroupStorage
+            | MapKind::StructOps
+            | MapKind::UserRingBuf
+            | MapKind::Arena => {
+                return Err(CompileError::UnsupportedInstruction(
+                    map.kind.map_fd_materialization_error(&map.name),
+                ));
+            }
             MapKind::SkStorage
             | MapKind::InodeStorage
             | MapKind::TaskStorage
@@ -549,10 +560,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             return Ok(());
         }
         if !map.kind.supports_map_fd_materialization() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map operations do not support map kind {:?} for '{}'",
-                map.kind, map.name
-            )));
+            return Err(CompileError::UnsupportedInstruction(
+                map.kind.map_fd_materialization_error(&map.name),
+            ));
         }
 
         let mut inferred_key_size = key_size.max(1) as u32;
@@ -645,6 +655,17 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::TaskStorage => BpfMapDef::task_storage(spec.value_size),
             MapKind::CgrpStorage => BpfMapDef::cgrp_storage(spec.value_size),
             MapKind::ProgArray => BpfMapDef::prog_array(1024),
+            MapKind::ArrayOfMaps
+            | MapKind::HashOfMaps
+            | MapKind::DeprecatedCgroupStorage
+            | MapKind::DeprecatedPerCpuCgroupStorage
+            | MapKind::StructOps
+            | MapKind::UserRingBuf
+            | MapKind::Arena => {
+                return Err(CompileError::UnsupportedInstruction(
+                    spec.kind.map_fd_materialization_error("<unknown>"),
+                ));
+            }
         };
         Ok(map_def)
     }

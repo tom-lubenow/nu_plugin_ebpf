@@ -1182,19 +1182,26 @@ fn test_program_type_metadata_for_iter() {
 #[test]
 fn test_bpf_map_type_constants_match_kernel_uapi() {
     assert_eq!(BpfMapType::CgroupArray as u32, 8);
+    assert_eq!(BpfMapType::ArrayOfMaps as u32, 12);
+    assert_eq!(BpfMapType::HashOfMaps as u32, 13);
     assert_eq!(BpfMapType::DevMap as u32, 14);
     assert_eq!(BpfMapType::SockMap as u32, 15);
     assert_eq!(BpfMapType::CpuMap as u32, 16);
     assert_eq!(BpfMapType::XskMap as u32, 17);
     assert_eq!(BpfMapType::SockHash as u32, 18);
+    assert_eq!(BpfMapType::CgroupStorage as u32, 19);
     assert_eq!(BpfMapType::ReuseportSockArray as u32, 20);
+    assert_eq!(BpfMapType::PerCpuCgroupStorage as u32, 21);
     assert_eq!(BpfMapType::SkStorage as u32, 24);
     assert_eq!(BpfMapType::DevMapHash as u32, 25);
+    assert_eq!(BpfMapType::StructOps as u32, 26);
     assert_eq!(BpfMapType::RingBuf as u32, 27);
     assert_eq!(BpfMapType::InodeStorage as u32, 28);
     assert_eq!(BpfMapType::TaskStorage as u32, 29);
     assert_eq!(BpfMapType::BloomFilter as u32, 30);
+    assert_eq!(BpfMapType::UserRingBuf as u32, 31);
     assert_eq!(BpfMapType::CgrpStorage as u32, 32);
+    assert_eq!(BpfMapType::Arena as u32, 33);
 }
 
 #[test]
@@ -8734,6 +8741,30 @@ fn test_bpf_map_def_reports_modeled_map_kind() {
         BpfMapDef::reuseport_sockarray(16).map_kind(),
         Some(MapKind::ReuseportSockArray)
     );
+    assert_eq!(
+        BpfMapDef {
+            map_type: BpfMapType::ArrayOfMaps as u32,
+            key_size: 4,
+            value_size: 4,
+            max_entries: 1,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+        .map_kind(),
+        Some(MapKind::ArrayOfMaps)
+    );
+    assert_eq!(
+        BpfMapDef {
+            map_type: BpfMapType::UserRingBuf as u32,
+            key_size: 0,
+            value_size: 0,
+            max_entries: 4096,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+        .map_kind(),
+        Some(MapKind::UserRingBuf)
+    );
 
     let unknown = BpfMapDef {
         map_type: 999,
@@ -8781,6 +8812,70 @@ fn test_validate_runtime_artifacts_rejects_unknown_runtime_map_type() {
     assert!(
         matches!(err, CompileError::InvalidProgram(msg) if msg.contains("runtime map 'scratch' uses unsupported map type 999"))
     );
+}
+
+#[test]
+fn test_validate_runtime_artifacts_rejects_known_unmodeled_runtime_map_types() {
+    for (map_type, expected) in [
+        (
+            BpfMapType::ArrayOfMaps,
+            "requires inner-map metadata, which is not modeled",
+        ),
+        (
+            BpfMapType::HashOfMaps,
+            "requires inner-map metadata, which is not modeled",
+        ),
+        (BpfMapType::StructOps, "reserved for struct_ops objects"),
+        (
+            BpfMapType::UserRingBuf,
+            "user-ringbuf drain callbacks are not modeled",
+        ),
+        (
+            BpfMapType::Arena,
+            "arena map_extra/mmap support is not modeled",
+        ),
+        (
+            BpfMapType::CgroupStorage,
+            "deprecated cgroup-storage map type",
+        ),
+        (
+            BpfMapType::PerCpuCgroupStorage,
+            "deprecated cgroup-storage map type",
+        ),
+    ] {
+        let program = EbpfProgram::with_maps(
+            EbpfProgramType::Xdp,
+            "lo",
+            "test",
+            vec![],
+            0,
+            vec![EbpfMap {
+                name: "scratch".to_string(),
+                def: BpfMapDef {
+                    map_type: map_type as u32,
+                    key_size: 4,
+                    value_size: 4,
+                    max_entries: 1,
+                    map_flags: 0,
+                    pinning: BpfPinningType::None,
+                },
+            }],
+            vec![],
+            vec![],
+            None,
+            None,
+            HashMap::new(),
+            HashMap::new(),
+        );
+
+        let err = program
+            .validate_runtime_artifacts()
+            .expect_err("expected known unmodeled map type validation error");
+        assert!(
+            matches!(err, CompileError::InvalidProgram(ref msg) if msg.contains(expected)),
+            "unexpected error for {map_type:?}: {err:?}"
+        );
+    }
 }
 
 #[test]

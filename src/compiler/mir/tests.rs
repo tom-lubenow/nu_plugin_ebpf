@@ -46,10 +46,17 @@ fn test_map_kind_surface_classification() {
         MapKind::PerCpuArray,
         MapKind::LruPerCpuHash,
         MapKind::PerfEventArray,
+        MapKind::ArrayOfMaps,
+        MapKind::HashOfMaps,
+        MapKind::DeprecatedCgroupStorage,
+        MapKind::DeprecatedPerCpuCgroupStorage,
         MapKind::Queue,
         MapKind::Stack,
         MapKind::BloomFilter,
         MapKind::RingBuf,
+        MapKind::StructOps,
+        MapKind::UserRingBuf,
+        MapKind::Arena,
         MapKind::StackTrace,
         MapKind::DevMap,
         MapKind::DevMapHash,
@@ -64,7 +71,20 @@ fn test_map_kind_surface_classification() {
         MapKind::CgrpStorage,
         MapKind::ProgArray,
     ] {
-        assert!(kind.supports_map_fd_materialization());
+        assert_eq!(
+            kind.supports_map_fd_materialization(),
+            !matches!(
+                kind,
+                MapKind::ArrayOfMaps
+                    | MapKind::HashOfMaps
+                    | MapKind::DeprecatedCgroupStorage
+                    | MapKind::DeprecatedPerCpuCgroupStorage
+                    | MapKind::StructOps
+                    | MapKind::UserRingBuf
+                    | MapKind::Arena
+            ),
+            "{kind:?}"
+        );
     }
 
     assert!(MapKind::Queue.is_queue_or_stack());
@@ -100,5 +120,6 @@ fn test_map_kind_surface_classification() {
     assert!(MapKind::Stack.is_keyless_map());
     assert!(MapKind::BloomFilter.is_keyless_map());
     assert!(MapKind::RingBuf.is_keyless_map());
+    assert!(!MapKind::UserRingBuf.is_keyless_map());
     assert!(!MapKind::Array.is_keyless_map());
 }

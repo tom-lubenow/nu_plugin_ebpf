@@ -171,21 +171,28 @@ pub enum BpfMapType {
     LruHash = 9,
     LruPerCpuHash = 10,
     LpmTrie = 11,
+    ArrayOfMaps = 12,
+    HashOfMaps = 13,
     DevMap = 14,
     SockMap = 15,
     CpuMap = 16,
     XskMap = 17,
     SockHash = 18,
+    CgroupStorage = 19,
     ReuseportSockArray = 20,
+    PerCpuCgroupStorage = 21,
     Queue = 22,
     Stack = 23,
     SkStorage = 24,
     DevMapHash = 25,
+    StructOps = 26,
     RingBuf = 27,
     InodeStorage = 28,
     TaskStorage = 29,
     BloomFilter = 30,
+    UserRingBuf = 31,
     CgrpStorage = 32,
+    Arena = 33,
 }
 
 impl BpfMapType {
@@ -202,21 +209,28 @@ impl BpfMapType {
             x if x == Self::LruHash as u32 => Some(Self::LruHash),
             x if x == Self::LruPerCpuHash as u32 => Some(Self::LruPerCpuHash),
             x if x == Self::LpmTrie as u32 => Some(Self::LpmTrie),
+            x if x == Self::ArrayOfMaps as u32 => Some(Self::ArrayOfMaps),
+            x if x == Self::HashOfMaps as u32 => Some(Self::HashOfMaps),
             x if x == Self::DevMap as u32 => Some(Self::DevMap),
             x if x == Self::SockMap as u32 => Some(Self::SockMap),
             x if x == Self::CpuMap as u32 => Some(Self::CpuMap),
             x if x == Self::XskMap as u32 => Some(Self::XskMap),
             x if x == Self::SockHash as u32 => Some(Self::SockHash),
+            x if x == Self::CgroupStorage as u32 => Some(Self::CgroupStorage),
             x if x == Self::ReuseportSockArray as u32 => Some(Self::ReuseportSockArray),
+            x if x == Self::PerCpuCgroupStorage as u32 => Some(Self::PerCpuCgroupStorage),
             x if x == Self::Queue as u32 => Some(Self::Queue),
             x if x == Self::Stack as u32 => Some(Self::Stack),
             x if x == Self::SkStorage as u32 => Some(Self::SkStorage),
             x if x == Self::DevMapHash as u32 => Some(Self::DevMapHash),
+            x if x == Self::StructOps as u32 => Some(Self::StructOps),
             x if x == Self::RingBuf as u32 => Some(Self::RingBuf),
             x if x == Self::InodeStorage as u32 => Some(Self::InodeStorage),
             x if x == Self::TaskStorage as u32 => Some(Self::TaskStorage),
             x if x == Self::BloomFilter as u32 => Some(Self::BloomFilter),
+            x if x == Self::UserRingBuf as u32 => Some(Self::UserRingBuf),
             x if x == Self::CgrpStorage as u32 => Some(Self::CgrpStorage),
+            x if x == Self::Arena as u32 => Some(Self::Arena),
             _ => None,
         }
     }
@@ -238,24 +252,32 @@ impl BpfMapType {
             Self::LruHash => "LruHash",
             Self::LruPerCpuHash => "LruPerCpuHash",
             Self::LpmTrie => "LpmTrie",
+            Self::ArrayOfMaps => "ArrayOfMaps",
+            Self::HashOfMaps => "HashOfMaps",
             Self::DevMap => "DevMap",
             Self::SockMap => "SockMap",
             Self::CpuMap => "CpuMap",
             Self::XskMap => "XskMap",
             Self::SockHash => "SockHash",
+            Self::CgroupStorage => "CgroupStorage",
             Self::ReuseportSockArray => "ReuseportSockArray",
+            Self::PerCpuCgroupStorage => "PerCpuCgroupStorage",
             Self::Queue => "Queue",
             Self::Stack => "Stack",
             Self::SkStorage => "SkStorage",
             Self::DevMapHash => "DevMapHash",
+            Self::StructOps => "StructOps",
             Self::RingBuf => "RingBuf",
             Self::InodeStorage => "InodeStorage",
             Self::TaskStorage => "TaskStorage",
             Self::BloomFilter => "BloomFilter",
+            Self::UserRingBuf => "UserRingBuf",
             Self::CgrpStorage => "CgrpStorage",
+            Self::Arena => "Arena",
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn map_kind(self) -> MapKind {
         match self {
             Self::Hash => MapKind::Hash,
@@ -269,21 +291,28 @@ impl BpfMapType {
             Self::LruHash => MapKind::LruHash,
             Self::LruPerCpuHash => MapKind::LruPerCpuHash,
             Self::LpmTrie => MapKind::LpmTrie,
+            Self::ArrayOfMaps => MapKind::ArrayOfMaps,
+            Self::HashOfMaps => MapKind::HashOfMaps,
             Self::DevMap => MapKind::DevMap,
             Self::SockMap => MapKind::SockMap,
             Self::CpuMap => MapKind::CpuMap,
             Self::XskMap => MapKind::XskMap,
             Self::SockHash => MapKind::SockHash,
+            Self::CgroupStorage => MapKind::DeprecatedCgroupStorage,
             Self::ReuseportSockArray => MapKind::ReuseportSockArray,
+            Self::PerCpuCgroupStorage => MapKind::DeprecatedPerCpuCgroupStorage,
             Self::Queue => MapKind::Queue,
             Self::Stack => MapKind::Stack,
             Self::SkStorage => MapKind::SkStorage,
             Self::DevMapHash => MapKind::DevMapHash,
+            Self::StructOps => MapKind::StructOps,
             Self::RingBuf => MapKind::RingBuf,
             Self::InodeStorage => MapKind::InodeStorage,
             Self::TaskStorage => MapKind::TaskStorage,
             Self::BloomFilter => MapKind::BloomFilter,
+            Self::UserRingBuf => MapKind::UserRingBuf,
             Self::CgrpStorage => MapKind::CgrpStorage,
+            Self::Arena => MapKind::Arena,
         }
     }
 }
@@ -312,6 +341,7 @@ pub struct BpfMapDef {
 }
 
 impl BpfMapDef {
+    #[allow(dead_code)]
     pub(crate) fn map_kind(&self) -> Option<MapKind> {
         BpfMapType::from_raw(self.map_type).map(BpfMapType::map_kind)
     }
@@ -366,6 +396,38 @@ impl BpfMapDef {
         };
 
         match map_type {
+            BpfMapType::ArrayOfMaps | BpfMapType::HashOfMaps => {
+                return Err(CompileError::InvalidProgram(format!(
+                    "runtime map '{}' ({}) requires inner-map metadata, which is not modeled by this compiler yet",
+                    map_name,
+                    self.map_type_name()
+                )));
+            }
+            BpfMapType::CgroupStorage | BpfMapType::PerCpuCgroupStorage => {
+                return Err(CompileError::InvalidProgram(format!(
+                    "runtime map '{}' ({}) uses a deprecated cgroup-storage map type; use cgrp-storage local-storage maps instead",
+                    map_name,
+                    self.map_type_name()
+                )));
+            }
+            BpfMapType::StructOps => {
+                return Err(CompileError::InvalidProgram(format!(
+                    "runtime map '{}' (StructOps) is reserved for struct_ops objects; use struct_ops attach syntax instead of generic runtime maps",
+                    map_name
+                )));
+            }
+            BpfMapType::UserRingBuf => {
+                return Err(CompileError::InvalidProgram(format!(
+                    "runtime map '{}' (UserRingBuf) is not supported yet; user-ringbuf drain callbacks are not modeled",
+                    map_name
+                )));
+            }
+            BpfMapType::Arena => {
+                return Err(CompileError::InvalidProgram(format!(
+                    "runtime map '{}' (Arena) is not supported yet; arena map_extra/mmap support is not modeled",
+                    map_name
+                )));
+            }
             BpfMapType::Hash
             | BpfMapType::LruHash
             | BpfMapType::PerCpuHash

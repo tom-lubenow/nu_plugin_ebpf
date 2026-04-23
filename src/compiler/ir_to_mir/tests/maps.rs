@@ -2171,6 +2171,45 @@ fn test_lower_map_put_rejects_prog_array_kind_with_tail_call_guidance() {
 }
 
 #[test]
+fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
+
+    for (kind, expected) in [
+        ("array-of-maps", "inner-map metadata is not modeled yet"),
+        ("hash-of-maps", "inner-map metadata is not modeled yet"),
+        ("struct-ops", "reserved for struct_ops objects"),
+        (
+            "user-ringbuf",
+            "user-ringbuf drain callbacks are not modeled yet",
+        ),
+        ("arena", "arena map_extra/mmap support is not modeled yet"),
+        ("deprecated-cgroup-storage", "deprecated cgroup-storage map"),
+        ("per-cpu-cgroup-storage", "deprecated cgroup-storage map"),
+    ] {
+        let hir = make_map_put_program(DeclId::new(42), 0, kind);
+        let err = match lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Ok(_) => panic!("{kind} map-put should be rejected during lowering"),
+            Err(err) => err,
+        };
+
+        match err {
+            CompileError::UnsupportedInstruction(msg) => {
+                assert!(msg.contains(expected), "{kind}: {msg}");
+            }
+            other => panic!("unexpected lowering error for {kind}: {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn test_lower_map_get_rejects_sockmap_kind() {
     let mut hir = make_map_get_projection_program(DeclId::new(42), DeclId::new(43));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");

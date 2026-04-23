@@ -401,6 +401,7 @@ Near-term priority order:
   - Recent progress: socket-map, local-storage, redirect-map, queue/stack, counter-map, array-index, keyless-map, and runtime map-FD materialization classification now lives on `MapKind`, reducing duplicated map-family matches in Nu-call lowering, verifier/VCC layout checks, and backend map registration.
   - Recent progress: runtime artifact validation now requires `GenericMaps` support for arbitrary emitted maps, while keeping reserved maps like ring buffers, stack traces, counters, and prog arrays tied to their dedicated capabilities.
   - Recent progress: runtime artifact validation now rejects unknown BPF map types and malformed modeled map definitions (for example keyless maps with keys or fixed-FD maps with the wrong key/value widths) before loader/kernel handoff.
+  - Recent progress: the program model now recognizes the remaining common kernel map families that are not materializable yet (`array-of-maps`, `hash-of-maps`, `user-ringbuf`, `arena`, `struct_ops`, and deprecated cgroup-storage map types) and rejects them with targeted diagnostics instead of treating them as unknown map kinds.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.

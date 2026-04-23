@@ -190,6 +190,12 @@ impl<'a> HirToMirLowering<'a> {
             "lru-per-cpu-hash" | "lru-percpu-hash" | "lru_per_cpu_hash" | "lrupercpuhash" => {
                 Some(MapKind::LruPerCpuHash)
             }
+            "array-of-maps" | "array_of_maps" | "arrayofmaps" | "map-array" | "map_array" => {
+                Some(MapKind::ArrayOfMaps)
+            }
+            "hash-of-maps" | "hash_of_maps" | "hashofmaps" | "map-hash" | "map_hash" => {
+                Some(MapKind::HashOfMaps)
+            }
             "devmap" | "dev-map" | "dev_map" => Some(MapKind::DevMap),
             "devmap-hash" | "devmap_hash" | "devmaphash" | "dev-map-hash" | "dev_map_hash" => {
                 Some(MapKind::DevMapHash)
@@ -213,6 +219,18 @@ impl<'a> HirToMirLowering<'a> {
             "ringbuf" | "ring-buf" | "ring_buf" | "ring-buffer" | "ring_buffer" => {
                 Some(MapKind::RingBuf)
             }
+            "struct-ops" | "struct_ops" | "structops" => Some(MapKind::StructOps),
+            "user-ringbuf" | "user_ringbuf" | "userringbuf" | "user-ring-buffer"
+            | "user_ring_buffer" => Some(MapKind::UserRingBuf),
+            "arena" => Some(MapKind::Arena),
+            "deprecated-cgroup-storage"
+            | "deprecated_cgroup_storage"
+            | "cgroup-storage-deprecated"
+            | "cgroup_storage_deprecated" => Some(MapKind::DeprecatedCgroupStorage),
+            "per-cpu-cgroup-storage"
+            | "percpu-cgroup-storage"
+            | "per_cpu_cgroup_storage"
+            | "percpucgroupstorage" => Some(MapKind::DeprecatedPerCpuCgroupStorage),
             "stack-trace" | "stack_trace" | "stacktrace" => Some(MapKind::StackTrace),
             "prog-array" | "prog_array" | "progarray" | "program-array" | "program_array"
             | "programarray" => Some(MapKind::ProgArray),
@@ -240,6 +258,21 @@ impl<'a> HirToMirLowering<'a> {
             ),
             MapKind::ReuseportSockArray => format!(
                 "{context} --kind {kind_arg} is reserved for sk_reuseport socket selection; use redirect-socket with --kind reuseport-sockarray instead of generic map commands"
+            ),
+            MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
+                "{context} --kind {kind_arg} names a map-in-map family; inner-map metadata is not modeled yet"
+            ),
+            MapKind::StructOps => format!(
+                "{context} --kind {kind_arg} is reserved for struct_ops objects; use struct_ops attach syntax instead of generic map commands"
+            ),
+            MapKind::UserRingBuf => format!(
+                "{context} --kind {kind_arg} names a user-ringbuf map; user-ringbuf drain callbacks are not modeled yet"
+            ),
+            MapKind::Arena => format!(
+                "{context} --kind {kind_arg} names an arena map; arena map_extra/mmap support is not modeled yet"
+            ),
+            MapKind::DeprecatedCgroupStorage | MapKind::DeprecatedPerCpuCgroupStorage => format!(
+                "{context} --kind {kind_arg} names a deprecated cgroup-storage map; use cgrp-storage local-storage maps instead"
             ),
             _ => return None,
         };

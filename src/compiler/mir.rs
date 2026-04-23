@@ -65,10 +65,17 @@ pub enum MapKind {
     PerCpuArray,
     LruPerCpuHash,
     PerfEventArray,
+    ArrayOfMaps,
+    HashOfMaps,
+    DeprecatedCgroupStorage,
+    DeprecatedPerCpuCgroupStorage,
     Queue,
     Stack,
     BloomFilter,
     RingBuf,
+    StructOps,
+    UserRingBuf,
+    Arena,
     StackTrace,
     DevMap,
     DevMapHash,
@@ -134,33 +141,41 @@ impl MapKind {
     }
 
     pub fn supports_map_fd_materialization(self) -> bool {
+        !matches!(
+            self,
+            MapKind::ArrayOfMaps
+                | MapKind::HashOfMaps
+                | MapKind::DeprecatedCgroupStorage
+                | MapKind::DeprecatedPerCpuCgroupStorage
+                | MapKind::StructOps
+                | MapKind::UserRingBuf
+                | MapKind::Arena
+        )
+    }
+
+    pub fn map_fd_materialization_error(self, map_name: &str) -> String {
         match self {
-            MapKind::Hash
-            | MapKind::Array
-            | MapKind::CgroupArray
-            | MapKind::LpmTrie
-            | MapKind::LruHash
-            | MapKind::PerCpuHash
-            | MapKind::PerCpuArray
-            | MapKind::LruPerCpuHash
-            | MapKind::PerfEventArray
-            | MapKind::Queue
-            | MapKind::Stack
-            | MapKind::BloomFilter
-            | MapKind::RingBuf
-            | MapKind::StackTrace
-            | MapKind::DevMap
-            | MapKind::DevMapHash
-            | MapKind::CpuMap
-            | MapKind::XskMap
-            | MapKind::SockMap
-            | MapKind::SockHash
-            | MapKind::ReuseportSockArray
-            | MapKind::SkStorage
-            | MapKind::InodeStorage
-            | MapKind::TaskStorage
-            | MapKind::CgrpStorage
-            | MapKind::ProgArray => true,
+            MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
+                "map '{}' uses {:?}, which requires inner-map metadata not modeled by this compiler yet",
+                map_name, self
+            ),
+            MapKind::DeprecatedCgroupStorage | MapKind::DeprecatedPerCpuCgroupStorage => format!(
+                "map '{}' uses deprecated {:?}; use cgrp-storage local-storage maps instead",
+                map_name, self
+            ),
+            MapKind::StructOps => format!(
+                "map '{}' uses StructOps; struct_ops maps are emitted through struct_ops object support, not generic map materialization",
+                map_name
+            ),
+            MapKind::UserRingBuf => format!(
+                "map '{}' uses UserRingBuf, but user-ringbuf drain callbacks are not modeled yet",
+                map_name
+            ),
+            MapKind::Arena => format!(
+                "map '{}' uses Arena, but arena map_extra/mmap support is not modeled yet",
+                map_name
+            ),
+            _ => format!("map '{}' uses unsupported map kind {:?}", map_name, self),
         }
     }
 
