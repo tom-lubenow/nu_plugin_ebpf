@@ -5082,6 +5082,21 @@ fn make_cgrp_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgr
     )
 }
 
+fn current_file_inode_path() -> CellPath {
+    CellPath {
+        members: vec![string_member("arg0"), string_member("f_inode")],
+    }
+}
+
+fn make_inode_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    make_local_storage_map_contains_program(
+        current_file_inode_path(),
+        b"inode_state",
+        b"inode-storage",
+        map_contains_decl,
+    )
+}
+
 fn make_local_storage_map_get_program(
     owner_path: CellPath,
     map_name: &[u8],
@@ -5267,6 +5282,15 @@ fn make_cgrp_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
     )
 }
 
+fn make_inode_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
+    make_local_storage_map_get_program(
+        current_file_inode_path(),
+        b"inode_state",
+        b"inode-storage",
+        map_get_decl,
+    )
+}
+
 fn make_local_storage_map_delete_program(
     owner_path: CellPath,
     map_name: &[u8],
@@ -5385,6 +5409,15 @@ fn make_cgrp_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
         current_task_cgroup_path(),
         b"cgrp_state",
         b"cgrp-storage",
+        map_delete_decl,
+    )
+}
+
+fn make_inode_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+    make_local_storage_map_delete_program(
+        current_file_inode_path(),
+        b"inode_state",
+        b"inode-storage",
         map_delete_decl,
     )
 }
@@ -11920,6 +11953,262 @@ fn test_compile_kprobe_cgrp_storage_map_contains_program() {
         .find(|map| map.name == "cgrp_state")
         .expect("expected cgrp-storage runtime map artifact");
     assert_eq!(map.def.map_type, BpfMapDef::cgrp_storage(8).map_type);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_lsm_inode_storage_map_get_program() {
+    let hir = make_inode_storage_map_get_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("inode-storage map-get should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::InodeStorage,
+                    },
+                    ..
+                } if name == "inode_state"
+            )),
+        "expected inode-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::InodeStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(1))
+            )),
+        "expected inode-storage get helper call with explicit flags"
+    );
+    let inode_arg_ty = lowering
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { helper, args, .. }
+                if *helper == BpfHelper::InodeStorageGet as u32 =>
+            {
+                match args.get(1) {
+                    Some(MirValue::VReg(vreg)) => lowering.type_hints.main.get(vreg),
+                    _ => None,
+                }
+            }
+            _ => None,
+        });
+    assert!(
+        inode_arg_ty.is_some_and(MirType::is_inode_ptr),
+        "expected inode-storage owner to type as inode pointer, got {:?}",
+        inode_arg_ty
+    );
+    assert!(matches!(
+        lowering.type_hints.generic_map_value_types.get(&MapRef {
+            name: "inode_state".to_string(),
+            kind: MapKind::InodeStorage,
+        }),
+        Some(MirType::Struct { fields, .. })
+            if fields.len() == 1 && fields[0].name == "hits" && fields[0].ty == MirType::I64
+    ));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized inode-storage map-get should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "inode_state")
+        .expect("expected inode-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::inode_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_lsm_inode_storage_map_delete_program() {
+    let hir = make_inode_storage_map_delete_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("inode-storage map-delete should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::InodeStorage,
+                    },
+                    ..
+                } if name == "inode_state"
+            )),
+        "expected inode-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::InodeStorageDelete as u32 && args.len() == 2
+            )),
+        "expected inode-storage delete helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized inode-storage map-delete should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "inode_state")
+        .expect("expected inode-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::inode_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_lsm_inode_storage_map_contains_program() {
+    let hir = make_inode_storage_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("inode-storage map-contains should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::InodeStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[2], MirValue::Const(0))
+                        && matches!(args[3], MirValue::Const(0))
+            )),
+        "expected lookup-only inode-storage get helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized inode-storage map-contains should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "inode_state")
+        .expect("expected inode-storage runtime map artifact");
+    assert_eq!(map.def.map_type, BpfMapDef::inode_storage(8).map_type);
     assert!(
         result
             .relocations
