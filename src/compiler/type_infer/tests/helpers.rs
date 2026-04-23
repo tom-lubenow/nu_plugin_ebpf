@@ -8099,6 +8099,10 @@ fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
             MirType::named_kernel_struct_ptr("udp6_sock"),
         ),
         (
+            BpfHelper::SkcToMptcpSock,
+            MirType::named_kernel_struct_ptr("mptcp_sock"),
+        ),
+        (
             BpfHelper::SkcToUnixSock,
             MirType::named_kernel_struct_ptr("unix_sock"),
         ),
@@ -9002,6 +9006,10 @@ fn test_type_error_helper_additional_skc_casts_reject_non_kernel_pointer() {
         (
             BpfHelper::SkcToUdp6Sock,
             "helper skc_to_udp6_sock sk expects pointer in [Kernel], got Stack",
+        ),
+        (
+            BpfHelper::SkcToMptcpSock,
+            "helper skc_to_mptcp_sock sk expects pointer in [Kernel], got Stack",
         ),
         (
             BpfHelper::SkcToUnixSock,

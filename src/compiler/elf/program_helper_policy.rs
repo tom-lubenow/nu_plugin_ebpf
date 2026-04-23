@@ -1026,6 +1026,7 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::SkcToTcpTimewaitSock
         | BpfHelper::SkcToTcpRequestSock
         | BpfHelper::SkcToUdp6Sock
+        | BpfHelper::SkcToMptcpSock
         | BpfHelper::SkcToUnixSock => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::SocketCast,
         },

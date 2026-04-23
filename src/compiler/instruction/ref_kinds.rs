@@ -697,6 +697,7 @@ pub const fn helper_pointer_arg_ref_kind(
             | BpfHelper::SkcToTcpTimewaitSock
             | BpfHelper::SkcToTcpRequestSock
             | BpfHelper::SkcToUdp6Sock
+            | BpfHelper::SkcToMptcpSock
             | BpfHelper::SkcToUnixSock,
             0,
         )

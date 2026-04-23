@@ -154,6 +154,7 @@ impl BpfHelper {
             138 => Some(Self::SkcToTcpTimewaitSock),
             139 => Some(Self::SkcToTcpRequestSock),
             140 => Some(Self::SkcToUdp6Sock),
+            196 => Some(Self::SkcToMptcpSock),
             141 => Some(Self::GetTaskStack),
             145 => Some(Self::InodeStorageGet),
             146 => Some(Self::InodeStorageDelete),
@@ -926,6 +927,7 @@ impl BpfHelper {
             | BpfHelper::SkcToTcpTimewaitSock
             | BpfHelper::SkcToTcpRequestSock
             | BpfHelper::SkcToUdp6Sock
+            | BpfHelper::SkcToMptcpSock
             | BpfHelper::SkcToUnixSock => HelperSignature {
                 min_args: 1,
                 max_args: 1,

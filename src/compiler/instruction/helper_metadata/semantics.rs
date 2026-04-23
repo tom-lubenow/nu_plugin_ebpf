@@ -1544,6 +1544,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const SKC_TO_MPTCP_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper skc_to_mptcp_sock sk",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const SKC_TO_UNIX_SOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 0,
             op: "helper skc_to_unix_sock sk",
@@ -2327,6 +2335,11 @@ impl BpfHelper {
             },
             BpfHelper::SkcToUdp6Sock => HelperSemantics {
                 ptr_arg_rules: SKC_TO_UDP6_SOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SkcToMptcpSock => HelperSemantics {
+                ptr_arg_rules: SKC_TO_MPTCP_SOCK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

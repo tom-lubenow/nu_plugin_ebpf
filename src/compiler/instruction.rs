@@ -422,6 +422,8 @@ pub enum BpfHelper {
     SkcToTcpRequestSock = 139,
     /// struct udp6_sock *bpf_skc_to_udp6_sock(sk)
     SkcToUdp6Sock = 140,
+    /// struct mptcp_sock *bpf_skc_to_mptcp_sock(sk)
+    SkcToMptcpSock = 196,
     /// long bpf_get_task_stack(task, buf, size, flags)
     GetTaskStack = 141,
     /// struct unix_sock *bpf_skc_to_unix_sock(sk)
@@ -635,6 +637,7 @@ impl BpfHelper {
             BpfHelper::SkcToTcpTimewaitSock => "bpf_skc_to_tcp_timewait_sock",
             BpfHelper::SkcToTcpRequestSock => "bpf_skc_to_tcp_request_sock",
             BpfHelper::SkcToUdp6Sock => "bpf_skc_to_udp6_sock",
+            BpfHelper::SkcToMptcpSock => "bpf_skc_to_mptcp_sock",
             BpfHelper::GetTaskStack => "bpf_get_task_stack",
             BpfHelper::SkcToUnixSock => "bpf_skc_to_unix_sock",
             BpfHelper::InodeStorageGet => "bpf_inode_storage_get",
@@ -828,6 +831,7 @@ impl BpfHelper {
             "skc_to_tcp_timewait_sock" => Some(Self::SkcToTcpTimewaitSock),
             "skc_to_tcp_request_sock" => Some(Self::SkcToTcpRequestSock),
             "skc_to_udp6_sock" => Some(Self::SkcToUdp6Sock),
+            "skc_to_mptcp_sock" => Some(Self::SkcToMptcpSock),
             "get_task_stack" => Some(Self::GetTaskStack),
             "skc_to_unix_sock" => Some(Self::SkcToUnixSock),
             "inode_storage_get" => Some(Self::InodeStorageGet),
