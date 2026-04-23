@@ -4950,7 +4950,12 @@ fn make_bloom_filter_map_contains_program(map_contains_decl: DeclId) -> HirProgr
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+fn make_local_storage_map_contains_program(
+    owner_path: CellPath,
+    map_name: &[u8],
+    kind_arg: &[u8],
+    map_contains_decl: DeclId,
+) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -4962,9 +4967,7 @@ fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgr
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(1),
-                    lit: HirLiteral::CellPath(Box::new(CellPath {
-                        members: vec![string_member("task")],
-                    })),
+                    lit: HirLiteral::CellPath(Box::new(owner_path)),
                 },
                 HirStmt::FollowCellPath {
                     src_dst: RegId::new(0),
@@ -4972,11 +4975,11 @@ fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgr
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(2),
-                    lit: HirLiteral::String(b"task_state".to_vec()),
+                    lit: HirLiteral::String(map_name.to_vec()),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(3),
-                    lit: HirLiteral::String(b"task-storage".to_vec()),
+                    lit: HirLiteral::String(kind_arg.to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: map_contains_decl,
@@ -5000,7 +5003,34 @@ fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgr
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
+fn make_task_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    make_local_storage_map_contains_program(
+        CellPath {
+            members: vec![string_member("task")],
+        },
+        b"task_state",
+        b"task-storage",
+        map_contains_decl,
+    )
+}
+
+fn make_sk_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
+    make_local_storage_map_contains_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        b"sock_state",
+        b"sk-storage",
+        map_contains_decl,
+    )
+}
+
+fn make_local_storage_map_get_program(
+    owner_path: CellPath,
+    map_name: &[u8],
+    kind_arg: &[u8],
+    map_get_decl: DeclId,
+) -> HirProgram {
     let ctx_var = VarId::new(0);
     let lookup_var = VarId::new(1);
     let func = HirFunction {
@@ -5014,9 +5044,7 @@ fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(1),
-                        lit: HirLiteral::CellPath(Box::new(CellPath {
-                            members: vec![string_member("task")],
-                        })),
+                        lit: HirLiteral::CellPath(Box::new(owner_path)),
                     },
                     HirStmt::FollowCellPath {
                         src_dst: RegId::new(0),
@@ -5024,11 +5052,11 @@ fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(2),
-                        lit: HirLiteral::String(b"task_state".to_vec()),
+                        lit: HirLiteral::String(map_name.to_vec()),
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(3),
-                        lit: HirLiteral::String(b"task-storage".to_vec()),
+                        lit: HirLiteral::String(kind_arg.to_vec()),
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(4),
@@ -5123,56 +5151,139 @@ fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_task_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
+    make_local_storage_map_get_program(
+        CellPath {
+            members: vec![string_member("task")],
+        },
+        b"task_state",
+        b"task-storage",
+        map_get_decl,
+    )
+}
+
+fn make_sk_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
+    make_local_storage_map_get_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        b"sock_state",
+        b"sk-storage",
+        map_get_decl,
+    )
+}
+
+fn make_local_storage_map_delete_program(
+    owner_path: CellPath,
+    map_name: &[u8],
+    kind_arg: &[u8],
+    map_delete_decl: DeclId,
+) -> HirProgram {
     let ctx_var = VarId::new(0);
-    let stmts = vec![
-        HirStmt::LoadVariable {
-            dst: RegId::new(0),
-            var_id: ctx_var,
-        },
-        HirStmt::LoadLiteral {
-            dst: RegId::new(1),
-            lit: HirLiteral::CellPath(Box::new(CellPath {
-                members: vec![string_member("task")],
-            })),
-        },
-        HirStmt::FollowCellPath {
-            src_dst: RegId::new(0),
-            path: RegId::new(1),
-        },
-        HirStmt::LoadLiteral {
-            dst: RegId::new(2),
-            lit: HirLiteral::String(b"task_state".to_vec()),
-        },
-        HirStmt::LoadLiteral {
-            dst: RegId::new(3),
-            lit: HirLiteral::String(b"task-storage".to_vec()),
-        },
-        HirStmt::Call {
-            decl_id: map_delete_decl,
-            src_dst: RegId::new(0),
-            args: HirCallArgs {
-                positional: vec![RegId::new(2)],
-                named: vec![(b"kind".to_vec(), RegId::new(3))],
-                ..Default::default()
-            },
-        },
-    ];
-    let spans_len = stmts.len() + 1;
+    let owner_var = VarId::new(1);
     let func = HirFunction {
-        blocks: vec![HirBlock {
-            id: HirBlockId(0),
-            stmts,
-            terminator: HirTerminator::Return { src: RegId::new(0) },
-        }],
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(owner_path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: owner_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: owner_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(map_name.to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(kind_arg.to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_delete_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(2)],
+                            named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            ..Default::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
         entry: HirBlockId(0),
-        spans: vec![Span::test_data(); spans_len],
-        ast: vec![None; spans_len],
+        spans: vec![Span::test_data(); 14],
+        ast: vec![None; 14],
         comments: vec![],
-        register_count: 4,
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_task_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+    make_local_storage_map_delete_program(
+        CellPath {
+            members: vec![string_member("task")],
+        },
+        b"task_state",
+        b"task-storage",
+        map_delete_decl,
+    )
+}
+
+fn make_sk_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+    make_local_storage_map_delete_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        b"sock_state",
+        b"sk-storage",
+        map_delete_decl,
+    )
 }
 
 fn make_cgroup_array_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
@@ -11216,6 +11327,240 @@ fn test_compile_fentry_task_storage_map_contains_program() {
         .find(|map| map.name == "task_state")
         .expect("expected task-storage runtime map artifact");
     assert_eq!(map.def.map_type, BpfMapDef::task_storage(8).map_type);
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_cgroup_sock_sk_storage_map_get_program() {
+    let hir = make_sk_storage_map_get_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk-storage map-get should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::SkStorage,
+                    },
+                    ..
+                } if name == "sock_state"
+            )),
+        "expected sk-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::SkStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(1))
+            )),
+        "expected sk-storage get helper call with explicit flags"
+    );
+    assert!(matches!(
+        lowering.type_hints.generic_map_value_types.get(&MapRef {
+            name: "sock_state".to_string(),
+            kind: MapKind::SkStorage,
+        }),
+        Some(MirType::Struct { fields, .. })
+            if fields.len() == 1 && fields[0].name == "hits" && fields[0].ty == MirType::I64
+    ));
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized sk-storage map-get should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "sock_state")
+        .expect("expected sk-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::sk_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_cgroup_sockopt_sk_storage_map_delete_program() {
+    let hir = make_sk_storage_map_delete_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk-storage map-delete should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef {
+                        name,
+                        kind: MapKind::SkStorage,
+                    },
+                    ..
+                } if name == "sock_state"
+            )),
+        "expected sk-storage map fd load"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::SkStorageDelete as u32 && args.len() == 2
+            )),
+        "expected sk-storage delete helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized sk-storage map-delete should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "sock_state")
+        .expect("expected sk-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::sk_storage(8));
+    assert!(
+        result
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == map.name)
+    );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_cgroup_sock_sk_storage_map_contains_program() {
+    let hir = make_sk_storage_map_contains_program(DeclId::new(42));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk-storage map-contains should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::SkStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[2], MirValue::Const(0))
+                        && matches!(args[3], MirValue::Const(0))
+            )),
+        "expected lookup-only sk-storage get helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized sk-storage map-contains should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "sock_state")
+        .expect("expected sk-storage runtime map artifact");
+    assert_eq!(map.def.map_type, BpfMapDef::sk_storage(8).map_type);
     assert!(
         result
             .relocations
