@@ -4818,6 +4818,56 @@ fn make_hash_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_generic_map_contains_program(map_contains_decl: DeclId, kind: &str) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"seen_pids".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: map_contains_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_bloom_filter_map_contains_program(map_contains_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -10218,6 +10268,12 @@ fn test_compile_generic_map_put_specialized_kinds() {
             MapKind::LpmTrie,
             BpfMapDef::lpm_trie(4, 16, 10240),
         ),
+        (
+            "lru per-cpu hash map-put",
+            "lru-per-cpu-hash",
+            MapKind::LruPerCpuHash,
+            BpfMapDef::lru_per_cpu_hash(4, 16, 10240),
+        ),
     ] {
         let hir = make_map_put_program(DeclId::new(42), 1, kind_arg);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
@@ -10287,65 +10343,105 @@ fn test_compile_generic_map_put_specialized_kinds() {
 }
 
 #[test]
-fn test_compile_optimized_hash_map_delete_program() {
-    let hir = make_map_delete_program(DeclId::new(42), "hash");
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+fn test_compile_generic_map_delete_lookup_kinds() {
     let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
 
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("hash map-delete should lower through attach flow");
+    for (context, kind_arg, expected_kind, expected_def) in [
+        (
+            "hash map-delete",
+            "hash",
+            MapKind::Hash,
+            BpfMapDef::hash(4, 8, 10240),
+        ),
+        (
+            "lpm trie map-delete",
+            "lpm-trie",
+            MapKind::LpmTrie,
+            BpfMapDef::lpm_trie(4, 8, 10240),
+        ),
+        (
+            "lru hash map-delete",
+            "lru-hash",
+            MapKind::LruHash,
+            BpfMapDef::lru_hash(4, 8, 10240),
+        ),
+        (
+            "per-cpu hash map-delete",
+            "per-cpu-hash",
+            MapKind::PerCpuHash,
+            BpfMapDef::per_cpu_hash(4, 8, 10240),
+        ),
+        (
+            "lru per-cpu hash map-delete",
+            "lru-per-cpu-hash",
+            MapKind::LruPerCpuHash,
+            BpfMapDef::lru_per_cpu_hash(4, 8, 10240),
+        ),
+    ] {
+        let hir = make_map_delete_program(DeclId::new(42), kind_arg);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
 
-    assert!(
-        lowering
-            .program
-            .main
-            .blocks
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} should lower through attach flow: {err}"));
+
+        assert!(
+            lowering
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::MapDelete {
+                        map: MapRef { name, kind },
+                        ..
+                    } if name == "cached_pids" && *kind == expected_kind
+                )),
+            "{context} should lower to a map delete with the expected kind"
+        );
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("optimized {context} should compile: {err}"));
+
+        let map = result
+            .maps
             .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::MapDelete {
-                    map: MapRef { name, kind },
-                    ..
-                } if name == "cached_pids" && *kind == MapKind::Hash
-            )),
-        "expected generic hash map-delete MIR instruction"
-    );
-
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
-
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("optimized hash map-delete should compile");
-
-    let map = result
-        .maps
-        .iter()
-        .find(|map| map.name == "cached_pids")
-        .expect("expected hash runtime map artifact");
-    assert!(
-        result
-            .relocations
-            .iter()
-            .any(|reloc| reloc.symbol_name == map.name)
-    );
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+            .find(|map| map.name == "cached_pids")
+            .unwrap_or_else(|| panic!("{context} should emit cached_pids map"));
+        assert_eq!(map.def.map_type, expected_def.map_type);
+        assert_eq!(map.def.key_size, expected_def.key_size);
+        assert_eq!(map.def.value_size, expected_def.value_size);
+        assert_eq!(map.def.max_entries, expected_def.max_entries);
+        assert_eq!(map.def.map_flags, expected_def.map_flags);
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|reloc| reloc.symbol_name == map.name),
+            "{context} should emit a map relocation"
+        );
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    }
 }
 
 #[test]
@@ -10580,6 +10676,120 @@ fn test_compile_kprobe_hash_map_contains_program() {
             .any(|reloc| reloc.symbol_name == map.name)
     );
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_generic_map_contains_lookup_kinds() {
+    let decl_names = HashMap::from([(DeclId::new(42), "map-contains".to_string())]);
+
+    for (context, kind_arg, expected_kind, expected_def) in [
+        (
+            "hash map-contains",
+            "hash",
+            MapKind::Hash,
+            BpfMapDef::hash(4, 1, 10240),
+        ),
+        (
+            "array map-contains",
+            "array",
+            MapKind::Array,
+            BpfMapDef::array(1, 10240),
+        ),
+        (
+            "lpm trie map-contains",
+            "lpm-trie",
+            MapKind::LpmTrie,
+            BpfMapDef::lpm_trie(4, 1, 10240),
+        ),
+        (
+            "lru hash map-contains",
+            "lru-hash",
+            MapKind::LruHash,
+            BpfMapDef::lru_hash(4, 1, 10240),
+        ),
+        (
+            "per-cpu hash map-contains",
+            "per-cpu-hash",
+            MapKind::PerCpuHash,
+            BpfMapDef::per_cpu_hash(4, 1, 10240),
+        ),
+        (
+            "per-cpu array map-contains",
+            "per-cpu-array",
+            MapKind::PerCpuArray,
+            BpfMapDef::per_cpu_array(1, 10240),
+        ),
+        (
+            "lru per-cpu hash map-contains",
+            "lru-per-cpu-hash",
+            MapKind::LruPerCpuHash,
+            BpfMapDef::lru_per_cpu_hash(4, 1, 10240),
+        ),
+    ] {
+        let hir = make_generic_map_contains_program(DeclId::new(42), kind_arg);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} should lower through attach flow: {err}"));
+
+        assert!(
+            lowering
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::MapLookup {
+                        map: MapRef { name, kind },
+                        ..
+                    } if name == "seen_pids" && *kind == expected_kind
+                )),
+            "{context} should lower to a map lookup with the expected kind"
+        );
+
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("optimized {context} should compile: {err}"));
+
+        let map = result
+            .maps
+            .iter()
+            .find(|map| map.name == "seen_pids")
+            .unwrap_or_else(|| panic!("{context} should emit seen_pids map"));
+        assert_eq!(map.def.map_type, expected_def.map_type);
+        assert_eq!(map.def.key_size, expected_def.key_size);
+        assert_eq!(map.def.value_size, expected_def.value_size);
+        assert_eq!(map.def.max_entries, expected_def.max_entries);
+        assert_eq!(map.def.map_flags, expected_def.map_flags);
+        assert!(
+            result
+                .relocations
+                .iter()
+                .any(|reloc| reloc.symbol_name == map.name),
+            "{context} should emit a map relocation"
+        );
+        assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+    }
 }
 
 #[test]
