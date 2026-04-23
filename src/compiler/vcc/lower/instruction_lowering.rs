@@ -705,6 +705,30 @@ impl<'a> VccLowerer<'a> {
                         out.push(VccInst::RingbufRelease { ptr: release_ptr });
                     }
                 }
+                if let Some(helper) = helper_kind {
+                    for (arg_idx, arg) in args.iter().enumerate() {
+                        let Some(role) = helper.dynptr_arg_role(arg_idx) else {
+                            continue;
+                        };
+                        let ptr = self.base_ptr_reg(arg, out);
+                        match role {
+                            HelperDynptrArgRole::In => {
+                                out.push(VccInst::HelperDynptrRequireInitialized {
+                                    ptr,
+                                    helper: helper.name().to_string(),
+                                    arg_idx,
+                                });
+                            }
+                            HelperDynptrArgRole::Out => {
+                                out.push(VccInst::HelperDynptrMarkInitialized {
+                                    ptr,
+                                    helper: helper.name().to_string(),
+                                    arg_idx,
+                                });
+                            }
+                        }
+                    }
+                }
                 if let Some(kind) = Self::helper_release_kind(*helper)
                     && let Some(arg0) = args.first()
                 {

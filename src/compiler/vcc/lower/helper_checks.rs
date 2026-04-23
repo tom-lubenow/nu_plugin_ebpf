@@ -1242,6 +1242,16 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        for (arg_idx, arg) in args.iter().enumerate() {
+            if let Some(message) = helper.scalar_arg_known_const_requirement(arg_idx) {
+                let value = self.lower_value(arg, out);
+                out.push(VccInst::AssertKnownConst {
+                    value,
+                    message: message.to_string(),
+                });
+            }
+        }
+
         if let Some((arg_idx, trigger_arg_idx, message)) =
             helper.zero_scalar_arg_requirement_when_arg_zero()
             && let (Some(arg), Some(trigger)) = (args.get(arg_idx), args.get(trigger_arg_idx))

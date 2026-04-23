@@ -73,6 +73,289 @@ fn bpf_spin_lock_guarded_function(
     (func, lock)
 }
 
+fn dynptr_map_value_ty() -> MirType {
+    MirType::Array {
+        elem: Box::new(MirType::U8),
+        len: 16,
+    }
+}
+
+fn dynptr_helper_types(
+    data: VReg,
+    len: Option<VReg>,
+    extra: &[(VReg, MirType)],
+) -> HashMap<VReg, MirType> {
+    let mut types = HashMap::new();
+    types.insert(
+        data,
+        MirType::Ptr {
+            pointee: Box::new(dynptr_map_value_ty()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    if let Some(len) = len {
+        types.insert(len, MirType::I64);
+    }
+    for (vreg, ty) in extra {
+        types.insert(*vreg, ty.clone());
+    }
+    types
+}
+
+fn dynptr_guarded_function(
+    param_count: usize,
+    body: impl FnOnce(&mut MirFunction, BlockId, VReg, Option<VReg>),
+) -> (MirFunction, VReg, Option<VReg>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let guarded = func.alloc_block();
+    let null_data = func.alloc_block();
+    func.entry = entry;
+    func.param_count = param_count;
+
+    let data = func.alloc_vreg();
+    let len = (param_count > 1).then(|| func.alloc_vreg());
+    let cond = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: guarded,
+        if_false: null_data,
+    };
+    func.block_mut(null_data).terminator = MirInst::Return { val: None };
+    body(&mut func, guarded, data, len);
+    (func, data, len)
+}
+
+#[test]
+fn test_verify_mir_dynptr_helper_lifecycle_balanced() {
+    let mut from_ret = VReg(0);
+    let mut read_ret = VReg(0);
+    let mut write_ret = VReg(0);
+    let mut data_ret = VReg(0);
+    let (func, data, len) = dynptr_guarded_function(1, |func, block, data, _| {
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let read_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let write_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        from_ret = func.alloc_vreg();
+        read_ret = func.alloc_vreg();
+        write_ret = func.alloc_vreg();
+        data_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: from_ret,
+                helper: BpfHelper::DynptrFromMem as u32,
+                args: vec![
+                    MirValue::VReg(data),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                    MirValue::StackSlot(dynptr_slot),
+                ],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: read_ret,
+                helper: BpfHelper::DynptrRead as u32,
+                args: vec![
+                    MirValue::StackSlot(read_slot),
+                    MirValue::Const(4),
+                    MirValue::StackSlot(dynptr_slot),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: write_ret,
+                helper: BpfHelper::DynptrWrite as u32,
+                args: vec![
+                    MirValue::StackSlot(dynptr_slot),
+                    MirValue::Const(0),
+                    MirValue::StackSlot(write_slot),
+                    MirValue::Const(4),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: data_ret,
+                helper: BpfHelper::DynptrData as u32,
+                args: vec![
+                    MirValue::StackSlot(dynptr_slot),
+                    MirValue::Const(0),
+                    MirValue::Const(4),
+                ],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = dynptr_helper_types(
+        data,
+        len,
+        &[
+            (from_ret, MirType::I64),
+            (read_ret, MirType::I64),
+            (write_ret, MirType::I64),
+            (
+                data_ret,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Map,
+                },
+            ),
+        ],
+    );
+
+    verify_mir(&func, &types).expect("expected dynptr helper lifecycle to verify");
+}
+
+#[test]
+fn test_verify_mir_dynptr_helper_rejects_use_before_init() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let read_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: read_ret,
+            helper: BpfHelper::DynptrRead as u32,
+            args: vec![
+                MirValue::StackSlot(dst_slot),
+                MirValue::Const(4),
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+    let mut types = HashMap::new();
+    types.insert(read_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected uninitialized dynptr error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires initialized dynptr stack object")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_dynptr_helper_rejects_reinit() {
+    let mut first_ret = VReg(0);
+    let mut second_ret = VReg(0);
+    let (func, data, len) = dynptr_guarded_function(1, |func, block, data, _| {
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        first_ret = func.alloc_vreg();
+        second_ret = func.alloc_vreg();
+        let args = vec![
+            MirValue::VReg(data),
+            MirValue::Const(8),
+            MirValue::Const(0),
+            MirValue::StackSlot(dynptr_slot),
+        ];
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: first_ret,
+                helper: BpfHelper::DynptrFromMem as u32,
+                args: args.clone(),
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: second_ret,
+                helper: BpfHelper::DynptrFromMem as u32,
+                args,
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = dynptr_helper_types(
+        data,
+        len,
+        &[(first_ret, MirType::I64), (second_ret, MirType::I64)],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected dynptr reinit error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires uninitialized dynptr stack object slot")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_dynptr_data_requires_constant_len() {
+    let mut from_ret = VReg(0);
+    let mut data_ret = VReg(0);
+    let (func, data, len) = dynptr_guarded_function(2, |func, block, data, len| {
+        let len = len.expect("expected second param");
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        from_ret = func.alloc_vreg();
+        data_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: from_ret,
+                helper: BpfHelper::DynptrFromMem as u32,
+                args: vec![
+                    MirValue::VReg(data),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                    MirValue::StackSlot(dynptr_slot),
+                ],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: data_ret,
+                helper: BpfHelper::DynptrData as u32,
+                args: vec![
+                    MirValue::StackSlot(dynptr_slot),
+                    MirValue::Const(0),
+                    MirValue::VReg(len),
+                ],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = dynptr_helper_types(
+        data,
+        len,
+        &[
+            (from_ret, MirType::I64),
+            (
+                data_ret,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Map,
+                },
+            ),
+        ],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected dynptr_data const len error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg2 must be known constant")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_bpf_spin_lock_unlock_balanced() {
     let mut lock_ret = VReg(0);

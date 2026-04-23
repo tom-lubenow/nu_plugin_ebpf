@@ -1735,6 +1735,65 @@ impl BpfHelper {
             },
         ];
 
+        const DYNPTR_FROM_MEM_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper dynptr_from_mem data",
+                allowed: MAP_ONLY,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 3,
+                op: "helper dynptr_from_mem ptr",
+                allowed: STACK_ONLY,
+                fixed_size: Some(16),
+                size_from_arg: None,
+            },
+        ];
+
+        const DYNPTR_READ_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper dynptr_read dst",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(1),
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper dynptr_read src",
+                allowed: STACK_ONLY,
+                fixed_size: Some(16),
+                size_from_arg: None,
+            },
+        ];
+
+        const DYNPTR_WRITE_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper dynptr_write dst",
+                allowed: STACK_ONLY,
+                fixed_size: Some(16),
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper dynptr_write src",
+                allowed: STACK_MAP,
+                fixed_size: None,
+                size_from_arg: Some(3),
+            },
+        ];
+
+        const DYNPTR_DATA_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper dynptr_data ptr",
+            allowed: STACK_ONLY,
+            fixed_size: Some(16),
+            size_from_arg: None,
+        }];
+
         match self {
             BpfHelper::MapLookupElem | BpfHelper::MapLookupPercpuElem => HelperSemantics {
                 ptr_arg_rules: MAP_LOOKUP_RULES,
@@ -2555,6 +2614,26 @@ impl BpfHelper {
             },
             BpfHelper::KptrXchg => HelperSemantics {
                 ptr_arg_rules: KPTR_XCHG_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::DynptrFromMem => HelperSemantics {
+                ptr_arg_rules: DYNPTR_FROM_MEM_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::DynptrRead => HelperSemantics {
+                ptr_arg_rules: DYNPTR_READ_RULES,
+                positive_size_args: &[1],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::DynptrWrite => HelperSemantics {
+                ptr_arg_rules: DYNPTR_WRITE_RULES,
+                positive_size_args: &[3],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::DynptrData => HelperSemantics {
+                ptr_arg_rules: DYNPTR_DATA_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

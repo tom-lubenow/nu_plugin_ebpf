@@ -375,6 +375,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::SpinUnlock)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_dynptr_from_mem"),
+        Some(BpfHelper::DynptrFromMem)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("dynptr_data"),
+        Some(BpfHelper::DynptrData)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_get_xfrm_state"),
         Some(BpfHelper::SkbGetXfrmState)
     ));
@@ -2930,6 +2938,49 @@ fn test_helper_signature_bpf_spin_lock_helpers() {
         assert!(semantics.ptr_arg_rules[0].allowed.allow_map);
         assert!(!semantics.ptr_arg_rules[0].allowed.allow_kernel);
     }
+}
+
+#[test]
+fn test_helper_signature_dynptr_helpers() {
+    let from_mem = HelperSignature::for_id(BpfHelper::DynptrFromMem as u32)
+        .expect("expected dynptr_from_mem signature");
+    assert_eq!(from_mem.min_args, 4);
+    assert_eq!(from_mem.max_args, 4);
+    assert_eq!(from_mem.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(from_mem.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(from_mem.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(from_mem.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(from_mem.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::DynptrFromMem.dynptr_arg_role(3),
+        Some(HelperDynptrArgRole::Out)
+    );
+
+    for helper in [BpfHelper::DynptrRead, BpfHelper::DynptrWrite] {
+        let sig = HelperSignature::for_id(helper as u32).expect("expected dynptr I/O signature");
+        assert_eq!(sig.min_args, 5);
+        assert_eq!(sig.max_args, 5);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    }
+    assert_eq!(
+        BpfHelper::DynptrRead.dynptr_arg_role(2),
+        Some(HelperDynptrArgRole::In)
+    );
+    assert_eq!(
+        BpfHelper::DynptrWrite.dynptr_arg_role(0),
+        Some(HelperDynptrArgRole::In)
+    );
+
+    let data = HelperSignature::for_id(BpfHelper::DynptrData as u32)
+        .expect("expected dynptr_data signature");
+    assert_eq!(data.min_args, 3);
+    assert_eq!(data.max_args, 3);
+    assert_eq!(data.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(data.ret_kind, HelperRetKind::PointerMaybeNull);
+    assert_eq!(
+        BpfHelper::DynptrData.scalar_arg_known_const_requirement(2),
+        Some("helper 'bpf_dynptr_data' arg2 must be known constant")
+    );
 }
 
 #[test]

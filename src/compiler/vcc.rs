@@ -15,10 +15,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::compiler::cfg::CFG;
 use crate::compiler::ctx_field_schema::ContextFieldLoadGuard;
 use crate::compiler::instruction::{
-    BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncIterFamily,
-    KfuncIterLifecycleOp, KfuncRefKind, KfuncRetKind, KfuncSignature, KfuncUnknownDynptrArg,
-    KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy, KfuncUnknownIterLifecycle,
-    KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
+    BpfHelper, HelperArgKind, HelperDynptrArgRole, HelperRetKind, HelperSignature, KfuncArgKind,
+    KfuncIterFamily, KfuncIterLifecycleOp, KfuncRefKind, KfuncRetKind, KfuncSignature,
+    KfuncUnknownDynptrArg, KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy,
+    KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
     KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
     helper_release_ref_kind, kfunc_acquire_ref_kind,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
@@ -469,6 +469,16 @@ pub enum VccInst {
     DynptrRequireInitialized {
         ptr: VccReg,
         kfunc: String,
+        arg_idx: usize,
+    },
+    HelperDynptrMarkInitialized {
+        ptr: VccReg,
+        helper: String,
+        arg_idx: usize,
+    },
+    HelperDynptrRequireInitialized {
+        ptr: VccReg,
+        helper: String,
         arg_idx: usize,
     },
     DynptrCopy {

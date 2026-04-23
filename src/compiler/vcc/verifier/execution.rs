@@ -1715,6 +1715,46 @@ impl VccVerifier {
                             "kfunc '{}' arg{} requires initialized dynptr stack object",
                             kfunc, arg_idx
                         ),
+                        ));
+                }
+            }
+            VccInst::HelperDynptrMarkInitialized {
+                ptr,
+                helper,
+                arg_idx,
+            } => {
+                let op = format!("helper '{}' arg{}", helper, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if state.is_dynptr_slot_initialized(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} requires uninitialized dynptr stack object slot",
+                            helper, arg_idx
+                        ),
+                    ));
+                    return;
+                }
+                state.initialize_dynptr_slot(slot);
+            }
+            VccInst::HelperDynptrRequireInitialized {
+                ptr,
+                helper,
+                arg_idx,
+            } => {
+                let op = format!("helper '{}' arg{}", helper, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if !state.is_dynptr_slot_initialized(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} requires initialized dynptr stack object",
+                            helper, arg_idx
+                        ),
                     ));
                 }
             }

@@ -598,12 +598,53 @@ impl<'a> TypeInference<'a> {
             errors.push(TypeError::new(message));
         }
 
+        for (arg_idx, arg) in args.iter().enumerate() {
+            if let Some(message) = helper.scalar_arg_known_const_requirement(arg_idx) {
+                let is_const = matches!(
+                    self.value_range_for(arg, value_ranges),
+                    ValueRange::Known { min, max } if min == max
+                );
+                if !is_const {
+                    errors.push(TypeError::new(message));
+                }
+            }
+        }
+
         if let Some((arg_idx, trigger_arg_idx, message)) =
             helper.zero_scalar_arg_requirement_when_arg_zero()
             && arg_is_known_zero(trigger_arg_idx)
             && !arg_is_known_zero(arg_idx)
         {
             errors.push(TypeError::new(message));
+        }
+
+        for (arg_idx, arg) in args.iter().enumerate() {
+            if helper.dynptr_arg_role(arg_idx).is_none() {
+                continue;
+            }
+            match arg {
+                MirValue::VReg(vreg) => {
+                    if matches!(
+                        self.mir_type_for_vreg(*vreg, types),
+                        MirType::Ptr {
+                            address_space: AddressSpace::Stack,
+                            ..
+                        }
+                    ) {
+                        let is_base = stack_bounds
+                            .get(vreg)
+                            .is_some_and(|bounds| bounds.min == 0 && bounds.max == 0);
+                        if !is_base {
+                            errors.push(TypeError::new(format!(
+                                "helper '{}' arg{} expects stack slot base pointer",
+                                helper.name(),
+                                arg_idx
+                            )));
+                        }
+                    }
+                }
+                MirValue::StackSlot(_) | MirValue::Const(_) => {}
+            }
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {

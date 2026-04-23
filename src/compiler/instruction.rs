@@ -494,10 +494,24 @@ pub enum BpfHelper {
     CsumLevel = 135,
     /// void *bpf_kptr_xchg(dst, ptr)
     KptrXchg = 194,
+    /// long bpf_dynptr_from_mem(data, size, flags, ptr)
+    DynptrFromMem = 197,
+    /// long bpf_dynptr_read(dst, len, src, offset, flags)
+    DynptrRead = 201,
+    /// long bpf_dynptr_write(dst, offset, src, len, flags)
+    DynptrWrite = 202,
+    /// void *bpf_dynptr_data(ptr, offset, len)
+    DynptrData = 203,
     /// long bpf_probe_read_user_str(dst, size, unsafe_ptr)
     ProbeReadUserStr = 114,
     /// long bpf_probe_read_kernel_str(dst, size, unsafe_ptr)
     ProbeReadKernelStr = 115,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelperDynptrArgRole {
+    In,
+    Out,
 }
 
 impl BpfHelper {
@@ -697,6 +711,10 @@ impl BpfHelper {
             BpfHelper::RingbufQuery => "bpf_ringbuf_query",
             BpfHelper::CsumLevel => "bpf_csum_level",
             BpfHelper::KptrXchg => "bpf_kptr_xchg",
+            BpfHelper::DynptrFromMem => "bpf_dynptr_from_mem",
+            BpfHelper::DynptrRead => "bpf_dynptr_read",
+            BpfHelper::DynptrWrite => "bpf_dynptr_write",
+            BpfHelper::DynptrData => "bpf_dynptr_data",
             BpfHelper::ProbeReadUserStr => "bpf_probe_read_user_str",
             BpfHelper::ProbeReadKernelStr => "bpf_probe_read_kernel_str",
         }
@@ -903,6 +921,10 @@ impl BpfHelper {
             "ringbuf_query" => Some(Self::RingbufQuery),
             "csum_level" => Some(Self::CsumLevel),
             "kptr_xchg" => Some(Self::KptrXchg),
+            "dynptr_from_mem" => Some(Self::DynptrFromMem),
+            "dynptr_read" => Some(Self::DynptrRead),
+            "dynptr_write" => Some(Self::DynptrWrite),
+            "dynptr_data" => Some(Self::DynptrData),
             "probe_read_user_str" => Some(Self::ProbeReadUserStr),
             "probe_read_kernel_str" => Some(Self::ProbeReadKernelStr),
             _ => None,
@@ -1028,6 +1050,19 @@ impl BpfHelper {
                 0,
                 3,
                 "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)",
+            )),
+            (Self::DynptrFromMem, 2) => Some((
+                0,
+                0,
+                "helper 'bpf_dynptr_from_mem' requires arg2 flags to be 0",
+            )),
+            (Self::DynptrRead, 4) => {
+                Some((0, 0, "helper 'bpf_dynptr_read' requires arg4 flags to be 0"))
+            }
+            (Self::DynptrWrite, 4) => Some((
+                0,
+                0,
+                "helper 'bpf_dynptr_write' requires arg4 flags to be 0 for modeled dynptr sources",
             )),
             (Self::Redirect, 1) => Some((
                 0,
@@ -1172,6 +1207,23 @@ impl BpfHelper {
                 0,
                 "helper 'bpf_get_local_storage' requires arg1 flags to be 0",
             )),
+            _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_known_const_requirement(self, arg_idx: usize) -> Option<&'static str> {
+        match (self, arg_idx) {
+            (Self::DynptrData, 2) => Some("helper 'bpf_dynptr_data' arg2 must be known constant"),
+            _ => None,
+        }
+    }
+
+    pub const fn dynptr_arg_role(self, arg_idx: usize) -> Option<HelperDynptrArgRole> {
+        match (self, arg_idx) {
+            (Self::DynptrFromMem, 3) => Some(HelperDynptrArgRole::Out),
+            (Self::DynptrRead, 2) | (Self::DynptrWrite, 0) | (Self::DynptrData, 0) => {
+                Some(HelperDynptrArgRole::In)
+            }
             _ => None,
         }
     }

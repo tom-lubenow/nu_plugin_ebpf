@@ -1,8 +1,8 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    KfuncRefKind, helper_pointer_arg_ref_kind, scalar_range_contains_only_allowed_values,
-    scalar_range_contains_only_bitmask,
+    HelperDynptrArgRole, KfuncRefKind, helper_pointer_arg_ref_kind,
+    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
 };
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
@@ -474,6 +474,16 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         errors.push(VerifierTypeError::new(message));
     }
 
+    for (arg_idx, arg) in args.iter().enumerate() {
+        if let Some(message) = helper.scalar_arg_known_const_requirement(arg_idx) {
+            let is_const =
+                matches!(value_range(arg, state), ValueRange::Known { min, max } if min == max);
+            if !is_const {
+                errors.push(VerifierTypeError::new(message));
+            }
+        }
+    }
+
     if let Some((arg_idx, trigger_arg_idx, message)) =
         helper.zero_scalar_arg_requirement_when_arg_zero()
         && arg_is_known_zero(trigger_arg_idx)
@@ -671,6 +681,39 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         }
     }
 
+    for (arg_idx, arg) in args.iter().enumerate() {
+        let Some(role) = helper.dynptr_arg_role(arg_idx) else {
+            continue;
+        };
+        let Some(slot) =
+            helper_dynptr_stack_slot_base_from_arg(helper, arg_idx, arg, state, errors)
+        else {
+            continue;
+        };
+        match role {
+            HelperDynptrArgRole::In => {
+                if !state.is_dynptr_slot_initialized(slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} requires initialized dynptr stack object",
+                        helper.name(),
+                        arg_idx
+                    )));
+                }
+            }
+            HelperDynptrArgRole::Out => {
+                if state.is_dynptr_slot_initialized(slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} requires uninitialized dynptr stack object slot",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    continue;
+                }
+                state.initialize_dynptr_slot(slot);
+            }
+        }
+    }
+
     match helper {
         BpfHelper::SpinLock => {
             if !state.acquire_bpf_spin_lock() {
@@ -694,6 +737,38 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     }
 
     acquire_kind
+}
+
+fn helper_dynptr_stack_slot_base_from_arg(
+    helper: BpfHelper,
+    arg_idx: usize,
+    arg: &MirValue,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<StackSlotId> {
+    match arg {
+        MirValue::StackSlot(slot) => Some(*slot),
+        MirValue::VReg(vreg) => match state.get(*vreg) {
+            VerifierType::Ptr {
+                space: AddressSpace::Stack,
+                bounds: Some(bounds),
+                ..
+            } => match bounds.origin() {
+                PtrOrigin::Stack(slot) if bounds.min() == 0 && bounds.max() == 0 => Some(slot),
+                PtrOrigin::Stack(_) => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} expects stack slot base pointer",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    None
+                }
+                _ => None,
+            },
+            _ => None,
+        },
+        MirValue::Const(_) => None,
+    }
 }
 
 fn validate_get_socket_cookie_arg_shape(
