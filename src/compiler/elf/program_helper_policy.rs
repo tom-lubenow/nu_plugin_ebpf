@@ -1338,3 +1338,129 @@ impl ProgramSpec {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn assert_unique_program_types(table_name: &str, program_types: &[EbpfProgramType]) {
+        let mut seen = HashSet::new();
+
+        for program_type in program_types {
+            assert!(
+                seen.insert(*program_type),
+                "duplicate program type {program_type:?} in {table_name}"
+            );
+        }
+    }
+
+    fn assert_unique_helpers(table_name: &str, helpers: &[BpfHelper]) {
+        let mut seen = HashSet::new();
+
+        for helper in helpers {
+            assert!(
+                seen.insert(*helper as u32),
+                "duplicate helper {} in {table_name}",
+                helper.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_helper_program_surface_family_specs_are_unique() {
+        let mut families = Vec::new();
+
+        for spec in HELPER_PROGRAM_SURFACE_FAMILY_SPECS {
+            assert!(
+                !families.contains(&spec.family),
+                "duplicate helper program surface family {:?}",
+                spec.family
+            );
+            families.push(spec.family);
+            assert!(
+                !spec.label.is_empty(),
+                "helper program surface family {:?} must have a diagnostic label",
+                spec.family
+            );
+            assert_unique_program_types("helper program surface family", spec.program_types);
+        }
+    }
+
+    #[test]
+    fn test_helper_policy_tables_are_unique() {
+        let mut socket_cookie_policy_programs = HashSet::new();
+        let mut socket_cookie_policies = Vec::new();
+        for spec in GET_SOCKET_COOKIE_ARG_POLICY_SPECS {
+            assert!(
+                !socket_cookie_policies.contains(&spec.policy),
+                "duplicate socket-cookie arg policy {:?}",
+                spec.policy
+            );
+            socket_cookie_policies.push(spec.policy);
+            assert_unique_program_types("socket-cookie arg policy", spec.program_types);
+            for program_type in spec.program_types {
+                assert!(
+                    socket_cookie_policy_programs.insert(*program_type),
+                    "program type {program_type:?} appears in multiple socket-cookie arg policies"
+                );
+            }
+        }
+
+        let mut redirect_specs = Vec::new();
+        for spec in SOCKET_REDIRECT_HELPER_SPECS {
+            let key = (spec.map_kind, spec.family);
+            assert!(
+                !redirect_specs.contains(&key),
+                "duplicate socket redirect spec for {:?} / {:?}",
+                spec.map_kind,
+                spec.family
+            );
+            redirect_specs.push(key);
+        }
+
+        let mut program_specific_policies = HashSet::new();
+        for policy in PROGRAM_SPECIFIC_HELPER_POLICIES {
+            assert!(
+                program_specific_policies.insert(policy.program_type),
+                "duplicate program-specific helper policy for {:?}",
+                policy.program_type
+            );
+            assert!(
+                !policy.label.is_empty(),
+                "program-specific helper policy for {:?} must have a diagnostic label",
+                policy.program_type
+            );
+            assert_unique_helpers("program-specific helper policy", policy.modeled_helpers);
+        }
+
+        let mut zero_arg_requirements = HashSet::new();
+        for requirement in HELPER_ZERO_ARG_REQUIREMENTS {
+            let key = (
+                requirement.helper as u32,
+                requirement.program_type,
+                requirement.arg_idx,
+            );
+            assert!(
+                zero_arg_requirements.insert(key),
+                "duplicate zero-arg helper requirement for {} / {:?} arg{}",
+                requirement.helper.name(),
+                requirement.program_type,
+                requirement.arg_idx
+            );
+            assert!(
+                !requirement.error_message.is_empty(),
+                "zero-arg helper requirement must have an error message"
+            );
+        }
+
+        assert_unique_helpers("tc ingress-only helpers", TC_INGRESS_ONLY_HELPERS);
+        assert_unique_helpers("tc egress-only helpers", TC_EGRESS_ONLY_HELPERS);
+        assert_unique_helpers(
+            "cgroup_sock_addr inet-connect-only helpers",
+            CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS,
+        );
+        assert_unique_helpers("cgroup retval helpers", CGROUP_RETVAL_HELPERS);
+        assert_unique_helpers("syscall modeled helpers", SYSCALL_MODELED_HELPERS);
+    }
+}
