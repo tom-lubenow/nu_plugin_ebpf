@@ -1317,9 +1317,14 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        let has_trusted_btf_arg = call_args
+            .iter()
+            .filter_map(|arg| arg.source_reg)
+            .any(|reg| self.get_metadata(reg).is_some_and(|meta| meta.trusted_btf));
         let aggregate_return_abi = self.subfunction_aggregate_return_abi(decl_id, hir);
-        if Self::has_aggregate_builder(hir)
-            && (aggregate_return_abi.is_none() || call_args.len().saturating_add(1) > 5)
+        if has_trusted_btf_arg
+            || (Self::has_aggregate_builder(hir)
+                && (aggregate_return_abi.is_none() || call_args.len().saturating_add(1) > 5))
         {
             self.inline_user_function(decl_id, src_dst, dst_vreg, &call_args)?;
             return Ok(());

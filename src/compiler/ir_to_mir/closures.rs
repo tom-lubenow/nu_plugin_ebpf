@@ -323,6 +323,23 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         call_args: &[UserFunctionCallArg],
     ) -> Result<(), CompileError> {
+        if !self.subfunction_in_progress.insert(decl_id) {
+            return Err(CompileError::UnsupportedInstruction(
+                "Recursive user-defined functions are not supported in eBPF".into(),
+            ));
+        }
+        let result = self.inline_user_function_inner(decl_id, src_dst, dst_vreg, call_args);
+        self.subfunction_in_progress.remove(&decl_id);
+        result
+    }
+
+    fn inline_user_function_inner(
+        &mut self,
+        decl_id: DeclId,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        call_args: &[UserFunctionCallArg],
+    ) -> Result<(), CompileError> {
         let hir = self.user_functions.get(&decl_id).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "User-defined function {} not found",

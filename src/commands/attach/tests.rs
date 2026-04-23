@@ -14426,6 +14426,10 @@ fn test_compile_optimized_typed_trampoline_user_function_projection() {
         &HashMap::new(),
     )
     .expect("typed trampoline arg through user function should lower");
+    assert!(
+        lowering.program.subfunctions.is_empty(),
+        "trusted BTF pointer arguments should inline user functions instead of losing provenance at the BPF subfunction ABI"
+    );
 
     optimize_with_ssa_hints(
         &mut lowering.program.main,
@@ -14488,6 +14492,10 @@ fn test_compile_optimized_named_typed_trampoline_user_function_projection() {
         &HashMap::new(),
     )
     .expect("named typed trampoline arg through user function should lower");
+    assert!(
+        lowering.program.subfunctions.is_empty(),
+        "trusted named BTF pointer arguments should inline user functions instead of losing provenance at the BPF subfunction ABI"
+    );
 
     optimize_with_ssa_hints(
         &mut lowering.program.main,
