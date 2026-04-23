@@ -353,6 +353,11 @@ impl EbpfProgram {
                     global.name
                 )));
             }
+            require_capability(
+                program,
+                ProgramCapability::Globals,
+                &format!("readonly global '{}'", global.name),
+            )?;
             if !seen_names.insert(global.name.as_str()) {
                 return Err(invalid(format!(
                     "duplicate global or map name '{}'",
@@ -368,6 +373,11 @@ impl EbpfProgram {
                     global.name
                 )));
             }
+            require_capability(
+                program,
+                ProgramCapability::Globals,
+                &format!("data global '{}'", global.name),
+            )?;
             if !seen_names.insert(global.name.as_str()) {
                 return Err(invalid(format!(
                     "duplicate global or map name '{}'",
@@ -383,6 +393,11 @@ impl EbpfProgram {
                     global.name
                 )));
             }
+            require_capability(
+                program,
+                ProgramCapability::Globals,
+                &format!("bss global '{}'", global.name),
+            )?;
             if !seen_names.insert(global.name.as_str()) {
                 return Err(invalid(format!(
                     "duplicate global or map name '{}'",

@@ -5125,6 +5125,48 @@ fn test_runtime_artifacts_reject_zero_sized_bss_global() {
 }
 
 #[test]
+fn test_runtime_artifacts_require_globals_capability_for_global_sections() {
+    let programs = vec![
+        (
+            "readonly global 'threshold'",
+            EbpfProgram::from_bytecode(EbpfProgramType::Extension, "replace_me", "test", vec![])
+                .with_readonly_globals(vec![ReadonlyGlobal {
+                    name: "threshold".to_string(),
+                    data: vec![1, 0, 0, 0],
+                }]),
+        ),
+        (
+            "data global 'counter'",
+            EbpfProgram::from_bytecode(EbpfProgramType::Extension, "replace_me", "test", vec![])
+                .with_data_globals(vec![DataGlobal {
+                    name: "counter".to_string(),
+                    data: vec![0; 8],
+                }]),
+        ),
+        (
+            "bss global 'state'",
+            EbpfProgram::from_bytecode(EbpfProgramType::Extension, "replace_me", "test", vec![])
+                .with_bss_globals(vec![BssGlobal {
+                    name: "state".to_string(),
+                    size: 16,
+                }]),
+        ),
+    ];
+
+    for (artifact, program) in programs {
+        let err = program
+            .validate_runtime_artifacts()
+            .expect_err("global sections should require Globals capability");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("freplace programs do not support program globals")
+                && msg.contains(artifact),
+            "unexpected error for {artifact}: {err}"
+        );
+    }
+}
+
+#[test]
 fn test_program_type_resolves_xdp_ifindex_alias() {
     assert_eq!(
         EbpfProgramType::Xdp

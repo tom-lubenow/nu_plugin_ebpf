@@ -525,6 +525,7 @@ Near-term priority order:
   - Recent progress: program-specific kfunc escape-hatch policy now lives in a compact table for the narrow `sock_ops` and `cgroup_sock_addr` kfunc surfaces instead of repeated direct program-type comparisons.
   - Recent progress: `bpf_get_socket_cookie` argument policy now comes from an explicit program-surface table, keeping context-pointer vs socket-pointer acceptance out of direct program-type matches.
   - Recent progress: syscall-program raw-helper restrictions now use the same program-specific policy table shape as other narrow surfaces, preserving the conservative modeled-helper allowlist without a direct `Syscall` match in the validator.
+  - Recent progress: runtime artifact validation now requires program surfaces to advertise `Globals` before accepting emitted `.rodata`, `.data`, or `.bss` global sections.
   - Remaining: broaden mutable globals beyond current scalar/string/binary/list/record cases and add richer explicit global declarations/initializers.
 
 ## Ergonomics and quality
