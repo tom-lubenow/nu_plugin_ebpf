@@ -6,6 +6,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxStoreTarget;
+use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
 use std::collections::HashMap;
@@ -4057,6 +4058,74 @@ fn test_lower_kprobe_ctx_cgroup_id_field() {
             ..
         }
     )));
+}
+
+#[test]
+fn test_lower_kprobe_ctx_cgroup_alias_projects_current_task_default_cgroup() {
+    let projection_path = [
+        TrampolineFieldSelector::Field("cgroups".to_string()),
+        TrampolineFieldSelector::Field("dfl_cgrp".to_string()),
+    ];
+    if !matches!(
+        KernelBtf::get().kernel_named_type_field_projection("task_struct", &projection_path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Ptr { .. })
+    ) {
+        return;
+    }
+
+    for alias in ["cgroup", "current_cgroup"] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(alias)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("kprobe ctx.cgroup alias should lower");
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field: CtxField::Task,
+                ..
+            }
+        )));
+        assert!(
+            result.type_hints.main.values().any(MirType::is_cgroup_ptr),
+            "expected {alias} to type as a cgroup pointer"
+        );
+    }
+}
+
+#[test]
+fn test_lower_packet_program_rejects_ctx_cgroup_alias() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("cgroup")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("packet programs should reject ctx.cgroup pointer alias");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.cgroup is not available on xdp programs"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -393,6 +393,86 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn current_cgroup_alias_name(path: &CellPath) -> Option<&str> {
+        let Some(PathMember::String { val, .. }) = path.members.first() else {
+            return None;
+        };
+        matches!(val.as_str(), "cgroup" | "current_cgroup").then_some(val.as_str())
+    }
+
+    fn current_cgroup_alias_projection_members(path: &CellPath) -> Option<Vec<PathMember>> {
+        Self::current_cgroup_alias_name(path)?;
+        let mut members = vec![
+            PathMember::test_string("cgroups".to_string(), false, Casing::Sensitive),
+            PathMember::test_string("dfl_cgrp".to_string(), false, Casing::Sensitive),
+        ];
+        members.extend(path.members.iter().skip(1).cloned());
+        Some(members)
+    }
+
+    fn lower_current_cgroup_context_alias(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        path: &CellPath,
+    ) -> Result<bool, CompileError> {
+        let Some(alias_name) = Self::current_cgroup_alias_name(path) else {
+            return Ok(false);
+        };
+
+        let task_field = CtxField::Task;
+        if let Some(ctx) = self.probe_ctx
+            && let Some(err) = ctx.ctx_field_access_error(&task_field)
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                err.replace("ctx.task", &format!("ctx.{alias_name}")),
+            ));
+        }
+
+        let task_type_spec = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &task_field)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "ctx.{alias_name} requires typed ctx.task support"
+                ))
+            })?;
+        let task_runtime_ty = self
+            .ctx_field_kernel_btf_root_runtime_type(&task_field, &task_type_spec)?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "ctx.{alias_name} requires kernel BTF for task_struct"
+                ))
+            })?;
+
+        let task_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints
+            .insert(task_vreg, task_runtime_ty.clone());
+        self.emit(MirInst::LoadCtxField {
+            dst: task_vreg,
+            field: task_field.clone(),
+            slot: None,
+        });
+
+        let alias_members = Self::current_cgroup_alias_projection_members(path)
+            .expect("alias name was already matched");
+        let path_desc = Self::typed_value_path_desc(&path.members);
+        let projected_ty = self.lower_typed_value_projection(
+            src_dst,
+            dst_vreg,
+            task_vreg,
+            &task_runtime_ty,
+            &alias_members,
+            &path_desc,
+            Some(&task_field),
+            None,
+        )?;
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = false;
+        meta.field_type = Some(projected_ty);
+        meta.root_ctx_field = Some(task_field);
+        meta.source_var = None;
+        Ok(true)
+    }
+
     /// Lower FollowCellPath instruction (context field access like $ctx.pid)
     pub(super) fn lower_follow_cell_path(
         &mut self,
@@ -483,6 +563,10 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if self.lower_context_helper_backed_cgroup_id_projection(src_dst, dst_vreg, &path)? {
+            return Ok(());
+        }
+
+        if self.lower_current_cgroup_context_alias(src_dst, dst_vreg, &path)? {
             return Ok(());
         }
 

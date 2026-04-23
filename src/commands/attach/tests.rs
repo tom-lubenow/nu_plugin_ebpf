@@ -5065,11 +5065,7 @@ fn make_sk_storage_map_contains_program(map_contains_decl: DeclId) -> HirProgram
 
 fn current_task_cgroup_path() -> CellPath {
     CellPath {
-        members: vec![
-            string_member("task"),
-            string_member("cgroups"),
-            string_member("dfl_cgrp"),
-        ],
+        members: vec![string_member("cgroup")],
     }
 }
 
