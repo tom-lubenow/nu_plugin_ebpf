@@ -1635,6 +1635,31 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
 }
 
 #[test]
+fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema() {
+    assert!(EbpfProgramType::Kprobe.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::Task));
+    assert!(!EbpfProgramType::Xdp.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::Task));
+    assert!(
+        EbpfProgramType::Netfilter
+            .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
+    );
+    assert!(
+        EbpfProgramType::Netfilter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterSkb)
+    );
+    assert!(
+        !EbpfProgramType::Kprobe.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
+    );
+
+    let netfilter = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
+    assert!(netfilter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState));
+    assert!(
+        ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+            Some(&netfilter),
+            &CtxField::NetfilterSkb
+        )
+    );
+}
+
+#[test]
 fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
     let task_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::Task)
         .expect("expected ctx.task type spec");

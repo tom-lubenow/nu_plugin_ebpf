@@ -347,6 +347,7 @@ Near-term priority order:
   - Recent progress: task pt_regs register reads now have an ordinary projection surface (`ctx.task.pt_regs.arg0` through `.arg5` and `.retval`) backed by `bpf_task_pt_regs` plus the shared pt_regs offset resolver, so current-task register snapshots no longer require raw helper spelling.
   - Recent progress: program-specific context alias routing now uses explicit alias-surface tables and a tracepoint builtin-preservation allowlist instead of an inline `EbpfProgramType` selector match.
   - Recent progress: `ProbeContext` schema fallback accessors now route through the resolved `program_type()` instead of directly consulting the stored legacy `probe_type`, keeping typed `ProgramSpec` metadata on the main path.
+  - Recent progress: trusted BTF context-root policy now lives in the shared context schema, covering `ctx.task` and verifier-provided netfilter roots (`ctx.state` / `ctx.nf_state` and `ctx.skb`) so pointer-valued hops preserve direct-load provenance without broadening scalar probe-read behavior.
 
 - [ ] Expand map support to the broader eBPF map ecosystem.
   - Add missing map definitions and loader plumbing for commonly used map families.

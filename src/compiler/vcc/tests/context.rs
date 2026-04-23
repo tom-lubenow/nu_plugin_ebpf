@@ -738,6 +738,35 @@ fn test_verify_mir_for_probe_context_btf_arg_allows_direct_kernel_pointer_load()
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_netfilter_state_allows_direct_kernel_pointer_load() {
+    let (mut func, entry) = new_mir_function();
+    let state = func.alloc_vreg();
+    let dev = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: state,
+            field: CtxField::NetfilterState,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst: dev,
+        ptr: state,
+        offset: 0,
+        ty: MirType::named_kernel_struct_ptr("net_device"),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(state, MirType::named_kernel_struct_ptr("nf_hook_state"));
+    types.insert(dev, MirType::named_kernel_struct_ptr("net_device"));
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected netfilter ctx.state to carry trusted BTF pointer provenance");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sk_reuseport_socket_is_non_null() {
     let (mut func, entry) = new_mir_function();
     let bad = func.alloc_block();

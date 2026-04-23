@@ -170,6 +170,7 @@ struct BaseContextFieldSchemaSpec {
     type_spec: ContextFieldTypeSpec,
     projection_kind: BaseContextFieldProjectionKind,
     pointer_non_null: bool,
+    trusted_btf_pointer: bool,
     sock_ops_load_guard: Option<SockOpsCallbackGuard>,
 }
 
@@ -179,6 +180,7 @@ impl BaseContextFieldSchemaSpec {
             type_spec,
             projection_kind: BaseContextFieldProjectionKind::None,
             pointer_non_null: false,
+            trusted_btf_pointer: false,
             sock_ops_load_guard: None,
         }
     }
@@ -188,6 +190,7 @@ impl BaseContextFieldSchemaSpec {
             type_spec,
             projection_kind: BaseContextFieldProjectionKind::Direct,
             pointer_non_null: false,
+            trusted_btf_pointer: false,
             sock_ops_load_guard: None,
         }
     }
@@ -197,6 +200,7 @@ impl BaseContextFieldSchemaSpec {
             type_spec,
             projection_kind: BaseContextFieldProjectionKind::SocketValidated,
             pointer_non_null: false,
+            trusted_btf_pointer: false,
             sock_ops_load_guard: None,
         }
     }
@@ -208,12 +212,18 @@ impl BaseContextFieldSchemaSpec {
                 normalize_u32_words_host_order,
             },
             pointer_non_null: false,
+            trusted_btf_pointer: false,
             sock_ops_load_guard: None,
         }
     }
 
     fn non_null_pointer(mut self) -> Self {
         self.pointer_non_null = true;
+        self
+    }
+
+    fn trusted_btf_pointer(mut self) -> Self {
+        self.trusted_btf_pointer = true;
         self
     }
 
@@ -249,6 +259,10 @@ impl BaseContextFieldSchemaSpec {
 
     fn pointer_is_non_null(&self) -> bool {
         self.pointer_non_null
+    }
+
+    fn is_trusted_btf_kernel_pointer(&self) -> bool {
+        self.trusted_btf_pointer
     }
 }
 
@@ -600,7 +614,8 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("task_struct"))
                 .with_kernel_btf_runtime_type("task_struct"),
         )
-        .non_null_pointer(),
+        .non_null_pointer()
+        .trusted_btf_pointer(),
         CtxField::Context => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),
@@ -629,12 +644,14 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("nf_hook_state"))
                 .with_kernel_btf_runtime_type("nf_hook_state"),
         )
-        .non_null_pointer(),
+        .non_null_pointer()
+        .trusted_btf_pointer(),
         CtxField::NetfilterSkb => BaseContextFieldSchemaSpec::value(
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("sk_buff"))
                 .with_kernel_btf_runtime_type("sk_buff"),
         )
-        .non_null_pointer(),
+        .non_null_pointer()
+        .trusted_btf_pointer(),
         CtxField::NetfilterHook | CtxField::NetfilterProtocolFamily => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U8))
         }
@@ -719,6 +736,10 @@ fn raw_ctx_field_pointer_is_non_null(field: &CtxField) -> bool {
     base_ctx_field_schema_spec(field).is_some_and(|spec| spec.pointer_is_non_null())
 }
 
+fn raw_ctx_field_is_trusted_btf_kernel_pointer(field: &CtxField) -> bool {
+    base_ctx_field_schema_spec(field).is_some_and(|spec| spec.is_trusted_btf_kernel_pointer())
+}
+
 pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
     raw_ctx_field_type_spec(field)
 }
@@ -738,12 +759,24 @@ pub(crate) fn static_ctx_field_pointer_is_non_null(field: &CtxField) -> bool {
     raw_ctx_field_pointer_is_non_null(field)
 }
 
+pub(crate) fn static_ctx_field_is_trusted_btf_kernel_pointer(field: &CtxField) -> bool {
+    raw_ctx_field_is_trusted_btf_kernel_pointer(field)
+}
+
 pub(crate) fn program_type_ctx_field_pointer_is_non_null(
     program_type: EbpfProgramType,
     field: &CtxField,
 ) -> bool {
     program_type.base_ctx_field_access_error(field).is_none()
         && raw_ctx_field_pointer_is_non_null(field)
+}
+
+pub(crate) fn program_type_ctx_field_is_trusted_btf_kernel_pointer(
+    program_type: EbpfProgramType,
+    field: &CtxField,
+) -> bool {
+    program_type.base_ctx_field_access_error(field).is_none()
+        && raw_ctx_field_is_trusted_btf_kernel_pointer(field)
 }
 
 pub(crate) fn ctx_field_sock_ops_load_guard(field: &CtxField) -> Option<SockOpsCallbackGuard> {

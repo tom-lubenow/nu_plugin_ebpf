@@ -2204,6 +2204,71 @@ fn test_lower_fentry_pointer_hop_scalar_field_projection() {
 }
 
 #[test]
+fn test_lower_netfilter_state_pointer_hop_preserves_trusted_btf_provenance() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("state"),
+            string_member("in"),
+            string_member("ifindex"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("netfilter trusted pointer-hop projection should lower");
+
+    let helper_reads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )
+        })
+        .count();
+    let direct_kernel_pointer_loads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    },
+                    ..
+                }
+            )
+        })
+        .count();
+
+    assert_eq!(
+        helper_reads, 1,
+        "expected only the scalar net_device field leaf to use probe_read"
+    );
+    assert!(
+        direct_kernel_pointer_loads >= 1,
+        "expected netfilter trusted BTF pointer hop to use a direct load"
+    );
+}
+
+#[test]
 fn test_lower_fentry_array_element_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("comm"), int_member(0)],
