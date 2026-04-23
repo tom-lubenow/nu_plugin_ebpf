@@ -5067,6 +5067,41 @@ fn test_runtime_artifacts_reject_program_name_conflicting_with_map_or_global() {
 }
 
 #[test]
+fn test_object_runtime_artifacts_require_globals_for_extra_data_symbols() {
+    let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".rodata.custom".to_string(),
+            name: "blob".to_string(),
+            data: vec![1, 2, 3, 4],
+            align: 1,
+            writable: false,
+            relocations: vec![],
+        }],
+        programs: vec![
+            EbpfProgram::from_bytecode(EbpfProgramType::Extension, "replace_me", "test", vec![])
+                .into_program_section(),
+        ],
+    };
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("extra data symbols should require Globals capability");
+
+    assert!(
+        err.to_string().contains(
+            "freplace programs do not support program globals required by extra data symbol 'blob'"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_to_elf_rejects_missing_relocation_symbol() {
     use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
 

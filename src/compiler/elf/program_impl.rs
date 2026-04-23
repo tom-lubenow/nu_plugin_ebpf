@@ -777,6 +777,22 @@ impl EbpfObject {
             }
         }
 
+        if let Some(data_symbol) = self.extra_data_symbols.first() {
+            for program in &self.programs {
+                if !program
+                    .prog_type
+                    .supports_capability(ProgramCapability::Globals)
+                {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "{} programs do not support {} required by extra data symbol '{}'",
+                        program.prog_type.info().canonical_prefix,
+                        ProgramCapability::Globals.description(),
+                        data_symbol.name
+                    )));
+                }
+            }
+        }
+
         let mut program_names = HashSet::new();
         for program in &self.programs {
             if artifact_symbol_names.contains(program.name.as_str()) {
