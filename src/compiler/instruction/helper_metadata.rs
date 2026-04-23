@@ -39,6 +39,8 @@ impl BpfHelper {
             26 => Some(Self::SkbLoadBytes),
             51 => Some(Self::RedirectMap),
             152 => Some(Self::RedirectNeigh),
+            153 => Some(Self::PerCpuPtr),
+            154 => Some(Self::ThisCpuPtr),
             155 => Some(Self::RedirectPeer),
             54 => Some(Self::XdpAdjustMeta),
             68 => Some(Self::SkbLoadBytesRelative),
@@ -216,6 +218,18 @@ impl BpfHelper {
                 max_args: 3,
                 arg_kinds: [P, P, S, S, S],
                 ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::PerCpuPtr => HelperSignature {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerMaybeNull,
+            },
+            BpfHelper::ThisCpuPtr => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::PointerNonNull,
             },
             BpfHelper::MapUpdateElem => HelperSignature {
                 min_args: 4,

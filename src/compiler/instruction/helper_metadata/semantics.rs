@@ -1453,6 +1453,14 @@ impl BpfHelper {
             },
         ];
 
+        const PER_CPU_PTR_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper per_cpu_ptr ptr",
+            allowed: KERNEL,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const SYS_BPF_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
             arg_idx: 1,
             op: "helper sys_bpf attr",
@@ -2391,6 +2399,11 @@ impl BpfHelper {
             },
             BpfHelper::SeqPrintfBtf => HelperSemantics {
                 ptr_arg_rules: SEQ_PRINTF_BTF_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::PerCpuPtr | BpfHelper::ThisCpuPtr => HelperSemantics {
+                ptr_arg_rules: PER_CPU_PTR_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

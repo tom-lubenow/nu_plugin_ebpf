@@ -836,6 +836,83 @@ fn test_type_error_seq_output_helpers_reject_non_iter_program() {
 }
 
 #[test]
+fn test_infer_per_cpu_ptr_helpers_return_kernel_pointers() {
+    let cases = [
+        (
+            BpfHelper::PerCpuPtr,
+            vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+        ),
+        (BpfHelper::ThisCpuPtr, vec![MirValue::VReg(VReg(0))]),
+    ];
+
+    for (helper, args) in cases {
+        let mut func = make_test_function();
+        let percpu_ptr = func.alloc_vreg();
+        assert_eq!(percpu_ptr, VReg(0));
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: percpu_ptr,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_open");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .unwrap_or_else(|errs| panic!("expected {helper:?} to infer: {errs:?}"));
+        assert_eq!(
+            types.get(&dst),
+            Some(&MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            })
+        );
+    }
+}
+
+#[test]
+fn test_type_error_per_cpu_ptr_helpers_require_kernel_pointer() {
+    for helper in [BpfHelper::PerCpuPtr, BpfHelper::ThisCpuPtr] {
+        let mut func = make_test_function();
+        let ptr_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::PerCpuPtr => vec![MirValue::StackSlot(ptr_slot), MirValue::Const(0)],
+            BpfHelper::ThisCpuPtr => vec![MirValue::StackSlot(ptr_slot)],
+            _ => unreachable!(),
+        };
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected per-cpu pointer helper shape error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("helper per_cpu_ptr ptr expects pointer in [Kernel]")),
+            "unexpected errors for {helper:?}: {errs:?}"
+        );
+    }
+}
+
+#[test]
 fn test_type_error_get_socket_cookie_helper_rejects_sk_lookup_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

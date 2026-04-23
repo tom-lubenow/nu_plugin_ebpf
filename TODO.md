@@ -36,6 +36,7 @@ Last updated: 2026-04-22.
   - Legacy typed probe-read string coverage now includes `bpf_probe_read_str` on the same modeled program surface as `bpf_probe_read`, while ordinary language string reads continue to lower to explicit user/kernel helpers.
   - Added typed helper return modeling (e.g., pointer return for `bpf_map_lookup_elem` helper calls).
   - Typed helper map lookup coverage now includes `bpf_map_lookup_percpu_elem` (helper ID `195`) with pointer return modeling, map/key pointer semantics, and raw helper-call materialization for explicitly selected per-cpu map kinds.
+  - Typed helper per-CPU pointer coverage now includes `bpf_per_cpu_ptr` and `bpf_this_cpu_ptr`, with kernel per-CPU pointer argument checks and nullable/non-null kernel pointer return modeling.
   - Typed helper map queue/stack coverage now includes `bpf_map_push_elem` / `bpf_map_pop_elem` / `bpf_map_peek_elem` signatures, pointer-arg semantics (stack-only map handle, stack/map value buffer), and queue/stack push flag validation with parity tests across type inference, verifier_types, and VCC.
   - Typed helper ringbuf coverage now also includes `bpf_ringbuf_query` signature, map-handle pointer-space checks, and kernel flag-mask validation across type inference, verifier_types, and VCC.
   - Typed helper perf-event-array read coverage now includes `bpf_perf_event_read` and `bpf_perf_event_read_value`, with fixed perf-event-array map args, `BPF_F_INDEX_MASK` / `BPF_F_CURRENT_CPU` flag validation, buffer bounds, and exact `struct bpf_perf_event_value` size validation.

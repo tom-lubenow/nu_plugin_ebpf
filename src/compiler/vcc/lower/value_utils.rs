@@ -171,6 +171,7 @@ impl<'a> VccLowerer<'a> {
                             | BpfHelper::SockFromFile
                             | BpfHelper::TaskPtRegs
                             | BpfHelper::SkcToTcpSock
+                            | BpfHelper::PerCpuPtr
                             | BpfHelper::GetListenerSock
                     )
                 ) {

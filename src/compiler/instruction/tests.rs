@@ -67,6 +67,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MapLookupPercpuElem)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_per_cpu_ptr"),
+        Some(BpfHelper::PerCpuPtr)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("bpf_this_cpu_ptr"),
+        Some(BpfHelper::ThisCpuPtr)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skc_to_mptcp_sock"),
         Some(BpfHelper::SkcToMptcpSock)
     ));
@@ -801,6 +809,31 @@ fn test_helper_signature_map_lookup_percpu_elem() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+}
+
+#[test]
+fn test_helper_signature_per_cpu_ptr_helpers() {
+    let per_cpu = HelperSignature::for_id(BpfHelper::PerCpuPtr as u32)
+        .expect("expected bpf_per_cpu_ptr helper signature");
+    assert_eq!(per_cpu.min_args, 2);
+    assert_eq!(per_cpu.max_args, 2);
+    assert_eq!(per_cpu.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(per_cpu.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(per_cpu.ret_kind, HelperRetKind::PointerMaybeNull);
+
+    let this_cpu = HelperSignature::for_id(BpfHelper::ThisCpuPtr as u32)
+        .expect("expected bpf_this_cpu_ptr helper signature");
+    assert_eq!(this_cpu.min_args, 1);
+    assert_eq!(this_cpu.max_args, 1);
+    assert_eq!(this_cpu.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(this_cpu.ret_kind, HelperRetKind::PointerNonNull);
+
+    let semantics = BpfHelper::PerCpuPtr.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+    assert_eq!(semantics.ptr_arg_rules[0].op, "helper per_cpu_ptr ptr");
+    assert!(semantics.ptr_arg_rules[0].allowed.allow_kernel);
+    assert!(!semantics.ptr_arg_rules[0].allowed.allow_stack);
+    assert!(!semantics.ptr_arg_rules[0].allowed.allow_map);
 }
 
 #[test]

@@ -176,6 +176,10 @@ pub enum BpfHelper {
     RedirectMap = 51,
     /// long bpf_redirect_neigh(ifindex, params, plen, flags)
     RedirectNeigh = 152,
+    /// void *bpf_per_cpu_ptr(percpu_ptr, cpu)
+    PerCpuPtr = 153,
+    /// void *bpf_this_cpu_ptr(percpu_ptr)
+    ThisCpuPtr = 154,
     /// long bpf_redirect_peer(ifindex, flags)
     RedirectPeer = 155,
     /// long bpf_xdp_adjust_meta(xdp_md, delta)
@@ -528,6 +532,8 @@ impl BpfHelper {
             BpfHelper::Redirect => "bpf_redirect",
             BpfHelper::RedirectMap => "bpf_redirect_map",
             BpfHelper::RedirectNeigh => "bpf_redirect_neigh",
+            BpfHelper::PerCpuPtr => "bpf_per_cpu_ptr",
+            BpfHelper::ThisCpuPtr => "bpf_this_cpu_ptr",
             BpfHelper::RedirectPeer => "bpf_redirect_peer",
             BpfHelper::XdpAdjustMeta => "bpf_xdp_adjust_meta",
             BpfHelper::TailCall => "bpf_tail_call",
@@ -729,6 +735,8 @@ impl BpfHelper {
             "redirect" => Some(Self::Redirect),
             "redirect_map" => Some(Self::RedirectMap),
             "redirect_neigh" => Some(Self::RedirectNeigh),
+            "per_cpu_ptr" => Some(Self::PerCpuPtr),
+            "this_cpu_ptr" => Some(Self::ThisCpuPtr),
             "redirect_peer" => Some(Self::RedirectPeer),
             "xdp_adjust_meta" => Some(Self::XdpAdjustMeta),
             "tail_call" => Some(Self::TailCall),

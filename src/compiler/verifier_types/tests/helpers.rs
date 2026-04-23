@@ -9496,6 +9496,94 @@ fn test_helper_map_lookup_percpu_rejects_out_of_bounds_key_pointer() {
 }
 
 #[test]
+fn test_helper_per_cpu_ptr_helpers_accept_kernel_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let percpu_ptr = func.alloc_vreg();
+    let per_cpu_dst = func.alloc_vreg();
+    let this_cpu_dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: percpu_ptr,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: per_cpu_dst,
+            helper: BpfHelper::PerCpuPtr as u32,
+            args: vec![MirValue::VReg(percpu_ptr), MirValue::Const(0)],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: this_cpu_dst,
+            helper: BpfHelper::ThisCpuPtr as u32,
+            args: vec![MirValue::VReg(percpu_ptr)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let kernel_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Kernel,
+    };
+    let types = HashMap::from([
+        (percpu_ptr, kernel_ptr.clone()),
+        (per_cpu_dst, kernel_ptr.clone()),
+        (this_cpu_dst, kernel_ptr),
+    ]);
+
+    verify_mir(&func, &types).expect("expected per-cpu pointer helpers to verify");
+}
+
+#[test]
+fn test_helper_per_cpu_ptr_helpers_reject_stack_pointer() {
+    for helper in [BpfHelper::PerCpuPtr, BpfHelper::ThisCpuPtr] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ptr_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::PerCpuPtr => vec![MirValue::StackSlot(ptr_slot), MirValue::Const(0)],
+            BpfHelper::ThisCpuPtr => vec![MirValue::StackSlot(ptr_slot)],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let types = HashMap::from([(
+            dst,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        )]);
+        let err = verify_mir(&func, &types).expect_err("expected per-cpu pointer helper error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper per_cpu_ptr ptr expects pointer in [Kernel]")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_helper_map_lookup_rejects_user_map_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -231,6 +231,10 @@ impl<'a> TypeInference<'a> {
                 Some(MirType::named_kernel_struct_ptr("task_struct"))
             }
             BpfHelper::TaskPtRegs => Some(MirType::named_kernel_struct_ptr("pt_regs")),
+            BpfHelper::PerCpuPtr | BpfHelper::ThisCpuPtr => Some(MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            }),
             _ => None,
         }
     }

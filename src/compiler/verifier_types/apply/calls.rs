@@ -116,6 +116,7 @@ pub(super) fn apply_call_helper_inst(
                     | BpfHelper::SockFromFile
                     | BpfHelper::TaskPtRegs
                     | BpfHelper::SkcToTcpSock
+                    | BpfHelper::PerCpuPtr
                     | BpfHelper::GetListenerSock,
                 ) => VerifierType::Ptr {
                     space: AddressSpace::Kernel,
