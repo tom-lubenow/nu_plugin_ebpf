@@ -502,6 +502,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
+            CtxField::Random => {
+                self.instructions
+                    .push(EbpfInsn::call(BpfHelper::GetPrandomU32));
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
+            }
             CtxField::CgroupId => {
                 self.instructions
                     .push(EbpfInsn::call(BpfHelper::GetCurrentCgroupId));

@@ -688,6 +688,8 @@ pub enum CtxField {
     Cpu,
     /// Current NUMA node ID
     NumaNode,
+    /// Pseudo-random u32 from bpf_get_prandom_u32()
+    Random,
     /// Timestamp (nanoseconds)
     Timestamp,
     /// Boot-time timestamp (nanoseconds, includes suspend)
@@ -966,6 +968,7 @@ impl CtxField {
             CtxField::Task => "task".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),
+            CtxField::Random => "random".to_string(),
             CtxField::Timestamp => "timestamp".to_string(),
             CtxField::BootTimestamp => "ktime_boot".to_string(),
             CtxField::CoarseTimestamp => "ktime_coarse".to_string(),

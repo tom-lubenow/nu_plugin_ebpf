@@ -4312,6 +4312,35 @@ fn test_lower_kprobe_numa_node_ctx_field() {
 }
 
 #[test]
+fn test_lower_kprobe_random_ctx_field() {
+    for field_name in ["random", "prandom_u32"] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|_| panic!("kprobe ctx.{field_name} should lower"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field: CtxField::Random,
+                ..
+            }
+        )));
+    }
+}
+
+#[test]
 fn test_lower_kprobe_tracing_helper_ctx_fields() {
     for (field_name, expected_field) in [
         ("func_ip", CtxField::FuncIp),

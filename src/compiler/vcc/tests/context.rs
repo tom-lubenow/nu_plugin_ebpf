@@ -192,6 +192,27 @@ fn test_verify_mir_for_probe_context_rejects_out_of_range_pt_regs_arg_load() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_allows_random_field_load() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst,
+            field: CtxField::Random,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected xdp ctx.random field to verify");
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_verify_mir_for_probe_context_allows_perf_event_specific_field_loads() {
     let (mut func, entry) = new_mir_function();

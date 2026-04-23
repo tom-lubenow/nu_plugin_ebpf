@@ -160,6 +160,7 @@ Last updated: 2026-04-22.
   - Ordinary context access now exposes those time/counter helpers without raw helper spelling as `ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
   - Attach-flow compile fixtures now cover those ordinary time/counter fields plus the `ctx.numa_node` alias through the public context path.
   - Typed helper scalar coverage now includes `bpf_get_numa_node_id` as a broad no-arg scalar-return helper.
+  - Ordinary context access now exposes the pseudo-random helper without raw helper spelling as `ctx.random` / `ctx.prandom_u32`.
   - Typed helper PID namespace coverage now includes `bpf_get_ns_current_pid_tgid`, with stack/map output-buffer bounds and exact `struct bpf_pidns_info` size validation.
   - Typed helper string-format coverage now includes `bpf_snprintf` and `bpf_snprintf_btf`, with stack/map output and data buffers, map/rodata-only format strings for plain `snprintf`, fixed `struct btf_ptr` sizing and `BTF_F_*` flag-mask validation for BTF formatting, nonnegative sizes, and 8-byte-aligned format-argument data where applicable.
   - Typed helper string parsing coverage now includes `bpf_strtol` and `bpf_strtoul`, with stack/map input bounds, fixed 8-byte result-slot validation, and base-selector flag validation.

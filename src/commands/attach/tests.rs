@@ -7101,6 +7101,8 @@ fn test_compile_tracepoint_builtin_ctx_counter_programs() {
         "cpu",
         "numa_node",
         "numa_node_id",
+        "random",
+        "prandom_u32",
         "ktime",
         "timestamp",
         "ktime_boot",
@@ -7910,6 +7912,20 @@ fn test_compile_kprobe_ctx_numa_node_id_alias_counter_program() {
         },
         "kprobe ctx.numa_node_id count",
     );
+}
+
+#[test]
+fn test_compile_kprobe_ctx_random_counter_programs() {
+    for field in ["random", "prandom_u32"] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            &format!("kprobe ctx.{field} count"),
+        );
+    }
 }
 
 #[test]

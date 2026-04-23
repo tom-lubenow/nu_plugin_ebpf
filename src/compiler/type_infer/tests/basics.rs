@@ -304,6 +304,26 @@ fn test_infer_ctx_numa_node() {
 }
 
 #[test]
+fn test_infer_ctx_random() {
+    let mut func = make_test_function();
+    let v0 = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: v0,
+            field: CtxField::Random,
+            slot: None,
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti.infer(&func).unwrap();
+
+    assert_eq!(types.get(&v0), Some(&MirType::U32));
+}
+
+#[test]
 fn test_infer_tc_egress_helper_backed_ctx_fields() {
     for (field, expected_ty) in [
         (CtxField::CgroupClassid, MirType::U32),

@@ -112,6 +112,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.task }    - Get current task_struct pointer
     {|ctx| $ctx.numa_node } - Get current NUMA node ID
     {|ctx| $ctx.numa_node_id } - Get current NUMA node ID
+    {|ctx| $ctx.random } - Get a pseudo-random u32
     {|ctx| $ctx.ktime }   - Get kernel timestamp in nanoseconds
     {|ctx| $ctx.ktime_boot } - Get boot-time kernel timestamp in nanoseconds
     {|ctx| $ctx.ktime_coarse } - Get coarse kernel timestamp in nanoseconds

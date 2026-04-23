@@ -717,6 +717,10 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         BaseContextFieldAccessRequirement::CpuField,
     ),
     (
+        &[CtxField::Random],
+        BaseContextFieldAccessRequirement::RandomField,
+    ),
+    (
         &[CtxField::CgroupId],
         BaseContextFieldAccessRequirement::CurrentTaskCgroupField,
     ),
@@ -936,6 +940,7 @@ fn packet_field_access_error(program_type: EbpfProgramType, field: &CtxField) ->
 enum BaseContextFieldAccessRequirement {
     TaskFields,
     CpuField,
+    RandomField,
     CurrentTaskCgroupField,
     TimestampField,
     PerfEventField,
@@ -1283,6 +1288,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: BASE_RUNTIME_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::RandomField,
+        program_types: BASE_RUNTIME_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::CurrentTaskCgroupField,
         program_types: BASE_RUNTIME_FIELD_PROGRAMS,
     },
@@ -1435,6 +1444,7 @@ impl BaseContextFieldAccessRequirement {
         match self {
             Self::TaskFields => self.allowed_by_program_surface(program_type),
             Self::CpuField => self.allowed_by_program_surface(program_type),
+            Self::RandomField => self.allowed_by_program_surface(program_type),
             Self::CurrentTaskCgroupField => self.allowed_by_program_surface(program_type),
             Self::TimestampField => self.allowed_by_program_surface(program_type),
             Self::PerfEventField => {
@@ -1491,6 +1501,7 @@ impl BaseContextFieldAccessRequirement {
         match self {
             Self::TaskFields
             | Self::CpuField
+            | Self::RandomField
             | Self::CurrentTaskCgroupField
             | Self::TimestampField
             | Self::StackFields => format!(

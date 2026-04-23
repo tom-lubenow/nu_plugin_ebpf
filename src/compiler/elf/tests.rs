@@ -5321,6 +5321,12 @@ fn test_program_type_resolves_tracepoint_builtin_alias_names() {
             .expect("tracepoint numa_node_id should preserve builtin alias"),
         CtxField::NumaNode
     );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("prandom_u32")
+            .expect("tracepoint prandom_u32 should preserve builtin alias"),
+        CtxField::Random
+    );
 }
 
 #[test]
@@ -6126,6 +6132,7 @@ fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
     let ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     assert!(ctx.ctx_field_access_error(&CtxField::Cpu).is_none());
     assert!(ctx.ctx_field_access_error(&CtxField::NumaNode).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::Random).is_none());
     for field in [
         CtxField::Timestamp,
         CtxField::BootTimestamp,
@@ -6147,6 +6154,7 @@ fn test_probe_context_rejects_runtime_fields_on_contextless_programs() {
     let fields = [
         CtxField::Cpu,
         CtxField::NumaNode,
+        CtxField::Random,
         CtxField::Timestamp,
         CtxField::BootTimestamp,
         CtxField::CoarseTimestamp,

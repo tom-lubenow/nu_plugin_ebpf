@@ -545,6 +545,7 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::SockOpsSkTxhash
         | CtxField::SysctlWrite
         | CtxField::SysctlFilePos
+        | CtxField::Random
         | CtxField::SocketUid => {
             BaseContextFieldSchemaSpec::value(ContextFieldTypeSpec::value(MirType::U32))
         }
