@@ -492,4 +492,20 @@ mod tests {
             CtxField::TracepointField("cgroup".to_string())
         );
     }
+
+    #[test]
+    fn test_tracepoint_task_payload_name_is_not_stolen() {
+        assert_eq!(
+            EbpfProgramType::Tracepoint
+                .resolve_tracepoint_ctx_field_name("current_task")
+                .expect("current_task should resolve"),
+            CtxField::Task
+        );
+        assert_eq!(
+            EbpfProgramType::Tracepoint
+                .resolve_tracepoint_ctx_field_name("task")
+                .expect("task should resolve as payload"),
+            CtxField::TracepointField("task".to_string())
+        );
+    }
 }
