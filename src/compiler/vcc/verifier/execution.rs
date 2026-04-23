@@ -695,8 +695,8 @@ impl VccVerifier {
                                     if lp.space == VccAddrSpace::Packet
                                         && rp.space == VccAddrSpace::Packet => {}
                                 (VccValueType::Ptr(lp), VccValueType::Ptr(rp))
-                                    if lp.space == VccAddrSpace::Kernel
-                                        && rp.space == VccAddrSpace::Kernel
+                                    if matches!(lp.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
+                                        && matches!(rp.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
                                         && context_buffer_end_cmp.is_some() => {}
                                 _ => {
                                     self.errors.push(VccError::new(
@@ -899,6 +899,7 @@ impl VccVerifier {
                             VccAddrSpace::Stack(_)
                                 | VccAddrSpace::MapValue
                                 | VccAddrSpace::Packet
+                                | VccAddrSpace::KernelBtf
                         ) || (ptr_info.space == VccAddrSpace::Kernel
                             && ptr_info.context_buffer_root.is_some());
                         if !load_allowed {
@@ -1155,7 +1156,9 @@ impl VccVerifier {
                     }
                 };
                 match ty {
-                    VccValueType::Ptr(info) if info.space == VccAddrSpace::Kernel => {
+                    VccValueType::Ptr(info)
+                        if matches!(info.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf) =>
+                    {
                         if let Err(err) = self.require_non_null_ptr(info, "kfunc release") {
                             self.errors.push(err);
                             return;
@@ -1854,7 +1857,9 @@ impl VccVerifier {
                     }
                 };
                 match ty {
-                    VccValueType::Ptr(info) if info.space == VccAddrSpace::Kernel => {
+                    VccValueType::Ptr(info)
+                        if matches!(info.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf) =>
+                    {
                         if let Some(ref_id) = info.kfunc_ref {
                             let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
                             if let Err(err) = self.require_non_null_ptr(info, &op) {
@@ -1920,7 +1925,7 @@ impl VccVerifier {
                     }
                 };
                 if let VccValueType::Ptr(info) = ty
-                    && info.space == VccAddrSpace::Kernel
+                    && matches!(info.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
                     && let Some(ref_id) = info.kfunc_ref
                 {
                     let op = format!("helper {} arg{}", helper_id, arg_idx);

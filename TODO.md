@@ -9,6 +9,7 @@ Last updated: 2026-04-22.
   - VCC is a mandatory gate, but the model is still incomplete versus kernel verifier behavior for broader program classes.
   - Expand tracked state beyond current pointer/stack/map/range model and tighten parity tests against real verifier outcomes.
   - Recent progress: VCC verification runs as CFG dataflow over reachable blocks (with state joins/widening), includes nullable-pointer branch refinement with impossible-branch pruning, and applies typed helper argument/return checks plus helper-specific pointer-space and size/bounds checks for core helpers.
+  - Recent progress: trusted BTF-derived kernel pointers are now tracked separately from generic probe-read kernel pointers, allowing `$ctx.cgroup` to feed cgroup-local-storage helpers without losing verifier provenance.
 
 - [x] Implement tail calls end-to-end.
   - Implemented bytecode lowering to `bpf_tail_call` and failure fallback termination.

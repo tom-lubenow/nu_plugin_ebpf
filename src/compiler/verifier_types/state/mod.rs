@@ -25,10 +25,12 @@ pub(super) enum PtrOrigin {
     Map,
     Packet(VReg),
     ContextBuffer(VReg),
+    KernelBtf(VReg),
 }
 
 pub(super) const UNKNOWN_PACKET_LIMIT: i64 = i64::MAX / 4;
 pub(super) const UNKNOWN_CONTEXT_BUFFER_LIMIT: i64 = i64::MAX / 4;
+pub(super) const UNKNOWN_KERNEL_BTF_LIMIT: i64 = i64::MAX / 4;
 
 fn value_range_satisfies_only<F>(range: ValueRange, predicate: &F) -> bool
 where

@@ -84,6 +84,7 @@ pub enum VccAddrSpace {
     Context,
     RingBuf,
     Kernel,
+    KernelBtf,
     User,
     Unknown,
 }

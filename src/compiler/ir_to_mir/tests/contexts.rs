@@ -5,7 +5,7 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::CtxStoreTarget;
+use crate::compiler::mir::{AddressSpace, CtxStoreTarget};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
@@ -4097,6 +4097,38 @@ fn test_lower_kprobe_ctx_cgroup_alias_projects_current_task_default_cgroup() {
                 ..
             }
         )));
+        let instructions: Vec<&MirInst> = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect();
+        assert!(
+            !instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )),
+            "expected {alias} to preserve trusted BTF pointer provenance without probe_read"
+        );
+        assert!(
+            instructions
+                .iter()
+                .filter(|inst| matches!(
+                    inst,
+                    MirInst::Load {
+                        ty: MirType::Ptr {
+                            address_space: AddressSpace::Kernel,
+                            ..
+                        },
+                        ..
+                    }
+                ))
+                .count()
+                >= 2,
+            "expected {alias} to use direct trusted BTF pointer field loads"
+        );
         assert!(
             result.type_hints.main.values().any(MirType::is_cgroup_ptr),
             "expected {alias} to type as a cgroup pointer"

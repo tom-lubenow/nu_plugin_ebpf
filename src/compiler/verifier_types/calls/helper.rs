@@ -739,6 +739,17 @@ fn helper_allows_maybe_null_arg(
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
 ) -> bool {
+    if matches!(
+        (helper, arg_idx),
+        (BpfHelper::SkStorageGet, 2)
+            | (BpfHelper::InodeStorageGet, 2)
+            | (BpfHelper::TaskStorageGet, 2)
+            | (BpfHelper::CgrpStorageGet, 1)
+            | (BpfHelper::CgrpStorageGet, 2)
+            | (BpfHelper::CgrpStorageDelete, 1)
+    ) {
+        return true;
+    }
     if !matches!(helper, BpfHelper::GetSocketCookie) || arg_idx != 0 {
         return false;
     }

@@ -85,6 +85,19 @@ impl<'a> VccLowerer<'a> {
                 offset,
                 ty,
             } => {
+                let trusted_btf_ptr = self.ptr_regs.get(&VccReg(ptr.0)).copied().and_then(|info| {
+                    if info.space != VccAddrSpace::KernelBtf {
+                        return None;
+                    }
+                    let mut loaded = ptr_info_from_mir(ty)?;
+                    if loaded.space == VccAddrSpace::Kernel {
+                        loaded.space = VccAddrSpace::KernelBtf;
+                        loaded.nullability = VccNullability::NonNull;
+                        Some(loaded)
+                    } else {
+                        None
+                    }
+                });
                 out.push(VccInst::Load {
                     dst: VccReg(dst.0),
                     ptr: VccReg(ptr.0),
@@ -92,7 +105,16 @@ impl<'a> VccLowerer<'a> {
                     size: ty.size() as u8,
                 });
                 self.maybe_assume_list_len(*dst, *ptr, *offset, out);
-                self.maybe_assume_type(*dst, ty, out);
+                if let Some(info) = trusted_btf_ptr {
+                    out.push(VccInst::Assume {
+                        dst: VccReg(dst.0),
+                        ty: VccValueType::Ptr(info),
+                        ctx_field_source: None,
+                    });
+                    self.ptr_regs.insert(VccReg(dst.0), info);
+                } else {
+                    self.maybe_assume_type(*dst, ty, out);
+                }
             }
             MirInst::Store {
                 ptr,
@@ -361,6 +383,12 @@ impl<'a> VccLowerer<'a> {
                         && let VccValueType::Ptr(ref mut info) = ty
                     {
                         info.nullability = VccNullability::NonNull;
+                    }
+                    if matches!(field, CtxField::Task)
+                        && let VccValueType::Ptr(ref mut info) = ty
+                        && info.space == VccAddrSpace::Kernel
+                    {
+                        info.space = VccAddrSpace::KernelBtf;
                     }
                     if ProbeContext::resolve_ctx_field_is_raw_context_pointer(
                         self.probe_ctx,

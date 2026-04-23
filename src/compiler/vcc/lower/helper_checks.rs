@@ -234,7 +234,7 @@ impl<'a> VccLowerer<'a> {
         if !Self::kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
             return Ok(());
         }
-        if space != VccAddrSpace::Kernel
+        if !matches!(space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
             && !(space == VccAddrSpace::Context
                 && Self::kfunc_pointer_arg_allows_context_as_kernel(kfunc, arg_idx))
         {
@@ -584,7 +584,7 @@ impl<'a> VccLowerer<'a> {
         match space {
             VccAddrSpace::Stack(_) => allow_stack,
             VccAddrSpace::MapValue | VccAddrSpace::RingBuf => allow_map,
-            VccAddrSpace::Context | VccAddrSpace::Kernel => allow_kernel,
+            VccAddrSpace::Context | VccAddrSpace::Kernel | VccAddrSpace::KernelBtf => allow_kernel,
             VccAddrSpace::Packet => false,
             VccAddrSpace::User => allow_user,
             VccAddrSpace::Unknown => true,
@@ -599,6 +599,7 @@ impl<'a> VccLowerer<'a> {
             VccAddrSpace::RingBuf => "RingBuf",
             VccAddrSpace::Context => "Context",
             VccAddrSpace::Kernel => "Kernel",
+            VccAddrSpace::KernelBtf => "KernelBtf",
             VccAddrSpace::User => "User",
             VccAddrSpace::Unknown => "Unknown",
         }
@@ -1387,7 +1388,10 @@ impl<'a> VccLowerer<'a> {
 
     fn helper_arg_has_tracked_kfunc_ref(&self, arg: &MirValue) -> bool {
         self.value_ptr_info(arg)
-            .is_some_and(|info| matches!(info.space, VccAddrSpace::Kernel) && info.kfunc_ref.is_some())
+            .is_some_and(|info| {
+                matches!(info.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
+                    && info.kfunc_ref.is_some()
+            })
     }
 
     fn helper_expected_named_arg_shape(
@@ -1405,6 +1409,17 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn helper_pointer_arg_allows_maybe_null(&self, helper_id: u32, arg_idx: usize) -> bool {
+        if matches!(
+            (BpfHelper::from_u32(helper_id), arg_idx),
+            (Some(BpfHelper::SkStorageGet), 2)
+                | (Some(BpfHelper::InodeStorageGet), 2)
+                | (Some(BpfHelper::TaskStorageGet), 2)
+                | (Some(BpfHelper::CgrpStorageGet), 1)
+                | (Some(BpfHelper::CgrpStorageGet), 2)
+                | (Some(BpfHelper::CgrpStorageDelete), 1)
+        ) {
+            return true;
+        }
         if !matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::GetSocketCookie))
             || arg_idx != 0
         {

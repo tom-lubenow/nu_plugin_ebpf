@@ -87,7 +87,8 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
         (AddressSpace::Stack, PtrOrigin::Stack(_))
         | (AddressSpace::Map, PtrOrigin::Map)
         | (AddressSpace::Packet, PtrOrigin::Packet(_))
-        | (AddressSpace::Kernel, PtrOrigin::ContextBuffer(_)) => {}
+        | (AddressSpace::Kernel, PtrOrigin::ContextBuffer(_))
+        | (AddressSpace::Kernel, PtrOrigin::KernelBtf(_)) => {}
         _ => return,
     }
 
@@ -98,7 +99,10 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
         return;
     }
 
-    if space == AddressSpace::Kernel && bounds.limit() == UNKNOWN_CONTEXT_BUFFER_LIMIT {
+    if space == AddressSpace::Kernel
+        && matches!(bounds.origin(), PtrOrigin::ContextBuffer(_))
+        && bounds.limit() == UNKNOWN_CONTEXT_BUFFER_LIMIT
+    {
         errors.push(VerifierTypeError::new(format!(
             "{op} on bounded context buffers requires a preceding end-pointer guard"
         )));
@@ -119,6 +123,7 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
             PtrOrigin::Map => "map value".to_string(),
             PtrOrigin::Packet(root) => format!("packet root v{}", root.0),
             PtrOrigin::ContextBuffer(root) => format!("context buffer root v{}", root.0),
+            PtrOrigin::KernelBtf(root) => format!("trusted kernel BTF root v{}", root.0),
         };
         errors.push(VerifierTypeError::new(format!(
             "{op} out of bounds for {origin}: access [{start}..{end}] exceeds 0..{}",

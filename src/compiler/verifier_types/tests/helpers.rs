@@ -11071,6 +11071,43 @@ fn test_helper_cgrp_storage_get_allows_null_cgroup_and_init_value() {
 }
 
 #[test]
+fn test_helper_cgrp_storage_get_allows_maybe_null_cgroup_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let cgroup = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::CgrpStorageGet as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::VReg(cgroup),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cgroup, MirType::named_kernel_struct_ptr("cgroup"));
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected maybe-null cgroup pointer to verify");
+}
+
+#[test]
 fn test_helper_cgrp_storage_get_rejects_anonymous_kernel_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

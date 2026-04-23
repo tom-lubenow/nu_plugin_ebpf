@@ -255,6 +255,7 @@ impl VccVerifier {
             VccAddrSpace::RingBuf => "RingBuf",
             VccAddrSpace::Context => "Context",
             VccAddrSpace::Kernel => "Kernel",
+            VccAddrSpace::KernelBtf => "KernelBtf",
             VccAddrSpace::User => "User",
             VccAddrSpace::Unknown => "Unknown",
         }

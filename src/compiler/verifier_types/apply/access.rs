@@ -25,9 +25,9 @@ pub(super) fn apply_load_inst(
     } = state.get(ptr)
     {
         match bounds.map(|bounds| bounds.origin()) {
-            Some(PtrOrigin::ContextBuffer(_)) => {}
+            Some(PtrOrigin::ContextBuffer(_) | PtrOrigin::KernelBtf(_)) => {}
             _ => errors.push(VerifierTypeError::new(
-                "load on kernel pointers requires bounded context-buffer provenance",
+                "load on kernel pointers requires bounded context-buffer or trusted BTF provenance",
             )),
         }
     }
@@ -45,10 +45,39 @@ pub(super) fn apply_load_inst(
         state,
         errors,
     );
-    let ty = types
+    let mut ty = types
         .get(&dst)
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
+    let trusted_btf_load = matches!(
+        state.get(ptr),
+        VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            bounds: Some(bounds),
+            ..
+        } if matches!(bounds.origin(), PtrOrigin::KernelBtf(_))
+    );
+    if trusted_btf_load
+        && let VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            ringbuf_ref,
+            kfunc_ref,
+            ..
+        } = ty
+    {
+        ty = VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            nullability: Nullability::NonNull,
+            bounds: Some(PtrBounds::new(
+                PtrOrigin::KernelBtf(dst),
+                0,
+                0,
+                UNKNOWN_KERNEL_BTF_LIMIT,
+            )),
+            ringbuf_ref,
+            kfunc_ref,
+        };
+    }
     state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
 }
 
@@ -286,6 +315,28 @@ pub(super) fn apply_load_ctx_field_inst(
             space,
             nullability: Nullability::NonNull,
             bounds,
+            ringbuf_ref,
+            kfunc_ref,
+        };
+    }
+    if matches!(field, CtxField::Task)
+        && let VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            nullability,
+            ringbuf_ref,
+            kfunc_ref,
+            ..
+        } = ty
+    {
+        ty = VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            nullability,
+            bounds: Some(PtrBounds::new(
+                PtrOrigin::KernelBtf(dst),
+                0,
+                0,
+                UNKNOWN_KERNEL_BTF_LIMIT,
+            )),
             ringbuf_ref,
             kfunc_ref,
         };

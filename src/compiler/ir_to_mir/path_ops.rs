@@ -400,14 +400,69 @@ impl<'a> HirToMirLowering<'a> {
         matches!(val.as_str(), "cgroup" | "current_cgroup").then_some(val.as_str())
     }
 
-    fn current_cgroup_alias_projection_members(path: &CellPath) -> Option<Vec<PathMember>> {
-        Self::current_cgroup_alias_name(path)?;
-        let mut members = vec![
-            PathMember::test_string("cgroups".to_string(), false, Casing::Sensitive),
-            PathMember::test_string("dfl_cgrp".to_string(), false, Casing::Sensitive),
+    fn lower_current_cgroup_btf_pointer_projection(
+        &mut self,
+        dst_vreg: VReg,
+        task_vreg: VReg,
+        alias_name: &str,
+    ) -> Result<MirType, CompileError> {
+        let projection_path = [
+            TrampolineFieldSelector::Field("cgroups".to_string()),
+            TrampolineFieldSelector::Field("dfl_cgrp".to_string()),
         ];
-        members.extend(path.members.iter().skip(1).cloned());
-        Some(members)
+        let path_desc = format!("ctx.{alias_name}");
+        let projection = KernelBtf::get()
+            .kernel_named_type_field_projection("task_struct", &projection_path)
+            .map_err(|err| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{path_desc} requires kernel BTF for task_struct.cgroups.dfl_cgrp: {err}"
+                ))
+            })?;
+
+        let mut base_vreg = task_vreg;
+        let mut projected_ty = None;
+        for (idx, segment) in projection.path.iter().enumerate() {
+            if segment.bitfield.is_some() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{path_desc} does not support bitfield segments"
+                )));
+            }
+            let segment_ty =
+                Self::projected_trampoline_field_type(&segment.type_info).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{path_desc} has unsupported kernel BTF field type {:?}",
+                        segment.type_info
+                    ))
+                })?;
+            let segment_vreg = if idx + 1 == projection.path.len() {
+                dst_vreg
+            } else {
+                self.func.alloc_vreg()
+            };
+            self.vreg_type_hints
+                .insert(segment_vreg, segment_ty.clone());
+            self.emit(MirInst::Load {
+                dst: segment_vreg,
+                ptr: base_vreg,
+                offset: Self::trampoline_projection_offset_i32(segment.offset_bytes, &path_desc)?,
+                ty: segment_ty.clone(),
+            });
+            base_vreg = segment_vreg;
+            projected_ty = Some(segment_ty);
+        }
+
+        let projected_ty = projected_ty.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{path_desc} requires a non-empty kernel BTF projection"
+            ))
+        })?;
+        if !projected_ty.is_cgroup_ptr() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{path_desc} resolved to {:?}, expected cgroup pointer",
+                projected_ty
+            )));
+        }
+        Ok(projected_ty)
     }
 
     fn lower_current_cgroup_context_alias(
@@ -452,19 +507,29 @@ impl<'a> HirToMirLowering<'a> {
             slot: None,
         });
 
-        let alias_members = Self::current_cgroup_alias_projection_members(path)
-            .expect("alias name was already matched");
         let path_desc = Self::typed_value_path_desc(&path.members);
-        let projected_ty = self.lower_typed_value_projection(
-            src_dst,
-            dst_vreg,
-            task_vreg,
-            &task_runtime_ty,
-            &alias_members,
-            &path_desc,
-            Some(&task_field),
-            None,
-        )?;
+        let remaining_members: Vec<PathMember> = path.members.iter().skip(1).cloned().collect();
+        let projected_ty = if remaining_members.is_empty() {
+            self.lower_current_cgroup_btf_pointer_projection(dst_vreg, task_vreg, alias_name)?
+        } else {
+            let cgroup_vreg = self.func.alloc_vreg();
+            let cgroup_ty = self.lower_current_cgroup_btf_pointer_projection(
+                cgroup_vreg,
+                task_vreg,
+                alias_name,
+            )?;
+            let projected_ty = self.lower_typed_value_projection(
+                src_dst,
+                dst_vreg,
+                cgroup_vreg,
+                &cgroup_ty,
+                &remaining_members,
+                &path_desc,
+                Some(&task_field),
+                None,
+            )?;
+            projected_ty
+        };
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
         meta.field_type = Some(projected_ty);

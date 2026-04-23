@@ -1321,6 +1321,7 @@ fn stack_slot_from_arg(state: &VerifierState, arg: VReg) -> Option<StackSlotId> 
             PtrOrigin::Map => None,
             PtrOrigin::Packet(_) => None,
             PtrOrigin::ContextBuffer(_) => None,
+            PtrOrigin::KernelBtf(_) => None,
         },
         _ => None,
     }
