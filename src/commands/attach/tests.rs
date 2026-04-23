@@ -8139,6 +8139,20 @@ fn ctx_task_pid_path(root: &str) -> CellPath {
     }
 }
 
+fn pt_regs_offsets_available() -> bool {
+    KernelBtf::get().pt_regs_offsets().is_ok()
+}
+
+fn ctx_task_pt_regs_arg0_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![
+            string_member(root),
+            string_member("pt_regs"),
+            string_member("arg0"),
+        ],
+    }
+}
+
 #[test]
 fn test_compile_kprobe_ctx_task_pid_counter_program() {
     if !task_struct_pid_projection_available() {
@@ -8201,22 +8215,62 @@ fn test_compile_task_context_ctx_task_pid_counter_programs() {
 
 #[test]
 fn test_compile_kprobe_ctx_task_pt_regs_arg_counter_program() {
-    if KernelBtf::get().pt_regs_offsets().is_err() {
+    if !pt_regs_offsets_available() {
         return;
     }
 
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,
         "ksys_read",
-        CellPath {
-            members: vec![
-                string_member("task"),
-                string_member("pt_regs"),
-                string_member("arg0"),
-            ],
-        },
+        ctx_task_pt_regs_arg0_path("task"),
         "kprobe ctx.task.pt_regs.arg0 count",
     );
+}
+
+#[test]
+fn test_compile_tracepoint_ctx_current_task_pt_regs_arg_counter_program() {
+    if !pt_regs_offsets_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_openat",
+        ctx_task_pt_regs_arg0_path("current_task"),
+        "tracepoint ctx.current_task.pt_regs.arg0 count",
+    );
+}
+
+#[test]
+fn test_compile_task_context_ctx_task_pt_regs_arg_counter_programs() {
+    if !pt_regs_offsets_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "fentry ctx.task.pt_regs.arg0 count",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w ctx.task.pt_regs.arg0 count",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup ctx.task.pt_regs.arg0 count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            program_type,
+            target,
+            ctx_task_pt_regs_arg0_path("task"),
+            context,
+        );
+    }
 }
 
 #[test]
@@ -8311,7 +8365,7 @@ fn test_compile_task_context_bound_ctx_task_pid_counter_programs() {
 
 #[test]
 fn test_compile_kprobe_bound_ctx_task_pt_regs_arg_counter_program() {
-    if KernelBtf::get().pt_regs_offsets().is_err() {
+    if !pt_regs_offsets_available() {
         return;
     }
 
@@ -8333,6 +8387,70 @@ fn test_compile_kprobe_bound_ctx_task_pt_regs_arg_counter_program() {
         &decl_names,
         "bound kprobe ctx.task.pt_regs.arg0 count",
     );
+}
+
+#[test]
+fn test_compile_tracepoint_bound_ctx_current_task_pt_regs_arg_counter_program() {
+    if !pt_regs_offsets_available() {
+        return;
+    }
+
+    let hir = make_bound_ctx_path_projection_call_program(
+        CellPath {
+            members: vec![string_member("current_task")],
+        },
+        CellPath {
+            members: vec![string_member("pt_regs"), string_member("arg0")],
+        },
+        DeclId::new(42),
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_openat",
+        &decl_names,
+        "bound tracepoint ctx.current_task.pt_regs.arg0 count",
+    );
+}
+
+#[test]
+fn test_compile_task_context_bound_ctx_task_pt_regs_arg_counter_programs() {
+    if !pt_regs_offsets_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "bound fentry ctx.task.pt_regs.arg0 count",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "bound raw_tracepoint.w ctx.task.pt_regs.arg0 count",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "bound lsm_cgroup ctx.task.pt_regs.arg0 count",
+        ),
+    ] {
+        let hir = make_bound_ctx_path_projection_call_program(
+            CellPath {
+                members: vec![string_member("task")],
+            },
+            CellPath {
+                members: vec![string_member("pt_regs"), string_member("arg0")],
+            },
+            DeclId::new(42),
+        );
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "count".to_string());
+        assert_attach_program_compiles(&hir, program_type, target, &decl_names, context);
+    }
 }
 
 #[test]
