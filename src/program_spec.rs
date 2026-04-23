@@ -3195,6 +3195,84 @@ mod tests {
         );
     }
 
+    fn representative_target_for_program_type(program_type: EbpfProgramType) -> &'static str {
+        match program_type {
+            EbpfProgramType::Kprobe => "ksys_read",
+            EbpfProgramType::Kretprobe => "ksys_read",
+            EbpfProgramType::KprobeMulti => "vfs_*",
+            EbpfProgramType::KretprobeMulti => "vfs_*",
+            EbpfProgramType::Ksyscall => "nanosleep",
+            EbpfProgramType::KretSyscall => "nanosleep",
+            EbpfProgramType::Fentry => "vfs_read",
+            EbpfProgramType::Fexit => "vfs_read",
+            EbpfProgramType::FmodRet => "bpf_modify_return_test",
+            EbpfProgramType::TpBtf => "sched_switch",
+            EbpfProgramType::Lsm => "file_open",
+            EbpfProgramType::LsmCgroup => "socket_bind",
+            EbpfProgramType::Extension => "replace_me",
+            EbpfProgramType::Syscall => "demo",
+            EbpfProgramType::Tracepoint => "syscalls/sys_enter_openat",
+            EbpfProgramType::RawTracepoint => "sys_enter",
+            EbpfProgramType::RawTracepointWritable => "sys_enter",
+            EbpfProgramType::Uprobe => "/bin/bash:main",
+            EbpfProgramType::Uretprobe => "/bin/bash:main",
+            EbpfProgramType::UprobeMulti => "/bin/bash:read*",
+            EbpfProgramType::UretprobeMulti => "/bin/bash:read*",
+            EbpfProgramType::Xdp => "lo",
+            EbpfProgramType::PerfEvent => "software:cpu-clock:cpu=1",
+            EbpfProgramType::SocketFilter => "tcp4:127.0.0.1:8080",
+            EbpfProgramType::SkLookup => "/proc/self/ns/net",
+            EbpfProgramType::FlowDissector => "/proc/self/ns/net",
+            EbpfProgramType::Netfilter => "ipv4:pre_routing:priority=-100:defrag",
+            EbpfProgramType::LwtIn
+            | EbpfProgramType::LwtOut
+            | EbpfProgramType::LwtXmit
+            | EbpfProgramType::LwtSeg6Local => "demo-route",
+            EbpfProgramType::SkReuseport => "select",
+            EbpfProgramType::SkMsg => "/sys/fs/bpf/demo_sockmap",
+            EbpfProgramType::SkSkb => "/sys/fs/bpf/demo_sockmap",
+            EbpfProgramType::SkSkbParser => "/sys/fs/bpf/demo_sockmap",
+            EbpfProgramType::CgroupDevice => "/sys/fs/cgroup",
+            EbpfProgramType::SockOps => "/sys/fs/cgroup",
+            EbpfProgramType::Tc => "lo:ingress",
+            EbpfProgramType::Tcx => "lo:ingress",
+            EbpfProgramType::Netkit => "nk0:primary",
+            EbpfProgramType::TcAction => "demo-action",
+            EbpfProgramType::CgroupSkb => "/sys/fs/cgroup:egress",
+            EbpfProgramType::CgroupSock => "/sys/fs/cgroup:sock_create",
+            EbpfProgramType::CgroupSysctl => "/sys/fs/cgroup",
+            EbpfProgramType::CgroupSockopt => "/sys/fs/cgroup:get",
+            EbpfProgramType::CgroupSockAddr => "/sys/fs/cgroup:connect4",
+            EbpfProgramType::LircMode2 => "/dev/lirc0",
+            EbpfProgramType::StructOps => "sched_ext_ops",
+        }
+    }
+
+    #[test]
+    fn test_supported_program_types_parse_canonical_representative_specs() {
+        for &program_type in EbpfProgramType::supported_program_types() {
+            let target = representative_target_for_program_type(program_type);
+            let direct = ProgramSpec::from_program_type_target(program_type, target)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{} representative target should parse directly: {err}",
+                        program_type.canonical_prefix()
+                    )
+                });
+            let parsed =
+                ProgramSpec::parse(&format!("{}:{target}", program_type.canonical_prefix()))
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "{} canonical representative spec should parse: {err}",
+                            program_type.canonical_prefix()
+                        )
+                    });
+
+            assert_eq!(parsed, direct);
+            assert_eq!(parsed.program_type(), program_type);
+        }
+    }
+
     #[test]
     fn test_cgroup_sysctl_target_requires_non_empty_path() {
         let target =
