@@ -104,6 +104,26 @@ impl<'a> HirToMirLowering<'a> {
         Ok(types)
     }
 
+    fn validate_ctx_field_access_with_source_name(
+        &self,
+        ctx_field: &CtxField,
+        source_ctx_field_name: &str,
+    ) -> Result<(), CompileError> {
+        if let Some(ctx) = self.probe_ctx
+            && let Some(message) = ctx.ctx_field_access_error(ctx_field)
+        {
+            let canonical = format!("ctx.{}", ctx_field.display_name());
+            let source = format!("ctx.{source_ctx_field_name}");
+            let message = if source_ctx_field_name != "arg" && source != canonical {
+                message.replace(&canonical, &source)
+            } else {
+                message
+            };
+            return Err(CompileError::UnsupportedInstruction(message));
+        }
+        Ok(())
+    }
+
     pub(super) fn lower_dynamic_typed_numeric_get(
         &mut self,
         dst_reg: RegId,
@@ -353,9 +373,7 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
         if !uses_ctx_arg {
-            if let Some(ctx) = self.probe_ctx {
-                ctx.validate_ctx_field_access(&CtxField::CgroupId)?;
-            }
+            self.validate_ctx_field_access_with_source_name(&CtxField::CgroupId, projection_name)?;
         }
         if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
             return Err(CompileError::UnsupportedInstruction(message));
@@ -648,18 +666,7 @@ impl<'a> HirToMirLowering<'a> {
         let source_ctx_field_name = Self::ctx_path_member_name(&path.members[0])?;
         let (ctx_field, root_members_consumed) = self.resolve_ctx_field_from_path(&path)?;
         let remaining_members = &path.members[root_members_consumed..];
-        if let Some(ctx) = self.probe_ctx {
-            if let Some(message) = ctx.ctx_field_access_error(&ctx_field) {
-                let canonical = format!("ctx.{}", ctx_field.display_name());
-                let source = format!("ctx.{source_ctx_field_name}");
-                let message = if source_ctx_field_name != "arg" && source != canonical {
-                    message.replace(&canonical, &source)
-                } else {
-                    message
-                };
-                return Err(CompileError::UnsupportedInstruction(message));
-            }
-        }
+        self.validate_ctx_field_access_with_source_name(&ctx_field, &source_ctx_field_name)?;
         if matches!(ctx_field, CtxField::Cgroup) {
             self.lower_current_cgroup_context_field(
                 src_dst,

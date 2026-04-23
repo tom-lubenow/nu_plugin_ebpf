@@ -4356,13 +4356,19 @@ fn test_lower_packet_program_rejects_current_task_alias_with_source_name() {
 
 #[test]
 fn test_lower_contextless_program_rejects_current_task_cgroup_fields() {
-    for path in [
-        CellPath {
-            members: vec![string_member("cgroup_id")],
-        },
-        CellPath {
-            members: vec![string_member("ancestor_cgroup_id"), int_member(0)],
-        },
+    for (path, expected_field) in [
+        (
+            CellPath {
+                members: vec![string_member("cgroup_id")],
+            },
+            "cgroup_id",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("ancestor_cgroup_id"), int_member(0)],
+            },
+            "ancestor_cgroup_id",
+        ),
     ] {
         for (program_type, target) in [
             (EbpfProgramType::Extension, "replace_me"),
@@ -4383,7 +4389,7 @@ fn test_lower_contextless_program_rejects_current_task_cgroup_fields() {
 
             assert!(
                 err.to_string().contains(&format!(
-                    "ctx.cgroup_id is not available on {} programs",
+                    "ctx.{expected_field} is not available on {} programs",
                     program_type.canonical_prefix()
                 )),
                 "unexpected error for {program_type:?}: {err}"
