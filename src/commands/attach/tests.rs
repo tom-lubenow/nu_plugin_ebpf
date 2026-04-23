@@ -12086,70 +12086,90 @@ fn test_compile_kprobe_current_cgroup_storage_map_contains_program() {
     );
 }
 
-#[test]
-fn test_compile_kprobe_current_cgroup_btf_projection_program() {
+fn current_cgroup_kn_id_projection_available() -> bool {
     let projection_path = [
         TrampolineFieldSelector::Field("kn".to_string()),
         TrampolineFieldSelector::Field("id".to_string()),
     ];
-    if !matches!(
+    matches!(
         KernelBtf::get().kernel_named_type_field_projection("cgroup", &projection_path),
         Ok(projection) if matches!(projection.type_info, TypeInfo::Int { size: 8, .. })
-    ) {
+    )
+}
+
+fn current_cgroup_kn_id_path() -> CellPath {
+    CellPath {
+        members: vec![
+            string_member("current_cgroup"),
+            string_member("kn"),
+            string_member("id"),
+        ],
+    }
+}
+
+#[test]
+fn test_compile_kprobe_current_cgroup_btf_projection_program() {
+    if !current_cgroup_kn_id_projection_available() {
         return;
     }
 
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,
         "ksys_read",
-        CellPath {
-            members: vec![
-                string_member("current_cgroup"),
-                string_member("kn"),
-                string_member("id"),
-            ],
-        },
+        current_cgroup_kn_id_path(),
         "current_cgroup BTF field projection",
     );
 }
 
 #[test]
 fn test_compile_tracepoint_current_cgroup_btf_projection_program() {
-    let projection_path = [
-        TrampolineFieldSelector::Field("kn".to_string()),
-        TrampolineFieldSelector::Field("id".to_string()),
-    ];
-    if !matches!(
-        KernelBtf::get().kernel_named_type_field_projection("cgroup", &projection_path),
-        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { size: 8, .. })
-    ) {
+    if !current_cgroup_kn_id_projection_available() {
         return;
     }
 
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Tracepoint,
         "syscalls/sys_enter_openat",
-        CellPath {
-            members: vec![
-                string_member("current_cgroup"),
-                string_member("kn"),
-                string_member("id"),
-            ],
-        },
+        current_cgroup_kn_id_path(),
         "tracepoint current_cgroup BTF field projection",
     );
 }
 
 #[test]
+fn test_compile_task_context_current_cgroup_btf_projection_programs() {
+    if !current_cgroup_kn_id_projection_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "fentry current_cgroup BTF field projection",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w current_cgroup BTF field projection",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup current_cgroup BTF field projection",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            program_type,
+            target,
+            current_cgroup_kn_id_path(),
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_kprobe_bound_current_cgroup_btf_projection_program() {
-    let projection_path = [
-        TrampolineFieldSelector::Field("kn".to_string()),
-        TrampolineFieldSelector::Field("id".to_string()),
-    ];
-    if !matches!(
-        KernelBtf::get().kernel_named_type_field_projection("cgroup", &projection_path),
-        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { size: 8, .. })
-    ) {
+    if !current_cgroup_kn_id_projection_available() {
         return;
     }
 
@@ -12172,14 +12192,7 @@ fn test_compile_kprobe_bound_current_cgroup_btf_projection_program() {
 
 #[test]
 fn test_compile_tracepoint_bound_current_cgroup_btf_projection_program() {
-    let projection_path = [
-        TrampolineFieldSelector::Field("kn".to_string()),
-        TrampolineFieldSelector::Field("id".to_string()),
-    ];
-    if !matches!(
-        KernelBtf::get().kernel_named_type_field_projection("cgroup", &projection_path),
-        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { size: 8, .. })
-    ) {
+    if !current_cgroup_kn_id_projection_available() {
         return;
     }
 
@@ -12198,6 +12211,41 @@ fn test_compile_tracepoint_bound_current_cgroup_btf_projection_program() {
         &HashMap::new(),
         "tracepoint bound current_cgroup BTF field projection",
     );
+}
+
+#[test]
+fn test_compile_task_context_bound_current_cgroup_btf_projection_programs() {
+    if !current_cgroup_kn_id_projection_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "fentry bound current_cgroup BTF field projection",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w bound current_cgroup BTF field projection",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup bound current_cgroup BTF field projection",
+        ),
+    ] {
+        let hir = make_bound_ctx_path_program(
+            CellPath {
+                members: vec![string_member("current_cgroup")],
+            },
+            CellPath {
+                members: vec![string_member("kn"), string_member("id")],
+            },
+        );
+        assert_attach_program_compiles(&hir, program_type, target, &HashMap::new(), context);
+    }
 }
 
 #[test]
