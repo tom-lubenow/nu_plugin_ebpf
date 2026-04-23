@@ -4616,6 +4616,53 @@ fn make_map_push_program(map_push_decl: DeclId, flags: i64, kind: &str) -> HirPr
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_literal_map_push_program(map_push_decl: DeclId, flags: i64, kind: &str) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"iter_values".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(kind.as_bytes().to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(flags),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(2)),
+                            (b"flags".to_vec(), RegId::new(3)),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_map_put_program(map_put_decl: DeclId, flags: i64, kind: &str) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -7780,6 +7827,34 @@ fn test_compile_iter_return_program() {
         "task",
         &HashMap::new(),
         "iter return 0",
+    );
+}
+
+#[test]
+fn test_compile_iter_annotated_mut_int_count_program() {
+    let hir = make_annotated_mut_int_count_program(DeclId::new(42));
+    let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "task",
+        &decl_names,
+        "iter annotated mut int count",
+    );
+}
+
+#[test]
+fn test_compile_iter_literal_queue_map_push_program() {
+    let hir = make_literal_map_push_program(DeclId::new(42), 0, "queue");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
+
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "task",
+        &decl_names,
+        "iter literal queue map-push",
     );
 }
 
