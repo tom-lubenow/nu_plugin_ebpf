@@ -6645,6 +6645,38 @@ fn test_compile_fentry_named_projected_ctx_arg_program() {
 }
 
 #[test]
+fn test_compile_tracepoint_builtin_ctx_counter_programs() {
+    for field in [
+        "pid",
+        "tid",
+        "tgid",
+        "uid",
+        "gid",
+        "cpu",
+        "numa_node",
+        "numa_node_id",
+        "ktime",
+        "timestamp",
+        "ktime_boot",
+        "boot_time",
+        "ktime_coarse",
+        "coarse_time",
+        "ktime_tai",
+        "tai_time",
+        "jiffies",
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::Tracepoint,
+            "syscalls/sys_enter_openat",
+            CellPath {
+                members: vec![string_member(field)],
+            },
+            &format!("tracepoint ctx.{field} count"),
+        );
+    }
+}
+
+#[test]
 fn test_compile_fentry_ctx_arg_count_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Fentry,
