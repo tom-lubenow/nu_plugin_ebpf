@@ -534,7 +534,13 @@ impl EbpfProgram {
                             )));
                         }
                     }
-                    _ => {}
+                    _ => {
+                        require_capability(
+                            program,
+                            ProgramCapability::GenericMaps,
+                            &format!("runtime map '{}'", map.name),
+                        )?;
+                    }
                 },
             }
         }

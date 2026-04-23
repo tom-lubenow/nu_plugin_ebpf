@@ -8166,3 +8166,57 @@ fn test_validate_runtime_artifacts_rejects_missing_emit_capability_for_events_ma
         matches!(err, CompileError::InvalidProgram(msg) if msg.contains("limited programs do not support event emission"))
     );
 }
+
+#[test]
+fn test_validate_runtime_artifacts_requires_generic_maps_for_arbitrary_maps() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Syscall,
+        "demo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "scratch".to_string(),
+            def: BpfMapDef::hash(8, 8, 1024),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("expected generic map capability validation error");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("syscall programs do not support generic map operations required by runtime map 'scratch'"))
+    );
+}
+
+#[test]
+fn test_validate_runtime_artifacts_accepts_arbitrary_maps_with_generic_maps() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "scratch".to_string(),
+            def: BpfMapDef::hash(8, 8, 1024),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    program
+        .validate_runtime_artifacts()
+        .expect("generic-map-capable program should accept arbitrary runtime maps");
+}
