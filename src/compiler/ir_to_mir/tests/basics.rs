@@ -873,6 +873,112 @@ fn test_loop_break_edge_does_not_disable_sibling_continue_backedge() {
 }
 
 #[test]
+fn test_loop_branch_to_header_lowers_through_loopback_trampoline() {
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Nothing,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Range {
+                            start: RegId::new(0),
+                            step: RegId::new(1),
+                            end: RegId::new(2),
+                            inclusion: RangeInclusion::Inclusive,
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(4),
+                    stream: RegId::new(3),
+                    body: HirBlockId(1),
+                    end: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Bool(true),
+                }],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(5),
+                    if_true: HirBlockId(0),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 6],
+        ast: vec![None; 6],
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("loop branch to header should lower");
+
+    let header_block = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| {
+            matches!(block.terminator, MirInst::LoopHeader { .. }).then_some(block.id)
+        })
+        .expect("expected loop header block");
+
+    let loopback_block = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| {
+            matches!(
+                block.terminator,
+                MirInst::LoopBack { header, .. } if header == header_block
+            )
+            .then_some(block.id)
+        })
+        .expect("expected conditional header edge to use a LoopBack trampoline");
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| matches!(
+            block.terminator,
+            MirInst::Branch { if_true, if_false, .. }
+                if if_true == loopback_block || if_false == loopback_block
+        )),
+        "expected a branch edge to target the LoopBack trampoline"
+    );
+}
+
+#[test]
 fn test_lower_fentry_aggregate_scalar_field_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("tv_nsec")],

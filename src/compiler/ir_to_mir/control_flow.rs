@@ -174,6 +174,26 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn branch_target_with_loop_back(&mut self, target_block: BlockId) -> BlockId {
+        let Some(loop_ctx) = self.loop_contexts.last().cloned() else {
+            return target_block;
+        };
+        if target_block != loop_ctx.header_block {
+            return target_block;
+        }
+
+        let backedge_block = self.func.alloc_block();
+        let old_block = self.current_block;
+        self.current_block = backedge_block;
+        self.terminate(MirInst::LoopBack {
+            counter: loop_ctx.counter_vreg,
+            step: loop_ctx.step,
+            header: loop_ctx.header_block,
+        });
+        self.current_block = old_block;
+        backedge_block
+    }
+
     fn is_terminal_cleanup_stmt(stmt: &HirStmt) -> bool {
         matches!(
             stmt,
@@ -526,6 +546,8 @@ impl<'a> HirToMirLowering<'a> {
                         CompileError::UnsupportedInstruction("Invalid branch target".into())
                     })?
                 };
+                let if_true = self.branch_target_with_loop_back(if_true);
+                let if_false = self.branch_target_with_loop_back(if_false);
                 let cond_vreg = self.get_vreg(*cond);
                 self.terminate(MirInst::Branch {
                     cond: cond_vreg,
@@ -1208,6 +1230,8 @@ impl<'a> HirToMirLowering<'a> {
                 let if_false = *self.hir_block_map.get(if_false).ok_or_else(|| {
                     CompileError::UnsupportedInstruction("Invalid branch target".into())
                 })?;
+                let if_true = self.branch_target_with_loop_back(if_true);
+                let if_false = self.branch_target_with_loop_back(if_false);
                 let cond_vreg = self.get_vreg(*cond);
                 self.terminate(MirInst::Branch {
                     cond: cond_vreg,
@@ -1226,6 +1250,8 @@ impl<'a> HirToMirLowering<'a> {
                 let if_false = *self.hir_block_map.get(if_false).ok_or_else(|| {
                     CompileError::UnsupportedInstruction("Invalid branch target".into())
                 })?;
+                let if_true = self.branch_target_with_loop_back(if_true);
+                let if_false = self.branch_target_with_loop_back(if_false);
                 let src_vreg = self.get_vreg(*src);
                 let cmp_result = self.func.alloc_vreg();
                 self.emit(MirInst::BinOp {
@@ -1252,6 +1278,8 @@ impl<'a> HirToMirLowering<'a> {
                 let if_false = *self.hir_block_map.get(if_false).ok_or_else(|| {
                     CompileError::UnsupportedInstruction("Invalid match target".into())
                 })?;
+                let if_true = self.branch_target_with_loop_back(if_true);
+                let if_false = self.branch_target_with_loop_back(if_false);
                 self.lower_match(pattern, *src, if_true, if_false)?;
             }
             HirTerminator::Iterate {

@@ -514,6 +514,7 @@ Near-term priority order:
   - Recent progress: metadata-backed `record spread` now merges compiler-known source fields instead of being rejected outright, preserving downstream field semantics for spread string/record flows.
   - Recent progress: `list spread` now guards each copied slot against the source runtime length instead of unconditionally copying the full compile-time capacity.
   - Recent progress: loop context lifetime now survives sibling break/continue blocks correctly, so a break edge no longer disables verifier-friendly `LoopBack` lowering for a later continue edge in the same bounded loop.
+  - Recent progress: conditional branch edges to loop headers now lower through generated `LoopBack` trampolines, so bounded loop counters still advance when future IR shapes branch directly to a continue target.
   - Ensure CFG lowering remains verifier-friendly with predictable complexity limits.
 
 - [~] Support global/static data sections.
