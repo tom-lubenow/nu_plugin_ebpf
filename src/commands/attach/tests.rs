@@ -9076,6 +9076,43 @@ fn test_compile_netfilter_ctx_typed_pointer_counter_programs() {
 }
 
 #[test]
+fn test_compile_netfilter_bound_typed_pointer_counter_programs() {
+    for (root, projection, context) in [
+        (
+            vec![string_member("state")],
+            vec![string_member("in"), string_member("ifindex")],
+            "bound netfilter ctx.state.in.ifindex count",
+        ),
+        (
+            vec![string_member("nf_state")],
+            vec![string_member("out"), string_member("ifindex")],
+            "bound netfilter ctx.nf_state.out.ifindex count",
+        ),
+        (
+            vec![string_member("skb")],
+            vec![string_member("len")],
+            "bound netfilter ctx.skb.len count",
+        ),
+    ] {
+        let hir = make_bound_ctx_path_projection_call_program(
+            CellPath { members: root },
+            CellPath {
+                members: projection,
+            },
+            DeclId::new(42),
+        );
+        let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+        assert_attach_program_compiles(
+            &hir,
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            &decl_names,
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_lwt_ctx_scalar_counter_programs() {
     for (program_type, target, field, context) in [
         (
