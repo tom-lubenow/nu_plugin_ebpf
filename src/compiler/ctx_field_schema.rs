@@ -759,10 +759,6 @@ pub(crate) fn static_ctx_field_pointer_is_non_null(field: &CtxField) -> bool {
     raw_ctx_field_pointer_is_non_null(field)
 }
 
-pub(crate) fn static_ctx_field_is_trusted_btf_kernel_pointer(field: &CtxField) -> bool {
-    raw_ctx_field_is_trusted_btf_kernel_pointer(field)
-}
-
 pub(crate) fn program_type_ctx_field_pointer_is_non_null(
     program_type: EbpfProgramType,
     field: &CtxField,

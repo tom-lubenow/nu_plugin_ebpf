@@ -8,8 +8,8 @@ use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
     program_type_ctx_field_projection_spec, program_type_ctx_field_type_spec,
-    static_ctx_field_is_trusted_btf_kernel_pointer, static_ctx_field_pointer_is_non_null,
-    static_ctx_field_projection_spec, static_ctx_field_type_spec,
+    static_ctx_field_pointer_is_non_null, static_ctx_field_projection_spec,
+    static_ctx_field_type_spec,
 };
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::instruction::BpfHelper;
@@ -66,10 +66,9 @@ impl ProbeContext {
         probe_ctx: Option<&Self>,
         field: &CtxField,
     ) -> bool {
-        probe_ctx.map_or_else(
-            || static_ctx_field_is_trusted_btf_kernel_pointer(field),
-            |ctx| ctx.ctx_field_is_trusted_btf_kernel_pointer(field),
-        )
+        probe_ctx.map_or(matches!(field, CtxField::Task), |ctx| {
+            ctx.ctx_field_is_trusted_btf_kernel_pointer(field)
+        })
     }
 
     pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {

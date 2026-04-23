@@ -1657,6 +1657,13 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
             &CtxField::NetfilterSkb
         )
     );
+    assert!(ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(None, &CtxField::Task));
+    assert!(
+        !ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+            None,
+            &CtxField::NetfilterState
+        )
+    );
 }
 
 #[test]
