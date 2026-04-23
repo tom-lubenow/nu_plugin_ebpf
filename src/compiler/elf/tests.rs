@@ -5327,6 +5327,24 @@ fn test_program_type_resolves_tracepoint_builtin_alias_names() {
             .expect("tracepoint prandom_u32 should preserve builtin alias"),
         CtxField::Random
     );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("function_ip")
+            .expect("tracepoint function_ip should preserve builtin alias"),
+        CtxField::FuncIp
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("bpf_cookie")
+            .expect("tracepoint bpf_cookie should preserve builtin alias"),
+        CtxField::AttachCookie
+    );
+    assert_eq!(
+        EbpfProgramType::Tracepoint
+            .resolve_ctx_field_name("current_task")
+            .expect("tracepoint current_task should preserve builtin alias"),
+        CtxField::Task
+    );
 }
 
 #[test]
@@ -5335,6 +5353,12 @@ fn test_program_type_resolves_task_field_name() {
         EbpfProgramType::Kprobe
             .resolve_ctx_field_name("task")
             .expect("kprobe task should resolve"),
+        CtxField::Task
+    );
+    assert_eq!(
+        EbpfProgramType::Kprobe
+            .resolve_ctx_field_name("current_task")
+            .expect("kprobe current_task should resolve"),
         CtxField::Task
     );
 }

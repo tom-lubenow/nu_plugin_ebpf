@@ -112,6 +112,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.uid_gid } - Get packed (gid << 32) | uid
     {|ctx| $ctx.comm }    - Get process command name (first 16 bytes)
     {|ctx| $ctx.task }    - Get current task_struct pointer
+    {|ctx| $ctx.current_task } - Alias for ctx.task; preserved as a builtin on tracepoints
     {|ctx| $ctx.numa_node } - Get current NUMA node ID
     {|ctx| $ctx.numa_node_id } - Get current NUMA node ID
     {|ctx| $ctx.random } - Get a pseudo-random u32

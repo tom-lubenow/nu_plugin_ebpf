@@ -7096,8 +7096,12 @@ fn test_compile_tracepoint_builtin_ctx_counter_programs() {
         "pid",
         "tid",
         "tgid",
+        "pid_tgid",
+        "current_pid_tgid",
         "uid",
         "gid",
+        "uid_gid",
+        "current_uid_gid",
         "cpu",
         "numa_node",
         "numa_node_id",
@@ -7112,6 +7116,10 @@ fn test_compile_tracepoint_builtin_ctx_counter_programs() {
         "ktime_tai",
         "tai_time",
         "jiffies",
+        "func_ip",
+        "function_ip",
+        "attach_cookie",
+        "bpf_cookie",
         "cgroup_id",
     ] {
         assert_ctx_path_count_program_compiles(
@@ -7123,6 +7131,20 @@ fn test_compile_tracepoint_builtin_ctx_counter_programs() {
             &format!("tracepoint ctx.{field} count"),
         );
     }
+}
+
+#[test]
+fn test_compile_tracepoint_ctx_current_task_non_null_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("current_task")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_openat",
+        &HashMap::new(),
+        "tracepoint ctx.current_task non-null check",
+    );
 }
 
 #[test]
