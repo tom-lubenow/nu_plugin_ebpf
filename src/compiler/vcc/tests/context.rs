@@ -760,6 +760,31 @@ fn test_verify_mir_for_probe_context_task_is_non_null_task_pointer() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_rejects_direct_cgroup_ctx_load() {
+    let (mut func, entry) = new_mir_function();
+    let cgroup = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: cgroup,
+            field: CtxField::Cgroup,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cgroup, MirType::named_kernel_struct_ptr("cgroup"));
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+    let errors = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("direct ctx.cgroup LoadCtxField should be rejected");
+    assert!(errors.iter().any(|err| {
+        err.message
+            .contains("ctx.cgroup must be lowered through task_struct.cgroups.dfl_cgrp")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_btf_arg_allows_direct_kernel_pointer_load() {
     let (mut func, entry) = new_mir_function();
     let file = func.alloc_vreg();

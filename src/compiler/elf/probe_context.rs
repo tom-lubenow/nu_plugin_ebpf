@@ -888,6 +888,12 @@ impl ProbeContext {
     pub(crate) fn validate_load_ctx_field(&self, field: &CtxField) -> Result<(), CompileError> {
         self.validate_ctx_field_access(field)?;
         match field {
+            CtxField::Cgroup => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "ctx.cgroup must be lowered through task_struct.cgroups.dfl_cgrp before MIR verification"
+                        .into(),
+                ));
+            }
             CtxField::Arg(idx) if self.arg_access().is_pt_regs() => {
                 let offsets = KernelBtf::get().pt_regs_offsets().map_err(|e| {
                     CompileError::UnsupportedInstruction(format!(
