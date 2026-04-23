@@ -6024,12 +6024,39 @@ fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
 }
 
 #[test]
-fn test_probe_context_rejects_numa_node_on_struct_ops() {
-    let ctx = ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu");
-    let err = ctx
-        .ctx_field_access_error(&CtxField::NumaNode)
-        .expect("expected struct_ops numa_node access error");
-    assert!(err.contains("ctx.numa_node is not available on struct_ops programs"));
+fn test_probe_context_rejects_runtime_fields_on_contextless_programs() {
+    let contexts = [
+        ProbeContext::new(EbpfProgramType::Extension, "replace_me"),
+        ProbeContext::new(EbpfProgramType::Syscall, "demo"),
+        ProbeContext::new_struct_ops_callback("sched_ext_ops", "select_cpu"),
+    ];
+    let fields = [
+        CtxField::Cpu,
+        CtxField::NumaNode,
+        CtxField::Timestamp,
+        CtxField::BootTimestamp,
+        CtxField::CoarseTimestamp,
+        CtxField::TaiTimestamp,
+        CtxField::Jiffies,
+    ];
+
+    for ctx in contexts {
+        for field in &fields {
+            let err = ctx
+                .ctx_field_access_error(field)
+                .unwrap_or_else(|| panic!("expected {} access error", field.display_name()));
+            assert!(
+                err.contains(&format!(
+                    "ctx.{} is not available on {} programs",
+                    field.display_name(),
+                    ctx.program_type().canonical_prefix()
+                )),
+                "unexpected error for {:?}/{}: {err}",
+                ctx.program_type(),
+                field.display_name()
+            );
+        }
+    }
 }
 
 #[test]

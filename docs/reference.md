@@ -17,13 +17,13 @@ The closure receives a context parameter with these fields:
 | `task` | Current `task_struct *` pointer from `bpf_get_current_task_btf`; the legacy `bpf_get_current_task` helper is also modeled as a typed non-null task pointer. BTF-backed fields such as `task.pid` can be projected when kernel BTF is available | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `cgroup_id` | Current task cgroup ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
-| `cpu` | CPU ID | all non-struct_ops program types |
-| `numa_node` / `numa_node_id` | Current NUMA node ID from `bpf_get_numa_node_id` | all non-struct_ops program types |
-| `ktime` | Kernel timestamp (ns) | All |
-| `ktime_boot` | Boot-time kernel timestamp (ns, includes suspend time) | All |
-| `ktime_coarse` | Coarse kernel timestamp (ns) | All |
-| `ktime_tai` | TAI kernel timestamp (ns) | All |
-| `jiffies` | Kernel jiffies counter | All |
+| `cpu` | CPU ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `numa_node` / `numa_node_id` | Current NUMA node ID from `bpf_get_numa_node_id` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `ktime` | Kernel timestamp (ns) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `ktime_boot` | Boot-time kernel timestamp (ns, includes suspend time) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `ktime_coarse` | Coarse kernel timestamp (ns) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `ktime_tai` | TAI kernel timestamp (ns) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `jiffies` | Kernel jiffies counter | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `func_ip` | Address of the traced function/probe target (`bpf_get_func_ip`) | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf |
 | `attach_cookie` | Per-attachment cookie supplied at link/attach time (`bpf_get_attach_cookie`) | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf |
 | `kstack` | Kernel stack-trace ID collected through `bpf_get_stackid` and stored in the `kstacks` stack-trace map | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf |
