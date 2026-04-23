@@ -201,6 +201,11 @@ fn verify_mir_with_subfunction_summaries_impl(
                         "unreleased res spin lock at function exit",
                     ));
                 }
+                if state.has_live_bpf_spin_lock() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased bpf spin lock at function exit",
+                    ));
+                }
                 if state.has_live_res_spin_lock_irqsave() {
                     errors.push(VerifierTypeError::new(
                         "unreleased res spin lock irqsave at function exit",
@@ -300,6 +305,11 @@ fn verify_mir_with_subfunction_summaries_impl(
                 if state.has_live_res_spin_lock() {
                     errors.push(VerifierTypeError::new(
                         "unreleased res spin lock at function exit",
+                    ));
+                }
+                if state.has_live_bpf_spin_lock() {
+                    errors.push(VerifierTypeError::new(
+                        "unreleased bpf spin lock at function exit",
                     ));
                 }
                 if state.has_live_res_spin_lock_irqsave() {

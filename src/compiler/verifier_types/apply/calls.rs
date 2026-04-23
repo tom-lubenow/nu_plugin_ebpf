@@ -14,6 +14,21 @@ pub(super) fn apply_call_helper_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    let helper_kind = BpfHelper::from_u32(helper);
+    if state.has_live_bpf_spin_lock() {
+        match helper_kind {
+            Some(BpfHelper::SpinLock | BpfHelper::SpinUnlock) => {}
+            Some(helper) => errors.push(VerifierTypeError::new(format!(
+                "helper '{}' cannot be called while bpf_spin_lock is held",
+                helper.name()
+            ))),
+            None => errors.push(VerifierTypeError::new(format!(
+                "helper {} cannot be called while bpf_spin_lock is held",
+                helper
+            ))),
+        }
+    }
+
     if let Some(helper_kind) = BpfHelper::from_u32(helper)
         && let Some(message) = probe_ctx
             .and_then(|ctx| ctx.helper_call_error(helper_kind))
@@ -183,6 +198,13 @@ pub(super) fn apply_call_kfunc_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if state.has_live_bpf_spin_lock() {
+        errors.push(VerifierTypeError::new(format!(
+            "kfunc '{}' cannot be called while bpf_spin_lock is held",
+            kfunc
+        )));
+    }
+
     if let Some(message) = probe_ctx.and_then(|ctx| ctx.kfunc_call_error(kfunc)) {
         errors.push(VerifierTypeError::new(message));
         let ty = types
@@ -255,6 +277,13 @@ pub(super) fn apply_call_subfn_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if state.has_live_bpf_spin_lock() {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction '{}' cannot be called while bpf_spin_lock is held",
+            subfn
+        )));
+    }
+
     if args.len() > 5 {
         errors.push(VerifierTypeError::new(format!(
             "BPF subfunctions support at most 5 arguments, got {}",

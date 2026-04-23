@@ -1263,6 +1263,30 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::BpfSpinLockAcquire => {
+                if !state.acquire_bpf_spin_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "helper 'bpf_spin_lock' cannot acquire a second bpf_spin_lock",
+                    ));
+                }
+            }
+            VccInst::BpfSpinLockRelease => {
+                if !state.release_bpf_spin_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "helper 'bpf_spin_unlock' requires a matching bpf_spin_lock",
+                    ));
+                }
+            }
+            VccInst::BpfSpinLockRejectIfHeld { message } => {
+                if state.has_live_bpf_spin_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::ResSpinLockIrqsaveAcquire { flags } => {
                 let Some(slot) = self.stack_slot_from_reg(
                     state,
@@ -2098,6 +2122,12 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased res spin lock at function exit",
+                    ));
+                }
+                if state.has_live_bpf_spin_lock() {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "unreleased bpf spin lock at function exit",
                     ));
                 }
                 if state.has_live_res_spin_lock_irqsave() {

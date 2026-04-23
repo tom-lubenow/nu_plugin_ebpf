@@ -357,6 +357,11 @@ pub enum VccInst {
     },
     ResSpinLockAcquire,
     ResSpinLockRelease,
+    BpfSpinLockAcquire,
+    BpfSpinLockRelease,
+    BpfSpinLockRejectIfHeld {
+        message: String,
+    },
     ResSpinLockIrqsaveAcquire {
         flags: VccReg,
     },

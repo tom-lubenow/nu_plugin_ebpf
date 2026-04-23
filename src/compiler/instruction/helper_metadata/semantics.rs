@@ -1057,6 +1057,14 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const SPIN_LOCK_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper spin_lock lock",
+            allowed: MAP_ONLY,
+            fixed_size: Some(4),
+            size_from_arg: None,
+        }];
+
         const TCP_CHECK_SYNCOOKIE_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2482,6 +2490,11 @@ impl BpfHelper {
             },
             BpfHelper::SkRelease => HelperSemantics {
                 ptr_arg_rules: SK_RELEASE_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::SpinLock | BpfHelper::SpinUnlock => HelperSemantics {
+                ptr_arg_rules: SPIN_LOCK_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

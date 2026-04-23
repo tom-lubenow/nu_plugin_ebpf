@@ -590,6 +590,28 @@ impl VerifierState {
         self.res_spin_lock_max_depth > 0
     }
 
+    pub(in crate::compiler::verifier_types) fn acquire_bpf_spin_lock(&mut self) -> bool {
+        if self.bpf_spin_lock_max_depth > 0 {
+            return false;
+        }
+        self.bpf_spin_lock_min_depth = 1;
+        self.bpf_spin_lock_max_depth = 1;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_bpf_spin_lock(&mut self) -> bool {
+        if self.bpf_spin_lock_min_depth == 0 {
+            return false;
+        }
+        self.bpf_spin_lock_min_depth = 0;
+        self.bpf_spin_lock_max_depth = 0;
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_live_bpf_spin_lock(&self) -> bool {
+        self.bpf_spin_lock_max_depth > 0
+    }
+
     pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave(&mut self) {
         self.res_spin_lock_irqsave_min_depth =
             self.res_spin_lock_irqsave_min_depth.saturating_add(1);

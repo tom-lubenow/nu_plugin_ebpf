@@ -121,6 +121,8 @@ impl BpfHelper {
             89 => Some(Self::MapPeekElem),
             90 => Some(Self::MsgPushData),
             91 => Some(Self::MsgPopData),
+            93 => Some(Self::SpinLock),
+            94 => Some(Self::SpinUnlock),
             65 => Some(Self::XdpAdjustTail),
             66 => Some(Self::SkbGetXfrmState),
             188 => Some(Self::XdpGetBuffLen),
@@ -368,6 +370,12 @@ impl BpfHelper {
                     ret_kind: HelperRetKind::Scalar,
                 }
             }
+            BpfHelper::SpinLock | BpfHelper::SpinUnlock => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Scalar,
+            },
             BpfHelper::SkbAdjustRoom => HelperSignature {
                 min_args: 4,
                 max_args: 4,

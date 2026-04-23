@@ -46,6 +46,8 @@ impl VerifierState {
             && self.iter_kmem_cache_slots == other.iter_kmem_cache_slots
             && self.res_spin_lock_min_depth == other.res_spin_lock_min_depth
             && self.res_spin_lock_max_depth == other.res_spin_lock_max_depth
+            && self.bpf_spin_lock_min_depth == other.bpf_spin_lock_min_depth
+            && self.bpf_spin_lock_max_depth == other.bpf_spin_lock_max_depth
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
             && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
@@ -242,6 +244,12 @@ impl VerifierState {
             res_spin_lock_max_depth: self
                 .res_spin_lock_max_depth
                 .max(other.res_spin_lock_max_depth),
+            bpf_spin_lock_min_depth: self
+                .bpf_spin_lock_min_depth
+                .min(other.bpf_spin_lock_min_depth),
+            bpf_spin_lock_max_depth: self
+                .bpf_spin_lock_max_depth
+                .max(other.bpf_spin_lock_max_depth),
             res_spin_lock_irqsave_min_depth: self
                 .res_spin_lock_irqsave_min_depth
                 .min(other.res_spin_lock_irqsave_min_depth),

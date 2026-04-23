@@ -367,6 +367,14 @@ fn test_bpf_helper_name_roundtrip() {
         Some(BpfHelper::MsgPopData)
     ));
     assert!(matches!(
+        BpfHelper::from_name("bpf_spin_lock"),
+        Some(BpfHelper::SpinLock)
+    ));
+    assert!(matches!(
+        BpfHelper::from_name("spin_unlock"),
+        Some(BpfHelper::SpinUnlock)
+    ));
+    assert!(matches!(
         BpfHelper::from_name("bpf_skb_get_xfrm_state"),
         Some(BpfHelper::SkbGetXfrmState)
     ));
@@ -2902,6 +2910,26 @@ fn test_ima_hash_helper_contracts() {
         "helper ima_file_hash dst"
     );
     assert_eq!(file_semantics.ptr_arg_rules[1].size_from_arg, Some(2));
+}
+
+#[test]
+fn test_helper_signature_bpf_spin_lock_helpers() {
+    for helper in [BpfHelper::SpinLock, BpfHelper::SpinUnlock] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .expect("expected bpf spin lock helper signature");
+        assert_eq!(sig.min_args, 1);
+        assert_eq!(sig.max_args, 1);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+        let semantics = helper.semantics();
+        assert_eq!(semantics.ptr_arg_rules.len(), 1);
+        assert_eq!(semantics.ptr_arg_rules[0].op, "helper spin_lock lock");
+        assert_eq!(semantics.ptr_arg_rules[0].fixed_size, Some(4));
+        assert!(!semantics.ptr_arg_rules[0].allowed.allow_stack);
+        assert!(semantics.ptr_arg_rules[0].allowed.allow_map);
+        assert!(!semantics.ptr_arg_rules[0].allowed.allow_kernel);
+    }
 }
 
 #[test]

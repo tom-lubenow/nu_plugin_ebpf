@@ -671,6 +671,24 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         }
     }
 
+    match helper {
+        BpfHelper::SpinLock => {
+            if !state.acquire_bpf_spin_lock() {
+                errors.push(VerifierTypeError::new(
+                    "helper 'bpf_spin_lock' cannot acquire a second bpf_spin_lock",
+                ));
+            }
+        }
+        BpfHelper::SpinUnlock => {
+            if !state.release_bpf_spin_lock() {
+                errors.push(VerifierTypeError::new(
+                    "helper 'bpf_spin_unlock' requires a matching bpf_spin_lock",
+                ));
+            }
+        }
+        _ => {}
+    }
+
     if helper.invalidates_packet_pointers() {
         state.invalidate_packet_pointers();
     }

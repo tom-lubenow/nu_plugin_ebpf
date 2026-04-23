@@ -350,6 +350,10 @@ pub enum BpfHelper {
     MsgPushData = 90,
     /// long bpf_msg_pop_data(msg, start, len, flags)
     MsgPopData = 91,
+    /// long bpf_spin_lock(lock)
+    SpinLock = 93,
+    /// long bpf_spin_unlock(lock)
+    SpinUnlock = 94,
     /// long bpf_xdp_adjust_tail(xdp_md, delta)
     XdpAdjustTail = 65,
     /// long bpf_skb_get_xfrm_state(skb, index, xfrm_state, size, flags)
@@ -621,6 +625,8 @@ impl BpfHelper {
             BpfHelper::MapPeekElem => "bpf_map_peek_elem",
             BpfHelper::MsgPushData => "bpf_msg_push_data",
             BpfHelper::MsgPopData => "bpf_msg_pop_data",
+            BpfHelper::SpinLock => "bpf_spin_lock",
+            BpfHelper::SpinUnlock => "bpf_spin_unlock",
             BpfHelper::XdpAdjustTail => "bpf_xdp_adjust_tail",
             BpfHelper::SkbGetXfrmState => "bpf_skb_get_xfrm_state",
             BpfHelper::XdpGetBuffLen => "bpf_xdp_get_buff_len",
@@ -825,6 +831,8 @@ impl BpfHelper {
             "map_peek_elem" => Some(Self::MapPeekElem),
             "msg_push_data" => Some(Self::MsgPushData),
             "msg_pop_data" => Some(Self::MsgPopData),
+            "spin_lock" => Some(Self::SpinLock),
+            "spin_unlock" => Some(Self::SpinUnlock),
             "xdp_adjust_tail" => Some(Self::XdpAdjustTail),
             "skb_get_xfrm_state" => Some(Self::SkbGetXfrmState),
             "xdp_get_buff_len" => Some(Self::XdpGetBuffLen),

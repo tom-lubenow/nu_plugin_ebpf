@@ -645,6 +645,22 @@ impl<'a> VccLowerer<'a> {
             MirInst::CallHelper { dst, helper, args } => {
                 self.verify_helper_call(*helper, args, out)?;
                 let helper_kind = BpfHelper::from_u32(*helper);
+                match helper_kind {
+                    Some(BpfHelper::SpinLock) => out.push(VccInst::BpfSpinLockAcquire),
+                    Some(BpfHelper::SpinUnlock) => out.push(VccInst::BpfSpinLockRelease),
+                    Some(helper) => out.push(VccInst::BpfSpinLockRejectIfHeld {
+                        message: format!(
+                            "helper '{}' cannot be called while bpf_spin_lock is held",
+                            helper.name()
+                        ),
+                    }),
+                    None => out.push(VccInst::BpfSpinLockRejectIfHeld {
+                        message: format!(
+                            "helper {} cannot be called while bpf_spin_lock is held",
+                            helper
+                        ),
+                    }),
+                }
                 let ty = self.helper_return_type(*helper, *dst);
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
@@ -704,6 +720,12 @@ impl<'a> VccLowerer<'a> {
                 dst, kfunc, args, ..
             } => {
                 self.verify_kfunc_call(kfunc, args, out)?;
+                out.push(VccInst::BpfSpinLockRejectIfHeld {
+                    message: format!(
+                        "kfunc '{}' cannot be called while bpf_spin_lock is held",
+                        kfunc
+                    ),
+                });
                 let ty = self.kfunc_return_type(kfunc, *dst);
                 out.push(VccInst::Assume {
                     dst: VccReg(dst.0),
@@ -1175,6 +1197,14 @@ impl<'a> VccLowerer<'a> {
                             args.len()
                         ),
                     ));
+                }
+                if let MirInst::CallSubfn { subfn, .. } = inst {
+                    out.push(VccInst::BpfSpinLockRejectIfHeld {
+                        message: format!(
+                            "subfunction '{}' cannot be called while bpf_spin_lock is held",
+                            subfn
+                        ),
+                    });
                 }
                 if let MirInst::CallSubfn { dst, subfn, args } = inst
                     && let Some(

@@ -30,6 +30,328 @@ fn test_helper_pointer_arg_required() {
     );
 }
 
+fn bpf_spin_lock_types(lock: VReg, extra: &[(VReg, MirType)]) -> HashMap<VReg, MirType> {
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U32),
+            address_space: AddressSpace::Map,
+        },
+    );
+    for (vreg, ty) in extra {
+        types.insert(*vreg, ty.clone());
+    }
+    types
+}
+
+fn bpf_spin_lock_guarded_function(
+    body: impl FnOnce(&mut MirFunction, BlockId, VReg),
+) -> (MirFunction, VReg) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let locked = func.alloc_block();
+    let unlocked = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(lock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: locked,
+        if_false: unlocked,
+    };
+    func.block_mut(unlocked).terminator = MirInst::Return { val: None };
+    body(&mut func, locked, lock);
+    (func, lock)
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_lock_unlock_balanced() {
+    let mut lock_ret = VReg(0);
+    let mut unlock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        unlock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: unlock_ret,
+                helper: BpfHelper::SpinUnlock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(
+        lock,
+        &[(lock_ret, MirType::I64), (unlock_ret, MirType::I64)],
+    );
+
+    verify_mir(&func, &types).expect("expected balanced bpf spin lock/unlock to verify");
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_unlock_requires_matching_lock() {
+    let mut unlock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        unlock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: unlock_ret,
+                helper: BpfHelper::SpinUnlock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(lock, &[(unlock_ret, MirType::I64)]);
+
+    let err = verify_mir(&func, &types).expect_err("expected unmatched bpf_spin_unlock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_spin_lock")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_lock_must_be_released_at_exit() {
+    let mut lock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(lock, &[(lock_ret, MirType::I64)]);
+
+    let err = verify_mir(&func, &types).expect_err("expected unreleased bpf spin lock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased bpf spin lock")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_lock_rejects_second_lock() {
+    let mut lock_ret = VReg(0);
+    let mut second_lock_ret = VReg(0);
+    let mut unlock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        second_lock_ret = func.alloc_vreg();
+        unlock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: second_lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: unlock_ret,
+                helper: BpfHelper::SpinUnlock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(
+        lock,
+        &[
+            (lock_ret, MirType::I64),
+            (second_lock_ret, MirType::I64),
+            (unlock_ret, MirType::I64),
+        ],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected second bpf_spin_lock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("cannot acquire a second bpf_spin_lock")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_lock_rejects_helper_call_while_held() {
+    let mut lock_ret = VReg(0);
+    let mut helper_ret = VReg(0);
+    let mut unlock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        helper_ret = func.alloc_vreg();
+        unlock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: helper_ret,
+                helper: BpfHelper::KtimeGetNs as u32,
+                args: vec![],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: unlock_ret,
+                helper: BpfHelper::SpinUnlock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(
+        lock,
+        &[
+            (lock_ret, MirType::I64),
+            (helper_ret, MirType::I64),
+            (unlock_ret, MirType::I64),
+        ],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected helper-in-lock error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("cannot be called while bpf_spin_lock is held")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_lock_rejects_kfunc_and_subfunction_calls_while_held() {
+    let mut lock_ret = VReg(0);
+    let mut kfunc_ret = VReg(0);
+    let mut subfn_ret = VReg(0);
+    let mut unlock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        kfunc_ret = func.alloc_vreg();
+        subfn_ret = func.alloc_vreg();
+        unlock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).instructions.push(MirInst::CallKfunc {
+            dst: kfunc_ret,
+            kfunc: "bpf_preempt_disable".to_string(),
+            btf_id: None,
+            args: vec![],
+        });
+        func.block_mut(block).instructions.push(MirInst::CallKfunc {
+            dst: kfunc_ret,
+            kfunc: "bpf_preempt_enable".to_string(),
+            btf_id: None,
+            args: vec![],
+        });
+        func.block_mut(block).instructions.push(MirInst::CallSubfn {
+            dst: subfn_ret,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args: vec![],
+        });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: unlock_ret,
+                helper: BpfHelper::SpinUnlock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(
+        lock,
+        &[
+            (lock_ret, MirType::I64),
+            (kfunc_ret, MirType::I64),
+            (subfn_ret, MirType::I64),
+            (unlock_ret, MirType::I64),
+        ],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected kfunc/subfunction-in-lock errors");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_preempt_disable' cannot be called")),
+        "unexpected error messages: {:?}",
+        err
+    );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("subfunction 'subfn0' cannot be called")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_program_bpf_spin_lock_policy() {
+    let mut lock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(lock, &[(lock_ret, MirType::I64)]);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::SocketFilter.info())
+        .expect_err("expected socket_filter bpf_spin_lock policy rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("helper 'bpf_spin_lock' is only valid") && e.message.contains("xdp")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_syscall_helpers_accept_syscall_program() {
     let mut func = MirFunction::new();

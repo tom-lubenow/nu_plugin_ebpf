@@ -50,6 +50,8 @@ struct VccState {
     iter_kmem_cache_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_min_depth: u32,
     res_spin_lock_max_depth: u32,
+    bpf_spin_lock_min_depth: u32,
+    bpf_spin_lock_max_depth: u32,
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
@@ -133,6 +135,8 @@ impl VccState {
             iter_kmem_cache_slots: HashMap::new(),
             res_spin_lock_min_depth: 0,
             res_spin_lock_max_depth: 0,
+            bpf_spin_lock_min_depth: 0,
+            bpf_spin_lock_max_depth: 0,
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
@@ -680,6 +684,28 @@ impl VccState {
         self.res_spin_lock_max_depth > 0
     }
 
+    fn acquire_bpf_spin_lock(&mut self) -> bool {
+        if self.bpf_spin_lock_max_depth > 0 {
+            return false;
+        }
+        self.bpf_spin_lock_min_depth = 1;
+        self.bpf_spin_lock_max_depth = 1;
+        true
+    }
+
+    fn release_bpf_spin_lock(&mut self) -> bool {
+        if self.bpf_spin_lock_min_depth == 0 {
+            return false;
+        }
+        self.bpf_spin_lock_min_depth = 0;
+        self.bpf_spin_lock_max_depth = 0;
+        true
+    }
+
+    fn has_live_bpf_spin_lock(&self) -> bool {
+        self.bpf_spin_lock_max_depth > 0
+    }
+
     fn acquire_res_spin_lock_irqsave(&mut self) {
         self.res_spin_lock_irqsave_min_depth =
             self.res_spin_lock_irqsave_min_depth.saturating_add(1);
@@ -979,6 +1005,12 @@ impl VccState {
             res_spin_lock_max_depth: self
                 .res_spin_lock_max_depth
                 .max(other.res_spin_lock_max_depth),
+            bpf_spin_lock_min_depth: self
+                .bpf_spin_lock_min_depth
+                .min(other.bpf_spin_lock_min_depth),
+            bpf_spin_lock_max_depth: self
+                .bpf_spin_lock_max_depth
+                .max(other.bpf_spin_lock_max_depth),
             res_spin_lock_irqsave_min_depth: self
                 .res_spin_lock_irqsave_min_depth
                 .min(other.res_spin_lock_irqsave_min_depth),
@@ -1062,6 +1094,8 @@ impl VccState {
             iter_kmem_cache_slots: self.iter_kmem_cache_slots.clone(),
             res_spin_lock_min_depth: self.res_spin_lock_min_depth,
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
+            bpf_spin_lock_min_depth: self.bpf_spin_lock_min_depth,
+            bpf_spin_lock_max_depth: self.bpf_spin_lock_max_depth,
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
