@@ -527,3 +527,94 @@ impl ProgramSpec {
             .flatten()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_program_context_layout_specs_are_unique_and_consistent() {
+        let mut program_types = HashSet::new();
+
+        for spec in PROGRAM_CONTEXT_LAYOUT_SPECS {
+            assert!(
+                program_types.insert(spec.program_type),
+                "duplicate context layout spec for {:?}",
+                spec.program_type
+            );
+
+            if spec.data_meta.is_some() {
+                assert!(
+                    spec.packet_context.is_some(),
+                    "data_meta layout for {:?} requires a packet context",
+                    spec.program_type
+                );
+            }
+
+            if spec.raw_socket_context_pointer {
+                assert!(
+                    spec.socket_ref.is_some(),
+                    "raw socket context pointer for {:?} requires a socket reference layout",
+                    spec.program_type
+                );
+            }
+
+            if spec.socket_cookie || spec.socket_uid || spec.netns_cookie {
+                assert!(
+                    spec.socket_ref.is_some(),
+                    "socket identity helper fields for {:?} require a socket reference layout",
+                    spec.program_type
+                );
+            }
+
+            if spec.lookup_cookie {
+                assert_eq!(
+                    spec.program_type,
+                    EbpfProgramType::SkLookup,
+                    "lookup_cookie should stay tied to sk_lookup layout metadata"
+                );
+            }
+
+            if spec.sock_ops_load_guards {
+                assert_eq!(
+                    spec.program_type,
+                    EbpfProgramType::SockOps,
+                    "sock_ops load guards should stay tied to sock_ops layout metadata"
+                );
+            }
+
+            let mut non_null_fields = HashSet::new();
+            for field in spec.non_null_ctx_fields {
+                assert!(
+                    non_null_fields.insert(field),
+                    "duplicate non-null context field {field:?} for {:?}",
+                    spec.program_type
+                );
+                assert!(
+                    spec.program_type
+                        .base_ctx_field_access_error(field)
+                        .is_none(),
+                    "non-null context field {field:?} for {:?} must also be legal",
+                    spec.program_type
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_direct_packet_write_programs_are_unique_and_packet_backed() {
+        let mut program_types = HashSet::new();
+
+        for program_type in DIRECT_PACKET_WRITE_PROGRAMS {
+            assert!(
+                program_types.insert(*program_type),
+                "duplicate direct packet write program {program_type:?}"
+            );
+            assert!(
+                program_type.packet_context_kind().is_some(),
+                "direct packet write program {program_type:?} must have a packet context"
+            );
+        }
+    }
+}
