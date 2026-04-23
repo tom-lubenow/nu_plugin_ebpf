@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 
-const TOTAL_STEPS = 75
+const TOTAL_STEPS = 80
 const COUNTER_TIMEOUT = 5sec
 const STREAM_TIMEOUT = 5sec
 const POLL_INTERVAL = 100ms
@@ -69,6 +69,16 @@ def command-exists [name: string] {
 
 def run-nu-with-plugin [plugin_bin: string, code: string] {
     run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code
+}
+
+def expect-dry-run-binary [plugin_bin: string, code: string, label: string] {
+    let result = (run-nu-with-plugin $plugin_bin $code | str trim)
+
+    if $result != "binary" {
+        fail $"expected ($label) dry-run to return binary, got ($result)"
+    }
+
+    $result
 }
 
 def step [index: int, label: string, body: closure] {
@@ -1186,7 +1196,36 @@ step 74 "uprobe.multi bash read wildcard counters" {
     }
 }
 
-step 75 "verify no leaked probes" {
+step 75 "sk_reuseport select dry-run context surface" {
+    let code = 'ebpf attach --dry-run "sk_reuseport:select" {|ctx| ($ctx.hash + $ctx.socket_cookie + $ctx.sk.family) | count; "pass" } | describe'
+    expect-dry-run-binary $plugin_bin $code "sk_reuseport select context"
+}
+
+step 76 "flow_dissector dry-run flow key context surface" {
+    let code = 'ebpf attach --dry-run "flow_dissector:/proc/self/ns/net" {|ctx| ($ctx.flow_keys.ip_proto + $ctx.flow_keys.nhoff + $ctx.flow_keys.thoff) | count; "fallback" } | describe'
+    expect-dry-run-binary $plugin_bin $code "flow_dissector flow key context"
+}
+
+step 77 "netfilter dry-run state context surface" {
+    let code = 'ebpf attach --dry-run "netfilter:ipv4:pre_routing:priority=-100:defrag" {|ctx| ($ctx.hook + $ctx.pf + $ctx.state.in.ifindex + $ctx.state.out.ifindex) | count; "accept" } | describe'
+    expect-dry-run-binary $plugin_bin $code "netfilter state context"
+}
+
+step 78 "lwt_xmit dry-run helper-backed skb context surface" {
+    let code = 'ebpf attach --dry-run "lwt_xmit:demo-route" {|ctx| ($ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm) | count; "reroute" } | describe'
+    expect-dry-run-binary $plugin_bin $code "lwt_xmit helper-backed skb context"
+}
+
+step 79 "lirc_mode2 dry-run raw sample context surface" {
+    if not ("/dev/lirc0" | path exists) {
+        print "Skipping lirc_mode2 dry-run smoke: /dev/lirc0 is not available"
+    } else {
+        let code = 'ebpf attach --dry-run "lirc_mode2:/dev/lirc0" {|ctx| ($ctx.sample + $ctx.value + $ctx.mode) | count; 0 } | describe'
+        expect-dry-run-binary $plugin_bin $code "lirc_mode2 raw sample context"
+    }
+}
+
+step 80 "verify no leaked probes" {
     let remaining = (ebpf list | length)
     if $remaining != 0 {
         fail $"expected empty probe list, got ($remaining)"
