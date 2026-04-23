@@ -11,7 +11,7 @@ use aya_obj::{
     btf::{Btf, BtfKind},
 };
 use object::{Endianness, Object as _, ObjectSection as _};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[test]
 fn test_hello_world_creation() {
@@ -3913,6 +3913,21 @@ fn test_program_type_supports_probe_capabilities() {
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::HelperCalls));
     assert!(EbpfProgramType::Xdp.supports_capability(ProgramCapability::Globals));
     assert!(!EbpfProgramType::Xdp.supports_capability(ProgramCapability::ReadUserString));
+}
+
+#[test]
+fn test_program_capability_surfaces_are_unique() {
+    for program_type in EbpfProgramType::supported_program_types() {
+        let mut seen = HashSet::new();
+        for capability in program_type.supported_capabilities() {
+            assert!(
+                seen.insert(*capability),
+                "{} capability surface repeats {:?}",
+                program_type.canonical_prefix(),
+                capability
+            );
+        }
+    }
 }
 
 #[test]

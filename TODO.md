@@ -571,3 +571,4 @@ Near-term priority order:
 - [ ] Stabilize language surface and feature gating.
   - Define capability-based feature flags so unsupported constructs fail predictably.
   - Version language features explicitly to avoid silent behavior drift.
+  - Recent progress: program capability surfaces are now regression-checked as set-like metadata, so duplicate capability entries cannot silently accumulate in per-program policy tables.
