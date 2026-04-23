@@ -909,7 +909,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(IngressIfindexContextLayout::SkBuff) => Self::sk_buff_offsets().3,
                     None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.ingress_ifindex is only available on xdp, socket_filter, lwt_*, tc_action, tc, cgroup_skb, sk_lookup, sk_skb, and sk_skb_parser programs".to_string(),
+                            "ctx.ingress_ifindex is only available on xdp, socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_lookup, sk_skb, and sk_skb_parser programs".to_string(),
                         ));
                     }
                 };
@@ -1081,7 +1081,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     )
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.protocol is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, and sk_lookup programs".to_string(),
+                            "ctx.protocol is only available on skb-backed packet, cgroup_sock, cgroup_sock_addr, sk_lookup, and sk_reuseport programs".to_string(),
                         ));
                     }
                 }
@@ -1106,7 +1106,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Some(SocketContextLayout::SkReuseport) => Self::sk_reuseport_md_offsets().7,
                     None => {
                         return Err(CompileError::UnsupportedInstruction(
-                            "ctx.sk is only available on socket_filter, tc_action, tc, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
+                            "ctx.sk is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
                 };
