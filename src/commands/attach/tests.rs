@@ -8125,24 +8125,78 @@ fn test_compile_kprobe_ctx_task_non_null_program() {
     );
 }
 
-#[test]
-fn test_compile_kprobe_ctx_task_pid_counter_program() {
+fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
-    if !matches!(
+    matches!(
         KernelBtf::get().kernel_named_type_field_projection("task_struct", &path),
         Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
-    ) {
+    )
+}
+
+fn ctx_task_pid_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("pid")],
+    }
+}
+
+#[test]
+fn test_compile_kprobe_ctx_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
         return;
     }
 
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Kprobe,
         "ksys_read",
-        CellPath {
-            members: vec![string_member("task"), string_member("pid")],
-        },
+        ctx_task_pid_path("task"),
         "kprobe ctx.task.pid count",
     );
+}
+
+#[test]
+fn test_compile_tracepoint_ctx_current_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_openat",
+        ctx_task_pid_path("current_task"),
+        "tracepoint ctx.current_task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_task_context_ctx_task_pid_counter_programs() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "fentry ctx.task.pid count",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "raw_tracepoint.w ctx.task.pid count",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "lsm_cgroup ctx.task.pid count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            program_type,
+            target,
+            ctx_task_pid_path("task"),
+            context,
+        );
+    }
 }
 
 #[test]
@@ -8167,11 +8221,7 @@ fn test_compile_kprobe_ctx_task_pt_regs_arg_counter_program() {
 
 #[test]
 fn test_compile_kprobe_bound_ctx_task_pid_counter_program() {
-    let path = [TrampolineFieldSelector::Field("pid".to_string())];
-    if !matches!(
-        KernelBtf::get().kernel_named_type_field_projection("task_struct", &path),
-        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
-    ) {
+    if !task_struct_pid_projection_available() {
         return;
     }
 
@@ -8193,6 +8243,70 @@ fn test_compile_kprobe_bound_ctx_task_pid_counter_program() {
         &decl_names,
         "bound kprobe ctx.task.pid count",
     );
+}
+
+#[test]
+fn test_compile_tracepoint_bound_ctx_current_task_pid_counter_program() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    let hir = make_bound_ctx_path_projection_call_program(
+        CellPath {
+            members: vec![string_member("current_task")],
+        },
+        CellPath {
+            members: vec![string_member("pid")],
+        },
+        DeclId::new(42),
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "count".to_string());
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_openat",
+        &decl_names,
+        "bound tracepoint ctx.current_task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_task_context_bound_ctx_task_pid_counter_programs() {
+    if !task_struct_pid_projection_available() {
+        return;
+    }
+
+    for (program_type, target, context) in [
+        (
+            EbpfProgramType::Fentry,
+            "security_file_open",
+            "bound fentry ctx.task.pid count",
+        ),
+        (
+            EbpfProgramType::RawTracepointWritable,
+            "sys_enter",
+            "bound raw_tracepoint.w ctx.task.pid count",
+        ),
+        (
+            EbpfProgramType::LsmCgroup,
+            "socket_bind",
+            "bound lsm_cgroup ctx.task.pid count",
+        ),
+    ] {
+        let hir = make_bound_ctx_path_projection_call_program(
+            CellPath {
+                members: vec![string_member("task")],
+            },
+            CellPath {
+                members: vec![string_member("pid")],
+            },
+            DeclId::new(42),
+        );
+        let mut decl_names = HashMap::new();
+        decl_names.insert(DeclId::new(42), "count".to_string());
+        assert_attach_program_compiles(&hir, program_type, target, &decl_names, context);
+    }
 }
 
 #[test]
