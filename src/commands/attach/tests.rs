@@ -7387,9 +7387,13 @@ fn test_compile_kprobe_ctx_numa_node_id_alias_counter_program() {
 fn test_compile_kprobe_ctx_clock_counter_programs() {
     for field in [
         "ktime",
+        "timestamp",
         "ktime_boot",
+        "boot_time",
         "ktime_coarse",
+        "coarse_time",
         "ktime_tai",
+        "tai_time",
         "jiffies",
     ] {
         assert_ctx_path_count_program_compiles(
