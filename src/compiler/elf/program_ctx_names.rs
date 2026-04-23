@@ -97,9 +97,11 @@ const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("iter_kmem_cache", CtxField::IterKmemCache),
     ("ksym", CtxField::IterKsym),
     ("iter_ksym", CtxField::IterKsym),
-    ("sk", CtxField::IterNetlinkSk),
     ("netlink_sk", CtxField::IterNetlinkSk),
     ("iter_netlink_sk", CtxField::IterNetlinkSk),
+    ("sk", CtxField::IterSock),
+    ("sock", CtxField::IterSock),
+    ("iter_sock", CtxField::IterSock),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -644,9 +646,11 @@ mod tests {
             ("iter_kmem_cache", CtxField::IterKmemCache),
             ("ksym", CtxField::IterKsym),
             ("iter_ksym", CtxField::IterKsym),
-            ("sk", CtxField::IterNetlinkSk),
             ("netlink_sk", CtxField::IterNetlinkSk),
             ("iter_netlink_sk", CtxField::IterNetlinkSk),
+            ("sk", CtxField::IterSock),
+            ("sock", CtxField::IterSock),
+            ("iter_sock", CtxField::IterSock),
         ] {
             assert_eq!(
                 EbpfProgramType::Iter

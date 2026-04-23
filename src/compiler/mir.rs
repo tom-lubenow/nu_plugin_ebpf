@@ -730,6 +730,8 @@ pub enum CtxField {
     IterKsym,
     /// Current netlink iterator netlink_sock pointer
     IterNetlinkSk,
+    /// Current socket pointer on sockmap/socket-storage iterators
+    IterSock,
     /// Current task default cgroup pointer
     Cgroup,
     /// CPU ID
@@ -1037,6 +1039,7 @@ impl CtxField {
             CtxField::IterKmemCache => "iter_kmem_cache".to_string(),
             CtxField::IterKsym => "iter_ksym".to_string(),
             CtxField::IterNetlinkSk => "iter_netlink_sk".to_string(),
+            CtxField::IterSock => "iter_sock".to_string(),
             CtxField::Cgroup => "cgroup".to_string(),
             CtxField::Cpu => "cpu".to_string(),
             CtxField::NumaNode => "numa_node".to_string(),

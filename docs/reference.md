@@ -25,7 +25,8 @@ The closure receives a context parameter with these fields:
 | `cgroup` / `iter_cgroup` | Nullable iterated `cgroup *` pointer from `struct bpf_iter__cgroup`; BTF-backed fields such as `cgroup.level` can be projected when kernel BTF is available. This shadows the current-task cgroup alias only on iterator programs; use `current_cgroup` for the helper-backed current-task cgroup meaning on other tracing families. | `iter:cgroup` |
 | `map` / `iter_map` | Nullable iterated `bpf_map *` pointer from BPF map iterator contexts; BTF-backed fields such as `map.id` can be projected when kernel BTF is available. | `iter:bpf_map`, `iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, `iter:sockmap` |
 | `key` / `iter_key` | Nullable map key pointer from BPF map-element iterator contexts. | `iter:bpf_map_elem`, `iter:sockmap` |
-| `value` / `iter_value` | Nullable map value pointer from BPF map-element and BPF socket-storage iterator contexts. | `iter:bpf_map_elem`, `iter:bpf_sk_storage_map`, `iter:sockmap` |
+| `value` / `iter_value` | Nullable map value pointer from BPF map-element and BPF socket-storage iterator contexts. | `iter:bpf_map_elem`, `iter:bpf_sk_storage_map` |
+| `sk` / `sock` / `iter_sock` | Nullable iterated `sock *` pointer from socket-storage-map and sockmap iterator contexts. | `iter:bpf_sk_storage_map`, `iter:sockmap` |
 | `prog` / `iter_prog` | Nullable iterated `bpf_prog *` pointer from `struct bpf_iter__bpf_prog`; BTF-backed fields such as `prog.len` can be projected when kernel BTF is available. | `iter:bpf_prog` |
 | `link` / `iter_link` | Nullable iterated `bpf_link *` pointer from `struct bpf_iter__bpf_link`; BTF-backed fields such as `link.id` can be projected when kernel BTF is available. | `iter:bpf_link` |
 | `sk_common` / `sock_common` / `iter_sk_common` | Nullable iterated `sock_common *` pointer from `struct bpf_iter__tcp`. | `iter:tcp` |
@@ -37,7 +38,7 @@ The closure receives a context parameter with these fields:
 | `rt` / `route` / `ipv6_route` / `iter_ipv6_route` | Nullable iterated `fib6_info *` pointer from `struct bpf_iter__ipv6_route`. | `iter:ipv6_route` |
 | `cache` / `kmem_cache` / `iter_kmem_cache` | Nullable iterated `kmem_cache *` pointer from `struct bpf_iter__kmem_cache`. | `iter:kmem_cache` |
 | `ksym` / `iter_ksym` | Nullable iterated `kallsym_iter *` pointer from `struct bpf_iter__ksym`. | `iter:ksym` |
-| `sk` / `netlink_sk` / `iter_netlink_sk` | Nullable iterated `netlink_sock *` pointer from `struct bpf_iter__netlink`. | `iter:netlink` |
+| `netlink_sk` / `iter_netlink_sk` | Nullable iterated `netlink_sock *` pointer from `struct bpf_iter__netlink`. | `iter:netlink` |
 | `cgroup` / `current_cgroup` | Current task default `cgroup *` pointer, available for cgroup-local-storage ownership and BTF-backed cgroup projections such as `current_cgroup.kn.id`; follow-up projections also work after binding the pointer to a local. On tracepoints, use `current_cgroup` when you need the builtin rather than a payload field named `cgroup`. | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, fentry, fexit, fmod_ret, tracepoint, raw_tracepoint, raw_tracepoint.w, uprobe, uretprobe, uprobe.multi, uretprobe.multi, lsm, lsm_cgroup, perf_event |
 | `cgroup_id` | Current task cgroup ID | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ancestor_cgroup_id.N` | Current task ancestor cgroup ID at constant numeric level `N` | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
@@ -231,10 +232,11 @@ exist; `$ctx.prog` on `iter:bpf_prog`; and `$ctx.link` on `iter:bpf_link`.
 Network iterators expose `$ctx.sk_common` plus `$ctx.uid` on `iter:tcp`,
 `$ctx.udp_sk` / `$ctx.uid` / `$ctx.bucket` on `iter:udp`, and
 `$ctx.unix_sk` / `$ctx.uid` on `iter:unix`.
-Other simple single-pointer iterator contexts expose their kernel-native roots:
-`$ctx.dmabuf`, `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`, and `$ctx.sk` for
-`iter:dmabuf`, `iter:ipv6_route`, `iter:kmem_cache`, `iter:ksym`, and
-`iter:netlink`, respectively.
+Socket map iterators expose `$ctx.sk` / `$ctx.iter_sock` for their `sock *`
+payload. Other simple single-pointer iterator contexts expose their
+kernel-native roots: `$ctx.dmabuf`, `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`,
+and `$ctx.netlink_sk` for `iter:dmabuf`, `iter:ipv6_route`,
+`iter:kmem_cache`, `iter:ksym`, and `iter:netlink`, respectively.
 `$ctx.current_task` and `$ctx.current_cgroup` remain reserved for helper-backed
 current-task semantics on task-aware tracing families. Live attach is rejected
 until the loader grows BPF iterator link/seq-file support.

@@ -3084,6 +3084,17 @@ fn test_compile_iter_misc_single_pointer_loads_use_ctx_offsets() {
 }
 
 #[test]
+fn test_compile_iter_sock_loads_use_target_specific_ctx_offsets() {
+    assert_iter_ctx_load_uses_ctx_offset(
+        CtxField::IterSock,
+        "bpf_sk_storage_map",
+        opcode::BPF_DW,
+        16,
+    );
+    assert_iter_ctx_load_uses_ctx_offset(CtxField::IterSock, "sockmap", opcode::BPF_DW, 24);
+}
+
+#[test]
 #[cfg(target_arch = "x86_64")]
 fn test_compile_perf_event_sample_period_load_uses_ctx_dword_offset_168() {
     let ctx = ProbeContext::new(

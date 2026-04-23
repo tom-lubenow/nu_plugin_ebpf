@@ -8417,9 +8417,9 @@ fn test_compile_iter_sockmap_payload_roots_programs() {
         ),
         (
             CellPath {
-                members: vec![string_member("value")],
+                members: vec![string_member("sk")],
             },
-            "iter:sockmap ctx.value nullable check",
+            "iter:sockmap ctx.sk nullable check",
         ),
     ] {
         let hir = make_ctx_path_non_null_program(path);
@@ -8447,6 +8447,12 @@ fn test_compile_iter_bpf_sk_storage_map_payload_roots_programs() {
                 members: vec![string_member("value")],
             },
             "iter:bpf_sk_storage_map ctx.value nullable check",
+        ),
+        (
+            CellPath {
+                members: vec![string_member("sk")],
+            },
+            "iter:bpf_sk_storage_map ctx.sk nullable check",
         ),
     ] {
         let hir = make_ctx_path_non_null_program(path);
@@ -8592,7 +8598,11 @@ fn test_compile_iter_misc_single_pointer_payload_roots_programs() {
             "iter:kmem_cache ctx.kmem_cache nullable check",
         ),
         ("ksym", "ksym", "iter:ksym ctx.ksym nullable check"),
-        ("netlink", "sk", "iter:netlink ctx.sk nullable check"),
+        (
+            "netlink",
+            "netlink_sk",
+            "iter:netlink ctx.netlink_sk nullable check",
+        ),
     ] {
         let hir = make_ctx_path_non_null_program(CellPath {
             members: vec![string_member(root)],

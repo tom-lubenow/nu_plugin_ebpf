@@ -1645,6 +1645,7 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterKmemCache));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterKsym));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterNetlinkSk));
+    assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterSock));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1708,6 +1709,7 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
     assert!(
         !EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterNetlinkSk)
     );
+    assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterSock));
     assert!(
         EbpfProgramType::Netfilter
             .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
@@ -1823,6 +1825,7 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
         (CtxField::IterKmemCache, "kmem_cache"),
         (CtxField::IterKsym, "kallsym_iter"),
         (CtxField::IterNetlinkSk, "netlink_sock"),
+        (CtxField::IterSock, "sock"),
     ] {
         let spec = ProbeContext::static_ctx_field_type_spec(&field)
             .unwrap_or_else(|| panic!("expected {field:?} type spec"));
@@ -7391,6 +7394,31 @@ fn test_probe_context_allows_bpf_object_iterator_payload_roots() {
     let link = ProbeContext::new(EbpfProgramType::Iter, "bpf_link");
     assert!(link.ctx_field_access_error(&CtxField::IterLink).is_none());
     assert!(link.validate_load_ctx_field(&CtxField::IterLink).is_ok());
+
+    let sk_storage = ProbeContext::new(EbpfProgramType::Iter, "bpf_sk_storage_map");
+    assert!(
+        sk_storage
+            .ctx_field_access_error(&CtxField::IterSock)
+            .is_none()
+    );
+    assert!(
+        sk_storage
+            .validate_load_ctx_field(&CtxField::IterSock)
+            .is_ok()
+    );
+
+    let sockmap = ProbeContext::new(EbpfProgramType::Iter, "sockmap");
+    assert!(
+        sockmap
+            .ctx_field_access_error(&CtxField::IterSock)
+            .is_none()
+    );
+    assert!(sockmap.validate_load_ctx_field(&CtxField::IterSock).is_ok());
+    assert!(
+        sockmap
+            .ctx_field_access_error(&CtxField::IterMapValue)
+            .is_some()
+    );
 }
 
 #[test]
@@ -7440,7 +7468,7 @@ fn test_probe_context_allows_misc_single_pointer_iterator_payload_roots() {
         ("ipv6_route", "rt", CtxField::IterIpv6Route),
         ("kmem_cache", "kmem_cache", CtxField::IterKmemCache),
         ("ksym", "ksym", CtxField::IterKsym),
-        ("netlink", "sk", CtxField::IterNetlinkSk),
+        ("netlink", "netlink_sk", CtxField::IterNetlinkSk),
     ] {
         let ctx = ProbeContext::new(EbpfProgramType::Iter, target);
         assert_eq!(
@@ -7489,6 +7517,11 @@ fn test_probe_context_rejects_iter_payload_roots_on_unrelated_iterators() {
         ctx.ctx_field_access_error(&CtxField::IterDmabuf)
             .expect("expected iter dmabuf field access error"),
         "ctx.iter_dmabuf is only available on iter:dmabuf programs"
+    );
+    assert_eq!(
+        ctx.ctx_field_access_error(&CtxField::IterSock)
+            .expect("expected iter sock field access error"),
+        "ctx.iter_sock is only available on iter:bpf_sk_storage_map and iter:sockmap programs"
     );
 }
 

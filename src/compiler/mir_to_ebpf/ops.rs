@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
+use crate::program_spec::ProgramSpec;
 
 mod context;
 
@@ -14,6 +15,21 @@ impl<'a> MirToEbpfCompiler<'a> {
             .as_ref()?
             .parsed_program_spec()?
             .cgroup_sock_addr_tuple_alias_field(field)
+    }
+
+    fn iter_sock_ctx_offset(&self) -> Result<i16, CompileError> {
+        match self
+            .probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.parsed_program_spec())
+        {
+            Some(ProgramSpec::Iter { target }) if target.name == "bpf_sk_storage_map" => Ok(16),
+            Some(ProgramSpec::Iter { target }) if target.name == "sockmap" => Ok(24),
+            _ => Err(CompileError::UnsupportedInstruction(
+                "ctx.iter_sock is only available on iter:bpf_sk_storage_map and iter:sockmap programs"
+                    .into(),
+            )),
+        }
     }
 
     /// Emit binary operation with register operand
@@ -524,6 +540,11 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::IterNetlinkSk => {
                 self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
+            }
+            CtxField::IterSock => {
+                let offset = self.iter_sock_ctx_offset()?;
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
             CtxField::Cgroup => {
                 return Err(CompileError::UnsupportedInstruction(

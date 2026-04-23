@@ -697,6 +697,10 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("netlink_sock"))
                 .with_kernel_btf_runtime_type("netlink_sock"),
         ),
+        CtxField::IterSock => BaseContextFieldSchemaSpec::value(
+            ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("sock"))
+                .with_kernel_btf_runtime_type("sock"),
+        ),
         CtxField::Cgroup => BaseContextFieldSchemaSpec::value(
             ContextFieldTypeSpec::value(MirType::named_kernel_struct_ptr("cgroup"))
                 .with_kernel_btf_runtime_type("cgroup"),
