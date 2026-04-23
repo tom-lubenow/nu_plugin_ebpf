@@ -645,7 +645,7 @@ const NETFILTER_CTX_FIELDS: &[CtxField] = &[
     CtxField::NetfilterHook,
     CtxField::NetfilterProtocolFamily,
 ];
-const ITER_CTX_FIELDS: &[CtxField] = &[CtxField::IterTask];
+const ITER_CTX_FIELDS: &[CtxField] = &[CtxField::IterTask, CtxField::IterMeta];
 const SOCKET_TUPLE_CTX_FIELDS: &[CtxField] = &[
     CtxField::RemoteIp4,
     CtxField::RemoteIp6,
@@ -1944,17 +1944,23 @@ mod tests {
             find_base_ctx_field_access_requirement(&CtxField::IterTask),
             Some(BaseContextFieldAccessRequirement::IterFields)
         );
+        assert_eq!(
+            find_base_ctx_field_access_requirement(&CtxField::IterMeta),
+            Some(BaseContextFieldAccessRequirement::IterFields)
+        );
         assert!(BaseContextFieldAccessRequirement::IterFields.is_allowed(EbpfProgramType::Iter));
         assert!(!BaseContextFieldAccessRequirement::IterFields.is_allowed(EbpfProgramType::Kprobe));
 
         let task = ProgramSpec::parse("iter:task").expect("iter task spec should parse");
         assert!(task.ctx_field_access_error(&CtxField::IterTask).is_none());
+        assert!(task.ctx_field_access_error(&CtxField::IterMeta).is_none());
 
         let map = ProgramSpec::parse("iter:map").expect("iter map spec should parse");
         assert_eq!(
             map.ctx_field_access_error(&CtxField::IterTask),
             Some("ctx.iter_task is only available on iter:task programs".to_string())
         );
+        assert!(map.ctx_field_access_error(&CtxField::IterMeta).is_none());
     }
 
     #[test]

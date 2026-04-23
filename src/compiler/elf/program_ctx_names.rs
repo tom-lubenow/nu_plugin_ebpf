@@ -55,6 +55,8 @@ const NETFILTER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
 const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("task", CtxField::IterTask),
     ("iter_task", CtxField::IterTask),
+    ("meta", CtxField::IterMeta),
+    ("iter_meta", CtxField::IterMeta),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
     CtxFieldAliasSurface {
@@ -537,6 +539,22 @@ mod tests {
                 .resolve_ctx_field_name("current_task")
                 .expect("current_task should keep current-task semantics"),
             CtxField::Task
+        );
+    }
+
+    #[test]
+    fn test_iterator_meta_aliases_resolve_to_iter_meta() {
+        assert_eq!(
+            EbpfProgramType::Iter
+                .resolve_ctx_field_name("meta")
+                .expect("meta alias should resolve"),
+            CtxField::IterMeta
+        );
+        assert_eq!(
+            EbpfProgramType::Iter
+                .resolve_ctx_field_name("iter_meta")
+                .expect("iter_meta alias should resolve"),
+            CtxField::IterMeta
         );
     }
 }

@@ -260,6 +260,7 @@ Near-term priority order:
   - Recent progress: `iter` BPF iterator sections now have compile/dry-run program-model support (`iter:*` emits `iter/*`) with conservative capabilities and explicit live-attach rejection until iterator link/seq-file loading is implemented.
   - Recent progress: attach-flow fixtures for `iter:task` now exercise helper-free annotated mutable globals plus context-free generic queue map operations, not only constant return programs.
   - Recent progress: `iter:task` now exposes a distinct iterator task context root (`ctx.task` / `ctx.iter_task`) backed by direct iterator-context loads, keeping the nullable iterated task separate from helper-backed `ctx.current_task` semantics.
+  - Recent progress: all BPF iterator sections now expose iterator metadata through `ctx.meta` / `ctx.iter_meta`, including BTF-backed `bpf_iter_meta.seq_num` projection coverage across task and map iterator targets.
 
 - [~] Generalize context modeling by program type.
   - Replace tracing-centric context fields with per-program typed context schemas.

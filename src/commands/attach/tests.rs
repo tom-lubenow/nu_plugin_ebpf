@@ -8226,6 +8226,34 @@ fn test_compile_iter_task_ctx_task_nullable_program() {
     );
 }
 
+#[test]
+fn test_compile_iter_task_ctx_meta_non_null_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("meta")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "task",
+        &HashMap::new(),
+        "iter:task ctx.meta non-null check",
+    );
+}
+
+#[test]
+fn test_compile_iter_map_ctx_meta_non_null_program() {
+    let hir = make_ctx_path_non_null_program(CellPath {
+        members: vec![string_member("iter_meta")],
+    });
+    assert_attach_program_compiles(
+        &hir,
+        EbpfProgramType::Iter,
+        "map",
+        &HashMap::new(),
+        "iter:map ctx.iter_meta non-null check",
+    );
+}
+
 fn task_struct_pid_projection_available() -> bool {
     let path = [TrampolineFieldSelector::Field("pid".to_string())];
     matches!(
@@ -8234,9 +8262,23 @@ fn task_struct_pid_projection_available() -> bool {
     )
 }
 
+fn iter_meta_seq_num_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("seq_num".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("bpf_iter_meta", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
 fn ctx_task_pid_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("pid")],
+    }
+}
+
+fn ctx_iter_meta_seq_num_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("seq_num")],
     }
 }
 
@@ -8324,6 +8366,34 @@ fn test_compile_iter_task_ctx_iter_task_pid_counter_program() {
         "task",
         ctx_task_pid_path("iter_task"),
         "iter:task ctx.iter_task.pid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_task_ctx_meta_seq_num_counter_program() {
+    if !iter_meta_seq_num_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "task",
+        ctx_iter_meta_seq_num_path("meta"),
+        "iter:task ctx.meta.seq_num count",
+    );
+}
+
+#[test]
+fn test_compile_iter_map_ctx_iter_meta_seq_num_counter_program() {
+    if !iter_meta_seq_num_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "map",
+        ctx_iter_meta_seq_num_path("iter_meta"),
+        "iter:map ctx.iter_meta.seq_num count",
     );
 }
 

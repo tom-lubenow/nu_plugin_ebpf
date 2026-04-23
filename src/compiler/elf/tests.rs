@@ -1628,6 +1628,7 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
     assert!(EbpfProgramType::Kprobe.ctx_field_pointer_is_non_null(&CtxField::Task));
     assert!(!EbpfProgramType::Xdp.ctx_field_pointer_is_non_null(&CtxField::Task));
     assert!(!EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterTask));
+    assert!(EbpfProgramType::Iter.ctx_field_pointer_is_non_null(&CtxField::IterMeta));
     assert!(EbpfProgramType::CgroupSock.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(!EbpfProgramType::CgroupSockopt.ctx_field_pointer_is_non_null(&CtxField::Socket));
     assert!(EbpfProgramType::SkReuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1646,6 +1647,7 @@ fn test_program_type_ctx_field_non_null_pointer_policy_follows_context_schema() 
 
     let iter_task = ProbeContext::new(EbpfProgramType::Iter, "task");
     assert!(!iter_task.ctx_field_pointer_is_non_null(&CtxField::IterTask));
+    assert!(iter_task.ctx_field_pointer_is_non_null(&CtxField::IterMeta));
 
     let reuseport = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
     assert!(reuseport.ctx_field_pointer_is_non_null(&CtxField::Socket));
@@ -1657,6 +1659,7 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
     assert!(EbpfProgramType::Kprobe.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::Task));
     assert!(!EbpfProgramType::Xdp.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::Task));
     assert!(!EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterTask));
+    assert!(EbpfProgramType::Iter.ctx_field_is_trusted_btf_kernel_pointer(&CtxField::IterMeta));
     assert!(
         EbpfProgramType::Netfilter
             .ctx_field_is_trusted_btf_kernel_pointer(&CtxField::NetfilterState)
@@ -1696,6 +1699,13 @@ fn test_static_context_field_btf_runtime_type_policy_follows_schema() {
     assert_eq!(
         iter_task_spec.kernel_btf_runtime_type_name,
         Some("task_struct")
+    );
+
+    let iter_meta_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::IterMeta)
+        .expect("expected ctx.iter_meta type spec");
+    assert_eq!(
+        iter_meta_spec.kernel_btf_runtime_type_name,
+        Some("bpf_iter_meta")
     );
 
     let nf_state_spec = ProbeContext::static_ctx_field_type_spec(&CtxField::NetfilterState)
@@ -7176,7 +7186,9 @@ fn test_probe_context_allows_iter_task_only_on_task_iterator() {
         CtxField::Task
     );
     assert!(ctx.ctx_field_access_error(&CtxField::IterTask).is_none());
+    assert!(ctx.ctx_field_access_error(&CtxField::IterMeta).is_none());
     assert!(ctx.validate_load_ctx_field(&CtxField::IterTask).is_ok());
+    assert!(ctx.validate_load_ctx_field(&CtxField::IterMeta).is_ok());
     assert!(ctx.ctx_field_access_error(&CtxField::Task).is_some());
 }
 
@@ -7187,6 +7199,7 @@ fn test_probe_context_rejects_iter_task_on_other_iterators() {
         .ctx_field_access_error(&CtxField::IterTask)
         .expect("expected iter task field access error");
     assert_eq!(err, "ctx.iter_task is only available on iter:task programs");
+    assert!(ctx.ctx_field_access_error(&CtxField::IterMeta).is_none());
 }
 
 #[test]
