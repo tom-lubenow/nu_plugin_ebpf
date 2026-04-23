@@ -193,6 +193,8 @@ struct RegMetadata {
     field_type: Option<MirType>,
     /// Originating root context field for values derived from a specific ctx field.
     root_ctx_field: Option<CtxField>,
+    /// Whether this value preserves verifier-trusted kernel BTF pointer provenance.
+    trusted_btf: bool,
     /// Direct backing variable for values loaded from `LoadVariable`.
     /// This is intentionally cleared by transformations that produce new values.
     source_var: Option<VarId>,

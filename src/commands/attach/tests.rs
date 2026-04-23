@@ -12031,6 +12031,20 @@ fn test_compile_lsm_inode_storage_map_get_program() {
         "expected inode-storage owner to type as inode pointer, got {:?}",
         inode_arg_ty
     );
+    assert!(
+        !lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )),
+        "inode-storage owner should preserve trusted BTF pointer provenance without probe_read"
+    );
     assert!(matches!(
         lowering.type_hints.generic_map_value_types.get(&MapRef {
             name: "inode_state".to_string(),

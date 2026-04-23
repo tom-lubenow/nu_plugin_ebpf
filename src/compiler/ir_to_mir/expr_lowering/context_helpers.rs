@@ -257,6 +257,7 @@ impl<'a> HirToMirLowering<'a> {
             field_members,
             path_desc,
             None,
+            false,
             projected_semantics,
         )?;
         self.terminate(MirInst::Jump { target: join_block });

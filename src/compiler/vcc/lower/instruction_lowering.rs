@@ -384,11 +384,15 @@ impl<'a> VccLowerer<'a> {
                     {
                         info.nullability = VccNullability::NonNull;
                     }
-                    if matches!(field, CtxField::Task)
+                    if ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                        self.probe_ctx,
+                        field,
+                    )
                         && let VccValueType::Ptr(ref mut info) = ty
                         && info.space == VccAddrSpace::Kernel
                     {
                         info.space = VccAddrSpace::KernelBtf;
+                        info.nullability = VccNullability::NonNull;
                     }
                     if ProbeContext::resolve_ctx_field_is_raw_context_pointer(
                         self.probe_ctx,

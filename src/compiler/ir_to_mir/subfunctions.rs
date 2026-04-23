@@ -38,7 +38,8 @@ impl<'a> HirToMirLowering<'a> {
             self.vreg_type_hints.insert(vreg, ty);
         }
 
-        if let Some(meta) = seed.metadata.clone() {
+        if let Some(mut meta) = seed.metadata.clone() {
+            meta.trusted_btf = false;
             if let Some(reg) = reg {
                 self.reg_metadata.insert(reg.get(), meta.clone());
             }

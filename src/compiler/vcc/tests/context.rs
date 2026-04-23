@@ -709,6 +709,35 @@ fn test_verify_mir_for_probe_context_task_is_non_null_task_pointer() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_btf_arg_allows_direct_kernel_pointer_load() {
+    let (mut func, entry) = new_mir_function();
+    let file = func.alloc_vreg();
+    let inode = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: file,
+            field: CtxField::Arg(0),
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst: inode,
+        ptr: file,
+        offset: 0,
+        ty: MirType::named_kernel_struct_ptr("inode"),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(file, MirType::named_kernel_struct_ptr("file"));
+    types.insert(inode, MirType::named_kernel_struct_ptr("inode"));
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected trusted BTF arg pointer to allow direct kernel pointer loads");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sk_reuseport_socket_is_non_null() {
     let (mut func, entry) = new_mir_function();
     let bad = func.alloc_block();

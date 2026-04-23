@@ -62,6 +62,14 @@ impl ProbeContext {
         )
     }
 
+    pub(crate) fn resolve_ctx_field_is_trusted_btf_kernel_pointer(
+        probe_ctx: Option<&Self>,
+        field: &CtxField,
+    ) -> bool {
+        matches!(field, CtxField::Task)
+            || probe_ctx.is_some_and(|ctx| ctx.ctx_field_is_trusted_btf_kernel_pointer(field))
+    }
+
     pub(crate) fn static_ctx_field_type_spec(field: &CtxField) -> Option<ContextFieldTypeSpec> {
         static_ctx_field_type_spec(field)
     }
@@ -163,6 +171,24 @@ impl ProbeContext {
             || self.program_type().ctx_field_pointer_is_non_null(field),
             |spec| spec.ctx_field_pointer_is_non_null(field),
         )
+    }
+
+    pub(crate) fn ctx_field_is_trusted_btf_kernel_pointer(&self, field: &CtxField) -> bool {
+        if matches!(field, CtxField::Task) {
+            return true;
+        }
+
+        let type_info = match field {
+            CtxField::Arg(idx) if self.uses_btf_trampoline() => {
+                self.btf_arg_type_info(*idx as usize).ok().flatten()
+            }
+            CtxField::RetVal if self.retval_access().is_trampoline() => {
+                self.btf_ret_type_info().ok().flatten()
+            }
+            _ => None,
+        };
+
+        matches!(type_info, Some(TypeInfo::Ptr { is_user: false, .. }))
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {

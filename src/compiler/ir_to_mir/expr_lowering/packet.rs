@@ -55,6 +55,7 @@ impl<'a> HirToMirLowering<'a> {
                 ptr_vreg: VReg,
                 address_space: AddressSpace,
                 base_offset: usize,
+                trusted_btf: bool,
             },
         }
 
@@ -122,6 +123,7 @@ impl<'a> HirToMirLowering<'a> {
                     ptr_vreg: root_ptr_vreg,
                     address_space,
                     base_offset: 0,
+                    trusted_btf: address_space == AddressSpace::Kernel,
                 }
             }
             TrampolineValueKind::Scalar => {
@@ -246,6 +248,7 @@ impl<'a> HirToMirLowering<'a> {
                                 ptr_vreg,
                                 address_space,
                                 base_offset: 0,
+                                trusted_btf: false,
                             };
                         }
                         _ => {
@@ -260,6 +263,7 @@ impl<'a> HirToMirLowering<'a> {
                     ptr_vreg,
                     address_space,
                     base_offset,
+                    trusted_btf,
                 } => {
                     let field_offset =
                         base_offset
@@ -272,6 +276,28 @@ impl<'a> HirToMirLowering<'a> {
                             })?;
 
                     if is_last {
+                        if trusted_btf
+                            && address_space == AddressSpace::Kernel
+                            && matches!(
+                                projected_ty,
+                                MirType::Ptr {
+                                    address_space: AddressSpace::Kernel,
+                                    ..
+                                }
+                            )
+                        {
+                            self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
+                            self.emit(MirInst::Load {
+                                dst: dst_vreg,
+                                ptr: ptr_vreg,
+                                offset: Self::trampoline_projection_offset_i32(
+                                    field_offset,
+                                    path_desc,
+                                )?,
+                                ty: projected_ty.clone(),
+                            });
+                            break;
+                        }
                         let projected_slot = self.func.alloc_stack_slot(
                             align_to_eight(projected_ty.size()),
                             8,
@@ -339,6 +365,7 @@ impl<'a> HirToMirLowering<'a> {
                                 ptr_vreg,
                                 address_space,
                                 base_offset: field_offset,
+                                trusted_btf,
                             };
                         }
                         TypeInfo::Ptr { is_user, .. } => {
@@ -348,32 +375,47 @@ impl<'a> HirToMirLowering<'a> {
                                 AddressSpace::Kernel
                             };
                             let ptr_ty = Self::trampoline_pointer_type(next_address_space);
-                            let pointer_slot = self.func.alloc_stack_slot(
-                                align_to_eight(8),
-                                8,
-                                StackSlotKind::Local,
-                            );
-                            self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
-                            self.emit_trampoline_probe_read_to_slot(
-                                ptr_vreg,
-                                address_space,
-                                field_offset,
-                                pointer_slot,
-                                &ptr_ty,
-                                path_desc,
-                            )?;
                             let next_ptr_vreg = self.func.alloc_vreg();
                             self.vreg_type_hints.insert(next_ptr_vreg, ptr_ty.clone());
-                            self.emit(MirInst::LoadSlot {
-                                dst: next_ptr_vreg,
-                                slot: pointer_slot,
-                                offset: 0,
-                                ty: ptr_ty,
-                            });
+                            let next_trusted_btf =
+                                trusted_btf && next_address_space == AddressSpace::Kernel;
+                            if trusted_btf && address_space == AddressSpace::Kernel {
+                                self.emit(MirInst::Load {
+                                    dst: next_ptr_vreg,
+                                    ptr: ptr_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: ptr_ty,
+                                });
+                            } else {
+                                let pointer_slot = self.func.alloc_stack_slot(
+                                    align_to_eight(8),
+                                    8,
+                                    StackSlotKind::Local,
+                                );
+                                self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
+                                self.emit_trampoline_probe_read_to_slot(
+                                    ptr_vreg,
+                                    address_space,
+                                    field_offset,
+                                    pointer_slot,
+                                    &ptr_ty,
+                                    path_desc,
+                                )?;
+                                self.emit(MirInst::LoadSlot {
+                                    dst: next_ptr_vreg,
+                                    slot: pointer_slot,
+                                    offset: 0,
+                                    ty: ptr_ty,
+                                });
+                            }
                             cursor = TrampolineCursor::Pointer {
                                 ptr_vreg: next_ptr_vreg,
                                 address_space: next_address_space,
                                 base_offset: 0,
+                                trusted_btf: next_trusted_btf,
                             };
                         }
                         _ => {

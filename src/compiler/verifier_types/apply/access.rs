@@ -319,10 +319,9 @@ pub(super) fn apply_load_ctx_field_inst(
             kfunc_ref,
         };
     }
-    if matches!(field, CtxField::Task)
+    if ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(probe_ctx, field)
         && let VerifierType::Ptr {
             space: AddressSpace::Kernel,
-            nullability,
             ringbuf_ref,
             kfunc_ref,
             ..
@@ -330,7 +329,7 @@ pub(super) fn apply_load_ctx_field_inst(
     {
         ty = VerifierType::Ptr {
             space: AddressSpace::Kernel,
-            nullability,
+            nullability: Nullability::NonNull,
             bounds: Some(PtrBounds::new(
                 PtrOrigin::KernelBtf(dst),
                 0,

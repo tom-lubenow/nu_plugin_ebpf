@@ -313,6 +313,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(element_ty.clone());
         meta.root_ctx_field = root_ctx_field.cloned();
+        meta.trusted_btf = false;
 
         Ok(element_ty)
     }
@@ -389,6 +390,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(MirType::I64);
         meta.root_ctx_field = None;
+        meta.trusted_btf = false;
         meta.source_var = None;
         Ok(true)
     }
@@ -526,6 +528,7 @@ impl<'a> HirToMirLowering<'a> {
                 &remaining_members,
                 &path_desc,
                 Some(&task_field),
+                true,
                 None,
             )?;
             projected_ty
@@ -534,6 +537,13 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(projected_ty);
         meta.root_ctx_field = Some(task_field);
+        meta.trusted_btf = matches!(
+            meta.field_type.as_ref(),
+            Some(MirType::Ptr {
+                address_space: AddressSpace::Kernel,
+                ..
+            })
+        );
         meta.source_var = None;
         Ok(true)
     }
@@ -600,6 +610,9 @@ impl<'a> HirToMirLowering<'a> {
             let root_ctx_field = self
                 .get_metadata(src_dst)
                 .and_then(|meta| meta.root_ctx_field.clone());
+            let base_trusted_btf = self
+                .get_metadata(src_dst)
+                .is_some_and(|meta| meta.trusted_btf);
             self.vreg_type_hints.insert(
                 base_vreg,
                 self.vreg_type_hints
@@ -615,12 +628,21 @@ impl<'a> HirToMirLowering<'a> {
                 &path.members,
                 &path_desc,
                 root_ctx_field.as_ref(),
+                base_trusted_btf,
                 projected_semantics.as_ref(),
             )?;
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = root_ctx_field;
+            meta.trusted_btf = base_trusted_btf
+                && matches!(
+                    meta.field_type.as_ref(),
+                    Some(MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    })
+                );
             meta.annotated_semantics = projected_semantics;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);
@@ -676,6 +698,11 @@ impl<'a> HirToMirLowering<'a> {
                 if spec.normalize_u32_words_host_order {
                     self.normalize_host_order_u32_array_slot(base_vreg)?;
                 }
+                let base_trusted_btf = slot.is_none()
+                    && ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                        self.probe_ctx,
+                        &ctx_field,
+                    );
                 let projected_ty = self.lower_typed_value_projection(
                     src_dst,
                     dst_vreg,
@@ -684,12 +711,21 @@ impl<'a> HirToMirLowering<'a> {
                     remaining_members,
                     &Self::typed_value_path_desc(&path.members),
                     Some(&ctx_field),
+                    base_trusted_btf,
                     None,
                 )?;
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
+                meta.trusted_btf = base_trusted_btf
+                    && matches!(
+                        meta.field_type.as_ref(),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Kernel,
+                            ..
+                        })
+                    );
                 meta.source_var = None;
                 return Ok(());
             }
@@ -709,6 +745,11 @@ impl<'a> HirToMirLowering<'a> {
                     field: ctx_field.clone(),
                     slot: None,
                 });
+                let base_trusted_btf =
+                    ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                        self.probe_ctx,
+                        &ctx_field,
+                    );
                 let projected_ty = self.lower_typed_value_projection(
                     src_dst,
                     dst_vreg,
@@ -717,12 +758,21 @@ impl<'a> HirToMirLowering<'a> {
                     remaining_members,
                     &Self::typed_value_path_desc(&path.members),
                     Some(&ctx_field),
+                    base_trusted_btf,
                     None,
                 )?;
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
+                meta.trusted_btf = base_trusted_btf
+                    && matches!(
+                        meta.field_type.as_ref(),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Kernel,
+                            ..
+                        })
+                    );
                 meta.source_var = None;
                 return Ok(());
             }
@@ -764,12 +814,14 @@ impl<'a> HirToMirLowering<'a> {
                     remaining_members,
                     &Self::typed_value_path_desc(&path.members),
                     Some(&ctx_field),
+                    false,
                     None,
                 )?;
                 let meta = self.get_or_create_metadata(src_dst);
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
+                meta.trusted_btf = false;
                 meta.source_var = None;
                 return Ok(());
             }
@@ -862,6 +914,16 @@ impl<'a> HirToMirLowering<'a> {
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = Some(ctx_field.clone());
+            meta.trusted_btf = matches!(
+                spec.kind,
+                TrampolineValueKind::Pointer { user_space: false }
+            ) && matches!(
+                meta.field_type.as_ref(),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Kernel,
+                    ..
+                })
+            );
             meta.source_var = None;
             return Ok(());
         }
@@ -1014,10 +1076,16 @@ impl<'a> HirToMirLowering<'a> {
             self.normalize_host_order_u32_array_slot(dst_vreg)?;
         }
 
+        let trusted_btf = slot.is_none()
+            && ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                self.probe_ctx,
+                &ctx_field,
+            );
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
         meta.field_type = Some(field_type);
         meta.root_ctx_field = Some(ctx_field);
+        meta.trusted_btf = trusted_btf;
         meta.source_var = None;
 
         Ok(())

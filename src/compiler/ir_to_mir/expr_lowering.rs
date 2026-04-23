@@ -772,6 +772,7 @@ impl<'a> HirToMirLowering<'a> {
         path_members: &[PathMember],
         path_desc: &str,
         root_ctx_field: Option<&CtxField>,
+        trusted_btf: bool,
         projected_semantics: Option<&AnnotatedValueSemantics>,
     ) -> Result<MirType, CompileError> {
         let projected_by_ref =
@@ -784,6 +785,7 @@ impl<'a> HirToMirLowering<'a> {
                 base_offset: usize,
                 target_ty: MirType,
                 direct: bool,
+                trusted_btf: bool,
             },
             PacketScalar {
                 base_vreg: VReg,
@@ -804,6 +806,7 @@ impl<'a> HirToMirLowering<'a> {
                 base_offset: 0,
                 target_ty: pointee.as_ref().clone(),
                 direct: true,
+                trusted_btf: *address_space == AddressSpace::Kernel && trusted_btf,
             },
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -924,6 +927,7 @@ impl<'a> HirToMirLowering<'a> {
                     base_offset,
                     target_ty,
                     direct,
+                    trusted_btf,
                 } = &cursor
                 else {
                     break;
@@ -942,6 +946,7 @@ impl<'a> HirToMirLowering<'a> {
                 let current_base_vreg = *base_vreg;
                 let current_address_space = *address_space;
                 let current_base_offset = *base_offset;
+                let current_trusted_btf = *trusted_btf;
                 let next_space = *next_space;
                 let ptr_ty = MirType::Ptr {
                     pointee: pointee.clone(),
@@ -962,24 +967,38 @@ impl<'a> HirToMirLowering<'a> {
                         });
                     }
                     AddressSpace::Kernel | AddressSpace::User => {
-                        let pointer_slot =
-                            self.func
-                                .alloc_stack_slot(align_to_eight(8), 8, StackSlotKind::Local);
-                        self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
-                        self.emit_trampoline_probe_read_to_slot(
-                            current_base_vreg,
-                            current_address_space,
-                            current_base_offset,
-                            pointer_slot,
-                            &ptr_ty,
-                            path_desc,
-                        )?;
-                        self.emit(MirInst::LoadSlot {
-                            dst: ptr_vreg,
-                            slot: pointer_slot,
-                            offset: 0,
-                            ty: ptr_ty,
-                        });
+                        if current_trusted_btf && current_address_space == AddressSpace::Kernel {
+                            self.emit(MirInst::Load {
+                                dst: ptr_vreg,
+                                ptr: current_base_vreg,
+                                offset: Self::trampoline_projection_offset_i32(
+                                    current_base_offset,
+                                    path_desc,
+                                )?,
+                                ty: ptr_ty,
+                            });
+                        } else {
+                            let pointer_slot = self.func.alloc_stack_slot(
+                                align_to_eight(8),
+                                8,
+                                StackSlotKind::Local,
+                            );
+                            self.record_stack_slot_type(pointer_slot, ptr_ty.clone());
+                            self.emit_trampoline_probe_read_to_slot(
+                                current_base_vreg,
+                                current_address_space,
+                                current_base_offset,
+                                pointer_slot,
+                                &ptr_ty,
+                                path_desc,
+                            )?;
+                            self.emit(MirInst::LoadSlot {
+                                dst: ptr_vreg,
+                                slot: pointer_slot,
+                                offset: 0,
+                                ty: ptr_ty,
+                            });
+                        }
                     }
                     AddressSpace::Packet => {
                         return Err(CompileError::UnsupportedInstruction(format!(
@@ -994,6 +1013,7 @@ impl<'a> HirToMirLowering<'a> {
                     base_offset: 0,
                     target_ty: pointee.as_ref().clone(),
                     direct: true,
+                    trusted_btf: current_trusted_btf && next_space == AddressSpace::Kernel,
                 };
             }
 
@@ -1003,6 +1023,7 @@ impl<'a> HirToMirLowering<'a> {
                 base_offset,
                 target_ty,
                 direct,
+                trusted_btf,
             } = &cursor
             else {
                 continue;
@@ -1037,6 +1058,7 @@ impl<'a> HirToMirLowering<'a> {
                         base_offset: 0,
                         target_ty: MirType::U8,
                         direct: true,
+                        trusted_btf: false,
                     };
                     continue;
                 }
@@ -1071,6 +1093,7 @@ impl<'a> HirToMirLowering<'a> {
                         base_offset: 0,
                         target_ty: view_ty,
                         direct: false,
+                        trusted_btf: false,
                     };
                     continue;
                 }
@@ -1123,6 +1146,7 @@ impl<'a> HirToMirLowering<'a> {
                         base_offset: field_offset,
                         target_ty: view_ty,
                         direct: false,
+                        trusted_btf: false,
                     };
                     continue;
                 }
@@ -1400,7 +1424,27 @@ impl<'a> HirToMirLowering<'a> {
                             }
                         }
                         AddressSpace::Kernel | AddressSpace::User => {
-                            if *address_space == AddressSpace::Kernel
+                            if *trusted_btf
+                                && *address_space == AddressSpace::Kernel
+                                && matches!(
+                                    next_ty,
+                                    MirType::Ptr {
+                                        address_space: AddressSpace::Kernel,
+                                        ..
+                                    }
+                                )
+                            {
+                                self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: dst_vreg,
+                                    ptr: *base_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: next_ty.clone(),
+                                });
+                            } else if *address_space == AddressSpace::Kernel
                                 && root_ctx_field == Some(&CtxField::SockoptOptval)
                             {
                                 if bitfield.is_some() {
@@ -1525,6 +1569,7 @@ impl<'a> HirToMirLowering<'a> {
                 base_offset: field_offset,
                 target_ty: next_ty,
                 direct: false,
+                trusted_btf: *trusted_btf,
             };
         }
 

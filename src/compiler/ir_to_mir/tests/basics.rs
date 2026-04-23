@@ -2111,7 +2111,7 @@ fn test_lower_lsm_pointer_root_field_projection() {
             )))
     );
     assert!(
-        blocks
+        !blocks
             .iter()
             .any(|block| block.instructions.iter().any(|inst| matches!(
                 inst,
@@ -2119,7 +2119,23 @@ fn test_lower_lsm_pointer_root_field_projection() {
                     helper,
                     ..
                 } if *helper == BpfHelper::ProbeReadKernel as u32
-            )))
+            ))),
+        "terminal trusted BTF pointer field should not use probe_read"
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    },
+                    ..
+                }
+            ))),
+        "expected trusted BTF pointer field to lower as a direct load"
     );
 }
 
@@ -2158,28 +2174,32 @@ fn test_lower_fentry_pointer_hop_scalar_field_projection() {
             )
         })
         .count();
-    assert!(
-        helper_reads >= 2,
-        "expected chained kernel reads for intermediate pointer hop"
-    );
-    assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
+    let direct_kernel_pointer_loads = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| {
+            matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::Ptr {
                         address_space: AddressSpace::Kernel,
                         ..
                     },
                     ..
                 }
-            )),
-        "expected intermediate pointer load from helper scratch slot"
+            )
+        })
+        .count();
+    assert!(
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read after direct trusted pointer hop"
+    );
+    assert!(
+        direct_kernel_pointer_loads >= 1,
+        "expected intermediate pointer hop to use a direct trusted BTF load"
     );
 }
 
@@ -2780,8 +2800,8 @@ fn test_lower_generic_field_projection_after_deeper_pointer_binding() {
         })
         .count();
     assert!(
-        helper_reads >= 3,
-        "expected chained kernel reads across a deeper post-binding pointer path"
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read across a deeper trusted pointer path"
     );
     assert!(
         result
@@ -2839,8 +2859,8 @@ fn test_lower_fentry_multi_level_pointer_field_projection() {
         })
         .count();
     assert!(
-        helper_reads >= 5,
-        "expected chained helper reads across the intermediate pointer, multi-level pointer hop, and scalar leaf"
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read across trusted multi-level pointer hops"
     );
     assert!(
         result
@@ -2899,8 +2919,8 @@ fn test_lower_fentry_multi_level_pointer_index_projection() {
         })
         .count();
     assert!(
-        helper_reads >= 5,
-        "expected chained helper reads across direct pointer indexing and subsequent pointer hops"
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read across trusted pointer indexing"
     );
     assert!(
         result
@@ -2961,8 +2981,8 @@ fn test_lower_generic_field_projection_after_multi_level_pointer_binding() {
         })
         .count();
     assert!(
-        helper_reads >= 5,
-        "expected chained helper reads across a bound multi-level pointer path"
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read across a bound trusted pointer path"
     );
     assert!(
         result
@@ -3024,8 +3044,8 @@ fn test_lower_generic_field_projection_after_binding_root_trampoline_arg() {
         })
         .count();
     assert!(
-        helper_reads >= 4,
-        "expected chained helper reads after binding a root trampoline pointer arg"
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read after binding a trusted trampoline arg"
     );
     assert!(
         result
@@ -3090,8 +3110,8 @@ fn test_lower_generic_pointer_index_projection_after_binding_root_trampoline_arg
         })
         .count();
     assert!(
-        helper_reads >= 4,
-        "expected helper reads across bound pointer indexing and subsequent pointer hops"
+        helper_reads == 1,
+        "expected only the scalar leaf to use probe_read across bound trusted pointer indexing"
     );
     assert!(
         result
