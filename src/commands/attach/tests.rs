@@ -5289,13 +5289,15 @@ fn make_sk_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
     )
 }
 
+fn make_cgrp_storage_map_get_program_with_owner(
+    owner_path: CellPath,
+    map_get_decl: DeclId,
+) -> HirProgram {
+    make_local_storage_map_get_program(owner_path, b"cgrp_state", b"cgrp-storage", map_get_decl)
+}
+
 fn make_cgrp_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
-    make_local_storage_map_get_program(
-        current_task_cgroup_path(),
-        b"cgrp_state",
-        b"cgrp-storage",
-        map_get_decl,
-    )
+    make_cgrp_storage_map_get_program_with_owner(current_task_cgroup_path(), map_get_decl)
 }
 
 fn make_inode_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
@@ -5420,13 +5422,20 @@ fn make_sk_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
     )
 }
 
-fn make_cgrp_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+fn make_cgrp_storage_map_delete_program_with_owner(
+    owner_path: CellPath,
+    map_delete_decl: DeclId,
+) -> HirProgram {
     make_local_storage_map_delete_program(
-        current_task_cgroup_path(),
+        owner_path,
         b"cgrp_state",
         b"cgrp-storage",
         map_delete_decl,
     )
+}
+
+fn make_cgrp_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
+    make_cgrp_storage_map_delete_program_with_owner(current_task_cgroup_path(), map_delete_decl)
 }
 
 fn make_inode_storage_map_delete_program(map_delete_decl: DeclId) -> HirProgram {
@@ -11932,6 +11941,66 @@ fn test_compile_kprobe_cgrp_storage_map_get_program() {
 }
 
 #[test]
+fn test_compile_kprobe_current_cgroup_storage_map_get_program() {
+    let hir = make_cgrp_storage_map_get_program_with_owner(
+        current_task_cgroup_alias_path(),
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-get".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("current_cgroup cgrp-storage map-get should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageGet as u32
+                        && args.len() == 4
+                        && matches!(args[3], MirValue::Const(1))
+            )),
+        "expected cgrp-storage get helper call with explicit create flag"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized current_cgroup cgrp-storage map-get should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
 fn test_compile_kprobe_cgrp_storage_map_delete_program() {
     let hir = make_cgrp_storage_map_delete_program(DeclId::new(42));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
@@ -12008,6 +12077,64 @@ fn test_compile_kprobe_cgrp_storage_map_delete_program() {
             .iter()
             .any(|reloc| reloc.symbol_name == map.name)
     );
+    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+}
+
+#[test]
+fn test_compile_kprobe_current_cgroup_storage_map_delete_program() {
+    let hir = make_cgrp_storage_map_delete_program_with_owner(
+        current_task_cgroup_alias_path(),
+        DeclId::new(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("current_cgroup cgrp-storage map-delete should lower through attach flow");
+
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::CgrpStorageDelete as u32 && args.len() == 2
+            )),
+        "expected cgrp-storage delete helper call"
+    );
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("optimized current_cgroup cgrp-storage map-delete should compile");
+
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "cgrp_state")
+        .expect("expected cgrp-storage runtime map artifact");
+    assert_eq!(map.def, BpfMapDef::cgrp_storage(8));
     assert!(!result.bytecode.is_empty(), "Should produce bytecode");
 }
 
