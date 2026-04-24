@@ -2,7 +2,8 @@ use super::*;
 use crate::compiler::ProgramIntrinsic;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
-    BpfHelper, kfunc_pointer_arg_fixed_size, kfunc_pointer_arg_requires_stack_slot_base,
+    BpfHelper, HelperArgKind, HelperSignature, kfunc_pointer_arg_fixed_size,
+    kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{AddressSpace, MapOpKind};
 
@@ -15,6 +16,73 @@ pub(super) struct ScalarKfuncOutArgWriteback {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn helper_callback_subfunction_arg_seeds(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
+        match (helper, arg_idx) {
+            (BpfHelper::BpfLoop, 1) => Ok(vec![
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::I64),
+                    metadata: None,
+                },
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::Ptr {
+                        pointee: Box::new(MirType::Unknown),
+                        address_space: AddressSpace::Stack,
+                    }),
+                    metadata: None,
+                },
+            ]),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "helper-call '{}' callback lowering is not modeled yet",
+                helper.name()
+            ))),
+        }
+    }
+
+    pub(super) fn lower_helper_callback_subprogram_arg(
+        &mut self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        arg_reg: RegId,
+    ) -> Result<MirValue, CompileError> {
+        if !matches!(
+            HelperSignature::for_id(helper as u32).map(|sig| sig.arg_kind(arg_idx)),
+            Some(HelperArgKind::Subprogram)
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "helper-call '{}' arg{} is not a callback subprogram",
+                helper.name(),
+                arg_idx
+            )));
+        }
+
+        let block_id = self
+            .get_metadata(arg_reg)
+            .and_then(|meta| meta.closure_block_id)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "helper-call '{}' arg{} requires a closure or block literal callback",
+                    helper.name(),
+                    arg_idx
+                ))
+            })?;
+        let arg_seeds = self.helper_callback_subfunction_arg_seeds(helper, arg_idx)?;
+        let subfn = self.lower_helper_callback_subfunction(
+            block_id,
+            &format!("{}_callback_{}", helper.name(), block_id.get()),
+            &arg_seeds,
+        )?;
+        let callback_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadSubprogram {
+            dst: callback_vreg,
+            subfn,
+        });
+        Ok(MirValue::VReg(callback_vreg))
+    }
+
     pub(super) fn aggregate_call_value_type<'b>(ty: &'b MirType) -> Option<&'b MirType> {
         match ty {
             MirType::Array { .. } | MirType::Struct { .. } => Some(ty),

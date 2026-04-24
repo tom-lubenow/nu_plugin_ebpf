@@ -857,7 +857,9 @@ impl<'a> HirToMirLowering<'a> {
                         helper.name()
                     ))
                 })?;
-                if helper.requires_callback_subprogram() {
+                if helper.requires_callback_subprogram()
+                    && !helper.supports_modeled_callback_subprogram()
+                {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "helper-call '{}' requires callback subprogram pointer support, which is not modeled yet",
                         helper.name()
@@ -916,6 +918,18 @@ impl<'a> HirToMirLowering<'a> {
                         let (arg, map_ref, map_vreg) =
                             self.materialize_helper_map_fd_arg(helper, helper_arg_idx, arg_reg)?;
                         helper_map_args.push((helper_arg_idx, map_ref, map_vreg));
+                        args.push(arg);
+                        continue;
+                    }
+                    if helper.supports_modeled_callback_subprogram()
+                        && matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Subprogram)
+                    {
+                        let arg = self.lower_helper_callback_subprogram_arg(
+                            helper,
+                            helper_arg_idx,
+                            arg_reg,
+                        )?;
+                        helper_arg_regs.push((helper_arg_idx, arg_reg));
                         args.push(arg);
                         continue;
                     }

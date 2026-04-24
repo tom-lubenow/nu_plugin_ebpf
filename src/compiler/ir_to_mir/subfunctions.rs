@@ -1,6 +1,140 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn lower_helper_callback_subfunction(
+        &mut self,
+        block_id: NuBlockId,
+        name: &str,
+        arg_seeds: &[SubfunctionArgSeed],
+    ) -> Result<SubfunctionId, CompileError> {
+        let hir = self.closure_irs.get(&block_id).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!("Closure block {:?} not found", block_id))
+        })?;
+        let input_reg = Self::infer_pipeline_input_reg(hir);
+        let uses_in = Self::uses_in_variable(hir);
+        let needs_input = input_reg.is_some() || uses_in;
+        let param_vars = Self::infer_param_vars(hir);
+        let param_count = arg_seeds.len().saturating_sub(usize::from(needs_input));
+        let declared_params = param_vars.len() + usize::from(needs_input);
+        if declared_params > arg_seeds.len() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "callback closure for '{}' declares {} parameters, but the callback ABI supplies {}",
+                name,
+                declared_params,
+                arg_seeds.len()
+            )));
+        }
+
+        let mut subfn = MirFunction::with_name(name.to_string());
+        subfn.param_count = arg_seeds.len();
+
+        let old_func = std::mem::replace(&mut self.func, subfn);
+        let old_reg_map = std::mem::take(&mut self.reg_map);
+        let old_reg_metadata = std::mem::take(&mut self.reg_metadata);
+        let old_current_block = self.current_block;
+        let old_pipeline_input = self.pipeline_input.take();
+        let old_pipeline_input_reg = self.pipeline_input_reg.take();
+        let old_positional_args = std::mem::take(&mut self.positional_args);
+        let old_named_flags = std::mem::take(&mut self.named_flags);
+        let old_named_args = std::mem::take(&mut self.named_args);
+        let old_var_mappings = std::mem::take(&mut self.var_mappings);
+        let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
+        let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
+        let old_loop_body_inits = std::mem::take(&mut self.loop_body_inits);
+        let old_type_hints = std::mem::replace(
+            &mut self.current_type_hints,
+            self.closure_type_hints
+                .get(&block_id)
+                .cloned()
+                .unwrap_or_default(),
+        );
+        let old_vreg_hints = std::mem::take(&mut self.vreg_type_hints);
+        let old_stack_slot_hints = std::mem::take(&mut self.stack_slot_type_hints);
+        let old_subfunction_global_aliases = std::mem::take(&mut self.subfunction_global_aliases);
+        let old_ctx_param = self.ctx_param;
+        let old_return_seed_state = std::mem::take(&mut self.current_return_seed_state);
+        let old_aggregate_return = std::mem::take(&mut self.current_subfunction_aggregate_return);
+
+        self.ctx_param = None;
+        let mut next_arg_seed = 0usize;
+
+        if needs_input {
+            let vreg = self.func.alloc_vreg();
+            if let Some(reg) = input_reg {
+                self.reg_map.insert(reg.get(), vreg);
+            }
+            if uses_in {
+                self.var_mappings.insert(IN_VARIABLE_ID, vreg);
+            }
+            let seed = arg_seeds.get(next_arg_seed);
+            self.seed_subfunction_param(
+                vreg,
+                next_arg_seed,
+                seed,
+                input_reg,
+                uses_in.then_some(IN_VARIABLE_ID),
+            );
+            next_arg_seed += 1;
+        }
+
+        for (idx, var_id) in param_vars.iter().enumerate() {
+            let vreg = self.func.alloc_vreg();
+            self.var_mappings.insert(*var_id, vreg);
+            let seed = arg_seeds.get(next_arg_seed + idx);
+            self.seed_subfunction_param(vreg, next_arg_seed + idx, seed, None, Some(*var_id));
+        }
+        for extra_idx in param_vars.len()..param_count {
+            let unused = self.func.alloc_vreg();
+            let seed = arg_seeds.get(next_arg_seed + extra_idx);
+            self.seed_subfunction_param(unused, next_arg_seed + extra_idx, seed, None, None);
+        }
+
+        self.hir_block_map.insert(hir.entry, self.func.entry);
+        self.current_block = self.func.entry;
+
+        let result = self.lower_block(hir);
+
+        let subfn = std::mem::replace(&mut self.func, old_func);
+        let subfn_hints = std::mem::replace(&mut self.vreg_type_hints, old_vreg_hints);
+        let subfn_stack_slot_hints =
+            std::mem::replace(&mut self.stack_slot_type_hints, old_stack_slot_hints);
+        let subfn_return_seed =
+            match std::mem::replace(&mut self.current_return_seed_state, old_return_seed_state) {
+                CurrentReturnSeedState::Known(seed) => seed,
+                CurrentReturnSeedState::Unset | CurrentReturnSeedState::Conflict => None,
+            };
+
+        self.reg_map = old_reg_map;
+        self.reg_metadata = old_reg_metadata;
+        self.current_block = old_current_block;
+        self.pipeline_input = old_pipeline_input;
+        self.pipeline_input_reg = old_pipeline_input_reg;
+        self.positional_args = old_positional_args;
+        self.named_flags = old_named_flags;
+        self.named_args = old_named_args;
+        self.var_mappings = old_var_mappings;
+        self.loop_contexts = old_loop_contexts;
+        self.hir_block_map = old_hir_block_map;
+        self.loop_body_inits = old_loop_body_inits;
+        self.current_type_hints = old_type_hints;
+        self.subfunction_global_aliases = old_subfunction_global_aliases;
+        self.ctx_param = old_ctx_param;
+        self.current_subfunction_aggregate_return = old_aggregate_return;
+
+        if let Err(err) = result {
+            return Err(err);
+        }
+
+        let subfn_id = SubfunctionId(self.subfunctions.len() as u32);
+        self.subfunctions.push(subfn);
+        self.subfunction_hints.push(subfn_hints);
+        self.subfunction_stack_slot_hints
+            .push(subfn_stack_slot_hints);
+        self.subfunction_return_seeds.push(subfn_return_seed);
+
+        Ok(subfn_id)
+    }
+
     fn seed_subfunction_param(
         &mut self,
         vreg: VReg,
