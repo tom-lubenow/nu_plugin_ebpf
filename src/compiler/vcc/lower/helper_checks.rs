@@ -603,7 +603,44 @@ impl<'a> VccLowerer<'a> {
                             ),
                         ));
                     };
-                    if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::BpfLoop)) {
+                    if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::ForEachMapElem)) {
+                        let valid = args.len() == 4
+                            && matches!(
+                                args.first(),
+                                Some(MirType::Ptr {
+                                    address_space: AddressSpace::Kernel,
+                                    ..
+                                })
+                            )
+                            && matches!(
+                                args.get(1),
+                                Some(MirType::Ptr {
+                                    address_space: AddressSpace::Map,
+                                    ..
+                                })
+                            )
+                            && matches!(
+                                args.get(2),
+                                Some(MirType::Ptr {
+                                    address_space: AddressSpace::Map,
+                                    ..
+                                })
+                            )
+                            && matches!(
+                                args.get(3),
+                                Some(MirType::Ptr {
+                                    address_space: AddressSpace::Stack,
+                                    ..
+                                })
+                            )
+                            && matches!(ret.as_ref(), MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool);
+                        if !valid {
+                            return Err(VccError::new(
+                                VccErrorKind::UnsupportedInstruction,
+                                "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar",
+                            ));
+                        }
+                    } else if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::BpfLoop)) {
                         let valid = args.len() == 2
                             && matches!(args[0], MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool)
                             && matches!(

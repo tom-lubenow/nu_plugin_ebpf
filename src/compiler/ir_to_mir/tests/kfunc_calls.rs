@@ -5,6 +5,7 @@ use crate::compiler::elf::BpfMapType;
 use crate::compiler::hir::{HirBlock, infer_ctx_param};
 use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
+use crate::compiler::mir::AddressSpace;
 use crate::compiler::passes::optimize_with_ssa_hints;
 use nu_protocol::{DeclId, RegId, VarId};
 
@@ -184,7 +185,7 @@ fn test_helper_call_rejects_unmodeled_callback_subprogram_helpers() {
             stmts: vec![
                 HirStmt::LoadLiteral {
                     dst: RegId::new(1),
-                    lit: HirLiteral::String(b"bpf_for_each_map_elem".to_vec()),
+                    lit: HirLiteral::String(b"bpf_timer_set_callback".to_vec()),
                 },
                 HirStmt::Call {
                     decl_id: DeclId::new(42),
@@ -221,12 +222,170 @@ fn test_helper_call_rejects_unmodeled_callback_subprogram_helpers() {
 
     match err {
         CompileError::UnsupportedInstruction(msg) => assert!(
-            msg.contains("bpf_for_each_map_elem")
+            msg.contains("bpf_timer_set_callback")
                 && msg.contains("requires callback subprogram pointer support"),
             "unexpected error: {msg}"
         ),
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+#[test]
+fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
+    let closure_block_id = nu_protocol::BlockId::new(7);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_for_each_map_elem".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"demo_map".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(b"ctx".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String(b"array".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                        ],
+                        named: vec![(b"kind".to_vec(), RegId::new(6))],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("for_each_map_elem helper-call should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_for_each_map_elem helper-call with closure should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef {
+                name,
+                kind: MapKind::Array,
+            },
+            ..
+        } if name == "demo_map"
+    )));
+    assert!(
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadSubprogram { .. }))
+    );
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::ForEachMapElem as u32 && args.len() == 4
+    )));
+
+    let callback_hints = &result.type_hints.subfunctions[0];
+    assert!(matches!(
+        callback_hints.get(&VReg(0)),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        })
+    ));
+    assert!(matches!(
+        callback_hints.get(&VReg(1)),
+        Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Map,
+        }) if matches!(pointee.as_ref(), MirType::U32)
+    ));
+    assert!(matches!(
+        callback_hints.get(&VReg(2)),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Map,
+            ..
+        })
+    ));
+    assert!(
+        matches!(
+            callback_hints.get(&VReg(3)),
+            Some(MirType::Ptr {
+                address_space: AddressSpace::Stack,
+                ..
+            })
+        ),
+        "unexpected callback_ctx hint: {:?}",
+        callback_hints.get(&VReg(3))
+    );
 }
 
 #[test]

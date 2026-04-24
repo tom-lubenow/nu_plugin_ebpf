@@ -626,6 +626,13 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const FOR_EACH_MAP_ELEM_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 2,
+            op: "helper bpf_for_each_map_elem callback_ctx",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
 
         const LOAD_HDR_OPT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -2547,6 +2554,11 @@ impl BpfHelper {
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
                 ptr_arg_rules: TASK_PT_REGS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::ForEachMapElem => HelperSemantics {
+                ptr_arg_rules: FOR_EACH_MAP_ELEM_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

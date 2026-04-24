@@ -20,36 +20,87 @@ impl<'a> HirToMirLowering<'a> {
         &self,
         helper: BpfHelper,
         arg_idx: usize,
+        helper_map_args: &[(usize, MapRef, VReg)],
         callback_ctx: Option<(VReg, RegId)>,
     ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
+        let stack_callback_ctx_seed = || {
+            let mut callback_ctx_seed = callback_ctx
+                .map(|(vreg, reg)| self.subfunction_arg_seed_for_value(vreg, Some(reg)))
+                .unwrap_or_default();
+            callback_ctx_seed.type_hint = Some(match callback_ctx_seed.type_hint.take() {
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack,
+                }) => MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack,
+                },
+                Some(ty @ (MirType::Array { .. } | MirType::Struct { .. })) => MirType::Ptr {
+                    pointee: Box::new(ty),
+                    address_space: AddressSpace::Stack,
+                },
+                _ => MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Stack,
+                },
+            });
+            callback_ctx_seed
+        };
+
         match (helper, arg_idx) {
             (BpfHelper::BpfLoop, 1) => {
-                let mut callback_ctx_seed = callback_ctx
-                    .map(|(vreg, reg)| self.subfunction_arg_seed_for_value(vreg, Some(reg)))
-                    .unwrap_or_default();
-                callback_ctx_seed.type_hint = Some(match callback_ctx_seed.type_hint.take() {
-                    Some(MirType::Ptr {
-                        pointee,
-                        address_space: AddressSpace::Stack,
-                    }) => MirType::Ptr {
-                        pointee,
-                        address_space: AddressSpace::Stack,
-                    },
-                    Some(ty @ (MirType::Array { .. } | MirType::Struct { .. })) => MirType::Ptr {
-                        pointee: Box::new(ty),
-                        address_space: AddressSpace::Stack,
-                    },
-                    _ => MirType::Ptr {
-                        pointee: Box::new(MirType::Unknown),
-                        address_space: AddressSpace::Stack,
-                    },
-                });
+                let callback_ctx_seed = stack_callback_ctx_seed();
                 Ok(vec![
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::I64),
                         metadata: None,
                     },
                     callback_ctx_seed,
+                ])
+            }
+            (BpfHelper::ForEachMapElem, 1) => {
+                let Some((_, map_ref, map_vreg)) =
+                    helper_map_args.iter().find(|(idx, _, _)| *idx == 0)
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' requires a literal map operand before the callback",
+                        helper.name()
+                    )));
+                };
+                let (key_ty, mut value_ty) = match self.vreg_type_hints.get(map_vreg) {
+                    Some(MirType::MapRef { key_ty, val_ty }) => {
+                        (key_ty.as_ref().clone(), val_ty.as_ref().clone())
+                    }
+                    _ => (MirType::Unknown, MirType::Unknown),
+                };
+                if matches!(value_ty, MirType::Unknown)
+                    && let Some(named_value_ty) = self.named_map_value_type(map_ref)
+                {
+                    value_ty = named_value_ty.clone();
+                }
+                Ok(vec![
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(MirType::Unknown),
+                            address_space: AddressSpace::Kernel,
+                        }),
+                        metadata: None,
+                    },
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(key_ty),
+                            address_space: AddressSpace::Map,
+                        }),
+                        metadata: None,
+                    },
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(value_ty),
+                            address_space: AddressSpace::Map,
+                        }),
+                        metadata: None,
+                    },
+                    stack_callback_ctx_seed(),
                 ])
             }
             _ => Err(CompileError::UnsupportedInstruction(format!(
@@ -64,6 +115,7 @@ impl<'a> HirToMirLowering<'a> {
         helper: BpfHelper,
         arg_idx: usize,
         arg_reg: RegId,
+        helper_map_args: &[(usize, MapRef, VReg)],
         callback_ctx: Option<(VReg, RegId)>,
     ) -> Result<MirValue, CompileError> {
         if !matches!(
@@ -87,8 +139,12 @@ impl<'a> HirToMirLowering<'a> {
                     arg_idx
                 ))
             })?;
-        let arg_seeds =
-            self.helper_callback_subfunction_arg_seeds(helper, arg_idx, callback_ctx)?;
+        let arg_seeds = self.helper_callback_subfunction_arg_seeds(
+            helper,
+            arg_idx,
+            helper_map_args,
+            callback_ctx,
+        )?;
         let subfn = self.lower_helper_callback_subfunction(
             block_id,
             &format!("{}_callback_{}", helper.name(), block_id.get()),
@@ -397,6 +453,39 @@ impl<'a> HirToMirLowering<'a> {
             ),
             None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must name a recognized map family; generic map commands support: hash, array, queue, stack, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash; socket map kinds still use their specialized helpers"
+            ))),
+        }
+    }
+
+    pub(super) fn for_each_map_elem_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash for bpf_for_each_map_elem"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(
+                kind @ (
+                    MapKind::Hash
+                    | MapKind::PerCpuHash
+                    | MapKind::LruHash
+                    | MapKind::LruPerCpuHash
+                    | MapKind::Array
+                    | MapKind::PerCpuArray
+                ),
+            ) => Ok(kind),
+            Some(map_kind) => Err(Self::reserved_special_map_kind_error(context, &kind, map_kind)
+                .unwrap_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} --kind {kind} is not supported by bpf_for_each_map_elem; supported kinds are hash, array, lru-hash, per-cpu-hash, per-cpu-array, and lru-per-cpu-hash"
+                    ))
+                })),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must name a recognized map family; bpf_for_each_map_elem supports hash, array, lru-hash, per-cpu-hash, per-cpu-array, and lru-per-cpu-hash"
             ))),
         }
     }

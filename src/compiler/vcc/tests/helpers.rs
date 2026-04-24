@@ -35,13 +35,8 @@ fn test_verify_mir_unmodeled_callback_helpers_require_modeled_subprogram_pointer
         .instructions
         .push(MirInst::CallHelper {
             dst,
-            helper: BpfHelper::ForEachMapElem as u32,
-            args: vec![
-                MirValue::Const(1),
-                MirValue::Const(0),
-                MirValue::Const(0),
-                MirValue::Const(0),
-            ],
+            helper: BpfHelper::TimerSetCallback as u32,
+            args: vec![MirValue::Const(1), MirValue::Const(0)],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -50,7 +45,140 @@ fn test_verify_mir_unmodeled_callback_helpers_require_modeled_subprogram_pointer
     let err = verify_mir(&func, &types).expect_err("expected callback helper error");
     assert!(
         err.iter().any(|e| e.message.contains(
-            "helper 'bpf_for_each_map_elem' requires callback subprogram pointer support"
+            "helper 'bpf_timer_set_callback' requires callback subprogram pointer support"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_each_map_elem_accepts_modeled_callback_subprogram() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_map".to_string(),
+            kind: MapKind::Array,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::ForEachMapElem as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U64),
+        },
+    );
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Kernel,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U32),
+                    address_space: AddressSpace::Map,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U64),
+                    address_space: AddressSpace::Map,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected modeled bpf_for_each_map_elem callback to verify");
+}
+
+#[test]
+fn test_verify_mir_for_each_map_elem_rejects_wrong_callback_signature() {
+    let (mut func, entry) = new_mir_function();
+    let map = func.alloc_vreg();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_map".to_string(),
+            kind: MapKind::Array,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::ForEachMapElem as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U64),
+        },
+    );
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![MirType::I64],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected bpf_for_each_map_elem callback signature error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar"
         )),
         "unexpected errors: {:?}",
         err

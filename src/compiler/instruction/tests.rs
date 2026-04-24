@@ -1118,6 +1118,21 @@ fn test_map_lookup_percpu_helper_uses_explicit_per_cpu_map_kind_family() {
 }
 
 #[test]
+fn test_for_each_map_elem_helper_uses_explicit_iteration_map_kind_family() {
+    assert_eq!(
+        BpfHelper::ForEachMapElem.local_helper_map_arg_index(),
+        Some(0)
+    );
+    assert_eq!(
+        BpfHelper::ForEachMapElem.helper_explicit_map_kind_family(0),
+        Some(HelperExplicitMapKindFamily::ForEachMapElem)
+    );
+    assert!(BpfHelper::ForEachMapElem.helper_requires_explicit_map_kind(0));
+    assert!(BpfHelper::ForEachMapElem.supports_local_helper_map_fd(0));
+    assert_eq!(BpfHelper::ForEachMapElem.helper_map_arg_kind(0), None);
+}
+
+#[test]
 fn test_queue_stack_helpers_use_expected_explicit_map_kind_families() {
     assert_eq!(
         BpfHelper::MapPushElem.helper_explicit_map_kind_family(0),
@@ -5780,7 +5795,8 @@ fn test_callback_helper_signatures_and_names() {
     assert!(!BpfHelper::TimerStart.requires_callback_subprogram());
     assert!(!BpfHelper::TimerCancel.requires_callback_subprogram());
     assert!(BpfHelper::BpfLoop.supports_modeled_callback_subprogram());
-    assert!(!BpfHelper::ForEachMapElem.supports_modeled_callback_subprogram());
+    assert!(BpfHelper::ForEachMapElem.supports_modeled_callback_subprogram());
+    assert!(!BpfHelper::TimerSetCallback.supports_modeled_callback_subprogram());
 }
 
 #[test]

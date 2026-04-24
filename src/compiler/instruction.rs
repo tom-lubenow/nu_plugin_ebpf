@@ -990,7 +990,7 @@ impl BpfHelper {
     }
 
     pub const fn supports_modeled_callback_subprogram(self) -> bool {
-        matches!(self, Self::BpfLoop)
+        matches!(self, Self::ForEachMapElem | Self::BpfLoop)
     }
 
     pub const fn zero_size_pointer_arg_size_arg(self, arg_idx: usize) -> Option<usize> {
@@ -1379,6 +1379,7 @@ impl BpfHelper {
             | Self::RingbufReserveDynptr
             | Self::RingbufQuery
             | Self::UserRingbufDrain
+            | Self::ForEachMapElem
             | Self::MapLookupPercpuElem
             | Self::MapPushElem
             | Self::MapPopElem
@@ -1417,6 +1418,7 @@ impl BpfHelper {
                 Self::MapPopElem => Some(HelperExplicitMapKindFamily::QueueStack),
                 Self::RedirectMap => Some(HelperExplicitMapKindFamily::RedirectMap),
                 Self::MapLookupPercpuElem => Some(HelperExplicitMapKindFamily::PerCpuLookupMap),
+                Self::ForEachMapElem => Some(HelperExplicitMapKindFamily::ForEachMapElem),
                 _ => None,
             },
             _ => None,
@@ -1473,6 +1475,7 @@ pub enum HelperExplicitMapKindFamily {
     QueueStackBloom,
     RedirectMap,
     PerCpuLookupMap,
+    ForEachMapElem,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

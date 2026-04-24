@@ -928,6 +928,7 @@ impl<'a> HirToMirLowering<'a> {
                             helper,
                             helper_arg_idx,
                             arg_reg,
+                            &helper_map_args,
                             positional_args.get(pos_idx + 1).copied(),
                         )?;
                         helper_arg_regs.push((helper_arg_idx, arg_reg));
@@ -2803,6 +2804,9 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Some(HelperExplicitMapKindFamily::PerCpuLookupMap) => {
                     self.required_per_cpu_lookup_map_kind_arg("helper-call")?
+                }
+                Some(HelperExplicitMapKindFamily::ForEachMapElem) => {
+                    self.for_each_map_elem_kind_arg("helper-call")?
                 }
                 None => {
                     return Err(CompileError::UnsupportedInstruction(format!(
