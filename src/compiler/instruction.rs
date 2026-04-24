@@ -7,7 +7,7 @@
 //!
 //! Some instructions (like 64-bit immediate loads) use two 64-bit slots.
 
-use crate::compiler::mir::MapKind;
+use crate::compiler::mir::{AddressSpace, MapKind, MirType};
 
 const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
 const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
@@ -990,7 +990,87 @@ impl BpfHelper {
     }
 
     pub const fn supports_modeled_callback_subprogram(self) -> bool {
-        matches!(self, Self::ForEachMapElem | Self::FindVma | Self::BpfLoop)
+        matches!(
+            self,
+            Self::ForEachMapElem | Self::FindVma | Self::BpfLoop | Self::UserRingbufDrain
+        )
+    }
+
+    pub const fn callback_subprogram_signature_message(self) -> Option<&'static str> {
+        match self {
+            Self::ForEachMapElem => Some(
+                "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar",
+            ),
+            Self::FindVma => Some(
+                "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar",
+            ),
+            Self::BpfLoop => {
+                Some("helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar")
+            }
+            Self::UserRingbufDrain => Some(
+                "helper 'bpf_user_ringbuf_drain' callback must have signature fn(*stack /* dynptr */, *stack) -> scalar",
+            ),
+            _ => None,
+        }
+    }
+
+    pub fn callback_subprogram_type_error(
+        self,
+        arg_idx: usize,
+        arg_ty: &MirType,
+    ) -> Option<String> {
+        let MirType::Subprogram { args, ret } = arg_ty else {
+            return Some(format!(
+                "helper '{}' arg{} expects callback subprogram, got {:?}",
+                self.name(),
+                arg_idx,
+                arg_ty
+            ));
+        };
+
+        let valid = match self {
+            Self::ForEachMapElem => {
+                args.len() == 4
+                    && matches!(
+                        args.first(),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Kernel,
+                            ..
+                        })
+                    )
+                    && args.get(1).is_some_and(MirType::is_map_ptr)
+                    && args.get(2).is_some_and(MirType::is_map_ptr)
+                    && args.get(3).is_some_and(MirType::is_stack_ptr)
+                    && ret.is_scalar_like()
+            }
+            Self::FindVma => {
+                args.len() == 3
+                    && args.first().is_some_and(MirType::is_task_struct_ptr)
+                    && args.get(1).is_some_and(MirType::is_vm_area_struct_ptr)
+                    && args.get(2).is_some_and(MirType::is_stack_ptr)
+                    && ret.is_scalar_like()
+            }
+            Self::BpfLoop => {
+                args.len() == 2
+                    && args.first().is_some_and(MirType::is_scalar_like)
+                    && args.get(1).is_some_and(MirType::is_stack_ptr)
+                    && ret.is_scalar_like()
+            }
+            Self::UserRingbufDrain => {
+                args.len() == 2
+                    && args.first().is_some_and(MirType::is_dynptr_stack_ptr)
+                    && args.get(1).is_some_and(MirType::is_stack_ptr)
+                    && ret.is_scalar_like()
+            }
+            _ => return None,
+        };
+
+        if valid {
+            None
+        } else {
+            self.callback_subprogram_signature_message()
+                .map(ToOwned::to_owned)
+        }
     }
 
     pub const fn zero_size_pointer_arg_size_arg(self, arg_idx: usize) -> Option<usize> {

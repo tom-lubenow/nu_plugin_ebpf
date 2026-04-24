@@ -901,6 +901,156 @@ fn test_type_error_bpf_loop_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_infer_user_ringbuf_drain_callback_subprogram_type() {
+    let mut callback = MirFunction::with_name("user_ringbuf_cb");
+    callback.param_count = 2;
+    callback.vreg_count = callback.param_count as u32;
+    let dynptr_slot = callback.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    callback.param_stack_slots.insert(0, dynptr_slot);
+    callback.entry_initialized_dynptr_slots.insert(dynptr_slot);
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    let data_ptr = callback.alloc_vreg();
+    callback
+        .block_mut(callback_entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: data_ptr,
+            helper: BpfHelper::DynptrData as u32,
+            args: vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::Const(0),
+                MirValue::Const(4),
+            ],
+        });
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let hints = vec![HashMap::from([
+        (
+            VReg(0),
+            MirType::Ptr {
+                pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+        (
+            VReg(1),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+    ])];
+    let stack_hints = vec![HashMap::from([(
+        dynptr_slot,
+        MirType::opaque_named_struct("bpf_dynptr"),
+    )])];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected user_ringbuf_drain callback scheme inference to succeed");
+
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "events".to_string(),
+            kind: MapKind::UserRingBuf,
+        },
+    });
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::UserRingbufDrain as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(callback_fn),
+            MirValue::StackSlot(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let types = ti
+        .infer(&func)
+        .expect("expected user_ringbuf_drain callback subprogram to infer");
+
+    match types.get(&callback_fn) {
+        Some(MirType::Subprogram { args, ret }) => {
+            assert_eq!(args.len(), 2);
+            assert!(args.first().is_some_and(MirType::is_dynptr_stack_ptr));
+            assert!(args.get(1).is_some_and(MirType::is_stack_ptr));
+            assert!(matches!(ret.as_ref(), MirType::I64));
+        }
+        other => panic!("expected callback subprogram type, got {:?}", other),
+    }
+    assert_eq!(types.get(&helper_ret), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_user_ringbuf_drain_rejects_wrong_callback_signature() {
+    let mut callback = MirFunction::with_name("bad_user_ringbuf_cb");
+    callback.param_count = 1;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let subfn_schemes =
+        infer_subfunction_schemes(&[callback], None).expect("expected bad callback scheme");
+
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "events".to_string(),
+            kind: MapKind::UserRingBuf,
+        },
+    });
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::UserRingbufDrain as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(callback_fn),
+            MirValue::StackSlot(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected user_ringbuf_drain callback signature error");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_user_ringbuf_drain' callback must have signature fn(*stack /* dynptr */, *stack) -> scalar",
+        )
+    }));
+}
+
+#[test]
 fn test_type_error_syscall_helpers_enforce_size_and_flags() {
     let mut func = make_test_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

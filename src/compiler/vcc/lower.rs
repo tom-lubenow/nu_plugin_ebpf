@@ -27,6 +27,33 @@ mod context_checks;
 mod instruction_lowering;
 
 impl<'a> VccLowerer<'a> {
+    fn seed_vcc_type_for(
+        func: &MirFunction,
+        slot_sizes: &HashMap<StackSlotId, usize>,
+        vreg: VReg,
+        ty: &MirType,
+    ) -> VccValueType {
+        let Some(slot) = func.param_stack_slots.get(&(vreg.0 as usize)).copied() else {
+            return vcc_type_from_mir(ty);
+        };
+        let VccValueType::Ptr(mut info) = vcc_type_from_mir(ty) else {
+            return vcc_type_from_mir(ty);
+        };
+        if !matches!(info.space, VccAddrSpace::Stack(_)) {
+            return VccValueType::Ptr(info);
+        }
+        info.space = VccAddrSpace::Stack(slot);
+        info.bounds = slot_sizes
+            .get(&slot)
+            .copied()
+            .and_then(|size| stack_bounds(size as i64));
+        VccValueType::Ptr(info)
+    }
+
+    fn seed_vcc_type(&self, vreg: VReg, ty: &MirType) -> VccValueType {
+        Self::seed_vcc_type_for(self.func, &self.slot_sizes, vreg, ty)
+    }
+
     fn new(
         func: &'a MirFunction,
         types: &'a HashMap<VReg, MirType>,
@@ -46,7 +73,8 @@ impl<'a> VccLowerer<'a> {
         }
         let mut ptr_regs = HashMap::new();
         for (vreg, ty) in types {
-            if let VccValueType::Ptr(info) = vcc_type_from_mir(ty) {
+            if let VccValueType::Ptr(info) = Self::seed_vcc_type_for(func, &slot_sizes, *vreg, ty)
+            {
                 ptr_regs.insert(VccReg(vreg.0), info);
             }
         }
@@ -69,7 +97,7 @@ impl<'a> VccLowerer<'a> {
     fn seed_types(&self) -> HashMap<VccReg, VccValueType> {
         let mut seed = HashMap::new();
         for (vreg, ty) in self.types {
-            seed.insert(VccReg(vreg.0), vcc_type_from_mir(ty));
+            seed.insert(VccReg(vreg.0), self.seed_vcc_type(*vreg, ty));
         }
         seed
     }
@@ -103,6 +131,7 @@ impl<'a> VccLowerer<'a> {
         Ok(VccFunction {
             entry: VccBlockId(self.func.entry.0),
             blocks,
+            entry_initialized_dynptr_slots: self.func.entry_initialized_dynptr_slots.clone(),
             reg_count: self.next_temp,
         })
     }

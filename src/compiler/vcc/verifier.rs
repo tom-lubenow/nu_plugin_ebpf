@@ -21,7 +21,11 @@ impl VccVerifier {
         let mut worklist: VecDeque<VccBlockId> = VecDeque::new();
         let mut update_counts: HashMap<VccBlockId, usize> = HashMap::new();
 
-        in_states.insert(func.entry, VccState::with_seed(seed));
+        let mut entry_state = VccState::with_seed(seed);
+        for slot in &func.entry_initialized_dynptr_slots {
+            entry_state.initialize_dynptr_slot(*slot);
+        }
+        in_states.insert(func.entry, entry_state);
         worklist.push_back(func.entry);
 
         while let Some(block_id) = worklist.pop_front() {

@@ -2179,10 +2179,7 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
         ("array-of-maps", "inner-map metadata is not modeled yet"),
         ("hash-of-maps", "inner-map metadata is not modeled yet"),
         ("struct-ops", "reserved for struct_ops objects"),
-        (
-            "user-ringbuf",
-            "user-ringbuf drain callbacks are not modeled yet",
-        ),
+        ("user-ringbuf", "reserved for user-ringbuf helper surfaces"),
         ("arena", "arena map_extra/mmap support is not modeled yet"),
         ("deprecated-cgroup-storage", "deprecated cgroup-storage map"),
         ("per-cpu-cgroup-storage", "deprecated cgroup-storage map"),

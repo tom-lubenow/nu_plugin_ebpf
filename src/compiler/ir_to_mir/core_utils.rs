@@ -431,6 +431,7 @@ impl<'a> HirToMirLowering<'a> {
         SubfunctionArgSeed {
             type_hint,
             metadata,
+            synthetic_stack_slot: None,
         }
     }
 

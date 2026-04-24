@@ -54,6 +54,7 @@ impl<'a> HirToMirLowering<'a> {
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::I64),
                         metadata: None,
+                        synthetic_stack_slot: None,
                     },
                     callback_ctx_seed,
                 ])
@@ -85,6 +86,7 @@ impl<'a> HirToMirLowering<'a> {
                             address_space: AddressSpace::Kernel,
                         }),
                         metadata: None,
+                        synthetic_stack_slot: None,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -92,6 +94,7 @@ impl<'a> HirToMirLowering<'a> {
                             address_space: AddressSpace::Map,
                         }),
                         metadata: None,
+                        synthetic_stack_slot: None,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -99,6 +102,7 @@ impl<'a> HirToMirLowering<'a> {
                             address_space: AddressSpace::Map,
                         }),
                         metadata: None,
+                        synthetic_stack_slot: None,
                     },
                     stack_callback_ctx_seed(),
                 ])
@@ -107,10 +111,28 @@ impl<'a> HirToMirLowering<'a> {
                 SubfunctionArgSeed {
                     type_hint: Some(MirType::named_kernel_struct_ptr("task_struct")),
                     metadata: None,
+                    synthetic_stack_slot: None,
                 },
                 SubfunctionArgSeed {
                     type_hint: Some(MirType::named_kernel_struct_ptr("vm_area_struct")),
                     metadata: None,
+                    synthetic_stack_slot: None,
+                },
+                stack_callback_ctx_seed(),
+            ]),
+            (BpfHelper::UserRingbufDrain, 1) => Ok(vec![
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::Ptr {
+                        pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+                        address_space: AddressSpace::Stack,
+                    }),
+                    metadata: None,
+                    synthetic_stack_slot: Some(SyntheticStackSlotSeed {
+                        ty: MirType::opaque_named_struct("bpf_dynptr"),
+                        size: 16,
+                        align: 8,
+                        initialize_dynptr: true,
+                    }),
                 },
                 stack_callback_ctx_seed(),
             ]),
@@ -420,7 +442,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind_arg} is reserved for struct_ops objects; use struct_ops attach syntax instead of generic map commands"
             ),
             MapKind::UserRingBuf => format!(
-                "{context} --kind {kind_arg} names a user-ringbuf map; user-ringbuf drain callbacks are not modeled yet"
+                "{context} --kind {kind_arg} is reserved for user-ringbuf helper surfaces; use helper-call user_ringbuf_drain instead of generic map commands"
             ),
             MapKind::Arena => format!(
                 "{context} --kind {kind_arg} names an arena map; arena map_extra/mmap support is not modeled yet"

@@ -8864,10 +8864,6 @@ fn test_validate_runtime_artifacts_rejects_known_unmodeled_runtime_map_types() {
         ),
         (BpfMapType::StructOps, "reserved for struct_ops objects"),
         (
-            BpfMapType::UserRingBuf,
-            "user-ringbuf drain callbacks are not modeled",
-        ),
-        (
             BpfMapType::Arena,
             "arena map_extra/mmap support is not modeled",
         ),
@@ -8913,6 +8909,31 @@ fn test_validate_runtime_artifacts_rejects_known_unmodeled_runtime_map_types() {
             "unexpected error for {map_type:?}: {err:?}"
         );
     }
+}
+
+#[test]
+fn test_validate_runtime_artifacts_accepts_user_ringbuf_runtime_map() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "test",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "scratch".to_string(),
+            def: BpfMapDef::user_ring_buffer(4096),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    program
+        .validate_runtime_artifacts()
+        .expect("expected user ring buffer runtime map to validate");
 }
 
 #[test]

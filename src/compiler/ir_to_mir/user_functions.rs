@@ -1156,6 +1156,7 @@ impl<'a> HirToMirLowering<'a> {
                 arg_seeds.push(SubfunctionArgSeed {
                     type_hint: Some(ptr_ty),
                     metadata: None,
+                    synthetic_stack_slot: None,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::Record {
@@ -1184,6 +1185,7 @@ impl<'a> HirToMirLowering<'a> {
                 arg_seeds.push(SubfunctionArgSeed {
                     type_hint: Some(ptr_ty),
                     metadata: None,
+                    synthetic_stack_slot: None,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::List {
@@ -1218,6 +1220,7 @@ impl<'a> HirToMirLowering<'a> {
                 arg_seeds.push(SubfunctionArgSeed {
                     type_hint: Some(ptr_ty),
                     metadata: None,
+                    synthetic_stack_slot: None,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::String {

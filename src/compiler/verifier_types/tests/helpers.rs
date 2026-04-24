@@ -471,6 +471,52 @@ fn test_verify_mir_bpf_loop_rejects_wrong_callback_signature() {
     );
 }
 
+#[test]
+fn test_verify_mir_callback_dynptr_param_seeds_initialized_stack_slot() {
+    let mut func = MirFunction::new();
+    func.param_count = 2;
+    func.vreg_count = func.param_count as u32;
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    func.param_stack_slots.insert(0, dynptr_slot);
+    func.entry_initialized_dynptr_slots.insert(dynptr_slot);
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let data_ptr = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: data_ptr,
+            helper: BpfHelper::DynptrData as u32,
+            args: vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::Const(0),
+                MirValue::Const(4),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let types = HashMap::from([
+        (
+            VReg(0),
+            MirType::Ptr {
+                pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+        (
+            VReg(1),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+    ]);
+
+    verify_mir(&func, &types).expect("expected callback dynptr param to verify as initialized");
+}
+
 fn bpf_spin_lock_types(lock: VReg, extra: &[(VReg, MirType)]) -> HashMap<VReg, MirType> {
     let mut types = HashMap::new();
     types.insert(

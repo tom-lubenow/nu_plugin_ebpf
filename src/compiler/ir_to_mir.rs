@@ -215,10 +215,19 @@ pub enum AnnotatedValueSemantics {
     Record(Vec<(String, AnnotatedValueSemantics)>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SyntheticStackSlotSeed {
+    ty: MirType,
+    size: usize,
+    align: usize,
+    initialize_dynptr: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 struct SubfunctionArgSeed {
     type_hint: Option<MirType>,
     metadata: Option<RegMetadata>,
+    synthetic_stack_slot: Option<SyntheticStackSlotSeed>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

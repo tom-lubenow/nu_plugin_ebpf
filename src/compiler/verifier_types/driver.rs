@@ -100,11 +100,28 @@ fn verify_mir_with_subfunction_summaries_impl(
     let mut entry_state = VerifierState::new(total_vregs);
     for i in 0..func.param_count {
         let vreg = VReg(i as u32);
-        let ty = types
-            .get(&vreg)
-            .map(verifier_type_from_mir)
-            .unwrap_or(VerifierType::Unknown);
+        let ty = if let Some(slot) = func.param_stack_slots.get(&i).copied() {
+            let bounds = slot_sizes
+                .get(&slot)
+                .copied()
+                .map(|limit| PtrBounds::new(PtrOrigin::Stack(slot), 0, 0, limit));
+            VerifierType::Ptr {
+                space: AddressSpace::Stack,
+                nullability: Nullability::NonNull,
+                bounds,
+                ringbuf_ref: None,
+                kfunc_ref: None,
+            }
+        } else {
+            types
+                .get(&vreg)
+                .map(verifier_type_from_mir)
+                .unwrap_or(VerifierType::Unknown)
+        };
         entry_state.set(vreg, ty);
+    }
+    for slot in &func.entry_initialized_dynptr_slots {
+        entry_state.initialize_dynptr_slot(*slot);
     }
 
     in_states.insert(func.entry, entry_state);

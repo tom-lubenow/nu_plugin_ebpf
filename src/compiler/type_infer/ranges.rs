@@ -839,6 +839,20 @@ impl<'a> TypeInference<'a> {
         }
 
         let mut bounds: HashMap<VReg, StackBounds> = HashMap::new();
+        for (param_idx, slot) in &func.param_stack_slots {
+            let Some(limit) = slot_limits.get(slot).copied() else {
+                continue;
+            };
+            bounds.insert(
+                VReg(*param_idx as u32),
+                StackBounds {
+                    slot: *slot,
+                    min: 0,
+                    max: 0,
+                    limit,
+                },
+            );
+        }
         let mut changed = true;
         let max_iters = func.vreg_count.max(1);
 

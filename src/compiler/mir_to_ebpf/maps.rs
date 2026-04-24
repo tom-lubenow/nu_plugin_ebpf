@@ -449,7 +449,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.register_generic_map_spec(map, 4, Some(8))?;
             }
             MapKind::XskMap => self.register_generic_map_spec(map, 4, Some(4))?,
-            MapKind::RingBuf => self.register_generic_map_spec(map, 0, Some(0))?,
+            MapKind::RingBuf | MapKind::UserRingBuf => {
+                self.register_generic_map_spec(map, 0, Some(0))?
+            }
             MapKind::StackTrace => self.register_generic_map_spec(map, 4, Some(127 * 8))?,
             MapKind::CgroupArray | MapKind::PerfEventArray | MapKind::ProgArray => {
                 self.register_generic_map_spec(map, 4, Some(4))?;
@@ -459,7 +461,6 @@ impl<'a> MirToEbpfCompiler<'a> {
             | MapKind::DeprecatedCgroupStorage
             | MapKind::DeprecatedPerCpuCgroupStorage
             | MapKind::StructOps
-            | MapKind::UserRingBuf
             | MapKind::Arena => {
                 return Err(CompileError::UnsupportedInstruction(
                     map.kind.map_fd_materialization_error(&map.name),
@@ -572,7 +573,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             inferred_key_size = 4;
         }
         let (inferred_value_size, defaulted) = match value_size {
-            Some(size) if matches!(map.kind, MapKind::RingBuf) => (size as u32, false),
+            Some(size) if matches!(map.kind, MapKind::RingBuf | MapKind::UserRingBuf) => {
+                (size as u32, false)
+            }
             Some(size) => (size.max(1) as u32, false),
             None => (8, true),
         };
@@ -642,6 +645,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
             MapKind::BloomFilter => BpfMapDef::bloom_filter(spec.value_size, max_entries),
             MapKind::RingBuf => BpfMapDef::ring_buffer(256 * 1024),
+            MapKind::UserRingBuf => BpfMapDef::user_ring_buffer(256 * 1024),
             MapKind::StackTrace => BpfMapDef::stack_trace_map(),
             MapKind::DevMap => BpfMapDef::dev_map(max_entries),
             MapKind::DevMapHash => BpfMapDef::dev_map_hash(spec.key_size, max_entries),
@@ -660,7 +664,6 @@ impl<'a> MirToEbpfCompiler<'a> {
             | MapKind::DeprecatedCgroupStorage
             | MapKind::DeprecatedPerCpuCgroupStorage
             | MapKind::StructOps
-            | MapKind::UserRingBuf
             | MapKind::Arena => {
                 return Err(CompileError::UnsupportedInstruction(
                     spec.kind.map_fd_materialization_error("<unknown>"),

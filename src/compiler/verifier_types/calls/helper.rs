@@ -79,142 +79,15 @@ fn helper_callback_subprogram_type_error(
             arg_idx
         ));
     };
-    let MirType::Subprogram { args, ret } = types.get(vreg)? else {
+    let arg_ty = types.get(vreg)?;
+    if !matches!(arg_ty, MirType::Subprogram { .. }) {
         return Some(format!(
             "helper '{}' arg{} expects callback subprogram",
             helper.name(),
             arg_idx
         ));
-    };
-
-    match helper {
-        BpfHelper::ForEachMapElem => {
-            let valid = args.len() == 4
-                && matches!(
-                    args.first(),
-                    Some(MirType::Ptr {
-                        address_space: AddressSpace::Kernel,
-                        ..
-                    })
-                )
-                && matches!(
-                    args.get(1),
-                    Some(MirType::Ptr {
-                        address_space: AddressSpace::Map,
-                        ..
-                    })
-                )
-                && matches!(
-                    args.get(2),
-                    Some(MirType::Ptr {
-                        address_space: AddressSpace::Map,
-                        ..
-                    })
-                )
-                && matches!(
-                    args.get(3),
-                    Some(MirType::Ptr {
-                        address_space: AddressSpace::Stack,
-                        ..
-                    })
-                )
-                && matches!(
-                    ret.as_ref(),
-                    MirType::I8
-                        | MirType::I16
-                        | MirType::I32
-                        | MirType::I64
-                        | MirType::U8
-                        | MirType::U16
-                        | MirType::U32
-                        | MirType::U64
-                        | MirType::Bool
-                );
-            if valid {
-                None
-            } else {
-                Some(
-                    "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar"
-                        .into(),
-                )
-            }
-        }
-        BpfHelper::FindVma => {
-            let valid = args.len() == 3
-                && args.first().is_some_and(MirType::is_task_struct_ptr)
-                && args.get(1).is_some_and(MirType::is_vm_area_struct_ptr)
-                && matches!(
-                    args.get(2),
-                    Some(MirType::Ptr {
-                        address_space: AddressSpace::Stack,
-                        ..
-                    })
-                )
-                && matches!(
-                    ret.as_ref(),
-                    MirType::I8
-                        | MirType::I16
-                        | MirType::I32
-                        | MirType::I64
-                        | MirType::U8
-                        | MirType::U16
-                        | MirType::U32
-                        | MirType::U64
-                        | MirType::Bool
-                );
-            if valid {
-                None
-            } else {
-                Some(
-                    "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar"
-                        .into(),
-                )
-            }
-        }
-        BpfHelper::BpfLoop => {
-            let valid = args.len() == 2
-                && matches!(
-                    args[0],
-                    MirType::I8
-                        | MirType::I16
-                        | MirType::I32
-                        | MirType::I64
-                        | MirType::U8
-                        | MirType::U16
-                        | MirType::U32
-                        | MirType::U64
-                        | MirType::Bool
-                )
-                && matches!(
-                    args.get(1),
-                    Some(MirType::Ptr {
-                        address_space: AddressSpace::Stack,
-                        ..
-                    })
-                )
-                && matches!(
-                    ret.as_ref(),
-                    MirType::I8
-                        | MirType::I16
-                        | MirType::I32
-                        | MirType::I64
-                        | MirType::U8
-                        | MirType::U16
-                        | MirType::U32
-                        | MirType::U64
-                        | MirType::Bool
-                );
-            if valid {
-                None
-            } else {
-                Some(
-                    "helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar"
-                        .into(),
-                )
-            }
-        }
-        _ => None,
     }
+    helper.callback_subprogram_type_error(arg_idx, arg_ty)
 }
 
 pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(

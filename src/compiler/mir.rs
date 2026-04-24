@@ -6,7 +6,7 @@
 //! - Type information for verification
 //! - A target for optimization passes
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 mod function_impl;
@@ -136,7 +136,11 @@ impl MapKind {
     pub fn is_keyless_map(self) -> bool {
         matches!(
             self,
-            MapKind::Queue | MapKind::Stack | MapKind::BloomFilter | MapKind::RingBuf
+            MapKind::Queue
+                | MapKind::Stack
+                | MapKind::BloomFilter
+                | MapKind::RingBuf
+                | MapKind::UserRingBuf
         )
     }
 
@@ -148,7 +152,6 @@ impl MapKind {
                 | MapKind::DeprecatedCgroupStorage
                 | MapKind::DeprecatedPerCpuCgroupStorage
                 | MapKind::StructOps
-                | MapKind::UserRingBuf
                 | MapKind::Arena
         )
     }
@@ -165,10 +168,6 @@ impl MapKind {
             ),
             MapKind::StructOps => format!(
                 "map '{}' uses StructOps; struct_ops maps are emitted through struct_ops object support, not generic map materialization",
-                map_name
-            ),
-            MapKind::UserRingBuf => format!(
-                "map '{}' uses UserRingBuf, but user-ringbuf drain callbacks are not modeled yet",
                 map_name
             ),
             MapKind::Arena => format!(
@@ -406,6 +405,37 @@ impl MirType {
         }
     }
 
+    pub fn is_scalar_like(&self) -> bool {
+        matches!(
+            self,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+                | MirType::Bool
+        )
+    }
+
+    pub fn is_ptr_in(&self, address_space: AddressSpace) -> bool {
+        matches!(self, MirType::Ptr { address_space: space, .. } if *space == address_space)
+    }
+
+    pub fn is_stack_ptr(&self) -> bool {
+        self.is_ptr_in(AddressSpace::Stack)
+    }
+
+    pub fn is_map_ptr(&self) -> bool {
+        self.is_ptr_in(AddressSpace::Map)
+    }
+
+    pub fn is_kernel_ptr(&self) -> bool {
+        self.is_ptr_in(AddressSpace::Kernel)
+    }
+
     pub fn is_task_struct_ptr(&self) -> bool {
         self.is_named_kernel_struct_ptr(&["task_struct"])
     }
@@ -438,6 +468,17 @@ impl MirType {
 
     pub fn is_socket_cookie_socket_ptr(&self) -> bool {
         self.is_socket_ptr()
+    }
+
+    pub fn is_dynptr_stack_ptr(&self) -> bool {
+        let MirType::Ptr {
+            address_space: AddressSpace::Stack,
+            pointee,
+        } = self
+        else {
+            return false;
+        };
+        pointee.has_struct_name(&["bpf_dynptr", "bpf_dynptr_kern"])
     }
 
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
@@ -1724,6 +1765,10 @@ pub struct MirFunction {
     pub maps_used: Vec<MapRef>,
     /// Parameter count (for BPF subfunction calling convention)
     pub param_count: usize,
+    /// Synthetic stack slots that model stack-object parameters for verifier/VCC analysis.
+    pub param_stack_slots: HashMap<usize, StackSlotId>,
+    /// Synthetic dynptr parameter slots that enter initialized.
+    pub entry_initialized_dynptr_slots: HashSet<StackSlotId>,
     /// Mutable-global symbols that semantically alias incoming parameters.
     ///
     /// This is used to recover "returns arg N" summaries for subfunctions that

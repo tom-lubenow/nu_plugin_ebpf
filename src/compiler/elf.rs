@@ -416,12 +416,6 @@ impl BpfMapDef {
                     map_name
                 )));
             }
-            BpfMapType::UserRingBuf => {
-                return Err(CompileError::InvalidProgram(format!(
-                    "runtime map '{}' (UserRingBuf) is not supported yet; user-ringbuf drain callbacks are not modeled",
-                    map_name
-                )));
-            }
             BpfMapType::Arena => {
                 return Err(CompileError::InvalidProgram(format!(
                     "runtime map '{}' (Arena) is not supported yet; arena map_extra/mmap support is not modeled",
@@ -480,7 +474,7 @@ impl BpfMapDef {
                 self.require_nonzero_field(map_name, "value_size", self.value_size)?;
                 self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
             }
-            BpfMapType::RingBuf => {
+            BpfMapType::RingBuf | BpfMapType::UserRingBuf => {
                 self.require_field(map_name, "key_size", self.key_size, 0)?;
                 self.require_field(map_name, "value_size", self.value_size, 0)?;
                 self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
@@ -803,6 +797,18 @@ impl BpfMapDef {
             key_size: 0,             // Not used for ring buffers
             value_size: 0,           // Not used for ring buffers
             max_entries: size_bytes, // Buffer size in bytes (must be power of 2)
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a user ring buffer map for userspace-to-kernel event transfer.
+    pub fn user_ring_buffer(size_bytes: u32) -> Self {
+        Self {
+            map_type: BpfMapType::UserRingBuf as u32,
+            key_size: 0,
+            value_size: 0,
+            max_entries: size_bytes,
             map_flags: 0,
             pinning: BpfPinningType::None,
         }

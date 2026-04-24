@@ -166,6 +166,19 @@ impl<'a> HirToMirLowering<'a> {
             self.vreg_type_hints.insert(vreg, ty);
         }
 
+        if let Some(stack_object) = &seed.synthetic_stack_slot {
+            let slot = self.func.alloc_stack_slot(
+                stack_object.size,
+                stack_object.align,
+                StackSlotKind::Local,
+            );
+            self.record_stack_slot_type(slot, stack_object.ty.clone());
+            self.func.param_stack_slots.insert(param_idx, slot);
+            if stack_object.initialize_dynptr {
+                self.func.entry_initialized_dynptr_slots.insert(slot);
+            }
+        }
+
         if let Some(mut meta) = seed.metadata.clone() {
             meta.trusted_btf = false;
             if let Some(reg) = reg {

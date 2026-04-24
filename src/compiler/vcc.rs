@@ -567,6 +567,7 @@ pub struct VccBlock {
 pub struct VccFunction {
     pub entry: VccBlockId,
     pub blocks: Vec<VccBlock>,
+    entry_initialized_dynptr_slots: HashSet<StackSlotId>,
     reg_count: u32,
 }
 
@@ -580,6 +581,7 @@ impl VccFunction {
                 instructions: Vec::new(),
                 terminator: VccTerminator::Return { value: None },
             }],
+            entry_initialized_dynptr_slots: HashSet::new(),
             reg_count: 0,
         }
     }

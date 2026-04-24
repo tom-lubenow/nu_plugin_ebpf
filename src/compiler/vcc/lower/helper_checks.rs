@@ -586,16 +586,11 @@ impl<'a> VccLowerer<'a> {
             },
             HelperArgKind::Subprogram => match arg {
                 MirValue::VReg(vreg) => {
-                    let Some(MirType::Subprogram { args, ret }) = self.types.get(vreg) else {
+                    let Some(arg_ty) = self.types.get(vreg) else {
                         return Err(VccError::new(
                             VccErrorKind::TypeMismatch {
                                 expected: VccTypeClass::Unknown,
-                                actual: self
-                                    .types
-                                    .get(vreg)
-                                    .map(vcc_type_from_mir)
-                                    .unwrap_or(VccValueType::Unknown)
-                                    .class(),
+                                actual: VccTypeClass::Unknown,
                             },
                             format!(
                                 "helper {} arg{} expects callback subprogram",
@@ -603,78 +598,25 @@ impl<'a> VccLowerer<'a> {
                             ),
                         ));
                     };
-                    if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::ForEachMapElem)) {
-                        let valid = args.len() == 4
-                            && matches!(
-                                args.first(),
-                                Some(MirType::Ptr {
-                                    address_space: AddressSpace::Kernel,
-                                    ..
-                                })
-                            )
-                            && matches!(
-                                args.get(1),
-                                Some(MirType::Ptr {
-                                    address_space: AddressSpace::Map,
-                                    ..
-                                })
-                            )
-                            && matches!(
-                                args.get(2),
-                                Some(MirType::Ptr {
-                                    address_space: AddressSpace::Map,
-                                    ..
-                                })
-                            )
-                            && matches!(
-                                args.get(3),
-                                Some(MirType::Ptr {
-                                    address_space: AddressSpace::Stack,
-                                    ..
-                                })
-                            )
-                            && matches!(ret.as_ref(), MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool);
-                        if !valid {
-                            return Err(VccError::new(
-                                VccErrorKind::UnsupportedInstruction,
-                                "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar",
-                            ));
-                        }
-                    } else if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::FindVma)) {
-                        let valid = args.len() == 3
-                            && args.first().is_some_and(MirType::is_task_struct_ptr)
-                            && args.get(1).is_some_and(MirType::is_vm_area_struct_ptr)
-                            && matches!(
-                                args.get(2),
-                                Some(MirType::Ptr {
-                                    address_space: AddressSpace::Stack,
-                                    ..
-                                })
-                            )
-                            && matches!(ret.as_ref(), MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool);
-                        if !valid {
-                            return Err(VccError::new(
-                                VccErrorKind::UnsupportedInstruction,
-                                "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar",
-                            ));
-                        }
-                    } else if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::BpfLoop)) {
-                        let valid = args.len() == 2
-                            && matches!(args[0], MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool)
-                            && matches!(
-                                args.get(1),
-                                Some(MirType::Ptr {
-                                    address_space: AddressSpace::Stack,
-                                    ..
-                                })
-                            )
-                            && matches!(ret.as_ref(), MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool);
-                        if !valid {
-                            return Err(VccError::new(
-                                VccErrorKind::UnsupportedInstruction,
-                                "helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar",
-                            ));
-                        }
+                    if !matches!(arg_ty, MirType::Subprogram { .. }) {
+                        return Err(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Unknown,
+                                actual: vcc_type_from_mir(arg_ty).class(),
+                            },
+                            format!(
+                                "helper {} arg{} expects callback subprogram",
+                                helper_id, arg_idx
+                            ),
+                        ));
+                    }
+                    if let Some(helper) = BpfHelper::from_u32(helper_id)
+                        && let Some(message) = helper.callback_subprogram_type_error(arg_idx, arg_ty)
+                    {
+                        return Err(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            message,
+                        ));
                     }
                     Ok(())
                 }

@@ -80,7 +80,6 @@ fn test_map_kind_surface_classification() {
                     | MapKind::DeprecatedCgroupStorage
                     | MapKind::DeprecatedPerCpuCgroupStorage
                     | MapKind::StructOps
-                    | MapKind::UserRingBuf
                     | MapKind::Arena
             ),
             "{kind:?}"
@@ -120,6 +119,6 @@ fn test_map_kind_surface_classification() {
     assert!(MapKind::Stack.is_keyless_map());
     assert!(MapKind::BloomFilter.is_keyless_map());
     assert!(MapKind::RingBuf.is_keyless_map());
-    assert!(!MapKind::UserRingBuf.is_keyless_map());
+    assert!(MapKind::UserRingBuf.is_keyless_map());
     assert!(!MapKind::Array.is_keyless_map());
 }
