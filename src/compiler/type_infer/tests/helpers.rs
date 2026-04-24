@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::MapRef;
+use crate::compiler::mir::StructField;
 
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
@@ -398,24 +399,151 @@ fn test_type_error_syscall_program_rejects_unmodeled_helper() {
 }
 
 #[test]
-fn test_type_error_unmodeled_callback_helpers_require_modeled_subprogram_pointers() {
+fn test_infer_timer_set_callback_callback_subprogram_type() {
+    let mut callback = MirFunction::with_name("timer_cb");
+    callback.param_count = 3;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let value_ty = MirType::Struct {
+        name: Some("timer_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "timer".to_string(),
+                ty: MirType::opaque_named_struct("bpf_timer"),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let hints = vec![HashMap::from([
+        (
+            VReg(0),
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (
+            VReg(1),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U32),
+                address_space: AddressSpace::Map,
+            },
+        ),
+        (
+            VReg(2),
+            MirType::Ptr {
+                pointee: Box::new(value_ty.clone()),
+                address_space: AddressSpace::Map,
+            },
+        ),
+    ])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected timer_set_callback callback scheme inference to succeed");
+
     let mut func = make_test_function();
-    let dst = func.alloc_vreg();
+    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
     block.instructions.push(MirInst::CallHelper {
-        dst,
+        dst: helper_ret,
         helper: BpfHelper::TimerSetCallback as u32,
-        args: vec![MirValue::Const(1), MirValue::Const(0)],
+        args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_timer_set_callback callback subprogram to infer");
+
+    match types.get(&callback_fn) {
+        Some(MirType::Subprogram { args, ret }) => {
+            assert_eq!(args.len(), 3);
+            assert!(matches!(
+                args.first(),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Kernel,
+                    ..
+                })
+            ));
+            assert!(matches!(
+                args.get(1),
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Map,
+                }) if matches!(pointee.as_ref(), MirType::U32)
+            ));
+            assert!(matches!(
+                args.get(2),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Map,
+                    ..
+                })
+            ));
+            assert!(matches!(ret.as_ref(), MirType::I64));
+        }
+        other => panic!("expected callback subprogram type, got {:?}", other),
+    }
+    assert_eq!(types.get(&helper_ret), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_timer_set_callback_rejects_wrong_callback_signature() {
+    let mut callback = MirFunction::with_name("bad_timer_cb");
+    callback.param_count = 2;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let subfn_schemes =
+        infer_subfunction_schemes(&[callback], None).expect("expected bad callback scheme");
+
+    let mut func = make_test_function();
+    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::TimerSetCallback as u32,
+        args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
     let errs = ti
         .infer(&func)
-        .expect_err("expected callback helper to be rejected");
+        .expect_err("expected bpf_timer_set_callback callback signature error");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "helper 'bpf_timer_set_callback' requires callback subprogram pointer support",
+            "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar",
         )
     }));
 }

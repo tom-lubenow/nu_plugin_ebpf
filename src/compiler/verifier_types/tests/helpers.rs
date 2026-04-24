@@ -31,27 +31,114 @@ fn test_helper_pointer_arg_required() {
 }
 
 #[test]
-fn test_verify_mir_unmodeled_callback_helpers_require_modeled_subprogram_pointers() {
+fn test_verify_mir_timer_set_callback_accepts_modeled_callback_subprogram() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
 
-    let dst = func.alloc_vreg();
+    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let value_ty = MirType::Struct {
+        name: Some("timer_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "timer".to_string(),
+                ty: MirType::opaque_named_struct("bpf_timer"),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
     func.block_mut(entry)
         .instructions
         .push(MirInst::CallHelper {
-            dst,
+            dst: helper_ret,
             helper: BpfHelper::TimerSetCallback as u32,
-            args: vec![MirValue::Const(1), MirValue::Const(0)],
+            args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(dst, MirType::I64);
-    let err = verify_mir(&func, &types).expect_err("expected callback helper error");
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Kernel,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U32),
+                    address_space: AddressSpace::Map,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(value_ty),
+                    address_space: AddressSpace::Map,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected modeled bpf_timer_set_callback callback to verify");
+}
+
+#[test]
+fn test_verify_mir_timer_set_callback_rejects_wrong_callback_signature() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerSetCallback as u32,
+            args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![MirType::I64],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected bpf_timer_set_callback callback signature error");
     assert!(
         err.iter().any(|e| e.message.contains(
-            "helper 'bpf_timer_set_callback' requires callback subprogram pointer support"
+            "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar"
         )),
         "unexpected errors: {:?}",
         err

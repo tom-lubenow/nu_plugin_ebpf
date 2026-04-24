@@ -178,7 +178,24 @@ fn test_helper_call_with_ctx_variable_lowers_real_context_pointer() {
 }
 
 #[test]
-fn test_helper_call_rejects_unmodeled_callback_subprogram_helpers() {
+fn test_helper_call_timer_set_callback_requires_projected_map_timer_field() {
+    let closure_block_id = nu_protocol::BlockId::new(6);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -187,11 +204,19 @@ fn test_helper_call_rejects_unmodeled_callback_subprogram_helpers() {
                     dst: RegId::new(1),
                     lit: HirLiteral::String(b"bpf_timer_set_callback".to_vec()),
                 },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
                 HirStmt::Call {
                     decl_id: DeclId::new(42),
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
-                        positional: vec![RegId::new(1)],
+                        positional: vec![RegId::new(1), RegId::new(2), RegId::new(3)],
                         ..Default::default()
                     },
                 },
@@ -202,11 +227,16 @@ fn test_helper_call_rejects_unmodeled_callback_subprogram_helpers() {
         spans: vec![],
         ast: vec![],
         comments: vec![],
-        register_count: 2,
+        register_count: 4,
         file_count: 0,
     };
 
-    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let hir_program = HirProgram::new(
+        func,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "helper-call".to_string());
 
@@ -218,16 +248,202 @@ fn test_helper_call_rejects_unmodeled_callback_subprogram_helpers() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("expected callback helper-call to be rejected");
+    .expect_err("expected timer_set_callback helper-call to reject non-map timer pointer");
 
     match err {
         CompileError::UnsupportedInstruction(msg) => assert!(
             msg.contains("bpf_timer_set_callback")
-                && msg.contains("requires callback subprogram pointer support"),
+                && msg.contains(
+                    "requires arg0 to be a bpf_timer field projected from a concrete map value",
+                ),
             "unexpected error: {msg}"
         ),
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+#[test]
+fn test_helper_call_timer_set_callback_closure_lowers_to_callback_subprogram() {
+    use nu_protocol::ast::CellPath;
+
+    let closure_block_id = nu_protocol::BlockId::new(7);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"demo_timers".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"array".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![nu_protocol::ast::PathMember::test_string(
+                            "timer".to_string(),
+                            false,
+                            nu_protocol::casing::Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String(b"bpf_timer_set_callback".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(43),
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5), RegId::new(0), RegId::new(6)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 8,
+        file_count: 0,
+    };
+
+    let map_ref = MapRef {
+        name: "demo_timers".to_string(),
+        kind: MapKind::Array,
+    };
+    let value_ty = MirType::Struct {
+        name: Some("timer_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "timer".to_string(),
+                ty: MirType::opaque_named_struct("bpf_timer"),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "map-get".to_string());
+    decl_names.insert(DeclId::new(43), "helper-call".to_string());
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        Some(&HashMap::from([(map_ref.clone(), value_ty.clone())])),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_timer_set_callback helper-call with projected timer field should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    assert_eq!(result.program.subfunctions[0].param_count, 3);
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::MapLookup {
+            map: MapRef {
+                name,
+                kind: MapKind::Array,
+            },
+            ..
+        } if name == "demo_timers"
+    )));
+    assert!(
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadSubprogram { .. }))
+    );
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::TimerSetCallback as u32 && args.len() == 2
+    )));
+
+    let callback_hints = &result.type_hints.subfunctions[0];
+    assert!(matches!(
+        callback_hints.get(&VReg(0)),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        })
+    ));
+    assert!(matches!(
+        callback_hints.get(&VReg(1)),
+        Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Map,
+        }) if matches!(pointee.as_ref(), MirType::U32)
+    ));
+    assert!(matches!(
+        callback_hints.get(&VReg(2)),
+        Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Map,
+        }) if pointee.as_ref() == &value_ty
+    ));
 }
 
 #[test]

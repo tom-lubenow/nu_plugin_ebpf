@@ -929,6 +929,7 @@ impl<'a> HirToMirLowering<'a> {
                             helper_arg_idx,
                             arg_reg,
                             &helper_map_args,
+                            &helper_arg_regs,
                             positional_args.get(pos_idx + 1).copied(),
                         )?;
                         helper_arg_regs.push((helper_arg_idx, arg_reg));
@@ -1107,11 +1108,20 @@ impl<'a> HirToMirLowering<'a> {
                         stored_ty
                     {
                         let semantics = self.named_map_value_semantics(&map_ref).cloned();
+                        let key_ty = if map_ref.kind.is_array_index_map() {
+                            MirType::U32
+                        } else {
+                            self.vreg_type_hints
+                                .get(&key_vreg)
+                                .map(|ty| self.stored_generic_map_value_type(ty))
+                                .unwrap_or(MirType::Unknown)
+                        };
                         let meta = self.get_or_create_metadata(src_dst);
                         meta.field_type = Some(MirType::Ptr {
-                            pointee: Box::new(value_ty),
+                            pointee: Box::new(value_ty.clone()),
                             address_space: AddressSpace::Map,
                         });
+                        meta.map_value_origin = Some(MapValueOrigin { key_ty, value_ty });
                         if let Some(semantics) = semantics {
                             meta.annotated_semantics = Some(semantics);
                         }

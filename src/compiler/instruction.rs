@@ -992,7 +992,11 @@ impl BpfHelper {
     pub const fn supports_modeled_callback_subprogram(self) -> bool {
         matches!(
             self,
-            Self::ForEachMapElem | Self::FindVma | Self::BpfLoop | Self::UserRingbufDrain
+            Self::ForEachMapElem
+                | Self::TimerSetCallback
+                | Self::FindVma
+                | Self::BpfLoop
+                | Self::UserRingbufDrain
         )
     }
 
@@ -1000,6 +1004,9 @@ impl BpfHelper {
         match self {
             Self::ForEachMapElem => Some(
                 "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar",
+            ),
+            Self::TimerSetCallback => Some(
+                "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar",
             ),
             Self::FindVma => Some(
                 "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar",
@@ -1041,6 +1048,19 @@ impl BpfHelper {
                     && args.get(1).is_some_and(MirType::is_map_ptr)
                     && args.get(2).is_some_and(MirType::is_map_ptr)
                     && args.get(3).is_some_and(MirType::is_stack_ptr)
+                    && ret.is_scalar_like()
+            }
+            Self::TimerSetCallback => {
+                args.len() == 3
+                    && matches!(
+                        args.first(),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Kernel,
+                            ..
+                        })
+                    )
+                    && args.get(1).is_some_and(MirType::is_map_ptr)
+                    && args.get(2).is_some_and(MirType::is_map_ptr)
                     && ret.is_scalar_like()
             }
             Self::FindVma => {

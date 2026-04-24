@@ -169,6 +169,13 @@ struct LoopContext {
 }
 
 /// Metadata tracked for each Nushell register during lowering
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MapValueOrigin {
+    key_ty: MirType,
+    value_ty: MirType,
+}
+
+/// Metadata tracked for each Nushell register during lowering
 #[derive(Debug, Clone, Default)]
 struct RegMetadata {
     /// Compile-time integer constant
@@ -204,6 +211,8 @@ struct RegMetadata {
     list_buffer: Option<(StackSlotId, usize)>,
     /// Logical semantics for annotated mutable globals and their projected fields.
     annotated_semantics: Option<AnnotatedValueSemantics>,
+    /// Provenance for pointers that still refer to a concrete map value allocation.
+    map_value_origin: Option<MapValueOrigin>,
     /// Closure block ID (for inline execution in where/each)
     closure_block_id: Option<nu_protocol::BlockId>,
 }

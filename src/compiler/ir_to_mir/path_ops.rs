@@ -620,6 +620,9 @@ impl<'a> HirToMirLowering<'a> {
             let root_ctx_field = self
                 .get_metadata(src_dst)
                 .and_then(|meta| meta.root_ctx_field.clone());
+            let map_value_origin = self
+                .get_metadata(src_dst)
+                .and_then(|meta| meta.map_value_origin.clone());
             let base_trusted_btf = self
                 .get_metadata(src_dst)
                 .is_some_and(|meta| meta.trusted_btf);
@@ -641,10 +644,18 @@ impl<'a> HirToMirLowering<'a> {
                 base_trusted_btf,
                 projected_semantics.as_ref(),
             )?;
+            let preserves_map_value_origin = matches!(
+                self.vreg_type_hints.get(&dst_vreg),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Map,
+                    ..
+                })
+            );
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = root_ctx_field;
+            meta.map_value_origin = map_value_origin.filter(|_| preserves_map_value_origin);
             meta.trusted_btf = base_trusted_btf
                 && matches!(
                     meta.field_type.as_ref(),

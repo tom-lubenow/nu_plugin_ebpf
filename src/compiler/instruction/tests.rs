@@ -5798,7 +5798,7 @@ fn test_callback_helper_signatures_and_names() {
     assert!(BpfHelper::ForEachMapElem.supports_modeled_callback_subprogram());
     assert!(BpfHelper::FindVma.supports_modeled_callback_subprogram());
     assert!(BpfHelper::UserRingbufDrain.supports_modeled_callback_subprogram());
-    assert!(!BpfHelper::TimerSetCallback.supports_modeled_callback_subprogram());
+    assert!(BpfHelper::TimerSetCallback.supports_modeled_callback_subprogram());
 }
 
 #[test]

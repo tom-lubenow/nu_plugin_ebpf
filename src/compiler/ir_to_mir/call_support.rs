@@ -21,6 +21,7 @@ impl<'a> HirToMirLowering<'a> {
         helper: BpfHelper,
         arg_idx: usize,
         helper_map_args: &[(usize, MapRef, VReg)],
+        helper_arg_regs: &[(usize, RegId)],
         callback_ctx: Option<(VReg, RegId)>,
     ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
         let stack_callback_ctx_seed = || {
@@ -136,6 +137,72 @@ impl<'a> HirToMirLowering<'a> {
                 },
                 stack_callback_ctx_seed(),
             ]),
+            (BpfHelper::TimerSetCallback, 1) => {
+                let Some((_, timer_reg)) = helper_arg_regs.iter().find(|(idx, _)| *idx == 0) else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' requires timer arg0 before the callback",
+                        helper.name()
+                    )));
+                };
+                let timer_ty = self
+                    .reg_map
+                    .get(&timer_reg.get())
+                    .copied()
+                    .and_then(|timer_vreg| self.typed_value_runtime_type(*timer_reg, timer_vreg));
+                if !matches!(
+                    timer_ty.as_ref(),
+                    Some(MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Map,
+                    }) if matches!(
+                        pointee.as_ref(),
+                        MirType::Struct {
+                            name: Some(name),
+                            ..
+                        } if name == "bpf_timer"
+                    )
+                ) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' requires arg0 to be a bpf_timer field projected from a concrete map value",
+                        helper.name()
+                    )));
+                }
+                let Some(origin) = self
+                    .get_metadata(*timer_reg)
+                    .and_then(|meta| meta.map_value_origin.clone())
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' requires arg0 to be a bpf_timer field projected from a concrete map value",
+                        helper.name()
+                    )));
+                };
+                Ok(vec![
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(MirType::Unknown),
+                            address_space: AddressSpace::Kernel,
+                        }),
+                        metadata: None,
+                        synthetic_stack_slot: None,
+                    },
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(origin.key_ty),
+                            address_space: AddressSpace::Map,
+                        }),
+                        metadata: None,
+                        synthetic_stack_slot: None,
+                    },
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(origin.value_ty),
+                            address_space: AddressSpace::Map,
+                        }),
+                        metadata: None,
+                        synthetic_stack_slot: None,
+                    },
+                ])
+            }
             _ => Err(CompileError::UnsupportedInstruction(format!(
                 "helper-call '{}' callback lowering is not modeled yet",
                 helper.name()
@@ -149,6 +216,7 @@ impl<'a> HirToMirLowering<'a> {
         arg_idx: usize,
         arg_reg: RegId,
         helper_map_args: &[(usize, MapRef, VReg)],
+        helper_arg_regs: &[(usize, RegId)],
         callback_ctx: Option<(VReg, RegId)>,
     ) -> Result<MirValue, CompileError> {
         if !matches!(
@@ -176,6 +244,7 @@ impl<'a> HirToMirLowering<'a> {
             helper,
             arg_idx,
             helper_map_args,
+            helper_arg_regs,
             callback_ctx,
         )?;
         let subfn = self.lower_helper_callback_subfunction(
