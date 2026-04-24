@@ -389,6 +389,156 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
 }
 
 #[test]
+fn test_helper_call_find_vma_closure_lowers_to_callback_subprogram() {
+    let closure_block_id = nu_protocol::BlockId::new(8);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_get_current_task_btf".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"bpf_find_vma".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String(b"ctx".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(3),
+                            RegId::new(2),
+                            RegId::new(4),
+                            RegId::new(5),
+                            RegId::new(6),
+                            RegId::new(7),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 8,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "tcp_connect");
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("find_vma helper-call should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_find_vma helper-call with closure should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::GetCurrentTaskBtf as u32 && args.is_empty()
+    )));
+    assert!(
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadSubprogram { .. }))
+    );
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::FindVma as u32 && args.len() == 5
+    )));
+
+    let callback_hints = &result.type_hints.subfunctions[0];
+    assert!(
+        callback_hints
+            .get(&VReg(0))
+            .is_some_and(MirType::is_task_struct_ptr)
+    );
+    assert!(
+        callback_hints
+            .get(&VReg(1))
+            .is_some_and(MirType::is_vm_area_struct_ptr)
+    );
+    assert!(matches!(
+        callback_hints.get(&VReg(2)),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Stack,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn test_helper_call_bpf_loop_closure_lowers_to_callback_subprogram() {
     let closure_block_id = nu_protocol::BlockId::new(7);
     let closure = HirFunction {

@@ -706,6 +706,7 @@ pub const fn helper_pointer_arg_ref_kind(
         }
         (BpfHelper::TaskStorageGet | BpfHelper::TaskStorageDelete, 1)
         | (BpfHelper::TaskPtRegs | BpfHelper::GetTaskStack, 0)
+        | (BpfHelper::FindVma, 0)
         | (BpfHelper::CopyFromUserTask, 3) => Some(KfuncRefKind::Task),
         (BpfHelper::InodeStorageGet | BpfHelper::InodeStorageDelete, 1)
         | (BpfHelper::ImaInodeHash, 0) => Some(KfuncRefKind::Inode),

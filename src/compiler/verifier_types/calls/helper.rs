@@ -139,6 +139,38 @@ fn helper_callback_subprogram_type_error(
                 )
             }
         }
+        BpfHelper::FindVma => {
+            let valid = args.len() == 3
+                && args.first().is_some_and(MirType::is_task_struct_ptr)
+                && args.get(1).is_some_and(MirType::is_vm_area_struct_ptr)
+                && matches!(
+                    args.get(2),
+                    Some(MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    })
+                )
+                && matches!(
+                    ret.as_ref(),
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                        | MirType::Bool
+                );
+            if valid {
+                None
+            } else {
+                Some(
+                    "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar"
+                        .into(),
+                )
+            }
+        }
         BpfHelper::BpfLoop => {
             let valid = args.len() == 2
                 && matches!(

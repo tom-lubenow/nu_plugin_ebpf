@@ -990,7 +990,7 @@ impl BpfHelper {
     }
 
     pub const fn supports_modeled_callback_subprogram(self) -> bool {
-        matches!(self, Self::ForEachMapElem | Self::BpfLoop)
+        matches!(self, Self::ForEachMapElem | Self::FindVma | Self::BpfLoop)
     }
 
     pub const fn zero_size_pointer_arg_size_arg(self, arg_idx: usize) -> Option<usize> {

@@ -92,6 +92,27 @@ impl<'a> TypeInference<'a> {
                     )
                 }
             }
+            BpfHelper::FindVma => {
+                let valid = args.len() == 3
+                    && args.first().is_some_and(MirType::is_task_struct_ptr)
+                    && args.get(1).is_some_and(MirType::is_vm_area_struct_ptr)
+                    && matches!(
+                        args.get(2),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Stack,
+                            ..
+                        })
+                    )
+                    && Self::mir_is_numeric(ret);
+                if valid {
+                    None
+                } else {
+                    Some(
+                        "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar"
+                            .into(),
+                    )
+                }
+            }
             BpfHelper::BpfLoop => {
                 let valid = args.len() == 2
                     && Self::mir_is_numeric(&args[0])

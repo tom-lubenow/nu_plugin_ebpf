@@ -410,6 +410,10 @@ impl MirType {
         self.is_named_kernel_struct_ptr(&["task_struct"])
     }
 
+    pub fn is_vm_area_struct_ptr(&self) -> bool {
+        self.is_named_kernel_struct_ptr(&["vm_area_struct"])
+    }
+
     pub fn is_file_ptr(&self) -> bool {
         self.is_named_kernel_struct_ptr(&["file"])
     }

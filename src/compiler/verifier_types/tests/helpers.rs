@@ -198,6 +198,125 @@ fn test_verify_mir_for_each_map_elem_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_verify_mir_find_vma_accepts_modeled_callback_subprogram() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let task = func.alloc_vreg();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::FindVma as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::Const(0),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::named_kernel_struct_ptr("task_struct"),
+                MirType::named_kernel_struct_ptr("vm_area_struct"),
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected modeled bpf_find_vma callback to verify");
+}
+
+#[test]
+fn test_verify_mir_find_vma_rejects_wrong_callback_signature() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let task = func.alloc_vreg();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::FindVma as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::Const(0),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![MirType::I64],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected bpf_find_vma callback signature error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_find_vma' callback must have signature fn(task_struct*, vm_area_struct*, *stack) -> scalar"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_bpf_loop_accepts_modeled_callback_subprogram() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

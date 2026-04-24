@@ -103,6 +103,17 @@ impl<'a> HirToMirLowering<'a> {
                     stack_callback_ctx_seed(),
                 ])
             }
+            (BpfHelper::FindVma, 2) => Ok(vec![
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::named_kernel_struct_ptr("task_struct")),
+                    metadata: None,
+                },
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::named_kernel_struct_ptr("vm_area_struct")),
+                    metadata: None,
+                },
+                stack_callback_ctx_seed(),
+            ]),
             _ => Err(CompileError::UnsupportedInstruction(format!(
                 "helper-call '{}' callback lowering is not modeled yet",
                 helper.name()
