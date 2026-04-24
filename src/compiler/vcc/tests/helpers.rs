@@ -299,6 +299,61 @@ fn test_verify_mir_find_vma_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_verify_mir_find_vma_requires_task_pointer_arg0() {
+    let (mut func, entry) = new_mir_function();
+    let not_task = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::FindVma as u32,
+            args: vec![
+                MirValue::StackSlot(not_task),
+                MirValue::Const(0),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::named_kernel_struct_ptr("task_struct"),
+                MirType::named_kernel_struct_ptr("vm_area_struct"),
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_find_vma task pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_find_vma' arg0 expects task pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_bpf_loop_accepts_modeled_callback_subprogram() {
     let (mut func, entry) = new_mir_function();
     let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
