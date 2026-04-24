@@ -345,6 +345,149 @@ fn test_helper_call_bpf_loop_closure_lowers_to_callback_subprogram() {
 }
 
 #[test]
+fn test_helper_call_bpf_loop_closure_propagates_callback_ctx_record_type() {
+    use crate::compiler::ir_to_mir::tests::helpers::string_member;
+    use nu_protocol::ast::CellPath;
+
+    let closure_block_id = nu_protocol::BlockId::new(8);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(10),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: VarId::new(11),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("count")],
+                    })),
+                },
+                HirStmt::CloneCellPath {
+                    dst: RegId::new(3),
+                    src: RegId::new(1),
+                    path: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_loop".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String(b"count".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(4),
+                    key: RegId::new(5),
+                    val: RegId::new(6),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(7),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 8,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_loop helper-call with record callback ctx should lower");
+
+    let callback_ty = lowering
+        .type_hints
+        .subfunctions
+        .first()
+        .and_then(|hints| hints.get(&VReg(1)))
+        .expect("expected callback_ctx parameter hint");
+    match callback_ty {
+        MirType::Ptr {
+            pointee,
+            address_space: crate::compiler::mir::AddressSpace::Stack,
+        } => match pointee.as_ref() {
+            MirType::Struct { fields, .. } => {
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].name, "count");
+                assert!(matches!(fields[0].ty, MirType::I64));
+            }
+            other => panic!("expected callback_ctx record pointee, got {:?}", other),
+        },
+        other => panic!("expected stack pointer callback_ctx hint, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_kfunc_call_without_pipeline_does_not_inject_src_dst() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId};

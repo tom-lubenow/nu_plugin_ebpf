@@ -912,7 +912,7 @@ impl<'a> HirToMirLowering<'a> {
                     helper_arg_regs.push((args.len(), src_dst));
                     args.push(MirValue::VReg(arg_vreg));
                 }
-                for (arg_vreg, arg_reg) in positional_args {
+                for (pos_idx, (arg_vreg, arg_reg)) in positional_args.iter().copied().enumerate() {
                     let helper_arg_idx = args.len();
                     if helper.supports_local_helper_map_fd(helper_arg_idx) {
                         let (arg, map_ref, map_vreg) =
@@ -928,6 +928,7 @@ impl<'a> HirToMirLowering<'a> {
                             helper,
                             helper_arg_idx,
                             arg_reg,
+                            positional_args.get(pos_idx + 1).copied(),
                         )?;
                         helper_arg_regs.push((helper_arg_idx, arg_reg));
                         args.push(arg);

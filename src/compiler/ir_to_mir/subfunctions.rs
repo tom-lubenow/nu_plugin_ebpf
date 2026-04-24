@@ -41,13 +41,7 @@ impl<'a> HirToMirLowering<'a> {
         let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
         let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
         let old_loop_body_inits = std::mem::take(&mut self.loop_body_inits);
-        let old_type_hints = std::mem::replace(
-            &mut self.current_type_hints,
-            self.closure_type_hints
-                .get(&block_id)
-                .cloned()
-                .unwrap_or_default(),
-        );
+        let old_type_hints = std::mem::take(&mut self.current_type_hints);
         let old_vreg_hints = std::mem::take(&mut self.vreg_type_hints);
         let old_stack_slot_hints = std::mem::take(&mut self.stack_slot_type_hints);
         let old_subfunction_global_aliases = std::mem::take(&mut self.subfunction_global_aliases);

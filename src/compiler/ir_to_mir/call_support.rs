@@ -20,21 +20,38 @@ impl<'a> HirToMirLowering<'a> {
         &self,
         helper: BpfHelper,
         arg_idx: usize,
+        callback_ctx: Option<(VReg, RegId)>,
     ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
         match (helper, arg_idx) {
-            (BpfHelper::BpfLoop, 1) => Ok(vec![
-                SubfunctionArgSeed {
-                    type_hint: Some(MirType::I64),
-                    metadata: None,
-                },
-                SubfunctionArgSeed {
-                    type_hint: Some(MirType::Ptr {
+            (BpfHelper::BpfLoop, 1) => {
+                let mut callback_ctx_seed = callback_ctx
+                    .map(|(vreg, reg)| self.subfunction_arg_seed_for_value(vreg, Some(reg)))
+                    .unwrap_or_default();
+                callback_ctx_seed.type_hint = Some(match callback_ctx_seed.type_hint.take() {
+                    Some(MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Stack,
+                    }) => MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Stack,
+                    },
+                    Some(ty @ (MirType::Array { .. } | MirType::Struct { .. })) => MirType::Ptr {
+                        pointee: Box::new(ty),
+                        address_space: AddressSpace::Stack,
+                    },
+                    _ => MirType::Ptr {
                         pointee: Box::new(MirType::Unknown),
                         address_space: AddressSpace::Stack,
-                    }),
-                    metadata: None,
-                },
-            ]),
+                    },
+                });
+                Ok(vec![
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::I64),
+                        metadata: None,
+                    },
+                    callback_ctx_seed,
+                ])
+            }
             _ => Err(CompileError::UnsupportedInstruction(format!(
                 "helper-call '{}' callback lowering is not modeled yet",
                 helper.name()
@@ -47,6 +64,7 @@ impl<'a> HirToMirLowering<'a> {
         helper: BpfHelper,
         arg_idx: usize,
         arg_reg: RegId,
+        callback_ctx: Option<(VReg, RegId)>,
     ) -> Result<MirValue, CompileError> {
         if !matches!(
             HelperSignature::for_id(helper as u32).map(|sig| sig.arg_kind(arg_idx)),
@@ -69,7 +87,8 @@ impl<'a> HirToMirLowering<'a> {
                     arg_idx
                 ))
             })?;
-        let arg_seeds = self.helper_callback_subfunction_arg_seeds(helper, arg_idx)?;
+        let arg_seeds =
+            self.helper_callback_subfunction_arg_seeds(helper, arg_idx, callback_ctx)?;
         let subfn = self.lower_helper_callback_subfunction(
             block_id,
             &format!("{}_callback_{}", helper.name(), block_id.get()),

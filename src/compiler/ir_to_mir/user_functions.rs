@@ -1338,22 +1338,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut arg_seeds: Vec<SubfunctionArgSeed> = call_args
             .iter()
-            .map(|arg| {
-                let metadata = arg
-                    .source_reg
-                    .and_then(|reg| self.get_metadata(reg).cloned());
-                let type_hint = self.vreg_type_hints.get(&arg.vreg).cloned().or_else(|| {
-                    metadata.as_ref().and_then(|meta| {
-                        meta.field_type
-                            .clone()
-                            .or_else(|| Self::metadata_record_layout(meta))
-                    })
-                });
-                SubfunctionArgSeed {
-                    type_hint,
-                    metadata,
-                }
-            })
+            .map(|arg| self.subfunction_arg_seed_for_value(arg.vreg, arg.source_reg))
             .collect();
         let mut args: Vec<VReg> = call_args.iter().map(|arg| arg.vreg).collect();
         let aggregate_return_setup = aggregate_return_abi

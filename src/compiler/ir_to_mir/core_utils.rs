@@ -415,6 +415,25 @@ impl<'a> HirToMirLowering<'a> {
         Some(Self::record_type_from_fields(&field_layouts))
     }
 
+    pub(super) fn subfunction_arg_seed_for_value(
+        &self,
+        vreg: VReg,
+        source_reg: Option<RegId>,
+    ) -> SubfunctionArgSeed {
+        let metadata = source_reg.and_then(|reg| self.get_metadata(reg).cloned());
+        let type_hint = self.vreg_type_hints.get(&vreg).cloned().or_else(|| {
+            metadata.as_ref().and_then(|meta| {
+                meta.field_type
+                    .clone()
+                    .or_else(|| Self::metadata_record_layout(meta))
+            })
+        });
+        SubfunctionArgSeed {
+            type_hint,
+            metadata,
+        }
+    }
+
     pub(super) fn metadata_record_semantics(meta: &RegMetadata) -> Option<AnnotatedValueSemantics> {
         if meta.record_fields.is_empty() {
             return None;
