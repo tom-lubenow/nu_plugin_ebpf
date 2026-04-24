@@ -30,7 +30,9 @@ pub(super) fn apply_call_helper_inst(
     }
 
     if let Some(helper_kind) = BpfHelper::from_u32(helper) {
-        if helper_kind.requires_callback_subprogram() {
+        if helper_kind.requires_callback_subprogram()
+            && !helper_kind.supports_modeled_callback_subprogram()
+        {
             errors.push(VerifierTypeError::new(format!(
                 "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
                 helper_kind.name()

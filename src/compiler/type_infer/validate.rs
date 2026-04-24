@@ -11,7 +11,7 @@ impl<'a> TypeInference<'a> {
         let Some(helper) = BpfHelper::from_u32(helper_id) else {
             return;
         };
-        if helper.requires_callback_subprogram() {
+        if helper.requires_callback_subprogram() && !helper.supports_modeled_callback_subprogram() {
             errors.push(TypeError::new(format!(
                 "helper '{}' requires callback subprogram pointer support, which is not modeled yet",
                 helper.name()
@@ -33,6 +33,46 @@ impl<'a> TypeInference<'a> {
         };
         if let Some(message) = ctx.kfunc_call_error(kfunc) {
             errors.push(TypeError::new(message));
+        }
+    }
+
+    fn helper_callback_subprogram_error(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        arg_ty: &MirType,
+    ) -> Option<String> {
+        let MirType::Subprogram { args, ret } = arg_ty else {
+            return Some(format!(
+                "helper '{}' arg{} expects callback subprogram, got {:?}",
+                helper.name(),
+                arg_idx,
+                arg_ty
+            ));
+        };
+
+        match helper {
+            BpfHelper::BpfLoop => {
+                let valid = args.len() == 2
+                    && Self::mir_is_numeric(&args[0])
+                    && matches!(
+                        args.get(1),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Stack,
+                            ..
+                        })
+                    )
+                    && Self::mir_is_numeric(ret);
+                if valid {
+                    None
+                } else {
+                    Some(
+                        "helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar"
+                            .into(),
+                    )
+                }
+            }
+            _ => None,
         }
     }
 
@@ -740,6 +780,17 @@ impl<'a> TypeInference<'a> {
                                         "helper {} arg{} expects pointer, got {:?}",
                                         helper, idx, arg_ty
                                     )));
+                                }
+                            }
+                            HelperArgKind::Subprogram => {
+                                if let Some(helper_kind) = helper_kind
+                                    && let Some(message) = self.helper_callback_subprogram_error(
+                                        helper_kind,
+                                        idx,
+                                        &arg_ty,
+                                    )
+                                {
+                                    errors.push(TypeError::new(message));
                                 }
                             }
                         }

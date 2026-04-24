@@ -331,6 +331,12 @@ pub enum MirType {
         val_ty: Box<MirType>,
     },
 
+    // Reference to a local BPF subprogram used as a helper callback target
+    Subprogram {
+        args: Vec<MirType>,
+        ret: Box<MirType>,
+    },
+
     // Unknown type (before inference)
     Unknown,
 }
@@ -351,7 +357,8 @@ impl MirType {
                 .max()
                 .unwrap_or(0),
             MirType::MapRef { .. } => 8, // Map FD
-            MirType::Unknown => 8,       // Default to 64-bit
+            MirType::Subprogram { .. } => 8,
+            MirType::Unknown => 8, // Default to 64-bit
         }
     }
 
@@ -507,6 +514,7 @@ impl MirType {
                 fields.iter().map(|f| f.ty.align()).max().unwrap_or(1)
             }
             MirType::MapRef { .. } => 8,
+            MirType::Subprogram { .. } => 8,
             MirType::Unknown => 8,
         }
     }
@@ -1503,6 +1511,9 @@ pub enum MirInst {
         symbol: String,
         ty: MirType,
     },
+
+    /// Materialize a pointer to a local BPF subprogram for callback-taking helpers.
+    LoadSubprogram { dst: VReg, subfn: SubfunctionId },
 
     /// Map update
     MapUpdate {

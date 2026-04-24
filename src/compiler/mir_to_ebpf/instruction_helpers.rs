@@ -211,6 +211,23 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    pub(super) fn compile_load_subprogram_inst(
+        &mut self,
+        dst: VReg,
+        subfn: SubfunctionId,
+    ) -> Result<(), CompileError> {
+        let dst_reg = self.alloc_dst_reg(dst)?;
+        let reloc_offset = self.instructions.len() * 8;
+        let [insn1, insn2] = EbpfInsn::ld_imm64(dst_reg, 0);
+        self.instructions.push(insn1);
+        self.instructions.push(insn2);
+        self.relocations.push(SymbolRelocation {
+            insn_offset: reloc_offset,
+            symbol_name: self.subfn_symbol_name(subfn),
+        });
+        Ok(())
+    }
+
     pub(super) fn compile_map_update_inst(
         &mut self,
         map: &crate::compiler::mir::MapRef,

@@ -619,6 +619,14 @@ impl BpfHelper {
             },
         ];
 
+        const BPF_LOOP_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 2,
+            op: "helper bpf_loop callback_ctx",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+
         const LOAD_HDR_OPT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2539,6 +2547,11 @@ impl BpfHelper {
             },
             BpfHelper::TaskPtRegs => HelperSemantics {
                 ptr_arg_rules: TASK_PT_REGS_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::BpfLoop => HelperSemantics {
+                ptr_arg_rules: BPF_LOOP_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

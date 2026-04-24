@@ -137,7 +137,13 @@ impl HMType {
                 key_ty: Box::new(key_ty.to_mir_type()?),
                 val_ty: Box::new(val_ty.to_mir_type()?),
             }),
-            HMType::Fn { .. } => None, // MirType doesn't have function types
+            HMType::Fn { args, ret } => Some(MirType::Subprogram {
+                args: args
+                    .iter()
+                    .map(HMType::to_mir_type)
+                    .collect::<Option<Vec<_>>>()?,
+                ret: Box::new(ret.to_mir_type()?),
+            }),
             HMType::Unknown => Some(MirType::Unknown),
         }
     }
@@ -180,6 +186,10 @@ impl HMType {
             MirType::MapRef { key_ty, val_ty } => HMType::MapRef {
                 key_ty: Box::new(HMType::from_mir_type(key_ty)),
                 val_ty: Box::new(HMType::from_mir_type(val_ty)),
+            },
+            MirType::Subprogram { args, ret } => HMType::Fn {
+                args: args.iter().map(HMType::from_mir_type).collect(),
+                ret: Box::new(HMType::from_mir_type(ret)),
             },
             MirType::Unknown => HMType::Unknown,
         }

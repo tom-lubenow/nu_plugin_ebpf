@@ -833,6 +833,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 kfunc_ref: None,
             })
         }
+        MirType::Subprogram { .. } => VccValueType::Unknown,
         MirType::Unknown => VccValueType::Unknown,
         _ => VccValueType::Scalar { range: None },
     }

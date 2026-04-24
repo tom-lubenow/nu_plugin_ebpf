@@ -84,6 +84,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_load_global_inst(*dst, symbol)?;
             }
 
+            LirInst::LoadSubprogram { dst, subfn } => {
+                self.compile_load_subprogram_inst(*dst, *subfn)?;
+            }
+
             LirInst::MapUpdate {
                 map,
                 key,

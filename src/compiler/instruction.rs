@@ -989,6 +989,10 @@ impl BpfHelper {
         )
     }
 
+    pub const fn supports_modeled_callback_subprogram(self) -> bool {
+        matches!(self, Self::BpfLoop)
+    }
+
     pub const fn zero_size_pointer_arg_size_arg(self, arg_idx: usize) -> Option<usize> {
         match (self, arg_idx) {
             (Self::CsumDiff, 0) => Some(1),
@@ -1460,6 +1464,7 @@ impl BpfHelper {
 pub enum HelperArgKind {
     Scalar,
     Pointer,
+    Subprogram,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -186,12 +186,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 size: 4,
                 signed: false,
             },
-            MirType::U64 | MirType::Ptr { .. } | MirType::MapRef { .. } | MirType::Unknown => {
-                BpfFieldType::Int {
-                    size: 8,
-                    signed: false,
-                }
-            }
+            MirType::U64
+            | MirType::Ptr { .. }
+            | MirType::MapRef { .. }
+            | MirType::Subprogram { .. }
+            | MirType::Unknown => BpfFieldType::Int {
+                size: 8,
+                signed: false,
+            },
             ty if ty.byte_array_len() == Some(16) => BpfFieldType::Comm,
             ty if ty.byte_array_len().is_some() => BpfFieldType::String,
             MirType::Array { .. } | MirType::Struct { .. } => BpfFieldType::Bytes(ty.size().max(1)),

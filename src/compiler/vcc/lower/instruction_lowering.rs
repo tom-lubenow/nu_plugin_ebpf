@@ -547,6 +547,18 @@ impl<'a> VccLowerer<'a> {
                     ctx_field_source: None,
                 });
             }
+            MirInst::LoadSubprogram { dst, .. } => {
+                let ty = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                out.push(VccInst::Assume {
+                    dst: VccReg(dst.0),
+                    ty,
+                    ctx_field_source: None,
+                });
+            }
             MirInst::MapUpdate {
                 map,
                 key,

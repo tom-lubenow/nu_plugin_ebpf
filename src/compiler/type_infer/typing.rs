@@ -479,7 +479,10 @@ impl<'a> TypeInference<'a> {
                 key_ty: Box::new(self.hm_to_mir(&key_ty)),
                 val_ty: Box::new(self.hm_to_mir(&val_ty)),
             },
-            HMType::Fn { .. } => MirType::I64, // Functions not in MirType
+            HMType::Fn { args, ret } => MirType::Subprogram {
+                args: args.iter().map(|arg| self.hm_to_mir(arg)).collect(),
+                ret: Box::new(self.hm_to_mir(&ret)),
+            },
             HMType::Unknown => MirType::Unknown,
         }
     }

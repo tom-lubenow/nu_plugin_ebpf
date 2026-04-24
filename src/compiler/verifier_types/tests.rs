@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::mir::{
     COUNTER_MAP_NAME, MapKind, MapRef, MirType, STRING_COUNTER_MAP_NAME, StackSlotKind,
+    SubfunctionId,
 };
 
 mod context;

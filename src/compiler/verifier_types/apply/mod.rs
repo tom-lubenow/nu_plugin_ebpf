@@ -73,6 +73,9 @@ pub(super) fn apply_inst(
         MirInst::LoadMapFd { dst, .. } => {
             apply_typed_dst_inst(*dst, types, state);
         }
+        MirInst::LoadSubprogram { dst, .. } => {
+            apply_typed_dst_inst(*dst, types, state);
+        }
         MirInst::CallKfunc {
             dst, kfunc, args, ..
         } => {

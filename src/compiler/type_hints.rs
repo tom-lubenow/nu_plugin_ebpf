@@ -366,6 +366,7 @@ pub(crate) fn infer_instruction_def_type(
             },
             true,
         )),
+        MirInst::LoadSubprogram { dst, .. } => hints.get(dst).cloned().map(|ty| (*dst, ty, true)),
         MirInst::LoadMapFd { dst, map } => match map.kind {
             MapKind::DevMap | MapKind::DevMapHash | MapKind::CpuMap | MapKind::XskMap => Some((
                 *dst,

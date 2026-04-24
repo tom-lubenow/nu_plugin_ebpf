@@ -224,6 +224,7 @@ impl BpfHelper {
     pub const fn signature(self) -> HelperSignature {
         const S: HelperArgKind = HelperArgKind::Scalar;
         const P: HelperArgKind = HelperArgKind::Pointer;
+        const F: HelperArgKind = HelperArgKind::Subprogram;
         match self {
             BpfHelper::MapLookupElem => HelperSignature {
                 min_args: 2,
@@ -808,7 +809,7 @@ impl BpfHelper {
             BpfHelper::ForEachMapElem => HelperSignature {
                 min_args: 4,
                 max_args: 4,
-                arg_kinds: [P, P, P, S, S],
+                arg_kinds: [P, F, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::SkLookupTcp | BpfHelper::SkLookupUdp | BpfHelper::SkcLookupTcp => {
@@ -978,7 +979,7 @@ impl BpfHelper {
             BpfHelper::TimerSetCallback => HelperSignature {
                 min_args: 2,
                 max_args: 2,
-                arg_kinds: [P, P, S, S, S],
+                arg_kinds: [P, F, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::TimerStart => HelperSignature {
@@ -1002,13 +1003,13 @@ impl BpfHelper {
             BpfHelper::FindVma => HelperSignature {
                 min_args: 5,
                 max_args: 5,
-                arg_kinds: [P, S, P, P, S],
+                arg_kinds: [P, S, F, P, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::BpfLoop => HelperSignature {
                 min_args: 4,
                 max_args: 4,
-                arg_kinds: [S, P, P, S, S],
+                arg_kinds: [S, F, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::TaskPtRegs => HelperSignature {
@@ -1094,7 +1095,7 @@ impl BpfHelper {
             BpfHelper::UserRingbufDrain => HelperSignature {
                 min_args: 4,
                 max_args: 4,
-                arg_kinds: [P, P, P, S, S],
+                arg_kinds: [P, F, P, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
             BpfHelper::KptrXchg => HelperSignature {

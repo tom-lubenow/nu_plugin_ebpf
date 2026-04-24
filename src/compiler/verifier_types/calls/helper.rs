@@ -44,6 +44,93 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
                 )));
             }
         }
+        HelperArgKind::Subprogram => {
+            let valid = match arg {
+                MirValue::VReg(vreg) => matches!(types.get(vreg), Some(MirType::Subprogram { .. })),
+                _ => false,
+            };
+            if !valid {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} expects callback subprogram",
+                    helper_id, arg_idx
+                )));
+                return;
+            }
+            if let Some(message) =
+                helper_callback_subprogram_type_error(helper_id, arg_idx, arg, types)
+            {
+                errors.push(VerifierTypeError::new(message));
+            }
+        }
+    }
+}
+
+fn helper_callback_subprogram_type_error(
+    helper_id: u32,
+    arg_idx: usize,
+    arg: &MirValue,
+    types: &HashMap<VReg, MirType>,
+) -> Option<String> {
+    let helper = BpfHelper::from_u32(helper_id)?;
+    let MirValue::VReg(vreg) = arg else {
+        return Some(format!(
+            "helper '{}' arg{} expects callback subprogram",
+            helper.name(),
+            arg_idx
+        ));
+    };
+    let MirType::Subprogram { args, ret } = types.get(vreg)? else {
+        return Some(format!(
+            "helper '{}' arg{} expects callback subprogram",
+            helper.name(),
+            arg_idx
+        ));
+    };
+
+    match helper {
+        BpfHelper::BpfLoop => {
+            let valid = args.len() == 2
+                && matches!(
+                    args[0],
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                        | MirType::Bool
+                )
+                && matches!(
+                    args.get(1),
+                    Some(MirType::Ptr {
+                        address_space: AddressSpace::Stack,
+                        ..
+                    })
+                )
+                && matches!(
+                    ret.as_ref(),
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                        | MirType::Bool
+                );
+            if valid {
+                None
+            } else {
+                Some(
+                    "helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar"
+                        .into(),
+                )
+            }
+        }
+        _ => None,
     }
 }
 

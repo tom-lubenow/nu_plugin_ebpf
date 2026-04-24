@@ -28,14 +28,14 @@ fn test_verify_mir_signal_helpers() {
 }
 
 #[test]
-fn test_verify_mir_callback_helpers_require_modeled_subprogram_pointers() {
+fn test_verify_mir_unmodeled_callback_helpers_require_modeled_subprogram_pointers() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
     func.block_mut(entry)
         .instructions
         .push(MirInst::CallHelper {
             dst,
-            helper: BpfHelper::BpfLoop as u32,
+            helper: BpfHelper::ForEachMapElem as u32,
             args: vec![
                 MirValue::Const(1),
                 MirValue::Const(0),
@@ -49,9 +49,100 @@ fn test_verify_mir_callback_helpers_require_modeled_subprogram_pointers() {
     types.insert(dst, MirType::I64);
     let err = verify_mir(&func, &types).expect_err("expected callback helper error");
     assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_for_each_map_elem' requires callback subprogram pointer support"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_bpf_loop_accepts_modeled_callback_subprogram() {
+    let (mut func, entry) = new_mir_function();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::BpfLoop as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::I64,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected modeled bpf_loop callback to verify");
+}
+
+#[test]
+fn test_verify_mir_bpf_loop_rejects_wrong_callback_signature() {
+    let (mut func, entry) = new_mir_function();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::BpfLoop as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![MirType::I64],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_loop callback signature error");
+    assert!(
         err.iter().any(|e| e
             .message
-            .contains("helper 'bpf_loop' requires callback subprogram pointer support")),
+            .contains("helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar")),
         "unexpected errors: {:?}",
         err
     );

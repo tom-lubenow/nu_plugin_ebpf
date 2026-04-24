@@ -12,7 +12,8 @@ impl<'a> VccLowerer<'a> {
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         if let Some(helper) = BpfHelper::from_u32(helper_id) {
-            if helper.requires_callback_subprogram() {
+            if helper.requires_callback_subprogram() && !helper.supports_modeled_callback_subprogram()
+            {
                 return Err(VccError::new(
                     VccErrorKind::UnsupportedInstruction,
                     format!(
@@ -582,6 +583,57 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
                 MirValue::StackSlot(_) => Ok(()),
+            },
+            HelperArgKind::Subprogram => match arg {
+                MirValue::VReg(vreg) => {
+                    let Some(MirType::Subprogram { args, ret }) = self.types.get(vreg) else {
+                        return Err(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Unknown,
+                                actual: self
+                                    .types
+                                    .get(vreg)
+                                    .map(vcc_type_from_mir)
+                                    .unwrap_or(VccValueType::Unknown)
+                                    .class(),
+                            },
+                            format!(
+                                "helper {} arg{} expects callback subprogram",
+                                helper_id, arg_idx
+                            ),
+                        ));
+                    };
+                    if matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::BpfLoop)) {
+                        let valid = args.len() == 2
+                            && matches!(args[0], MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool)
+                            && matches!(
+                                args.get(1),
+                                Some(MirType::Ptr {
+                                    address_space: AddressSpace::Stack,
+                                    ..
+                                })
+                            )
+                            && matches!(ret.as_ref(), MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64 | MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64 | MirType::Bool);
+                        if !valid {
+                            return Err(VccError::new(
+                                VccErrorKind::UnsupportedInstruction,
+                                "helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar",
+                            ));
+                        }
+                    }
+                    Ok(())
+                }
+                MirValue::Const(_) | MirValue::StackSlot(_) => Err(VccError::new(
+                    VccErrorKind::TypeMismatch {
+                        expected: VccTypeClass::Unknown,
+                        actual: if matches!(arg, MirValue::Const(_)) {
+                            VccTypeClass::Scalar
+                        } else {
+                            VccTypeClass::Ptr
+                        },
+                    },
+                    format!("helper {} arg{} expects callback subprogram", helper_id, arg_idx),
+                )),
             },
         }
     }

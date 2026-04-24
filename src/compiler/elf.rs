@@ -1044,12 +1044,14 @@ impl CounterKeySchema {
                 size: 4,
                 signed: false,
             },
-            MirType::U64 | MirType::Ptr { .. } | MirType::MapRef { .. } | MirType::Unknown => {
-                CounterKeySchema::Int {
-                    size: ty.size().max(1),
-                    signed: false,
-                }
-            }
+            MirType::U64
+            | MirType::Ptr { .. }
+            | MirType::MapRef { .. }
+            | MirType::Subprogram { .. }
+            | MirType::Unknown => CounterKeySchema::Int {
+                size: ty.size().max(1),
+                signed: false,
+            },
             ty if ty.byte_array_len().is_some() => CounterKeySchema::String {
                 size: ty
                     .byte_array_len()

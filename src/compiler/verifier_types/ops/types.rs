@@ -45,6 +45,7 @@ pub(in crate::compiler::verifier_types) fn verifier_type_from_mir(ty: &MirType) 
             ringbuf_ref: None,
             kfunc_ref: None,
         },
+        MirType::Subprogram { .. } => VerifierType::Unknown,
         MirType::Unknown => VerifierType::Unknown,
         _ => VerifierType::Scalar,
     }

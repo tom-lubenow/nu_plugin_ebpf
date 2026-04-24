@@ -52,6 +52,111 @@ fn test_subfunction_call_rejects_more_than_five_args() {
     }
 }
 
+#[test]
+fn test_bpf_loop_callback_load_emits_text_relocation() {
+    use crate::compiler::instruction::opcode;
+    use crate::compiler::mir::*;
+
+    let mut callback = MirFunction::with_name("loop_cb");
+    callback.param_count = 2;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    let callback_idx = VReg(0);
+    let callback_ret = callback.alloc_vreg();
+    callback
+        .block_mut(callback_entry)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: callback_ret,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(callback_idx),
+            rhs: MirValue::Const(0),
+        });
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(callback_ret)),
+    };
+
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+
+    let callback_ctx = main.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = main.alloc_vreg();
+    let helper_ret = main.alloc_vreg();
+    let block = main.block_mut(entry);
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::BpfLoop as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::VReg(callback_fn),
+            MirValue::StackSlot(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main,
+        subfunctions: vec![callback],
+    };
+
+    let type_hints = MirTypeHints {
+        main: std::collections::HashMap::new(),
+        subfunctions: vec![std::collections::HashMap::from([(
+            VReg(1),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        )])],
+        main_stack_slots: std::collections::HashMap::new(),
+        subfunction_stack_slots: vec![std::collections::HashMap::new()],
+        generic_map_value_types: std::collections::HashMap::new(),
+        generic_map_value_semantics: std::collections::HashMap::new(),
+    };
+
+    let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
+        .expect("bpf_loop callback should compile");
+
+    let reloc = result
+        .relocations
+        .iter()
+        .find(|reloc| reloc.symbol_name == "loop_cb")
+        .expect("expected callback relocation against local subprogram symbol");
+    let load = &result.bytecode[reloc.insn_offset..reloc.insn_offset + 8];
+    assert_eq!(
+        load[0], 0x18,
+        "expected ldimm64 opcode for callback subprogram load"
+    );
+    assert_eq!(
+        load[1] & 0xf0,
+        0,
+        "expected plain ldimm64 object relocation, not a pseudo source register"
+    );
+    assert!(
+        result
+            .subfunction_symbols
+            .iter()
+            .any(|symbol| symbol.name == "loop_cb"),
+        "expected loop callback subfunction symbol"
+    );
+    assert!(
+        result.bytecode.chunks(8).any(|chunk| {
+            chunk[0] == opcode::CALL
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                    == BpfHelper::BpfLoop as i32
+        }),
+        "expected bpf_loop helper call"
+    );
+}
+
 // ==================== BPF-to-BPF Function Call Tests ====================
 
 /// Test BPF-to-BPF function call compiles correctly

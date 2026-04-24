@@ -350,6 +350,12 @@ fn lower_inst(
                 symbol: symbol.clone(),
             });
         }
+        MirInst::LoadSubprogram { dst, subfn } => {
+            out.push(LirInst::LoadSubprogram {
+                dst: *dst,
+                subfn: *subfn,
+            });
+        }
         MirInst::MapUpdate {
             map,
             key,

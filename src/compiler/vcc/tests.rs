@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::mir::{
     AddressSpace, BlockId, CtxField, MapKind, MapRef, MirFunction, MirInst, MirType, MirValue,
-    STRING_COUNTER_MAP_NAME, StackSlotKind, StringAppendType,
+    STRING_COUNTER_MAP_NAME, StackSlotKind, StringAppendType, SubfunctionId,
 };
 use std::collections::HashMap;
 

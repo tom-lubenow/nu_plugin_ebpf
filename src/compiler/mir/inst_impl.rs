@@ -48,6 +48,7 @@ impl MirInst {
                 }
             }
             MirInst::LoadMapFd { .. } => {}
+            MirInst::LoadSubprogram { .. } => {}
             MirInst::CallKfunc { args, .. } | MirInst::CallSubfn { args, .. } => {
                 for arg in args {
                     f(arg);
@@ -132,6 +133,7 @@ impl MirInst {
             | MirInst::UnaryOp { dst, .. }
             | MirInst::CallHelper { dst, .. }
             | MirInst::LoadMapFd { dst, .. }
+            | MirInst::LoadSubprogram { dst, .. }
             | MirInst::CallKfunc { dst, .. }
             | MirInst::CallSubfn { dst, .. }
             | MirInst::MapLookup { dst, .. }
@@ -176,6 +178,7 @@ impl MirInst {
                 }
             }
             MirInst::LoadMapFd { .. } => {}
+            MirInst::LoadSubprogram { .. } => {}
             MirInst::CallKfunc { args, .. } => {
                 for arg in args {
                     uses.push(*arg);

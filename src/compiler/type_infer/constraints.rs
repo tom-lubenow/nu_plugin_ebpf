@@ -270,6 +270,16 @@ impl<'a> TypeInference<'a> {
                 self.constrain(dst_ty, ptr_ty, "global_load");
             }
 
+            MirInst::LoadSubprogram { dst, subfn } => {
+                let dst_ty = self.vreg_type(*dst);
+                let scheme = self
+                    .subfn_schemes
+                    .and_then(|env| env.get(subfn))
+                    .ok_or_else(|| TypeError::new(format!("Unknown subfunction ID {:?}", subfn)))?;
+                let subprogram_ty = scheme.instantiate(&mut self.tvar_gen);
+                self.constrain(dst_ty, subprogram_ty, "load_subprogram");
+            }
+
             MirInst::LoadMapFd { dst, map } => {
                 let dst_ty = self.vreg_type(*dst);
                 let (key_ty, val_ty) = match map.kind {

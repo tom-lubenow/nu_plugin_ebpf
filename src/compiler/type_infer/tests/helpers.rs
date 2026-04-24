@@ -398,13 +398,13 @@ fn test_type_error_syscall_program_rejects_unmodeled_helper() {
 }
 
 #[test]
-fn test_type_error_callback_helpers_require_modeled_subprogram_pointers() {
+fn test_type_error_unmodeled_callback_helpers_require_modeled_subprogram_pointers() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::CallHelper {
         dst,
-        helper: BpfHelper::BpfLoop as u32,
+        helper: BpfHelper::ForEachMapElem as u32,
         args: vec![
             MirValue::Const(1),
             MirValue::Const(0),
@@ -420,7 +420,128 @@ fn test_type_error_callback_helpers_require_modeled_subprogram_pointers() {
         .expect_err("expected callback helper to be rejected");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("helper 'bpf_loop' requires callback subprogram pointer support")
+            .contains("helper 'bpf_for_each_map_elem' requires callback subprogram pointer support")
+    }));
+}
+
+#[test]
+fn test_infer_bpf_loop_callback_subprogram_type() {
+    let mut callback = MirFunction::with_name("loop_cb");
+    callback.param_count = 2;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    let scalar_arg = VReg(0);
+    let result = callback.alloc_vreg();
+    callback
+        .block_mut(callback_entry)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: result,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(scalar_arg),
+            rhs: MirValue::Const(0),
+        });
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(result)),
+    };
+
+    let hints = vec![HashMap::from([(
+        VReg(1),
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Stack,
+        },
+    )])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected callback scheme inference to succeed");
+
+    let mut func = make_test_function();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::BpfLoop as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::VReg(callback_fn),
+            MirValue::StackSlot(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_loop callback subprogram to infer");
+
+    match types.get(&callback_fn) {
+        Some(MirType::Subprogram { args, ret }) => {
+            assert_eq!(args.len(), 2);
+            assert!(matches!(args[0], MirType::I64));
+            assert!(matches!(
+                args.get(1),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Stack,
+                    ..
+                })
+            ));
+            assert!(matches!(ret.as_ref(), MirType::I64));
+        }
+        other => panic!("expected callback subprogram type, got {:?}", other),
+    }
+    assert_eq!(types.get(&helper_ret), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_bpf_loop_rejects_wrong_callback_signature() {
+    let mut callback = MirFunction::with_name("bad_loop_cb");
+    callback.param_count = 1;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let subfn_schemes =
+        infer_subfunction_schemes(&[callback], None).expect("expected bad callback scheme");
+
+    let mut func = make_test_function();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::BpfLoop as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::VReg(callback_fn),
+            MirValue::StackSlot(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_loop callback signature error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_loop' callback must have signature fn(u64, *stack) -> scalar")
     }));
 }
 

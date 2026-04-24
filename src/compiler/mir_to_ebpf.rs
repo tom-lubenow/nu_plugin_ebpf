@@ -314,6 +314,14 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
+    fn subfn_symbol_name(&self, subfn_id: SubfunctionId) -> String {
+        self.lir
+            .subfunctions
+            .get(subfn_id.0 as usize)
+            .and_then(|func| func.name.clone())
+            .unwrap_or_else(|| format!("subfn_{}", subfn_id.0))
+    }
+
     /// Compile the MIR program to eBPF
     pub fn compile(mut self) -> Result<MirCompileResult, CompileError> {
         // Compile the main function
@@ -355,12 +363,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .map(|(_, next_offset)| *next_offset)
                     .unwrap_or(total);
                 let size = end.saturating_sub(*offset);
-                let name = self
-                    .lir
-                    .subfunctions
-                    .get(subfn_id.0 as usize)
-                    .and_then(|func| func.name.clone())
-                    .unwrap_or_else(|| format!("subfn_{}", subfn_id.0));
+                let name = self.subfn_symbol_name(*subfn_id);
                 symbols.push(SubfunctionSymbol {
                     name,
                     offset: offset * 8,

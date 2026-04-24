@@ -5736,6 +5736,37 @@ fn test_callback_helper_signatures_and_names() {
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
 
+    assert_eq!(
+        HelperSignature::for_id(BpfHelper::ForEachMapElem as u32)
+            .expect("for_each_map_elem signature")
+            .arg_kind(1),
+        HelperArgKind::Subprogram
+    );
+    assert_eq!(
+        HelperSignature::for_id(BpfHelper::TimerSetCallback as u32)
+            .expect("timer_set_callback signature")
+            .arg_kind(1),
+        HelperArgKind::Subprogram
+    );
+    assert_eq!(
+        HelperSignature::for_id(BpfHelper::FindVma as u32)
+            .expect("find_vma signature")
+            .arg_kind(2),
+        HelperArgKind::Subprogram
+    );
+    assert_eq!(
+        HelperSignature::for_id(BpfHelper::BpfLoop as u32)
+            .expect("bpf_loop signature")
+            .arg_kind(1),
+        HelperArgKind::Subprogram
+    );
+    assert_eq!(
+        HelperSignature::for_id(BpfHelper::UserRingbufDrain as u32)
+            .expect("user_ringbuf_drain signature")
+            .arg_kind(1),
+        HelperArgKind::Subprogram
+    );
+
     for helper in [
         BpfHelper::ForEachMapElem,
         BpfHelper::TimerSetCallback,
@@ -5748,6 +5779,8 @@ fn test_callback_helper_signatures_and_names() {
     assert!(!BpfHelper::TimerInit.requires_callback_subprogram());
     assert!(!BpfHelper::TimerStart.requires_callback_subprogram());
     assert!(!BpfHelper::TimerCancel.requires_callback_subprogram());
+    assert!(BpfHelper::BpfLoop.supports_modeled_callback_subprogram());
+    assert!(!BpfHelper::ForEachMapElem.supports_modeled_callback_subprogram());
 }
 
 #[test]

@@ -234,6 +234,10 @@ pub enum LirInst {
         args: Vec<VReg>, // precolored R1-R5 vregs
         ret: VReg,       // precolored R0 vreg
     },
+    LoadSubprogram {
+        dst: VReg,
+        subfn: SubfunctionId,
+    },
     LoadMapFd {
         dst: VReg,
         map: MapRef,
@@ -400,6 +404,7 @@ impl LirInst {
             | LirInst::CallHelper { ret: dst, .. }
             | LirInst::CallKfunc { ret: dst, .. }
             | LirInst::CallSubfn { ret: dst, .. }
+            | LirInst::LoadSubprogram { dst, .. }
             | LirInst::LoadMapFd { dst, .. }
             | LirInst::MapLookup { dst, .. }
             | LirInst::LoadGlobal { dst, .. }
@@ -451,6 +456,7 @@ impl LirInst {
             LirInst::CallSubfn { args, .. } => {
                 uses.extend(args.iter().copied());
             }
+            LirInst::LoadSubprogram { .. } => {}
             LirInst::LoadMapFd { .. } => {}
             LirInst::MapLookup { key, .. } => uses.push(*key),
             LirInst::LoadGlobal { .. } => {}

@@ -341,6 +341,17 @@ impl EbpfInsn {
             Self::new(0, 0, 0, 0, 0), // Second half of 128-bit instruction
         ]
     }
+
+    /// LD_IMM64 - Load a raw 64-bit immediate value.
+    pub fn ld_imm64(dst: EbpfReg, imm: i64) -> [Self; 2] {
+        let imm_bytes = imm.to_le_bytes();
+        let lo = i32::from_le_bytes([imm_bytes[0], imm_bytes[1], imm_bytes[2], imm_bytes[3]]);
+        let hi = i32::from_le_bytes([imm_bytes[4], imm_bytes[5], imm_bytes[6], imm_bytes[7]]);
+        [
+            Self::new(opcode::LD_DW_IMM, dst.as_u8(), 0, 0, lo),
+            Self::new(0, 0, 0, 0, hi),
+        ]
+    }
 }
 
 impl EbpfBuilder {
