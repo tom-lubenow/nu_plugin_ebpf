@@ -52,6 +52,36 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ringbuf-query-built-in-events"
+        category: "maps"
+        tags: [helper-call ringbuf reserved-name]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_ringbuf_query" events 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+        min_kernel: "5.8"
+    }
+    {
+        name: "stackid-built-in-kstacks"
+        category: "maps"
+        tags: [helper-call stack-trace reserved-name]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_stackid" $ctx kstacks 0 | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+        min_kernel: "4.6"
+    }
+    {
         name: "global-scalar-mut"
         category: "globals"
         tags: [data-global scalar]
