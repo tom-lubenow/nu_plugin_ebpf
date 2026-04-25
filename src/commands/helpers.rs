@@ -12,7 +12,7 @@
 //! - kfunc-call: Escape hatch for invoking a typed kernel kfunc by name
 //! - tail-call: Transfer control to a program in a named prog-array map
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
-//! - map-define: Declare a named generic map value schema
+//! - map-define: Declare named generic map key/value schemas
 //! - map-get / map-put / map-delete / map-push / map-peek / map-pop / map-contains:
 //!   Generic BPF map operations
 
@@ -385,20 +385,22 @@ impl PluginCommand for MapDefine {
     }
 
     fn description(&self) -> &str {
-        "Declare the value layout for a named generic BPF map."
+        "Declare key and value layouts for a named generic BPF map."
     }
 
     fn extra_description(&self) -> &str {
-        r#"Declares a named map value schema for later map operations in the same
+        r#"Declares named map key/value schemas for later map operations in the same
 program. This is a compile-time declaration: it does not perform a runtime map
-operation. It is useful when a map value contains verifier-sensitive fields
-that cannot be inferred from an ordinary map write, such as `bpf_timer`.
+operation. It is useful when a map key or value layout should be fixed before
+ordinary map operations, including verifier-sensitive value fields such as
+`bpf_timer`.
 
-Supported value type specs match `global-define --type` fixed-layout specs and
-also allow `bpf_timer` inside map-value records.
+Supported key type specs match `global-define --type` fixed-layout specs.
+Supported value type specs use the same fixed-layout specs and also allow
+`bpf_timer` inside map-value records.
 
 Example:
-  map-define timers --kind array --value-type 'record{timer:bpf_timer,cookie:u64}'
+  map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}'
   let entry = (0 | map-get timers --kind array)
   if $entry != 0 { helper-call "bpf_timer_start" $entry.timer 1000 0 }"#
     }
@@ -414,6 +416,12 @@ Example:
                 None,
             )
             .named(
+                "key-type",
+                SyntaxShape::String,
+                "Optional map key type spec using fixed-layout scalar/bytes/string/list/array/record forms; array-like maps require u32 keys",
+                None,
+            )
+            .named(
                 "value-type",
                 SyntaxShape::String,
                 "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer",
@@ -424,8 +432,8 @@ Example:
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
-            example: "ebpf attach 'raw_tracepoint:sys_enter' {|ctx| map-define timers --kind array --value-type 'record{timer:bpf_timer,cookie:u64}'; 0 }",
-            description: "Declare an array map value record containing a bpf_timer field",
+            example: "ebpf attach 'raw_tracepoint:sys_enter' {|ctx| map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}'; 0 }",
+            description: "Declare an array map key and a value record containing a bpf_timer field",
             result: None,
         }]
     }

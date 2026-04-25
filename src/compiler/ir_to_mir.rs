@@ -343,12 +343,18 @@ pub struct HirToMirLowering<'a> {
     vreg_type_hints: HashMap<VReg, MirType>,
     /// Collected stack-slot pointee type hints for stack-address values
     stack_slot_type_hints: HashMap<StackSlotId, MirType>,
+    /// Source-order generic map key schemas discovered during lowering
+    map_key_types: HashMap<MapRef, MirType>,
     /// Source-order generic map value schemas discovered during lowering
     map_value_types: HashMap<MapRef, MirType>,
+    /// Generic map value schemas declared explicitly with `map-define`
+    declared_map_value_types: HashSet<MapRef>,
     /// Logical semantics for generic map values with richer runtime layouts.
     map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Generic maps whose observed value schemas conflict
     conflicting_map_value_types: HashSet<MapRef>,
+    /// Generic maps whose declared key schemas conflict
+    conflicting_map_key_types: HashSet<MapRef>,
     /// Generic maps whose observed value semantics conflict
     conflicting_map_value_semantics: HashSet<MapRef>,
     /// Map schemas seeded from already-attached pinned programs
@@ -466,9 +472,12 @@ impl<'a> HirToMirLowering<'a> {
             decl_type_hints,
             vreg_type_hints: HashMap::new(),
             stack_slot_type_hints: HashMap::new(),
+            map_key_types: HashMap::new(),
             map_value_types,
+            declared_map_value_types: HashSet::new(),
             map_value_semantics,
             conflicting_map_value_types: HashSet::new(),
+            conflicting_map_key_types: HashSet::new(),
             conflicting_map_value_semantics: HashSet::new(),
             externally_seeded_map_value_types,
             externally_seeded_map_value_semantics,
@@ -501,7 +510,7 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower an entire HIR function to MIR
     pub fn finish(self) -> MirProgram {
-        let (program, _, _, _, _, _, _) = self.finish_with_hints();
+        let (program, _, _, _, _, _, _, _) = self.finish_with_hints();
         program
     }
 
@@ -510,6 +519,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> (
         MirProgram,
         MirTypeHints,
+        HashMap<MapRef, MirType>,
         HashMap<MapRef, MirType>,
         HashMap<MapRef, AnnotatedValueSemantics>,
         Vec<ReadonlyGlobal>,
@@ -523,6 +533,12 @@ impl<'a> HirToMirLowering<'a> {
             subfunctions: self.subfunction_hints,
             main_stack_slots: self.stack_slot_type_hints,
             subfunction_stack_slots: self.subfunction_stack_slot_hints,
+            generic_map_key_types: self
+                .map_key_types
+                .iter()
+                .filter(|(map, _)| !self.conflicting_map_key_types.contains(*map))
+                .map(|(map, ty)| (map.clone(), ty.clone()))
+                .collect(),
             generic_map_value_types: self
                 .map_value_types
                 .iter()
@@ -547,10 +563,12 @@ impl<'a> HirToMirLowering<'a> {
                 .resize_with(program.subfunctions.len(), HashMap::new);
         }
         let map_value_types = hints.generic_map_value_types.clone();
+        let map_key_types = hints.generic_map_key_types.clone();
         let map_value_semantics = hints.generic_map_value_semantics.clone();
         (
             program,
             hints,
+            map_key_types,
             map_value_types,
             map_value_semantics,
             self.readonly_globals,

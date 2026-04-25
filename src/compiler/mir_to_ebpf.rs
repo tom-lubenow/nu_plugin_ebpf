@@ -228,6 +228,8 @@ pub struct MirToEbpfCompiler<'a> {
     tail_call_maps: BTreeSet<String>,
     /// Generic maps inferred from map operations
     generic_map_specs: BTreeMap<String, MapLayoutSpec>,
+    /// Generic map key layouts recovered during HIR/MIR lowering
+    generic_map_key_types: HashMap<MapRef, MirType>,
     /// Generic map value layouts recovered during HIR/MIR lowering
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// MIR vreg types for the current function being compiled
@@ -259,13 +261,20 @@ impl<'a> MirToEbpfCompiler<'a> {
         probe_ctx: Option<&'a ProbeContext>,
         program_types: ProgramVregTypes,
     ) -> Self {
-        Self::new_with_types_and_maps(lir, probe_ctx, program_types, HashMap::new())
+        Self::new_with_types_and_maps(
+            lir,
+            probe_ctx,
+            program_types,
+            HashMap::new(),
+            HashMap::new(),
+        )
     }
 
     fn new_with_types_and_maps(
         lir: &'a LirProgram,
         probe_ctx: Option<&'a ProbeContext>,
         program_types: ProgramVregTypes,
+        generic_map_key_types: HashMap<MapRef, MirType>,
         generic_map_value_types: HashMap<MapRef, MirType>,
     ) -> Self {
         Self {
@@ -292,6 +301,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             needs_ustack_map: false,
             tail_call_maps: BTreeSet::new(),
             generic_map_specs: BTreeMap::new(),
+            generic_map_key_types,
             generic_map_value_types,
             current_types: HashMap::new(),
             program_types,
@@ -532,6 +542,10 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         .as_ref()
         .map(|hints| hints.generic_map_value_types.clone())
         .unwrap_or_default();
+    let generic_map_key_types = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.generic_map_key_types.clone())
+        .unwrap_or_default();
     let program_types = verify_mir_program(&program, probe_ctx, normalized_type_hints.as_ref())?;
     let lir_program = lower_mir_to_lir_checked(&program)?;
 
@@ -539,6 +553,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         &lir_program,
         probe_ctx,
         program_types,
+        generic_map_key_types,
         generic_map_value_types,
     );
     let mut result = compiler.compile()?;

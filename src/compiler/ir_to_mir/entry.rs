@@ -11,6 +11,7 @@ use super::*;
 pub struct MirLoweringResult {
     pub program: MirProgram,
     pub type_hints: MirTypeHints,
+    pub generic_map_key_types: HashMap<MapRef, MirType>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     pub generic_map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     pub readonly_globals: Vec<ReadonlyGlobal>,
@@ -383,6 +384,7 @@ pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     let (
         program,
         type_hints,
+        generic_map_key_types,
         generic_map_value_types,
         generic_map_value_semantics,
         readonly_globals,
@@ -392,6 +394,7 @@ pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     Ok(MirLoweringResult {
         program,
         type_hints,
+        generic_map_key_types,
         generic_map_value_types,
         generic_map_value_semantics,
         readonly_globals,

@@ -1517,6 +1517,7 @@ pub(super) fn compile_closure_with_context(
     let crate::compiler::MirLoweringResult {
         program: mut mir_program,
         mut type_hints,
+        generic_map_key_types: _,
         generic_map_value_types,
         generic_map_value_semantics,
         readonly_globals,

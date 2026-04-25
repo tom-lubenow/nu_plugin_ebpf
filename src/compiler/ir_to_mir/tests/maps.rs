@@ -2496,3 +2496,208 @@ fn test_lower_captured_string_map_name_respects_literal_metadata() {
 
     assert_eq!(map_name, "captured_path");
 }
+
+#[test]
+fn test_map_define_key_type_registers_and_materializes_record_key() {
+    let map_define_decl = DeclId::new(41);
+    let map_put_decl = DeclId::new(42);
+    let decl_names = HashMap::from([
+        (map_define_decl, "map-define".to_string()),
+        (map_put_decl, "map-put".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("cookie".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(3),
+                    val: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String("typed_keys".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("hash".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("record{pid:int,cookie:int}".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::String("int".into()),
+                },
+                HirStmt::Call {
+                    decl_id: map_define_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(6)),
+                            (b"key-type".to_vec(), RegId::new(7)),
+                            (b"value-type".to_vec(), RegId::new(8)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::Int(42),
+                },
+                HirStmt::Call {
+                    decl_id: map_put_decl,
+                    src_dst: RegId::new(10),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5), RegId::new(0)],
+                        named: vec![(b"kind".to_vec(), RegId::new(6))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(10),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 11,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-define record key schema should lower");
+
+    let map_ref = MapRef {
+        name: "typed_keys".to_string(),
+        kind: MapKind::Hash,
+    };
+    let key_ty = result
+        .generic_map_key_types
+        .get(&map_ref)
+        .expect("map-define should register a key schema");
+    assert_eq!(key_ty.size(), 16);
+
+    let key_vreg = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapUpdate { map, key, .. } if map == &map_ref => Some(*key),
+            _ => None,
+        })
+        .expect("expected typed-key map update");
+    assert_eq!(
+        result.type_hints.main.get(&key_vreg),
+        Some(&MirType::Ptr {
+            pointee: Box::new(key_ty.clone()),
+            address_space: AddressSpace::Stack,
+        })
+    );
+}
+
+#[test]
+fn test_map_define_rejects_key_type_for_keyless_map() {
+    let map_define_decl = DeclId::new(41);
+    let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("queued".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("queue".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("u32".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("u64".into()),
+                },
+                HirStmt::Call {
+                    decl_id: map_define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(2)),
+                            (b"key-type".to_vec(), RegId::new(3)),
+                            (b"value-type".to_vec(), RegId::new(4)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("keyless map key schemas should be rejected");
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("--key-type is not supported for keyless"))
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}

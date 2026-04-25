@@ -5,6 +5,7 @@ const MAX_NAMED_GLOBAL_NUMERIC_LIST_CAPACITY: usize = 60;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NamedTypeSpecContext {
     Global,
+    MapKey,
     MapValue,
 }
 
@@ -451,6 +452,7 @@ impl ParsedNamedGlobalType {
 
         let context_name = match context {
             NamedTypeSpecContext::Global => "global",
+            NamedTypeSpecContext::MapKey => "map key",
             NamedTypeSpecContext::MapValue => "map value",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
@@ -803,6 +805,11 @@ impl<'a> HirToMirLowering<'a> {
         let parsed =
             ParsedNamedGlobalType::parse_with_context(spec, NamedTypeSpecContext::MapValue)?;
         Ok((parsed.ty, parsed.semantics))
+    }
+
+    pub(super) fn parse_named_map_key_type_spec(spec: &str) -> Result<MirType, CompileError> {
+        let parsed = ParsedNamedGlobalType::parse_with_context(spec, NamedTypeSpecContext::MapKey)?;
+        Ok(parsed.ty)
     }
 
     fn typed_named_program_global_layout(

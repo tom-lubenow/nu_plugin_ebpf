@@ -1032,7 +1032,7 @@ impl<'a> HirToMirLowering<'a> {
                         "map-define does not accept flags".into(),
                     ));
                 }
-                self.require_only_named_args("map-define", &["kind", "value-type"])?;
+                self.require_only_named_args("map-define", &["kind", "key-type", "value-type"])?;
                 if self.pipeline_input.is_some() || src_dst_had_value {
                     return Err(CompileError::UnsupportedInstruction(
                         "map-define does not accept pipeline input".into(),
@@ -1062,6 +1062,13 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name,
                     kind: map_kind,
                 };
+                if let Some((_, key_type_reg)) = self.named_args.get("key-type").copied() {
+                    let key_type_spec =
+                        self.literal_string_arg(key_type_reg, "map-define --key-type")?;
+                    let key_ty = Self::parse_named_map_key_type_spec(&key_type_spec)?;
+                    self.validate_declared_map_key_type(&map_ref, &key_ty, "map-define")?;
+                    self.register_named_map_key_type(&map_ref, &key_ty);
+                }
 
                 if self.externally_seeded_map_value_types.contains(&map_ref)
                     && let Some(existing) = self.named_map_value_type(&map_ref)
@@ -1073,6 +1080,7 @@ impl<'a> HirToMirLowering<'a> {
                     )));
                 }
                 self.register_named_map_value_type(&map_ref, &value_ty);
+                self.declared_map_value_types.insert(map_ref.clone());
 
                 if let Some(value_semantics) = value_semantics {
                     if self
@@ -1154,6 +1162,14 @@ impl<'a> HirToMirLowering<'a> {
                                     .into(),
                             )
                         })?;
+                    let key_reg = self
+                        .positional_args
+                        .get(1)
+                        .map(|(_, reg)| *reg)
+                        .or(self.pipeline_input_reg)
+                        .or_else(|| src_dst_had_value.then_some(src_dst));
+                    let key_vreg =
+                        self.map_key_vreg_for_named_schema(&map_ref, key_vreg, key_reg, "map-get")?;
                     let lookup_vreg = self.func.alloc_vreg();
 
                     self.emit(MirInst::MapLookup {
@@ -1182,9 +1198,13 @@ impl<'a> HirToMirLowering<'a> {
                         let key_ty = if map_ref.kind.is_array_index_map() {
                             MirType::U32
                         } else {
-                            self.vreg_type_hints
-                                .get(&key_vreg)
-                                .map(|ty| self.stored_generic_map_value_type(ty))
+                            self.named_map_key_type(&map_ref)
+                                .cloned()
+                                .or_else(|| {
+                                    self.vreg_type_hints
+                                        .get(&key_vreg)
+                                        .map(|ty| self.stored_generic_map_value_type(ty))
+                                })
                                 .unwrap_or(MirType::Unknown)
                         };
                         let meta = self.get_or_create_metadata(src_dst);
@@ -1250,6 +1270,12 @@ impl<'a> HirToMirLowering<'a> {
                     )?;
                 } else {
                     self.validate_generic_map_update_kind(map_kind, &map_name)?;
+                    let key_vreg = self.map_key_vreg_for_named_schema(
+                        &map_ref,
+                        key_vreg,
+                        Some(key_reg),
+                        "map-put",
+                    )?;
                     let value_vreg = self
                         .pipeline_input
                         .or_else(|| src_dst_had_value.then_some(dst_vreg))
@@ -1413,6 +1439,18 @@ impl<'a> HirToMirLowering<'a> {
                                     .into(),
                             )
                         })?;
+                    let key_reg = self
+                        .positional_args
+                        .get(1)
+                        .map(|(_, reg)| *reg)
+                        .or(self.pipeline_input_reg)
+                        .or_else(|| src_dst_had_value.then_some(src_dst));
+                    let key_vreg = self.map_key_vreg_for_named_schema(
+                        &map_ref,
+                        key_vreg,
+                        key_reg,
+                        "map-delete",
+                    )?;
 
                     self.emit(MirInst::MapDelete {
                         map: map_ref,
@@ -1995,6 +2033,108 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn validate_declared_map_key_type(
+        &self,
+        map_ref: &MapRef,
+        key_ty: &MirType,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        if map_ref.kind.is_keyless_map() || map_ref.kind.is_local_storage() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --key-type is not supported for keyless or object-keyed map kind {:?}",
+                map_ref.kind
+            )));
+        }
+        if map_ref.kind.is_array_index_map() && key_ty != &MirType::U32 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --key-type for {:?} maps must be u32",
+                map_ref.kind
+            )));
+        }
+        if matches!(key_ty, MirType::Unknown) || key_ty.size() == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --key-type must describe a fixed-size map key"
+            )));
+        }
+        Ok(())
+    }
+
+    fn map_key_vreg_for_named_schema(
+        &mut self,
+        map_ref: &MapRef,
+        key_vreg: VReg,
+        key_reg: Option<RegId>,
+        context: &str,
+    ) -> Result<VReg, CompileError> {
+        let Some(key_ty) = self.named_map_key_type(map_ref).cloned() else {
+            return Ok(key_vreg);
+        };
+        self.validate_declared_map_key_type(map_ref, &key_ty, context)?;
+
+        let observed_ty = key_reg
+            .and_then(|reg| {
+                self.get_metadata(reg).and_then(|m| {
+                    m.field_type
+                        .clone()
+                        .or_else(|| Self::metadata_record_layout(m))
+                })
+            })
+            .or_else(|| self.vreg_type_hints.get(&key_vreg).cloned());
+
+        match key_ty {
+            MirType::Array { .. } | MirType::Struct { .. } => match observed_ty.as_ref() {
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack | AddressSpace::Map,
+                }) if pointee.as_ref() == &key_ty => Ok(key_vreg),
+                Some(observed) if self.stored_generic_map_value_type(observed) == key_ty => {
+                    let Some(key_reg) = key_reg else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{context} key for '{}' matches the declared aggregate schema but is not materializable",
+                            map_ref.name
+                        )));
+                    };
+                    let ptr_vreg = self.materialized_metadata_aggregate_vreg(key_reg, key_vreg)?;
+                    self.vreg_type_hints.insert(
+                        ptr_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(key_ty),
+                            address_space: AddressSpace::Stack,
+                        },
+                    );
+                    Ok(ptr_vreg)
+                }
+                Some(observed) => Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} key for '{}' has type {:?}, expected declared key type {:?}",
+                    map_ref.name, observed, key_ty
+                ))),
+                None => Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} key for '{}' requires a typed aggregate matching --key-type",
+                    map_ref.name
+                ))),
+            },
+            scalar_ty => match observed_ty.as_ref() {
+                Some(MirType::Ptr { pointee, .. }) if pointee.as_ref() == &scalar_ty => {
+                    Ok(key_vreg)
+                }
+                Some(MirType::Array { .. } | MirType::Struct { .. })
+                | Some(MirType::Ptr { .. }) => Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} key for '{}' is aggregate/pointer typed, expected declared scalar key type {:?}",
+                    map_ref.name, scalar_ty
+                ))),
+                _ => {
+                    let typed_key_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: typed_key_vreg,
+                        src: MirValue::VReg(key_vreg),
+                    });
+                    self.vreg_type_hints.insert(typed_key_vreg, scalar_ty);
+                    Ok(typed_key_vreg)
+                }
+            },
+        }
+    }
+
     fn record_named_map_value_schema_from_reg(
         &mut self,
         map_ref: &MapRef,
@@ -2017,25 +2157,37 @@ impl<'a> HirToMirLowering<'a> {
             .flatten();
         if let Some(value_ty) = value_ty {
             let stored_value_ty = self.stored_generic_map_value_type(&value_ty);
-            if self.externally_seeded_map_value_types.contains(map_ref)
+            let explicit_schema = self.declared_map_value_types.contains(map_ref);
+            if (self.externally_seeded_map_value_types.contains(map_ref) || explicit_schema)
                 && let Some(existing) = self.named_map_value_type(map_ref)
                 && existing != &stored_value_ty
             {
+                let schema_source = if explicit_schema {
+                    "declared"
+                } else {
+                    "pinned"
+                };
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} value type for '{}' conflicts with pinned map schema",
-                    map_ref.name
+                    "{context} value type for '{}' conflicts with {schema_source} map schema",
+                    map_ref.name,
                 )));
             }
             self.register_named_map_value_type(map_ref, &stored_value_ty);
         }
         if let Some(value_semantics) = value_semantics {
-            if self.externally_seeded_map_value_semantics.contains(map_ref)
+            let explicit_schema = self.declared_map_value_types.contains(map_ref);
+            if (self.externally_seeded_map_value_semantics.contains(map_ref) || explicit_schema)
                 && let Some(existing) = self.named_map_value_semantics(map_ref)
                 && existing != &value_semantics
             {
+                let schema_source = if explicit_schema {
+                    "declared"
+                } else {
+                    "pinned"
+                };
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} value semantics for '{}' conflicts with pinned map schema",
-                    map_ref.name
+                    "{context} value semantics for '{}' conflicts with {schema_source} map schema",
+                    map_ref.name,
                 )));
             }
             self.register_named_map_value_semantics(map_ref, &value_semantics);
@@ -2915,12 +3067,13 @@ impl<'a> HirToMirLowering<'a> {
 
     fn emit_typed_map_fd_load(&mut self, map_name: String, map_kind: MapKind) -> VReg {
         let map_vreg = self.func.alloc_vreg();
+        let map_ref = MapRef {
+            name: map_name.clone(),
+            kind: map_kind,
+        };
         self.emit(MirInst::LoadMapFd {
             dst: map_vreg,
-            map: MapRef {
-                name: map_name,
-                kind: map_kind,
-            },
+            map: map_ref.clone(),
         });
         if matches!(map_kind, MapKind::SockMap) {
             self.vreg_type_hints.insert(
@@ -2950,10 +3103,14 @@ impl<'a> HirToMirLowering<'a> {
                 | MapKind::PerCpuHash
                 | MapKind::LruPerCpuHash
         ) {
+            let key_ty = self
+                .named_map_key_type(&map_ref)
+                .cloned()
+                .unwrap_or(MirType::Unknown);
             self.vreg_type_hints.insert(
                 map_vreg,
                 MirType::MapRef {
-                    key_ty: Box::new(MirType::Unknown),
+                    key_ty: Box::new(key_ty),
                     val_ty: Box::new(MirType::Unknown),
                 },
             );
@@ -3039,13 +3196,19 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         };
 
-        if self.externally_seeded_map_value_types.contains(map_ref)
+        let explicit_schema = self.declared_map_value_types.contains(map_ref);
+        if (self.externally_seeded_map_value_types.contains(map_ref) || explicit_schema)
             && let Some(existing) = self.named_map_value_type(map_ref)
             && existing != &value_ty
         {
+            let schema_source = if explicit_schema {
+                "declared"
+            } else {
+                "pinned"
+            };
             return Err(CompileError::UnsupportedInstruction(format!(
-                "storage helper init value type for '{}' conflicts with pinned map schema",
-                map_ref.name
+                "storage helper init value type for '{}' conflicts with {schema_source} map schema",
+                map_ref.name,
             )));
         }
 

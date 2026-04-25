@@ -52,6 +52,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-record-key-put-get"
+        category: "maps"
+        tags: [maps map-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define keyed --kind hash --key-type "record{pid:int,cookie:int}" --value-type int'
+            '  let key = { pid: 1, cookie: 7 }'
+            '  42 | map-put keyed $key --kind hash'
+            '  let entry = ($key | map-get keyed --kind hash)'
+            '  if $entry != 0 {'
+            '    $entry | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-query-built-in-events"
         category: "maps"
         tags: [helper-call ringbuf reserved-name]

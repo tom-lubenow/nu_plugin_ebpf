@@ -440,8 +440,16 @@ impl<'a> MirToEbpfCompiler<'a> {
             | MapKind::PerCpuArray
             | MapKind::LruPerCpuHash => {
                 let key_size = match self.current_types.get(&dst) {
-                    Some(MirType::MapRef { key_ty, .. }) => key_ty.size().max(1),
-                    _ => 8,
+                    Some(MirType::MapRef { key_ty, .. })
+                        if !matches!(key_ty.as_ref(), MirType::Unknown) =>
+                    {
+                        key_ty.size().max(1)
+                    }
+                    _ => self
+                        .generic_map_key_types
+                        .get(map)
+                        .map(|ty| ty.size().max(1))
+                        .unwrap_or(8),
                 };
                 let value_size = self
                     .generic_map_specs
@@ -465,7 +473,11 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::SockHash => {
                 let key_size = match self.current_types.get(&dst) {
                     Some(MirType::MapRef { key_ty, .. }) => key_ty.size().max(1),
-                    _ => 1,
+                    _ => self
+                        .generic_map_key_types
+                        .get(map)
+                        .map(|ty| ty.size().max(1))
+                        .unwrap_or(1),
                 };
                 self.register_generic_map_spec(map, key_size, Some(4))?;
             }
@@ -728,7 +740,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
             ));
         }
-        let key_layout = self.map_operand_layout(key, "map key", 8)?;
+        let default_key_size = self
+            .generic_map_key_types
+            .get(map)
+            .map(|ty| ty.size().max(1))
+            .unwrap_or(8);
+        let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
         let key_size = match key_layout {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
         };
@@ -760,7 +777,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
             ));
         }
-        let key_layout = self.map_operand_layout(key, "map key", 8)?;
+        let default_key_size = self
+            .generic_map_key_types
+            .get(map)
+            .map(|ty| ty.size().max(1))
+            .unwrap_or(8);
+        let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
         let val_layout = self.map_operand_layout(val, "map value", 8)?;
         let key_size = match key_layout {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
@@ -797,7 +819,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 map.kind.generic_map_op_error(MapOpKind::Delete, &map.name),
             ));
         }
-        let key_layout = self.map_operand_layout(key, "map key", 8)?;
+        let default_key_size = self
+            .generic_map_key_types
+            .get(map)
+            .map(|ty| ty.size().max(1))
+            .unwrap_or(8);
+        let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
         let key_size = match key_layout {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
         };

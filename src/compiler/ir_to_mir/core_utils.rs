@@ -629,6 +629,24 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn register_named_map_key_type(&mut self, map: &MapRef, ty: &MirType) {
+        let ty = self.stored_generic_map_value_type(ty);
+        if self.conflicting_map_key_types.contains(map) {
+            return;
+        }
+
+        match self.map_key_types.get(map) {
+            Some(existing) if existing != &ty => {
+                self.map_key_types.remove(map);
+                self.conflicting_map_key_types.insert(map.clone());
+            }
+            Some(_) => {}
+            None => {
+                self.map_key_types.insert(map.clone(), ty);
+            }
+        }
+    }
+
     pub(super) fn register_named_map_value_type(&mut self, map: &MapRef, ty: &MirType) {
         let ty = self.stored_generic_map_value_type(ty);
         if self.conflicting_map_value_types.contains(map) {
@@ -674,6 +692,14 @@ impl<'a> HirToMirLowering<'a> {
             None
         } else {
             self.map_value_types.get(map)
+        }
+    }
+
+    pub(super) fn named_map_key_type(&self, map: &MapRef) -> Option<&MirType> {
+        if self.conflicting_map_key_types.contains(map) {
+            None
+        } else {
+            self.map_key_types.get(map)
         }
     }
 
