@@ -72,6 +72,41 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "map-define-aligned-record-key-put-get"
+        category: "maps"
+        tags: [maps map-define records alignment accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define keyed_aligned --kind hash --key-type "record{tag:int,flag:bool}" --value-type int'
+            '  let key = { tag: 7, flag: true }'
+            '  42 | map-put keyed_aligned $key --kind hash'
+            '  let entry = ($key | map-get keyed_aligned --kind hash)'
+            '  if $entry != 0 {'
+            '    $entry | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "annotated-mut-record-alignment"
+        category: "globals"
+        tags: [globals records alignment accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut state: record<tag: bool count: int> = { tag: true, count: 7 }'
+            '  $state.count | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-define-null-only-lookup-keeps-value-layout"
         category: "maps"
         tags: [maps map-define accept]
