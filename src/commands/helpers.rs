@@ -397,7 +397,7 @@ ordinary map operations, including verifier-sensitive value fields such as
 
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
-`bpf_timer` inside map-value records.
+`bpf_timer` and `bpf_spin_lock` inside map-value records.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}'
@@ -424,7 +424,7 @@ Example:
             .named(
                 "value-type",
                 SyntaxShape::String,
-                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer",
+                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer and bpf_spin_lock",
                 None,
             )
             .category(Category::Experimental)

@@ -231,6 +231,43 @@ fn test_verify_mir_timer_start_rejects_stack_timer_pointer() {
 }
 
 #[test]
+fn test_verify_mir_spin_lock_rejects_plain_map_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let lock = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::SpinLock as u32,
+            args: vec![MirValue::VReg(lock)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U32),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_spin_lock map pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_spin_lock' arg0 expects map-backed bpf_spin_lock pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_each_map_elem_accepts_modeled_callback_subprogram() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -694,7 +731,7 @@ fn bpf_spin_lock_types(lock: VReg, extra: &[(VReg, MirType)]) -> HashMap<VReg, M
     types.insert(
         lock,
         MirType::Ptr {
-            pointee: Box::new(MirType::U32),
+            pointee: Box::new(MirType::bpf_spin_lock_struct()),
             address_space: AddressSpace::Map,
         },
     );

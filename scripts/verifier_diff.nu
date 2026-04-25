@@ -369,6 +369,25 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
+        name: "spin-lock-map-define-lock-unlock"
+        category: "helper-state"
+        tags: [spin-lock map-define accept]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry != 0 {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "timer-set-callback-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer callback reject]

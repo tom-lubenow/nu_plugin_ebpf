@@ -79,6 +79,13 @@ fn bpf_timer_map_ptr_ty() -> MirType {
     }
 }
 
+fn u32_map_ptr_ty() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::U32),
+        address_space: AddressSpace::Map,
+    }
+}
+
 fn emit_timer_map_lookup(func: &mut MirFunction, entry: BlockId, timer: VReg) {
     let key = func.alloc_vreg();
     let block = func.block_mut(entry);
@@ -602,6 +609,30 @@ fn test_type_error_timer_start_rejects_stack_timer_pointer() {
     assert!(errs.iter().any(|e| {
         e.message
             .contains("helper 'bpf_timer_start' arg0 expects map-backed bpf_timer pointer")
+    }));
+}
+
+#[test]
+fn test_type_error_spin_lock_rejects_plain_map_pointer() {
+    let mut func = make_test_function();
+    let lock = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::SpinLock as u32,
+        args: vec![MirValue::VReg(lock)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let type_hints = HashMap::from([(lock, u32_map_ptr_ty())]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&type_hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_spin_lock plain map pointer error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_spin_lock' arg0 expects map-backed bpf_spin_lock pointer")
     }));
 }
 

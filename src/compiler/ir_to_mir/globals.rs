@@ -43,6 +43,7 @@ enum NamedGlobalTypeShape {
         max_len: usize,
     },
     BpfTimer,
+    BpfSpinLock,
     FixedArray {
         elem: Box<ParsedNamedGlobalType>,
         len: usize,
@@ -176,6 +177,7 @@ impl ParsedNamedGlobalType {
                     | NamedGlobalTypeShape::Bool
                     | NamedGlobalTypeShape::Bytes { .. }
                     | NamedGlobalTypeShape::BpfTimer
+                    | NamedGlobalTypeShape::BpfSpinLock
                     | NamedGlobalTypeShape::FixedArray { .. }
                     | NamedGlobalTypeShape::Record(_)
             )
@@ -220,6 +222,17 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape: NamedGlobalTypeShape::BpfTimer,
+            });
+        }
+
+        if context == NamedTypeSpecContext::MapValue && spec == "bpf_spin_lock" {
+            return Ok(Self {
+                ty: MirType::bpf_spin_lock_struct(),
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::BpfSpinLock,
             });
         }
 
@@ -456,7 +469,7 @@ impl ParsedNamedGlobalType {
             NamedTypeSpecContext::MapValue => "map value",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
-            "; map value schemas also support bpf_timer"
+            "; map value schemas also support bpf_timer and bpf_spin_lock"
         } else {
             ""
         };
@@ -673,6 +686,12 @@ impl ParsedNamedGlobalType {
                 "global type spec '{}' cannot initialize verifier-managed bpf_timer objects",
                 spec
             ))),
+            NamedGlobalTypeShape::BpfSpinLock => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "global type spec '{}' cannot initialize verifier-managed bpf_spin_lock objects",
+                    spec
+                )))
+            }
             NamedGlobalTypeShape::FixedArray { elem, len } => {
                 let Value::List { vals, .. } = value else {
                     return Err(CompileError::UnsupportedInstruction(format!(

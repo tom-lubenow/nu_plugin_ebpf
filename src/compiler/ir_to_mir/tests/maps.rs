@@ -2637,6 +2637,25 @@ fn test_map_define_key_type_registers_and_materializes_record_key() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_bpf_spin_lock() {
+    let (ty, semantics) =
+        HirToMirLowering::parse_named_map_value_type_spec("record{lock:bpf_spin_lock,counter:u64}")
+            .expect("bpf_spin_lock map value type should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "lock");
+    assert_eq!(fields[0].ty, MirType::bpf_spin_lock_struct());
+    assert_eq!(fields[0].offset, 0);
+    assert_eq!(fields[1].name, "counter");
+    assert_eq!(fields[1].ty, MirType::U64);
+    assert_eq!(fields[1].offset, 4);
+}
+
+#[test]
 fn test_map_define_rejects_key_type_for_keyless_map() {
     let map_define_decl = DeclId::new(41);
     let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);

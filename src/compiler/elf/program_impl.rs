@@ -1219,6 +1219,63 @@ impl EbpfObject {
         btf.add_struct_with_offsets(&sanitized_name, size as u32, &member_refs)
     }
 
+    fn emit_local_btf_mir_type(btf: &mut BtfBuilder, ty: &MirType, array_index_type: u32) -> u32 {
+        match ty {
+            MirType::I8 => btf.add_int("s8", 1, true),
+            MirType::I16 => btf.add_int("s16", 2, true),
+            MirType::I32 => btf.add_int("s32", 4, true),
+            MirType::I64 => btf.add_int("s64", 8, true),
+            MirType::U8 | MirType::Bool => btf.add_int("u8", 1, false),
+            MirType::U16 => btf.add_int("u16", 2, false),
+            MirType::U32 => btf.add_int("u32", 4, false),
+            MirType::U64 => btf.add_int("u64", 8, false),
+            MirType::Ptr { pointee, .. } => {
+                let pointee_type = Self::emit_local_btf_mir_type(btf, pointee, array_index_type);
+                btf.add_ptr(pointee_type)
+            }
+            MirType::Array { elem, len } => {
+                let elem_type = Self::emit_local_btf_mir_type(btf, elem, array_index_type);
+                btf.add_array(elem_type, array_index_type, *len as u32)
+            }
+            MirType::Struct { name, fields, .. } => {
+                let mut members = Vec::with_capacity(fields.len());
+                for field in fields {
+                    let field_type =
+                        Self::emit_local_btf_mir_type(btf, &field.ty, array_index_type);
+                    members.push((field.name.clone(), field_type, field.offset as u32));
+                }
+                let member_refs: Vec<(&str, u32, u32)> = members
+                    .iter()
+                    .map(|(name, field_type, offset)| (name.as_str(), *field_type, *offset))
+                    .collect();
+                let name = name.as_deref().unwrap_or("_anonymous_");
+                let sanitized_name =
+                    Self::sanitize_local_btf_struct_name(name, ty.size(), fields.len());
+                btf.add_struct_with_offsets(&sanitized_name, ty.size() as u32, &member_refs)
+            }
+            MirType::Subprogram { .. } | MirType::MapRef { .. } | MirType::Unknown => {
+                let fallback_size = ty.size().max(1);
+                let byte_type = btf.add_int("u8", 1, false);
+                if fallback_size == 1 {
+                    byte_type
+                } else {
+                    btf.add_array(byte_type, array_index_type, fallback_size as u32)
+                }
+            }
+        }
+    }
+
+    fn generic_map_value_btf_type(&self, map: &EbpfMap) -> Option<&MirType> {
+        let kind = map.def.map_kind()?;
+        let map_ref = MapRef {
+            name: map.name.clone(),
+            kind,
+        };
+        self.programs
+            .iter()
+            .find_map(|program| program.generic_map_value_types.get(&map_ref))
+    }
+
     fn emit_struct_ops_value_btf_type(
         btf: &mut BtfBuilder,
         value_type_name: &str,
@@ -1284,8 +1341,17 @@ impl EbpfObject {
                 // key_size field: __uint(key_size, size_value)
                 let key_size_ptr = btf.add_uint_type(int_type, map.def.key_size);
 
-                // value_size field: __uint(value_size, size_value)
-                let value_size_ptr = btf.add_uint_type(int_type, map.def.value_size);
+                // Typed schemas use __type(value, T) so verifier-managed map fields
+                // are visible to the kernel; untyped maps keep __uint(value_size, N).
+                let value_member = if let Some(value_ty) = self.generic_map_value_btf_type(map) {
+                    let value_type = Self::emit_local_btf_mir_type(&mut btf, value_ty, int_type);
+                    ("value", btf.add_ptr(value_type))
+                } else {
+                    (
+                        "value_size",
+                        btf.add_uint_type(int_type, map.def.value_size),
+                    )
+                };
 
                 // max_entries field: __uint(max_entries, count)
                 // Note: 0 means auto-size (e.g., num_cpus for perf event arrays)
@@ -1298,7 +1364,7 @@ impl EbpfObject {
                 let struct_type = btf.add_btf_map_struct(&[
                     ("type", type_ptr),
                     ("key_size", key_size_ptr),
-                    ("value_size", value_size_ptr),
+                    value_member,
                     ("max_entries", max_entries_ptr),
                     ("pinning", pinning_ptr),
                 ]);

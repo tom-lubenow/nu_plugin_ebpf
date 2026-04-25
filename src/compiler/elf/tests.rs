@@ -4340,6 +4340,80 @@ fn test_elf_generation_with_bss_globals_creates_bss_data_map() {
 }
 
 #[test]
+fn test_elf_map_btf_emits_declared_value_type() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let map_ref = MapRef {
+        name: "locks".to_string(),
+        kind: MapKind::Hash,
+    };
+    let value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "lock".to_string(),
+                ty: MirType::bpf_spin_lock_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "counter".to_string(),
+                ty: MirType::U64,
+                offset: 4,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "typed_map",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![EbpfMap {
+            name: "locks".to_string(),
+            def: BpfMapDef::hash(4, value_ty.size() as u32, 1024),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(map_ref, value_ty)]),
+        HashMap::new(),
+    );
+
+    let elf = program.to_elf().expect("typed map ELF should emit");
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    let btf = Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+
+    assert!(
+        btf.id_by_type_name_kind("bpf_spin_lock", BtfKind::Struct)
+            .is_ok()
+    );
+    assert!(
+        btf_data.windows(b"value\0".len()).any(|w| w == b"value\0"),
+        "expected BTF map definition to use a typed value member"
+    );
+    assert!(
+        btf_data
+            .windows(b"value_size\0".len())
+            .all(|w| w != b"value_size\0"),
+        "typed map should not also emit a value_size member"
+    );
+}
+
+#[test]
 fn test_struct_ops_object_emits_btf_without_generic_maps() {
     let object = EbpfObject::struct_ops("demo", "fake_ops", vec![0; 32])
         .with_callback_slot("select_cpu", 8)

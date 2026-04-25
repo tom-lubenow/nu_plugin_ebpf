@@ -406,6 +406,10 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_timer", 16)
     }
 
+    pub fn bpf_spin_lock_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_spin_lock", 4)
+    }
+
     pub fn named_kernel_struct_ptr(name: &str) -> Self {
         MirType::Ptr {
             pointee: Box::new(Self::opaque_named_struct(name)),
@@ -500,6 +504,17 @@ impl MirType {
         pointee.has_struct_name(&["bpf_timer"]) || pointee.has_zero_offset_bpf_timer_field()
     }
 
+    pub fn is_bpf_spin_lock_map_ptr(&self) -> bool {
+        let MirType::Ptr {
+            address_space: AddressSpace::Map,
+            pointee,
+        } = self
+        else {
+            return false;
+        };
+        pointee.has_struct_name(&["bpf_spin_lock"]) || pointee.has_zero_offset_bpf_spin_lock_field()
+    }
+
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
         let MirType::Ptr {
             address_space: AddressSpace::Kernel,
@@ -531,6 +546,15 @@ impl MirType {
         fields
             .iter()
             .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_timer"]))
+    }
+
+    fn has_zero_offset_bpf_spin_lock_field(&self) -> bool {
+        let MirType::Struct { fields, .. } = self else {
+            return false;
+        };
+        fields
+            .iter()
+            .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_spin_lock"]))
     }
 
     fn is_socket_cookie_socket_pointee(&self) -> bool {
