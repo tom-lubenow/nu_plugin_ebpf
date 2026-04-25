@@ -117,6 +117,74 @@ fn test_lower_load_value_string_can_drive_map_get_name() {
 }
 
 #[test]
+fn test_lower_load_value_record_uses_natural_alignment() {
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("ok", Value::bool(true, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::record(rec, Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("constant records should lower through naturally aligned rodata");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.push(1);
+    expected.extend_from_slice(&[0u8; 7]);
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert_eq!(result.readonly_globals[0].data, expected);
+
+    let record_ty = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::LoadGlobal { ty, .. } => Some(ty),
+            _ => None,
+        })
+        .expect("expected constant record to load from rodata");
+    let MirType::Struct { fields, .. } = record_ty else {
+        panic!("expected record rodata type, got {record_ty:?}");
+    };
+    let user_fields = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_fields.len(), 2);
+    assert_eq!(user_fields[0].name, "pid");
+    assert_eq!(user_fields[0].offset, 0);
+    assert_eq!(user_fields[1].name, "ok");
+    assert_eq!(user_fields[1].offset, 8);
+    assert_eq!(record_ty.size(), 16);
+}
+
+#[test]
 fn test_lower_glob_pattern_literal_can_drive_map_get_name() {
     let map_get_decl = DeclId::new(78);
     let func = HirFunction {

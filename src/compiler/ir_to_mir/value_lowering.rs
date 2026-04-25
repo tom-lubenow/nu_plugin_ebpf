@@ -275,27 +275,106 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    pub(super) fn record_type_from_fields(fields: &[(String, MirType)]) -> MirType {
+    fn align_record_offset(value: usize, align: usize) -> usize {
+        if align <= 1 {
+            value
+        } else {
+            value.saturating_add(align - 1) & !(align - 1)
+        }
+    }
+
+    fn record_padding_field(offset: usize, size: usize, pad_index: usize) -> Option<StructField> {
+        (size > 0).then(|| StructField {
+            name: format!("__layout_pad{pad_index}"),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: size,
+            },
+            offset,
+            synthetic: true,
+            bitfield: None,
+        })
+    }
+
+    fn aligned_record_fields(fields: &[(String, MirType)]) -> (Vec<StructField>, Vec<usize>) {
         let mut offset = 0usize;
-        let struct_fields = fields
-            .iter()
-            .map(|(name, ty)| {
-                let struct_field = StructField {
-                    name: name.clone(),
-                    ty: ty.clone(),
-                    offset,
-                    synthetic: false,
-                    bitfield: None,
-                };
-                offset = offset.saturating_add(ty.size());
-                struct_field
-            })
-            .collect();
+        let mut struct_align = 1usize;
+        let mut pad_index = 0usize;
+        let mut struct_fields = Vec::with_capacity(fields.len());
+        let mut field_offsets = Vec::with_capacity(fields.len());
+
+        for (name, ty) in fields {
+            let field_align = ty.align().max(1);
+            let aligned_offset = Self::align_record_offset(offset, field_align);
+            if let Some(padding) =
+                Self::record_padding_field(offset, aligned_offset.saturating_sub(offset), pad_index)
+            {
+                struct_fields.push(padding);
+                pad_index += 1;
+            }
+            struct_fields.push(StructField {
+                name: name.clone(),
+                ty: ty.clone(),
+                offset: aligned_offset,
+                synthetic: false,
+                bitfield: None,
+            });
+            field_offsets.push(aligned_offset);
+            offset = aligned_offset.saturating_add(ty.size());
+            struct_align = struct_align.max(field_align);
+        }
+
+        let final_size = Self::align_record_offset(offset, struct_align);
+        if let Some(padding) =
+            Self::record_padding_field(offset, final_size.saturating_sub(offset), pad_index)
+        {
+            struct_fields.push(padding);
+        }
+
+        (struct_fields, field_offsets)
+    }
+
+    pub(super) fn record_type_from_fields(fields: &[(String, MirType)]) -> MirType {
+        let (struct_fields, _) = Self::aligned_record_fields(fields);
         MirType::Struct {
             name: None,
             kernel_btf_type_id: None,
             fields: struct_fields,
         }
+    }
+
+    pub(super) fn record_type_and_data_from_field_reprs(
+        fields: &[(String, MirType, Vec<u8>)],
+    ) -> Result<(MirType, Vec<u8>), CompileError> {
+        let field_layouts = fields
+            .iter()
+            .map(|(name, ty, _)| (name.clone(), ty.clone()))
+            .collect::<Vec<_>>();
+        let (struct_fields, field_offsets) = Self::aligned_record_fields(&field_layouts);
+        let record_ty = MirType::Struct {
+            name: None,
+            kernel_btf_type_id: None,
+            fields: struct_fields,
+        };
+        let mut data = vec![0u8; record_ty.size()];
+
+        for (index, ((name, ty, field_data), offset)) in
+            fields.iter().zip(field_offsets.iter().copied()).enumerate()
+        {
+            if field_data.len() != ty.size() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "record field '{}' at index {} encoded to {} bytes but layout requires {} bytes",
+                    name,
+                    index,
+                    field_data.len(),
+                    ty.size()
+                )));
+            }
+            let end = offset.saturating_add(field_data.len());
+            data[offset..end].copy_from_slice(field_data);
+        }
+
+        Ok((record_ty, data))
     }
 
     fn alloc_readonly_global_name(&mut self) -> String {
@@ -431,16 +510,14 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let mut field_layouts = Vec::with_capacity(record.len());
-        let mut data = Vec::new();
+        let mut fields = Vec::with_capacity(record.len());
 
         for (field_name, field_value) in record.iter() {
             let (field_ty, field_data) = constant_record_field_rodata_repr(field_value)?;
-            field_layouts.push((field_name.clone(), field_ty));
-            data.extend_from_slice(&field_data);
+            fields.push((field_name.clone(), field_ty, field_data));
         }
 
-        Ok((Self::record_type_from_fields(&field_layouts), data))
+        Self::record_type_and_data_from_field_reprs(&fields)
     }
 
     fn lower_constant_record_value(

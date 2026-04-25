@@ -177,9 +177,7 @@ impl<'a> HirToMirLowering<'a> {
                 None,
             ))),
             nu_protocol::Type::Record(fields) => {
-                let mut mir_fields = Vec::with_capacity(fields.len());
-                let mut data = Vec::new();
-                let mut offset = 0usize;
+                let mut field_reprs = Vec::with_capacity(fields.len());
 
                 for (field_name, field_type) in fields.iter() {
                     let Some((field_ty, field_data, field_list_max_len, field_string_slot_len)) =
@@ -188,27 +186,11 @@ impl<'a> HirToMirLowering<'a> {
                         return Ok(None);
                     };
                     let _ = (field_list_max_len, field_string_slot_len);
-                    mir_fields.push(StructField {
-                        name: field_name.clone(),
-                        ty: field_ty.clone(),
-                        offset,
-                        synthetic: false,
-                        bitfield: None,
-                    });
-                    offset = offset.saturating_add(field_ty.size());
-                    data.extend_from_slice(&field_data);
+                    field_reprs.push((field_name.clone(), field_ty, field_data));
                 }
 
-                Ok(Some((
-                    MirType::Struct {
-                        name: None,
-                        kernel_btf_type_id: None,
-                        fields: mir_fields,
-                    },
-                    data,
-                    None,
-                    None,
-                )))
+                let (ty, data) = Self::record_type_and_data_from_field_reprs(&field_reprs)?;
+                Ok(Some((ty, data, None, None)))
             }
             _ => Ok(None),
         }
@@ -337,9 +319,7 @@ impl<'a> HirToMirLowering<'a> {
                     )));
                 }
 
-                let mut mir_fields = Vec::with_capacity(fields.len());
-                let mut data = Vec::new();
-                let mut offset = 0usize;
+                let mut field_reprs = Vec::with_capacity(fields.len());
 
                 for (field_name, field_type) in fields.iter() {
                     let field_repr = if let Some(field_value) = val.get(field_name) {
@@ -363,27 +343,11 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     };
                     let _ = (field_list_max_len, field_string_slot_len);
-                    mir_fields.push(StructField {
-                        name: field_name.clone(),
-                        ty: field_ty.clone(),
-                        offset,
-                        synthetic: false,
-                        bitfield: None,
-                    });
-                    offset = offset.saturating_add(field_ty.size());
-                    data.extend_from_slice(&field_data);
+                    field_reprs.push((field_name.clone(), field_ty, field_data));
                 }
 
-                Ok(Some((
-                    MirType::Struct {
-                        name: None,
-                        kernel_btf_type_id: None,
-                        fields: mir_fields,
-                    },
-                    data,
-                    None,
-                    None,
-                )))
+                let (ty, data) = Self::record_type_and_data_from_field_reprs(&field_reprs)?;
+                Ok(Some((ty, data, None, None)))
             }
             _ => Ok(None),
         }

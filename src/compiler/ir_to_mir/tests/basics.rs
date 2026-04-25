@@ -5028,9 +5028,10 @@ fn test_lower_leading_annotated_mut_record_uses_declared_field_order() {
 
     assert_eq!(result.data_globals.len(), 1);
     let data = &result.data_globals[0].data;
-    assert_eq!(data.len(), 9);
+    assert_eq!(data.len(), 16);
     assert_eq!(&data[..8], &7i64.to_le_bytes());
     assert_eq!(data[8], 0);
+    assert!(data[9..].iter().all(|byte| *byte == 0));
 }
 
 #[test]
@@ -5084,7 +5085,7 @@ fn test_lower_leading_annotated_mut_record_partial_initializer_zero_fills_missin
 
     assert_eq!(result.data_globals.len(), 1);
     let data = &result.data_globals[0].data;
-    assert_eq!(data.len(), 17);
+    assert_eq!(data.len(), 24);
     assert_eq!(&data[..8], &7i64.to_le_bytes());
     assert!(data[8..].iter().all(|byte| *byte == 0));
 }
@@ -5139,7 +5140,7 @@ fn test_lower_leading_annotated_mut_record_null_uses_declared_scalar_layout() {
     assert_eq!(result.data_globals.len(), 0);
     assert_eq!(result.bss_globals.len(), 1);
     assert_eq!(result.bss_globals[0].name, "__nu_local_global_351");
-    assert_eq!(result.bss_globals[0].size, 17);
+    assert_eq!(result.bss_globals[0].size, 24);
     assert!(
         result
             .program

@@ -86,7 +86,7 @@ history and release notes, not here.
 
 - [~] Strengthen global/static data support.
   - Broaden fixed-layout globals beyond current scalar/string/binary/list/record cases when the type annotation gives an honest byte layout.
-  - Keep source-level fixed-record globals naturally aligned with zero-filled padding and aligned array stride.
+  - Keep source-level fixed-record globals and metadata-built record constants naturally aligned with zero-filled padding and aligned array stride.
   - Keep implicit mutable globals, leading typed `mut`, and explicit `global-*` declarations consistent.
   - Add clearer diagnostics when a Nushell value cannot be represented as fixed-layout eBPF data.
 

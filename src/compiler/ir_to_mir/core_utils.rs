@@ -491,7 +491,11 @@ impl<'a> HirToMirLowering<'a> {
             ));
         };
 
-        for (record_field, layout_field) in meta.record_fields.iter().zip(fields.iter()) {
+        for (record_field, layout_field) in meta
+            .record_fields
+            .iter()
+            .zip(fields.iter().filter(|field| !field.synthetic))
+        {
             match &record_field.ty {
                 MirType::Array { .. } | MirType::Struct { .. } => {
                     let aggregate_field_vreg =
