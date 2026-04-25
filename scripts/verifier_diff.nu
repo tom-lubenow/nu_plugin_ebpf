@@ -603,6 +603,21 @@ def validate-status-option [label: string value] {
     }
 }
 
+def validate-fixture-metadata [fixtures] {
+    for fixture in $fixtures {
+        let min_kernel = ($fixture | get -o min_kernel)
+        let min_kernel_source = ($fixture | get -o min_kernel_source)
+
+        if $min_kernel != null and ($min_kernel_source == null or $min_kernel_source == "") {
+            fail $"fixture ($fixture.name) declares min_kernel=($min_kernel) without min_kernel_source"
+        }
+
+        if $min_kernel == null and $min_kernel_source != null {
+            fail $"fixture ($fixture.name) declares min_kernel_source without min_kernel"
+        }
+    }
+}
+
 def fixture-has-tag [fixture tag] {
     if $tag == null {
         return true
@@ -818,6 +833,8 @@ def main [
     if $kernel and $no_kernel {
         fail "--kernel and --no-kernel are mutually exclusive"
     }
+
+    validate-fixture-metadata $FIXTURES
 
     let fixtures = (select-fixtures $fixture $category $tag $local_status $kernel_status)
 
