@@ -68,6 +68,59 @@ const FIXTURES = [
         min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_query/"
     }
     {
+        name: "ringbuf-reserve-submit-balanced"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec != 0 {'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+        min_kernel: "5.8"
+        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve/"
+    }
+    {
+        name: "ringbuf-reserve-rejects-leak"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased ringbuf record reference"
+    }
+    {
+        name: "ringbuf-reserve-rejects-double-submit"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec != 0 {'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ringbuf record already released"
+    }
+    {
         name: "stackid-built-in-kstacks"
         category: "maps"
         tags: [helper-call stack-trace reserved-name]

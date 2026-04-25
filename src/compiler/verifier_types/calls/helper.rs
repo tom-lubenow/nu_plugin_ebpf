@@ -29,6 +29,12 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
             }
         }
         HelperArgKind::Pointer => {
+            if let MirValue::VReg(vreg) = arg
+                && state.is_released_ringbuf_record(*vreg)
+            {
+                errors.push(VerifierTypeError::new("ringbuf record already released"));
+                return;
+            }
             if helper_pointer_arg_allows_const_zero(
                 helper_id, arg_idx, arg, state, program, probe_ctx,
             ) {
@@ -583,6 +589,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     if semantics.ringbuf_record_arg0 {
         if let Some(record) = args.first() {
             match record {
+                MirValue::VReg(vreg) if state.is_released_ringbuf_record(*vreg) => {}
                 MirValue::VReg(vreg) => match state.get(*vreg) {
                     VerifierType::Ptr {
                         space: AddressSpace::Map,
@@ -590,7 +597,11 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                         ringbuf_ref: Some(ref_id),
                         ..
                     } => {
-                        state.invalidate_ringbuf_ref(ref_id);
+                        if state.is_live_ringbuf_ref(ref_id) {
+                            state.invalidate_ringbuf_ref(ref_id);
+                        } else {
+                            errors.push(VerifierTypeError::new("ringbuf record already released"));
+                        }
                     }
                     VerifierType::Ptr {
                         nullability: Nullability::MaybeNull,

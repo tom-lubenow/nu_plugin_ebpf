@@ -163,6 +163,7 @@ impl VerifierState {
                 self.ranges[idx] = ValueRange::Unknown;
                 self.non_zero[idx] = false;
                 self.not_equal[idx].clear();
+                self.released_ringbuf_record_regs[idx] = true;
                 self.guards.remove(&reg);
             }
         }
@@ -194,6 +195,23 @@ impl VerifierState {
             .iter()
             .copied()
             .any(std::convert::identity)
+    }
+
+    pub(in crate::compiler::verifier_types) fn is_live_ringbuf_ref(&self, id: VReg) -> bool {
+        self.live_ringbuf_refs
+            .get(id.0 as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    pub(in crate::compiler::verifier_types) fn is_released_ringbuf_record(
+        &self,
+        vreg: VReg,
+    ) -> bool {
+        self.released_ringbuf_record_regs
+            .get(vreg.0 as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     pub(in crate::compiler::verifier_types) fn has_live_kfunc_refs(&self) -> bool {

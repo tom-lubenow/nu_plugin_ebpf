@@ -13538,7 +13538,7 @@ fn test_helper_ringbuf_submit_rejects_double_release() {
     let err = verify_mir(&func, &types).expect_err("expected double-release error");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("helper 132 arg0 expects pointer")),
+            .any(|e| e.message.contains("ringbuf record already released")),
         "unexpected errors: {:?}",
         err
     );

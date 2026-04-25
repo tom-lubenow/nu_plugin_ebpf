@@ -8,6 +8,7 @@ impl VerifierState {
             && self.not_equal == other.not_equal
             && self.ctx_field_sources == other.ctx_field_sources
             && self.live_ringbuf_refs == other.live_ringbuf_refs
+            && self.released_ringbuf_record_regs == other.released_ringbuf_record_regs
             && self.live_kfunc_refs == other.live_kfunc_refs
             && self.kfunc_ref_kinds == other.kfunc_ref_kinds
             && self.rcu_read_lock_min_depth == other.rcu_read_lock_min_depth
@@ -110,6 +111,13 @@ impl VerifierState {
         for i in 0..self.live_ringbuf_refs.len() {
             live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
         }
+        let mut released_ringbuf_record_regs =
+            Vec::with_capacity(self.released_ringbuf_record_regs.len());
+        for i in 0..self.released_ringbuf_record_regs.len() {
+            released_ringbuf_record_regs.push(
+                self.released_ringbuf_record_regs[i] || other.released_ringbuf_record_regs[i],
+            );
+        }
         let mut live_kfunc_refs = Vec::with_capacity(self.live_kfunc_refs.len());
         let mut kfunc_ref_kinds = Vec::with_capacity(self.kfunc_ref_kinds.len());
         for i in 0..self.live_kfunc_refs.len() {
@@ -162,6 +170,7 @@ impl VerifierState {
             not_equal,
             ctx_field_sources,
             live_ringbuf_refs,
+            released_ringbuf_record_regs,
             live_kfunc_refs,
             kfunc_ref_kinds,
             rcu_read_lock_min_depth: self
