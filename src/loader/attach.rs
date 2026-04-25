@@ -3,12 +3,15 @@ use aya::programs::perf_event::perf_hw_id;
 use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
 use std::io::BufRead as _;
 
-fn unsupported_live_attach_error(prog_type: crate::compiler::EbpfProgramType) -> LoadError {
+fn unsupported_live_attach_error(
+    prog_type: crate::compiler::EbpfProgramType,
+    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
+) -> LoadError {
     let attach_kind = prog_type.attach_kind();
     let detail = attach_kind
         .unsupported_live_attach_detail()
         .unwrap_or("this attach kind has no live attach implementation");
-    let requirements = compatibility_requirements_detail(prog_type.compatibility_requirements());
+    let requirements = compatibility_requirements_detail(requirements);
     LoadError::Attach(format!(
         "live attach for {} programs is not supported by this loader yet; {}{}; use --dry-run to compile",
         prog_type.canonical_prefix(),
@@ -349,14 +352,6 @@ impl EbpfState {
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
         let program = object.primary_program().map_err(LoadError::from)?;
-        if !program
-            .prog_type
-            .attach_kind()
-            .loader_supports_live_attach()
-        {
-            return Err(unsupported_live_attach_error(program.prog_type));
-        }
-
         let spec = program
             .parsed_program_spec()
             .cloned()
@@ -370,6 +365,17 @@ impl EbpfState {
                     program.target
                 ))
             })?;
+        let compatibility_requirements = spec.compatibility_requirements();
+        if !program
+            .prog_type
+            .attach_kind()
+            .loader_supports_live_attach()
+        {
+            return Err(unsupported_live_attach_error(
+                program.prog_type,
+                &compatibility_requirements,
+            ));
+        }
         if let ProgramSpec::CgroupSockAddr { target } = &spec {
             if target.is_unix() {
                 return Err(unsupported_cgroup_sock_addr_target_error(target));
@@ -1233,7 +1239,10 @@ impl EbpfState {
             | ProgramAttachKind::Extension
             | ProgramAttachKind::Syscall
             | ProgramAttachKind::Iter => {
-                return Err(unsupported_live_attach_error(program.prog_type));
+                return Err(unsupported_live_attach_error(
+                    program.prog_type,
+                    &compatibility_requirements,
+                ));
             }
             ProgramAttachKind::StructOps => {
                 return Err(LoadError::Load(

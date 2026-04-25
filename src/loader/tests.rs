@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
     CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgram, EbpfProgramType, MapRef,
-    MirType, ir_to_mir::AnnotatedValueSemantics,
+    MirType, ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1588,6 +1588,33 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             }
         }
     }
+}
+
+#[test]
+fn test_attach_rejects_compile_only_programs_with_spec_requirements() {
+    let state = EbpfState::new();
+    let spec = ProgramSpec::parse("fmod_ret.s:bpf_modify_return_test")
+        .expect("sleepable fmod_ret spec should parse");
+    let object = EbpfProgram::from_bytecode(
+        EbpfProgramType::FmodRet,
+        "bpf_modify_return_test",
+        "main",
+        vec![],
+    )
+    .with_program_spec(spec)
+    .into_object();
+
+    let err = state
+        .attach(&object)
+        .expect_err("compile-only sleepable fmod_ret should reject before ELF emission");
+
+    let LoadError::Attach(msg) = err else {
+        panic!("expected attach error for sleepable fmod_ret");
+    };
+    assert!(msg.contains("live attach for fmod_ret programs is not supported by this loader yet"));
+    assert!(msg.contains(ProgramCompatibilityRequirement::KernelBtf.description()));
+    assert!(msg.contains(ProgramCompatibilityRequirement::BpfTrampoline.description()));
+    assert!(msg.contains(ProgramCompatibilityRequirement::SleepableProgram.description()));
 }
 
 #[test]
