@@ -28,6 +28,7 @@
 //! - [`HelperCall`] - Invoke modeled BPF helpers
 //! - [`KfuncCall`] - Invoke typed kernel kfuncs
 //! - [`GlobalDefine`] / [`GlobalGet`] / [`GlobalSet`] - Named compiler-managed program globals
+//! - [`MapDefine`] - Declare generic map value schemas
 //! - [`MapGet`] / [`MapPut`] / [`MapDelete`] / [`MapPush`] / [`MapPeek`] / [`MapPop`] -
 //!   Generic named map operations
 
@@ -72,8 +73,8 @@ pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
 pub use helpers::{
     Count, Emit, GlobalDefine, GlobalGet, GlobalSet, HelperCall, Histogram, KfuncCall, MapContains,
-    MapDelete, MapGet, MapPeek, MapPop, MapPush, MapPut, ReadKernelStr, ReadStr, StartTimer,
-    StopTimer, TailCall,
+    MapDefine, MapDelete, MapGet, MapPeek, MapPop, MapPush, MapPut, ReadKernelStr, ReadStr,
+    StartTimer, StopTimer, TailCall,
 };
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;

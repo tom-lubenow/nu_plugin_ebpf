@@ -382,6 +382,10 @@ impl MirType {
     }
 
     pub fn opaque_named_struct(name: &str) -> Self {
+        Self::opaque_named_struct_with_size(name, 1)
+    }
+
+    pub fn opaque_named_struct_with_size(name: &str, size: usize) -> Self {
         MirType::Struct {
             name: Some(name.to_string()),
             kernel_btf_type_id: None,
@@ -389,13 +393,17 @@ impl MirType {
                 name: "__opaque".to_string(),
                 ty: MirType::Array {
                     elem: Box::new(MirType::U8),
-                    len: 1,
+                    len: size.max(1),
                 },
                 offset: 0,
                 synthetic: false,
                 bitfield: None,
             }],
         }
+    }
+
+    pub fn bpf_timer_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_timer", 16)
     }
 
     pub fn named_kernel_struct_ptr(name: &str) -> Self {
@@ -489,7 +497,7 @@ impl MirType {
         else {
             return false;
         };
-        pointee.has_struct_name(&["bpf_timer"])
+        pointee.has_struct_name(&["bpf_timer"]) || pointee.has_zero_offset_bpf_timer_field()
     }
 
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
@@ -514,6 +522,15 @@ impl MirType {
         candidates
             .iter()
             .any(|candidate| lower == candidate.to_ascii_lowercase())
+    }
+
+    fn has_zero_offset_bpf_timer_field(&self) -> bool {
+        let MirType::Struct { fields, .. } = self else {
+            return false;
+        };
+        fields
+            .iter()
+            .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_timer"]))
     }
 
     fn is_socket_cookie_socket_pointee(&self) -> bool {

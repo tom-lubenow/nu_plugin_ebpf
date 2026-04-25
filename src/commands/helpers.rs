@@ -12,6 +12,7 @@
 //! - kfunc-call: Escape hatch for invoking a typed kernel kfunc by name
 //! - tail-call: Transfer control to a program in a named prog-array map
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
+//! - map-define: Declare a named generic map value schema
 //! - map-get / map-put / map-delete / map-push / map-peek / map-pop / map-contains:
 //!   Generic BPF map operations
 
@@ -370,6 +371,73 @@ Example:
         _input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
         Ok(PipelineData::Value(Value::nothing(call.head), None))
+    }
+}
+
+#[derive(Clone)]
+pub struct MapDefine;
+
+impl PluginCommand for MapDefine {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "map-define"
+    }
+
+    fn description(&self) -> &str {
+        "Declare the value layout for a named generic BPF map."
+    }
+
+    fn extra_description(&self) -> &str {
+        r#"Declares a named map value schema for later map operations in the same
+program. This is a compile-time declaration: it does not perform a runtime map
+operation. It is useful when a map value contains verifier-sensitive fields
+that cannot be inferred from an ordinary map write, such as `bpf_timer`.
+
+Supported value type specs match `global-define --type` fixed-layout specs and
+also allow `bpf_timer` inside map-value records.
+
+Example:
+  map-define timers --kind array --value-type 'record{timer:bpf_timer,cookie:u64}'
+  let entry = (0 | map-get timers --kind array)
+  if $entry != 0 { helper-call "bpf_timer_start" $entry.timer 1000 0 }"#
+    }
+
+    fn signature(&self) -> Signature {
+        Signature::build("map-define")
+            .input_output_types(vec![(Type::Nothing, Type::Int)])
+            .required("name", SyntaxShape::String, "Map name")
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, queue, stack, bloom-filter, sk-storage, task-storage, inode-storage, or cgrp-storage (default hash)",
+                None,
+            )
+            .named(
+                "value-type",
+                SyntaxShape::String,
+                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer",
+                None,
+            )
+            .category(Category::Experimental)
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "ebpf attach 'raw_tracepoint:sys_enter' {|ctx| map-define timers --kind array --value-type 'record{timer:bpf_timer,cookie:u64}'; 0 }",
+            description: "Declare an array map value record containing a bpf_timer field",
+            result: None,
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        _input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        Ok(PipelineData::Value(Value::int(0, call.head), None))
     }
 }
 

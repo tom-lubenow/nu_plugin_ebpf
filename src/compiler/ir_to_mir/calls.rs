@@ -1026,6 +1026,76 @@ impl<'a> HirToMirLowering<'a> {
                 self.reset_call_result_metadata(src_dst);
             }
 
+            "map-define" => {
+                if !self.named_flags.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-define does not accept flags".into(),
+                    ));
+                }
+                self.require_only_named_args("map-define", &["kind", "value-type"])?;
+                if self.pipeline_input.is_some() || src_dst_had_value {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-define does not accept pipeline input".into(),
+                    ));
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-define requires exactly one positional map name".into(),
+                    ));
+                }
+
+                let (_, map_reg) = self.positional_args[0];
+                let map_name = self.literal_string_arg(map_reg, "map-define")?;
+                self.validate_generic_map_name(&map_name, "map-define")?;
+                let map_kind = self.map_define_kind_arg("map-define")?;
+                let (_, type_reg) =
+                    self.named_args.get("value-type").copied().ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-define requires --value-type with a compile-time type string"
+                                .into(),
+                        )
+                    })?;
+                let type_spec = self.literal_string_arg(type_reg, "map-define --value-type")?;
+                let (value_ty, value_semantics) =
+                    Self::parse_named_map_value_type_spec(&type_spec)?;
+                let map_ref = MapRef {
+                    name: map_name,
+                    kind: map_kind,
+                };
+
+                if self.externally_seeded_map_value_types.contains(&map_ref)
+                    && let Some(existing) = self.named_map_value_type(&map_ref)
+                    && existing != &value_ty
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define value type for '{}' conflicts with pinned map schema",
+                        map_ref.name
+                    )));
+                }
+                self.register_named_map_value_type(&map_ref, &value_ty);
+
+                if let Some(value_semantics) = value_semantics {
+                    if self
+                        .externally_seeded_map_value_semantics
+                        .contains(&map_ref)
+                        && let Some(existing) = self.named_map_value_semantics(&map_ref)
+                        && existing != &value_semantics
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define value semantics for '{}' conflicts with pinned map schema",
+                            map_ref.name
+                        )));
+                    }
+                    self.register_named_map_value_semantics(&map_ref, &value_semantics);
+                }
+
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::Const(0),
+                });
+                self.reset_call_result_metadata(src_dst);
+            }
+
             "map-get" => {
                 let result_vreg = if src_dst_had_value {
                     self.assign_fresh_vreg(src_dst)

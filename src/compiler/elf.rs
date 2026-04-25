@@ -1680,6 +1680,7 @@ pub enum ProgramIntrinsic {
     GlobalDefine,
     GlobalGet,
     GlobalSet,
+    MapDefine,
     MapGet,
     MapPut,
     MapDelete,
@@ -1715,6 +1716,7 @@ impl ProgramIntrinsic {
             ProgramIntrinsic::GlobalDefine => "global-define",
             ProgramIntrinsic::GlobalGet => "global-get",
             ProgramIntrinsic::GlobalSet => "global-set",
+            ProgramIntrinsic::MapDefine => "map-define",
             ProgramIntrinsic::MapGet => "map-get",
             ProgramIntrinsic::MapPut => "map-put",
             ProgramIntrinsic::MapDelete => "map-delete",
@@ -1746,6 +1748,7 @@ impl ProgramIntrinsic {
             "global-define" => Some(ProgramIntrinsic::GlobalDefine),
             "global-get" => Some(ProgramIntrinsic::GlobalGet),
             "global-set" => Some(ProgramIntrinsic::GlobalSet),
+            "map-define" => Some(ProgramIntrinsic::MapDefine),
             "map-get" => Some(ProgramIntrinsic::MapGet),
             "map-put" => Some(ProgramIntrinsic::MapPut),
             "map-delete" => Some(ProgramIntrinsic::MapDelete),
@@ -1778,6 +1781,7 @@ impl ProgramIntrinsic {
             | ProgramIntrinsic::GlobalGet
             | ProgramIntrinsic::GlobalSet => ProgramCapability::Globals,
             ProgramIntrinsic::MapGet
+            | ProgramIntrinsic::MapDefine
             | ProgramIntrinsic::MapPut
             | ProgramIntrinsic::MapDelete
             | ProgramIntrinsic::MapContains

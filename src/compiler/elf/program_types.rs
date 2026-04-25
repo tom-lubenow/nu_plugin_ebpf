@@ -1295,6 +1295,7 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::GlobalDefine,
     ProgramIntrinsic::GlobalGet,
     ProgramIntrinsic::GlobalSet,
+    ProgramIntrinsic::MapDefine,
     ProgramIntrinsic::MapGet,
     ProgramIntrinsic::MapPut,
     ProgramIntrinsic::MapDelete,

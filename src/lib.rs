@@ -59,6 +59,7 @@ impl Plugin for EbpfPlugin {
             Box::new(GlobalDefine),
             Box::new(GlobalGet),
             Box::new(GlobalSet),
+            Box::new(MapDefine),
             Box::new(MapGet),
             Box::new(MapPut),
             Box::new(MapDelete),

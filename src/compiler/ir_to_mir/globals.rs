@@ -2,6 +2,12 @@ use super::*;
 
 const MAX_NAMED_GLOBAL_NUMERIC_LIST_CAPACITY: usize = 60;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NamedTypeSpecContext {
+    Global,
+    MapValue,
+}
+
 #[derive(Clone, Debug)]
 struct ParsedNamedGlobalType {
     ty: MirType,
@@ -35,6 +41,7 @@ enum NamedGlobalTypeShape {
     NumericList {
         max_len: usize,
     },
+    BpfTimer,
     FixedArray {
         elem: Box<ParsedNamedGlobalType>,
         len: usize,
@@ -167,12 +174,17 @@ impl ParsedNamedGlobalType {
                     | NamedGlobalTypeShape::U64
                     | NamedGlobalTypeShape::Bool
                     | NamedGlobalTypeShape::Bytes { .. }
+                    | NamedGlobalTypeShape::BpfTimer
                     | NamedGlobalTypeShape::FixedArray { .. }
                     | NamedGlobalTypeShape::Record(_)
             )
     }
 
     fn parse(spec: &str) -> Result<Self, CompileError> {
+        Self::parse_with_context(spec, NamedTypeSpecContext::Global)
+    }
+
+    fn parse_with_context(spec: &str, context: NamedTypeSpecContext) -> Result<Self, CompileError> {
         let scalar_shape = match spec {
             "i8" => Some((MirType::I8, NamedGlobalTypeShape::I8)),
             "i16" => Some((MirType::I16, NamedGlobalTypeShape::I16)),
@@ -196,6 +208,17 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape,
+            });
+        }
+
+        if context == NamedTypeSpecContext::MapValue && spec == "bpf_timer" {
+            return Ok(Self {
+                ty: MirType::bpf_timer_struct(),
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::BpfTimer,
             });
         }
 
@@ -240,7 +263,7 @@ impl ParsedNamedGlobalType {
                     )));
                 }
 
-                let parsed_field = Self::parse(field_spec)?;
+                let parsed_field = Self::parse_with_context(field_spec, context)?;
                 if let Some(semantics) = parsed_field.semantics.clone() {
                     field_semantics.push((name.to_string(), semantics));
                 }
@@ -295,7 +318,7 @@ impl ParsedNamedGlobalType {
                 ));
             }
 
-            let parsed_elem = Self::parse(elem_spec)?;
+            let parsed_elem = Self::parse_with_context(elem_spec, context)?;
             if !parsed_elem.is_fixed_array_element_type() {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global fixed-array declarations require fixed-layout elements without string/list semantics, got '{}'",
@@ -426,9 +449,18 @@ impl ParsedNamedGlobalType {
             });
         }
 
+        let context_name = match context {
+            NamedTypeSpecContext::Global => "global",
+            NamedTypeSpecContext::MapValue => "map value",
+        };
+        let map_suffix = if context == NamedTypeSpecContext::MapValue {
+            "; map value schemas also support bpf_timer"
+        } else {
+            ""
+        };
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported global type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{type:N}}, or nested record{{field:type,...}}",
-            spec
+            "unsupported {context_name} type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{type:N}}, or nested record{{field:type,...}}{}",
+            spec, map_suffix
         )))
     }
 
@@ -635,6 +667,10 @@ impl ParsedNamedGlobalType {
                 }
                 Ok(data)
             }
+            NamedGlobalTypeShape::BpfTimer => Err(CompileError::UnsupportedInstruction(format!(
+                "global type spec '{}' cannot initialize verifier-managed bpf_timer objects",
+                spec
+            ))),
             NamedGlobalTypeShape::FixedArray { elem, len } => {
                 let Value::List { vals, .. } = value else {
                     return Err(CompileError::UnsupportedInstruction(format!(
@@ -759,6 +795,14 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(None)
+    }
+
+    pub(super) fn parse_named_map_value_type_spec(
+        spec: &str,
+    ) -> Result<(MirType, Option<AnnotatedValueSemantics>), CompileError> {
+        let parsed =
+            ParsedNamedGlobalType::parse_with_context(spec, NamedTypeSpecContext::MapValue)?;
+        Ok((parsed.ty, parsed.semantics))
     }
 
     fn typed_named_program_global_layout(

@@ -7,6 +7,7 @@ use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::passes::optimize_with_ssa_hints;
+use nu_protocol::ast::{Comparison, Operator};
 use nu_protocol::{DeclId, RegId, VarId};
 
 #[test]
@@ -636,6 +637,178 @@ fn test_helper_call_timer_init_start_cancel_projected_map_timer_field_lowers() {
             ..
         } if *helper == BpfHelper::TimerCancel as u32 && args.len() == 1
     )));
+}
+
+#[test]
+fn test_map_define_timer_field_registers_bpf_timer_schema() {
+    use nu_protocol::ast::CellPath;
+
+    let lookup_var = VarId::new(0);
+    let main = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"demo_timers".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"array".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"record{timer:bpf_timer,cookie:u64}".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(41),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            named: vec![
+                                (b"kind".to_vec(), RegId::new(2)),
+                                (b"value-type".to_vec(), RegId::new(3)),
+                            ],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(4)],
+                            named: vec![(b"kind".to_vec(), RegId::new(2))],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: lookup_var,
+                        src: RegId::new(5),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(5),
+                        op: Operator::Comparison(Comparison::NotEqual),
+                        rhs: RegId::new(6),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(5),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(5),
+                        var_id: lookup_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![nu_protocol::ast::PathMember::test_string(
+                                "timer".to_string(),
+                                false,
+                                nu_protocol::casing::Casing::Sensitive,
+                            )],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(5),
+                        path: RegId::new(6),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::String(b"bpf_timer_start".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(8),
+                        lit: HirLiteral::Int(1000),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(9),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(43),
+                        src_dst: RegId::new(10),
+                        args: HirCallArgs {
+                            positional: vec![
+                                RegId::new(7),
+                                RegId::new(5),
+                                RegId::new(8),
+                                RegId::new(9),
+                            ],
+                            ..Default::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return {
+                    src: RegId::new(10),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return {
+                    src: RegId::new(10),
+                },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 11,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(main, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (DeclId::new(41), "map-define".to_string()),
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "helper-call".to_string()),
+    ]);
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-define timer program should lower");
+
+    let map_ref = MapRef {
+        name: "demo_timers".to_string(),
+        kind: MapKind::Array,
+    };
+    let value_ty = result
+        .type_hints
+        .generic_map_value_types
+        .get(&map_ref)
+        .expect("map-define should register a generic map value schema");
+    assert_eq!(value_ty.size(), 24);
+    assert!(
+        MirType::Ptr {
+            pointee: Box::new(value_ty.clone()),
+            address_space: AddressSpace::Map,
+        }
+        .is_bpf_timer_map_ptr()
+    );
 }
 
 #[test]

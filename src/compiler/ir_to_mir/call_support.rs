@@ -704,6 +704,49 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn map_define_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Ok(MapKind::Hash);
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(kind)
+                if kind.supports_generic_map_op(MapOpKind::Lookup)
+                    || kind.supports_generic_map_op(MapOpKind::Update)
+                    || kind.is_queue_or_stack()
+                    || matches!(kind, MapKind::BloomFilter)
+                    || kind.is_local_storage() =>
+            {
+                Ok(kind)
+            }
+            Some(map_kind) if map_kind.is_socket_map() => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} names a socket map; socket maps carry kernel socket references and use specialized redirect/update helpers"
+                )))
+            }
+            Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} is reserved for cgroup membership helper-calls"
+            ))),
+            Some(map_kind) if map_kind.is_redirect_map() => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind {kind} is reserved for redirect-map / bpf_redirect_map"
+                )))
+            }
+            Some(map_kind) => Err(
+                Self::reserved_special_map_kind_error(context, &kind, map_kind).unwrap_or_else(
+                    || {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{context} --kind must name a recognized value-carrying map family"
+                        ))
+                    },
+                ),
+            ),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must name a recognized value-carrying map family"
+            ))),
+        }
+    }
+
     pub(super) fn required_queue_stack_map_kind_arg(
         &self,
         context: &str,

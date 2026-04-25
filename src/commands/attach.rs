@@ -937,6 +937,7 @@ Output commands:
   global-define     - Declare a named compiler-managed program global
   global-get        - Load a named compiler-managed program global
   global-set        - Store the pipeline input into a named compiler-managed program global
+  map-define        - Declare a named generic map value schema
 
 Globals:
   Prefer leading annotated `mut` bindings for small private program state:
