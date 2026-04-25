@@ -563,6 +563,73 @@ const FIXTURES = [
         error_contains: "ctx.data is not available on socket_filter programs"
     }
     {
+        name: "cgroup-skb-egress-context"
+        category: "context-surface"
+        tags: [cgroup-skb context]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.remote_ip4 + $ctx.local_port + $ctx.sk.cgroup_id) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-skb-ingress-writable-context"
+        category: "context-surface"
+        tags: [cgroup-skb context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:ingress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.mark = 7'
+            '  $ctx.priority = 3'
+            '  $ctx.cb.0 = 1'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-create-context-write"
+        category: "context-surface"
+        tags: [cgroup-sock context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:sock_create"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.family + $ctx.sock_type + $ctx.protocol + $ctx.state + $ctx.rx_queue_mapping + $ctx.socket_cookie + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  $ctx.bound_dev_if = 1'
+            '  $ctx.mark = 7'
+            '  $ctx.priority = 3'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-post-bind6-context"
+        category: "context-surface"
+        tags: [cgroup-sock context ipv6]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind6"
+        program: [
+            '{|ctx|'
+            '  (($ctx.local_ip6 | get 1) + ($ctx.sk.src_ip6 | get 1) + $ctx.local_port + $ctx.remote_port) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sock-addr-connect4-context"
         category: "context-surface"
         tags: [cgroup-sock-addr context]
