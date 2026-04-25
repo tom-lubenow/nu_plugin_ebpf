@@ -154,6 +154,8 @@ pub struct ActiveProbe {
     event_schema: Option<EventSchema>,
     /// Optional schema for decoding `bytes_counters` keys
     bytes_counter_key_schema: Option<CounterKeySchema>,
+    /// Typed generic map key schemas established for this pinned program set
+    generic_map_key_types: HashMap<MapRef, MirType>,
     /// Typed generic map value schemas established for this pinned program set
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// Logical semantics for typed generic map values with richer layouts
@@ -192,6 +194,7 @@ impl std::fmt::Debug for ActiveProbe {
                 "bytes_counter_key_schema",
                 &self.bytes_counter_key_schema.is_some(),
             )
+            .field("generic_map_key_types", &self.generic_map_key_types.len())
             .field(
                 "generic_map_value_types",
                 &self.generic_map_value_types.len(),
@@ -324,7 +327,7 @@ impl Default for EbpfState {
 }
 
 impl EbpfState {
-    fn merge_generic_map_value_types<'a>(
+    fn merge_generic_map_types<'a>(
         schemas: impl Iterator<Item = &'a HashMap<MapRef, MirType>>,
     ) -> HashMap<MapRef, MirType> {
         let mut merged = HashMap::new();
@@ -349,6 +352,12 @@ impl EbpfState {
         }
 
         merged
+    }
+
+    fn merge_generic_map_value_types<'a>(
+        schemas: impl Iterator<Item = &'a HashMap<MapRef, MirType>>,
+    ) -> HashMap<MapRef, MirType> {
+        Self::merge_generic_map_types(schemas)
     }
 
     fn merge_generic_map_value_semantics<'a>(
@@ -447,6 +456,23 @@ impl EbpfState {
                 .values()
                 .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
                 .map(|probe| &probe.generic_map_value_types),
+        ))
+    }
+
+    /// Collect typed generic-map key schemas from active probes in a pin group.
+    ///
+    /// Conflicting schemas for the same pinned map are dropped so callers only see
+    /// unambiguous layouts.
+    pub fn pinned_generic_map_key_types(
+        &self,
+        pin_group: &str,
+    ) -> Result<HashMap<MapRef, MirType>, LoadError> {
+        let probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
+        Ok(Self::merge_generic_map_types(
+            probes
+                .values()
+                .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
+                .map(|probe| &probe.generic_map_key_types),
         ))
     }
 

@@ -1325,6 +1325,40 @@ fn test_parse_probe_spec_kprobe_unchanged() {
 }
 
 #[test]
+fn test_merge_generic_map_key_types_drops_conflicts() {
+    let shared = MapRef {
+        name: "shared_keyed".to_string(),
+        kind: MapKind::Hash,
+    };
+    let unique = MapRef {
+        name: "other_keyed".to_string(),
+        kind: MapKind::Hash,
+    };
+    let record_key = MirType::Struct {
+        name: Some("key".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![],
+    };
+    let other_key = MirType::U64;
+    let conflicting_key = MirType::I64;
+
+    let merged = EbpfState::merge_generic_map_types(
+        [
+            HashMap::from([
+                (shared.clone(), record_key.clone()),
+                (unique.clone(), other_key.clone()),
+            ]),
+            HashMap::from([(shared.clone(), record_key)]),
+            HashMap::from([(shared.clone(), conflicting_key)]),
+        ]
+        .iter(),
+    );
+
+    assert_eq!(merged.get(&unique), Some(&other_key));
+    assert!(!merged.contains_key(&shared));
+}
+
+#[test]
 fn test_merge_generic_map_value_types_drops_conflicts() {
     let shared = MapRef {
         name: "shared_path".to_string(),

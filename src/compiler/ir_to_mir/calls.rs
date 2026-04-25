@@ -1067,6 +1067,15 @@ impl<'a> HirToMirLowering<'a> {
                         self.literal_string_arg(key_type_reg, "map-define --key-type")?;
                     let key_ty = Self::parse_named_map_key_type_spec(&key_type_spec)?;
                     self.validate_declared_map_key_type(&map_ref, &key_ty, "map-define")?;
+                    if self.externally_seeded_map_key_types.contains(&map_ref)
+                        && let Some(existing) = self.named_map_key_type(&map_ref)
+                        && existing != &key_ty
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define key type for '{}' conflicts with pinned map schema",
+                            map_ref.name
+                        )));
+                    }
                     self.register_named_map_key_type(&map_ref, &key_ty);
                 }
 

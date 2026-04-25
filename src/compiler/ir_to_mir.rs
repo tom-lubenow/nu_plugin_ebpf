@@ -67,8 +67,8 @@ mod user_functions;
 mod value_lowering;
 pub use entry::{
     MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints,
-    lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_maps_and_semantics,
-    lower_ir_to_mir,
+    lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_key_value_maps_and_semantics,
+    lower_hir_to_mir_with_hints_maps_and_semantics, lower_ir_to_mir,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -357,6 +357,8 @@ pub struct HirToMirLowering<'a> {
     conflicting_map_key_types: HashSet<MapRef>,
     /// Generic maps whose observed value semantics conflict
     conflicting_map_value_semantics: HashSet<MapRef>,
+    /// Map key schemas seeded from already-attached pinned programs
+    externally_seeded_map_key_types: HashSet<MapRef>,
     /// Map schemas seeded from already-attached pinned programs
     externally_seeded_map_value_types: HashSet<MapRef>,
     /// Map semantics seeded from already-attached pinned programs
@@ -426,6 +428,7 @@ impl<'a> HirToMirLowering<'a> {
         captures: &'a [(VarId, Value)],
         ctx_param: Option<VarId>,
         type_hints: Option<&'a HirMirTypeHints>,
+        external_map_key_types: Option<&'a HashMap<MapRef, MirType>>,
         external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,
         external_map_value_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
         user_functions: &'a HashMap<DeclId, HirFunction>,
@@ -439,6 +442,8 @@ impl<'a> HirToMirLowering<'a> {
             ),
             None => (HashMap::new(), HashMap::new(), HashMap::new()),
         };
+        let map_key_types = external_map_key_types.cloned().unwrap_or_default();
+        let externally_seeded_map_key_types = map_key_types.keys().cloned().collect();
         let map_value_types = external_map_value_types.cloned().unwrap_or_default();
         let externally_seeded_map_value_types = map_value_types.keys().cloned().collect();
         let map_value_semantics = external_map_value_semantics.cloned().unwrap_or_default();
@@ -472,13 +477,14 @@ impl<'a> HirToMirLowering<'a> {
             decl_type_hints,
             vreg_type_hints: HashMap::new(),
             stack_slot_type_hints: HashMap::new(),
-            map_key_types: HashMap::new(),
+            map_key_types,
             map_value_types,
             declared_map_value_types: HashSet::new(),
             map_value_semantics,
             conflicting_map_value_types: HashSet::new(),
             conflicting_map_key_types: HashSet::new(),
             conflicting_map_value_semantics: HashSet::new(),
+            externally_seeded_map_key_types,
             externally_seeded_map_value_types,
             externally_seeded_map_value_semantics,
             user_functions,

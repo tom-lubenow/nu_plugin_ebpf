@@ -347,6 +347,30 @@ pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
     user_functions: &HashMap<DeclId, HirFunction>,
     decl_signatures: &HashMap<DeclId, UserFunctionSig>,
 ) -> Result<MirLoweringResult, CompileError> {
+    lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        hir,
+        probe_ctx,
+        decl_names,
+        type_info,
+        None,
+        external_map_value_types,
+        external_map_value_semantics,
+        user_functions,
+        decl_signatures,
+    )
+}
+
+pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+    hir: &HirProgram,
+    probe_ctx: Option<&ProbeContext>,
+    decl_names: &HashMap<DeclId, String>,
+    type_info: Option<&HirTypeInfo>,
+    external_map_key_types: Option<&HashMap<MapRef, MirType>>,
+    external_map_value_types: Option<&HashMap<MapRef, MirType>>,
+    external_map_value_semantics: Option<&HashMap<MapRef, AnnotatedValueSemantics>>,
+    user_functions: &HashMap<DeclId, HirFunction>,
+    decl_signatures: &HashMap<DeclId, UserFunctionSig>,
+) -> Result<MirLoweringResult, CompileError> {
     let hir_type_hints = type_info.map(mir_hints_from_hir);
     let mutated_capture_vars = collect_mutated_capture_vars(hir, user_functions);
     let forward_named_globals =
@@ -358,6 +382,7 @@ pub fn lower_hir_to_mir_with_hints_maps_and_semantics(
         &hir.captures,
         hir.ctx_param,
         hir_type_hints.as_ref(),
+        external_map_key_types,
         external_map_value_types,
         external_map_value_semantics,
         user_functions,

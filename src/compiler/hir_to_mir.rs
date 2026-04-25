@@ -5,7 +5,8 @@
 
 pub use super::ir_to_mir::{
     MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints,
-    lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_maps_and_semantics,
+    lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_key_value_maps_and_semantics,
+    lower_hir_to_mir_with_hints_maps_and_semantics,
 };
 
 #[cfg(test)]

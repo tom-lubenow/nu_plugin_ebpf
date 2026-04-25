@@ -59,7 +59,8 @@ pub use hir::{
 };
 pub use hir_to_mir::{
     MirLoweringResult, lower_hir_to_mir, lower_hir_to_mir_with_hints,
-    lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_maps_and_semantics,
+    lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_key_value_maps_and_semantics,
+    lower_hir_to_mir_with_hints_maps_and_semantics,
 };
 pub use instruction::{BpfHelper, EbpfInsn, EbpfReg};
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};

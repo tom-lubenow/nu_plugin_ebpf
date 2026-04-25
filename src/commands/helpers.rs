@@ -390,10 +390,10 @@ impl PluginCommand for MapDefine {
 
     fn extra_description(&self) -> &str {
         r#"Declares named map key/value schemas for later map operations in the same
-program. This is a compile-time declaration: it does not perform a runtime map
-operation. It is useful when a map key or value layout should be fixed before
-ordinary map operations, including verifier-sensitive value fields such as
-`bpf_timer`.
+program and for later pinned peers attached with the same `--pin` group. This
+is a compile-time declaration: it does not perform a runtime map operation. It
+is useful when a map key or value layout should be fixed before ordinary map
+operations, including verifier-sensitive value fields such as `bpf_timer`.
 
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
