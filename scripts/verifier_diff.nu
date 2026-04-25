@@ -456,6 +456,10 @@ def run-kernel-fixture [plugin_bin: string fixture tmp_dir: string] {
 }
 
 def select-kernel-fixtures [fixtures require_kernel: bool] {
+    select-fixtures-with-requirements $fixtures $require_kernel "kernel"
+}
+
+def select-fixtures-with-requirements [fixtures require_features: bool phase: string] {
     mut selected = []
 
     for fixture in $fixtures {
@@ -464,10 +468,10 @@ def select-kernel-fixtures [fixtures require_kernel: bool] {
             $selected = ($selected | append $fixture)
         } else {
             let reason = ($missing | str join ",")
-            if $require_kernel {
+            if $require_features {
                 fail $"fixture ($fixture.name) missing required host features: ($reason)"
             }
-            print $"kernel skip fixture ($fixture.name): missing ($reason)"
+            print $"($phase) skip fixture ($fixture.name): missing ($reason)"
         }
     }
 
@@ -527,8 +531,14 @@ def main [
     let plugin_bin = (resolve-plugin-bin $REPO_ROOT)
     print $"Using plugin: ($plugin_bin)"
 
+    let local_fixtures = (select-fixtures-with-requirements $fixtures $kernel "local")
+    if (($local_fixtures | length) == 0) {
+        print "ok: 0 local fixtures"
+        return
+    }
+
     let local_results = (
-        $fixtures
+        $local_fixtures
         | each {|fixture|
             let result = (check-local-fixture $plugin_bin $fixture)
             print $"local  ($result.local)  ($fixture.name)"
@@ -537,14 +547,14 @@ def main [
     )
 
     let local_accepts = (
-        $fixtures
+        $local_fixtures
         | zip $local_results
         | where {|pair| ($pair.1 | get local) == "accept" }
         | each {|pair| $pair.0 }
     )
 
     if $no_kernel {
-        print $"ok: (($fixtures | length)) local fixtures, kernel checks disabled"
+        print $"ok: (($local_fixtures | length)) local fixtures, kernel checks disabled"
         return
     }
 
@@ -554,7 +564,7 @@ def main [
     )
     let kernel_fixtures = (select-kernel-fixtures $kernel_candidates $kernel)
     if (($kernel_fixtures | length) == 0) {
-        print $"ok: (($fixtures | length)) local fixtures, no kernel fixtures"
+        print $"ok: (($local_fixtures | length)) local fixtures, no kernel fixtures"
         return
     }
 
@@ -565,7 +575,7 @@ def main [
             fail $"kernel verifier checks requested but unavailable: ($reason)"
         }
         print $"kernel skip: ($reason)"
-        print $"ok: (($fixtures | length)) local fixtures"
+        print $"ok: (($local_fixtures | length)) local fixtures"
         return
     }
 
@@ -584,5 +594,5 @@ def main [
         error make $err
     }
 
-    print $"ok: (($fixtures | length)) local fixtures, (($kernel_fixtures | length)) kernel fixtures"
+    print $"ok: (($local_fixtures | length)) local fixtures, (($kernel_fixtures | length)) kernel fixtures"
 }
