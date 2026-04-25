@@ -2188,6 +2188,60 @@ fn test_lower_global_define_type_bool_with_constant_not_initializer_uses_named_d
 }
 
 #[test]
+fn test_lower_global_define_type_record_rejects_reserved_padding_field_names() {
+    let define_decl = DeclId::new(1075);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{a:u8,__layout_pad0:u64}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("record type specs should reject internal padding field names");
+
+    assert!(
+        err.to_string().contains("reserve field names"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_with_constant_upsert_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1073);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
@@ -2832,8 +2886,10 @@ fn test_lower_global_define_type_record_with_fixed_record_array_initializer_uses
     let mut expected = Vec::new();
     expected.extend_from_slice(&7i64.to_le_bytes());
     expected.extend_from_slice(&2u32.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
     expected.extend_from_slice(&9i64.to_le_bytes());
     expected.extend_from_slice(&3u32.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
 
     assert_eq!(result.data_globals.len(), 1);
     assert_eq!(result.bss_globals.len(), 0);
@@ -3151,7 +3207,7 @@ fn test_lower_global_define_type_fixed_record_array_supports_field_projection() 
     assert_eq!(result.data_globals.len(), 0);
     assert_eq!(result.bss_globals.len(), 1);
     assert_eq!(result.bss_globals[0].name, "__nu_global_seen_entries");
-    assert_eq!(result.bss_globals[0].size, 24);
+    assert_eq!(result.bss_globals[0].size, 32);
     assert!(
         result
             .program
@@ -3268,8 +3324,10 @@ fn test_lower_global_define_type_fixed_record_array_initializer_uses_named_data_
     let mut expected = Vec::new();
     expected.extend_from_slice(&7i64.to_le_bytes());
     expected.extend_from_slice(&2u32.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
     expected.extend_from_slice(&9i64.to_le_bytes());
     expected.extend_from_slice(&3u32.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
 
     assert_eq!(result.data_globals.len(), 1);
     assert_eq!(result.bss_globals.len(), 0);

@@ -20,6 +20,13 @@ struct ParsedNamedGlobalType {
 }
 
 #[derive(Clone, Debug)]
+struct ParsedNamedRecordField {
+    name: String,
+    offset: usize,
+    ty: ParsedNamedGlobalType,
+}
+
+#[derive(Clone, Debug)]
 enum NamedGlobalTypeShape {
     I8,
     I16,
@@ -48,7 +55,30 @@ enum NamedGlobalTypeShape {
         elem: Box<ParsedNamedGlobalType>,
         len: usize,
     },
-    Record(Vec<(String, ParsedNamedGlobalType)>),
+    Record(Vec<ParsedNamedRecordField>),
+}
+
+const NAMED_TYPE_PADDING_FIELD_PREFIX: &str = "__layout_pad";
+
+fn align_up(value: usize, align: usize) -> usize {
+    if align <= 1 {
+        value
+    } else {
+        value.saturating_add(align - 1) & !(align - 1)
+    }
+}
+
+fn named_type_padding_field(offset: usize, size: usize, pad_index: usize) -> Option<StructField> {
+    (size > 0).then(|| StructField {
+        name: format!("{NAMED_TYPE_PADDING_FIELD_PREFIX}{pad_index}"),
+        ty: MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: size,
+        },
+        offset,
+        synthetic: true,
+        bitfield: None,
+    })
 }
 
 fn split_top_level_fields<'a>(body: &'a str, spec: &str) -> Result<Vec<&'a str>, CompileError> {
@@ -250,6 +280,8 @@ impl ParsedNamedGlobalType {
             let mut field_specs = Vec::new();
             let mut field_semantics = Vec::new();
             let mut offset = 0usize;
+            let mut struct_align = 1usize;
+            let mut pad_index = 0usize;
 
             for field in split_top_level_fields(body, spec)? {
                 if field.is_empty() {
@@ -264,6 +296,12 @@ impl ParsedNamedGlobalType {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "record field '{}' must use name:type syntax",
                         field
+                    )));
+                }
+                if name.starts_with(NAMED_TYPE_PADDING_FIELD_PREFIX) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record type specs reserve field names starting with '{}'",
+                        NAMED_TYPE_PADDING_FIELD_PREFIX
                     )));
                 }
 
@@ -282,15 +320,37 @@ impl ParsedNamedGlobalType {
                     field_semantics.push((name.to_string(), semantics));
                 }
                 let ty = parsed_field.ty.clone();
+                let field_align = ty.align().max(1);
+                let aligned_offset = align_up(offset, field_align);
+                if let Some(padding) = named_type_padding_field(
+                    offset,
+                    aligned_offset.saturating_sub(offset),
+                    pad_index,
+                ) {
+                    fields.push(padding);
+                    pad_index += 1;
+                }
                 fields.push(StructField {
                     name: name.to_string(),
                     ty: ty.clone(),
-                    offset,
+                    offset: aligned_offset,
                     synthetic: false,
                     bitfield: None,
                 });
-                field_specs.push((name.to_string(), parsed_field));
-                offset = offset.saturating_add(ty.size());
+                field_specs.push(ParsedNamedRecordField {
+                    name: name.to_string(),
+                    offset: aligned_offset,
+                    ty: parsed_field,
+                });
+                offset = aligned_offset.saturating_add(ty.size());
+                struct_align = struct_align.max(field_align);
+            }
+
+            let final_size = align_up(offset, struct_align);
+            if let Some(padding) =
+                named_type_padding_field(offset, final_size.saturating_sub(offset), pad_index)
+            {
+                fields.push(padding);
             }
 
             return Ok(Self {
@@ -730,25 +790,25 @@ impl ParsedNamedGlobalType {
                     )));
                 };
 
-                let mut data = Vec::with_capacity(self.ty.size());
-                for (field_name, field_ty) in fields {
-                    if let Some(field_value) = val.get(field_name) {
+                let mut data = vec![0u8; self.ty.size()];
+                for field in fields {
+                    if let Some(field_value) = val.get(&field.name) {
                         let nested_path = path
-                            .map(|prefix| format!("{prefix}.{field_name}"))
-                            .unwrap_or_else(|| field_name.clone());
-                        data.extend_from_slice(&field_ty.initializer_bytes_with_path(
+                            .map(|prefix| format!("{prefix}.{}", field.name))
+                            .unwrap_or_else(|| field.name.clone());
+                        let field_data = field.ty.initializer_bytes_with_path(
                             field_value,
                             spec,
                             Some(&nested_path),
-                        )?);
-                    } else {
-                        data.extend(std::iter::repeat_n(0u8, field_ty.ty.size()));
+                        )?;
+                        let end = field.offset.saturating_add(field.ty.ty.size());
+                        data[field.offset..end].copy_from_slice(&field_data);
                     }
                 }
 
                 if let Some((extra_name, _)) = val
                     .iter()
-                    .find(|(name, _)| !fields.iter().any(|(field_name, _)| field_name == *name))
+                    .find(|(name, _)| !fields.iter().any(|field| field.name == **name))
                 {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "global type spec '{}' initializer{} contains unexpected field '{}'",

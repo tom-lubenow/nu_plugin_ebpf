@@ -1271,7 +1271,7 @@ impl EbpfObject {
             }
             MirType::Struct { name, fields, .. } => {
                 let mut members = Vec::with_capacity(fields.len());
-                for field in fields {
+                for field in fields.iter().filter(|field| !field.synthetic) {
                     let field_type =
                         Self::emit_local_btf_mir_type(btf, &field.ty, array_index_type);
                     members.push((field.name.clone(), field_type, field.offset as u32));

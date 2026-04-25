@@ -609,6 +609,13 @@ impl MirType {
 
     /// Alignment in bytes
     pub fn align(&self) -> usize {
+        if self.is_bpf_timer_struct() {
+            return 8;
+        }
+        if self.is_bpf_spin_lock_struct() {
+            return 4;
+        }
+
         match self {
             MirType::I8 | MirType::U8 | MirType::Bool => 1,
             MirType::I16 | MirType::U16 => 2,

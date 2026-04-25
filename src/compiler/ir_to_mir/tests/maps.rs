@@ -3042,13 +3042,28 @@ fn test_map_value_type_spec_supports_bpf_spin_lock() {
     let MirType::Struct { fields, .. } = ty else {
         panic!("expected record map value type, got {ty:?}");
     };
-    assert_eq!(fields.len(), 2);
-    assert_eq!(fields[0].name, "lock");
-    assert_eq!(fields[0].ty, MirType::bpf_spin_lock_struct());
-    assert_eq!(fields[0].offset, 0);
-    assert_eq!(fields[1].name, "counter");
-    assert_eq!(fields[1].ty, MirType::U64);
-    assert_eq!(fields[1].offset, 4);
+    let user_fields = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_fields.len(), 2);
+    assert_eq!(user_fields[0].name, "lock");
+    assert_eq!(user_fields[0].ty, MirType::bpf_spin_lock_struct());
+    assert_eq!(user_fields[0].offset, 0);
+    assert_eq!(user_fields[1].name, "counter");
+    assert_eq!(user_fields[1].ty, MirType::U64);
+    assert_eq!(user_fields[1].offset, 8);
+    assert_eq!(
+        fields.iter().map(|field| field.ty.size()).sum::<usize>(),
+        16
+    );
+    assert_eq!(
+        fields
+            .iter()
+            .find(|field| field.synthetic && field.offset == 4)
+            .map(|field| field.ty.size()),
+        Some(4)
+    );
 }
 
 #[test]
@@ -3097,9 +3112,35 @@ fn test_map_value_type_validation_rejects_spin_lock_on_lru_hash() {
 
 #[test]
 fn test_map_value_type_validation_rejects_misaligned_timer() {
-    let err =
-        validate_map_value_type_spec_for_kind("record{cookie:u32,timer:bpf_timer}", MapKind::Hash)
-            .expect_err("misaligned timer should be rejected");
+    let ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U32,
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "timer".to_string(),
+                ty: MirType::bpf_timer_struct(),
+                offset: 4,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let err = HirToMirLowering::validate_named_map_value_type_for_map(
+        &MapRef {
+            name: "external_timer".to_string(),
+            kind: MapKind::Hash,
+        },
+        &ty,
+        "test --value-type",
+    )
+    .expect_err("misaligned external timer schema should be rejected");
 
     assert!(err.to_string().contains("8-byte aligned"));
 }

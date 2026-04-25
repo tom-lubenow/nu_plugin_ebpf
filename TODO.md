@@ -79,13 +79,14 @@ history and release notes, not here.
 
 - [~] Finish resource-backed map semantics.
   - Keep generic map operations, local storage, socket maps, redirect maps, cgroup arrays, bloom filters, ring buffers, user ring buffers, stack traces, prog arrays, and per-cpu maps aligned across lowering, type checks, VCC, and backend map emission.
-  - Keep extending source-level `map-define` only for real map resource metadata. Key/value layouts, `--max-entries`, and basic verifier-managed `bpf_timer` / `bpf_spin_lock` validation are modeled; kptrs and newer graph/workqueue fields are the next natural BTF-backed validation targets.
+  - Keep extending source-level `map-define` only for real map resource metadata. Key/value layouts, natural fixed-record alignment, `--max-entries`, and basic verifier-managed `bpf_timer` / `bpf_spin_lock` validation are modeled; kptrs and newer graph/workqueue fields are the next natural BTF-backed validation targets.
   - Add map-in-map support only after inner-map metadata, pinning, loader materialization, and verifier diagnostics are designed.
   - Add arena support only after map-extra, mmap/user-space access, and verifier constraints are modeled.
   - Keep `struct_ops` maps behind the struct_ops object loader rather than generic `map-*` commands.
 
 - [~] Strengthen global/static data support.
   - Broaden fixed-layout globals beyond current scalar/string/binary/list/record cases when the type annotation gives an honest byte layout.
+  - Keep source-level fixed-record globals naturally aligned with zero-filled padding and aligned array stride.
   - Keep implicit mutable globals, leading typed `mut`, and explicit `global-*` declarations consistent.
   - Add clearer diagnostics when a Nushell value cannot be represented as fixed-layout eBPF data.
 

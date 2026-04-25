@@ -397,7 +397,10 @@ operations, including verifier-sensitive value fields such as `bpf_timer`.
 
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
-`bpf_timer` and `bpf_spin_lock` inside map-value records.
+`bpf_timer` and `bpf_spin_lock` inside map-value records. Source-level
+`record{...}` specs use natural field alignment and aligned array stride;
+padding is zero-filled by typed initializers and hidden from emitted BTF
+members.
 Verifier-managed fields are checked against kernel layout rules: `bpf_spin_lock`
 must be a single top-level 4-byte-aligned field in a hash or array map, and
 `bpf_timer` must be a single 8-byte-aligned field in a hash, array, or lru-hash
@@ -583,6 +586,9 @@ With `--zero`, the input is used only for layout inference and the resulting
 global is zero-initialized in `.bss`. With `--type`, no input is needed to
 declare a zero-initialized global, but a compile-time constant input may also
 be provided when you want explicit layout plus explicit initial contents.
+Source-level `record{...}` specs use natural field alignment and aligned array
+stride; typed initializers zero-fill scalar fields, omitted record fields, and
+layout padding.
 
 Leading annotated `mut` bindings are the preferred small private-state path
 when ordinary Nushell variable syntax is enough. Named globals remain useful
