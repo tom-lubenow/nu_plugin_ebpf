@@ -870,6 +870,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-reuseport-migrate-context"
+        category: "context-surface"
+        tags: [sk-reuseport context]
+        target: "sk_reuseport:migrate"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.protocol + $ctx.hash + $ctx.bind_inany + $ctx.socket_cookie + $ctx.sk.bound_dev_if + $ctx.migrating_sk.bound_dev_if) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-lookup-context-clear-socket"
         category: "context-surface"
         tags: [sk-lookup context writable]
@@ -1743,6 +1757,19 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "redirect-socket-sk-reuseport-sockarray"
+        category: "language-surface"
+        tags: [redirect-socket sk-reuseport reuseport-sockarray]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  redirect-socket sockets 0 --kind reuseport-sockarray'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
     {
         name: "adjust-packet-sk-skb-parser-pull"
