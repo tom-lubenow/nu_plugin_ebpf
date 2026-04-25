@@ -463,6 +463,79 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-retval-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.retval = 0'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-reuseport-select-context"
+        category: "context-surface"
+        tags: [sk-reuseport context]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  ($ctx.hash + $ctx.socket_cookie + $ctx.sk.family) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-xmit-helper-context"
+        category: "context-surface"
+        tags: [lwt context helper-backed]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lirc-mode2-context"
+        category: "context-surface"
+        tags: [lirc context]
+        requires: [lirc-device]
+        target: "lirc_mode2:/dev/lirc0"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sample + $ctx.value + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "raw-tracepoint-writable-args"
+        category: "context-surface"
+        tags: [raw-tracepoint-w context]
+        target: "raw_tracepoint.w:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0 + $ctx.arg1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-get-rejects-queue"
         category: "maps"
         tags: [queue reject]
@@ -1153,6 +1226,8 @@ def host-feature-available [feature: string] {
         "/sys/fs/cgroup" | path exists
     } else if $feature == "netns-self" {
         "/proc/self/ns/net" | path exists
+    } else if $feature == "lirc-device" {
+        "/dev/lirc0" | path exists
     } else {
         false
     }
