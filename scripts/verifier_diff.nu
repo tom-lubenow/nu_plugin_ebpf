@@ -278,6 +278,25 @@ const FIXTURES = [
         min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve/"
     }
     {
+        name: "ringbuf-reserve-discard-balanced"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec != 0 {'
+            '    helper-call "bpf_ringbuf_discard" $rec 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+        min_kernel: "5.8"
+        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_discard/"
+    }
+    {
         name: "ringbuf-reserve-rejects-leak"
         category: "helper-state"
         tags: [ringbuf ref-lifetime reject]
@@ -312,6 +331,25 @@ const FIXTURES = [
         error_contains: "ringbuf record already released"
     }
     {
+        name: "ringbuf-reserve-rejects-submit-after-discard"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec != 0 {'
+            '    helper-call "bpf_ringbuf_discard" $rec 0'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ringbuf record already released"
+    }
+    {
         name: "ringbuf-dynptr-reserve-submit-balanced"
         category: "helper-state"
         tags: [ringbuf dynptr ref-lifetime]
@@ -321,6 +359,22 @@ const FIXTURES = [
             '  let d = "0123456789abcdef"'
             '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
             '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "ringbuf-dynptr-reserve-discard-balanced"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
             '  0'
             '}'
         ]
@@ -362,6 +416,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "ringbuf-dynptr-allows-slot-reuse-after-discard"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-dynptr-rejects-double-submit"
         category: "helper-state"
         tags: [ringbuf dynptr ref-lifetime reject]
@@ -371,6 +443,24 @@ const FIXTURES = [
             '  let d = "0123456789abcdef"'
             '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
             '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ringbuf dynptr reservation already released"
+    }
+    {
+        name: "ringbuf-dynptr-rejects-submit-after-discard"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
             '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
             '  0'
             '}'
