@@ -26,6 +26,7 @@ struct ProgramContextLayoutSpec {
     netns_cookie: bool,
     lookup_cookie: bool,
     raw_socket_context_pointer: bool,
+    direct_packet_writes: bool,
     non_null_ctx_fields: &'static [CtxField],
     sock_ops_load_guards: bool,
 }
@@ -53,6 +54,7 @@ impl ProgramContextLayoutSpec {
             netns_cookie,
             lookup_cookie: false,
             raw_socket_context_pointer: false,
+            direct_packet_writes: false,
             non_null_ctx_fields: &[],
             sock_ops_load_guards: false,
         }
@@ -75,9 +77,15 @@ impl ProgramContextLayoutSpec {
             netns_cookie: false,
             lookup_cookie: false,
             raw_socket_context_pointer: false,
+            direct_packet_writes: false,
             non_null_ctx_fields: &[],
             sock_ops_load_guards: false,
         }
+    }
+
+    const fn with_direct_packet_writes(mut self) -> Self {
+        self.direct_packet_writes = true;
+        self
     }
 
     fn ctx_field_pointer_is_non_null(&self, field: &CtxField) -> bool {
@@ -102,6 +110,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: true,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -111,25 +120,29 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         Some(PacketContextKind::SkBuff),
         None,
         true,
-    ),
+    )
+    .with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::Tcx,
         Some(PacketContextKind::SkBuff),
         None,
         true,
-    ),
+    )
+    .with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::Netkit,
         Some(PacketContextKind::SkBuff),
         None,
         true,
-    ),
+    )
+    .with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::TcAction,
         Some(PacketContextKind::SkBuff),
         None,
         true,
-    ),
+    )
+    .with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::CgroupSkb,
         None,
@@ -141,16 +154,18 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         None,
         Some(SocketContextLayout::SkBuff),
         false,
-    ),
+    )
+    .with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_backed(
         EbpfProgramType::SkSkbParser,
         None,
         Some(SocketContextLayout::SkBuff),
         false,
-    ),
+    )
+    .with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtIn),
     ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtOut),
-    ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtXmit),
+    ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtXmit).with_direct_packet_writes(),
     ProgramContextLayoutSpec::skb_packet_only(EbpfProgramType::LwtSeg6Local),
     ProgramContextLayoutSpec {
         program_type: EbpfProgramType::CgroupSock,
@@ -168,6 +183,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: true,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -187,6 +203,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -206,6 +223,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -225,6 +243,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: true,
         raw_socket_context_pointer: false,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -244,6 +263,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -263,6 +283,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: false,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[CtxField::Socket],
         sock_ops_load_guards: false,
     },
@@ -282,6 +303,7 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: true,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: false,
     },
@@ -301,21 +323,10 @@ const PROGRAM_CONTEXT_LAYOUT_SPECS: &[ProgramContextLayoutSpec] = &[
         netns_cookie: true,
         lookup_cookie: false,
         raw_socket_context_pointer: false,
+        direct_packet_writes: false,
         non_null_ctx_fields: &[],
         sock_ops_load_guards: true,
     },
-];
-
-const DIRECT_PACKET_WRITE_PROGRAMS: &[EbpfProgramType] = &[
-    EbpfProgramType::Xdp,
-    EbpfProgramType::TcAction,
-    EbpfProgramType::Tc,
-    EbpfProgramType::Tcx,
-    EbpfProgramType::Netkit,
-    EbpfProgramType::LwtXmit,
-    EbpfProgramType::SkMsg,
-    EbpfProgramType::SkSkb,
-    EbpfProgramType::SkSkbParser,
 ];
 
 fn program_context_layout_spec(
@@ -340,7 +351,7 @@ impl EbpfProgramType {
     }
 
     pub fn supports_direct_packet_writes(&self) -> bool {
-        DIRECT_PACKET_WRITE_PROGRAMS.contains(self)
+        program_context_layout_spec(*self).is_some_and(|spec| spec.direct_packet_writes)
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
@@ -616,13 +627,26 @@ mod tests {
 
     #[test]
     fn test_direct_packet_write_programs_are_unique_and_packet_backed() {
-        let mut program_types = HashSet::new();
+        let expected_program_types = HashSet::from([
+            EbpfProgramType::Xdp,
+            EbpfProgramType::TcAction,
+            EbpfProgramType::Tc,
+            EbpfProgramType::Tcx,
+            EbpfProgramType::Netkit,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ]);
+        let actual_program_types = PROGRAM_CONTEXT_LAYOUT_SPECS
+            .iter()
+            .filter(|spec| spec.direct_packet_writes)
+            .map(|spec| spec.program_type)
+            .collect::<HashSet<_>>();
 
-        for program_type in DIRECT_PACKET_WRITE_PROGRAMS {
-            assert!(
-                program_types.insert(*program_type),
-                "duplicate direct packet write program {program_type:?}"
-            );
+        assert_eq!(actual_program_types, expected_program_types);
+
+        for program_type in actual_program_types {
             assert!(
                 program_type.packet_context_kind().is_some(),
                 "direct packet write program {program_type:?} must have a packet context"
