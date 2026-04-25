@@ -992,6 +992,21 @@ fn helper_expected_named_arg_shape(
     helper: BpfHelper,
     arg_idx: usize,
 ) -> Option<(fn(&MirType) -> bool, &'static str)> {
+    if matches!(
+        (helper, arg_idx),
+        (
+            BpfHelper::TimerInit
+                | BpfHelper::TimerSetCallback
+                | BpfHelper::TimerStart
+                | BpfHelper::TimerCancel,
+            0
+        )
+    ) {
+        return Some((
+            MirType::is_bpf_timer_map_ptr,
+            "map-backed bpf_timer pointer",
+        ));
+    }
     match helper_pointer_arg_ref_kind(helper, arg_idx)? {
         KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
         KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),

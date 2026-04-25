@@ -867,7 +867,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.require_only_named_args("helper-call", &["kind"])?;
                 if self.named_args.contains_key("kind")
-                    && !helper.helper_requires_explicit_map_kind(0)
+                    && !(0..5).any(|idx| helper.helper_requires_explicit_map_kind(idx))
                 {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "helper-call --kind is only supported for helpers whose map family is ambiguous; '{}' already implies its map kind",
@@ -949,6 +949,7 @@ impl<'a> HirToMirLowering<'a> {
                         "BPF helper calls support at most 5 arguments".into(),
                     ));
                 }
+                self.validate_timer_helper_call_args(helper, &helper_map_args, &helper_arg_regs)?;
 
                 self.record_storage_helper_value_schema(
                     helper,
@@ -1121,7 +1122,11 @@ impl<'a> HirToMirLowering<'a> {
                             pointee: Box::new(value_ty.clone()),
                             address_space: AddressSpace::Map,
                         });
-                        meta.map_value_origin = Some(MapValueOrigin { key_ty, value_ty });
+                        meta.map_value_origin = Some(MapValueOrigin {
+                            map_ref: map_ref.clone(),
+                            key_ty,
+                            value_ty,
+                        });
                         if let Some(semantics) = semantics {
                             meta.annotated_semantics = Some(semantics);
                         }
@@ -2817,6 +2822,9 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Some(HelperExplicitMapKindFamily::ForEachMapElem) => {
                     self.for_each_map_elem_kind_arg("helper-call")?
+                }
+                Some(HelperExplicitMapKindFamily::TimerMap) => {
+                    self.required_timer_map_kind_arg("helper-call")?
                 }
                 None => {
                     return Err(CompileError::UnsupportedInstruction(format!(

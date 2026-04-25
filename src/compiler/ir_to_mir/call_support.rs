@@ -16,6 +16,89 @@ pub(super) struct ScalarKfuncOutArgWriteback {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn timer_helper_arg_error(helper: BpfHelper, arg_idx: usize) -> CompileError {
+        CompileError::UnsupportedInstruction(format!(
+            "helper-call '{}' requires arg{} to be a bpf_timer field projected from a concrete map value",
+            helper.name(),
+            arg_idx
+        ))
+    }
+
+    fn timer_map_kind_allowed(kind: MapKind) -> bool {
+        matches!(kind, MapKind::Hash | MapKind::Array | MapKind::LruHash)
+    }
+
+    pub(super) fn timer_arg_origin(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        timer_reg: RegId,
+    ) -> Result<MapValueOrigin, CompileError> {
+        let timer_ty = self
+            .reg_map
+            .get(&timer_reg.get())
+            .copied()
+            .and_then(|timer_vreg| self.typed_value_runtime_type(timer_reg, timer_vreg));
+        if !timer_ty.as_ref().is_some_and(MirType::is_bpf_timer_map_ptr) {
+            return Err(Self::timer_helper_arg_error(helper, arg_idx));
+        }
+        let Some(origin) = self
+            .get_metadata(timer_reg)
+            .and_then(|meta| meta.map_value_origin.clone())
+        else {
+            return Err(Self::timer_helper_arg_error(helper, arg_idx));
+        };
+        if !Self::timer_map_kind_allowed(origin.map_ref.kind) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "helper-call '{}' requires arg{} bpf_timer to come from a hash, array, or lru-hash map value, got {:?}",
+                helper.name(),
+                arg_idx,
+                origin.map_ref.kind
+            )));
+        }
+        Ok(origin)
+    }
+
+    pub(super) fn validate_timer_helper_call_args(
+        &self,
+        helper: BpfHelper,
+        helper_map_args: &[(usize, MapRef, VReg)],
+        helper_arg_regs: &[(usize, RegId)],
+    ) -> Result<(), CompileError> {
+        let timer_arg_idx = match helper {
+            BpfHelper::TimerInit
+            | BpfHelper::TimerSetCallback
+            | BpfHelper::TimerStart
+            | BpfHelper::TimerCancel => 0,
+            _ => return Ok(()),
+        };
+        let Some((_, timer_reg)) = helper_arg_regs
+            .iter()
+            .find(|(idx, _)| *idx == timer_arg_idx)
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "helper-call '{}' requires timer arg{}",
+                helper.name(),
+                timer_arg_idx
+            )));
+        };
+        let origin = self.timer_arg_origin(helper, timer_arg_idx, *timer_reg)?;
+        if matches!(helper, BpfHelper::TimerInit) {
+            let Some((_, map_ref, _)) = helper_map_args.iter().find(|(idx, _, _)| *idx == 1) else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "helper-call 'bpf_timer_init' requires arg1 to be a literal map name".into(),
+                ));
+            };
+            if map_ref != &origin.map_ref {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "helper-call 'bpf_timer_init' requires arg1 map '{}' ({:?}) to match the map value containing arg0 '{}' ({:?})",
+                    map_ref.name, map_ref.kind, origin.map_ref.name, origin.map_ref.kind
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn helper_callback_subfunction_arg_seeds(
         &self,
         helper: BpfHelper,
@@ -144,38 +227,7 @@ impl<'a> HirToMirLowering<'a> {
                         helper.name()
                     )));
                 };
-                let timer_ty = self
-                    .reg_map
-                    .get(&timer_reg.get())
-                    .copied()
-                    .and_then(|timer_vreg| self.typed_value_runtime_type(*timer_reg, timer_vreg));
-                if !matches!(
-                    timer_ty.as_ref(),
-                    Some(MirType::Ptr {
-                        pointee,
-                        address_space: AddressSpace::Map,
-                    }) if matches!(
-                        pointee.as_ref(),
-                        MirType::Struct {
-                            name: Some(name),
-                            ..
-                        } if name == "bpf_timer"
-                    )
-                ) {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "helper-call '{}' requires arg0 to be a bpf_timer field projected from a concrete map value",
-                        helper.name()
-                    )));
-                }
-                let Some(origin) = self
-                    .get_metadata(*timer_reg)
-                    .and_then(|meta| meta.map_value_origin.clone())
-                else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "helper-call '{}' requires arg0 to be a bpf_timer field projected from a concrete map value",
-                        helper.name()
-                    )));
-                };
+                let origin = self.timer_arg_origin(helper, 0, *timer_reg)?;
                 Ok(vec![
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -804,6 +856,32 @@ impl<'a> HirToMirLowering<'a> {
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind must be one of: per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
+            ))),
+        }
+    }
+
+    pub(super) fn required_timer_map_kind_arg(
+        &self,
+        context: &str,
+    ) -> Result<MapKind, CompileError> {
+        let Some((_, reg)) = self.named_args.get("kind") else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires --kind hash, --kind array, or --kind lru-hash for bpf_timer_init"
+            )));
+        };
+        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+        match Self::parse_generic_map_kind(&kind) {
+            Some(MapKind::Hash) => Ok(MapKind::Hash),
+            Some(MapKind::Array) => Ok(MapKind::Array),
+            Some(MapKind::LruHash) => Ok(MapKind::LruHash),
+            Some(map_kind) => Err(Self::reserved_special_map_kind_error(context, &kind, map_kind)
+                .unwrap_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} --kind {kind} is not supported by bpf_timer_init; supported kinds are hash, array, and lru-hash"
+                    ))
+                })),
+            None => Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind must be one of: hash, array, lru-hash"
             ))),
         }
     }

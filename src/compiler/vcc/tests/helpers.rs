@@ -7,6 +7,51 @@ const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
+fn bpf_timer_map_ptr_ty() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::opaque_named_struct("bpf_timer")),
+        address_space: AddressSpace::Map,
+    }
+}
+
+fn emit_checked_timer_map_lookup(
+    func: &mut MirFunction,
+    entry: BlockId,
+    timer: VReg,
+) -> (BlockId, VReg) {
+    let timer_loaded = func.alloc_block();
+    let done = func.alloc_block();
+    let key = func.alloc_vreg();
+    let timer_non_null = func.alloc_vreg();
+    let block = func.block_mut(entry);
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::MapLookup {
+        dst: timer,
+        map: MapRef {
+            name: "timer_map".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: timer_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(timer),
+        rhs: MirValue::Const(0),
+    });
+    block.terminator = MirInst::Branch {
+        cond: timer_non_null,
+        if_true: timer_loaded,
+        if_false: done,
+    };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    (timer_loaded, timer_non_null)
+}
+
 #[test]
 fn test_verify_mir_signal_helpers() {
     for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
@@ -30,7 +75,7 @@ fn test_verify_mir_signal_helpers() {
 #[test]
 fn test_verify_mir_timer_set_callback_accepts_modeled_callback_subprogram() {
     let (mut func, entry) = new_mir_function();
-    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let timer = func.alloc_vreg();
     let callback_fn = func.alloc_vreg();
     let helper_ret = func.alloc_vreg();
     let value_ty = MirType::Struct {
@@ -53,22 +98,25 @@ fn test_verify_mir_timer_set_callback_accepts_modeled_callback_subprogram() {
             },
         ],
     };
-    func.block_mut(entry)
+    let (timer_loaded, timer_non_null) = emit_checked_timer_map_lookup(&mut func, entry, timer);
+    func.block_mut(timer_loaded)
         .instructions
         .push(MirInst::LoadSubprogram {
             dst: callback_fn,
             subfn: SubfunctionId(0),
         });
-    func.block_mut(entry)
+    func.block_mut(timer_loaded)
         .instructions
         .push(MirInst::CallHelper {
             dst: helper_ret,
             helper: BpfHelper::TimerSetCallback as u32,
-            args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
+            args: vec![MirValue::VReg(timer), MirValue::VReg(callback_fn)],
         });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
+    func.block_mut(timer_loaded).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
+    types.insert(timer, bpf_timer_map_ptr_ty());
+    types.insert(timer_non_null, MirType::Bool);
     types.insert(
         callback_fn,
         MirType::Subprogram {
@@ -97,25 +145,28 @@ fn test_verify_mir_timer_set_callback_accepts_modeled_callback_subprogram() {
 #[test]
 fn test_verify_mir_timer_set_callback_rejects_wrong_callback_signature() {
     let (mut func, entry) = new_mir_function();
-    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let timer = func.alloc_vreg();
     let callback_fn = func.alloc_vreg();
     let helper_ret = func.alloc_vreg();
-    func.block_mut(entry)
+    let (timer_loaded, timer_non_null) = emit_checked_timer_map_lookup(&mut func, entry, timer);
+    func.block_mut(timer_loaded)
         .instructions
         .push(MirInst::LoadSubprogram {
             dst: callback_fn,
             subfn: SubfunctionId(0),
         });
-    func.block_mut(entry)
+    func.block_mut(timer_loaded)
         .instructions
         .push(MirInst::CallHelper {
             dst: helper_ret,
             helper: BpfHelper::TimerSetCallback as u32,
-            args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
+            args: vec![MirValue::VReg(timer), MirValue::VReg(callback_fn)],
         });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
+    func.block_mut(timer_loaded).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
+    types.insert(timer, bpf_timer_map_ptr_ty());
+    types.insert(timer_non_null, MirType::Bool);
     types.insert(
         callback_fn,
         MirType::Subprogram {
@@ -131,6 +182,37 @@ fn test_verify_mir_timer_set_callback_rejects_wrong_callback_signature() {
         err.iter().any(|e| e.message.contains(
             "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar"
         )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_timer_start_rejects_stack_timer_pointer() {
+    let (mut func, entry) = new_mir_function();
+    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerStart as u32,
+            args: vec![
+                MirValue::StackSlot(timer),
+                MirValue::Const(1000),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_timer_start stack timer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_timer_start' arg0 expects map-backed bpf_timer pointer")),
         "unexpected errors: {:?}",
         err
     );

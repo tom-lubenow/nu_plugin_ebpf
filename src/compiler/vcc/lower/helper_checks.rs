@@ -1470,6 +1470,18 @@ impl<'a> VccLowerer<'a> {
         helper: BpfHelper,
         arg_idx: usize,
     ) -> Option<(fn(&MirType) -> bool, &'static str)> {
+        if matches!(
+            (helper, arg_idx),
+            (
+                BpfHelper::TimerInit
+                    | BpfHelper::TimerSetCallback
+                    | BpfHelper::TimerStart
+                    | BpfHelper::TimerCancel,
+                0
+            )
+        ) {
+            return Some((MirType::is_bpf_timer_map_ptr, "map-backed bpf_timer pointer"));
+        }
         match Self::helper_pointer_arg_expected_ref_kind(helper as u32, arg_idx)? {
             KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
             KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),

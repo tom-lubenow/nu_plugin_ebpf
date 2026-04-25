@@ -1485,6 +1485,7 @@ impl BpfHelper {
             | Self::MapPopElem
             | Self::MapPeekElem
             | Self::RedirectMap => Some(0),
+            Self::TimerInit => Some(1),
             Self::SkRedirectMap
             | Self::SockMapUpdate
             | Self::MsgRedirectMap
@@ -1519,6 +1520,7 @@ impl BpfHelper {
                 Self::RedirectMap => Some(HelperExplicitMapKindFamily::RedirectMap),
                 Self::MapLookupPercpuElem => Some(HelperExplicitMapKindFamily::PerCpuLookupMap),
                 Self::ForEachMapElem => Some(HelperExplicitMapKindFamily::ForEachMapElem),
+                Self::TimerInit => Some(HelperExplicitMapKindFamily::TimerMap),
                 _ => None,
             },
             _ => None,
@@ -1576,6 +1578,7 @@ pub enum HelperExplicitMapKindFamily {
     RedirectMap,
     PerCpuLookupMap,
     ForEachMapElem,
+    TimerMap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

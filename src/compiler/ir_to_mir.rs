@@ -171,6 +171,7 @@ struct LoopContext {
 /// Metadata tracked for each Nushell register during lowering
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MapValueOrigin {
+    map_ref: MapRef,
     key_ty: MirType,
     value_ty: MirType,
 }

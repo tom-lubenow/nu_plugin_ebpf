@@ -15,10 +15,10 @@ history and release notes, not here.
 
 ## Near-Term Priority Order
 
-1. Finish eBPF timer helper semantics on top of the new timer/map-value provenance model.
-2. Build a verifier differential suite and kernel compatibility matrix so correctness is measured against real kernels.
+1. Build a verifier differential suite and kernel compatibility matrix so correctness is measured against real kernels.
+2. Tighten VCC/verifier parity for helper/kfunc state transitions: provenance, nullability, mutability, ref lifetime, dynptrs, timers, and by-reference stack objects.
 3. Continue shrinking raw `helper-call` usage only where an ordinary Nushell form or typed context projection is honest.
-4. Tighten VCC/verifier parity for helper/kfunc state transitions: provenance, nullability, mutability, ref lifetime, dynptrs, timers, and by-reference stack objects.
+4. Add kernel-version and feature metadata for helpers, kfuncs, map kinds, program families, and loader features.
 5. Turn the current internal-alpha surface into a documented external-alpha surface with feature gates, compatibility notes, and safe examples.
 
 ## Workstream Division
@@ -45,11 +45,6 @@ history and release notes, not here.
   - Keep dangerous fixtures dry-run-only or VM-only.
 
 ## Helper, Kfunc, and Callback Semantics
-
-- [~] Finish the modeled timer helper family.
-  - Model `bpf_timer_init`, `bpf_timer_start`, and `bpf_timer_cancel` with map-value provenance, timer-field validation, callback compatibility, and flag/clock checks.
-  - Keep `bpf_timer_set_callback` callback ABI checks aligned across lowering, type inference, verifier_types, and VCC.
-  - Add attach-flow compile fixtures that exercise ordinary map-value/timer field projection paths without requiring live timer execution on the host.
 
 - [~] Keep replacing raw helper usage with honest language forms.
   - Prefer ordinary Nushell syntax and typed context projection over new helper wrappers.

@@ -72,6 +72,30 @@ fn assert_bpf_tcp_sock_ptr(ty: Option<&MirType>) {
     assert_field("icsk_retransmits", MirType::U32, 108);
 }
 
+fn bpf_timer_map_ptr_ty() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::opaque_named_struct("bpf_timer")),
+        address_space: AddressSpace::Map,
+    }
+}
+
+fn emit_timer_map_lookup(func: &mut MirFunction, entry: BlockId, timer: VReg) {
+    let key = func.alloc_vreg();
+    let block = func.block_mut(entry);
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::MapLookup {
+        dst: timer,
+        map: MapRef {
+            name: "timer_map".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+}
+
 #[test]
 fn test_subfn_polymorphic_id() {
     let mut subfn = MirFunction::with_name("id");
@@ -457,9 +481,10 @@ fn test_infer_timer_set_callback_callback_subprogram_type() {
             .expect("expected timer_set_callback callback scheme inference to succeed");
 
     let mut func = make_test_function();
-    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let timer = func.alloc_vreg();
     let callback_fn = func.alloc_vreg();
     let helper_ret = func.alloc_vreg();
+    emit_timer_map_lookup(&mut func, BlockId(0), timer);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::LoadSubprogram {
         dst: callback_fn,
@@ -468,11 +493,13 @@ fn test_infer_timer_set_callback_callback_subprogram_type() {
     block.instructions.push(MirInst::CallHelper {
         dst: helper_ret,
         helper: BpfHelper::TimerSetCallback as u32,
-        args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
+        args: vec![MirValue::VReg(timer), MirValue::VReg(callback_fn)],
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let type_hints = HashMap::from([(timer, bpf_timer_map_ptr_ty())]);
+    let mut ti =
+        TypeInference::new_with_env(None, Some(&subfn_schemes), None, Some(&type_hints), None);
     let types = ti
         .infer(&func)
         .expect("expected bpf_timer_set_callback callback subprogram to infer");
@@ -522,9 +549,10 @@ fn test_type_error_timer_set_callback_rejects_wrong_callback_signature() {
         infer_subfunction_schemes(&[callback], None).expect("expected bad callback scheme");
 
     let mut func = make_test_function();
-    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let timer = func.alloc_vreg();
     let callback_fn = func.alloc_vreg();
     let helper_ret = func.alloc_vreg();
+    emit_timer_map_lookup(&mut func, BlockId(0), timer);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::LoadSubprogram {
         dst: callback_fn,
@@ -533,11 +561,13 @@ fn test_type_error_timer_set_callback_rejects_wrong_callback_signature() {
     block.instructions.push(MirInst::CallHelper {
         dst: helper_ret,
         helper: BpfHelper::TimerSetCallback as u32,
-        args: vec![MirValue::StackSlot(timer), MirValue::VReg(callback_fn)],
+        args: vec![MirValue::VReg(timer), MirValue::VReg(callback_fn)],
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let type_hints = HashMap::from([(timer, bpf_timer_map_ptr_ty())]);
+    let mut ti =
+        TypeInference::new_with_env(None, Some(&subfn_schemes), None, Some(&type_hints), None);
     let errs = ti
         .infer(&func)
         .expect_err("expected bpf_timer_set_callback callback signature error");
@@ -545,6 +575,33 @@ fn test_type_error_timer_set_callback_rejects_wrong_callback_signature() {
         e.message.contains(
             "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar",
         )
+    }));
+}
+
+#[test]
+fn test_type_error_timer_start_rejects_stack_timer_pointer() {
+    let mut func = make_test_function();
+    let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::TimerStart as u32,
+        args: vec![
+            MirValue::StackSlot(timer),
+            MirValue::Const(1000),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_timer_start stack timer error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_timer_start' arg0 expects map-backed bpf_timer pointer")
     }));
 }
 

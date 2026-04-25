@@ -481,6 +481,17 @@ impl MirType {
         pointee.has_struct_name(&["bpf_dynptr", "bpf_dynptr_kern"])
     }
 
+    pub fn is_bpf_timer_map_ptr(&self) -> bool {
+        let MirType::Ptr {
+            address_space: AddressSpace::Map,
+            pointee,
+        } = self
+        else {
+            return false;
+        };
+        pointee.has_struct_name(&["bpf_timer"])
+    }
+
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
         let MirType::Ptr {
             address_space: AddressSpace::Kernel,

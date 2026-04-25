@@ -31,7 +31,7 @@ For local compiler work, start with the fast Rust checks and then run targeted t
 
 ```bash
 cargo check -q
-cargo test -q timer_set_callback
+cargo test -q timer
 cargo test -q user_ringbuf
 cargo test -q callback_subprogram
 ```
