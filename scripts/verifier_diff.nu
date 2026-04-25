@@ -141,6 +141,36 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
+        name: "callback-bpf-loop"
+        category: "callbacks"
+        tags: [helper-call callback bpf-loop]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i cb| $i } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+        min_kernel: "5.17"
+    }
+    {
+        name: "callback-for-each-map-elem"
+        category: "callbacks"
+        tags: [helper-call callback map array]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb| 0 } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+        min_kernel: "5.13"
+    }
+    {
         name: "csum-diff-allows-null-zero-side"
         category: "helper-state"
         tags: [csum null-pointer tc-action]
@@ -437,7 +467,7 @@ def current-kernel-release [] {
 }
 
 def run-nu-with-plugin-complete [plugin_bin: string code: string] {
-    run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code | complete
+    run-external (current-nu-bin) "--no-config-file" "--plugins" $"[($plugin_bin)]" "-c" $code | complete
 }
 
 def fixture-program [fixture] {

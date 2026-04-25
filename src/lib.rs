@@ -76,6 +76,7 @@ mod tests {
 
     use super::*;
     use crate::compiler::ProgramIntrinsic;
+    use nu_protocol::SyntaxShape;
 
     #[test]
     fn test_plugin_exports_all_program_intrinsics() {
@@ -92,5 +93,16 @@ mod tests {
                 intrinsic.command_name()
             );
         }
+    }
+
+    #[test]
+    fn test_helper_call_signature_exposes_map_kind_flag() {
+        let signature = HelperCall.signature();
+        let kind_flag = signature
+            .named
+            .iter()
+            .find(|flag| flag.long == "kind")
+            .expect("helper-call should expose --kind for ambiguous map helpers");
+        assert!(matches!(kind_flag.arg, Some(SyntaxShape::String)));
     }
 }

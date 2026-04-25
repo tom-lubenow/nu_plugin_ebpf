@@ -5454,6 +5454,74 @@ fn test_to_elf_rejects_missing_relocation_symbol() {
 }
 
 #[test]
+fn test_to_elf_resolves_subfunction_relocation_symbols() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+    use object::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
+
+    let mut builder = EbpfBuilder::new();
+    let [insn1, insn2] = EbpfInsn::ld_imm64(EbpfReg::R1, 0);
+    builder.push(insn1);
+    builder.push(insn2);
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let main_size = builder.len() * 8;
+
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "uses_subfn",
+        bytecode,
+        main_size,
+        vec![],
+        vec![SymbolRelocation {
+            insn_offset: 0,
+            symbol_name: "loop_cb".to_string(),
+        }],
+        vec![SubfunctionSymbol {
+            name: "loop_cb".to_string(),
+            offset: main_size,
+            size: 16,
+        }],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let elf = program
+        .to_elf()
+        .expect("subfunction relocation should resolve to a local text symbol");
+    let file = object::File::parse(&*elf).expect("object crate should parse generated ELF");
+    let section = file
+        .section_by_name("kprobe/sys_clone")
+        .expect("expected kprobe text section");
+    let mut relocations = section.relocations();
+    let (reloc_offset, relocation) = relocations
+        .next()
+        .expect("expected relocation to subfunction symbol");
+    assert_eq!(reloc_offset, 0);
+    match relocation.target() {
+        RelocationTarget::Symbol(symbol_idx) => {
+            let symbol = file
+                .symbol_by_index(symbol_idx)
+                .expect("subfunction relocation symbol should exist");
+            assert_eq!(
+                symbol
+                    .name()
+                    .expect("subfunction relocation symbol should have a name"),
+                "loop_cb"
+            );
+            assert_eq!(symbol.address(), main_size as u64);
+        }
+        other => panic!("unexpected relocation target: {other:?}"),
+    }
+}
+
+#[test]
 fn test_runtime_artifacts_reject_zero_sized_bss_global() {
     let prog = EbpfProgram::hello_world("sys_clone").with_bss_globals(vec![BssGlobal {
         name: "state".to_string(),

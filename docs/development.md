@@ -40,7 +40,7 @@ Use the manual integration suite for host-facing attach/dry-run coverage after c
 
 ## Verifier Differential Harness
 
-Use `scripts/verifier_diff.nu` for small compiler/VCC fixtures that should be compared against the kernel verifier. The harness auto-selects the newest built plugin unless `PLUGIN_BIN` is set, runs local `ebpf attach --dry-run` checks first, and auto-skips kernel verifier loading unless the host has `bpftool`, root privileges, and `/sys/fs/bpf`.
+Use `scripts/verifier_diff.nu` for small compiler/VCC fixtures that should be compared against the kernel verifier. The harness auto-selects the newest built plugin unless `PLUGIN_BIN` is set, runs local `ebpf attach --dry-run` checks first under `nu --no-config-file` so stale registered plugin signatures cannot shadow the selected binary, and auto-skips kernel verifier loading unless the host has `bpftool`, root privileges, and `/sys/fs/bpf`.
 
 ```bash
 nu ./scripts/verifier_diff.nu --list

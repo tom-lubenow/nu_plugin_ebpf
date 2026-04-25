@@ -1018,8 +1018,9 @@ impl EbpfObject {
             });
             symbol_ids.insert(program.name.clone(), prog_sym_id);
 
+            let mut program_symbol_ids = symbol_ids.clone();
             for subfn in &program.subfunctions {
-                obj.add_symbol(Symbol {
+                let subfn_sym_id = obj.add_symbol(Symbol {
                     name: subfn.name.as_bytes().to_vec(),
                     value: offset + subfn.offset as u64,
                     size: subfn.size as u64,
@@ -1032,10 +1033,19 @@ impl EbpfObject {
                         st_other: object::elf::STV_DEFAULT,
                     },
                 });
+                if program_symbol_ids
+                    .insert(subfn.name.clone(), subfn_sym_id)
+                    .is_some()
+                {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "subfunction symbol '{}' conflicts with an existing ELF symbol",
+                        subfn.name
+                    )));
+                }
             }
 
             for reloc in &program.relocations {
-                let sym_id = *symbol_ids.get(&reloc.symbol_name).ok_or_else(|| {
+                let sym_id = *program_symbol_ids.get(&reloc.symbol_name).ok_or_else(|| {
                     CompileError::InvalidProgram(format!(
                         "program '{}' references missing ELF symbol '{}'",
                         program.name, reloc.symbol_name

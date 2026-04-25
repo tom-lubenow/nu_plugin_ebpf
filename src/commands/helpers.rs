@@ -209,6 +209,9 @@ The first positional argument must be a literal helper name such as
 `bpf_get_current_pid_tgid` or `bpf_get_socket_cookie`. If the helper takes
 arguments, pipeline input becomes arg0 when present.
 
+Use `--kind` only for map-family helpers whose map type is otherwise
+ambiguous, for example `bpf_for_each_map_elem`.
+
 Prefer a first-class command or ordinary Nushell syntax when the operation is
 already modeled directly."#
     }
@@ -221,6 +224,12 @@ already modeled directly."#
                 "args",
                 SyntaxShape::Any,
                 "Additional helper arguments (up to 5 total with pipeline input)",
+            )
+            .named(
+                "kind",
+                SyntaxShape::String,
+                "Map kind for helper calls whose map family is ambiguous",
+                None,
             )
             .category(Category::Experimental)
     }
