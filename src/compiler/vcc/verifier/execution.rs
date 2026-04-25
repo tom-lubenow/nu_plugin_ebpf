@@ -1748,6 +1748,16 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
+                if state.is_released_ringbuf_dynptr_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} ringbuf dynptr reservation already released",
+                            helper, arg_idx
+                        ),
+                    ));
+                    return;
+                }
                 if !state.is_dynptr_slot_initialized(slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
@@ -1790,6 +1800,16 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
+                if state.is_released_ringbuf_dynptr_slot(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper '{}' arg{} ringbuf dynptr reservation already released",
+                            helper, arg_idx
+                        ),
+                    ));
+                    return;
+                }
                 if !state.is_dynptr_slot_initialized(slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,

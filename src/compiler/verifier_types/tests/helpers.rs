@@ -1193,7 +1193,7 @@ fn test_verify_mir_ringbuf_dynptr_submit_rejects_double_release() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("requires initialized dynptr stack object")),
+            .contains("ringbuf dynptr reservation already released")),
         "unexpected errors: {:?}",
         err
     );

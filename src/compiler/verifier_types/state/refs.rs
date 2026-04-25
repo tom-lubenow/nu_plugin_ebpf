@@ -12,6 +12,7 @@ impl VerifierState {
         &mut self,
         slot: StackSlotId,
     ) {
+        self.released_ringbuf_dynptr_slots.remove(&slot);
         self.dynptr_initialized_slots.insert(slot);
     }
 
@@ -33,6 +34,7 @@ impl VerifierState {
         &mut self,
         slot: StackSlotId,
     ) {
+        self.released_ringbuf_dynptr_slots.remove(&slot);
         increment_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
     }
 
@@ -40,7 +42,18 @@ impl VerifierState {
         &mut self,
         slot: StackSlotId,
     ) -> bool {
-        decrement_slot_depth(&mut self.ringbuf_dynptr_slots, slot)
+        let released = decrement_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
+        if released {
+            self.released_ringbuf_dynptr_slots.insert(slot);
+        }
+        released
+    }
+
+    pub(in crate::compiler::verifier_types) fn is_released_ringbuf_dynptr_slot(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.released_ringbuf_dynptr_slots.contains(&slot)
     }
 
     pub(in crate::compiler::verifier_types) fn has_ringbuf_dynptr_slot(

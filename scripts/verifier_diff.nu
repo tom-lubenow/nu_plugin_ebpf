@@ -153,6 +153,24 @@ const FIXTURES = [
         error_contains: "unreleased ringbuf dynptr reservation"
     }
     {
+        name: "ringbuf-dynptr-allows-slot-reuse-after-submit"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-dynptr-rejects-double-submit"
         category: "helper-state"
         tags: [ringbuf dynptr ref-lifetime reject]
@@ -168,7 +186,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "requires initialized dynptr stack object"
+        error_contains: "ringbuf dynptr reservation already released"
     }
     {
         name: "dynptr-data-rejects-uninitialized"

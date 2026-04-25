@@ -54,6 +54,7 @@ impl VerifierState {
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
             && self.dynptr_initialized_slots == other.dynptr_initialized_slots
             && self.ringbuf_dynptr_slots == other.ringbuf_dynptr_slots
+            && self.released_ringbuf_dynptr_slots == other.released_ringbuf_dynptr_slots
             && self.unknown_stack_object_slots == other.unknown_stack_object_slots
             && self.guards == other.guards
             && self.reachable == other.reachable
@@ -163,6 +164,11 @@ impl VerifierState {
         );
         let ringbuf_dynptr_slots =
             join_slot_depths(&self.ringbuf_dynptr_slots, &other.ringbuf_dynptr_slots);
+        let released_ringbuf_dynptr_slots = self
+            .released_ringbuf_dynptr_slots
+            .union(&other.released_ringbuf_dynptr_slots)
+            .copied()
+            .collect();
         VerifierState {
             regs,
             ranges,
@@ -274,6 +280,7 @@ impl VerifierState {
             ),
             dynptr_initialized_slots,
             ringbuf_dynptr_slots,
+            released_ringbuf_dynptr_slots,
             unknown_stack_object_slots,
             reachable: true,
             guards,

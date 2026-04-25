@@ -735,6 +735,14 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         };
         match role {
             HelperDynptrArgRole::In => {
+                if state.is_released_ringbuf_dynptr_slot(slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} ringbuf dynptr reservation already released",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    continue;
+                }
                 if !state.is_dynptr_slot_initialized(slot) {
                     errors.push(VerifierTypeError::new(format!(
                         "helper '{}' arg{} requires initialized dynptr stack object",
@@ -769,6 +777,14 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                 state.acquire_ringbuf_dynptr_slot(slot);
             }
             HelperDynptrArgRole::RingbufReservationRelease => {
+                if state.is_released_ringbuf_dynptr_slot(slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper '{}' arg{} ringbuf dynptr reservation already released",
+                        helper.name(),
+                        arg_idx
+                    )));
+                    continue;
+                }
                 if !state.is_dynptr_slot_initialized(slot) {
                     errors.push(VerifierTypeError::new(format!(
                         "helper '{}' arg{} requires initialized dynptr stack object",
