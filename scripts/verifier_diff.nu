@@ -296,6 +296,36 @@ const FIXTURES = [
         error_contains: "map-get is not supported for map kind Queue"
     }
     {
+        name: "timer-init-rejects-non-map-timer"
+        category: "helper-state"
+        tags: [timer reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_timer_init" 0 timers 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
+        name: "timer-set-callback-rejects-non-map-timer"
+        category: "helper-state"
+        tags: [timer callback reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_timer_set_callback" 0 {|timer key val| 0}'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
         name: "timer-start-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
@@ -303,6 +333,21 @@ const FIXTURES = [
         program: [
             '{||'
             '  helper-call "bpf_timer_start" 0 1000 0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
+        name: "timer-cancel-rejects-non-map-timer"
+        category: "helper-state"
+        tags: [timer reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_timer_cancel" 0'
+            '  0'
             '}'
         ]
         local: "reject"
