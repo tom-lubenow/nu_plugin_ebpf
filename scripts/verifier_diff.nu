@@ -1223,7 +1223,7 @@ def host-feature-available [feature: string] {
     } else if $feature == "kernel-btf" {
         "/sys/kernel/btf/vmlinux" | path exists
     } else if $feature == "cgroup-v2" {
-        "/sys/fs/cgroup" | path exists
+        "/sys/fs/cgroup/cgroup.controllers" | path exists
     } else if $feature == "netns-self" {
         "/proc/self/ns/net" | path exists
     } else if $feature == "lirc-device" {
