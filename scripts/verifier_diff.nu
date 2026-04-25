@@ -185,6 +185,36 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "reserved-events-rejects-user-ringbuf"
+        category: "maps"
+        tags: [helper-call callback user-ringbuf reject reserved-name]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" events {|dyn cb| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "map name 'events' is reserved"
+    }
+    {
+        name: "helper-call-kind-rejects-implied-map-kind"
+        category: "maps"
+        tags: [helper-call map-kind reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_ringbuf_query" demo_ringbuf 0 --kind ringbuf'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper-call --kind is only supported for helpers whose map family is ambiguous"
+    }
+    {
         name: "csum-diff-allows-null-zero-side"
         category: "helper-state"
         tags: [csum null-pointer tc-action]
