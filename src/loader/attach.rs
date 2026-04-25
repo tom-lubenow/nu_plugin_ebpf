@@ -3,68 +3,15 @@ use aya::programs::perf_event::perf_hw_id;
 use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
 use std::io::BufRead as _;
 
-fn loader_compile_only_attach_kind(kind: ProgramAttachKind) -> bool {
-    matches!(
-        kind,
-        ProgramAttachKind::RawTracepointWritable
-            | ProgramAttachKind::FmodRet
-            | ProgramAttachKind::LsmCgroup
-            | ProgramAttachKind::Netkit
-            | ProgramAttachKind::TcAction
-            | ProgramAttachKind::SkReuseport
-            | ProgramAttachKind::FlowDissector
-            | ProgramAttachKind::Netfilter
-            | ProgramAttachKind::Lwt
-            | ProgramAttachKind::Extension
-            | ProgramAttachKind::Syscall
-            | ProgramAttachKind::Iter
-    )
-}
-
-fn unsupported_live_attach_detail(kind: ProgramAttachKind) -> &'static str {
-    match kind {
-        ProgramAttachKind::RawTracepointWritable => {
-            "the current object loader does not preserve writable raw-tracepoint sections, and rewriting them as raw_tracepoint would change verifier semantics"
-        }
-        ProgramAttachKind::FmodRet => {
-            "the current Aya loader surface does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support"
-        }
-        ProgramAttachKind::LsmCgroup => {
-            "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
-        }
-        ProgramAttachKind::Netkit => {
-            "the current Aya loader surface does not expose a netkit attach wrapper"
-        }
-        ProgramAttachKind::TcAction => {
-            "the current Aya loader surface does not expose a tc_action attach wrapper"
-        }
-        ProgramAttachKind::SkReuseport => {
-            "the current Aya loader surface does not expose a sk_reuseport attach wrapper"
-        }
-        ProgramAttachKind::FlowDissector => {
-            "the current Aya loader surface does not expose a flow-dissector attach wrapper"
-        }
-        ProgramAttachKind::Netfilter => "the loader still needs BPF-link netfilter attach support",
-        ProgramAttachKind::Lwt => "the loader still needs route LWT attach support",
-        ProgramAttachKind::Extension => {
-            "extension/freplace live attach requires a loaded target program and BTF/function pairing, not only a target function name"
-        }
-        ProgramAttachKind::Syscall => {
-            "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
-        }
-        ProgramAttachKind::Iter => {
-            "the loader still needs BPF iterator link/seq-file attach support"
-        }
-        _ => "this attach kind has no live attach implementation",
-    }
-}
-
 fn unsupported_live_attach_error(prog_type: crate::compiler::EbpfProgramType) -> LoadError {
     let attach_kind = prog_type.attach_kind();
+    let detail = attach_kind
+        .unsupported_live_attach_detail()
+        .unwrap_or("this attach kind has no live attach implementation");
     LoadError::Attach(format!(
         "live attach for {} programs is not supported by this loader yet; {}; use --dry-run to compile",
         prog_type.canonical_prefix(),
-        unsupported_live_attach_detail(attach_kind)
+        detail
     ))
 }
 
@@ -380,7 +327,11 @@ impl EbpfState {
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
         let program = object.primary_program().map_err(LoadError::from)?;
-        if loader_compile_only_attach_kind(program.prog_type.attach_kind()) {
+        if !program
+            .prog_type
+            .attach_kind()
+            .loader_supports_live_attach()
+        {
             return Err(unsupported_live_attach_error(program.prog_type));
         }
 

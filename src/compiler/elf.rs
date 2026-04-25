@@ -1422,6 +1422,48 @@ pub enum ProgramAttachKind {
     StructOps,
 }
 
+impl ProgramAttachKind {
+    pub fn loader_supports_live_attach(self) -> bool {
+        self.unsupported_live_attach_detail().is_none()
+    }
+
+    pub fn unsupported_live_attach_detail(self) -> Option<&'static str> {
+        Some(match self {
+            Self::RawTracepointWritable => {
+                "the current object loader does not preserve writable raw-tracepoint sections, and rewriting them as raw_tracepoint would change verifier semantics"
+            }
+            Self::FmodRet => {
+                "the current Aya loader surface does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support"
+            }
+            Self::LsmCgroup => {
+                "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
+            }
+            Self::Netkit => {
+                "the current Aya loader surface does not expose a netkit attach wrapper"
+            }
+            Self::TcAction => {
+                "the current Aya loader surface does not expose a tc_action attach wrapper"
+            }
+            Self::SkReuseport => {
+                "the current Aya loader surface does not expose a sk_reuseport attach wrapper"
+            }
+            Self::FlowDissector => {
+                "the current Aya loader surface does not expose a flow-dissector attach wrapper"
+            }
+            Self::Netfilter => "the loader still needs BPF-link netfilter attach support",
+            Self::Lwt => "the loader still needs route LWT attach support",
+            Self::Extension => {
+                "extension/freplace live attach requires a loaded target program and BTF/function pairing, not only a target function name"
+            }
+            Self::Syscall => {
+                "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
+            }
+            Self::Iter => "the loader still needs BPF iterator link/seq-file attach support",
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramTargetKind {
     KernelFunction,

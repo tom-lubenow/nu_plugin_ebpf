@@ -4021,6 +4021,61 @@ fn test_program_type_registry_covers_current_kernel_uapi_program_types() {
 }
 
 #[test]
+fn test_program_attach_kind_loader_live_support_metadata() {
+    for kind in [
+        ProgramAttachKind::Kprobe,
+        ProgramAttachKind::Kretprobe,
+        ProgramAttachKind::Fentry,
+        ProgramAttachKind::Fexit,
+        ProgramAttachKind::RawTracepoint,
+        ProgramAttachKind::Xdp,
+        ProgramAttachKind::SocketFilter,
+        ProgramAttachKind::CgroupSockAddr,
+        ProgramAttachKind::LircMode2,
+        ProgramAttachKind::StructOps,
+    ] {
+        assert!(
+            kind.loader_supports_live_attach(),
+            "{kind:?} should be marked live-loadable by the loader"
+        );
+        assert_eq!(kind.unsupported_live_attach_detail(), None);
+    }
+
+    for (kind, detail_fragment) in [
+        (
+            ProgramAttachKind::RawTracepointWritable,
+            "writable raw-tracepoint",
+        ),
+        (ProgramAttachKind::FmodRet, "BPF_MODIFY_RETURN"),
+        (ProgramAttachKind::LsmCgroup, "cgroup-scoped LSM"),
+        (ProgramAttachKind::Netkit, "netkit attach"),
+        (ProgramAttachKind::TcAction, "tc_action attach"),
+        (ProgramAttachKind::SkReuseport, "sk_reuseport attach"),
+        (ProgramAttachKind::FlowDissector, "flow-dissector attach"),
+        (ProgramAttachKind::Netfilter, "netfilter attach"),
+        (ProgramAttachKind::Lwt, "route LWT attach"),
+        (
+            ProgramAttachKind::Extension,
+            "extension/freplace live attach",
+        ),
+        (ProgramAttachKind::Syscall, "BPF_PROG_TYPE_SYSCALL"),
+        (ProgramAttachKind::Iter, "BPF iterator"),
+    ] {
+        assert!(
+            !kind.loader_supports_live_attach(),
+            "{kind:?} should be marked compile-only for live loader attach"
+        );
+        let detail = kind
+            .unsupported_live_attach_detail()
+            .unwrap_or_else(|| panic!("{kind:?} should explain why live attach is unsupported"));
+        assert!(
+            detail.contains(detail_fragment),
+            "{kind:?} unsupported detail should contain {detail_fragment:?}, got {detail:?}"
+        );
+    }
+}
+
+#[test]
 fn test_program_intrinsic_command_registry() {
     assert_eq!(
         ProgramIntrinsic::from_command_name("helper-call"),
