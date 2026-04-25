@@ -127,31 +127,24 @@ impl<'a> TypeInference<'a> {
         helper_id: u32,
         arg_idx: usize,
     ) -> bool {
-        matches!(
-            (BpfHelper::from_u32(helper_id), arg_idx),
-            (Some(BpfHelper::KptrXchg), 1)
-                | (Some(BpfHelper::RedirectNeigh), 1)
-                | (Some(BpfHelper::SkAssign), 1)
-                | (Some(BpfHelper::SkStorageGet), 2)
-                | (Some(BpfHelper::InodeStorageGet), 2)
-                | (Some(BpfHelper::TaskStorageGet), 2)
-                | (Some(BpfHelper::CgrpStorageGet), 1)
-                | (Some(BpfHelper::CgrpStorageGet), 2)
-                | (Some(BpfHelper::CgrpStorageDelete), 1)
-        ) || BpfHelper::from_u32(helper_id)
-            .and_then(|helper| helper.zero_size_pointer_arg_size_arg(arg_idx))
-            .is_some()
-            || self
-                .probe_ctx
-                .as_ref()
-                .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
-                .is_some_and(|policy| {
-                    matches!(
-                        BpfHelper::from_u32(helper_id),
-                        Some(BpfHelper::GetSocketCookie)
-                    ) && arg_idx == 0
-                        && policy.allows_maybe_null()
-                })
+        BpfHelper::from_u32(helper_id).is_some_and(|helper| {
+            helper.pointer_arg_allows_static_const_zero(arg_idx)
+                || self.helper_pointer_arg_allows_contextual_maybe_null(helper, arg_idx)
+        })
+    }
+
+    fn helper_pointer_arg_allows_contextual_maybe_null(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> bool {
+        if !matches!(helper, BpfHelper::GetSocketCookie) || arg_idx != 0 {
+            return false;
+        }
+        self.probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
+            .is_some_and(GetSocketCookieArgPolicy::allows_maybe_null)
     }
 
     pub(super) fn helper_ptr_space_allowed(

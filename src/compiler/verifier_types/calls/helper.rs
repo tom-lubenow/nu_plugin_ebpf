@@ -101,18 +101,7 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_allows_const_zero(
     let Some(helper) = BpfHelper::from_u32(helper_id) else {
         return false;
     };
-    (matches!(
-        (Some(helper), arg_idx),
-        (Some(BpfHelper::KptrXchg), 1)
-            | (Some(BpfHelper::RedirectNeigh), 1)
-            | (Some(BpfHelper::SkAssign), 1)
-            | (Some(BpfHelper::SkStorageGet), 2)
-            | (Some(BpfHelper::InodeStorageGet), 2)
-            | (Some(BpfHelper::TaskStorageGet), 2)
-            | (Some(BpfHelper::CgrpStorageGet), 1)
-            | (Some(BpfHelper::CgrpStorageGet), 2)
-            | (Some(BpfHelper::CgrpStorageDelete), 1)
-    ) || helper.zero_size_pointer_arg_size_arg(arg_idx).is_some()
+    (helper.pointer_arg_allows_static_const_zero(arg_idx)
         || helper_allows_maybe_null_arg(helper, arg_idx, program, probe_ctx))
         && matches!(
             value_range(arg, state),
@@ -909,15 +898,7 @@ fn helper_allows_maybe_null_arg(
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
 ) -> bool {
-    if matches!(
-        (helper, arg_idx),
-        (BpfHelper::SkStorageGet, 2)
-            | (BpfHelper::InodeStorageGet, 2)
-            | (BpfHelper::TaskStorageGet, 2)
-            | (BpfHelper::CgrpStorageGet, 1)
-            | (BpfHelper::CgrpStorageGet, 2)
-            | (BpfHelper::CgrpStorageDelete, 1)
-    ) {
+    if helper.pointer_arg_allows_static_maybe_null(arg_idx) {
         return true;
     }
     if !matches!(helper, BpfHelper::GetSocketCookie) || arg_idx != 0 {

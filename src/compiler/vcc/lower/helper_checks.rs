@@ -391,32 +391,10 @@ impl<'a> VccLowerer<'a> {
         helper_id: u32,
         arg_idx: usize,
     ) -> bool {
-        matches!(
-            (BpfHelper::from_u32(helper_id), arg_idx),
-            (Some(BpfHelper::KptrXchg), 1)
-                | (Some(BpfHelper::RedirectNeigh), 1)
-                | (Some(BpfHelper::SkAssign), 1)
-                | (Some(BpfHelper::SkStorageGet), 2)
-                | (Some(BpfHelper::InodeStorageGet), 2)
-                | (Some(BpfHelper::TaskStorageGet), 2)
-                | (Some(BpfHelper::CgrpStorageGet), 1)
-                | (Some(BpfHelper::CgrpStorageGet), 2)
-                | (Some(BpfHelper::CgrpStorageDelete), 1)
-        ) || BpfHelper::from_u32(helper_id)
-            .and_then(|helper| helper.zero_size_pointer_arg_size_arg(arg_idx))
-            .is_some()
-            || self
-            .probe_ctx
-            .and_then(|ctx| ctx.get_socket_cookie_arg_policy())
-            .or_else(|| {
-                self.program
-                    .and_then(|program| program.program_type.get_socket_cookie_arg_policy())
-            })
-            .is_some_and(|policy| {
-                matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::GetSocketCookie))
-                    && arg_idx == 0
-                    && policy.allows_maybe_null()
-            })
+        BpfHelper::from_u32(helper_id).is_some_and(|helper| {
+            helper.pointer_arg_allows_static_const_zero(arg_idx)
+                || self.helper_pointer_arg_allows_contextual_maybe_null(helper, arg_idx)
+        })
     }
 
     fn verify_helper_scalar_const_eq(
@@ -1493,20 +1471,18 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn helper_pointer_arg_allows_maybe_null(&self, helper_id: u32, arg_idx: usize) -> bool {
-        if matches!(
-            (BpfHelper::from_u32(helper_id), arg_idx),
-            (Some(BpfHelper::SkStorageGet), 2)
-                | (Some(BpfHelper::InodeStorageGet), 2)
-                | (Some(BpfHelper::TaskStorageGet), 2)
-                | (Some(BpfHelper::CgrpStorageGet), 1)
-                | (Some(BpfHelper::CgrpStorageGet), 2)
-                | (Some(BpfHelper::CgrpStorageDelete), 1)
-        ) {
-            return true;
-        }
-        if !matches!(BpfHelper::from_u32(helper_id), Some(BpfHelper::GetSocketCookie))
-            || arg_idx != 0
-        {
+        BpfHelper::from_u32(helper_id).is_some_and(|helper| {
+            helper.pointer_arg_allows_static_maybe_null(arg_idx)
+                || self.helper_pointer_arg_allows_contextual_maybe_null(helper, arg_idx)
+        })
+    }
+
+    fn helper_pointer_arg_allows_contextual_maybe_null(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> bool {
+        if !matches!(helper, BpfHelper::GetSocketCookie) || arg_idx != 0 {
             return false;
         }
         self.probe_ctx

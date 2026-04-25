@@ -1107,6 +1107,30 @@ impl BpfHelper {
         }
     }
 
+    /// Helper pointer arguments that accept a known literal null without
+    /// requiring program-context-specific policy.
+    pub const fn pointer_arg_allows_static_const_zero(self, arg_idx: usize) -> bool {
+        matches!(
+            (self, arg_idx),
+            (Self::KptrXchg, 1) | (Self::RedirectNeigh, 1) | (Self::SkAssign, 1)
+        ) || self.pointer_arg_allows_static_maybe_null(arg_idx)
+            || self.zero_size_pointer_arg_size_arg(arg_idx).is_some()
+    }
+
+    /// Helper pointer arguments that accept nullable pointer values without
+    /// requiring program-context-specific policy.
+    pub const fn pointer_arg_allows_static_maybe_null(self, arg_idx: usize) -> bool {
+        matches!(
+            (self, arg_idx),
+            (Self::SkStorageGet, 2)
+                | (Self::InodeStorageGet, 2)
+                | (Self::TaskStorageGet, 2)
+                | (Self::CgrpStorageGet, 1)
+                | (Self::CgrpStorageGet, 2)
+                | (Self::CgrpStorageDelete, 1)
+        )
+    }
+
     pub const fn scalar_arg_multiple_of_requirement(
         self,
         arg_idx: usize,

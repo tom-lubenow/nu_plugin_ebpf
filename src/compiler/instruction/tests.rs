@@ -2280,6 +2280,67 @@ fn test_helper_csum_diff_zero_size_pointer_contract() {
 }
 
 #[test]
+fn test_helper_static_null_pointer_contracts() {
+    for (helper, arg_idx) in [
+        (BpfHelper::KptrXchg, 1),
+        (BpfHelper::RedirectNeigh, 1),
+        (BpfHelper::SkAssign, 1),
+        (BpfHelper::CsumDiff, 0),
+        (BpfHelper::CsumDiff, 2),
+        (BpfHelper::ReadBranchRecords, 1),
+        (BpfHelper::GetBranchSnapshot, 0),
+        (BpfHelper::GetTaskStack, 1),
+        (BpfHelper::CopyFromUser, 0),
+        (BpfHelper::CopyFromUserTask, 0),
+        (BpfHelper::DPath, 1),
+        (BpfHelper::SeqPrintf, 3),
+    ] {
+        assert!(
+            helper.pointer_arg_allows_static_const_zero(arg_idx),
+            "{helper:?} arg{arg_idx} should allow static const zero"
+        );
+        assert!(
+            !helper.pointer_arg_allows_static_maybe_null(arg_idx),
+            "{helper:?} arg{arg_idx} should not allow maybe-null pointer values"
+        );
+    }
+
+    for (helper, arg_idx) in [
+        (BpfHelper::SkStorageGet, 2),
+        (BpfHelper::InodeStorageGet, 2),
+        (BpfHelper::TaskStorageGet, 2),
+        (BpfHelper::CgrpStorageGet, 1),
+        (BpfHelper::CgrpStorageGet, 2),
+        (BpfHelper::CgrpStorageDelete, 1),
+    ] {
+        assert!(
+            helper.pointer_arg_allows_static_const_zero(arg_idx),
+            "{helper:?} arg{arg_idx} should allow static const zero"
+        );
+        assert!(
+            helper.pointer_arg_allows_static_maybe_null(arg_idx),
+            "{helper:?} arg{arg_idx} should allow maybe-null pointer values"
+        );
+    }
+
+    for (helper, arg_idx) in [
+        (BpfHelper::MapLookupElem, 1),
+        (BpfHelper::MapUpdateElem, 2),
+        (BpfHelper::SkStorageGet, 1),
+        (BpfHelper::GetSocketCookie, 0),
+    ] {
+        assert!(
+            !helper.pointer_arg_allows_static_const_zero(arg_idx),
+            "{helper:?} arg{arg_idx} should not allow static const zero"
+        );
+        assert!(
+            !helper.pointer_arg_allows_static_maybe_null(arg_idx),
+            "{helper:?} arg{arg_idx} should not allow maybe-null pointer values"
+        );
+    }
+}
+
+#[test]
 fn test_snprintf_helper_contract() {
     let sig = HelperSignature::for_id(BpfHelper::Snprintf as u32)
         .expect("expected bpf_snprintf helper signature");
