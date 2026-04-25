@@ -141,6 +141,108 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "queue-map-push-peek-record"
+        category: "maps"
+        tags: [maps queue map-push map-peek records accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.arg0, cookie: 7 } | map-push recent_args --kind queue'
+            '  let entry = (map-peek recent_args --kind queue)'
+            '  if $entry != 0 {'
+            '    $entry.pid | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "stack-map-push-pop-record"
+        category: "maps"
+        tags: [maps stack map-push map-pop records accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.arg0, cookie: 7 } | map-push recent_args --kind stack'
+            '  let entry = (map-pop recent_args --kind stack)'
+            '  if $entry != 0 {'
+            '    $entry.cookie | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "bloom-filter-push-contains"
+        category: "maps"
+        tags: [maps bloom-filter map-push map-contains accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0 | map-push seen_args --kind bloom-filter'
+            '  $ctx.arg0 | map-contains seen_args --kind bloom-filter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "per-cpu-hash-map-put-get"
+        category: "maps"
+        tags: [maps per-cpu-hash map-put map-get accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0 | map-put cpu_seen 0 --kind per-cpu-hash'
+            '  let entry = (0 | map-get cpu_seen --kind per-cpu-hash)'
+            '  if $entry != 0 {'
+            '    $entry | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lru-per-cpu-hash-map-put-delete"
+        category: "maps"
+        tags: [maps lru-per-cpu-hash map-put map-delete accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0 | map-put lru_cpu_seen 0 --kind lru-per-cpu-hash'
+            '  0 | map-delete lru_cpu_seen --kind lru-per-cpu-hash'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "typed-map-to-map-copy"
+        category: "maps"
+        tags: [maps records map-put map-get accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.arg0, cookie: 7 } | map-put src_records 0 --kind hash'
+            '  let entry = (0 | map-get src_records --kind hash)'
+            '  if $entry != 0 {'
+            '    $entry | map-put dst_records 0 --kind hash'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-query-built-in-events"
         category: "maps"
         tags: [helper-call ringbuf reserved-name]

@@ -1039,15 +1039,16 @@ impl PluginCommand for MapPush {
     }
 
     fn description(&self) -> &str {
-        "Push a value into a named queue or stack BPF map."
+        "Push a value into a named queue, stack, or bloom-filter BPF map."
     }
 
     fn extra_description(&self) -> &str {
-        r#"Pushes the pipeline input into a named queue or stack map. Use
-`--kind queue` for FIFO behavior or `--kind stack` for LIFO behavior. Unlike
-`map-put`, queue/stack maps do not take an explicit key. The pushed value
-layout becomes available to later `map-peek` and `map-pop` uses in the same
-closure, and to pinned peers when attached with the same `--pin` group.
+        r#"Pushes the pipeline input into a named queue, stack, or bloom-filter map.
+Use `--kind queue` for FIFO behavior, `--kind stack` for LIFO behavior, or
+`--kind bloom-filter` for membership insertion. Unlike `map-put`, these maps do
+not take an explicit key. Queue/stack pushed value layouts become available to
+later `map-peek` and `map-pop` uses in the same closure, and to pinned peers
+when attached with the same `--pin` group.
 
 Example:
   $ctx.pid | map-push recent_pids --kind queue"#
@@ -1060,7 +1061,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: queue or stack (required)",
+                "Map kind: queue, stack, or bloom-filter (required)",
                 None,
             )
             .named(
