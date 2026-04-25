@@ -19,6 +19,177 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "kprobe-multi-context"
+        category: "tracing"
+        tags: [kprobe-multi context]
+        target: "kprobe.multi:vfs_*"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0 + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "kretprobe-context"
+        category: "tracing"
+        tags: [kretprobe context]
+        target: "kretprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "ksyscall-context"
+        category: "tracing"
+        tags: [ksyscall context]
+        target: "ksyscall:nanosleep"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0 + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "kretsyscall-context"
+        category: "tracing"
+        tags: [kretsyscall context]
+        target: "kretsyscall:nanosleep"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tracepoint-openat-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_openat"
+        program: [
+            '{|ctx|'
+            '  ($ctx.id + ($ctx.args | get 1) + $ctx.current_task.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "perf-event-context"
+        category: "tracing"
+        tags: [perf-event context]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  ($ctx.cpu + $ctx.sample_period + $ctx.addr + $ctx.perf_counter) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tp-btf-context"
+        category: "tracing"
+        tags: [tp-btf context]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0.orig_ax + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fentry-context"
+        category: "tracing"
+        tags: [fentry context]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lsm-context"
+        category: "tracing"
+        tags: [lsm context]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lsm-cgroup-context"
+        category: "tracing"
+        tags: [lsm-cgroup context]
+        requires: [kernel-btf]
+        target: "lsm_cgroup:socket_bind"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg2 + $ctx.pid) | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "syscall-helper-context"
+        category: "tracing"
+        tags: [syscall helper-call]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  helper-call "bpf_sys_close" 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "freplace-context"
+        category: "tracing"
+        tags: [freplace context]
+        target: "freplace:replace_me"
+        program: [
+            '{|ctx|'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "xdp-packet-count"
         category: "packet"
         tags: [xdp counter]
@@ -2013,6 +2184,8 @@ def host-feature-available [feature: string] {
         "/sys/class/net/lo" | path exists
     } else if $feature == "kernel-btf" {
         "/sys/kernel/btf/vmlinux" | path exists
+    } else if $feature == "tracefs" {
+        "/sys/kernel/tracing/events" | path exists
     } else if $feature == "cgroup-v2" {
         "/sys/fs/cgroup/cgroup.controllers" | path exists
     } else if $feature == "netns-self" {
