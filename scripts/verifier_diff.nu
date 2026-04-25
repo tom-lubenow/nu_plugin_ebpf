@@ -840,6 +840,125 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-task-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  if $ctx.meta != 0 { 1 | count }'
+            '  if $ctx.task != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-task-file-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:task_file"
+        program: [
+            '{|ctx|'
+            '  $ctx.fd | count'
+            '  if $ctx.task != 0 { 1 | count }'
+            '  if $ctx.file != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-task-vma-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:task_vma"
+        program: [
+            '{|ctx|'
+            '  if $ctx.task != 0 { 1 | count }'
+            '  if $ctx.vma != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-cgroup-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:cgroup"
+        program: [
+            '{|ctx|'
+            '  if $ctx.cgroup != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-bpf-map-elem-context"
+        category: "context-surface"
+        tags: [iter context map]
+        target: "iter:bpf_map_elem"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map != 0 { 1 | count }'
+            '  if $ctx.key != 0 { 1 | count }'
+            '  if $ctx.value != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-prog-link-contexts"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:bpf_prog"
+        program: [
+            '{|ctx|'
+            '  if $ctx.prog != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-udp-context"
+        category: "context-surface"
+        tags: [iter context socket]
+        target: "iter:udp"
+        program: [
+            '{|ctx|'
+            '  ($ctx.uid + $ctx.bucket) | count'
+            '  if $ctx.udp_sk != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-ksym-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:ksym"
+        program: [
+            '{|ctx|'
+            '  if $ctx.ksym != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-get-rejects-queue"
         category: "maps"
         tags: [queue reject]
