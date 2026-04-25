@@ -79,7 +79,7 @@ history and release notes, not here.
 
 - [~] Finish resource-backed map semantics.
   - Keep generic map operations, local storage, socket maps, redirect maps, cgroup arrays, bloom filters, ring buffers, user ring buffers, stack traces, prog arrays, and per-cpu maps aligned across lowering, type checks, VCC, and backend map emission.
-  - Extend source-level `map-define` schemas beyond explicit key/value layouts when needed; BTF-backed validation for additional verifier-managed fields is the next natural addition.
+  - Keep extending source-level `map-define` only for real map resource metadata. Key/value layouts and `--max-entries` are modeled; BTF-backed validation for additional verifier-managed fields is the next natural addition.
   - Add map-in-map support only after inner-map metadata, pinning, loader materialization, and verifier diagnostics are designed.
   - Add arena support only after map-extra, mmap/user-space access, and verifier constraints are modeled.
   - Keep `struct_ops` maps behind the struct_ops object loader rather than generic `map-*` commands.

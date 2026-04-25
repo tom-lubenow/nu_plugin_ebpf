@@ -89,6 +89,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "map-define-max-entries"
+        category: "maps"
+        tags: [maps map-define max-entries accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define small_seen --kind hash --value-type int --max-entries 32'
+            '  42 | map-put small_seen 0 --kind hash'
+            '  let entry = (0 | map-get small_seen --kind hash)'
+            '  if $entry != 0 { $entry | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-query-built-in-events"
         category: "maps"
         tags: [helper-call ringbuf reserved-name]

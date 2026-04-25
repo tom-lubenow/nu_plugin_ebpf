@@ -1861,6 +1861,8 @@ pub struct EbpfProgramSection {
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Optional typed generic map key schemas keyed by map identity
     pub generic_map_key_types: HashMap<MapRef, MirType>,
+    /// Optional generic map capacity declarations keyed by map identity
+    pub generic_map_max_entries: HashMap<MapRef, u32>,
     /// Optional typed generic map value schemas keyed by map identity
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     /// Optional logical semantics for generic map values with richer layouts
@@ -2009,6 +2011,8 @@ pub struct EbpfProgram {
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Optional typed generic map key schemas keyed by map identity
     pub generic_map_key_types: HashMap<MapRef, MirType>,
+    /// Optional generic map capacity declarations keyed by map identity
+    pub generic_map_max_entries: HashMap<MapRef, u32>,
     /// Optional typed generic map value schemas keyed by map identity
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     /// Optional logical semantics for generic map values with richer layouts

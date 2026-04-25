@@ -63,6 +63,7 @@ impl EbpfProgram {
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_key_types: HashMap::new(),
+            generic_map_max_entries: HashMap::new(),
             generic_map_value_types: HashMap::new(),
             generic_map_value_semantics: HashMap::new(),
         }
@@ -94,6 +95,7 @@ impl EbpfProgram {
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_key_types: HashMap::new(),
+            generic_map_max_entries: HashMap::new(),
             generic_map_value_types: HashMap::new(),
             generic_map_value_semantics: HashMap::new(),
         }
@@ -132,6 +134,7 @@ impl EbpfProgram {
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types: HashMap::new(),
+            generic_map_max_entries: HashMap::new(),
             generic_map_value_types,
             generic_map_value_semantics,
         }
@@ -177,6 +180,15 @@ impl EbpfProgram {
         self
     }
 
+    /// Attach generic map capacity declarations recovered during lowering.
+    pub fn with_generic_map_max_entries(
+        mut self,
+        generic_map_max_entries: HashMap<MapRef, u32>,
+    ) -> Self {
+        self.generic_map_max_entries = generic_map_max_entries;
+        self
+    }
+
     /// Attach the parsed program spec so target-sensitive metadata survives
     /// from command parsing through ELF section emission and loader attach.
     pub fn with_program_spec(mut self, program_spec: ProgramSpec) -> Self {
@@ -204,6 +216,7 @@ impl EbpfProgram {
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types,
+            generic_map_max_entries,
             generic_map_value_types,
             generic_map_value_semantics,
         } = self;
@@ -229,6 +242,7 @@ impl EbpfProgram {
                 event_schema,
                 bytes_counter_key_schema,
                 generic_map_key_types,
+                generic_map_max_entries,
                 generic_map_value_types,
                 generic_map_value_semantics,
             }],
@@ -250,6 +264,7 @@ impl EbpfProgram {
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,
+            generic_map_max_entries: self.generic_map_max_entries,
             generic_map_value_types: self.generic_map_value_types,
             generic_map_value_semantics: self.generic_map_value_semantics,
         }
@@ -817,6 +832,7 @@ impl EbpfObject {
                 event_schema: program.event_schema.clone(),
                 bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
                 generic_map_key_types: program.generic_map_key_types.clone(),
+                generic_map_max_entries: program.generic_map_max_entries.clone(),
                 generic_map_value_types: program.generic_map_value_types.clone(),
                 generic_map_value_semantics: program.generic_map_value_semantics.clone(),
             };

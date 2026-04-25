@@ -1239,6 +1239,55 @@ fn test_map_lookup_compiles_and_emits_generic_map() {
 }
 
 #[test]
+fn test_generic_map_max_entries_hint_sets_map_capacity() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let map_ref = MapRef {
+        name: "small_lookup".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst,
+        map: map_ref.clone(),
+        key,
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let type_hints = MirTypeHints {
+        generic_map_max_entries: HashMap::from([(map_ref.clone(), 128)]),
+        ..MirTypeHints::default()
+    };
+
+    let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
+        .expect("map lookup should compile with explicit max entries");
+    let map = result
+        .maps
+        .iter()
+        .find(|m| m.name == "small_lookup")
+        .expect("expected generic map definition");
+
+    assert_eq!(map.def.max_entries, 128);
+    assert_eq!(result.generic_map_max_entries.get(&map_ref), Some(&128));
+}
+
+#[test]
 fn test_lru_hash_lookup_compiles_and_emits_generic_map() {
     use crate::compiler::mir::*;
 

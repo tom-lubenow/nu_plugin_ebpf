@@ -633,6 +633,11 @@ impl<'a> MirToEbpfCompiler<'a> {
             Some(size) => (size.max(1) as u32, false),
             None => (8, true),
         };
+        let inferred_max_entries = self
+            .generic_map_max_entries
+            .get(map)
+            .copied()
+            .unwrap_or(10240);
 
         match self.generic_map_specs.get_mut(&map.name) {
             Some(spec) => {
@@ -646,6 +651,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "map '{}' used with conflicting key sizes: {} vs {}",
                         map.name, spec.key_size, inferred_key_size
+                    )));
+                }
+                if spec.max_entries != inferred_max_entries {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map '{}' used with conflicting max entries: {} vs {}",
+                        map.name, spec.max_entries, inferred_max_entries
                     )));
                 }
                 if spec.value_size != inferred_value_size {
@@ -667,6 +678,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         kind: map.kind,
                         key_size: inferred_key_size,
                         value_size: inferred_value_size,
+                        max_entries: inferred_max_entries,
                         value_size_defaulted: defaulted,
                     },
                 );
@@ -680,34 +692,37 @@ impl<'a> MirToEbpfCompiler<'a> {
         &self,
         spec: MapLayoutSpec,
     ) -> Result<BpfMapDef, CompileError> {
-        let max_entries = 10240;
         let map_def = match spec.kind {
-            MapKind::Hash => BpfMapDef::hash(spec.key_size, spec.value_size, max_entries),
-            MapKind::Array => BpfMapDef::array(spec.value_size, max_entries),
-            MapKind::CgroupArray => BpfMapDef::cgroup_array(max_entries),
-            MapKind::LpmTrie => BpfMapDef::lpm_trie(spec.key_size, spec.value_size, max_entries),
-            MapKind::LruHash => BpfMapDef::lru_hash(spec.key_size, spec.value_size, max_entries),
-            MapKind::PerCpuHash => {
-                BpfMapDef::per_cpu_hash(spec.key_size, spec.value_size, max_entries)
+            MapKind::Hash => BpfMapDef::hash(spec.key_size, spec.value_size, spec.max_entries),
+            MapKind::Array => BpfMapDef::array(spec.value_size, spec.max_entries),
+            MapKind::CgroupArray => BpfMapDef::cgroup_array(spec.max_entries),
+            MapKind::LpmTrie => {
+                BpfMapDef::lpm_trie(spec.key_size, spec.value_size, spec.max_entries)
             }
-            MapKind::PerCpuArray => BpfMapDef::per_cpu_array(spec.value_size, max_entries),
+            MapKind::LruHash => {
+                BpfMapDef::lru_hash(spec.key_size, spec.value_size, spec.max_entries)
+            }
+            MapKind::PerCpuHash => {
+                BpfMapDef::per_cpu_hash(spec.key_size, spec.value_size, spec.max_entries)
+            }
+            MapKind::PerCpuArray => BpfMapDef::per_cpu_array(spec.value_size, spec.max_entries),
             MapKind::LruPerCpuHash => {
-                BpfMapDef::lru_per_cpu_hash(spec.key_size, spec.value_size, max_entries)
+                BpfMapDef::lru_per_cpu_hash(spec.key_size, spec.value_size, spec.max_entries)
             }
             MapKind::PerfEventArray => BpfMapDef::perf_event_array(),
-            MapKind::Queue => BpfMapDef::queue(spec.value_size, max_entries),
-            MapKind::Stack => BpfMapDef::stack(spec.value_size, max_entries),
-            MapKind::BloomFilter => BpfMapDef::bloom_filter(spec.value_size, max_entries),
+            MapKind::Queue => BpfMapDef::queue(spec.value_size, spec.max_entries),
+            MapKind::Stack => BpfMapDef::stack(spec.value_size, spec.max_entries),
+            MapKind::BloomFilter => BpfMapDef::bloom_filter(spec.value_size, spec.max_entries),
             MapKind::RingBuf => BpfMapDef::ring_buffer(256 * 1024),
             MapKind::UserRingBuf => BpfMapDef::user_ring_buffer(256 * 1024),
             MapKind::StackTrace => BpfMapDef::stack_trace_map(),
-            MapKind::DevMap => BpfMapDef::dev_map(max_entries),
-            MapKind::DevMapHash => BpfMapDef::dev_map_hash(spec.key_size, max_entries),
-            MapKind::CpuMap => BpfMapDef::cpu_map(max_entries),
-            MapKind::XskMap => BpfMapDef::xsk_map(max_entries),
-            MapKind::SockMap => BpfMapDef::sock_map(max_entries),
-            MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, max_entries),
-            MapKind::ReuseportSockArray => BpfMapDef::reuseport_sockarray(max_entries),
+            MapKind::DevMap => BpfMapDef::dev_map(spec.max_entries),
+            MapKind::DevMapHash => BpfMapDef::dev_map_hash(spec.key_size, spec.max_entries),
+            MapKind::CpuMap => BpfMapDef::cpu_map(spec.max_entries),
+            MapKind::XskMap => BpfMapDef::xsk_map(spec.max_entries),
+            MapKind::SockMap => BpfMapDef::sock_map(spec.max_entries),
+            MapKind::SockHash => BpfMapDef::sock_hash(spec.key_size, spec.max_entries),
+            MapKind::ReuseportSockArray => BpfMapDef::reuseport_sockarray(spec.max_entries),
             MapKind::SkStorage => BpfMapDef::sk_storage(spec.value_size),
             MapKind::InodeStorage => BpfMapDef::inode_storage(spec.value_size),
             MapKind::TaskStorage => BpfMapDef::task_storage(spec.value_size),

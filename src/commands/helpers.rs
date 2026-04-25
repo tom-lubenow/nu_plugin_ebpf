@@ -12,7 +12,7 @@
 //! - kfunc-call: Escape hatch for invoking a typed kernel kfunc by name
 //! - tail-call: Transfer control to a program in a named prog-array map
 //! - global-define / global-get / global-set: Named compiler-managed per-program globals
-//! - map-define: Declare named generic map key/value schemas
+//! - map-define: Declare named generic map key/value schemas and capacity
 //! - map-get / map-put / map-delete / map-push / map-peek / map-pop / map-contains:
 //!   Generic BPF map operations
 
@@ -385,11 +385,11 @@ impl PluginCommand for MapDefine {
     }
 
     fn description(&self) -> &str {
-        "Declare key and value layouts for a named generic BPF map."
+        "Declare key/value layouts and capacity for a named generic BPF map."
     }
 
     fn extra_description(&self) -> &str {
-        r#"Declares named map key/value schemas for later map operations in the same
+        r#"Declares named map key/value schemas and optional capacity for later map operations in the same
 program and for later pinned peers attached with the same `--pin` group. This
 is a compile-time declaration: it does not perform a runtime map operation. It
 is useful when a map key or value layout should be fixed before ordinary map
@@ -398,9 +398,11 @@ operations, including verifier-sensitive value fields such as `bpf_timer`.
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
 `bpf_timer` and `bpf_spin_lock` inside map-value records.
+Use `--max-entries` to set a positive map capacity for value-carrying map
+families that expose a max_entries resource.
 
 Example:
-  map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}'
+  map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024
   let entry = (0 | map-get timers --kind array)
   if $entry != 0 { helper-call "bpf_timer_start" $entry.timer 1000 0 }"#
     }
@@ -427,13 +429,19 @@ Example:
                 "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer and bpf_spin_lock",
                 None,
             )
+            .named(
+                "max-entries",
+                SyntaxShape::Int,
+                "Optional positive map capacity; not supported for local-storage map kinds",
+                None,
+            )
             .category(Category::Experimental)
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
-            example: "ebpf attach 'raw_tracepoint:sys_enter' {|ctx| map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}'; 0 }",
-            description: "Declare an array map key and a value record containing a bpf_timer field",
+            example: "ebpf attach 'raw_tracepoint:sys_enter' {|ctx| map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024; 0 }",
+            description: "Declare an array map key, capacity, and a value record containing a bpf_timer field",
             result: None,
         }]
     }

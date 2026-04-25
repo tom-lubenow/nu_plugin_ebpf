@@ -52,6 +52,61 @@ fn path_struct_schema(map_name: &str, kind: MapKind) -> HashMap<MapRef, MirType>
     )])
 }
 
+fn map_define_with_max_entries_hir(
+    max_entries: i64,
+    kind: &str,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let map_define_decl = DeclId::new(41);
+    let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("small_map".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(kind.into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("int".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(max_entries),
+                },
+                HirStmt::Call {
+                    decl_id: map_define_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(1)),
+                            (b"value-type".to_vec(), RegId::new(2)),
+                            (b"max-entries".to_vec(), RegId::new(3)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(func, HashMap::new(), vec![], None),
+        decl_names,
+    )
+}
+
 fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let stmts = vec![
@@ -2637,6 +2692,149 @@ fn test_map_define_key_type_registers_and_materializes_record_key() {
 }
 
 #[test]
+fn test_map_define_max_entries_registers_capacity() {
+    let (hir, decl_names) = map_define_with_max_entries_hir(128, "hash");
+    let map_ref = MapRef {
+        name: "small_map".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    let result = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-define max entries should lower");
+
+    assert_eq!(result.generic_map_max_entries.get(&map_ref), Some(&128));
+    assert_eq!(
+        result.type_hints.generic_map_max_entries.get(&map_ref),
+        Some(&128)
+    );
+}
+
+#[test]
+fn test_map_define_rejects_zero_max_entries() {
+    let (hir, decl_names) = map_define_with_max_entries_hir(0, "hash");
+
+    let err = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("zero max entries should be rejected");
+
+    assert!(err.to_string().contains("must be positive"));
+}
+
+#[test]
+fn test_map_define_rejects_conflicting_external_max_entries() {
+    let (hir, decl_names) = map_define_with_max_entries_hir(256, "hash");
+    let map_ref = MapRef {
+        name: "small_map".to_string(),
+        kind: MapKind::Hash,
+    };
+    let external_max_entries = HashMap::from([(map_ref, 128)]);
+
+    let err = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        Some(&external_max_entries),
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("conflicting pinned max entries should fail");
+
+    assert!(err.to_string().contains("conflicts with pinned map schema"));
+}
+
+#[test]
+fn test_map_define_rejects_conflicting_declared_max_entries() {
+    let (mut hir, decl_names) = map_define_with_max_entries_hir(128, "hash");
+    let block = &mut hir.main.blocks[0];
+    block.stmts.extend([
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(256),
+        },
+        HirStmt::Call {
+            decl_id: DeclId::new(41),
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                positional: vec![RegId::new(0)],
+                named: vec![
+                    (b"kind".to_vec(), RegId::new(1)),
+                    (b"value-type".to_vec(), RegId::new(2)),
+                    (b"max-entries".to_vec(), RegId::new(5)),
+                ],
+                ..HirCallArgs::default()
+            },
+        },
+    ]);
+    block.terminator = HirTerminator::Return { src: RegId::new(6) };
+    hir.main.register_count = 7;
+
+    let err = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("conflicting declared max entries should fail");
+
+    assert!(
+        err.to_string()
+            .contains("conflicts with declared map schema")
+    );
+}
+
+#[test]
+fn test_map_define_rejects_local_storage_max_entries() {
+    let (hir, decl_names) = map_define_with_max_entries_hir(128, "task-storage");
+
+    let err = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("local-storage max entries should be rejected");
+
+    assert!(err.to_string().contains("object-local storage"));
+}
+
+#[test]
 fn test_external_key_schema_materializes_record_key() {
     let map_put_decl = DeclId::new(42);
     let decl_names = HashMap::from([(map_put_decl, "map-put".to_string())]);
@@ -2721,6 +2919,7 @@ fn test_external_key_schema_materializes_record_key() {
         &decl_names,
         None,
         Some(&external_key_schema),
+        None,
         None,
         None,
         &HashMap::new(),
@@ -2810,6 +3009,7 @@ fn test_map_define_rejects_conflicting_external_key_schema() {
         &decl_names,
         None,
         Some(&external_key_schema),
+        None,
         None,
         None,
         &HashMap::new(),

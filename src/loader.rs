@@ -156,6 +156,8 @@ pub struct ActiveProbe {
     bytes_counter_key_schema: Option<CounterKeySchema>,
     /// Typed generic map key schemas established for this pinned program set
     generic_map_key_types: HashMap<MapRef, MirType>,
+    /// Generic map capacity declarations established for this pinned program set
+    generic_map_max_entries: HashMap<MapRef, u32>,
     /// Typed generic map value schemas established for this pinned program set
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// Logical semantics for typed generic map values with richer layouts
@@ -195,6 +197,10 @@ impl std::fmt::Debug for ActiveProbe {
                 &self.bytes_counter_key_schema.is_some(),
             )
             .field("generic_map_key_types", &self.generic_map_key_types.len())
+            .field(
+                "generic_map_max_entries",
+                &self.generic_map_max_entries.len(),
+            )
             .field(
                 "generic_map_value_types",
                 &self.generic_map_value_types.len(),
@@ -360,6 +366,33 @@ impl EbpfState {
         Self::merge_generic_map_types(schemas)
     }
 
+    fn merge_generic_map_max_entries<'a>(
+        schemas: impl Iterator<Item = &'a HashMap<MapRef, u32>>,
+    ) -> HashMap<MapRef, u32> {
+        let mut merged = HashMap::new();
+        let mut conflicts = HashSet::new();
+
+        for schema_set in schemas {
+            for (map, max_entries) in schema_set {
+                if conflicts.contains(map) {
+                    continue;
+                }
+                match merged.get(map) {
+                    Some(existing) if existing != max_entries => {
+                        merged.remove(map);
+                        conflicts.insert(map.clone());
+                    }
+                    Some(_) => {}
+                    None => {
+                        merged.insert(map.clone(), *max_entries);
+                    }
+                }
+            }
+        }
+
+        merged
+    }
+
     fn merge_generic_map_value_semantics<'a>(
         schemas: impl Iterator<
             Item = &'a HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
@@ -473,6 +506,23 @@ impl EbpfState {
                 .values()
                 .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
                 .map(|probe| &probe.generic_map_key_types),
+        ))
+    }
+
+    /// Collect generic-map capacity declarations from active probes in a pin group.
+    ///
+    /// Conflicting capacities for the same pinned map are dropped so callers only
+    /// see unambiguous resource metadata.
+    pub fn pinned_generic_map_max_entries(
+        &self,
+        pin_group: &str,
+    ) -> Result<HashMap<MapRef, u32>, LoadError> {
+        let probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
+        Ok(Self::merge_generic_map_max_entries(
+            probes
+                .values()
+                .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
+                .map(|probe| &probe.generic_map_max_entries),
         ))
     }
 

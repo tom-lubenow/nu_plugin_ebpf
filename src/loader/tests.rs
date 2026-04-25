@@ -1393,6 +1393,30 @@ fn test_merge_generic_map_value_types_drops_conflicts() {
 }
 
 #[test]
+fn test_merge_generic_map_max_entries_drops_conflicts() {
+    let shared = MapRef {
+        name: "shared_capacity".to_string(),
+        kind: MapKind::Hash,
+    };
+    let unique = MapRef {
+        name: "other_capacity".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    let merged = EbpfState::merge_generic_map_max_entries(
+        [
+            HashMap::from([(shared.clone(), 128), (unique.clone(), 64)]),
+            HashMap::from([(shared.clone(), 128)]),
+            HashMap::from([(shared.clone(), 256)]),
+        ]
+        .iter(),
+    );
+
+    assert_eq!(merged.get(&unique), Some(&64));
+    assert!(!merged.contains_key(&shared));
+}
+
+#[test]
 fn test_merge_generic_map_value_semantics_drops_conflicts() {
     let shared = MapRef {
         name: "shared_state".to_string(),

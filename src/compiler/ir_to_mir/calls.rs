@@ -1032,7 +1032,10 @@ impl<'a> HirToMirLowering<'a> {
                         "map-define does not accept flags".into(),
                     ));
                 }
-                self.require_only_named_args("map-define", &["kind", "key-type", "value-type"])?;
+                self.require_only_named_args(
+                    "map-define",
+                    &["kind", "key-type", "value-type", "max-entries"],
+                )?;
                 if self.pipeline_input.is_some() || src_dst_had_value {
                     return Err(CompileError::UnsupportedInstruction(
                         "map-define does not accept pipeline input".into(),
@@ -1062,6 +1065,41 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name,
                     kind: map_kind,
                 };
+                if let Some(max_entries) =
+                    self.optional_nonnegative_named_u64_arg("map-define", "max-entries")?
+                {
+                    let max_entries = u32::try_from(max_entries).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "map-define --max-entries must fit in u32".into(),
+                        )
+                    })?;
+                    if max_entries == 0 {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "map-define --max-entries must be positive".into(),
+                        ));
+                    }
+                    if map_ref.kind.is_local_storage() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define --max-entries is not supported for object-local storage map kind {:?}",
+                            map_ref.kind
+                        )));
+                    }
+                    if let Some(existing) = self.named_map_max_entries(&map_ref)
+                        && existing != max_entries
+                    {
+                        let schema_source =
+                            if self.externally_seeded_map_max_entries.contains(&map_ref) {
+                                "pinned"
+                            } else {
+                                "declared"
+                            };
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define max entries for '{}' conflicts with {schema_source} map schema",
+                            map_ref.name
+                        )));
+                    }
+                    self.register_named_map_max_entries(&map_ref, max_entries);
+                }
                 if let Some((_, key_type_reg)) = self.named_args.get("key-type").copied() {
                     let key_type_spec =
                         self.literal_string_arg(key_type_reg, "map-define --key-type")?;

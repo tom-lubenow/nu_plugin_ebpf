@@ -665,6 +665,23 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn register_named_map_max_entries(&mut self, map: &MapRef, max_entries: u32) {
+        if self.conflicting_map_max_entries.contains(map) {
+            return;
+        }
+
+        match self.map_max_entries.get(map) {
+            Some(existing) if *existing != max_entries => {
+                self.map_max_entries.remove(map);
+                self.conflicting_map_max_entries.insert(map.clone());
+            }
+            Some(_) => {}
+            None => {
+                self.map_max_entries.insert(map.clone(), max_entries);
+            }
+        }
+    }
+
     pub(super) fn register_named_map_value_semantics(
         &mut self,
         map: &MapRef,
@@ -700,6 +717,14 @@ impl<'a> HirToMirLowering<'a> {
             None
         } else {
             self.map_key_types.get(map)
+        }
+    }
+
+    pub(super) fn named_map_max_entries(&self, map: &MapRef) -> Option<u32> {
+        if self.conflicting_map_max_entries.contains(map) {
+            None
+        } else {
+            self.map_max_entries.get(map).copied()
         }
     }
 

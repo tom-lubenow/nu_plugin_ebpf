@@ -347,6 +347,8 @@ pub struct HirToMirLowering<'a> {
     map_key_types: HashMap<MapRef, MirType>,
     /// Source-order generic map value schemas discovered during lowering
     map_value_types: HashMap<MapRef, MirType>,
+    /// Source-order generic map max-entry declarations discovered during lowering
+    map_max_entries: HashMap<MapRef, u32>,
     /// Generic map value schemas declared explicitly with `map-define`
     declared_map_value_types: HashSet<MapRef>,
     /// Logical semantics for generic map values with richer runtime layouts.
@@ -355,10 +357,14 @@ pub struct HirToMirLowering<'a> {
     conflicting_map_value_types: HashSet<MapRef>,
     /// Generic maps whose declared key schemas conflict
     conflicting_map_key_types: HashSet<MapRef>,
+    /// Generic maps whose declared max-entry counts conflict
+    conflicting_map_max_entries: HashSet<MapRef>,
     /// Generic maps whose observed value semantics conflict
     conflicting_map_value_semantics: HashSet<MapRef>,
     /// Map key schemas seeded from already-attached pinned programs
     externally_seeded_map_key_types: HashSet<MapRef>,
+    /// Map max-entry counts seeded from already-attached pinned programs
+    externally_seeded_map_max_entries: HashSet<MapRef>,
     /// Map schemas seeded from already-attached pinned programs
     externally_seeded_map_value_types: HashSet<MapRef>,
     /// Map semantics seeded from already-attached pinned programs
@@ -429,6 +435,7 @@ impl<'a> HirToMirLowering<'a> {
         ctx_param: Option<VarId>,
         type_hints: Option<&'a HirMirTypeHints>,
         external_map_key_types: Option<&'a HashMap<MapRef, MirType>>,
+        external_map_max_entries: Option<&'a HashMap<MapRef, u32>>,
         external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,
         external_map_value_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
         user_functions: &'a HashMap<DeclId, HirFunction>,
@@ -444,6 +451,8 @@ impl<'a> HirToMirLowering<'a> {
         };
         let map_key_types = external_map_key_types.cloned().unwrap_or_default();
         let externally_seeded_map_key_types = map_key_types.keys().cloned().collect();
+        let map_max_entries = external_map_max_entries.cloned().unwrap_or_default();
+        let externally_seeded_map_max_entries = map_max_entries.keys().cloned().collect();
         let map_value_types = external_map_value_types.cloned().unwrap_or_default();
         let externally_seeded_map_value_types = map_value_types.keys().cloned().collect();
         let map_value_semantics = external_map_value_semantics.cloned().unwrap_or_default();
@@ -478,13 +487,16 @@ impl<'a> HirToMirLowering<'a> {
             vreg_type_hints: HashMap::new(),
             stack_slot_type_hints: HashMap::new(),
             map_key_types,
+            map_max_entries,
             map_value_types,
             declared_map_value_types: HashSet::new(),
             map_value_semantics,
             conflicting_map_value_types: HashSet::new(),
             conflicting_map_key_types: HashSet::new(),
+            conflicting_map_max_entries: HashSet::new(),
             conflicting_map_value_semantics: HashSet::new(),
             externally_seeded_map_key_types,
+            externally_seeded_map_max_entries,
             externally_seeded_map_value_types,
             externally_seeded_map_value_semantics,
             user_functions,
@@ -516,7 +528,7 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower an entire HIR function to MIR
     pub fn finish(self) -> MirProgram {
-        let (program, _, _, _, _, _, _, _) = self.finish_with_hints();
+        let (program, _, _, _, _, _, _, _, _) = self.finish_with_hints();
         program
     }
 
@@ -527,6 +539,7 @@ impl<'a> HirToMirLowering<'a> {
         MirTypeHints,
         HashMap<MapRef, MirType>,
         HashMap<MapRef, MirType>,
+        HashMap<MapRef, u32>,
         HashMap<MapRef, AnnotatedValueSemantics>,
         Vec<ReadonlyGlobal>,
         Vec<DataGlobal>,
@@ -551,6 +564,12 @@ impl<'a> HirToMirLowering<'a> {
                 .filter(|(map, _)| !self.conflicting_map_value_types.contains(*map))
                 .map(|(map, ty)| (map.clone(), ty.clone()))
                 .collect(),
+            generic_map_max_entries: self
+                .map_max_entries
+                .iter()
+                .filter(|(map, _)| !self.conflicting_map_max_entries.contains(*map))
+                .map(|(map, max_entries)| (map.clone(), *max_entries))
+                .collect(),
             generic_map_value_semantics: self
                 .map_value_semantics
                 .iter()
@@ -570,12 +589,14 @@ impl<'a> HirToMirLowering<'a> {
         }
         let map_value_types = hints.generic_map_value_types.clone();
         let map_key_types = hints.generic_map_key_types.clone();
+        let map_max_entries = hints.generic_map_max_entries.clone();
         let map_value_semantics = hints.generic_map_value_semantics.clone();
         (
             program,
             hints,
             map_key_types,
             map_value_types,
+            map_max_entries,
             map_value_semantics,
             self.readonly_globals,
             self.data_globals,
