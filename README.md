@@ -27,6 +27,12 @@ This is an internal alpha, not a polished external release. The compiler has bro
 - Rust 2024 edition
 - Root access or CAP_BPF capability
 
+The compiler also tracks feature-style compatibility requirements for parsed
+program specs, and live-attach errors include those labels when a loader path is
+not implemented. Exact minimum kernel versions are still being built into the
+project metadata; the kernel verifier remains the final authority for unmodeled
+or version-specific behavior.
+
 ## Installation
 
 ```bash
