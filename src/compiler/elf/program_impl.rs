@@ -62,6 +62,7 @@ impl EbpfProgram {
             subfunctions: Vec::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
+            generic_map_key_types: HashMap::new(),
             generic_map_value_types: HashMap::new(),
             generic_map_value_semantics: HashMap::new(),
         }
@@ -92,6 +93,7 @@ impl EbpfProgram {
             subfunctions: Vec::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
+            generic_map_key_types: HashMap::new(),
             generic_map_value_types: HashMap::new(),
             generic_map_value_semantics: HashMap::new(),
         }
@@ -129,6 +131,7 @@ impl EbpfProgram {
             subfunctions,
             event_schema,
             bytes_counter_key_schema,
+            generic_map_key_types: HashMap::new(),
             generic_map_value_types,
             generic_map_value_semantics,
         }
@@ -165,6 +168,15 @@ impl EbpfProgram {
         self
     }
 
+    /// Attach typed generic map key schemas recovered during lowering.
+    pub fn with_generic_map_key_types(
+        mut self,
+        generic_map_key_types: HashMap<MapRef, MirType>,
+    ) -> Self {
+        self.generic_map_key_types = generic_map_key_types;
+        self
+    }
+
     /// Attach the parsed program spec so target-sensitive metadata survives
     /// from command parsing through ELF section emission and loader attach.
     pub fn with_program_spec(mut self, program_spec: ProgramSpec) -> Self {
@@ -191,6 +203,7 @@ impl EbpfProgram {
             subfunctions,
             event_schema,
             bytes_counter_key_schema,
+            generic_map_key_types,
             generic_map_value_types,
             generic_map_value_semantics,
         } = self;
@@ -215,6 +228,7 @@ impl EbpfProgram {
                 subfunctions,
                 event_schema,
                 bytes_counter_key_schema,
+                generic_map_key_types,
                 generic_map_value_types,
                 generic_map_value_semantics,
             }],
@@ -235,6 +249,7 @@ impl EbpfProgram {
             subfunctions: self.subfunctions,
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
+            generic_map_key_types: self.generic_map_key_types,
             generic_map_value_types: self.generic_map_value_types,
             generic_map_value_semantics: self.generic_map_value_semantics,
         }
@@ -801,6 +816,7 @@ impl EbpfObject {
                 subfunctions: program.subfunctions.clone(),
                 event_schema: program.event_schema.clone(),
                 bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
+                generic_map_key_types: program.generic_map_key_types.clone(),
                 generic_map_value_types: program.generic_map_value_types.clone(),
                 generic_map_value_semantics: program.generic_map_value_semantics.clone(),
             };
@@ -1276,6 +1292,17 @@ impl EbpfObject {
             .find_map(|program| program.generic_map_value_types.get(&map_ref))
     }
 
+    fn generic_map_key_btf_type(&self, map: &EbpfMap) -> Option<&MirType> {
+        let kind = map.def.map_kind()?;
+        let map_ref = MapRef {
+            name: map.name.clone(),
+            kind,
+        };
+        self.programs
+            .iter()
+            .find_map(|program| program.generic_map_key_types.get(&map_ref))
+    }
+
     fn emit_struct_ops_value_btf_type(
         btf: &mut BtfBuilder,
         value_type_name: &str,
@@ -1338,8 +1365,13 @@ impl EbpfObject {
                 // type field: __uint(type, map_type_value)
                 let type_ptr = btf.add_uint_type(int_type, map.def.map_type);
 
-                // key_size field: __uint(key_size, size_value)
-                let key_size_ptr = btf.add_uint_type(int_type, map.def.key_size);
+                // Typed schemas use __type(key, T); untyped maps keep __uint(key_size, N).
+                let key_member = if let Some(key_ty) = self.generic_map_key_btf_type(map) {
+                    let key_type = Self::emit_local_btf_mir_type(&mut btf, key_ty, int_type);
+                    ("key", btf.add_ptr(key_type))
+                } else {
+                    ("key_size", btf.add_uint_type(int_type, map.def.key_size))
+                };
 
                 // Typed schemas use __type(value, T) so verifier-managed map fields
                 // are visible to the kernel; untyped maps keep __uint(value_size, N).
@@ -1363,7 +1395,7 @@ impl EbpfObject {
                 // Create the anonymous map struct with pointer-sized members
                 let struct_type = btf.add_btf_map_struct(&[
                     ("type", type_ptr),
-                    ("key_size", key_size_ptr),
+                    key_member,
                     value_member,
                     ("max_entries", max_entries_ptr),
                     ("pinning", pinning_ptr),

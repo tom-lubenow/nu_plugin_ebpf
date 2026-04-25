@@ -4340,7 +4340,7 @@ fn test_elf_generation_with_bss_globals_creates_bss_data_map() {
 }
 
 #[test]
-fn test_elf_map_btf_emits_declared_value_type() {
+fn test_elf_map_btf_emits_declared_key_and_value_types() {
     use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
 
     let mut builder = EbpfBuilder::new();
@@ -4350,6 +4350,26 @@ fn test_elf_map_btf_emits_declared_value_type() {
     let map_ref = MapRef {
         name: "locks".to_string(),
         kind: MapKind::Hash,
+    };
+    let key_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "pid".to_string(),
+                ty: MirType::U32,
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 4,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
     };
     let value_ty = MirType::Struct {
         name: None,
@@ -4379,7 +4399,7 @@ fn test_elf_map_btf_emits_declared_value_type() {
         bytecode.len(),
         vec![EbpfMap {
             name: "locks".to_string(),
-            def: BpfMapDef::hash(4, value_ty.size() as u32, 1024),
+            def: BpfMapDef::hash(key_ty.size() as u32, value_ty.size() as u32, 1024),
         }],
         vec![],
         vec![],
@@ -4387,9 +4407,19 @@ fn test_elf_map_btf_emits_declared_value_type() {
         None,
         HashMap::from([(map_ref, value_ty)]),
         HashMap::new(),
-    );
+    )
+    .with_generic_map_key_types(HashMap::from([(
+        MapRef {
+            name: "locks".to_string(),
+            kind: MapKind::Hash,
+        },
+        key_ty,
+    )]));
 
     let elf = program.to_elf().expect("typed map ELF should emit");
+    let aya = AyaObject::parse(&elf).expect("Aya should parse typed map BTF");
+    assert!(aya.maps.get("locks").is_some());
+
     let parsed = object::File::parse(&*elf).expect("emitted object should parse");
     let btf_section = parsed
         .section_by_name(".BTF")
@@ -4402,8 +4432,18 @@ fn test_elf_map_btf_emits_declared_value_type() {
             .is_ok()
     );
     assert!(
+        btf_data.windows(b"key\0".len()).any(|w| w == b"key\0"),
+        "expected BTF map definition to use a typed key member"
+    );
+    assert!(
         btf_data.windows(b"value\0".len()).any(|w| w == b"value\0"),
         "expected BTF map definition to use a typed value member"
+    );
+    assert!(
+        btf_data
+            .windows(b"key_size\0".len())
+            .all(|w| w != b"key_size\0"),
+        "typed map should not also emit a key_size member"
     );
     assert!(
         btf_data

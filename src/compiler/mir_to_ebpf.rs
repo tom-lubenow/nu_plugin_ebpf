@@ -90,6 +90,8 @@ pub struct MirCompileResult {
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
     pub bytes_counter_key_schema: Option<CounterKeySchema>,
+    /// Optional typed generic map key schemas keyed by map identity
+    pub generic_map_key_types: HashMap<MapRef, MirType>,
 }
 
 impl MirCompileResult {
@@ -104,23 +106,38 @@ impl MirCompileResult {
             crate::compiler::ir_to_mir::AnnotatedValueSemantics,
         >,
     ) -> EbpfProgram {
+        let MirCompileResult {
+            bytecode,
+            main_size,
+            maps,
+            readonly_globals,
+            data_globals,
+            bss_globals,
+            relocations,
+            subfunction_symbols,
+            event_schema,
+            bytes_counter_key_schema,
+            generic_map_key_types,
+        } = self;
+
         EbpfProgram::with_maps(
             prog_type,
             target,
             name,
-            self.bytecode,
-            self.main_size,
-            self.maps,
-            self.relocations,
-            self.subfunction_symbols,
-            self.event_schema,
-            self.bytes_counter_key_schema,
+            bytecode,
+            main_size,
+            maps,
+            relocations,
+            subfunction_symbols,
+            event_schema,
+            bytes_counter_key_schema,
             generic_map_value_types,
             generic_map_value_semantics,
         )
-        .with_readonly_globals(self.readonly_globals)
-        .with_data_globals(self.data_globals)
-        .with_bss_globals(self.bss_globals)
+        .with_generic_map_key_types(generic_map_key_types)
+        .with_readonly_globals(readonly_globals)
+        .with_data_globals(data_globals)
+        .with_bss_globals(bss_globals)
     }
 
     pub fn into_struct_ops_callback(
@@ -476,6 +493,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             subfunction_symbols,
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
+            generic_map_key_types: self.generic_map_key_types,
         })
     }
 }
