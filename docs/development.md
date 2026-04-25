@@ -46,7 +46,9 @@ Use `scripts/verifier_diff.nu` for small compiler/VCC fixtures that should be co
 nu ./scripts/verifier_diff.nu --list
 nu ./scripts/verifier_diff.nu --no-kernel
 nu ./scripts/verifier_diff.nu --fixture raw-tracepoint-count
+nu ./scripts/verifier_diff.nu --category maps --no-kernel
+nu ./scripts/verifier_diff.nu --tag reject --local-status reject --no-kernel
 sudo nu ./scripts/verifier_diff.nu --kernel
 ```
 
-Fixtures carry expected local/kernel status, category tags, and optional host-feature requirements. Keep normal development runs local-only or auto-skip capable. Add kernel-required fixtures only when they are load-only, deterministic, and safe for the host; behavior-changing families should stay dry-run-only here and move to an isolated VM lane.
+Fixtures carry expected local/kernel status, category tags, and optional host-feature requirements. Use `--fixture`, `--category`, `--tag`, `--local-status`, and `--kernel-status` to run focused slices as the fixture set grows. Keep normal development runs local-only or auto-skip capable. Add kernel-required fixtures only when they are load-only, deterministic, and safe for the host; behavior-changing families should stay dry-run-only here and move to an isolated VM lane.

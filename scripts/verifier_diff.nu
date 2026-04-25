@@ -140,6 +140,77 @@ const FIXTURES = [
         kernel: "skip"
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
+    {
+        name: "csum-diff-allows-null-zero-side"
+        category: "helper-state"
+        tags: [csum null-pointer tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_csum_diff" 0 0 0 0 0 | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "csum-diff-rejects-null-nonzero-side"
+        category: "helper-state"
+        tags: [csum null-pointer reject tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_csum_diff" 0 4 0 0 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 28 arg0 requires arg1 = 0 when arg0 is null"
+    }
+    {
+        name: "csum-diff-rejects-unaligned-size"
+        category: "helper-state"
+        tags: [csum scalar-policy reject tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_csum_diff" 0 2 0 0 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_csum_diff' requires arg1 to be a multiple of 4"
+    }
+    {
+        name: "redirect-neigh-allows-null-params"
+        category: "helper-state"
+        tags: [redirect-neigh null-pointer tc]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_redirect_neigh" 1 0 0 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-neigh-rejects-null-nonzero-plen"
+        category: "helper-state"
+        tags: [redirect-neigh null-pointer reject tc]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_redirect_neigh" 1 0 4 0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null"
+    }
 ]
 
 def fail [msg: string] {
@@ -243,6 +314,33 @@ def fixture-summary [fixture] {
         requires: ((optional $fixture requires []) | str join ",")
         tags: ((optional $fixture tags []) | str join ",")
     }
+}
+
+def validate-status-option [label: string value] {
+    if $value == null {
+        return
+    }
+
+    if $value not-in [accept reject skip] {
+        fail $"invalid ($label) status '($value)'; expected accept, reject, or skip"
+    }
+}
+
+def fixture-has-tag [fixture tag] {
+    if $tag == null {
+        return true
+    }
+
+    optional $fixture tags [] | any {|fixture_tag| $fixture_tag == $tag }
+}
+
+def fixture-matches-filters [fixture category tag local_status kernel_status] {
+    (
+        ($category == null or (optional $fixture category "") == $category)
+        and (fixture-has-tag $fixture $tag)
+        and ($local_status == null or $fixture.local == $local_status)
+        and ($kernel_status == null or $fixture.kernel == $kernel_status)
+    )
 }
 
 def check-local-fixture [plugin_bin: string fixture] {
@@ -376,8 +474,11 @@ def select-kernel-fixtures [fixtures require_kernel: bool] {
     $selected
 }
 
-def select-fixtures [fixture_name] {
-    if $fixture_name == null {
+def select-fixtures [fixture_name category tag local_status kernel_status] {
+    validate-status-option "local" $local_status
+    validate-status-option "kernel" $kernel_status
+
+    let fixtures = if $fixture_name == null {
         $FIXTURES
     } else {
         let matches = ($FIXTURES | where {|fixture| $fixture.name == $fixture_name })
@@ -386,6 +487,17 @@ def select-fixtures [fixture_name] {
         }
         $matches
     }
+
+    let selected = (
+        $fixtures
+        | where {|fixture| fixture-matches-filters $fixture $category $tag $local_status $kernel_status }
+    )
+
+    if (($selected | length) == 0) {
+        fail "no verifier fixtures matched the selected filters"
+    }
+
+    $selected
 }
 
 def main [
@@ -393,12 +505,16 @@ def main [
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
     --fixture: string # Run one fixture by exact name.
+    --category: string # Run fixtures with an exact category.
+    --tag: string # Run fixtures containing a tag.
+    --local-status: string # Run fixtures whose expected local status is accept, reject, or skip.
+    --kernel-status: string # Run fixtures whose expected kernel status is accept, reject, or skip.
 ] {
     if $kernel and $no_kernel {
         fail "--kernel and --no-kernel are mutually exclusive"
     }
 
-    let fixtures = (select-fixtures $fixture)
+    let fixtures = (select-fixtures $fixture $category $tag $local_status $kernel_status)
 
     if $list {
         for fixture in $fixtures {
