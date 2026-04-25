@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Debug, Clone, Copy)]
+struct ResolvedTrampolineMember {
+    type_id: u32,
+    offset: u32,
+    bits: Option<u32>,
+}
+
 impl KernelBtf {
     pub(super) fn function_trampoline_layout(
         &self,
@@ -336,6 +343,72 @@ impl KernelBtf {
         }
     }
 
+    fn resolve_trampoline_member(
+        btf: &Btf,
+        struct_ty: &btf::btf::Struct,
+        field_name: &str,
+    ) -> Result<Option<ResolvedTrampolineMember>, BtfError> {
+        Self::resolve_trampoline_member_inner(btf, struct_ty, field_name, 0)
+    }
+
+    fn resolve_trampoline_member_inner(
+        btf: &Btf,
+        struct_ty: &btf::btf::Struct,
+        field_name: &str,
+        depth: usize,
+    ) -> Result<Option<ResolvedTrampolineMember>, BtfError> {
+        if depth > 8 {
+            return Ok(None);
+        }
+
+        if let Some(member) = struct_ty
+            .members
+            .iter()
+            .find(|member| member.name.as_deref() == Some(field_name))
+        {
+            return Ok(Some(ResolvedTrampolineMember {
+                type_id: member.type_id,
+                offset: member.offset,
+                bits: member.bits,
+            }));
+        }
+
+        for member in &struct_ty.members {
+            let is_anonymous = member.name.as_deref().map_or(true, str::is_empty);
+            if !is_anonymous {
+                continue;
+            }
+
+            let member_ty = btf.get_type_by_id(member.type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve anonymous kernel BTF member type {}: {}",
+                    member.type_id, e
+                ))
+            })?;
+            let (Type::Struct(nested_ty) | Type::Union(nested_ty)) = &member_ty.base_type else {
+                continue;
+            };
+            let Some(nested) =
+                Self::resolve_trampoline_member_inner(btf, nested_ty, field_name, depth + 1)?
+            else {
+                continue;
+            };
+            let offset = member.offset.checked_add(nested.offset).ok_or_else(|| {
+                BtfError::KernelBtfError(format!(
+                    "offset overflow while resolving anonymous trampoline field '{}'",
+                    field_name
+                ))
+            })?;
+            return Ok(Some(ResolvedTrampolineMember {
+                type_id: nested.type_id,
+                offset,
+                bits: nested.bits,
+            }));
+        }
+
+        Ok(None)
+    }
+
     pub(super) fn resolve_trampoline_field_projection(
         &self,
         btf: &Btf,
@@ -385,10 +458,13 @@ impl KernelBtf {
             ) {
                 (TrampolineFieldSelector::Field(segment), Type::Struct(struct_ty))
                 | (TrampolineFieldSelector::Field(segment), Type::Union(struct_ty)) => {
-                    let member = struct_ty
-                        .members
-                        .iter()
-                        .find(|member| member.name.as_deref() == Some(segment.as_str()))
+                    let member = Self::resolve_trampoline_member(btf, struct_ty, segment)
+                        .map_err(|e| {
+                            BtfError::KernelBtfError(format!(
+                                "failed to resolve trampoline aggregate type '{}.{}': {}",
+                                ty_name, segment, e
+                            ))
+                        })?
                         .ok_or_else(|| {
                             BtfError::KernelBtfError(format!(
                                 "trampoline aggregate type '{}' has no field '{}'",

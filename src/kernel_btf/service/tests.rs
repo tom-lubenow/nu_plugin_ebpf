@@ -937,6 +937,20 @@ fn test_kernel_named_type_field_projection_resolves_common_member() {
 }
 
 #[test]
+fn test_kernel_named_type_field_projection_resolves_anonymous_union_member() {
+    let projection = KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "bpf_iter_meta",
+            &[TrampolineFieldSelector::Field("seq".to_string())],
+        )
+        .expect("expected bpf_iter_meta.seq projection through anonymous union");
+
+    assert_eq!(projection.path.len(), 1);
+    assert_eq!(projection.path[0].offset_bytes, 0);
+    assert!(matches!(projection.type_info, TypeInfo::Ptr { .. }));
+}
+
+#[test]
 fn test_kernel_named_type_info_resolves_common_struct() {
     let info = KernelBtf::get()
         .kernel_named_type_info("file")

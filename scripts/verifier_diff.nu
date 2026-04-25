@@ -1813,6 +1813,72 @@ const FIXTURES = [
         error_contains: "helper 'bpf_override_return' is only valid in kprobe, kprobe.multi, and ksyscall programs"
     }
     {
+        name: "seq-write-iter-meta"
+        category: "helper-state"
+        tags: [iter helper-call seq]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let data = "abcd"'
+            '  helper-call "bpf_seq_write" $ctx.meta.seq $data 4'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "seq-write-rejects-non-iter"
+        category: "helper-state"
+        tags: [raw-tracepoint helper-call seq reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let data = "abcd"'
+            '  helper-call "bpf_seq_write" 0 $data 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_seq_write' is only valid in iter programs"
+    }
+    {
+        name: "seq-printf-allows-null-zero-data"
+        category: "helper-state"
+        tags: [iter helper-call seq]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let fmt = "value\u{0}"'
+            '  helper-call "bpf_seq_printf" $ctx.meta.seq $fmt 6 0 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "seq-printf-rejects-unaligned-data-len"
+        category: "helper-state"
+        tags: [iter helper-call seq reject]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let fmt = "value\u{0}"'
+            '  let data = "01234567"'
+            '  helper-call "bpf_seq_printf" $ctx.meta.seq $fmt 6 $data 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_seq_printf' requires arg4 to be a multiple of 8"
+    }
+    {
         name: "callback-bpf-loop"
         category: "callbacks"
         tags: [helper-call callback bpf-loop]
