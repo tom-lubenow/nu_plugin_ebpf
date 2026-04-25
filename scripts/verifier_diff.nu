@@ -479,6 +479,59 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-device-context"
+        category: "context-surface"
+        tags: [cgroup-device context]
+        requires: [cgroup-v2]
+        target: "cgroup_device:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.access_type + $ctx.device_access + $ctx.device_type + $ctx.major + $ctx.minor) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sysctl-new-value-write"
+        category: "context-surface"
+        tags: [cgroup-sysctl context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.file_pos = 0'
+            '  $ctx.new_value = "1"'
+            '  $ctx.name | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-basic-context-write"
+        category: "context-surface"
+        tags: [sock-ops context writable]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.op + ($ctx.args | get 0) + $ctx.family + $ctx.remote_port + $ctx.socket_cookie + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  $ctx.reply = 1'
+            '  $ctx.replylong.0 = 7'
+            '  $ctx.cb_flags = 1'
+            '  $ctx.sk_txhash = 7'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-reuseport-select-context"
         category: "context-surface"
         tags: [sk-reuseport context]
@@ -487,6 +540,65 @@ const FIXTURES = [
             '{|ctx|'
             '  ($ctx.hash + $ctx.socket_cookie + $ctx.sk.family) | count'
             '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-lookup-context-clear-socket"
+        category: "context-surface"
+        tags: [sk-lookup context writable]
+        requires: [netns-self]
+        target: "sk_lookup:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.family + $ctx.protocol + $ctx.local_port + $ctx.remote_port + $ctx.cookie + $ctx.sk.family) | count'
+            '  $ctx.sk = 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-msg-basic-context"
+        category: "context-surface"
+        tags: [sk-msg context]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.size + $ctx.family + $ctx.local_port + $ctx.remote_port + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-skb-basic-context"
+        category: "context-surface"
+        tags: [sk-skb context]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.eth_protocol + $ctx.local_port + $ctx.socket_uid + $ctx.sk.family) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-skb-parser-basic-context"
+        category: "context-surface"
+        tags: [sk-skb-parser context]
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.eth_protocol + $ctx.local_port + $ctx.sk.family) | count'
+            '  0'
             '}'
         ]
         local: "accept"
