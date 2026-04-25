@@ -6,22 +6,136 @@ const BPFFS = "/sys/fs/bpf"
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
+        category: "tracing"
+        tags: [raw-tracepoint counter]
         target: "raw_tracepoint:sys_enter"
-        program: '{|ctx| ($ctx.arg0 + $ctx.arg1) | count; 0 }'
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0 + $ctx.arg1) | count'
+            '  0'
+            '}'
+        ]
         local: "accept"
         kernel: "accept"
     }
     {
         name: "xdp-packet-count"
+        category: "packet"
+        tags: [xdp counter]
+        requires: [loopback-interface]
         target: "xdp:lo"
-        program: '{|ctx| $ctx.packet_len | count; "pass" }'
+        program: [
+            '{|ctx|'
+            '  $ctx.packet_len | count'
+            '  "pass"'
+            '}'
+        ]
         local: "accept"
         kernel: "accept"
     }
     {
-        name: "timer-start-rejects-non-map-timer"
+        name: "map-put-get-null-checked"
+        category: "maps"
+        tags: [hash-map null-check]
         target: "raw_tracepoint:sys_enter"
-        program: '{|| helper-call "bpf_timer_start" 0 1000 0 }'
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0 | map-put seen_args 0 --kind hash'
+            '  let entry = (0 | map-get seen_args --kind hash)'
+            '  if $entry != 0 {'
+            '    $entry | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-scalar-mut"
+        category: "globals"
+        tags: [data-global scalar]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut hits: int = 0'
+            '  $hits = ($hits + 1)'
+            '  $hits | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-action-cgroup-array-contains"
+        category: "packet"
+        tags: [tc-action cgroup-array helper-policy]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  map-contains tracked_cgroups 0 --kind cgroup-array'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "xdp-rejects-pid-context"
+        category: "context-policy"
+        tags: [xdp reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  $ctx.pid | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.pid is not available on xdp programs"
+    }
+    {
+        name: "socket-filter-rejects-direct-data"
+        category: "context-policy"
+        tags: [socket-filter reject]
+        target: "socket_filter:udp4:127.0.0.1:31337"
+        program: [
+            '{|ctx|'
+            '  $ctx.data | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.data is not available on socket_filter programs"
+    }
+    {
+        name: "map-get-rejects-queue"
+        category: "maps"
+        tags: [queue reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0 | map-get q --kind queue'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "map-get is not supported for map kind Queue"
+    }
+    {
+        name: "timer-start-rejects-non-map-timer"
+        category: "helper-state"
+        tags: [timer reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{||'
+            '  helper-call "bpf_timer_start" 0 1000 0'
+            '}'
+        ]
         local: "reject"
         kernel: "skip"
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
@@ -89,19 +203,46 @@ def run-nu-with-plugin-complete [plugin_bin: string code: string] {
     run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code | complete
 }
 
+def fixture-program [fixture] {
+    let program = $fixture.program
+    if (($program | describe) | str starts-with "list") {
+        $program | str join (char nl)
+    } else {
+        $program
+    }
+}
+
 def dry-run-describe-code [fixture] {
     let target = ($fixture.target | to nuon)
-    $"ebpf attach --dry-run ($target) ($fixture.program) | describe"
+    let program = (fixture-program $fixture)
+    $"ebpf attach --dry-run ($target) ($program) | describe"
 }
 
 def dry-run-save-code [fixture output_path: string] {
     let target = ($fixture.target | to nuon)
     let path = ($output_path | to nuon)
-    $"ebpf attach --dry-run ($target) ($fixture.program) | save -f ($path)"
+    let program = (fixture-program $fixture)
+    $"ebpf attach --dry-run ($target) ($program) | save -f ($path)"
 }
 
 def combined-output [result] {
     $"($result.stdout)($result.stderr)"
+}
+
+def optional [record field fallback] {
+    let value = ($record | get -o $field)
+    if $value == null { $fallback } else { $value }
+}
+
+def fixture-summary [fixture] {
+    {
+        name: $fixture.name
+        category: (optional $fixture category "")
+        local: $fixture.local
+        kernel: $fixture.kernel
+        requires: ((optional $fixture requires []) | str join ",")
+        tags: ((optional $fixture tags []) | str join ",")
+    }
 }
 
 def check-local-fixture [plugin_bin: string fixture] {
@@ -150,6 +291,25 @@ def kernel-preflight [] {
     { available: (($reasons | length) == 0), reasons: $reasons }
 }
 
+def host-feature-available [feature: string] {
+    if $feature == "loopback-interface" {
+        "/sys/class/net/lo" | path exists
+    } else if $feature == "kernel-btf" {
+        "/sys/kernel/btf/vmlinux" | path exists
+    } else if $feature == "cgroup-v2" {
+        "/sys/fs/cgroup" | path exists
+    } else if $feature == "netns-self" {
+        "/proc/self/ns/net" | path exists
+    } else {
+        false
+    }
+}
+
+def fixture-missing-requirements [fixture] {
+    optional $fixture requires []
+    | where {|feature| not (host-feature-available $feature) }
+}
+
 def write-dry-run-object [plugin_bin: string fixture obj_path: string] {
     let result = (run-nu-with-plugin-complete $plugin_bin (dry-run-save-code $fixture $obj_path))
 
@@ -188,7 +348,32 @@ def run-kernel-fixture [plugin_bin: string fixture tmp_dir: string] {
         fail $"fixture ($fixture.name) expected kernel ($fixture.kernel), got ($actual): ((combined-output $result) | str trim)"
     }
 
+    let expected_fragment = ($fixture | get -o kernel_error_contains)
+    let output = (combined-output $result)
+    if $fixture.kernel == "reject" and $expected_fragment != null and not ($output | str contains $expected_fragment) {
+        fail $"fixture ($fixture.name) kernel rejected, but log did not contain expected fragment: ($expected_fragment)"
+    }
+
     { name: $fixture.name, kernel: $actual, output: (combined-output $result) }
+}
+
+def select-kernel-fixtures [fixtures require_kernel: bool] {
+    mut selected = []
+
+    for fixture in $fixtures {
+        let missing = (fixture-missing-requirements $fixture)
+        if (($missing | length) == 0) {
+            $selected = ($selected | append $fixture)
+        } else {
+            let reason = ($missing | str join ",")
+            if $require_kernel {
+                fail $"fixture ($fixture.name) missing required host features: ($reason)"
+            }
+            print $"kernel skip fixture ($fixture.name): missing ($reason)"
+        }
+    }
+
+    $selected
 }
 
 def select-fixtures [fixture_name] {
@@ -204,6 +389,7 @@ def select-fixtures [fixture_name] {
 }
 
 def main [
+    --list         # List verifier fixtures and exit.
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
     --fixture: string # Run one fixture by exact name.
@@ -212,8 +398,17 @@ def main [
         fail "--kernel and --no-kernel are mutually exclusive"
     }
 
-    let plugin_bin = (resolve-plugin-bin $REPO_ROOT)
     let fixtures = (select-fixtures $fixture)
+
+    if $list {
+        for fixture in $fixtures {
+            let summary = (fixture-summary $fixture)
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) requires=($summary.requires) tags=($summary.tags)"
+        }
+        return
+    }
+
+    let plugin_bin = (resolve-plugin-bin $REPO_ROOT)
     print $"Using plugin: ($plugin_bin)"
 
     let local_results = (
@@ -237,7 +432,11 @@ def main [
         return
     }
 
-    let kernel_fixtures = ($local_accepts | where {|fixture| $fixture.kernel != "skip" })
+    let kernel_candidates = (
+        $local_accepts
+        | where {|fixture| $fixture.kernel != "skip" }
+    )
+    let kernel_fixtures = (select-kernel-fixtures $kernel_candidates $kernel)
     if (($kernel_fixtures | length) == 0) {
         print $"ok: (($fixtures | length)) local fixtures, no kernel fixtures"
         return

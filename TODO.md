@@ -39,7 +39,7 @@ history and release notes, not here.
   - Preserve clear diagnostics when VCC rejects a program that the compiler can describe precisely.
 
 - [~] Add a verifier differential suite.
-  - Grow `scripts/verifier_diff.nu` from the initial local-plus-optional-`bpftool` harness into the compatibility matrix driver.
+  - Grow `scripts/verifier_diff.nu` from the initial tagged fixture set and optional-`bpftool` kernel load path into the compatibility matrix driver.
   - Track expected accept/reject status, verifier log fragments, required kernel features, and minimum kernel versions.
   - Add fixture coverage for maps, helpers, kfuncs, callbacks, context fields, packet bounds, ref lifetimes, dynptrs, timers, and by-reference stack objects.
   - Keep dangerous fixtures dry-run-only or VM-only; the default host lane must remain auto-skip safe.

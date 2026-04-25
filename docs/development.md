@@ -43,9 +43,10 @@ Use the manual integration suite for host-facing attach/dry-run coverage after c
 Use `scripts/verifier_diff.nu` for small compiler/VCC fixtures that should be compared against the kernel verifier. The harness auto-selects the newest built plugin unless `PLUGIN_BIN` is set, runs local `ebpf attach --dry-run` checks first, and auto-skips kernel verifier loading unless the host has `bpftool`, root privileges, and `/sys/fs/bpf`.
 
 ```bash
+nu ./scripts/verifier_diff.nu --list
 nu ./scripts/verifier_diff.nu --no-kernel
 nu ./scripts/verifier_diff.nu --fixture raw-tracepoint-count
 sudo nu ./scripts/verifier_diff.nu --kernel
 ```
 
-Keep normal development runs local-only or auto-skip capable. Add kernel-required fixtures only when they are load-only, deterministic, and safe for the host; behavior-changing families should stay dry-run-only here and move to an isolated VM lane.
+Fixtures carry expected local/kernel status, category tags, and optional host-feature requirements. Keep normal development runs local-only or auto-skip capable. Add kernel-required fixtures only when they are load-only, deterministic, and safe for the host; behavior-changing families should stay dry-run-only here and move to an isolated VM lane.
