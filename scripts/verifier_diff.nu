@@ -1658,6 +1658,161 @@ const FIXTURES = [
         error_contains: "helper 'bpf_user_ringbuf_drain' requires arg3 flags"
     }
     {
+        name: "perf-event-read-helpers"
+        category: "helper-state"
+        tags: [perf-event helper-call]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  let value = "012345678901234567890123"'
+            '  helper-call "bpf_perf_event_read" perf_events 0'
+            '  helper-call "bpf_perf_event_read_value" perf_events 0 $value 24'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "perf-event-read-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [perf-event flags reject]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_perf_event_read" perf_events 4294967296'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU"
+    }
+    {
+        name: "perf-event-read-value-rejects-size"
+        category: "helper-state"
+        tags: [perf-event scalar-policy reject]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  let value = "01234567"'
+            '  helper-call "bpf_perf_event_read_value" perf_events 0 $value 8'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_perf_event_read_value' requires arg3 = 24"
+    }
+    {
+        name: "syscall-helpers"
+        category: "helper-state"
+        tags: [syscall helper-call]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  let attr = "01234567"'
+            '  let name = "init_task\u{0}"'
+            '  let out = "00000000"'
+            '  helper-call "bpf_sys_bpf" 0 $attr 8'
+            '  helper-call "bpf_kallsyms_lookup_name" $name 10 0 $out'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "syscall-helper-rejects-zero-attr-size"
+        category: "helper-state"
+        tags: [syscall scalar-policy reject]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  let attr = "01234567"'
+            '  helper-call "bpf_sys_bpf" 0 $attr 0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 166 arg2 must be > 0"
+    }
+    {
+        name: "syscall-helper-rejects-kallsyms-flags"
+        category: "helper-state"
+        tags: [syscall flags reject]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  let name = "init_task\u{0}"'
+            '  let out = "00000000"'
+            '  helper-call "bpf_kallsyms_lookup_name" $name 10 1 $out'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_kallsyms_lookup_name' requires arg2 = 0"
+    }
+    {
+        name: "lsm-bprm-opts-set"
+        category: "helper-state"
+        tags: [lsm helper-call]
+        requires: [kernel-btf]
+        target: "lsm:bprm_check_security"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_bprm_opts_set" $ctx.arg.bprm 1'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lsm-bprm-opts-set-rejects-flags"
+        category: "helper-state"
+        tags: [lsm flags reject]
+        requires: [kernel-btf]
+        target: "lsm:bprm_check_security"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_bprm_opts_set" $ctx.arg.bprm 2'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits"
+    }
+    {
+        name: "kprobe-override-return"
+        category: "helper-state"
+        tags: [kprobe helper-call]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_override_return" $ctx 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "kretprobe-rejects-override-return"
+        category: "helper-state"
+        tags: [kretprobe helper-call reject]
+        target: "kretprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_override_return" $ctx 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_override_return' is only valid in kprobe, kprobe.multi, and ksyscall programs"
+    }
+    {
         name: "callback-bpf-loop"
         category: "callbacks"
         tags: [helper-call callback bpf-loop]
