@@ -371,6 +371,98 @@ const FIXTURES = [
         error_contains: "ctx.data is not available on socket_filter programs"
     }
     {
+        name: "cgroup-sock-addr-connect4-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
+        program: [
+            '{|ctx|'
+            '  ($ctx.user_ip4 + $ctx.user_port + $ctx.remote_ip4 + $ctx.remote_port + $ctx.sk.family) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-connect4-writable-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.remote_ip4 = 2130706433'
+            '  $ctx.remote_port = 8080'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-connect6-indexed-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context ipv6]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect6"
+        program: [
+            '{|ctx|'
+            '  (($ctx.user_ip6 | get 3) + ($ctx.remote_ip6 | get 3) + $ctx.user_port + $ctx.remote_port) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-unix-sun-path-write"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context unix writable kfunc]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "flow-dissector-flow-key-context"
+        category: "context-surface"
+        tags: [flow-dissector context]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  ($ctx.flow_keys.ip_proto + $ctx.flow_keys.nhoff + $ctx.flow_keys.thoff + ($ctx.flow_keys.ipv6_dst | get 3)) | count'
+            '  "fallback"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-state-context"
+        category: "context-surface"
+        tags: [netfilter context]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  ($ctx.hook + $ctx.pf + $ctx.protocol_family + $ctx.state.in.ifindex + $ctx.nf_state.out.ifindex + $ctx.skb.len) | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-get-rejects-queue"
         category: "maps"
         tags: [queue reject]

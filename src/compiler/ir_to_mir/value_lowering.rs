@@ -772,15 +772,24 @@ impl<'a> HirToMirLowering<'a> {
             dst: dst_vreg,
             src: MirValue::StackSlot(slot),
         });
+        let array_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: aligned_len,
+        };
+        self.vreg_type_hints.insert(
+            dst_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
         // Track the string slot and value
         let meta = self.get_or_create_metadata(dst);
         meta.string_slot = Some(slot);
         meta.string_len_vreg = Some(len_vreg);
         meta.string_len_bound = Some(content_len);
-        meta.field_type = Some(MirType::Array {
-            elem: Box::new(MirType::U8),
-            len: aligned_len,
-        });
+        meta.field_type = Some(array_ty);
         // Also track the literal string value for record field names
         if let Some(s) = string_value {
             meta.literal_string = Some(s);
