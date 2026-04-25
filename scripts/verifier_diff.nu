@@ -121,6 +121,72 @@ const FIXTURES = [
         error_contains: "ringbuf record already released"
     }
     {
+        name: "ringbuf-dynptr-reserve-submit-balanced"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "ringbuf-dynptr-rejects-leak"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased ringbuf dynptr reservation"
+    }
+    {
+        name: "ringbuf-dynptr-rejects-double-submit"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires initialized dynptr stack object"
+    }
+    {
+        name: "dynptr-data-rejects-uninitialized"
+        category: "helper-state"
+        tags: [dynptr reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_dynptr_data" $d 0 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires initialized dynptr stack object"
+    }
+    {
         name: "stackid-built-in-kstacks"
         category: "maps"
         tags: [helper-call stack-trace reserved-name]
