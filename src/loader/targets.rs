@@ -433,6 +433,19 @@ pub fn parse_program_spec(spec: &str) -> Result<ProgramSpec, LoadError> {
     Ok(program_spec)
 }
 
+pub fn parse_program_spec_for_attach(spec: &str, dry_run: bool) -> Result<ProgramSpec, LoadError> {
+    let program_spec = ProgramSpec::parse(spec).map_err(parse_error)?;
+    if !dry_run
+        || !matches!(
+            program_spec,
+            ProgramSpec::SkMsg { .. } | ProgramSpec::SkSkb { .. } | ProgramSpec::SkSkbParser { .. }
+        )
+    {
+        validate_program_spec(&program_spec)?;
+    }
+    Ok(program_spec)
+}
+
 pub fn parse_probe_spec(spec: &str) -> Result<(EbpfProgramType, String), LoadError> {
     let Some((prefix, target)) = spec.split_once(':') else {
         return Err(LoadError::Load(format!(

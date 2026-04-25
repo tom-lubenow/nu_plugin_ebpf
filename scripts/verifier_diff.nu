@@ -282,6 +282,74 @@ const FIXTURES = [
         local: "accept"
         kernel: "accept"
     }
+    {
+        name: "adjust-message-sk-msg-apply"
+        category: "language-surface"
+        tags: [adjust-message sk-msg]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --apply 8'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-socket-sk-msg-sockmap"
+        category: "language-surface"
+        tags: [redirect-socket sk-msg sockmap]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockmap'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-packet-sk-skb-pull"
+        category: "language-surface"
+        tags: [adjust-packet sk-skb]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --pull 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-socket-sk-skb-sockmap"
+        category: "language-surface"
+        tags: [redirect-socket sk-skb sockmap]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockmap'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-packet-sk-skb-parser-pull"
+        category: "language-surface"
+        tags: [adjust-packet sk-skb-parser]
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --pull 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
 
 def fail [msg: string] {

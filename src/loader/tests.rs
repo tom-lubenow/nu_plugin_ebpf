@@ -1152,6 +1152,41 @@ fn test_parse_program_spec_sk_skb_parser_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_for_attach_allows_missing_socket_maps_on_dry_run() {
+    let missing_path = "/__nu_plugin_ebpf_missing_sockmap__";
+    for (spec_string, expected_type) in [
+        (format!("sk_msg:{missing_path}"), EbpfProgramType::SkMsg),
+        (format!("sk_skb:{missing_path}"), EbpfProgramType::SkSkb),
+        (
+            format!("sk_skb_parser:{missing_path}"),
+            EbpfProgramType::SkSkbParser,
+        ),
+    ] {
+        let spec = parse_program_spec_for_attach(&spec_string, true)
+            .expect("socket-map dry-run should not require a live pinned map");
+        assert_eq!(spec.program_type(), expected_type);
+        assert_eq!(spec.pinned_map_path(), Some(missing_path));
+
+        let err = parse_program_spec_for_attach(&spec_string, false)
+            .expect_err("live socket-map attach should still require a pinned map");
+        assert!(
+            err.to_string().contains("Unknown pinned sockmap path"),
+            "unexpected live attach error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_parse_program_spec_for_attach_keeps_other_dry_run_validation() {
+    let err = parse_program_spec_for_attach("xdp:__nu_plugin_ebpf_no_such_iface__", true)
+        .expect_err("dry-run should only skip socket-map path existence checks");
+    assert!(
+        err.to_string().contains("Unknown network interface"),
+        "unexpected dry-run validation error: {err}"
+    );
+}
+
+#[test]
 fn test_parse_program_spec_cgroup_device_is_structured() {
     let spec = parse_program_spec("cgroup_device:/sys/fs/cgroup").unwrap();
     assert_eq!(

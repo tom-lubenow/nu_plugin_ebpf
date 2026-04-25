@@ -112,7 +112,7 @@ pub use crate::program_spec::{
     ProgramSpec, SkLookupTarget, SkMsgTarget, SkReuseportMode, SkReuseportTarget, SkSkbTarget,
     SockOpsTarget, SocketFilterTarget, TcActionTarget, TcTarget, UprobeTarget,
 };
-pub use targets::{parse_probe_spec, parse_program_spec};
+pub use targets::{parse_probe_spec, parse_program_spec, parse_program_spec_for_attach};
 
 #[allow(dead_code)]
 enum OwnedSocket {

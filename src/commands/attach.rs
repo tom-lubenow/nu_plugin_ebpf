@@ -563,7 +563,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_port } - Get the local port in host byte order
     {|ctx| $ctx.netns_cookie } - Get the stable network-namespace cookie for the current sk_msg context
     Note: sk_msg programs attach to a pinned sockmap or sockhash path such as
-    `/sys/fs/bpf/demo_sockmap`. sk_msg uses raw integer verdict codes;
+    `/sys/fs/bpf/demo_sockmap`; dry-run mode only requires a syntactically
+    valid non-empty path, while live attach validates the pinned map exists.
+    sk_msg uses raw integer verdict codes;
     observation-only examples should return `pass` or `1`. `ctx.data` /
     `ctx.data_end` use the same guarded packet access model as XDP and tc,
     so forms like `($ctx.data | get 0)` and `mut ctx = $ctx; $ctx.data.0 = 1`
@@ -612,6 +614,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_port } - Get the local port in host byte order
     Note: initial sk_skb support targets pinned sockmap or sockhash paths such
     as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_verdict` programs.
+    Dry-run mode only requires a syntactically valid non-empty path, while live
+    attach validates the pinned map exists.
     It uses raw verdict codes but supports `pass` / `drop` aliases, and
     `ctx.data` / `ctx.data_end` use the same guarded packet access model as
     tc_action, tc, tcx, netkit, and cgroup_skb. Modeled skb packet-edit helpers also use the
@@ -658,7 +662,9 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.local_port } - Get the local port in host byte order
     Note: initial sk_skb_parser support targets pinned sockmap or sockhash
     paths such as `/sys/fs/bpf/demo_sockmap` and emits `sk_skb/stream_parser`
-    programs. It uses raw integer parser returns rather than verdict aliases,
+    programs. Dry-run mode only requires a syntactically valid non-empty path,
+    while live attach validates the pinned map exists. It uses raw integer
+    parser returns rather than verdict aliases,
     so ordinary examples should return an integer such as `0` or
     `$ctx.packet_len`. Modeled skb packet-edit helpers also use the
     ordinary helper surface here, including `bpf_skb_store_bytes`,
@@ -1224,18 +1230,18 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }",
-                description: "Count first-byte observations on a pinned sockmap or sockhash sk_msg verdict hook",
+                example: "ebpf attach --dry-run 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }",
+                description: "Compile a first-byte counter for a sockmap or sockhash sk_msg verdict hook",
                 result: None,
             },
             Example {
-                example: "ebpf attach 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 'pass' }",
-                description: "Count packet lengths on a pinned sockmap or sockhash sk_skb stream-verdict hook",
+                example: "ebpf attach --dry-run 'sk_skb:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 'pass' }",
+                description: "Compile a local-port counter for a sockmap or sockhash sk_skb stream-verdict hook",
                 result: None,
             },
             Example {
-                example: "ebpf attach 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 0 }",
-                description: "Count packet lengths on a pinned sockmap or sockhash sk_skb stream-parser hook",
+                example: "ebpf attach --dry-run 'sk_skb_parser:/sys/fs/bpf/demo_sockmap' {|ctx| $ctx.local_port | count; 0 }",
+                description: "Compile a local-port counter for a sockmap or sockhash sk_skb stream-parser hook",
                 result: None,
             },
             Example {
@@ -1350,7 +1356,7 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-    use crate::loader::{LoadError, get_state, parse_program_spec};
+    use crate::loader::{LoadError, get_state, parse_program_spec_for_attach};
 
     let probe_spec: String = call.req(0)?;
     let body: Value = call.req(1)?;
@@ -1360,7 +1366,7 @@ fn run_attach(
     let pin_group: Option<String> = call.get_flag("pin")?;
 
     // Parse the probe specification (includes validation)
-    let program_spec = parse_program_spec(&probe_spec).map_err(|e| match &e {
+    let program_spec = parse_program_spec_for_attach(&probe_spec, dry_run).map_err(|e| match &e {
         crate::loader::LoadError::FunctionNotFound { name, suggestions } => {
             let help = if suggestions.is_empty() {
                 format!("Check the function name. Use 'sudo cat /sys/kernel/tracing/available_filter_functions | grep {name}' to find available functions.")
