@@ -641,6 +641,7 @@ fn verify_mir_program(
             &types,
             &subfn_summaries,
             probe_ctx,
+            type_hints.map(|hints| &hints.generic_map_value_types),
         ) {
             if let Some(err) = errors.into_iter().next() {
                 return Err(CompileError::VerifierTypeError(err));
@@ -651,6 +652,7 @@ fn verify_mir_program(
             &types,
             &subfn_summaries,
             probe_ctx,
+            type_hints.map(|hints| &hints.generic_map_value_types),
         ) {
             let message = errors
                 .iter()

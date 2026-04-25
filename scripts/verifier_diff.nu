@@ -72,6 +72,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "map-define-null-only-lookup-keeps-value-layout"
+        category: "maps"
+        tags: [maps map-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define null_only --kind hash --value-type int'
+            '  42 | map-put null_only 0 --kind hash'
+            '  let entry = (0 | map-get null_only --kind hash)'
+            '  if $entry != 0 { 0 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-query-built-in-events"
         category: "maps"
         tags: [helper-call ringbuf reserved-name]

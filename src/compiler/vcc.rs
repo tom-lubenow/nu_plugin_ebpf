@@ -42,7 +42,7 @@ use crate::compiler::instruction::{
 };
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BinOpKind, COUNTER_MAP_NAME, CtxField,
-    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapOpKind, MirFunction, MirInst, MirType,
+    HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapOpKind, MapRef, MirFunction, MirInst, MirType,
     MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind,
     StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
 };
@@ -656,7 +656,7 @@ pub struct VccVerifier {
 include!("vcc/verifier.rs");
 include!("vcc/state.rs");
 pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None, None)
 }
 
 pub fn verify_mir_for_program(
@@ -664,7 +664,14 @@ pub fn verify_mir_for_program(
     types: &HashMap<VReg, MirType>,
     program: &ProgramTypeInfo,
 ) -> Result<(), Vec<VccError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), Some(program), None)
+    verify_mir_with_subfunction_summaries_impl(
+        func,
+        types,
+        &HashMap::new(),
+        Some(program),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -679,6 +686,7 @@ pub(crate) fn verify_mir_for_probe_context(
         &HashMap::new(),
         Some(probe_ctx.program_info()),
         Some(probe_ctx),
+        None,
     )
 }
 
@@ -691,7 +699,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries(
         crate::compiler::subfn_summaries::SubfunctionReturnSummary,
     >,
 ) -> Result<(), Vec<VccError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None, None)
 }
 
 pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
@@ -702,6 +710,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
         crate::compiler::subfn_summaries::SubfunctionReturnSummary,
     >,
     probe_ctx: Option<&ProbeContext>,
+    generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
 ) -> Result<(), Vec<VccError>> {
     verify_mir_with_subfunction_summaries_impl(
         func,
@@ -709,6 +718,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
         subfn_summaries,
         probe_ctx.map(|ctx| ctx.program_info()),
         probe_ctx,
+        generic_map_value_types,
     )
 }
 
@@ -721,6 +731,7 @@ fn verify_mir_with_subfunction_summaries_impl(
     >,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
+    generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
 ) -> Result<(), Vec<VccError>> {
     let effective_program = probe_ctx.map(|ctx| ctx.program_info()).or(program);
 
@@ -742,7 +753,12 @@ fn verify_mir_with_subfunction_summaries_impl(
             ),
         )]);
     }
-    let early_errors = check_generic_map_layout_constraints(func, types);
+    let empty_map_value_types = HashMap::new();
+    let early_errors = check_generic_map_layout_constraints(
+        func,
+        types,
+        generic_map_value_types.unwrap_or(&empty_map_value_types),
+    );
     if !early_errors.is_empty() {
         return Err(early_errors);
     }

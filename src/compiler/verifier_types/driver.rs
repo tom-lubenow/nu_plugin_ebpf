@@ -8,7 +8,7 @@ pub fn verify_mir(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None, None)
 }
 
 pub fn verify_mir_for_program(
@@ -16,7 +16,14 @@ pub fn verify_mir_for_program(
     types: &HashMap<VReg, MirType>,
     program: &ProgramTypeInfo,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), Some(program), None)
+    verify_mir_with_subfunction_summaries_impl(
+        func,
+        types,
+        &HashMap::new(),
+        Some(program),
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -31,6 +38,7 @@ pub(crate) fn verify_mir_for_probe_context(
         &HashMap::new(),
         Some(probe_ctx.program_info()),
         Some(probe_ctx),
+        None,
     )
 }
 
@@ -40,7 +48,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries(
     types: &HashMap<VReg, MirType>,
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None, None)
 }
 
 pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
@@ -48,6 +56,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
     types: &HashMap<VReg, MirType>,
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
     probe_ctx: Option<&ProbeContext>,
+    generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
 ) -> Result<(), Vec<VerifierTypeError>> {
     verify_mir_with_subfunction_summaries_impl(
         func,
@@ -55,6 +64,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
         subfn_summaries,
         probe_ctx.map(|ctx| ctx.program_info()),
         probe_ctx,
+        generic_map_value_types,
     )
 }
 
@@ -64,6 +74,7 @@ fn verify_mir_with_subfunction_summaries_impl(
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
+    generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
 ) -> Result<(), Vec<VerifierTypeError>> {
     let effective_program = probe_ctx.map(|ctx| ctx.program_info()).or(program);
 
@@ -92,7 +103,12 @@ fn verify_mir_with_subfunction_summaries_impl(
         )));
         return Err(errors);
     }
-    errors.extend(check_generic_map_layout_constraints(func, types));
+    let empty_map_value_types = HashMap::new();
+    errors.extend(check_generic_map_layout_constraints(
+        func,
+        types,
+        generic_map_value_types.unwrap_or(&empty_map_value_types),
+    ));
     if !errors.is_empty() {
         return Err(errors);
     }

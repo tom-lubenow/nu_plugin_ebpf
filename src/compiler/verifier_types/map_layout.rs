@@ -95,7 +95,15 @@ pub(super) fn infer_map_operand_size(
     }
 }
 
-pub(super) fn infer_map_lookup_value_size(dst: VReg, types: &HashMap<VReg, MirType>) -> usize {
+pub(super) fn infer_map_lookup_value_size(
+    dst: VReg,
+    map: &MapRef,
+    types: &HashMap<VReg, MirType>,
+    generic_map_value_types: &HashMap<MapRef, MirType>,
+) -> usize {
+    if let Some(ty) = generic_map_value_types.get(map) {
+        return ty.size().max(1);
+    }
     match types.get(&dst) {
         Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
         _ => 8,
@@ -176,6 +184,7 @@ pub(super) fn register_generic_map_layout_spec(
 pub(super) fn check_generic_map_layout_constraints(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
+    generic_map_value_types: &HashMap<MapRef, MirType>,
 ) -> Vec<VerifierTypeError> {
     let mut specs: HashMap<String, VerifierMapLayoutSpec> = HashMap::new();
     let mut counter_kinds: HashMap<String, MapKind> = HashMap::new();
@@ -197,7 +206,8 @@ pub(super) fn check_generic_map_layout_constraints(
                     else {
                         continue;
                     };
-                    let value_size = infer_map_lookup_value_size(*dst, types);
+                    let value_size =
+                        infer_map_lookup_value_size(*dst, map, types, generic_map_value_types);
                     register_generic_map_layout_spec(
                         map,
                         key_size,
