@@ -40,7 +40,7 @@ history and release notes, not here.
 
 - [~] Add a verifier differential suite.
   - Grow `scripts/verifier_diff.nu` from the initial tagged fixture set and optional-`bpftool` kernel load path into the compatibility matrix driver.
-  - Track expected accept/reject status, verifier log fragments, required kernel features, and minimum kernel versions.
+  - Track expected accept/reject status, verifier log fragments, required kernel features, and source-verified minimum kernel versions.
   - Add fixture coverage for maps, helpers, kfuncs, callbacks, context fields, packet bounds, ref lifetimes, dynptrs, timers, and by-reference stack objects.
   - Keep dangerous fixtures dry-run-only or VM-only; the default host lane must remain auto-skip safe.
 

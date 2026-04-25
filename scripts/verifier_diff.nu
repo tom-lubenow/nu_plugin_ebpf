@@ -409,6 +409,33 @@ def is-root [] {
     ((^id -u | str trim | into int) == 0)
 }
 
+def parse-kernel-version [version: string] {
+    let core = ($version | split row "-" | first)
+    let parts = ($core | split row ".")
+    {
+        major: (($parts | get 0) | into int)
+        minor: (($parts | get -o 1 | default "0") | into int)
+        patch: (($parts | get -o 2 | default "0") | into int)
+    }
+}
+
+def kernel-version-at-least [current: string required: string] {
+    let have = (parse-kernel-version $current)
+    let need = (parse-kernel-version $required)
+
+    if $have.major != $need.major {
+        return ($have.major > $need.major)
+    }
+    if $have.minor != $need.minor {
+        return ($have.minor > $need.minor)
+    }
+    $have.patch >= $need.patch
+}
+
+def current-kernel-release [] {
+    ^uname -r | str trim
+}
+
 def run-nu-with-plugin-complete [plugin_bin: string code: string] {
     run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code | complete
 }
@@ -451,6 +478,8 @@ def fixture-summary [fixture] {
         local: $fixture.local
         kernel: $fixture.kernel
         requires: ((optional $fixture requires []) | str join ",")
+        kernel_requires: ((optional $fixture kernel_requires []) | str join ",")
+        min_kernel: (optional $fixture min_kernel "")
         tags: ((optional $fixture tags []) | str join ",")
     }
 }
@@ -547,6 +576,26 @@ def fixture-missing-requirements [fixture] {
     | where {|feature| not (host-feature-available $feature) }
 }
 
+def fixture-missing-kernel-requirements [fixture] {
+    mut missing = (fixture-missing-requirements $fixture)
+
+    let kernel_features = (
+        optional $fixture kernel_requires []
+        | where {|feature| not (host-feature-available $feature) }
+    )
+    $missing = ($missing | append $kernel_features)
+
+    let min_kernel = ($fixture | get -o min_kernel)
+    if $min_kernel != null {
+        let current = (current-kernel-release)
+        if not (kernel-version-at-least $current $min_kernel) {
+            $missing = ($missing | append $"kernel>=($min_kernel),current=($current)")
+        }
+    }
+
+    $missing
+}
+
 def write-dry-run-object [plugin_bin: string fixture obj_path: string] {
     let result = (run-nu-with-plugin-complete $plugin_bin (dry-run-save-code $fixture $obj_path))
 
@@ -602,7 +651,11 @@ def select-fixtures-with-requirements [fixtures require_features: bool phase: st
     mut selected = []
 
     for fixture in $fixtures {
-        let missing = (fixture-missing-requirements $fixture)
+        let missing = if $phase == "kernel" {
+            fixture-missing-kernel-requirements $fixture
+        } else {
+            fixture-missing-requirements $fixture
+        }
         if (($missing | length) == 0) {
             $selected = ($selected | append $fixture)
         } else {
@@ -662,7 +715,7 @@ def main [
     if $list {
         for fixture in $fixtures {
             let summary = (fixture-summary $fixture)
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) requires=($summary.requires) tags=($summary.tags)"
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) tags=($summary.tags)"
         }
         return
     }
