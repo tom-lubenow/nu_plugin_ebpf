@@ -50,9 +50,9 @@ pub use elf::{
     CounterKeySchemaField, DataGlobal, EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram,
     EbpfProgramSection, EbpfProgramType, EventSchema, KernelTargetValidationKind,
     ObjectDataRelocation, ObjectDataSymbol, ProbeContext, ProgramAttachKind, ProgramCapability,
-    ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, ReadonlyGlobal,
-    SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec, StructOpsObjectSpec,
-    StructOpsValueField, SymbolRelocation,
+    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo,
+    ProgramValueAccess, ReadonlyGlobal, SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec,
+    StructOpsObjectSpec, StructOpsValueField, SymbolRelocation,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,

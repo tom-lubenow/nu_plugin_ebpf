@@ -53,6 +53,12 @@ struct ProgramBtfCallableSurfaceSpec {
     surface: ProgramBtfCallableSurface,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ProgramCompatibilityRequirementSurface {
+    program_types: &'static [EbpfProgramType],
+    requirements: &'static [ProgramCompatibilityRequirement],
+}
+
 const FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Fentry,
     EbpfProgramType::Fexit,
@@ -65,6 +71,57 @@ const LSM_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] =
     &[EbpfProgramType::Lsm, EbpfProgramType::LsmCgroup];
 
 const STRUCT_OPS_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::StructOps];
+
+const NO_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[];
+
+const BTF_TRAMPOLINE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::BpfTrampoline,
+];
+const TP_BTF_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::KernelBtf];
+const LSM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::BpfTrampoline,
+];
+const STRUCT_OPS_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::BpfTrampoline,
+    ProgramCompatibilityRequirement::StructOps,
+];
+const KPROBE_MULTI_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::KprobeMulti];
+const UPROBE_MULTI_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::UprobeMulti];
+const RAW_TRACEPOINT_WRITABLE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::RawTracepointWritable];
+const LSM_CGROUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::BpfTrampoline,
+    ProgramCompatibilityRequirement::CgroupLsm,
+];
+const EXTENSION_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::ExtensionProgram];
+const SYSCALL_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::SyscallProgram];
+const ITER_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::BpfIterator];
+const FLOW_DISSECTOR_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::FlowDissector];
+const TCX_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::Tcx];
+const NETKIT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::Netkit];
+const NETFILTER_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::NetfilterLink];
+const LWT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::RouteLwt];
+const SOCKMAP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::SockMapAttach];
+const CGROUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::CgroupV2];
+const LIRC_MODE2_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::LircMode2];
 
 const BTF_CALLABLE_SURFACES: &[ProgramBtfCallableSurfaceSpec] = &[
     ProgramBtfCallableSurfaceSpec {
@@ -85,6 +142,108 @@ const BTF_CALLABLE_SURFACES: &[ProgramBtfCallableSurfaceSpec] = &[
     },
 ];
 
+const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurface] = &[
+    ProgramCompatibilityRequirementSurface {
+        program_types: FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS,
+        requirements: BTF_TRAMPOLINE_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: TP_BTF_CALLABLE_PROGRAMS,
+        requirements: TP_BTF_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Lsm],
+        requirements: LSM_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::LsmCgroup],
+        requirements: LSM_CGROUP_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: STRUCT_OPS_BTF_CALLABLE_PROGRAMS,
+        requirements: STRUCT_OPS_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[
+            EbpfProgramType::KprobeMulti,
+            EbpfProgramType::KretprobeMulti,
+        ],
+        requirements: KPROBE_MULTI_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[
+            EbpfProgramType::UprobeMulti,
+            EbpfProgramType::UretprobeMulti,
+        ],
+        requirements: UPROBE_MULTI_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::RawTracepointWritable],
+        requirements: RAW_TRACEPOINT_WRITABLE_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Extension],
+        requirements: EXTENSION_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Syscall],
+        requirements: SYSCALL_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Iter],
+        requirements: ITER_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::FlowDissector],
+        requirements: FLOW_DISSECTOR_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Tcx],
+        requirements: TCX_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Netkit],
+        requirements: NETKIT_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Netfilter],
+        requirements: NETFILTER_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[
+            EbpfProgramType::LwtIn,
+            EbpfProgramType::LwtOut,
+            EbpfProgramType::LwtXmit,
+            EbpfProgramType::LwtSeg6Local,
+        ],
+        requirements: LWT_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[
+            EbpfProgramType::SkMsg,
+            EbpfProgramType::SkSkb,
+            EbpfProgramType::SkSkbParser,
+        ],
+        requirements: SOCKMAP_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[
+            EbpfProgramType::CgroupDevice,
+            EbpfProgramType::CgroupSkb,
+            EbpfProgramType::CgroupSock,
+            EbpfProgramType::CgroupSysctl,
+            EbpfProgramType::CgroupSockopt,
+            EbpfProgramType::CgroupSockAddr,
+            EbpfProgramType::SockOps,
+        ],
+        requirements: CGROUP_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::LircMode2],
+        requirements: LIRC_MODE2_COMPATIBILITY_REQUIREMENTS,
+    },
+];
+
 pub(super) fn btf_callable_surface_for(
     program_type: EbpfProgramType,
 ) -> Option<ProgramBtfCallableSurface> {
@@ -92,6 +251,16 @@ pub(super) fn btf_callable_surface_for(
         .iter()
         .find(|surface| surface.program_types.contains(&program_type))
         .map(|surface| surface.surface)
+}
+
+pub(super) fn compatibility_requirements_for(
+    program_type: EbpfProgramType,
+) -> &'static [ProgramCompatibilityRequirement] {
+    COMPATIBILITY_REQUIREMENT_SURFACES
+        .iter()
+        .find(|surface| surface.program_types.contains(&program_type))
+        .map(|surface| surface.requirements)
+        .unwrap_or(NO_COMPATIBILITY_REQUIREMENTS)
 }
 
 pub(super) const KPROBE_SPEC_ALIASES: &[&str] = &["kprobe"];
@@ -1139,6 +1308,32 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn test_compatibility_requirement_surfaces_are_disjoint() {
+        let mut program_types = HashSet::new();
+
+        for (index, surface) in COMPATIBILITY_REQUIREMENT_SURFACES.iter().enumerate() {
+            let mut requirements = HashSet::new();
+            for requirement in surface.requirements {
+                assert!(
+                    requirements.insert(*requirement),
+                    "duplicate compatibility requirement {requirement:?} in surface #{index}"
+                );
+            }
+
+            for program_type in surface.program_types {
+                assert!(
+                    ALL_PROGRAM_TYPES.contains(program_type),
+                    "{program_type:?} in compatibility surface #{index} must be supported"
+                );
+                assert!(
+                    program_types.insert(*program_type),
+                    "{program_type:?} appears in multiple compatibility surfaces"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_program_type_registry_prefixes_are_unique_and_complete() {

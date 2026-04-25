@@ -1,4 +1,4 @@
-use crate::compiler::EbpfProgramType;
+use crate::compiler::{EbpfProgramType, ProgramCompatibilityRequirement};
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
     TcAttachType,
@@ -2401,6 +2401,77 @@ impl ProgramSpec {
         }
     }
 
+    pub fn compatibility_requirements(&self) -> Vec<ProgramCompatibilityRequirement> {
+        let mut requirements = self.program_type().compatibility_requirements().to_vec();
+
+        match self {
+            ProgramSpec::Fentry {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Fexit {
+                sleepable: true, ..
+            }
+            | ProgramSpec::FmodRet {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Lsm {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Uprobe {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Uretprobe {
+                sleepable: true, ..
+            }
+            | ProgramSpec::UprobeMulti {
+                sleepable: true, ..
+            }
+            | ProgramSpec::UretprobeMulti {
+                sleepable: true, ..
+            } => push_compatibility_requirement(
+                &mut requirements,
+                ProgramCompatibilityRequirement::SleepableProgram,
+            ),
+            _ => {}
+        }
+
+        if let ProgramSpec::Xdp { target } = self {
+            if target.frags {
+                push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::XdpMultiBuffer,
+                );
+            }
+        }
+
+        if let Some(value_type_name) = self.struct_ops_value_type_name() {
+            if StructOpsFamily::from_value_type_name(value_type_name) == StructOpsFamily::SchedExt {
+                push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::SchedExt,
+                );
+            }
+        }
+
+        if let ProgramSpec::CgroupSockAddr { target } = self {
+            if target.attach_type.address_family() == ProgramAttachAddressFamily::Unix {
+                push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::CgroupUnixSockAddr,
+                );
+            }
+        }
+
+        requirements
+    }
+
+    pub fn requires_compatibility_feature(
+        &self,
+        requirement: ProgramCompatibilityRequirement,
+    ) -> bool {
+        self.compatibility_requirements().contains(&requirement)
+    }
+
     pub fn target_string(&self) -> String {
         match self {
             ProgramSpec::Kprobe { function }
@@ -2712,6 +2783,15 @@ impl ProgramSpec {
     }
 }
 
+fn push_compatibility_requirement(
+    requirements: &mut Vec<ProgramCompatibilityRequirement>,
+    requirement: ProgramCompatibilityRequirement,
+) {
+    if !requirements.contains(&requirement) {
+        requirements.push(requirement);
+    }
+}
+
 impl fmt::Display for ProgramSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let prefix = match self {
@@ -2937,6 +3017,61 @@ mod tests {
         );
         assert_eq!(sched_ext_select_cpu.section_name(), "struct_ops/select_cpu");
         assert_eq!(sched_ext_init.section_name(), "struct_ops.s/init");
+    }
+
+    #[test]
+    fn test_program_spec_compatibility_requirements_add_target_features() {
+        let plain_xdp = ProgramSpec::parse("xdp:lo").expect("plain xdp spec should parse");
+        assert!(
+            !plain_xdp
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpMultiBuffer)
+        );
+
+        let xdp_frags = ProgramSpec::parse("xdp:lo:frags").expect("xdp frags spec should parse");
+        assert!(
+            xdp_frags
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpMultiBuffer)
+        );
+
+        let fentry_sleepable =
+            ProgramSpec::parse("fentry.s:do_sys_openat2").expect("sleepable fentry should parse");
+        assert!(
+            fentry_sleepable
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::KernelBtf)
+        );
+        assert!(
+            fentry_sleepable
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SleepableProgram)
+        );
+
+        let struct_ops =
+            ProgramSpec::parse("struct_ops:tcp_congestion_ops").expect("struct_ops should parse");
+        assert!(
+            struct_ops.requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+        );
+        assert!(
+            !struct_ops.requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+
+        let sched_ext =
+            ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext should parse");
+        assert!(
+            sched_ext.requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+        );
+        assert!(
+            sched_ext.requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+
+        let cgroup_unix = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+            .expect("cgroup unix socket-address spec should parse");
+        assert!(
+            cgroup_unix.requires_compatibility_feature(ProgramCompatibilityRequirement::CgroupV2)
+        );
+        assert!(
+            cgroup_unix.requires_compatibility_feature(
+                ProgramCompatibilityRequirement::CgroupUnixSockAddr
+            )
+        );
     }
 
     #[test]

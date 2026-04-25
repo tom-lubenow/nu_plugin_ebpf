@@ -4231,6 +4231,55 @@ fn test_program_capability_surfaces_are_unique() {
 }
 
 #[test]
+fn test_program_compatibility_requirement_surfaces_are_unique() {
+    for program_type in EbpfProgramType::supported_program_types() {
+        let mut seen = HashSet::new();
+        for requirement in program_type.compatibility_requirements() {
+            assert!(
+                seen.insert(*requirement),
+                "{} compatibility surface repeats {:?}",
+                program_type.canonical_prefix(),
+                requirement
+            );
+            assert!(
+                !requirement.description().is_empty(),
+                "{requirement:?} should have a diagnostic description"
+            );
+        }
+    }
+
+    assert!(
+        EbpfProgramType::Fentry
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::KernelBtf)
+    );
+    assert!(
+        EbpfProgramType::Fentry
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::BpfTrampoline)
+    );
+    assert!(
+        EbpfProgramType::RawTracepointWritable
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::RawTracepointWritable)
+    );
+    assert!(
+        EbpfProgramType::Netfilter
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::NetfilterLink)
+    );
+    assert!(
+        EbpfProgramType::StructOps
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+    );
+    assert!(
+        EbpfProgramType::CgroupSockAddr
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::CgroupV2)
+    );
+    assert!(
+        EbpfProgramType::Kprobe
+            .compatibility_requirements()
+            .is_empty()
+    );
+}
+
+#[test]
 fn test_elf_generation() {
     let prog = EbpfProgram::hello_world("sys_clone");
     let elf = prog.to_elf().expect("Failed to generate ELF");

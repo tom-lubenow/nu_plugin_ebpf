@@ -69,8 +69,9 @@ history and release notes, not here.
   - Keep live `struct_ops:sched_ext_ops` out of normal host tests; use dry-run or VM-only fixtures.
   - Prefer compile/dry-run coverage first for behavior-changing families, then add live attach only when the loader path and test environment are safe.
 
-- [ ] Add kernel-version and feature metadata.
-  - Track minimum kernel versions for program families, helpers, kfuncs, map kinds, context fields, attach modes, and loader features.
+- [~] Add kernel-version and feature metadata.
+  - Keep the program-family and parsed-target compatibility requirement registry authoritative for feature-style requirements such as kernel BTF, BPF trampolines, TCX, netfilter links, LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and cgroup UNIX socket-address hooks.
+  - Track minimum kernel versions for program families, helpers, kfuncs, map kinds, context fields, attach modes, and loader features once each value is verified against kernel sources.
   - Surface compatibility diagnostics before backend or kernel load when a feature is known to require a newer kernel/config.
   - Document local-kernel detection limits and when the kernel verifier remains authoritative.
 

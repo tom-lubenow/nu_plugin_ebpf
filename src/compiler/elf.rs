@@ -1322,6 +1322,17 @@ impl EbpfProgramType {
         self.info().retval_access
     }
 
+    pub fn compatibility_requirements(&self) -> &'static [ProgramCompatibilityRequirement] {
+        program_types::compatibility_requirements_for(*self)
+    }
+
+    pub fn requires_compatibility_feature(
+        &self,
+        requirement: ProgramCompatibilityRequirement,
+    ) -> bool {
+        self.compatibility_requirements().contains(&requirement)
+    }
+
     pub fn uses_btf_trampoline(&self) -> bool {
         self.arg_access().is_trampoline() || self.retval_access().is_trampoline()
     }
@@ -1461,6 +1472,61 @@ impl ProgramAttachKind {
             Self::Iter => "the loader still needs BPF iterator link/seq-file attach support",
             _ => return None,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProgramCompatibilityRequirement {
+    KernelBtf,
+    BpfTrampoline,
+    SleepableProgram,
+    KprobeMulti,
+    UprobeMulti,
+    RawTracepointWritable,
+    CgroupLsm,
+    ExtensionProgram,
+    SyscallProgram,
+    BpfIterator,
+    XdpMultiBuffer,
+    FlowDissector,
+    Tcx,
+    Netkit,
+    NetfilterLink,
+    RouteLwt,
+    SockMapAttach,
+    CgroupV2,
+    LircMode2,
+    StructOps,
+    SchedExt,
+    CgroupUnixSockAddr,
+}
+
+impl ProgramCompatibilityRequirement {
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::KernelBtf => "kernel BTF for typed BTF-backed program targets",
+            Self::BpfTrampoline => "BPF trampoline target support",
+            Self::SleepableProgram => "sleepable BPF program section support",
+            Self::KprobeMulti => "multi-kprobe attach support",
+            Self::UprobeMulti => "multi-uprobe attach support",
+            Self::RawTracepointWritable => "writable raw-tracepoint program support",
+            Self::CgroupLsm => "cgroup-scoped LSM attach support",
+            Self::ExtensionProgram => "BPF extension/freplace target compatibility",
+            Self::SyscallProgram => "BPF syscall program support",
+            Self::BpfIterator => "BPF iterator target support",
+            Self::XdpMultiBuffer => "XDP multi-buffer section support",
+            Self::FlowDissector => "BPF flow-dissector attach support",
+            Self::Tcx => "TCX attach support",
+            Self::Netkit => "netkit attach support",
+            Self::NetfilterLink => "BPF-link netfilter attach support",
+            Self::RouteLwt => "route lightweight-tunnel BPF attach support",
+            Self::SockMapAttach => "sockmap or sockhash attach support",
+            Self::CgroupV2 => "cgroup v2 attach hierarchy",
+            Self::LircMode2 => "LIRC mode2 device attach support",
+            Self::StructOps => "BPF struct_ops object support",
+            Self::SchedExt => "sched_ext struct_ops support",
+            Self::CgroupUnixSockAddr => "cgroup UNIX socket-address hook support",
+        }
     }
 }
 
