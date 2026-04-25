@@ -392,6 +392,10 @@ mod tests {
             let mut local_program_types = HashSet::new();
             for program_type in surface.program_types {
                 assert!(
+                    EbpfProgramType::supported_program_types().contains(program_type),
+                    "{program_type:?} in return alias surface #{index} must be a supported program type"
+                );
+                assert!(
                     local_program_types.insert(*program_type),
                     "duplicate program type {program_type:?} in return alias surface #{index}"
                 );

@@ -1973,6 +1973,10 @@ mod tests {
 
         for program_type in program_types {
             assert!(
+                EbpfProgramType::supported_program_types().contains(program_type),
+                "{program_type:?} in {table_name} must be a supported program type"
+            );
+            assert!(
                 seen.insert(*program_type),
                 "duplicate program type {program_type:?} in {table_name}"
             );
@@ -2018,6 +2022,11 @@ mod tests {
 
         let mut program_surface_types = HashSet::new();
         for surface in PROGRAM_CTX_FIELD_ACCESS_SURFACES {
+            assert!(
+                EbpfProgramType::supported_program_types().contains(&surface.program_type),
+                "{:?} in program context access surfaces must be a supported program type",
+                surface.program_type
+            );
             assert!(
                 program_surface_types.insert(surface.program_type),
                 "duplicate program access surface for {:?}",
