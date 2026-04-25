@@ -398,6 +398,10 @@ operations, including verifier-sensitive value fields such as `bpf_timer`.
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
 `bpf_timer` and `bpf_spin_lock` inside map-value records.
+Verifier-managed fields are checked against kernel layout rules: `bpf_spin_lock`
+must be a single top-level 4-byte-aligned field in a hash or array map, and
+`bpf_timer` must be a single 8-byte-aligned field in a hash, array, or lru-hash
+map.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource.
 

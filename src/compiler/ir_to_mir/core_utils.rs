@@ -629,6 +629,177 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn validate_named_map_value_type_for_map(
+        map: &MapRef,
+        ty: &MirType,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        #[derive(Clone)]
+        struct ManagedField {
+            path: String,
+            offset: usize,
+            depth: usize,
+            in_array: bool,
+            repeat: usize,
+        }
+
+        fn collect_managed_fields(
+            ty: &MirType,
+            path: String,
+            offset: usize,
+            depth: usize,
+            in_array: bool,
+            repeat: usize,
+            timers: &mut Vec<ManagedField>,
+            spin_locks: &mut Vec<ManagedField>,
+        ) {
+            if ty.is_bpf_timer_struct() {
+                timers.push(ManagedField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                });
+                return;
+            }
+            if ty.is_bpf_spin_lock_struct() {
+                spin_locks.push(ManagedField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                });
+                return;
+            }
+
+            match ty {
+                MirType::Struct { fields, .. } => {
+                    for field in fields {
+                        let field_path = if path.is_empty() {
+                            field.name.clone()
+                        } else {
+                            format!("{}.{}", path, field.name)
+                        };
+                        collect_managed_fields(
+                            &field.ty,
+                            field_path,
+                            offset.saturating_add(field.offset),
+                            depth + 1,
+                            in_array,
+                            repeat,
+                            timers,
+                            spin_locks,
+                        );
+                    }
+                }
+                MirType::Array { elem, len } => {
+                    collect_managed_fields(
+                        elem,
+                        format!("{path}[]"),
+                        offset,
+                        depth + 1,
+                        true,
+                        repeat.saturating_mul(*len),
+                        timers,
+                        spin_locks,
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        fn total_occurrences(fields: &[ManagedField]) -> usize {
+            fields.iter().map(|field| field.repeat.max(1)).sum()
+        }
+
+        let mut timers = Vec::new();
+        let mut spin_locks = Vec::new();
+        collect_managed_fields(
+            ty,
+            "value".to_string(),
+            0,
+            0,
+            false,
+            1,
+            &mut timers,
+            &mut spin_locks,
+        );
+
+        let spin_lock_count = total_occurrences(&spin_locks);
+        if spin_lock_count > 0 {
+            if !matches!(map.kind, MapKind::Hash | MapKind::Array) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' contains bpf_spin_lock, which is only supported for hash and array maps",
+                    map.name
+                )));
+            }
+            if spin_lock_count != 1 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must contain exactly one bpf_spin_lock field, got {}",
+                    map.name, spin_lock_count
+                )));
+            }
+            let lock = &spin_locks[0];
+            if lock.depth == 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must wrap bpf_spin_lock in a map-value record field",
+                    map.name
+                )));
+            }
+            if lock.depth != 1 || lock.in_array {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_spin_lock at '{}', but bpf_spin_lock must be a top-level map-value record field",
+                    map.name, lock.path
+                )));
+            }
+            if lock.offset % 4 != 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_spin_lock at byte offset {}, but bpf_spin_lock must be 4-byte aligned",
+                    map.name, lock.offset
+                )));
+            }
+        }
+
+        let timer_count = total_occurrences(&timers);
+        if timer_count > 0 {
+            if !matches!(map.kind, MapKind::Hash | MapKind::Array | MapKind::LruHash) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' contains bpf_timer, which is only supported for hash, array, and lru-hash maps",
+                    map.name
+                )));
+            }
+            if timer_count != 1 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must contain exactly one bpf_timer field, got {}",
+                    map.name, timer_count
+                )));
+            }
+            let timer = &timers[0];
+            if timer.depth == 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must wrap bpf_timer in a map-value record field",
+                    map.name
+                )));
+            }
+            if timer.in_array {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_timer at '{}', but arrays of verifier-managed bpf_timer fields are not supported",
+                    map.name, timer.path
+                )));
+            }
+            if timer.offset % 8 != 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_timer at byte offset {}, but bpf_timer must be 8-byte aligned",
+                    map.name, timer.offset
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(super) fn register_named_map_key_type(&mut self, map: &MapRef, ty: &MirType) {
         let ty = self.stored_generic_map_value_type(ty);
         if self.conflicting_map_key_types.contains(map) {

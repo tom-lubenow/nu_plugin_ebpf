@@ -405,6 +405,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "spin-lock-map-define-rejects-lru-hash"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind lru-hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bpf_spin_lock, which is only supported for hash and array maps"
+    }
+    {
         name: "timer-set-callback-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer callback reject]

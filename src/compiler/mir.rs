@@ -410,6 +410,14 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_spin_lock", 4)
     }
 
+    pub fn is_bpf_timer_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_timer"])
+    }
+
+    pub fn is_bpf_spin_lock_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_spin_lock"])
+    }
+
     pub fn named_kernel_struct_ptr(name: &str) -> Self {
         MirType::Ptr {
             pointee: Box::new(Self::opaque_named_struct(name)),

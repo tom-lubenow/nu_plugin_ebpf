@@ -107,6 +107,18 @@ fn map_define_with_max_entries_hir(
     )
 }
 
+fn validate_map_value_type_spec_for_kind(spec: &str, kind: MapKind) -> Result<(), CompileError> {
+    let (ty, _) = HirToMirLowering::parse_named_map_value_type_spec(spec)?;
+    HirToMirLowering::validate_named_map_value_type_for_map(
+        &MapRef {
+            name: "typed_value".to_string(),
+            kind,
+        },
+        &ty,
+        "test --value-type",
+    )
+}
+
 fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let stmts = vec![
@@ -3037,6 +3049,71 @@ fn test_map_value_type_spec_supports_bpf_spin_lock() {
     assert_eq!(fields[1].name, "counter");
     assert_eq!(fields[1].ty, MirType::U64);
     assert_eq!(fields[1].offset, 4);
+}
+
+#[test]
+fn test_map_value_type_validation_accepts_managed_fields() {
+    validate_map_value_type_spec_for_kind("record{lock:bpf_spin_lock,counter:u64}", MapKind::Hash)
+        .expect("top-level spin lock in hash map should validate");
+    validate_map_value_type_spec_for_kind("record{timer:bpf_timer,cookie:u64}", MapKind::LruHash)
+        .expect("aligned timer in lru hash map should validate");
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_nested_spin_lock() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{nested:record{lock:bpf_spin_lock},counter:u64}",
+        MapKind::Hash,
+    )
+    .expect_err("nested spin lock should be rejected");
+
+    assert!(err.to_string().contains("top-level map-value record field"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_multiple_spin_locks() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{lock:bpf_spin_lock,other:bpf_spin_lock}",
+        MapKind::Hash,
+    )
+    .expect_err("multiple spin locks should be rejected");
+
+    assert!(err.to_string().contains("exactly one bpf_spin_lock"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_spin_lock_on_lru_hash() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{lock:bpf_spin_lock,counter:u64}",
+        MapKind::LruHash,
+    )
+    .expect_err("spin lock on lru-hash should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("only supported for hash and array")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_misaligned_timer() {
+    let err =
+        validate_map_value_type_spec_for_kind("record{cookie:u32,timer:bpf_timer}", MapKind::Hash)
+            .expect_err("misaligned timer should be rejected");
+
+    assert!(err.to_string().contains("8-byte aligned"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_timer_on_queue() {
+    let err =
+        validate_map_value_type_spec_for_kind("record{timer:bpf_timer,cookie:u64}", MapKind::Queue)
+            .expect_err("timer on queue should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("only supported for hash, array, and lru-hash")
+    );
 }
 
 #[test]

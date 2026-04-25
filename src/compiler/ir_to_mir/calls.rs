@@ -1065,6 +1065,11 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name,
                     kind: map_kind,
                 };
+                Self::validate_named_map_value_type_for_map(
+                    &map_ref,
+                    &value_ty,
+                    "map-define --value-type",
+                )?;
                 if let Some(max_entries) =
                     self.optional_nonnegative_named_u64_arg("map-define", "max-entries")?
                 {
