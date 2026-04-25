@@ -171,6 +171,20 @@ const FIXTURES = [
         min_kernel: "5.13"
     }
     {
+        name: "callback-user-ringbuf-drain"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "csum-diff-allows-null-zero-side"
         category: "helper-state"
         tags: [csum null-pointer tc-action]

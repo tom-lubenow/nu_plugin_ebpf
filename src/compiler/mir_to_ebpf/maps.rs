@@ -284,18 +284,60 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
-    fn is_builtin_map_name(name: &str) -> bool {
-        matches!(
-            name,
-            RINGBUF_MAP_NAME
-                | COUNTER_MAP_NAME
-                | STRING_COUNTER_MAP_NAME
-                | BYTES_COUNTER_MAP_NAME
-                | HISTOGRAM_MAP_NAME
-                | TIMESTAMP_MAP_NAME
-                | KSTACK_MAP_NAME
-                | USTACK_MAP_NAME
-        )
+    fn reserved_runtime_map_name_error(name: &str, detail: &str) -> CompileError {
+        CompileError::UnsupportedInstruction(format!(
+            "map name '{name}' is reserved for {detail}; choose a different map name"
+        ))
+    }
+
+    fn register_reserved_runtime_map_reference(
+        &mut self,
+        map: &crate::compiler::mir::MapRef,
+    ) -> Result<bool, CompileError> {
+        match map.name.as_str() {
+            RINGBUF_MAP_NAME => {
+                if map.kind != MapKind::RingBuf {
+                    return Err(Self::reserved_runtime_map_name_error(
+                        RINGBUF_MAP_NAME,
+                        &format!("the built-in RingBuf event map, got {:?}", map.kind),
+                    ));
+                }
+                self.needs_ringbuf = true;
+                Ok(true)
+            }
+            KSTACK_MAP_NAME => {
+                if map.kind != MapKind::StackTrace {
+                    return Err(Self::reserved_runtime_map_name_error(
+                        KSTACK_MAP_NAME,
+                        &format!("the built-in kernel stack-trace map, got {:?}", map.kind),
+                    ));
+                }
+                self.needs_kstack_map = true;
+                Ok(true)
+            }
+            USTACK_MAP_NAME => {
+                if map.kind != MapKind::StackTrace {
+                    return Err(Self::reserved_runtime_map_name_error(
+                        USTACK_MAP_NAME,
+                        &format!("the built-in user stack-trace map, got {:?}", map.kind),
+                    ));
+                }
+                self.needs_ustack_map = true;
+                Ok(true)
+            }
+            COUNTER_MAP_NAME | STRING_COUNTER_MAP_NAME | BYTES_COUNTER_MAP_NAME => Err(
+                Self::reserved_runtime_map_name_error(&map.name, "`count` runtime state"),
+            ),
+            HISTOGRAM_MAP_NAME => Err(Self::reserved_runtime_map_name_error(
+                HISTOGRAM_MAP_NAME,
+                "`histogram` runtime state",
+            )),
+            TIMESTAMP_MAP_NAME => Err(Self::reserved_runtime_map_name_error(
+                TIMESTAMP_MAP_NAME,
+                "`start-timer` / `stop-timer` runtime state",
+            )),
+            _ => Ok(false),
+        }
     }
 
     fn map_operand_layout(
@@ -557,7 +599,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         key_size: usize,
         value_size: Option<usize>,
     ) -> Result<(), CompileError> {
-        if Self::is_builtin_map_name(&map.name) {
+        if self.register_reserved_runtime_map_reference(map)? {
             return Ok(());
         }
         if !map.kind.supports_map_fd_materialization() {

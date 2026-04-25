@@ -2163,6 +2163,85 @@ fn test_compile_ringbuf_query_helper_with_loaded_map_fd() {
 }
 
 #[test]
+fn test_compile_builtin_events_map_reference_materializes_ringbuf() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: RINGBUF_MAP_NAME.to_string(),
+            kind: MapKind::RingBuf,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RingbufQuery as u32,
+            args: vec![MirValue::VReg(map), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled =
+        compile_mir_to_ebpf(&program, None).expect("built-in events map should materialize");
+
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == RINGBUF_MAP_NAME && map.def.map_type == BpfMapType::RingBuf as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == RINGBUF_MAP_NAME),
+        "expected built-in events relocation"
+    );
+}
+
+#[test]
+fn test_compile_builtin_events_map_rejects_wrong_kind() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: RINGBUF_MAP_NAME.to_string(),
+            kind: MapKind::UserRingBuf,
+        },
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let err = match compile_mir_to_ebpf(&program, None) {
+        Ok(_) => panic!("wrong map kind for built-in events should reject"),
+        Err(err) => err,
+    };
+
+    assert!(
+        matches!(err, CompileError::UnsupportedInstruction(ref msg) if msg.contains("map name 'events' is reserved") && msg.contains("got UserRingBuf")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_compile_perf_event_output_helper_with_loaded_map_fd() {
     use crate::compiler::elf::BpfMapType;
     use crate::compiler::mir::*;
