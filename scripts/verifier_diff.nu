@@ -173,6 +173,51 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
+        name: "ringbuf-query-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [ringbuf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_ringbuf_query" events 99'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_query' requires arg1 flags"
+    }
+    {
+        name: "bpf-loop-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [bpf-loop flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i cb| $i } "ctx" 99'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_loop' requires arg3 flags to be 0"
+    }
+    {
+        name: "user-ringbuf-drain-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [user-ringbuf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 99'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_user_ringbuf_drain' requires arg3 flags"
+    }
+    {
         name: "callback-bpf-loop"
         category: "callbacks"
         tags: [helper-call callback bpf-loop]
