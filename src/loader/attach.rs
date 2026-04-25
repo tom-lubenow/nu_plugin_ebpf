@@ -8,18 +8,40 @@ fn unsupported_live_attach_error(prog_type: crate::compiler::EbpfProgramType) ->
     let detail = attach_kind
         .unsupported_live_attach_detail()
         .unwrap_or("this attach kind has no live attach implementation");
+    let requirements = compatibility_requirements_detail(prog_type.compatibility_requirements());
     LoadError::Attach(format!(
-        "live attach for {} programs is not supported by this loader yet; {}; use --dry-run to compile",
+        "live attach for {} programs is not supported by this loader yet; {}{}; use --dry-run to compile",
         prog_type.canonical_prefix(),
-        detail
+        detail,
+        requirements
     ))
 }
 
 fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> LoadError {
+    let spec = ProgramSpec::CgroupSockAddr {
+        target: target.clone(),
+    };
+    let requirements = compatibility_requirements_detail(&spec.compatibility_requirements());
     LoadError::Attach(format!(
-        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks; use --dry-run to compile",
-        target.attach_type_name()
+        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks{}; use --dry-run to compile",
+        target.attach_type_name(),
+        requirements
     ))
+}
+
+fn compatibility_requirements_detail(
+    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
+) -> String {
+    if requirements.is_empty() {
+        String::new()
+    } else {
+        let descriptions = requirements
+            .iter()
+            .map(crate::compiler::ProgramCompatibilityRequirement::description)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("; feature requirements: {descriptions}")
+    }
 }
 
 const SYSCALL_SYMBOL_PREFIXES: &[&str] = &[

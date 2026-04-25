@@ -1486,6 +1486,14 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
             ),
             "unexpected live-attach error for {label}: {err:?}"
         );
+        if let LoadError::Attach(msg) = &err {
+            for requirement in prog_type.compatibility_requirements() {
+                assert!(
+                    msg.contains(requirement.description()),
+                    "{label} live-attach error should mention compatibility requirement {requirement:?}: {msg}"
+                );
+            }
+        }
     }
 }
 
@@ -1504,6 +1512,10 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
         .attach(&object)
         .expect_err("cgroup_sock_addr unix hooks should reject live attach before ELF emission");
 
+    let expected_requirements = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+        .expect("cgroup_sock_addr unix spec should parse")
+        .compatibility_requirements();
+
     assert!(
         matches!(
             err,
@@ -1514,6 +1526,14 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
         ),
         "unexpected cgroup_sock_addr unix live-attach error: {err:?}"
     );
+    if let LoadError::Attach(msg) = &err {
+        for requirement in expected_requirements {
+            assert!(
+                msg.contains(requirement.description()),
+                "cgroup_sock_addr unix live-attach error should mention compatibility requirement {requirement:?}: {msg}"
+            );
+        }
+    }
 }
 
 #[test]
