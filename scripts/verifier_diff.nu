@@ -900,6 +900,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-bpf-map-context"
+        category: "context-surface"
+        tags: [iter context map]
+        target: "iter:bpf_map"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-bpf-map-elem-context"
         category: "context-surface"
         tags: [iter context map]
@@ -916,13 +930,75 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
-        name: "iter-prog-link-contexts"
+        name: "iter-bpf-sk-storage-map-context"
+        category: "context-surface"
+        tags: [iter context map socket]
+        target: "iter:bpf_sk_storage_map"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map != 0 { 1 | count }'
+            '  if $ctx.value != 0 { 1 | count }'
+            '  if $ctx.sk != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-sockmap-context"
+        category: "context-surface"
+        tags: [iter context map socket]
+        target: "iter:sockmap"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map != 0 { 1 | count }'
+            '  if $ctx.key != 0 { 1 | count }'
+            '  if $ctx.sk != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-bpf-prog-context"
         category: "context-surface"
         tags: [iter context]
         target: "iter:bpf_prog"
         program: [
             '{|ctx|'
             '  if $ctx.prog != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-bpf-link-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:bpf_link"
+        program: [
+            '{|ctx|'
+            '  if $ctx.link != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-tcp-context"
+        category: "context-surface"
+        tags: [iter context socket]
+        target: "iter:tcp"
+        program: [
+            '{|ctx|'
+            '  $ctx.uid | count'
+            '  if $ctx.sk_common != 0 { 1 | count }'
+            '  if $ctx.sock_common != 0 { 1 | count }'
             '  0'
             '}'
         ]
@@ -945,6 +1021,64 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-unix-context"
+        category: "context-surface"
+        tags: [iter context socket]
+        target: "iter:unix"
+        program: [
+            '{|ctx|'
+            '  $ctx.uid | count'
+            '  if $ctx.unix_sk != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-dmabuf-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:dmabuf"
+        program: [
+            '{|ctx|'
+            '  if $ctx.dmabuf != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-ipv6-route-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:ipv6_route"
+        program: [
+            '{|ctx|'
+            '  if $ctx.rt != 0 { 1 | count }'
+            '  if $ctx.ipv6_route != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-kmem-cache-context"
+        category: "context-surface"
+        tags: [iter context]
+        target: "iter:kmem_cache"
+        program: [
+            '{|ctx|'
+            '  if $ctx.kmem_cache != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-ksym-context"
         category: "context-surface"
         tags: [iter context]
@@ -952,6 +1086,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  if $ctx.ksym != 0 { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-netlink-context"
+        category: "context-surface"
+        tags: [iter context socket]
+        target: "iter:netlink"
+        program: [
+            '{|ctx|'
+            '  if $ctx.netlink_sk != 0 { 1 | count }'
             '  0'
             '}'
         ]
