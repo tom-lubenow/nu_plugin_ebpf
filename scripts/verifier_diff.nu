@@ -65,6 +65,7 @@ const FIXTURES = [
         local: "accept"
         kernel: "accept"
         min_kernel: "5.8"
+        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_query/"
     }
     {
         name: "stackid-built-in-kstacks"
@@ -80,6 +81,7 @@ const FIXTURES = [
         local: "accept"
         kernel: "accept"
         min_kernel: "4.6"
+        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_get_stackid/"
     }
     {
         name: "global-scalar-mut"
@@ -184,6 +186,7 @@ const FIXTURES = [
         local: "accept"
         kernel: "accept"
         min_kernel: "5.17"
+        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_loop/"
     }
     {
         name: "callback-for-each-map-elem"
@@ -199,6 +202,7 @@ const FIXTURES = [
         local: "accept"
         kernel: "accept"
         min_kernel: "5.13"
+        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_for_each_map_elem/"
     }
     {
         name: "callback-user-ringbuf-drain"
@@ -584,6 +588,7 @@ def fixture-summary [fixture] {
         requires: ((optional $fixture requires []) | str join ",")
         kernel_requires: ((optional $fixture kernel_requires []) | str join ",")
         min_kernel: (optional $fixture min_kernel "")
+        min_kernel_source: (optional $fixture min_kernel_source "")
         tags: ((optional $fixture tags []) | str join ",")
     }
 }
@@ -819,7 +824,7 @@ def main [
     if $list {
         for fixture in $fixtures {
             let summary = (fixture-summary $fixture)
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) tags=($summary.tags)"
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags)"
         }
         return
     }
