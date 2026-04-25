@@ -22,6 +22,9 @@
 //! - [`Histogram`] - Add to log2 histogram
 //! - [`ReadStr`] / [`ReadKernelStr`] - Read strings from pointers
 //! - [`StartTimer`] / [`StopTimer`] - Latency measurement
+//! - [`AdjustPacket`] / [`AdjustMessage`] - Packet and message mutation helpers
+//! - [`Redirect`] / [`RedirectMap`] / [`RedirectSocket`] - Packet and socket redirect helpers
+//! - [`AssignSocket`] - Socket assignment helper
 //! - [`HelperCall`] - Invoke modeled BPF helpers
 //! - [`KfuncCall`] - Invoke typed kernel kfuncs
 //! - [`GlobalDefine`] / [`GlobalGet`] / [`GlobalSet`] - Named compiler-managed program globals
@@ -34,6 +37,7 @@ mod detach;
 mod helpers;
 mod histogram;
 mod list;
+mod program_intrinsics;
 mod setup;
 mod stacks;
 mod trace;
@@ -73,6 +77,9 @@ pub use helpers::{
 };
 pub use histogram::EbpfHistogram;
 pub use list::EbpfList;
+pub use program_intrinsics::{
+    AdjustMessage, AdjustPacket, AssignSocket, Redirect, RedirectMap, RedirectSocket,
+};
 pub use setup::EbpfSetup;
 pub use stacks::EbpfStacks;
 pub use trace::EbpfTrace;

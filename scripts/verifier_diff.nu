@@ -211,6 +211,77 @@ const FIXTURES = [
         kernel: "skip"
         error_contains: "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null"
     }
+    {
+        name: "adjust-packet-xdp-head"
+        category: "language-surface"
+        tags: [adjust-packet xdp]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --head 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-xdp-ifindex"
+        category: "language-surface"
+        tags: [redirect xdp]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  redirect 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-map-xdp-devmap"
+        category: "language-surface"
+        tags: [redirect-map xdp map]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  redirect-map tx_ports 0 --kind devmap'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tail-call-prog-array"
+        category: "language-surface"
+        tags: [tail-call prog-array]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0 | tail-call jumps'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "assign-socket-sk-lookup-clear"
+        category: "language-surface"
+        tags: [assign-socket sk-lookup]
+        requires: [netns-self]
+        target: "sk_lookup:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  assign-socket 0 --replace'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
 ]
 
 def fail [msg: string] {

@@ -47,6 +47,12 @@ impl Plugin for EbpfPlugin {
             Box::new(StopTimer),
             Box::new(ReadStr),
             Box::new(ReadKernelStr),
+            Box::new(AdjustPacket),
+            Box::new(AdjustMessage),
+            Box::new(Redirect),
+            Box::new(RedirectMap),
+            Box::new(RedirectSocket),
+            Box::new(AssignSocket),
             Box::new(HelperCall),
             Box::new(KfuncCall),
             Box::new(TailCall),
@@ -61,5 +67,30 @@ impl Plugin for EbpfPlugin {
             Box::new(MapPeek),
             Box::new(MapPop),
         ]
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::compiler::ProgramIntrinsic;
+
+    #[test]
+    fn test_plugin_exports_all_program_intrinsics() {
+        let commands = EbpfPlugin.commands();
+        let command_names = commands
+            .iter()
+            .map(|command| command.name())
+            .collect::<HashSet<_>>();
+
+        for intrinsic in ProgramIntrinsic::all() {
+            assert!(
+                command_names.contains(intrinsic.command_name()),
+                "plugin should export intrinsic command {}",
+                intrinsic.command_name()
+            );
+        }
     }
 }
