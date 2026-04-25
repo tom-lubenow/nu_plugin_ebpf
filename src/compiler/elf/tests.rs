@@ -4363,9 +4363,19 @@ fn test_elf_map_btf_emits_declared_key_and_value_types() {
                 bitfield: None,
             },
             StructField {
+                name: "__layout_pad0".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 4,
+                },
+                offset: 4,
+                synthetic: true,
+                bitfield: None,
+            },
+            StructField {
                 name: "cookie".to_string(),
                 ty: MirType::U64,
-                offset: 4,
+                offset: 8,
                 synthetic: false,
                 bitfield: None,
             },
@@ -4383,9 +4393,19 @@ fn test_elf_map_btf_emits_declared_key_and_value_types() {
                 bitfield: None,
             },
             StructField {
+                name: "__layout_pad0".to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 4,
+                },
+                offset: 4,
+                synthetic: true,
+                bitfield: None,
+            },
+            StructField {
                 name: "counter".to_string(),
                 ty: MirType::U64,
-                offset: 4,
+                offset: 8,
                 synthetic: false,
                 bitfield: None,
             },
@@ -4450,6 +4470,12 @@ fn test_elf_map_btf_emits_declared_key_and_value_types() {
             .windows(b"value_size\0".len())
             .all(|w| w != b"value_size\0"),
         "typed map should not also emit a value_size member"
+    );
+    assert!(
+        btf_data
+            .windows(b"__layout_pad0\0".len())
+            .all(|w| w != b"__layout_pad0\0"),
+        "synthetic record padding should affect map sizes without leaking into BTF members"
     );
 }
 
