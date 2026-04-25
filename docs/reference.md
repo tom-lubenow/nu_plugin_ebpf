@@ -667,6 +667,12 @@ ls /sys/kernel/tracing/events/syscalls/
 cat /sys/kernel/tracing/events/syscalls/sys_enter_openat/format
 ```
 
+Tracepoint field names come from tracefs format files. If those files are not
+readable in the current environment, syscall tracepoints may fall back to the
+generic syscall payload shape: `ctx.id` plus fixed-array `ctx.args`. For
+`syscalls/sys_enter_openat`, the filename pointer is then available as
+`($ctx.args | get 1)`.
+
 ## Limits
 
 | Resource | Limit |

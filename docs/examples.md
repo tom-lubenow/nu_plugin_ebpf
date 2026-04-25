@@ -309,6 +309,7 @@ ebpf histogram $exit
 
 ```nushell
 ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx|
-    { pid: $ctx.pid, file: ($ctx.filename | read-str) } | emit
+    let filename = ($ctx.args | get 1)
+    { pid: $ctx.pid, file: ($filename | read-str) } | emit
 }
 ```

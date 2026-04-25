@@ -925,10 +925,12 @@ Context parameter syntax (recommended):
 
   Tracepoint fields:
     Access fields specific to each tracepoint. Fields are read from tracefs.
+    If tracefs format files are not readable, syscall tracepoints may expose
+    the generic syscall layout instead: `ctx.id` and fixed-array `ctx.args`.
     Example for syscalls/sys_enter_openat:
-      {|ctx| $ctx.dfd }      - Directory file descriptor
-      {|ctx| $ctx.filename } - Pointer to filename string
-      {|ctx| $ctx.flags }    - Open flags
+      {|ctx| $ctx.id }             - Syscall number from the generic layout
+      {|ctx| $ctx.args | get 1 }   - Filename pointer from the generic args array
+      {|ctx| $ctx.filename }       - Named filename field when tracefs exposes it
 
 Output commands:
   emit              - Send value to userspace via ring buffer
@@ -1131,8 +1133,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx| $ctx.filename | emit }",
-                description: "Stream filenames from openat syscalls using tracepoint",
+                example: "ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx| ($ctx.args | get 1) | read-str | emit }",
+                description: "Stream filenames from openat syscalls using the generic syscall tracepoint args layout",
                 result: None,
             },
             Example {
