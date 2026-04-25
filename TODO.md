@@ -1,7 +1,14 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-22.
+Last updated: 2026-04-24.
+
+## Current project status
+
+- Internal alpha: the compiler is useful for development and local experiments, but the repo is not yet packaged or documented as a stable external tool.
+- The strongest areas are the Nushell-to-eBPF compiler pipeline, typed contexts, maps/globals, many tracing/packet/cgroup/socket surfaces, and shared type-inference/verifier/VCC checks.
+- The broadest remaining risks are kernel-version compatibility, live attach support outside the mature families, and remaining verifier-parity gaps for complex helper/kfunc state.
+- `struct_ops` and scheduler-facing work should remain VM-first; host-side tests should prefer dry-run and observational probe families.
 
 ## Current compiler gaps
 
@@ -242,9 +249,10 @@ Last updated: 2026-04-22.
   - Recent progress: `ebpf attach` help now documents the helper-free task and cgroup BTF projection forms (`ctx.task.pid`, `ctx.task.pt_regs.arg0`, `ctx.current_cgroup.kn.id`) plus bound trusted netfilter roots, keeping the advertised surface aligned with the modeled context language.
 
 Near-term priority order:
-1. Make the program model explicitly program-type-aware (targets, section naming, helper surface, attach/load path).
-2. Move context legality and aliases behind per-program context schemas instead of probe-centric special cases.
-3. Tighten VCC/verifier parity against that model before broadening the surface further.
+1. Finish the remaining eBPF timer helper surface (`bpf_timer_init`, `bpf_timer_start`, and `bpf_timer_cancel`) on top of the new timer/map-value provenance model.
+2. Keep shrinking raw `helper-call` usage by exposing common operations through ordinary Nushell forms, typed context projection, or the small first-class command set.
+3. Tighten VCC/verifier parity for helper/kfunc state transitions, especially provenance, nullability, mutability, ref lifetime, dynptrs, and by-reference stack objects.
+4. Build the kernel compatibility matrix and verifier differential suite so external readiness is measured against real kernels rather than only local unit coverage.
 
 - [~] Expand program type support beyond probes.
   - Add program-type-aware compile targets (section naming, context type, helper set, attach/load path).
@@ -404,7 +412,7 @@ Near-term priority order:
   - Recent progress: socket-map, local-storage, redirect-map, queue/stack, counter-map, array-index, keyless-map, and runtime map-FD materialization classification now lives on `MapKind`, reducing duplicated map-family matches in Nu-call lowering, verifier/VCC layout checks, and backend map registration.
   - Recent progress: runtime artifact validation now requires `GenericMaps` support for arbitrary emitted maps, while keeping reserved maps like ring buffers, stack traces, counters, and prog arrays tied to their dedicated capabilities.
   - Recent progress: runtime artifact validation now rejects unknown BPF map types and malformed modeled map definitions (for example keyless maps with keys or fixed-FD maps with the wrong key/value widths) before loader/kernel handoff.
-  - Recent progress: the program model now recognizes the remaining common kernel map families that are not materializable yet (`array-of-maps`, `hash-of-maps`, `user-ringbuf`, `arena`, `struct_ops`, and deprecated cgroup-storage map types) and rejects them with targeted diagnostics instead of treating them as unknown map kinds.
+  - Recent progress: the program model now recognizes the remaining common kernel map families and separates materialized helper-backed maps from families that still need extra loader/object modeling: `user-ringbuf` can now be emitted for modeled drain-helper use, while `array-of-maps`, `hash-of-maps`, `arena`, `struct_ops`, and deprecated cgroup-storage map types still reject with targeted diagnostics instead of being treated as unknown map kinds.
   - Validate map capability compatibility per program type and kernel version.
 
 - [~] Add kfunc and richer BTF-driven typing support.
@@ -437,7 +445,10 @@ Near-term priority order:
   - Verifier/type-infer/VCC parity now enforces `bpf_dynptr_slice` / `bpf_dynptr_slice_rdwr` constant-size semantics (`arg3` must be a known constant), matching kernel `buffer__szk` verifier behavior.
   - Added raw-helper dynptr coverage for `bpf_dynptr_from_mem`, `bpf_dynptr_read`, `bpf_dynptr_write`, and `bpf_dynptr_data`: map-value source bounds, stack-slot-base 16-byte dynptr objects, initialized/uninitialized dynptr state, positive read/write lengths, zero reserved flags, and constant `bpf_dynptr_data` length are enforced across type inference, verifier_types, and VCC.
   - Added ringbuf dynptr helper coverage for `bpf_ringbuf_reserve_dynptr`, `bpf_ringbuf_submit_dynptr`, and `bpf_ringbuf_discard_dynptr`: ringbuf map arguments, stack-slot-base 16-byte dynptr objects, positive reservation sizes, reserved/wakeup flag ranges, initialized dynptr use, release-only-on-ringbuf-reservation checks, double-release rejection, and function-exit leak detection are modeled across verifier_types and VCC, with type-inference pointer/flag checks.
-  - Added static helper metadata for the remaining local UAPI callback/timer helper IDs (`bpf_for_each_map_elem`, `bpf_timer_*`, `bpf_find_vma`, `bpf_loop`, and `bpf_user_ringbuf_drain`), including flag contracts and explicit diagnostics that callback-taking helpers still need callback subprogram pointer lowering.
+  - Added static helper metadata for the remaining local UAPI callback/timer helper IDs (`bpf_for_each_map_elem`, `bpf_timer_*`, `bpf_find_vma`, `bpf_loop`, and `bpf_user_ringbuf_drain`), including helper flag contracts and map-kind requirements.
+  - Modeled callback-subprogram helper coverage now includes `bpf_for_each_map_elem`, `bpf_find_vma`, `bpf_loop`, `bpf_user_ringbuf_drain`, and `bpf_timer_set_callback`; type inference, verifier_types, and VCC share the same callback ABI checks.
+  - `bpf_user_ringbuf_drain` now materializes `user-ringbuf` maps and seeds the callback dynptr parameter as an initialized synthetic stack object.
+  - `bpf_timer_set_callback` now recovers map-entry provenance through projected `bpf_timer` fields so callback arguments are seeded as owning map/key/value pointers.
   - Added stack-slot base-pointer identity checks for by-reference stack buffer args (`bpf_path_d_path arg1`, `scx_bpf_events arg0`, `bpf_copy_from_user*_str arg0`, and SCX bstr fmt/data args) across type inference, verifier_types, and VCC.
   - Added typed signature coverage for dma-buf iterators (`bpf_iter_dmabuf_new` / `bpf_iter_dmabuf_next` / `bpf_iter_dmabuf_destroy`) with stack-pointer argument enforcement and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.
   - Added typed signature coverage for kmem_cache iterators (`bpf_iter_kmem_cache_new` / `bpf_iter_kmem_cache_next` / `bpf_iter_kmem_cache_destroy`) with stack-pointer argument enforcement and stack-slot identity/lifetime tracking across type inference, verifier_types, and VCC.

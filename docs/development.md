@@ -24,3 +24,16 @@ If you want to test with a specific Nu build, run that binary directly:
 ```bash
 sudo target/debug/nu ./scripts/manual_integration.nu
 ```
+
+## Useful Verification Commands
+
+For local compiler work, start with the fast Rust checks and then run targeted tests around the surface you changed:
+
+```bash
+cargo check -q
+cargo test -q timer_set_callback
+cargo test -q user_ringbuf
+cargo test -q callback_subprogram
+```
+
+Use the manual integration suite for host-facing attach/dry-run coverage after compiler changes that affect public Nu syntax, map emission, or loader-visible sections.

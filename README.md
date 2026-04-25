@@ -16,6 +16,10 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 - `raw_tracepoint.w`, `fmod_ret`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, and `syscall` currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation.
 - Prefer `--dry-run` on the host and use an isolated VM or disposable environment for risky `struct_ops` families.
 
+## Project Status
+
+This is an internal alpha, not a polished external release. The compiler has broad unit coverage and useful live support for the core tracing, packet, socket, cgroup, and TCX surfaces, plus compile/dry-run coverage for many advanced eBPF section families. The main remaining risks are kernel-version compatibility, incomplete live attach paths for newer program families, and verifier-parity gaps around richer helper/kfunc state transitions.
+
 ## Requirements
 
 - Linux kernel 4.18+ for the basic tracing paths
