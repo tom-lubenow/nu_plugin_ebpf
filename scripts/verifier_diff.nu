@@ -1028,6 +1028,67 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "spin-lock-rejects-unreleased"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry != 0 {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased bpf spin lock"
+    }
+    {
+        name: "spin-lock-rejects-double-lock"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry != 0 {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot acquire a second bpf_spin_lock"
+    }
+    {
+        name: "spin-lock-rejects-helper-while-held"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry != 0 {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    helper-call "bpf_get_prandom_u32"'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot be called while bpf_spin_lock is held"
+    }
+    {
         name: "spin-lock-map-define-rejects-lru-hash"
         category: "helper-state"
         tags: [spin-lock map-define reject]
