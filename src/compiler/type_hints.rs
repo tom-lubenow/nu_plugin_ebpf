@@ -43,6 +43,16 @@ fn opaque_struct_mir_type(
     })
 }
 
+fn synthetic_padding_field(offset: usize, size: usize, pad_index: usize) -> Option<StructField> {
+    Some(StructField {
+        name: format!("__layout_pad{}", pad_index),
+        ty: byte_array_mir_type(size)?,
+        offset,
+        synthetic: true,
+        bitfield: None,
+    })
+}
+
 fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
     match type_info {
         TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
@@ -92,13 +102,11 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                     continue;
                 }
                 if field.offset > cursor {
-                    out.push(StructField {
-                        name: format!("__layout_pad{}", pad_index),
-                        ty: byte_array_mir_type(field.offset - cursor)?,
-                        offset: cursor,
-                        synthetic: false,
-                        bitfield: None,
-                    });
+                    out.push(synthetic_padding_field(
+                        cursor,
+                        field.offset - cursor,
+                        pad_index,
+                    )?);
                     pad_index += 1;
                 }
                 let ty = mir_type_from_type_info(&field.type_info)
@@ -127,13 +135,7 @@ fn mir_type_from_type_info(type_info: &TypeInfo) -> Option<MirType> {
                 return opaque_struct_mir_type(name, *size, *btf_type_id);
             }
             if cursor < *size {
-                out.push(StructField {
-                    name: format!("__layout_pad{}", pad_index),
-                    ty: byte_array_mir_type(*size - cursor)?,
-                    offset: cursor,
-                    synthetic: false,
-                    bitfield: None,
-                });
+                out.push(synthetic_padding_field(cursor, *size - cursor, pad_index)?);
             }
             Some(MirType::Struct {
                 name: Some(name.clone()),
@@ -597,6 +599,7 @@ mod tests {
     use super::*;
     use crate::compiler::EbpfProgramType;
     use crate::compiler::mir::StackSlotKind;
+    use crate::kernel_btf::FieldInfo;
     use crate::kernel_btf::KernelBtf;
 
     fn recover_ctx_arg_hint(probe_ctx: &ProbeContext) -> Option<MirType> {
@@ -662,6 +665,53 @@ mod tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn test_mir_type_from_type_info_marks_padding_synthetic() {
+        let ty = mir_type_from_type_info(&TypeInfo::Struct {
+            name: "demo".to_string(),
+            btf_type_id: Some(7),
+            size: 16,
+            fields: vec![
+                FieldInfo {
+                    name: "a".to_string(),
+                    type_info: TypeInfo::Int {
+                        size: 1,
+                        signed: false,
+                    },
+                    offset: 0,
+                    size: 1,
+                    bitfield: None,
+                },
+                FieldInfo {
+                    name: "b".to_string(),
+                    type_info: TypeInfo::Int {
+                        size: 8,
+                        signed: false,
+                    },
+                    offset: 8,
+                    size: 8,
+                    bitfield: None,
+                },
+            ],
+        })
+        .expect("struct type info should convert to MIR");
+
+        let MirType::Struct { fields, .. } = ty else {
+            panic!("expected struct MIR type");
+        };
+        let user_fields = fields
+            .iter()
+            .filter(|field| !field.synthetic)
+            .map(|field| (field.name.as_str(), field.offset))
+            .collect::<Vec<_>>();
+
+        assert_eq!(user_fields, vec![("a", 0), ("b", 8)]);
+        assert!(fields.iter().any(|field| field.synthetic
+            && field.name == "__layout_pad0"
+            && field.offset == 1
+            && field.ty.size() == 7));
     }
 
     #[test]
