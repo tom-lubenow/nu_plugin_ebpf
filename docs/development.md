@@ -4,7 +4,7 @@ Contributor-facing workflow notes. See the [README](../README.md) for installati
 
 ## Manual Integration Suite
 
-Run the repeatable manual integration checks with the Nu harness in `scripts/manual_integration.nu`. The script auto-selects the newest built plugin from `target/debug/nu_plugin_ebpf` and `target/release/nu_plugin_ebpf` unless `PLUGIN_BIN` is set.
+Run the repeatable manual integration checks with the Nu harness in `scripts/manual_integration.nu`. The script auto-selects the newest built plugin from `target/debug/nu_plugin_ebpf` and `target/release/nu_plugin_ebpf` unless `PLUGIN_BIN` is set. Subprocess checks use `nu --no-config-file` so the selected binary is not shadowed by a stale user plugin registry.
 
 The normal host-side harness intentionally avoids live `sched_ext` registration. Use `--dry-run` for `sched_ext_ops` on development hosts, and only opt into `--unsafe-struct-ops` inside an isolated environment you are willing to reset.
 

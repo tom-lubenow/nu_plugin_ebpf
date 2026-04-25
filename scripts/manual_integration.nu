@@ -68,7 +68,7 @@ def command-exists [name: string] {
 }
 
 def run-nu-with-plugin [plugin_bin: string, code: string] {
-    run-external (current-nu-bin) "--plugins" $"[($plugin_bin)]" "-c" $code
+    run-external (current-nu-bin) "--no-config-file" "--plugins" $"[($plugin_bin)]" "-c" $code
 }
 
 def expect-dry-run-binary [plugin_bin: string, code: string, label: string] {
