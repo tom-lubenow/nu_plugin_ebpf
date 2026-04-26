@@ -18,7 +18,7 @@ use crate::compiler::mir::CtxStoreTarget;
 use crate::compiler::mir::MirType;
 use crate::kernel_btf::{
     FieldInfo, KernelBtf, TracepointContext, TrampolineFieldProjection, TrampolineFieldSelector,
-    TrampolineValueSpec, TypeInfo,
+    TrampolineParamInfo, TrampolineValueSpec, TypeInfo,
 };
 use crate::program_spec::ProgramSpec;
 
@@ -501,6 +501,54 @@ impl ProbeContext {
                     )
                 }),
             None => Ok(None),
+        }
+    }
+
+    pub(crate) fn btf_arg_infos(&self) -> Result<Vec<TrampolineParamInfo>, String> {
+        if !self.uses_btf_trampoline() {
+            return Ok(Vec::new());
+        }
+
+        let btf = KernelBtf::get();
+        match self.program_type().btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::StructOpsCallback) => {
+                let value_type_name = self.require_struct_ops_value_type_name()?;
+                btf.struct_ops_callback_arg_infos(value_type_name, &self.target)
+                    .map_err(|e| {
+                        format!(
+                            "failed to resolve context arguments for struct_ops {}.{}: {}",
+                            value_type_name, self.target, e
+                        )
+                    })
+            }
+            Some(ProgramBtfCallableSurface::TpBtf) => {
+                btf.tp_btf_arg_infos(&self.target).map_err(|e| {
+                    format!(
+                        "failed to resolve context arguments for tp_btf:{}: {}",
+                        self.target, e
+                    )
+                })
+            }
+            Some(ProgramBtfCallableSurface::LsmHook) => {
+                btf.lsm_hook_arg_infos(&self.target).map_err(|e| {
+                    format!(
+                        "failed to resolve context arguments for {}: {}",
+                        self.btf_context_label(),
+                        e
+                    )
+                })
+            }
+            Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
+                .function_trampoline_arg_infos(&self.target)
+                .map_err(|e| {
+                    format!(
+                        "failed to resolve context arguments for {}:{}: {}",
+                        self.program_type().section_prefix(),
+                        self.target,
+                        e
+                    )
+                }),
+            None => Ok(Vec::new()),
         }
     }
 

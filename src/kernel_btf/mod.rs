@@ -16,7 +16,8 @@ pub use pt_regs::{PtRegsError, PtRegsOffsets};
 pub use service::{
     FunctionCheckResult, KernelBtf, KfuncArgShape, KfuncPointerRefFamily, KfuncRetShape,
     KfuncSignatureHint, TrampolineBitfieldInfo, TrampolineFieldPathSegment,
-    TrampolineFieldProjection, TrampolineFieldSelector, TrampolineValueKind, TrampolineValueSpec,
+    TrampolineFieldProjection, TrampolineFieldSelector, TrampolineParamInfo, TrampolineValueKind,
+    TrampolineValueSpec,
 };
 pub use tracepoint::TracepointContext;
 pub use types::{BitfieldInfo, FieldInfo, TypeInfo};

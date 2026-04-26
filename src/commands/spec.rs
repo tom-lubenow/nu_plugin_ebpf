@@ -9,6 +9,10 @@ use nu_protocol::{
 use crate::EbpfPlugin;
 #[cfg(target_os = "linux")]
 use crate::compiler::mir::{AddressSpace, MirType};
+#[cfg(target_os = "linux")]
+use crate::compiler::{ProbeContext, ProgramValueAccess};
+#[cfg(target_os = "linux")]
+use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 
 #[derive(Clone)]
 pub struct EbpfSpec;
@@ -96,6 +100,20 @@ struct SpecContextWrite {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecContextArg {
+    name: String,
+    index: Option<usize>,
+    named_alias: Option<String>,
+    source: &'static str,
+    kind: &'static str,
+    ty: Option<String>,
+    supported: bool,
+    note: Option<String>,
+    unsupported_reason: Option<String>,
+}
+
+#[cfg(target_os = "linux")]
 fn address_space_label(address_space: AddressSpace) -> &'static str {
     match address_space {
         AddressSpace::Stack => "stack",
@@ -159,6 +177,42 @@ fn mir_type_label(ty: &MirType) -> String {
 }
 
 #[cfg(target_os = "linux")]
+fn type_info_label(ty: &TypeInfo) -> String {
+    match ty {
+        TypeInfo::Int { size, signed } => match (*size, *signed) {
+            (1, true) => "i8".to_string(),
+            (2, true) => "i16".to_string(),
+            (4, true) => "i32".to_string(),
+            (8, true) => "i64".to_string(),
+            (1, false) => "u8".to_string(),
+            (2, false) => "u16".to_string(),
+            (4, false) => "u32".to_string(),
+            (8, false) => "u64".to_string(),
+            (size, true) => format!("int<{size}>"),
+            (size, false) => format!("uint<{size}>"),
+        },
+        TypeInfo::Ptr { target, is_user } => {
+            let address_space = if *is_user { "user" } else { "kernel" };
+            format!("ptr<{address_space}, {}>", type_info_label(target))
+        }
+        TypeInfo::Struct { name, .. } if !name.is_empty() => format!("struct<{name}>"),
+        TypeInfo::Struct { size, .. } => format!("struct<{size}>"),
+        TypeInfo::Array { element, len } => format!("array<{}; {}>", type_info_label(element), len),
+        TypeInfo::Void => "void".to_string(),
+        TypeInfo::Unknown => "unknown".to_string(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn trampoline_value_kind_label(kind: TrampolineValueKind) -> &'static str {
+    match kind {
+        TrampolineValueKind::Scalar => "scalar",
+        TrampolineValueKind::Pointer { .. } => "pointer",
+        TrampolineValueKind::Aggregate { .. } => "aggregate",
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn optional_string(value: Option<String>, span: Span) -> Value {
     value
         .map(|value| Value::string(value, span))
@@ -169,6 +223,14 @@ fn optional_string(value: Option<String>, span: Span) -> Value {
 fn optional_static_str(value: Option<&'static str>, span: Span) -> Value {
     value
         .map(|value| Value::string(value, span))
+        .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
+fn optional_usize(value: Option<usize>, span: Span) -> Value {
+    value
+        .and_then(|value| i64::try_from(value).ok())
+        .map(|value| Value::int(value, span))
         .unwrap_or_else(|| Value::nothing(span))
 }
 
@@ -232,6 +294,100 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
 }
 
 #[cfg(target_os = "linux")]
+fn spec_context_args(
+    spec: &crate::program_spec::ProgramSpec,
+    resolve_dynamic_args: bool,
+) -> (Vec<SpecContextArg>, Option<String>) {
+    match spec.program_type().arg_access() {
+        ProgramValueAccess::None => (Vec::new(), None),
+        ProgramValueAccess::PtRegs => (
+            (0..6)
+                .map(|index| SpecContextArg {
+                    name: format!("arg{index}"),
+                    index: Some(index),
+                    named_alias: None,
+                    source: "pt_regs",
+                    kind: "scalar",
+                    ty: Some("u64".to_string()),
+                    supported: true,
+                    note: None,
+                    unsupported_reason: None,
+                })
+                .collect(),
+            None,
+        ),
+        ProgramValueAccess::RawTracepoint => (
+            vec![SpecContextArg {
+                name: "argN".to_string(),
+                index: None,
+                named_alias: None,
+                source: "raw_tracepoint",
+                kind: "scalar",
+                ty: Some("u64".to_string()),
+                supported: true,
+                note: Some(
+                    "raw tracepoint argument count and meanings are target-specific".to_string(),
+                ),
+                unsupported_reason: None,
+            }],
+            None,
+        ),
+        ProgramValueAccess::Trampoline if !resolve_dynamic_args => (Vec::new(), None),
+        ProgramValueAccess::Trampoline => {
+            let ctx = ProbeContext::from_program_spec(spec.clone());
+            match ctx.btf_arg_infos() {
+                Ok(infos) => (
+                    infos
+                        .into_iter()
+                        .map(|info| {
+                            let kind = info
+                                .value
+                                .map(|value| trampoline_value_kind_label(value.kind))
+                                .unwrap_or("unsupported");
+                            SpecContextArg {
+                                name: format!("arg{}", info.index),
+                                index: Some(info.index),
+                                named_alias: info.name,
+                                source: "btf_trampoline",
+                                kind,
+                                ty: Some(type_info_label(&info.type_info)),
+                                supported: info.value.is_some(),
+                                note: None,
+                                unsupported_reason: info.unsupported_reason,
+                            }
+                        })
+                        .collect(),
+                    None,
+                ),
+                Err(err) => (Vec::new(), Some(err)),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn context_arg_records(args: Vec<SpecContextArg>, span: Span) -> Vec<Value> {
+    args.into_iter()
+        .map(|arg| {
+            Value::record(
+                record! {
+                    "name" => Value::string(arg.name, span),
+                    "index" => optional_usize(arg.index, span),
+                    "named_alias" => optional_string(arg.named_alias, span),
+                    "source" => Value::string(arg.source, span),
+                    "kind" => Value::string(arg.kind, span),
+                    "type" => optional_string(arg.ty, span),
+                    "supported" => Value::bool(arg.supported, span),
+                    "note" => optional_string(arg.note, span),
+                    "unsupported_reason" => optional_string(arg.unsupported_reason, span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextWrite> {
     spec.ctx_write_surfaces_for_spec()
         .into_iter()
@@ -261,12 +417,19 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
 }
 
 #[cfg(target_os = "linux")]
-fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span) -> Value {
+fn spec_record(
+    probe: String,
+    spec: crate::program_spec::ProgramSpec,
+    span: Span,
+    resolve_dynamic_args: bool,
+) -> Value {
     let program_type = spec.program_type();
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
     let context_fields = context_field_records(&spec, span);
+    let (context_args, context_arg_error) = spec_context_args(&spec, resolve_dynamic_args);
+    let context_args = context_arg_records(context_args, span);
     let context_writes = context_write_records(&spec, span);
     let capabilities = program_type
         .supported_capabilities()
@@ -330,6 +493,8 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
             "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
             "live_attach_note" => Value::string(live_attach_note, span),
             "context_fields" => Value::list(context_fields, span),
+            "context_args" => Value::list(context_args, span),
+            "context_arg_error" => optional_string(context_arg_error, span),
             "context_writes" => Value::list(context_writes, span),
             "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
@@ -365,7 +530,7 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
                             program_type.canonical_prefix()
                         )
                     });
-                spec_record(probe, spec, call.head)
+                spec_record(probe, spec, call.head, false)
             })
             .collect();
         return Ok(PipelineData::Value(Value::list(rows, call.head), None));
@@ -383,7 +548,7 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
     })?;
 
     Ok(PipelineData::Value(
-        spec_record(probe, spec, call.head),
+        spec_record(probe, spec, call.head, true),
         None,
     ))
 }
@@ -441,6 +606,66 @@ mod tests {
             !fields.iter().any(|field| field.names.contains(&"cgroup")),
             "ctx.cgroup is a tracepoint payload field name, so it must not be advertised as a builtin"
         );
+    }
+
+    fn arg<'a>(args: &'a [SpecContextArg], arg_name: &str) -> &'a SpecContextArg {
+        args.iter()
+            .find(|arg| arg.name == arg_name)
+            .unwrap_or_else(|| panic!("expected {arg_name} in spec context args"))
+    }
+
+    #[test]
+    fn test_spec_context_args_include_pt_regs_slots() {
+        let spec = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
+        let (args, err) = spec_context_args(&spec, true);
+
+        assert!(err.is_none());
+        assert_eq!(args.len(), 6);
+        let arg0 = arg(&args, "arg0");
+        assert_eq!(arg0.index, Some(0));
+        assert_eq!(arg0.source, "pt_regs");
+        assert_eq!(arg0.kind, "scalar");
+        assert_eq!(arg0.ty.as_deref(), Some("u64"));
+        assert!(arg0.supported);
+    }
+
+    #[test]
+    fn test_spec_context_args_describe_raw_tracepoint_symbolic_args() {
+        let spec = ProgramSpec::parse("raw_tracepoint:sys_enter")
+            .expect("raw tracepoint spec should parse");
+        let (args, err) = spec_context_args(&spec, true);
+
+        assert!(err.is_none());
+        let argn = arg(&args, "argN");
+        assert_eq!(argn.index, None);
+        assert_eq!(argn.source, "raw_tracepoint");
+        assert_eq!(argn.ty.as_deref(), Some("u64"));
+        assert!(argn.note.is_some());
+        assert!(argn.unsupported_reason.is_none());
+    }
+
+    #[test]
+    fn test_spec_context_args_include_btf_trampoline_metadata_when_available() {
+        let spec =
+            ProgramSpec::parse("fentry:security_file_open").expect("fentry spec should parse");
+        let (args, err) = spec_context_args(&spec, true);
+
+        let Some(file_arg) = args
+            .iter()
+            .find(|arg| arg.named_alias.as_deref() == Some("file"))
+        else {
+            assert!(
+                err.is_some() || args.is_empty(),
+                "expected named file arg metadata or an unavailable-BTF skip"
+            );
+            return;
+        };
+
+        assert_eq!(file_arg.name, "arg0");
+        assert_eq!(file_arg.index, Some(0));
+        assert_eq!(file_arg.source, "btf_trampoline");
+        assert!(file_arg.supported);
+        assert!(file_arg.ty.as_deref().is_some_and(|ty| ty.contains("file")));
     }
 
     #[test]

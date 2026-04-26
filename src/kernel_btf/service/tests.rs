@@ -711,6 +711,67 @@ fn test_lsm_hook_arg_index_by_name_resolves_candidate() {
 }
 
 #[test]
+fn test_function_trampoline_arg_infos_include_names_when_available() {
+    let Some((function_name, arg_name, expected_idx)) =
+        find_function_trampoline_named_arg_candidate()
+    else {
+        return;
+    };
+
+    let infos = KernelBtf::get()
+        .function_trampoline_arg_infos(function_name)
+        .expect("function trampoline arg infos query should succeed");
+    let info = infos
+        .iter()
+        .find(|info| info.name.as_deref() == Some(arg_name))
+        .expect("named function trampoline arg info should exist");
+
+    assert_eq!(info.index, expected_idx);
+    assert!(info.value.is_some());
+}
+
+#[test]
+fn test_tp_btf_arg_infos_skip_hidden_context_slot() {
+    let callable_name = KernelBtf::tp_btf_type_name("sys_enter");
+    let Ok(Some(_raw_visible_idx)) =
+        KernelBtf::get().function_trampoline_arg_index_by_name(&callable_name, "regs")
+    else {
+        return;
+    };
+
+    let infos = KernelBtf::get()
+        .tp_btf_arg_infos("sys_enter")
+        .expect("tp_btf arg infos query should succeed");
+    let regs = infos
+        .iter()
+        .find(|info| info.name.as_deref() == Some("regs"))
+        .expect("tp_btf visible regs arg info should exist");
+
+    assert_eq!(regs.index, 0);
+    assert!(regs.value.is_some());
+}
+
+#[test]
+fn test_struct_ops_callback_arg_infos_include_names_when_available() {
+    let Some((value_type_name, callback_name, arg_name, expected_idx)) =
+        find_struct_ops_named_arg_candidate()
+    else {
+        return;
+    };
+
+    let infos = KernelBtf::get()
+        .struct_ops_callback_arg_infos(value_type_name, callback_name)
+        .expect("struct_ops arg infos query should succeed");
+    let info = infos
+        .iter()
+        .find(|info| info.name.as_deref() == Some(arg_name))
+        .expect("named struct_ops arg info should exist");
+
+    assert_eq!(info.index, expected_idx);
+    assert!(info.value.is_some());
+}
+
+#[test]
 fn test_struct_ops_callback_ret_type_info_resolves_candidate() {
     for (value_type_name, callback_name) in [
         ("sched_ext_ops", "select_cpu"),

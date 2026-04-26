@@ -143,6 +143,16 @@ pub struct TrampolineValueSpec {
     pub kind: TrampolineValueKind,
 }
 
+/// BTF-resolved user-visible trampoline parameter metadata.
+#[derive(Debug, Clone)]
+pub struct TrampolineParamInfo {
+    pub index: usize,
+    pub name: Option<String>,
+    pub type_info: TypeInfo,
+    pub value: Option<TrampolineValueSpec>,
+    pub unsupported_reason: Option<String>,
+}
+
 /// Resolved field projection within a by-value trampoline aggregate.
 #[derive(Debug, Clone)]
 pub struct TrampolineFieldProjection {
@@ -603,6 +613,56 @@ impl KernelBtf {
             .map(Some)
     }
 
+    /// Resolve all user-visible argument metadata for a trampoline function.
+    pub fn function_trampoline_arg_infos(
+        &self,
+        function_name: &str,
+    ) -> Result<Vec<TrampolineParamInfo>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let ty = Self::resolve_named_trampoline_callable(&btf, function_name)?;
+        let Type::FunctionProto(proto) = &ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "function '{}' is missing a function prototype in kernel BTF",
+                function_name
+            )));
+        };
+
+        let layout = self.function_trampoline_layout(function_name)?;
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        let mut infos = Vec::new();
+
+        for (idx, param) in proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .enumerate()
+        {
+            let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kernel BTF type {}: {}",
+                    param.type_id, e
+                ))
+            })?;
+            let type_info = Self::type_info_from_btf_type(
+                &btf,
+                &param_ty,
+                &raw_type_sizes,
+                &raw_pointer_targets,
+            )?;
+            let layout = layout.args.get(idx);
+            infos.push(TrampolineParamInfo {
+                index: idx,
+                name: param.name.clone(),
+                type_info,
+                value: layout.and_then(|arg| arg.value),
+                unsupported_reason: layout.and_then(|arg| arg.unsupported_reason.clone()),
+            });
+        }
+
+        Ok(infos)
+    }
+
     /// Resolve the exact kernel-BTF type for an LSM hook argument.
     pub fn lsm_hook_arg_type_info(
         &self,
@@ -610,6 +670,14 @@ impl KernelBtf {
         arg_idx: usize,
     ) -> Result<Option<TypeInfo>, BtfError> {
         self.function_trampoline_arg_type_info(&Self::lsm_hook_function_name(hook_name), arg_idx)
+    }
+
+    /// Resolve all user-visible argument metadata for an LSM hook.
+    pub fn lsm_hook_arg_infos(
+        &self,
+        hook_name: &str,
+    ) -> Result<Vec<TrampolineParamInfo>, BtfError> {
+        self.function_trampoline_arg_infos(&Self::lsm_hook_function_name(hook_name))
     }
 
     /// Resolve the exact kernel-BTF type for a `tp_btf` tracepoint argument.
@@ -622,6 +690,23 @@ impl KernelBtf {
             &Self::tp_btf_type_name(tracepoint_name),
             Self::tp_btf_raw_arg_index(arg_idx),
         )
+    }
+
+    /// Resolve all user-visible argument metadata for a `tp_btf` tracepoint.
+    pub fn tp_btf_arg_infos(
+        &self,
+        tracepoint_name: &str,
+    ) -> Result<Vec<TrampolineParamInfo>, BtfError> {
+        let mut infos =
+            self.function_trampoline_arg_infos(&Self::tp_btf_type_name(tracepoint_name))?;
+        if infos.len() <= Self::TP_BTF_HIDDEN_ARG_COUNT {
+            return Ok(Vec::new());
+        }
+        infos.drain(0..Self::TP_BTF_HIDDEN_ARG_COUNT);
+        for (idx, info) in infos.iter_mut().enumerate() {
+            info.index = idx;
+        }
+        Ok(infos)
     }
 
     /// Resolve the argument index for a named trampoline function parameter.
@@ -705,6 +790,58 @@ impl KernelBtf {
         })?;
         Self::type_info_from_btf_type(&btf, &param_ty, &raw_type_sizes, &raw_pointer_targets)
             .map(Some)
+    }
+
+    /// Resolve all user-visible argument metadata for a `struct_ops` callback.
+    pub fn struct_ops_callback_arg_infos(
+        &self,
+        value_type_name: &str,
+        callback_name: &str,
+    ) -> Result<Vec<TrampolineParamInfo>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let callback_fn =
+            Self::resolve_struct_ops_callback_named_function(&btf, value_type_name, callback_name)?;
+        let Type::FunctionProto(proto) = &callback_fn.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "struct_ops callback function '{}__{}' is missing a function prototype in kernel BTF",
+                value_type_name, callback_name
+            )));
+        };
+
+        let layout = self.struct_ops_callback_layout(value_type_name, callback_name)?;
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        let mut infos = Vec::new();
+
+        for (idx, param) in proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .enumerate()
+        {
+            let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kernel BTF type {}: {}",
+                    param.type_id, e
+                ))
+            })?;
+            let type_info = Self::type_info_from_btf_type(
+                &btf,
+                &param_ty,
+                &raw_type_sizes,
+                &raw_pointer_targets,
+            )?;
+            let layout = layout.args.get(idx);
+            infos.push(TrampolineParamInfo {
+                index: idx,
+                name: param.name.clone(),
+                type_info,
+                value: layout.and_then(|arg| arg.value),
+                unsupported_reason: layout.and_then(|arg| arg.unsupported_reason.clone()),
+            });
+        }
+
+        Ok(infos)
     }
 
     fn resolve_struct_ops_callback_named_function<'a>(
