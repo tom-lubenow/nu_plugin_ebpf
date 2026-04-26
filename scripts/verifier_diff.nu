@@ -2,6 +2,7 @@
 
 const REPO_ROOT = (path self | path dirname | path dirname)
 const BPFFS = "/sys/fs/bpf"
+const VALID_TIERS = ["fast" "btf" "kernel" "vm-only"]
 
 const FIXTURES = [
     {
@@ -2298,10 +2299,29 @@ def optional [record field fallback] {
     if $value == null { $fallback } else { $value }
 }
 
+def fixture-tier [fixture] {
+    let explicit = ($fixture | get -o tier)
+    if $explicit != null {
+        return $explicit
+    }
+
+    let requirements = (
+        optional $fixture requires []
+        | append (optional $fixture kernel_requires [])
+    )
+
+    if ($requirements | any {|feature| $feature in ["kernel-btf" "tracefs"] }) {
+        "btf"
+    } else {
+        "fast"
+    }
+}
+
 def fixture-summary [fixture] {
     {
         name: $fixture.name
         category: (optional $fixture category "")
+        tier: (fixture-tier $fixture)
         local: $fixture.local
         kernel: $fixture.kernel
         requires: ((optional $fixture requires []) | str join ",")
@@ -2309,6 +2329,16 @@ def fixture-summary [fixture] {
         min_kernel: (optional $fixture min_kernel "")
         min_kernel_source: (optional $fixture min_kernel_source "")
         tags: ((optional $fixture tags []) | str join ",")
+    }
+}
+
+def validate-tier-option [label: string value] {
+    if $value == null {
+        return
+    }
+
+    if $value not-in $VALID_TIERS {
+        fail $"invalid ($label) tier '($value)'; expected one of ($VALID_TIERS | str join ', ')"
     }
 }
 
@@ -2324,6 +2354,8 @@ def validate-status-option [label: string value] {
 
 def validate-fixture-metadata [fixtures] {
     for fixture in $fixtures {
+        validate-tier-option $"fixture ($fixture.name)" ($fixture | get -o tier)
+
         let min_kernel = ($fixture | get -o min_kernel)
         let min_kernel_source = ($fixture | get -o min_kernel_source)
 
@@ -2345,10 +2377,12 @@ def fixture-has-tag [fixture tag] {
     optional $fixture tags [] | any {|fixture_tag| $fixture_tag == $tag }
 }
 
-def fixture-matches-filters [fixture category tag local_status kernel_status] {
+def fixture-matches-filters [fixture category tag tier exclude_tier local_status kernel_status] {
     (
         ($category == null or (optional $fixture category "") == $category)
         and (fixture-has-tag $fixture $tag)
+        and ($tier == null or (fixture-tier $fixture) == $tier)
+        and ($exclude_tier == null or (fixture-tier $fixture) != $exclude_tier)
         and ($local_status == null or $fixture.local == $local_status)
         and ($kernel_status == null or $fixture.kernel == $kernel_status)
     )
@@ -2517,7 +2551,9 @@ def select-fixtures-with-requirements [fixtures require_features: bool phase: st
     $selected
 }
 
-def select-fixtures [fixture_name category tag local_status kernel_status] {
+def select-fixtures [fixture_name category tag tier exclude_tier local_status kernel_status] {
+    validate-tier-option "selected" $tier
+    validate-tier-option "excluded" $exclude_tier
     validate-status-option "local" $local_status
     validate-status-option "kernel" $kernel_status
 
@@ -2533,7 +2569,7 @@ def select-fixtures [fixture_name category tag local_status kernel_status] {
 
     let selected = (
         $fixtures
-        | where {|fixture| fixture-matches-filters $fixture $category $tag $local_status $kernel_status }
+        | where {|fixture| fixture-matches-filters $fixture $category $tag $tier $exclude_tier $local_status $kernel_status }
     )
 
     if (($selected | length) == 0) {
@@ -2547,24 +2583,34 @@ def main [
     --list         # List verifier fixtures and exit.
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
+    --fast         # Run only fixtures in the fast tier.
     --fixture: string # Run one fixture by exact name.
     --category: string # Run fixtures with an exact category.
     --tag: string # Run fixtures containing a tag.
+    --tier: string # Run fixtures in a tier: fast, btf, kernel, or vm-only.
+    --exclude-tier: string # Exclude fixtures in a tier: fast, btf, kernel, or vm-only.
     --local-status: string # Run fixtures whose expected local status is accept, reject, or skip.
     --kernel-status: string # Run fixtures whose expected kernel status is accept, reject, or skip.
 ] {
     if $kernel and $no_kernel {
         fail "--kernel and --no-kernel are mutually exclusive"
     }
+    if $fast and $tier != null {
+        fail "--fast and --tier are mutually exclusive"
+    }
+    if $fast and $exclude_tier != null {
+        fail "--fast and --exclude-tier are mutually exclusive"
+    }
 
     validate-fixture-metadata $FIXTURES
 
-    let fixtures = (select-fixtures $fixture $category $tag $local_status $kernel_status)
+    let selected_tier = if $fast { "fast" } else { $tier }
+    let fixtures = (select-fixtures $fixture $category $tag $selected_tier $exclude_tier $local_status $kernel_status)
 
     if $list {
         for fixture in $fixtures {
             let summary = (fixture-summary $fixture)
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags)"
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags)"
         }
         return
     }
