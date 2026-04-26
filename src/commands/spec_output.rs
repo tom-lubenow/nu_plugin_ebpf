@@ -2,7 +2,7 @@
 
 use nu_protocol::{Span, Value, record};
 
-use crate::compiler::mir::{AddressSpace, MirType};
+use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
     ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramValueAccess,
     SockOpsCallbackGuard,
@@ -31,6 +31,20 @@ struct SpecContextWrite {
     field: &'static str,
     kind: &'static str,
     indexed: bool,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecContextProjection {
+    root: String,
+    name: String,
+    path: String,
+    ty: String,
+    offset: usize,
+    bit_offset: Option<u32>,
+    bit_size: Option<u32>,
+    supported: bool,
+    unsupported_reason: Option<String>,
 }
 
 #[cfg(target_os = "linux")]
@@ -310,6 +324,75 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
 }
 
 #[cfg(target_os = "linux")]
+fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextProjection> {
+    let mut projections = Vec::new();
+    let mut seen_roots = Vec::new();
+
+    for entry in spec.program_type().ctx_field_name_entries() {
+        if spec.ctx_field_access_error(&entry.field).is_some() || seen_roots.contains(&entry.field)
+        {
+            continue;
+        }
+        seen_roots.push(entry.field.clone());
+
+        let Some(type_spec) = spec.ctx_field_type_spec(&entry.field) else {
+            continue;
+        };
+        let MirType::Ptr { pointee, .. } = type_spec.semantic_ty else {
+            continue;
+        };
+        let MirType::Struct { fields, .. } = *pointee else {
+            continue;
+        };
+
+        let root = entry.field.display_name();
+        for field in fields.into_iter().filter(|field| !field.synthetic) {
+            let unsupported_reason = match entry.field {
+                CtxField::Socket => spec.socket_projection_access_error(&field.name),
+                _ => None,
+            };
+            let supported = unsupported_reason.is_none();
+            projections.push(SpecContextProjection {
+                root: root.clone(),
+                path: format!("{root}.{}", field.name),
+                name: field.name,
+                ty: mir_type_label(&field.ty),
+                offset: field.offset,
+                bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+                bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+                supported,
+                unsupported_reason,
+            });
+        }
+    }
+
+    projections
+}
+
+#[cfg(target_os = "linux")]
+fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
+    spec_context_projections(spec)
+        .into_iter()
+        .map(|projection| {
+            Value::record(
+                record! {
+                    "root" => Value::string(projection.root, span),
+                    "name" => Value::string(projection.name, span),
+                    "path" => Value::string(projection.path, span),
+                    "type" => Value::string(projection.ty, span),
+                    "offset" => optional_usize(Some(projection.offset), span),
+                    "bit_offset" => optional_u32(projection.bit_offset, span),
+                    "bit_size" => optional_u32(projection.bit_size, span),
+                    "supported" => Value::bool(projection.supported, span),
+                    "unsupported_reason" => optional_string(projection.unsupported_reason, span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn spec_tracepoint_fields(
     spec: &crate::program_spec::ProgramSpec,
     resolve_dynamic_fields: bool,
@@ -581,6 +664,7 @@ pub(super) fn spec_record(
     let (context_retval, context_retval_error) = spec_context_retval(&spec, resolve_dynamic_args);
     let context_retval = context_retval_record(context_retval, span);
     let context_writes = context_write_records(&spec, span);
+    let context_projections = context_projection_records(&spec, span);
     let capabilities = program_type
         .supported_capabilities()
         .iter()
@@ -653,6 +737,7 @@ pub(super) fn spec_record(
             "context_retval" => context_retval,
             "context_retval_error" => optional_string(context_retval_error, span),
             "context_writes" => Value::list(context_writes, span),
+            "context_projections" => Value::list(context_projections, span),
             "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
             "return_aliases" => Value::list(return_aliases, span),
@@ -789,6 +874,60 @@ mod tests {
                 .expect("direct packet writes should be present")
                 .as_bool()
                 .expect("direct packet writes should be a bool")
+        );
+    }
+
+    fn projection<'a>(
+        projections: &'a [SpecContextProjection],
+        path: &str,
+    ) -> &'a SpecContextProjection {
+        projections
+            .iter()
+            .find(|projection| projection.path == path)
+            .unwrap_or_else(|| panic!("expected {path} in spec context projections"))
+    }
+
+    #[test]
+    fn test_spec_context_projections_include_socket_members() {
+        let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
+            .expect("cgroup_sock spec should parse");
+        let projections = spec_context_projections(&spec);
+
+        let family = projection(&projections, "sk.family");
+        assert_eq!(family.root, "sk");
+        assert_eq!(family.name, "family");
+        assert_eq!(family.ty, "u32");
+        assert_eq!(family.offset, 4);
+        assert!(family.supported);
+        assert!(family.unsupported_reason.is_none());
+
+        let src_ip4 = projection(&projections, "sk.src_ip4");
+        assert!(!src_ip4.supported);
+        assert!(
+            src_ip4
+                .unsupported_reason
+                .as_deref()
+                .is_some_and(|reason| { reason.contains("cgroup_sock post_bind4") })
+        );
+    }
+
+    #[test]
+    fn test_spec_context_projections_respect_attach_sensitive_socket_members() {
+        let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:post_bind4")
+            .expect("cgroup_sock post_bind4 spec should parse");
+        let projections = spec_context_projections(&spec);
+
+        let src_ip4 = projection(&projections, "sk.src_ip4");
+        assert!(src_ip4.supported);
+        assert!(src_ip4.unsupported_reason.is_none());
+
+        let src_ip6 = projection(&projections, "sk.src_ip6");
+        assert!(!src_ip6.supported);
+        assert!(
+            src_ip6
+                .unsupported_reason
+                .as_deref()
+                .is_some_and(|reason| { reason.contains("cgroup_sock post_bind6") })
         );
     }
 
