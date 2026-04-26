@@ -198,7 +198,7 @@ fn test_map_lookup_rejects_queue_map_kind() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("map lookup is not supported for map kind Queue")),
+            .contains("map lookup is not supported for map kind queue")),
         "unexpected errors: {:?}",
         err
     );
@@ -542,7 +542,7 @@ fn test_counter_map_rejects_non_hash_kind() {
     let err = verify_mir(&func, &HashMap::new()).expect_err("expected counter map kind error");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("only supports Hash/PerCpuHash kinds")),
+            .any(|e| e.message.contains("only supports hash/per-cpu-hash kinds")),
         "unexpected errors: {:?}",
         err
     );

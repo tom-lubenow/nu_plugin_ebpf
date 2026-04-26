@@ -53,7 +53,7 @@ fn check_counter_map_kind(
         errors.push(VccError::new(
             VccErrorKind::UnsupportedInstruction,
             format!(
-                "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+                "map '{}' only supports hash/per-cpu-hash kinds, got {}",
                 map.name, map.kind
             ),
         ));
@@ -64,7 +64,7 @@ fn check_counter_map_kind(
             errors.push(VccError::new(
                 VccErrorKind::UnsupportedInstruction,
                 format!(
-                    "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                    "map '{}' used with conflicting kinds: {} vs {}",
                     map.name, existing, map.kind
                 ),
             ));
@@ -133,7 +133,7 @@ fn register_generic_map_layout_spec(
         errors.push(VccError::new(
             VccErrorKind::UnsupportedInstruction,
             format!(
-                "map operations do not support map kind {:?} for '{}'",
+                "map operations do not support map kind {} for '{}'",
                 map.kind, map.name
             ),
         ));
@@ -157,7 +157,7 @@ fn register_generic_map_layout_spec(
                 errors.push(VccError::new(
                     VccErrorKind::UnsupportedInstruction,
                     format!(
-                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        "map '{}' used with conflicting kinds: {} vs {}",
                         map.name, spec.kind, map.kind
                     ),
                 ));

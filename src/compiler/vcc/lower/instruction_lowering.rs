@@ -1548,7 +1548,7 @@ impl<'a> VccLowerer<'a> {
                 if prog_map.kind != MapKind::ProgArray {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
-                        format!("tail_call requires ProgArray map, got {:?}", prog_map.kind),
+                        format!("tail_call requires prog-array map, got {}", prog_map.kind),
                     ));
                 }
                 let vcc_val = self.lower_value(index, out);

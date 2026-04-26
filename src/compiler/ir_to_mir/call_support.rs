@@ -50,7 +50,7 @@ impl<'a> HirToMirLowering<'a> {
         };
         if !Self::timer_map_kind_allowed(origin.map_ref.kind) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "helper-call '{}' requires arg{} bpf_timer to come from a hash, array, or lru-hash map value, got {:?}",
+                "helper-call '{}' requires arg{} bpf_timer to come from a hash, array, or lru-hash map value, got {}",
                 helper.name(),
                 arg_idx,
                 origin.map_ref.kind
@@ -91,7 +91,7 @@ impl<'a> HirToMirLowering<'a> {
             };
             if map_ref != &origin.map_ref {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "helper-call 'bpf_timer_init' requires arg1 map '{}' ({:?}) to match the map value containing arg0 '{}' ({:?})",
+                    "helper-call 'bpf_timer_init' requires arg1 map '{}' ({}) to match the map value containing arg0 '{}' ({})",
                     map_ref.name, map_ref.kind, origin.map_ref.name, origin.map_ref.kind
                 )));
             }
@@ -702,7 +702,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::Queue) => Ok(MapKind::Queue),
             Some(MapKind::Stack) => Ok(MapKind::Stack),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind queue or --kind stack, got {:?}",
+                "{context} requires --kind queue or --kind stack, got {}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
@@ -726,7 +726,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::Stack) => Ok(MapKind::Stack),
             Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind queue, --kind stack, or --kind bloom-filter, got {:?}",
+                "{context} requires --kind queue, --kind stack, or --kind bloom-filter, got {}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
@@ -748,7 +748,7 @@ impl<'a> HirToMirLowering<'a> {
         match Self::parse_generic_map_kind(&kind) {
             Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind bloom-filter, got {:?}",
+                "{context} requires --kind bloom-filter, got {}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
@@ -785,7 +785,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(other) => Err(Self::reserved_special_map_kind_error(context, &kind, other)
                 .unwrap_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
-                        "{context} does not support map kind {:?}",
+                        "{context} does not support map kind {}",
                         other
                     ))
                 })),
@@ -811,7 +811,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::CpuMap) => Ok(MapKind::CpuMap),
             Some(MapKind::XskMap) => Ok(MapKind::XskMap),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap, got {:?}",
+                "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap, got {}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
@@ -835,7 +835,7 @@ impl<'a> HirToMirLowering<'a> {
             Some(MapKind::PerCpuArray) => Ok(MapKind::PerCpuArray),
             Some(MapKind::LruPerCpuHash) => Ok(MapKind::LruPerCpuHash),
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash, got {:?}",
+                "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash, got {}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
@@ -890,7 +890,7 @@ impl<'a> HirToMirLowering<'a> {
                 Ok(map_kind)
             }
             Some(other) => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray, got {:?}",
+                "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray, got {}",
                 other
             ))),
             None => Err(CompileError::UnsupportedInstruction(format!(
@@ -1181,19 +1181,19 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_array_index_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map delete is not supported for array map kind {:?} ('{}')",
+                "map delete is not supported for array map kind {} ('{}')",
                 map_kind, map_name
             )));
         }
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map delete is not supported for map kind {:?} ('{}')",
+                "map delete is not supported for map kind {} ('{}')",
                 map_kind, map_name
             )));
         }
         if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-delete is not supported for socket map kind {:?} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
+                "map-delete is not supported for socket map kind {} ('{}'); socket maps require specialized redirect/update helpers instead of generic map-delete",
                 map_kind, map_name
             )));
         }
@@ -1207,13 +1207,13 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-get is not supported for map kind {:?} ('{}'); use map-push and future queue/stack-specific operations instead",
+                "map-get is not supported for map kind {} ('{}'); use map-push and future queue/stack-specific operations instead",
                 map_kind, map_name
             )));
         }
         if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-get is not supported for socket map kind {:?} ('{}'); use specialized socket-map helpers instead",
+                "map-get is not supported for socket map kind {} ('{}'); use specialized socket-map helpers instead",
                 map_kind, map_name
             )));
         }
@@ -1227,13 +1227,13 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-put is not supported for map kind {:?} ('{}'); use map-push instead",
+                "map-put is not supported for map kind {} ('{}'); use map-push instead",
                 map_kind, map_name
             )));
         }
         if map_kind.is_socket_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-put is not supported for socket map kind {:?} ('{}'); use specialized socket-map update helpers instead",
+                "map-put is not supported for socket map kind {} ('{}'); use specialized socket-map update helpers instead",
                 map_kind, map_name
             )));
         }

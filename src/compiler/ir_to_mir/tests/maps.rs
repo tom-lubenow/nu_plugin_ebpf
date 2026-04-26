@@ -2019,7 +2019,7 @@ fn test_lower_map_peek_rejects_bloom_filter_kind() {
 
     assert!(
         err.to_string()
-            .contains("map-peek requires --kind queue or --kind stack, got BloomFilter")
+            .contains("map-peek requires --kind queue or --kind stack, got bloom-filter")
     );
 }
 
@@ -2041,7 +2041,7 @@ fn test_lower_map_pop_rejects_bloom_filter_kind() {
 
     assert!(
         err.to_string()
-            .contains("map-pop requires --kind queue or --kind stack, got BloomFilter")
+            .contains("map-pop requires --kind queue or --kind stack, got bloom-filter")
     );
 }
 
@@ -2150,7 +2150,7 @@ fn test_lower_map_delete_rejects_array_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map delete is not supported for array map kind"));
-            assert!(msg.contains("Array"));
+            assert!(msg.contains("array"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
@@ -2175,7 +2175,7 @@ fn test_lower_map_put_rejects_queue_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map-put is not supported for map kind"));
-            assert!(msg.contains("Queue"));
+            assert!(msg.contains("queue"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
@@ -2306,7 +2306,7 @@ fn test_lower_map_get_rejects_sockmap_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map-get is not supported for socket map kind"));
-            assert!(msg.contains("SockMap"));
+            assert!(msg.contains("sockmap"));
             assert!(msg.contains("use specialized socket-map helpers instead"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
@@ -2440,7 +2440,7 @@ fn test_lower_map_delete_rejects_queue_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map delete is not supported for map kind"));
-            assert!(msg.contains("Queue"));
+            assert!(msg.contains("queue"));
         }
         other => panic!("unexpected lowering error: {other:?}"),
     }
@@ -2521,7 +2521,7 @@ fn test_lower_map_delete_rejects_sockmap_kind() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("map-delete is not supported for socket map kind"));
-            assert!(msg.contains("SockMap"));
+            assert!(msg.contains("sockmap"));
             assert!(
                 msg.contains(
                     "socket maps require specialized redirect/update helpers instead of generic map-delete"

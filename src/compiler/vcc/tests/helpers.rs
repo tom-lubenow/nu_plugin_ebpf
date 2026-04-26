@@ -11061,7 +11061,7 @@ fn test_verify_mir_tail_call_rejects_non_prog_array_map_kind() {
     assert!(
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
-                && e.message.contains("tail_call requires ProgArray map")),
+                && e.message.contains("tail_call requires prog-array map")),
         "unexpected error messages: {:?}",
         err
     );

@@ -126,7 +126,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         if prog_map.kind != MapKind::ProgArray {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "Tail call requires prog array map, got {:?} for '{}'",
+                "tail call requires prog-array map, got {} for '{}'",
                 prog_map.kind, prog_map.name
             )));
         }

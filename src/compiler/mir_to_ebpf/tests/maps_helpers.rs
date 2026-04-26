@@ -1173,7 +1173,7 @@ fn test_counter_map_rejects_non_hash_kind() {
         Err(err) => {
             let msg = err.to_string();
             assert!(
-                msg.contains("Hash/PerCpuHash"),
+                msg.contains("hash/per-cpu-hash"),
                 "unexpected error message: {msg}"
             );
         }
@@ -1533,7 +1533,7 @@ fn test_map_delete_rejects_array_maps() {
         Err(err) => {
             let msg = err.to_string();
             assert!(
-                msg.contains("array map kind") || msg.contains("Array"),
+                msg.contains("array map kind") || msg.contains("array"),
                 "unexpected error: {msg}"
             );
         }
@@ -1576,7 +1576,7 @@ fn test_map_lookup_rejects_queue_maps() {
         Err(err) => {
             let msg = err.to_string();
             assert!(
-                msg.contains("map lookup is not supported for map kind Queue"),
+                msg.contains("map lookup is not supported for map kind queue"),
                 "unexpected error: {msg}"
             );
         }
@@ -1659,7 +1659,7 @@ fn test_tail_call_rejects_non_prog_array_map() {
         Err(err) => {
             let msg = err.to_string();
             assert!(
-                msg.contains("ProgArray") || msg.contains("prog array"),
+                msg.contains("prog-array") || msg.contains("prog array"),
                 "unexpected error: {msg}"
             );
         }
@@ -2285,7 +2285,7 @@ fn test_compile_builtin_events_map_rejects_wrong_kind() {
     };
 
     assert!(
-        matches!(err, CompileError::UnsupportedInstruction(ref msg) if msg.contains("map name 'events' is reserved") && msg.contains("got UserRingBuf")),
+        matches!(err, CompileError::UnsupportedInstruction(ref msg) if msg.contains("map name 'events' is reserved") && msg.contains("got user-ringbuf")),
         "unexpected error: {err:?}"
     );
 }

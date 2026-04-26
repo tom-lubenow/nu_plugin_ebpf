@@ -305,7 +305,7 @@ fn verify_mir_with_subfunction_summaries_impl(
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
                     errors.push(VerifierTypeError::new(format!(
-                        "tail_call requires ProgArray map, got {:?}",
+                        "tail_call requires prog-array map, got {}",
                         prog_map.kind
                     )));
                 }

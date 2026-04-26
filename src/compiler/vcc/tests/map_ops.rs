@@ -289,7 +289,7 @@ fn test_verify_mir_map_lookup_rejects_queue_map_kind() {
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
                 && e.message
-                    .contains("map lookup is not supported for map kind Queue")),
+                    .contains("map lookup is not supported for map kind queue")),
         "unexpected error messages: {:?}",
         err
     );
@@ -632,7 +632,7 @@ fn test_verify_mir_counter_map_rejects_non_hash_kind() {
     assert!(
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
-                && e.message.contains("only supports Hash/PerCpuHash kinds")),
+                && e.message.contains("only supports hash/per-cpu-hash kinds")),
         "unexpected error messages: {:?}",
         err
     );

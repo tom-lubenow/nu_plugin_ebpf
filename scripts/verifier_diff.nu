@@ -1450,7 +1450,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map-get is not supported for map kind Queue"
+        error_contains: "map-get is not supported for map kind queue"
     }
     {
         name: "timer-map-define-lowers-init-start-cancel"

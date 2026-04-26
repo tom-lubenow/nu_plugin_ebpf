@@ -13924,7 +13924,7 @@ fn test_tail_call_rejects_non_prog_array_map_kind() {
         verify_mir(&func, &HashMap::new()).expect_err("expected non-ProgArray tail_call error");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("tail_call requires ProgArray map")),
+            .any(|e| e.message.contains("tail_call requires prog-array map")),
         "unexpected errors: {:?}",
         err
     );

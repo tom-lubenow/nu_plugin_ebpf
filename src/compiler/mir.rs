@@ -353,22 +353,22 @@ impl MapKind {
     pub fn map_fd_materialization_error(self, map_name: &str) -> String {
         match self {
             MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
-                "map '{}' uses {:?}, which requires inner-map metadata not modeled by this compiler yet",
+                "map '{}' uses {}, which requires inner-map metadata not modeled by this compiler yet",
                 map_name, self
             ),
             MapKind::DeprecatedCgroupStorage | MapKind::DeprecatedPerCpuCgroupStorage => format!(
-                "map '{}' uses deprecated {:?}; use cgrp-storage local-storage maps instead",
+                "map '{}' uses deprecated {}; use cgrp-storage local-storage maps instead",
                 map_name, self
             ),
             MapKind::StructOps => format!(
-                "map '{}' uses StructOps; struct_ops maps are emitted through struct_ops object support, not generic map materialization",
+                "map '{}' uses struct-ops; struct_ops maps are emitted through struct_ops object support, not generic map materialization",
                 map_name
             ),
             MapKind::Arena => format!(
-                "map '{}' uses Arena, but arena map_extra/mmap support is not modeled yet",
+                "map '{}' uses arena, but arena map_extra/mmap support is not modeled yet",
                 map_name
             ),
-            _ => format!("map '{}' uses unsupported map kind {:?}", map_name, self),
+            _ => format!("map '{}' uses unsupported map kind {}", map_name, self),
         }
     }
 
@@ -417,7 +417,7 @@ impl MapKind {
     pub fn generic_map_op_error(self, op: MapOpKind, map_name: &str) -> String {
         if !self.supports_any_generic_map_op() {
             return format!(
-                "map operations do not support map kind {:?} for '{}'",
+                "map operations do not support map kind {} for '{}'",
                 self, map_name
             );
         }
@@ -435,26 +435,32 @@ impl MapKind {
                 format!("map delete is not supported for bloom-filter map '{map_name}'")
             }
             (MapOpKind::Delete, MapKind::Array | MapKind::PerCpuArray) => format!(
-                "map delete is not supported for array map kind {:?} ('{}')",
+                "map delete is not supported for array map kind {} ('{}')",
                 self, map_name
             ),
             (MapOpKind::Push, _) => format!(
-                "map-push requires queue, stack, or bloom-filter map kind, got {:?} for '{}'",
+                "map-push requires queue, stack, or bloom-filter map kind, got {} for '{}'",
                 self, map_name
             ),
             (MapOpKind::Lookup, _) => format!(
-                "map lookup is not supported for map kind {:?} ('{}')",
+                "map lookup is not supported for map kind {} ('{}')",
                 self, map_name
             ),
             (MapOpKind::Update, _) => format!(
-                "map update is not supported for map kind {:?} ('{}')",
+                "map update is not supported for map kind {} ('{}')",
                 self, map_name
             ),
             (MapOpKind::Delete, _) => format!(
-                "map delete is not supported for map kind {:?} ('{}')",
+                "map delete is not supported for map kind {} ('{}')",
                 self, map_name
             ),
         }
+    }
+}
+
+impl fmt::Display for MapKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
     }
 }
 

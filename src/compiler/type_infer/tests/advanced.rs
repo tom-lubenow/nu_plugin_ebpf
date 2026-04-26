@@ -1365,6 +1365,6 @@ fn test_type_infer_rejects_queue_map_lookup() {
 
     assert!(errors.iter().any(|e| {
         e.message
-            .contains("map lookup is not supported for map kind Queue")
+            .contains("map lookup is not supported for map kind queue")
     }));
 }

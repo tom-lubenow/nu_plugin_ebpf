@@ -131,7 +131,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         if !kind.supports_builtin_counter_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+                "map '{}' only supports hash/per-cpu-hash kinds, got {}",
                 map_name, kind
             )));
         }
@@ -141,7 +141,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             if let Some(existing) = *slot {
                 if existing != kind {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        "map '{}' used with conflicting kinds: {} vs {}",
                         map_name, existing, kind
                     )));
                 }
@@ -156,7 +156,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             if let Some(existing) = *slot {
                 if existing != kind {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        "map '{}' used with conflicting kinds: {} vs {}",
                         map_name, existing, kind
                     )));
                 }
@@ -180,7 +180,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             if let Some(existing) = self.bytes_counter_map_spec {
                 if existing.kind != kind {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        "map '{}' used with conflicting kinds: {} vs {}",
                         map_name, existing.kind, kind
                     )));
                 }
@@ -278,7 +278,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::Hash => Ok(BpfMapDef::hash(key_size, value_size, max_entries)),
             MapKind::PerCpuHash => Ok(BpfMapDef::per_cpu_hash(key_size, value_size, max_entries)),
             _ => Err(CompileError::UnsupportedInstruction(format!(
-                "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+                "map '{}' only supports hash/per-cpu-hash kinds, got {}",
                 map_name, kind
             ))),
         }
@@ -299,7 +299,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 if map.kind != MapKind::RingBuf {
                     return Err(Self::reserved_runtime_map_name_error(
                         RINGBUF_MAP_NAME,
-                        &format!("the built-in RingBuf event map, got {:?}", map.kind),
+                        &format!("the built-in ringbuf event map, got {}", map.kind),
                     ));
                 }
                 self.needs_ringbuf = true;
@@ -309,7 +309,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 if map.kind != MapKind::StackTrace {
                     return Err(Self::reserved_runtime_map_name_error(
                         KSTACK_MAP_NAME,
-                        &format!("the built-in kernel stack-trace map, got {:?}", map.kind),
+                        &format!("the built-in kernel stack-trace map, got {}", map.kind),
                     ));
                 }
                 self.needs_kstack_map = true;
@@ -319,7 +319,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 if map.kind != MapKind::StackTrace {
                     return Err(Self::reserved_runtime_map_name_error(
                         USTACK_MAP_NAME,
-                        &format!("the built-in user stack-trace map, got {:?}", map.kind),
+                        &format!("the built-in user stack-trace map, got {}", map.kind),
                     ));
                 }
                 self.needs_ustack_map = true;
@@ -643,7 +643,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             Some(spec) => {
                 if spec.kind != map.kind {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                        "map '{}' used with conflicting kinds: {} vs {}",
                         map.name, spec.kind, map.kind
                     )));
                 }

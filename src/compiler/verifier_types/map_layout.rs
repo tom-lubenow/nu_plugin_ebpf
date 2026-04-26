@@ -51,7 +51,7 @@ pub(super) fn check_counter_map_kind(
     }
     if !map.kind.supports_builtin_counter_map() {
         errors.push(VerifierTypeError::new(format!(
-            "map '{}' only supports Hash/PerCpuHash kinds, got {:?}",
+            "map '{}' only supports hash/per-cpu-hash kinds, got {}",
             map.name, map.kind
         )));
         return;
@@ -59,7 +59,7 @@ pub(super) fn check_counter_map_kind(
     if let Some(existing) = seen.get(&map.name) {
         if *existing != map.kind {
             errors.push(VerifierTypeError::new(format!(
-                "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                "map '{}' used with conflicting kinds: {} vs {}",
                 map.name, existing, map.kind
             )));
         }
@@ -122,7 +122,7 @@ pub(super) fn register_generic_map_layout_spec(
     }
     if !map.kind.supports_any_generic_map_op() {
         errors.push(VerifierTypeError::new(format!(
-            "map operations do not support map kind {:?} for '{}'",
+            "map operations do not support map kind {} for '{}'",
             map.kind, map.name
         )));
         return;
@@ -143,7 +143,7 @@ pub(super) fn register_generic_map_layout_spec(
         Some(spec) => {
             if spec.kind != map.kind {
                 errors.push(VerifierTypeError::new(format!(
-                    "map '{}' used with conflicting kinds: {:?} vs {:?}",
+                    "map '{}' used with conflicting kinds: {} vs {}",
                     map.name, spec.kind, map.kind
                 )));
                 return;

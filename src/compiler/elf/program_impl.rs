@@ -447,7 +447,7 @@ impl EbpfProgram {
                         || map.def.value_size != 8
                     {
                         return Err(invalid(format!(
-                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte keys and values",
+                            "runtime map '{}' must be a hash/per-cpu-hash with 8-byte keys and values",
                             map.name
                         )));
                     }
@@ -463,7 +463,7 @@ impl EbpfProgram {
                         || map.def.value_size != 8
                     {
                         return Err(invalid(format!(
-                            "runtime map '{}' must be a Hash/PerCpuHash with 16-byte keys and 8-byte values",
+                            "runtime map '{}' must be a hash/per-cpu-hash with 16-byte keys and 8-byte values",
                             map.name
                         )));
                     }
@@ -476,7 +476,7 @@ impl EbpfProgram {
                     )?;
                     if !is_hash_runtime_map(map.def.map_type) || map.def.value_size != 8 {
                         return Err(invalid(format!(
-                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte values",
+                            "runtime map '{}' must be a hash/per-cpu-hash with 8-byte values",
                             map.name
                         )));
                     }
@@ -498,7 +498,7 @@ impl EbpfProgram {
                         || map.def.value_size != 8
                     {
                         return Err(invalid(format!(
-                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte keys and values",
+                            "runtime map '{}' must be a hash/per-cpu-hash with 8-byte keys and values",
                             map.name
                         )));
                     }
@@ -514,7 +514,7 @@ impl EbpfProgram {
                         || map.def.value_size != 8
                     {
                         return Err(invalid(format!(
-                            "runtime map '{}' must be a Hash/PerCpuHash with 8-byte keys and values",
+                            "runtime map '{}' must be a hash/per-cpu-hash with 8-byte keys and values",
                             map.name
                         )));
                     }

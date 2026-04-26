@@ -694,7 +694,7 @@ impl<'a> TypeInference<'a> {
             MirInst::TailCall { prog_map, index } => {
                 if prog_map.kind != MapKind::ProgArray {
                     errors.push(TypeError::new(format!(
-                        "tail call requires ProgArray map kind, got {:?} for '{}'",
+                        "tail call requires prog-array map kind, got {} for '{}'",
                         prog_map.kind, prog_map.name
                     )));
                 }
