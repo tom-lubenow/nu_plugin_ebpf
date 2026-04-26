@@ -8,6 +8,7 @@ use crate::compiler::{
     SockOpsCallbackGuard, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
+use crate::program_spec::ProgramAttachShape;
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,6 +257,66 @@ fn string_list(values: &[&'static str], span: Span) -> Vec<Value> {
         .iter()
         .map(|value| Value::string(*value, span))
         .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> Value {
+    match spec.attach_shape() {
+        ProgramAttachShape::Generic => Value::record(
+            record! {
+                "kind" => Value::string("generic", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::Tc { ingress } => Value::record(
+            record! {
+                "kind" => Value::string("tc", span),
+                "direction" => Value::string(if ingress { "ingress" } else { "egress" }, span),
+                "ingress" => Value::bool(ingress, span),
+            },
+            span,
+        ),
+        ProgramAttachShape::CgroupSkb { ingress } => Value::record(
+            record! {
+                "kind" => Value::string("cgroup-skb", span),
+                "direction" => Value::string(if ingress { "ingress" } else { "egress" }, span),
+                "ingress" => Value::bool(ingress, span),
+            },
+            span,
+        ),
+        ProgramAttachShape::CgroupSock { post_bind, family } => Value::record(
+            record! {
+                "kind" => Value::string("cgroup-sock", span),
+                "phase" => Value::string(if post_bind { "post-bind" } else { "create-release" }, span),
+                "post_bind" => Value::bool(post_bind, span),
+                "family" => optional_static_str(family.map(|family| family.key()), span),
+            },
+            span,
+        ),
+        ProgramAttachShape::CgroupSockopt { get } => Value::record(
+            record! {
+                "kind" => Value::string("cgroup-sockopt", span),
+                "operation" => Value::string(if get { "get" } else { "set" }, span),
+            },
+            span,
+        ),
+        ProgramAttachShape::CgroupSockAddr { family, hook } => Value::record(
+            record! {
+                "kind" => Value::string("cgroup-sock-addr", span),
+                "family" => Value::string(family.key(), span),
+                "hook" => Value::string(hook.key(), span),
+            },
+            span,
+        ),
+        ProgramAttachShape::StructOpsCallback { family, sleepable } => Value::record(
+            record! {
+                "kind" => Value::string("struct-ops-callback", span),
+                "family" => Value::string(family.key(), span),
+                "sleepable" => Value::bool(sleepable, span),
+            },
+            span,
+        ),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -806,6 +867,7 @@ pub(super) fn spec_record(
             "section_prefix" => Value::string(program_type.section_prefix(), span),
             "section_uses_target" => Value::bool(program_type.section_uses_target(), span),
             "attach_kind" => Value::string(attach_kind.key(), span),
+            "attach_shape" => attach_shape_record(&spec, span),
             "target_kind" => Value::string(program_type.target_kind().key(), span),
             "kernel_target_validation" => optional_static_str(kernel_target_validation, span),
             "btf_callable_surface" => optional_static_str(btf_callable_surface, span),

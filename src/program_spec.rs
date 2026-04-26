@@ -168,6 +168,14 @@ pub(crate) enum StructOpsFamily {
 }
 
 impl StructOpsFamily {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::SchedExt => "sched-ext",
+            Self::TcpCongestion => "tcp-congestion",
+        }
+    }
+
     pub(crate) fn from_value_type_name(value_type_name: &str) -> Self {
         match value_type_name {
             "sched_ext_ops" => Self::SchedExt,
@@ -2016,6 +2024,14 @@ pub(crate) enum ProgramAttachAddressFamily {
 }
 
 impl ProgramAttachAddressFamily {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Ipv4 => "ipv4",
+            Self::Ipv6 => "ipv6",
+            Self::Unix => "unix",
+        }
+    }
+
     pub(crate) fn is_inet(self) -> bool {
         matches!(self, Self::Ipv4 | Self::Ipv6)
     }
@@ -2032,6 +2048,17 @@ pub(crate) enum ProgramAttachSockAddrHook {
 }
 
 impl ProgramAttachSockAddrHook {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Bind => "bind",
+            Self::Connect => "connect",
+            Self::GetPeerName => "getpeername",
+            Self::GetSockName => "getsockname",
+            Self::SendMsg => "sendmsg",
+            Self::RecvMsg => "recvmsg",
+        }
+    }
+
     pub(crate) fn is_connect(self) -> bool {
         matches!(self, Self::Connect)
     }

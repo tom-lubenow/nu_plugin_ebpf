@@ -254,6 +254,123 @@ fn test_spec_record_includes_registry_shape_metadata() {
 }
 
 #[test]
+fn test_spec_record_includes_attach_shape_metadata() {
+    let tc = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
+    let record = spec_record("tc:lo:egress".to_string(), tc, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "tc"
+    );
+    assert_eq!(
+        attach_shape
+            .get("direction")
+            .expect("tc direction should be present")
+            .as_str()
+            .expect("tc direction should be a string"),
+        "egress"
+    );
+    assert!(
+        !attach_shape
+            .get("ingress")
+            .expect("tc ingress should be present")
+            .as_bool()
+            .expect("tc ingress should be a bool")
+    );
+
+    let sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg6")
+        .expect("cgroup sock addr spec should parse");
+    let record = spec_record(
+        "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6".to_string(),
+        sock_addr,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "cgroup-sock-addr"
+    );
+    assert_eq!(
+        attach_shape
+            .get("family")
+            .expect("sock addr family should be present")
+            .as_str()
+            .expect("sock addr family should be a string"),
+        "ipv6"
+    );
+    assert_eq!(
+        attach_shape
+            .get("hook")
+            .expect("sock addr hook should be present")
+            .as_str()
+            .expect("sock addr hook should be a string"),
+        "sendmsg"
+    );
+
+    let callback = ProgramSpec::StructOpsCallback {
+        value_type_name: "sched_ext_ops".to_string(),
+        callback_name: "init".to_string(),
+    };
+    let record = spec_record(
+        "struct_ops:sched_ext_ops.init".to_string(),
+        callback,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "struct-ops-callback"
+    );
+    assert_eq!(
+        attach_shape
+            .get("family")
+            .expect("struct_ops family should be present")
+            .as_str()
+            .expect("struct_ops family should be a string"),
+        "sched-ext"
+    );
+    assert!(
+        attach_shape
+            .get("sleepable")
+            .expect("struct_ops sleepable should be present")
+            .as_bool()
+            .expect("struct_ops sleepable should be a bool")
+    );
+}
+
+#[test]
 fn test_spec_context_projections_include_socket_members() {
     let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
         .expect("cgroup_sock spec should parse");

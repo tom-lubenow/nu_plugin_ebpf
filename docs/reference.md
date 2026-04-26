@@ -583,7 +583,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, aliases, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, and nested direct/helper-backed projections, tracepoint payload fields, writable context surfaces, argument/return access mode, return aliases, capabilities, section naming/target usage, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, and nested direct/helper-backed projections, tracepoint payload fields, writable context surfaces, argument/return access mode, return aliases, capabilities, section naming/target usage, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |
