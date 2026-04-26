@@ -7,6 +7,8 @@ use nu_protocol::{
 };
 
 use crate::EbpfPlugin;
+#[cfg(target_os = "linux")]
+use crate::compiler::mir::{AddressSpace, MirType};
 
 #[derive(Clone)]
 pub struct EbpfSpec;
@@ -80,6 +82,9 @@ impl PluginCommand for EbpfSpec {
 struct SpecContextField {
     field: String,
     names: Vec<&'static str>,
+    semantic_type: Option<String>,
+    runtime_type: Option<String>,
+    kernel_btf_runtime_type: Option<&'static str>,
 }
 
 #[cfg(target_os = "linux")]
@@ -88,6 +93,83 @@ struct SpecContextWrite {
     field: &'static str,
     kind: &'static str,
     indexed: bool,
+}
+
+#[cfg(target_os = "linux")]
+fn address_space_label(address_space: AddressSpace) -> &'static str {
+    match address_space {
+        AddressSpace::Stack => "stack",
+        AddressSpace::Kernel => "kernel",
+        AddressSpace::User => "user",
+        AddressSpace::Packet => "packet",
+        AddressSpace::Map => "map",
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn mir_type_label(ty: &MirType) -> String {
+    match ty {
+        MirType::I8 => "i8".to_string(),
+        MirType::I16 => "i16".to_string(),
+        MirType::I32 => "i32".to_string(),
+        MirType::I64 => "i64".to_string(),
+        MirType::U8 => "u8".to_string(),
+        MirType::U16 => "u16".to_string(),
+        MirType::U32 => "u32".to_string(),
+        MirType::U64 => "u64".to_string(),
+        MirType::Bool => "bool".to_string(),
+        MirType::Ptr {
+            pointee,
+            address_space,
+        } => format!(
+            "ptr<{}, {}>",
+            address_space_label(*address_space),
+            mir_type_label(pointee)
+        ),
+        MirType::Array { elem, len } => format!("array<{}; {}>", mir_type_label(elem), len),
+        MirType::Struct {
+            name: Some(name), ..
+        } => format!("struct<{name}>"),
+        MirType::Struct { fields, .. } => {
+            let fields = fields
+                .iter()
+                .filter(|field| !field.synthetic)
+                .map(|field| format!("{}:{}", field.name, mir_type_label(&field.ty)))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("record<{fields}>")
+        }
+        MirType::MapRef { key_ty, val_ty } => {
+            format!(
+                "map<{}, {}>",
+                mir_type_label(key_ty),
+                mir_type_label(val_ty)
+            )
+        }
+        MirType::Subprogram { args, ret } => {
+            let args = args
+                .iter()
+                .map(mir_type_label)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("subprogram<({args}) -> {}>", mir_type_label(ret))
+        }
+        MirType::Unknown => "unknown".to_string(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn optional_string(value: Option<String>, span: Span) -> Value {
+    value
+        .map(|value| Value::string(value, span))
+        .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
+fn optional_static_str(value: Option<&'static str>, span: Span) -> Value {
+    value
+        .map(|value| Value::string(value, span))
+        .unwrap_or_else(|| Value::nothing(span))
 }
 
 #[cfg(target_os = "linux")]
@@ -102,11 +184,21 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
         if let Some((_, field)) = fields.iter_mut().find(|(field, _)| field == &entry.field) {
             field.names.push(entry.name);
         } else {
+            let type_spec = spec.ctx_field_type_spec(&entry.field);
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
                     field: entry.field.display_name(),
                     names: vec![entry.name],
+                    semantic_type: type_spec
+                        .as_ref()
+                        .map(|type_spec| mir_type_label(&type_spec.semantic_ty)),
+                    runtime_type: type_spec
+                        .as_ref()
+                        .map(|type_spec| mir_type_label(&type_spec.runtime_ty)),
+                    kernel_btf_runtime_type: type_spec
+                        .as_ref()
+                        .and_then(|type_spec| type_spec.kernel_btf_runtime_type_name),
                 },
             ));
         }
@@ -129,6 +221,9 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                 record! {
                     "field" => Value::string(field.field, span),
                     "names" => Value::list(names, span),
+                    "semantic_type" => optional_string(field.semantic_type, span),
+                    "runtime_type" => optional_string(field.runtime_type, span),
+                    "kernel_btf_runtime_type" => optional_static_str(field.kernel_btf_runtime_type, span),
                 },
                 span,
             )
@@ -311,7 +406,28 @@ mod tests {
         let fields = spec_context_fields(&spec);
 
         assert!(field(&fields, "ingress_ifindex").names.contains(&"ifindex"));
-        assert!(field(&fields, "packet_len").names.contains(&"packet_len"));
+        let packet_len = field(&fields, "packet_len");
+        assert!(packet_len.names.contains(&"packet_len"));
+        assert_eq!(packet_len.semantic_type.as_deref(), Some("u32"));
+        assert_eq!(packet_len.runtime_type.as_deref(), Some("u32"));
+    }
+
+    #[test]
+    fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
+        let spec = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
+        let fields = spec_context_fields(&spec);
+
+        let task = field(&fields, "task");
+        assert!(task.names.contains(&"current_task"));
+        assert_eq!(
+            task.semantic_type.as_deref(),
+            Some("ptr<kernel, struct<task_struct>>")
+        );
+        assert_eq!(
+            task.runtime_type.as_deref(),
+            Some("ptr<kernel, struct<task_struct>>")
+        );
+        assert_eq!(task.kernel_btf_runtime_type, Some("task_struct"));
     }
 
     #[test]
