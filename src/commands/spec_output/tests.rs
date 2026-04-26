@@ -186,6 +186,47 @@ fn test_spec_record_includes_registry_shape_metadata() {
             .expect("kernel target validation should be a string"),
         "fentry-trampoline"
     );
+    assert_eq!(
+        record
+            .get("btf_callable_surface")
+            .expect("BTF callable surface should be present")
+            .as_str()
+            .expect("BTF callable surface should be a string"),
+        "function-trampoline"
+    );
+    assert!(
+        !record
+            .get("sleepable")
+            .expect("sleepable flag should be present")
+            .as_bool()
+            .expect("sleepable flag should be a bool")
+    );
+
+    let sleepable_fentry =
+        ProgramSpec::parse("fentry.s:security_file_open").expect("sleepable fentry spec");
+    let record = spec_record(
+        "fentry.s:security_file_open".to_string(),
+        sleepable_fentry,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    assert!(
+        record
+            .get("sleepable")
+            .expect("sleepable flag should be present")
+            .as_bool()
+            .expect("sleepable flag should be a bool")
+    );
+    assert_eq!(
+        record
+            .get("section")
+            .expect("section should be present")
+            .as_str()
+            .expect("section should be a string"),
+        "fentry.s/security_file_open"
+    );
 
     let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
     let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
@@ -202,6 +243,12 @@ fn test_spec_record_includes_registry_shape_metadata() {
         record
             .get("kernel_target_validation")
             .expect("kernel target validation should be present")
+            .is_nothing()
+    );
+    assert!(
+        record
+            .get("btf_callable_surface")
+            .expect("BTF callable surface should be present")
             .is_nothing()
     );
 }

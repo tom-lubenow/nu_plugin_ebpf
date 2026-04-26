@@ -1732,6 +1732,17 @@ pub enum ProgramBtfCallableSurface {
     StructOpsCallback,
 }
 
+impl ProgramBtfCallableSurface {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::FunctionTrampoline => "function-trampoline",
+            Self::TpBtf => "tp-btf",
+            Self::LsmHook => "lsm-hook",
+            Self::StructOpsCallback => "struct-ops-callback",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PacketContextKind {
     XdpMd,

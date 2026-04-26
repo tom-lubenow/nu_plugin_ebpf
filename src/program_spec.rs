@@ -2569,6 +2569,40 @@ impl ProgramSpec {
         self.compatibility_requirements().contains(&requirement)
     }
 
+    pub fn sleepable(&self) -> bool {
+        match self {
+            ProgramSpec::Fentry {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Fexit {
+                sleepable: true, ..
+            }
+            | ProgramSpec::FmodRet {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Lsm {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Uprobe {
+                sleepable: true, ..
+            }
+            | ProgramSpec::Uretprobe {
+                sleepable: true, ..
+            }
+            | ProgramSpec::UprobeMulti {
+                sleepable: true, ..
+            }
+            | ProgramSpec::UretprobeMulti {
+                sleepable: true, ..
+            } => true,
+            ProgramSpec::StructOpsCallback {
+                value_type_name,
+                callback_name,
+            } => struct_ops_callback_is_sleepable(value_type_name, callback_name),
+            _ => false,
+        }
+    }
+
     pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
         let risk = self
             .struct_ops_value_type_name()

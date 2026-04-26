@@ -733,6 +733,9 @@ pub(super) fn spec_record(
     let kernel_target_validation = program_type
         .kernel_target_validation()
         .map(|validation| validation.key());
+    let btf_callable_surface = program_type
+        .btf_callable_surface()
+        .map(|surface| surface.key());
     let context_fields = context_field_records(&spec, span);
     let (tracepoint_fields, tracepoint_field_error) =
         spec_tracepoint_fields(&spec, resolve_dynamic_args);
@@ -805,6 +808,8 @@ pub(super) fn spec_record(
             "attach_kind" => Value::string(attach_kind.key(), span),
             "target_kind" => Value::string(program_type.target_kind().key(), span),
             "kernel_target_validation" => optional_static_str(kernel_target_validation, span),
+            "btf_callable_surface" => optional_static_str(btf_callable_surface, span),
+            "sleepable" => Value::bool(spec.sleepable(), span),
             "arg_access" => Value::string(program_type.arg_access().key(), span),
             "retval_access" => Value::string(program_type.retval_access().key(), span),
             "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, span),
