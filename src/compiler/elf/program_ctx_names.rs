@@ -524,6 +524,47 @@ mod tests {
     }
 
     #[test]
+    fn test_context_field_name_tables_resolve_through_program_types() {
+        for (name, expected) in GENERIC_CTX_FIELD_NAME_ENTRIES {
+            assert_eq!(
+                EbpfProgramType::Kprobe
+                    .resolve_ctx_field_name(name)
+                    .unwrap_or_else(|err| panic!("generic ctx.{name} should resolve: {err}")),
+                *expected,
+                "generic ctx.{name} should resolve to {expected:?}"
+            );
+        }
+
+        for (name, expected) in NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES {
+            assert_eq!(
+                EbpfProgramType::Kprobe
+                    .resolve_ctx_field_name(name)
+                    .unwrap_or_else(|err| {
+                        panic!("non-tracepoint ctx.{name} should resolve: {err}")
+                    }),
+                *expected,
+                "non-tracepoint ctx.{name} should resolve to {expected:?}"
+            );
+        }
+
+        for surface in CTX_FIELD_ALIAS_SURFACES {
+            for program_type in surface.program_types {
+                for (name, expected) in surface.entries {
+                    assert_eq!(
+                        program_type
+                            .resolve_ctx_field_name(name)
+                            .unwrap_or_else(|err| panic!(
+                                "{program_type:?} ctx.{name} should resolve: {err}"
+                            )),
+                        *expected,
+                        "{program_type:?} ctx.{name} alias should resolve to {expected:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_tracepoint_preserved_names_resolve_to_builtins() {
         for name in TRACEPOINT_PRESERVED_CTX_FIELD_NAMES {
             let field = EbpfProgramType::Tracepoint
