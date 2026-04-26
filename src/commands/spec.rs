@@ -126,6 +126,17 @@ struct SpecContextRetval {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecTracepointField {
+    name: String,
+    ty: String,
+    offset: usize,
+    size: usize,
+    bit_offset: Option<u32>,
+    bit_size: Option<u32>,
+}
+
+#[cfg(target_os = "linux")]
 fn address_space_label(address_space: AddressSpace) -> &'static str {
     match address_space {
         AddressSpace::Stack => "stack",
@@ -247,6 +258,13 @@ fn optional_usize(value: Option<usize>, span: Span) -> Value {
 }
 
 #[cfg(target_os = "linux")]
+fn optional_u32(value: Option<u32>, span: Span) -> Value {
+    value
+        .map(|value| Value::int(i64::from(value), span))
+        .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
 fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextField> {
     let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
 
@@ -298,6 +316,57 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "semantic_type" => optional_string(field.semantic_type, span),
                     "runtime_type" => optional_string(field.runtime_type, span),
                     "kernel_btf_runtime_type" => optional_static_str(field.kernel_btf_runtime_type, span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn spec_tracepoint_fields(
+    spec: &crate::program_spec::ProgramSpec,
+    resolve_dynamic_fields: bool,
+) -> (Vec<SpecTracepointField>, Option<String>) {
+    if !resolve_dynamic_fields || spec.tracepoint_parts().is_none() {
+        return (Vec::new(), None);
+    }
+
+    let ctx = ProbeContext::from_program_spec(spec.clone());
+    match ctx.tracepoint_context() {
+        Ok(Some(tracepoint)) => (
+            tracepoint
+                .fields
+                .into_iter()
+                .map(|field| SpecTracepointField {
+                    name: field.name,
+                    ty: type_info_label(&field.type_info),
+                    offset: field.offset,
+                    size: field.size,
+                    bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+                    bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+                })
+                .collect(),
+            None,
+        ),
+        Ok(None) => (Vec::new(), None),
+        Err(err) => (Vec::new(), Some(err)),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn tracepoint_field_records(fields: Vec<SpecTracepointField>, span: Span) -> Vec<Value> {
+    fields
+        .into_iter()
+        .map(|field| {
+            Value::record(
+                record! {
+                    "name" => Value::string(field.name, span),
+                    "type" => Value::string(field.ty, span),
+                    "offset" => optional_usize(Some(field.offset), span),
+                    "size" => optional_usize(Some(field.size), span),
+                    "bit_offset" => optional_u32(field.bit_offset, span),
+                    "bit_size" => optional_u32(field.bit_size, span),
                 },
                 span,
             )
@@ -518,6 +587,9 @@ fn spec_record(
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
     let context_fields = context_field_records(&spec, span);
+    let (tracepoint_fields, tracepoint_field_error) =
+        spec_tracepoint_fields(&spec, resolve_dynamic_args);
+    let tracepoint_fields = tracepoint_field_records(tracepoint_fields, span);
     let (context_args, context_arg_error) = spec_context_args(&spec, resolve_dynamic_args);
     let context_args = context_arg_records(context_args, span);
     let (context_retval, context_retval_error) = spec_context_retval(&spec, resolve_dynamic_args);
@@ -585,6 +657,8 @@ fn spec_record(
             "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
             "live_attach_note" => Value::string(live_attach_note, span),
             "context_fields" => Value::list(context_fields, span),
+            "tracepoint_fields" => Value::list(tracepoint_fields, span),
+            "tracepoint_field_error" => optional_string(tracepoint_field_error, span),
             "context_args" => Value::list(context_args, span),
             "context_arg_error" => optional_string(context_arg_error, span),
             "context_retval" => context_retval,
@@ -700,6 +774,41 @@ mod tests {
             !fields.iter().any(|field| field.names.contains(&"cgroup")),
             "ctx.cgroup is a tracepoint payload field name, so it must not be advertised as a builtin"
         );
+    }
+
+    fn tracepoint_field<'a>(
+        fields: &'a [SpecTracepointField],
+        field_name: &str,
+    ) -> Option<&'a SpecTracepointField> {
+        fields.iter().find(|field| field.name == field_name)
+    }
+
+    #[test]
+    fn test_spec_tracepoint_fields_include_payload_fields_when_available() {
+        let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+            .expect("tracepoint spec should parse");
+        let (fields, err) = spec_tracepoint_fields(&spec, true);
+
+        if fields.is_empty() {
+            assert!(err.is_some(), "expected tracepoint fields or an error");
+            return;
+        }
+
+        assert!(
+            tracepoint_field(&fields, "filename").is_some()
+                || tracepoint_field(&fields, "args").is_some(),
+            "expected tracefs syscall fields or the well-known syscall fallback"
+        );
+        assert!(fields.iter().all(|field| !field.ty.is_empty()));
+    }
+
+    #[test]
+    fn test_spec_tracepoint_fields_are_absent_for_non_tracepoints() {
+        let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+        let (fields, err) = spec_tracepoint_fields(&spec, true);
+
+        assert!(fields.is_empty());
+        assert!(err.is_none());
     }
 
     fn arg<'a>(args: &'a [SpecContextArg], arg_name: &str) -> &'a SpecContextArg {
