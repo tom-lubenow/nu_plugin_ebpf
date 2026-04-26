@@ -61,7 +61,7 @@ impl PluginCommand for EbpfSpec {
 fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
     use nu_protocol::{Value, record};
 
-    use crate::program_spec::{ProgramSpec, StructOpsFamily};
+    use crate::program_spec::ProgramSpec;
 
     let probe: String = call.req(0)?;
     let spec = ProgramSpec::parse(&probe).map_err(|err| {
@@ -71,16 +71,8 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
     })?;
     let program_type = spec.program_type();
     let attach_kind = program_type.attach_kind();
-    let loader_live_attach_supported = attach_kind.loader_supports_live_attach();
-    let unsupported_live_attach = attach_kind.unsupported_live_attach_detail();
-    let live_attach_risk = spec
-        .struct_ops_value_type_name()
-        .and_then(|value_type_name| {
-            StructOpsFamily::from_value_type_name(value_type_name).live_attach_risk()
-        });
-    let live_attach_requires_opt_in = loader_live_attach_supported && live_attach_risk.is_some();
-    let live_attach_default_allowed = loader_live_attach_supported && !live_attach_requires_opt_in;
-    let live_attach_note = unsupported_live_attach.or(live_attach_risk).unwrap_or("");
+    let live_attach_policy = spec.live_attach_policy();
+    let live_attach_note = live_attach_policy.note.unwrap_or("");
     let requirements = spec
         .compatibility_requirements()
         .into_iter()
@@ -105,9 +97,9 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
                 "section" => Value::string(spec.section_name(), call.head),
                 "attach_kind" => Value::string(format!("{attach_kind:?}"), call.head),
                 "target_kind" => Value::string(format!("{:?}", program_type.target_kind()), call.head),
-                "live_attach_supported" => Value::bool(loader_live_attach_supported, call.head),
-                "live_attach_default_allowed" => Value::bool(live_attach_default_allowed, call.head),
-                "live_attach_requires_opt_in" => Value::bool(live_attach_requires_opt_in, call.head),
+                "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, call.head),
+                "live_attach_default_allowed" => Value::bool(live_attach_policy.default_allowed, call.head),
+                "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, call.head),
                 "live_attach_note" => Value::string(live_attach_note, call.head),
                 "compatibility_requirements" => Value::list(requirements, call.head),
             },

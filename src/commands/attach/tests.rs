@@ -16,6 +16,7 @@ use crate::compiler::{
     StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
+use crate::program_spec::ProgramSpec;
 use nu_protocol::DeclId;
 use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
@@ -1353,9 +1354,9 @@ fn test_validate_struct_ops_top_level_field_kind_rejects_constant_on_callback_me
 
 #[test]
 fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default() {
-    let err =
-        super::validate_struct_ops_attach_safety("sched_ext_ops", false, false, Span::test_data())
-            .expect_err("live sched_ext attach should require explicit opt-in");
+    let spec = ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
+    let err = super::validate_struct_ops_attach_safety(&spec, false, false, Span::test_data())
+        .expect_err("live sched_ext attach should require explicit opt-in");
     assert!(err.labels.iter().any(|label| {
         label
             .text
@@ -1365,19 +1366,23 @@ fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default
 
 #[test]
 fn test_validate_struct_ops_attach_safety_allows_sched_ext_dry_run() {
-    super::validate_struct_ops_attach_safety("sched_ext_ops", true, false, Span::test_data())
+    let spec = ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
+    super::validate_struct_ops_attach_safety(&spec, true, false, Span::test_data())
         .expect("dry-run sched_ext attach should stay allowed");
 }
 
 #[test]
 fn test_validate_struct_ops_attach_safety_allows_sched_ext_with_explicit_opt_in() {
-    super::validate_struct_ops_attach_safety("sched_ext_ops", false, true, Span::test_data())
+    let spec = ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
+    super::validate_struct_ops_attach_safety(&spec, false, true, Span::test_data())
         .expect("explicit opt-in should allow live sched_ext attach");
 }
 
 #[test]
 fn test_validate_struct_ops_attach_safety_allows_lower_risk_families() {
-    super::validate_struct_ops_attach_safety("tcp_congestion_ops", false, false, Span::test_data())
+    let spec = ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+        .expect("tcp_congestion_ops spec should parse");
+    super::validate_struct_ops_attach_safety(&spec, false, false, Span::test_data())
         .expect("lower-risk struct_ops families should not be gated");
 }
 

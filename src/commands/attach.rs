@@ -1432,7 +1432,7 @@ fn run_attach(
             );
         }
         validate_struct_ops_attach_safety(
-            value_type_name,
+            &program_spec,
             dry_run,
             allow_unsafe_struct_ops,
             call.head,

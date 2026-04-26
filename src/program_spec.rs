@@ -1,4 +1,4 @@
-use crate::compiler::{EbpfProgramType, ProgramCompatibilityRequirement};
+use crate::compiler::{EbpfProgramType, ProgramAttachKind, ProgramCompatibilityRequirement};
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
     TcAttachType,
@@ -207,6 +207,31 @@ impl StructOpsFamily {
 
 pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_name: &str) -> bool {
     StructOpsFamily::from_value_type_name(value_type_name).callback_is_sleepable(callback_name)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProgramLiveAttachPolicy {
+    pub loader_supported: bool,
+    pub default_allowed: bool,
+    pub requires_opt_in: bool,
+    pub note: Option<&'static str>,
+}
+
+impl ProgramLiveAttachPolicy {
+    fn from_attach_kind_and_risk(
+        attach_kind: ProgramAttachKind,
+        risk: Option<&'static str>,
+    ) -> Self {
+        let unsupported = attach_kind.unsupported_live_attach_detail();
+        let loader_supported = unsupported.is_none();
+        let requires_opt_in = loader_supported && risk.is_some();
+        Self {
+            loader_supported,
+            default_allowed: loader_supported && !requires_opt_in,
+            requires_opt_in,
+            note: unsupported.or(risk),
+        }
+    }
 }
 
 /// Parsed xdp target information.
@@ -2490,6 +2515,15 @@ impl ProgramSpec {
         self.compatibility_requirements().contains(&requirement)
     }
 
+    pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
+        let risk = self
+            .struct_ops_value_type_name()
+            .and_then(|value_type_name| {
+                StructOpsFamily::from_value_type_name(value_type_name).live_attach_risk()
+            });
+        ProgramLiveAttachPolicy::from_attach_kind_and_risk(self.program_type().attach_kind(), risk)
+    }
+
     pub fn target_string(&self) -> String {
         match self {
             ProgramSpec::Kprobe { function }
@@ -3123,6 +3157,44 @@ mod tests {
             cgroup_unix.requires_compatibility_feature(
                 ProgramCompatibilityRequirement::CgroupUnixSockAddr
             )
+        );
+    }
+
+    #[test]
+    fn test_program_spec_live_attach_policy_accounts_for_loader_and_safety() {
+        let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+        assert_eq!(
+            xdp.live_attach_policy(),
+            ProgramLiveAttachPolicy {
+                loader_supported: true,
+                default_allowed: true,
+                requires_opt_in: false,
+                note: None,
+            }
+        );
+
+        let raw_tracepoint_writable =
+            ProgramSpec::parse("raw_tracepoint.w:sys_enter").expect("raw_tp.w spec should parse");
+        let raw_policy = raw_tracepoint_writable.live_attach_policy();
+        assert!(!raw_policy.loader_supported);
+        assert!(!raw_policy.default_allowed);
+        assert!(!raw_policy.requires_opt_in);
+        assert!(
+            raw_policy
+                .note
+                .is_some_and(|note| note.contains("writable raw-tracepoint"))
+        );
+
+        let sched_ext =
+            ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
+        let sched_ext_policy = sched_ext.live_attach_policy();
+        assert!(sched_ext_policy.loader_supported);
+        assert!(!sched_ext_policy.default_allowed);
+        assert!(sched_ext_policy.requires_opt_in);
+        assert!(
+            sched_ext_policy
+                .note
+                .is_some_and(|note| note.contains("sched_ext"))
         );
     }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::program_spec::StructOpsFamily;
+use crate::program_spec::{ProgramSpec, StructOpsFamily};
 
 pub(super) fn struct_ops_value_field_from_value(
     field_name: &str,
@@ -120,12 +120,8 @@ impl StructOpsFamily {
     }
 }
 
-fn struct_ops_live_attach_risk(value_type_name: &str) -> Option<&'static str> {
-    StructOpsFamily::from_value_type_name(value_type_name).live_attach_risk()
-}
-
 pub(super) fn validate_struct_ops_attach_safety(
-    value_type_name: &str,
+    program_spec: &ProgramSpec,
     dry_run: bool,
     allow_unsafe_struct_ops: bool,
     span: Span,
@@ -134,9 +130,16 @@ pub(super) fn validate_struct_ops_attach_safety(
         return Ok(());
     }
 
-    let Some(reason) = struct_ops_live_attach_risk(value_type_name) else {
+    let policy = program_spec.live_attach_policy();
+    if !policy.requires_opt_in {
         return Ok(());
-    };
+    }
+    let value_type_name = program_spec
+        .struct_ops_value_type_name()
+        .unwrap_or("unknown");
+    let reason = policy
+        .note
+        .unwrap_or("live attach requires explicit opt-in");
 
     Err(LabeledError::new("Unsafe struct_ops attach requires explicit opt-in")
         .with_label(
