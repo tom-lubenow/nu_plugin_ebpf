@@ -17,6 +17,9 @@ struct SpecContextField {
     semantic_type: Option<String>,
     runtime_type: Option<String>,
     kernel_btf_runtime_type: Option<&'static str>,
+    raw_context_pointer: bool,
+    pointer_non_null: bool,
+    trusted_btf_kernel_pointer: bool,
     load_guard: Option<&'static str>,
     load_guard_witness: Option<String>,
     load_guard_description: Option<String>,
@@ -259,6 +262,10 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                     kernel_btf_runtime_type: type_spec
                         .as_ref()
                         .and_then(|type_spec| type_spec.kernel_btf_runtime_type_name),
+                    raw_context_pointer: spec.ctx_field_is_raw_context_pointer(&entry.field),
+                    pointer_non_null: spec.ctx_field_pointer_is_non_null(&entry.field),
+                    trusted_btf_kernel_pointer: spec
+                        .ctx_field_is_trusted_btf_kernel_pointer(&entry.field),
                     load_guard: load_guard.map(context_field_load_guard_label),
                     load_guard_witness: load_guard
                         .map(ContextFieldLoadGuard::witness_field)
@@ -289,6 +296,9 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "semantic_type" => optional_string(field.semantic_type, span),
                     "runtime_type" => optional_string(field.runtime_type, span),
                     "kernel_btf_runtime_type" => optional_static_str(field.kernel_btf_runtime_type, span),
+                    "raw_context_pointer" => Value::bool(field.raw_context_pointer, span),
+                    "pointer_non_null" => Value::bool(field.pointer_non_null, span),
+                    "trusted_btf_kernel_pointer" => Value::bool(field.trusted_btf_kernel_pointer, span),
                     "load_guard" => optional_static_str(field.load_guard, span),
                     "load_guard_witness" => optional_string(field.load_guard_witness, span),
                     "load_guard_description" => optional_string(field.load_guard_description, span),
@@ -691,6 +701,21 @@ mod tests {
             Some("ptr<kernel, struct<task_struct>>")
         );
         assert_eq!(task.kernel_btf_runtime_type, Some("task_struct"));
+        assert!(task.pointer_non_null);
+        assert!(task.trusted_btf_kernel_pointer);
+        assert!(!task.raw_context_pointer);
+    }
+
+    #[test]
+    fn test_spec_context_fields_include_pointer_verifier_facts() {
+        let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
+            .expect("cgroup_sock spec should parse");
+        let fields = spec_context_fields(&spec);
+
+        let socket = field(&fields, "sk");
+        assert!(socket.raw_context_pointer);
+        assert!(socket.pointer_non_null);
+        assert!(!socket.trusted_btf_kernel_pointer);
     }
 
     #[test]

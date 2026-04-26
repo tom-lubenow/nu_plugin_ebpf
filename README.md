@@ -74,10 +74,10 @@ ebpf spec --list
 `ebpf spec` reports the parsed program type, context family, concrete context
 argument and return-value surfaces when knowable, argument/return access mode,
 packet context kind, direct packet-write support, modeled context fields with
-type labels and any load guards, tracepoint payload fields, writable context
-surfaces, return aliases, target, section name, capability labels,
-live-attach/default safety, and compatibility requirement labels before you
-attempt to compile or attach a closure.
+type labels, pointer verifier facts, and any load guards, tracepoint payload
+fields, writable context surfaces, return aliases, target, section name,
+capability labels, live-attach/default safety, and compatibility requirement
+labels before you attempt to compile or attach a closure.
 
 ## Quick Start
 
