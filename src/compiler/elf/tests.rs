@@ -1592,6 +1592,40 @@ fn test_program_type_ctx_field_load_guard_follows_context_layout() {
 
 #[test]
 fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
+    let mut context_family_keys = HashSet::new();
+    for family in [
+        ProgramContextFamily::Probe,
+        ProgramContextFamily::PerfEvent,
+        ProgramContextFamily::Xdp,
+        ProgramContextFamily::SkBuffPacket,
+        ProgramContextFamily::SkLookup,
+        ProgramContextFamily::FlowDissector,
+        ProgramContextFamily::Netfilter,
+        ProgramContextFamily::SkReuseport,
+        ProgramContextFamily::SkMsg,
+        ProgramContextFamily::SockOps,
+        ProgramContextFamily::CgroupSock,
+        ProgramContextFamily::CgroupSysctl,
+        ProgramContextFamily::CgroupSockopt,
+        ProgramContextFamily::CgroupSockAddr,
+        ProgramContextFamily::CgroupDevice,
+        ProgramContextFamily::LircMode2,
+        ProgramContextFamily::StructOps,
+        ProgramContextFamily::Extension,
+        ProgramContextFamily::Syscall,
+        ProgramContextFamily::Iter,
+    ] {
+        assert!(
+            context_family_keys.insert(family.key()),
+            "program context family key repeats for {family:?}"
+        );
+        assert_eq!(
+            family.to_string(),
+            family.key(),
+            "{family:?} Display should use the machine-readable key"
+        );
+    }
+
     assert!(ProgramContextFamily::PerfEvent.is_perf_event());
     assert!(!ProgramContextFamily::Probe.is_perf_event());
     assert!(EbpfProgramType::PerfEvent.uses_perf_event_context());
@@ -3917,6 +3951,11 @@ fn test_program_type_spec_prefix_registry_matches_alias_metadata() {
             .collect();
 
     for program_type in EbpfProgramType::supported_program_types() {
+        assert_eq!(
+            program_type.to_string(),
+            program_type.canonical_prefix(),
+            "{program_type:?} Display should use the canonical program key"
+        );
         for alias in program_type.info().spec_aliases {
             assert!(
                 advertised_prefixes.contains(alias),
@@ -4058,6 +4097,11 @@ fn test_program_attach_kind_loader_live_support_metadata() {
             target_kind_keys.insert(kind.key()),
             "program target kind key repeats for {kind:?}"
         );
+        assert_eq!(
+            kind.to_string(),
+            kind.key(),
+            "{kind:?} Display should use the machine-readable key"
+        );
         assert!(
             !kind.key().is_empty(),
             "{kind:?} should have a machine-readable key"
@@ -4116,6 +4160,11 @@ fn test_program_attach_kind_loader_live_support_metadata() {
         assert!(
             attach_kind_keys.insert(kind.key()),
             "program attach kind key repeats for {kind:?}"
+        );
+        assert_eq!(
+            kind.to_string(),
+            kind.key(),
+            "{kind:?} Display should use the machine-readable key"
         );
         assert!(
             !kind.key().is_empty(),
@@ -4329,6 +4378,11 @@ fn test_program_capability_surfaces_are_unique() {
             access_keys.insert(access.key()),
             "program value access key repeats for {access:?}"
         );
+        assert_eq!(
+            access.to_string(),
+            access.key(),
+            "{access:?} Display should use the machine-readable key"
+        );
         assert!(
             !access.key().is_empty(),
             "{access:?} should have a machine-readable key"
@@ -4353,6 +4407,11 @@ fn test_program_capability_surfaces_are_unique() {
         assert!(
             capability_keys.insert(capability.key()),
             "program capability key repeats for {capability:?}"
+        );
+        assert_eq!(
+            capability.to_string(),
+            capability.key(),
+            "{capability:?} Display should use the machine-readable key"
         );
         assert!(
             !capability.key().is_empty(),
@@ -4409,6 +4468,11 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         assert!(
             requirement_keys.insert(requirement.key()),
             "compatibility requirement key repeats for {requirement:?}"
+        );
+        assert_eq!(
+            requirement.to_string(),
+            requirement.key(),
+            "{requirement:?} Display should use the machine-readable key"
         );
         assert!(
             !requirement.key().is_empty(),

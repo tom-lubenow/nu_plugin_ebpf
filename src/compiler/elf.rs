@@ -7,6 +7,7 @@
 //! - Optional ".maps" section for BPF map definitions
 
 use std::collections::HashMap;
+use std::fmt;
 
 use object::write::{Object, Relocation, Symbol, SymbolSection};
 use object::{
@@ -1366,6 +1367,12 @@ impl EbpfProgramType {
     }
 }
 
+impl fmt::Display for EbpfProgramType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.canonical_prefix())
+    }
+}
+
 /// Context about the probe being compiled
 ///
 /// This provides the compiler with information about where the eBPF program
@@ -1526,6 +1533,12 @@ impl ProgramAttachKind {
     }
 }
 
+impl fmt::Display for ProgramAttachKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramCompatibilityRequirement {
     KernelBtf,
@@ -1614,6 +1627,12 @@ impl ProgramCompatibilityRequirement {
     }
 }
 
+impl fmt::Display for ProgramCompatibilityRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramTargetKind {
     KernelFunction,
@@ -1691,6 +1710,12 @@ impl ProgramTargetKind {
     }
 }
 
+impl fmt::Display for ProgramTargetKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramBtfCallableSurface {
     FunctionTrampoline,
@@ -1749,6 +1774,12 @@ impl ProgramValueAccess {
 
     pub fn is_trampoline(self) -> bool {
         matches!(self, ProgramValueAccess::Trampoline)
+    }
+}
+
+impl fmt::Display for ProgramValueAccess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
     }
 }
 
@@ -1975,6 +2006,12 @@ impl ProgramCapability {
             ProgramCapability::GenericMaps => "generic map operations",
             ProgramCapability::TailCalls => "tail calls",
         }
+    }
+}
+
+impl fmt::Display for ProgramCapability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
     }
 }
 
