@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 #[test]
 fn test_block_lookup_index_fast_path_and_fallback() {
@@ -36,45 +37,33 @@ fn test_alloc_block_stays_unique_after_block_removal() {
 
 #[test]
 fn test_map_kind_surface_classification() {
-    for kind in [
-        MapKind::Hash,
-        MapKind::Array,
-        MapKind::CgroupArray,
-        MapKind::LpmTrie,
-        MapKind::LruHash,
-        MapKind::PerCpuHash,
-        MapKind::PerCpuArray,
-        MapKind::LruPerCpuHash,
-        MapKind::PerfEventArray,
-        MapKind::ArrayOfMaps,
-        MapKind::HashOfMaps,
-        MapKind::DeprecatedCgroupStorage,
-        MapKind::DeprecatedPerCpuCgroupStorage,
-        MapKind::Queue,
-        MapKind::Stack,
-        MapKind::BloomFilter,
-        MapKind::RingBuf,
-        MapKind::StructOps,
-        MapKind::UserRingBuf,
-        MapKind::Arena,
-        MapKind::StackTrace,
-        MapKind::DevMap,
-        MapKind::DevMapHash,
-        MapKind::CpuMap,
-        MapKind::XskMap,
-        MapKind::SockMap,
-        MapKind::SockHash,
-        MapKind::ReuseportSockArray,
-        MapKind::SkStorage,
-        MapKind::InodeStorage,
-        MapKind::TaskStorage,
-        MapKind::CgrpStorage,
-        MapKind::ProgArray,
-    ] {
+    let mut keys = HashSet::new();
+    let mut aliases = HashSet::new();
+
+    for kind in MapKind::all() {
+        assert!(keys.insert(kind.key()), "duplicate map kind key {kind:?}");
+        assert!(
+            kind.aliases().contains(&kind.key()),
+            "{kind:?} aliases must include canonical key '{}'",
+            kind.key()
+        );
+
+        for alias in kind.aliases() {
+            assert!(
+                aliases.insert(*alias),
+                "duplicate map kind alias '{alias}' for {kind:?}"
+            );
+            assert_eq!(
+                MapKind::from_name(alias),
+                Some(*kind),
+                "map kind alias '{alias}' should resolve to {kind:?}"
+            );
+        }
+
         assert_eq!(
             kind.supports_map_fd_materialization(),
             !matches!(
-                kind,
+                *kind,
                 MapKind::ArrayOfMaps
                     | MapKind::HashOfMaps
                     | MapKind::DeprecatedCgroupStorage
@@ -85,6 +74,9 @@ fn test_map_kind_surface_classification() {
             "{kind:?}"
         );
     }
+
+    assert_eq!(MapKind::all().len(), 33);
+    assert_eq!(MapKind::from_name("unknown-map-kind"), None);
 
     assert!(MapKind::Queue.is_queue_or_stack());
     assert!(MapKind::Stack.is_queue_or_stack());

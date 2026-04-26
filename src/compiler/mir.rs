@@ -91,6 +91,42 @@ pub enum MapKind {
     ProgArray,
 }
 
+const ALL_MAP_KINDS: &[MapKind] = &[
+    MapKind::Hash,
+    MapKind::Array,
+    MapKind::CgroupArray,
+    MapKind::LpmTrie,
+    MapKind::LruHash,
+    MapKind::PerCpuHash,
+    MapKind::PerCpuArray,
+    MapKind::LruPerCpuHash,
+    MapKind::PerfEventArray,
+    MapKind::ArrayOfMaps,
+    MapKind::HashOfMaps,
+    MapKind::DeprecatedCgroupStorage,
+    MapKind::DeprecatedPerCpuCgroupStorage,
+    MapKind::Queue,
+    MapKind::Stack,
+    MapKind::BloomFilter,
+    MapKind::RingBuf,
+    MapKind::StructOps,
+    MapKind::UserRingBuf,
+    MapKind::Arena,
+    MapKind::StackTrace,
+    MapKind::DevMap,
+    MapKind::DevMapHash,
+    MapKind::CpuMap,
+    MapKind::XskMap,
+    MapKind::SockMap,
+    MapKind::SockHash,
+    MapKind::ReuseportSockArray,
+    MapKind::SkStorage,
+    MapKind::InodeStorage,
+    MapKind::TaskStorage,
+    MapKind::CgrpStorage,
+    MapKind::ProgArray,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MapOpKind {
     Lookup,
@@ -100,6 +136,164 @@ pub enum MapOpKind {
 }
 
 impl MapKind {
+    pub fn all() -> &'static [Self] {
+        ALL_MAP_KINDS
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            MapKind::Hash => "hash",
+            MapKind::Array => "array",
+            MapKind::CgroupArray => "cgroup-array",
+            MapKind::LpmTrie => "lpm-trie",
+            MapKind::LruHash => "lru-hash",
+            MapKind::PerCpuHash => "per-cpu-hash",
+            MapKind::PerCpuArray => "per-cpu-array",
+            MapKind::LruPerCpuHash => "lru-per-cpu-hash",
+            MapKind::PerfEventArray => "perf-event-array",
+            MapKind::ArrayOfMaps => "array-of-maps",
+            MapKind::HashOfMaps => "hash-of-maps",
+            MapKind::DeprecatedCgroupStorage => "deprecated-cgroup-storage",
+            MapKind::DeprecatedPerCpuCgroupStorage => "per-cpu-cgroup-storage",
+            MapKind::Queue => "queue",
+            MapKind::Stack => "stack",
+            MapKind::BloomFilter => "bloom-filter",
+            MapKind::RingBuf => "ringbuf",
+            MapKind::StructOps => "struct-ops",
+            MapKind::UserRingBuf => "user-ringbuf",
+            MapKind::Arena => "arena",
+            MapKind::StackTrace => "stack-trace",
+            MapKind::DevMap => "devmap",
+            MapKind::DevMapHash => "devmap-hash",
+            MapKind::CpuMap => "cpumap",
+            MapKind::XskMap => "xskmap",
+            MapKind::SockMap => "sockmap",
+            MapKind::SockHash => "sockhash",
+            MapKind::ReuseportSockArray => "reuseport-sockarray",
+            MapKind::SkStorage => "sk-storage",
+            MapKind::InodeStorage => "inode-storage",
+            MapKind::TaskStorage => "task-storage",
+            MapKind::CgrpStorage => "cgrp-storage",
+            MapKind::ProgArray => "prog-array",
+        }
+    }
+
+    pub fn aliases(self) -> &'static [&'static str] {
+        match self {
+            MapKind::Hash => &["hash"],
+            MapKind::Array => &["array"],
+            MapKind::CgroupArray => &["cgroup-array", "cgroup_array", "cgrouparray"],
+            MapKind::LpmTrie => &["lpm-trie", "lpm_trie", "lpmtrie"],
+            MapKind::LruHash => &["lru-hash", "lru_hash", "lruhash"],
+            MapKind::PerCpuHash => &["per-cpu-hash", "percpu-hash", "per_cpu_hash"],
+            MapKind::PerCpuArray => &["per-cpu-array", "percpu-array", "per_cpu_array"],
+            MapKind::LruPerCpuHash => &[
+                "lru-per-cpu-hash",
+                "lru-percpu-hash",
+                "lru_per_cpu_hash",
+                "lrupercpuhash",
+            ],
+            MapKind::PerfEventArray => &[
+                "perf-event-array",
+                "perf_event_array",
+                "perfeventarray",
+                "perf-event",
+                "perf_event",
+            ],
+            MapKind::ArrayOfMaps => &[
+                "array-of-maps",
+                "array_of_maps",
+                "arrayofmaps",
+                "map-array",
+                "map_array",
+            ],
+            MapKind::HashOfMaps => &[
+                "hash-of-maps",
+                "hash_of_maps",
+                "hashofmaps",
+                "map-hash",
+                "map_hash",
+            ],
+            MapKind::DeprecatedCgroupStorage => &[
+                "deprecated-cgroup-storage",
+                "deprecated_cgroup_storage",
+                "cgroup-storage-deprecated",
+                "cgroup_storage_deprecated",
+            ],
+            MapKind::DeprecatedPerCpuCgroupStorage => &[
+                "per-cpu-cgroup-storage",
+                "percpu-cgroup-storage",
+                "per_cpu_cgroup_storage",
+                "percpucgroupstorage",
+            ],
+            MapKind::Queue => &["queue"],
+            MapKind::Stack => &["stack"],
+            MapKind::BloomFilter => &["bloom-filter", "bloom_filter", "bloomfilter"],
+            MapKind::RingBuf => &[
+                "ringbuf",
+                "ring-buf",
+                "ring_buf",
+                "ring-buffer",
+                "ring_buffer",
+            ],
+            MapKind::StructOps => &["struct-ops", "struct_ops", "structops"],
+            MapKind::UserRingBuf => &[
+                "user-ringbuf",
+                "user_ringbuf",
+                "userringbuf",
+                "user-ring-buffer",
+                "user_ring_buffer",
+            ],
+            MapKind::Arena => &["arena"],
+            MapKind::StackTrace => &["stack-trace", "stack_trace", "stacktrace"],
+            MapKind::DevMap => &["devmap", "dev-map", "dev_map"],
+            MapKind::DevMapHash => &[
+                "devmap-hash",
+                "devmap_hash",
+                "devmaphash",
+                "dev-map-hash",
+                "dev_map_hash",
+            ],
+            MapKind::CpuMap => &["cpumap", "cpu-map", "cpu_map"],
+            MapKind::XskMap => &["xskmap", "xsk-map", "xsk_map"],
+            MapKind::SockMap => &["sockmap", "sock-map", "sock_map"],
+            MapKind::SockHash => &["sockhash", "sock-hash", "sock_hash"],
+            MapKind::ReuseportSockArray => &[
+                "reuseport-sockarray",
+                "reuseport_sockarray",
+                "reuseportsockarray",
+                "reuseport-sock-array",
+                "reuseport_sock_array",
+            ],
+            MapKind::SkStorage => &["sk-storage", "sk_storage", "skstorage"],
+            MapKind::InodeStorage => &["inode-storage", "inode_storage", "inodestorage"],
+            MapKind::TaskStorage => &["task-storage", "task_storage", "taskstorage"],
+            MapKind::CgrpStorage => &[
+                "cgrp-storage",
+                "cgrp_storage",
+                "cgrpstorage",
+                "cgroup-storage",
+                "cgroup_storage",
+                "cgroupstorage",
+            ],
+            MapKind::ProgArray => &[
+                "prog-array",
+                "prog_array",
+                "progarray",
+                "program-array",
+                "program_array",
+                "programarray",
+            ],
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|kind| kind.aliases().contains(&name))
+    }
+
     pub fn is_queue_or_stack(self) -> bool {
         matches!(self, MapKind::Queue | MapKind::Stack)
     }

@@ -473,66 +473,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     pub(super) fn parse_generic_map_kind(kind: &str) -> Option<MapKind> {
-        match kind {
-            "hash" => Some(MapKind::Hash),
-            "array" => Some(MapKind::Array),
-            "cgroup-array" | "cgroup_array" | "cgrouparray" => Some(MapKind::CgroupArray),
-            "queue" => Some(MapKind::Queue),
-            "stack" => Some(MapKind::Stack),
-            "bloom-filter" | "bloom_filter" | "bloomfilter" => Some(MapKind::BloomFilter),
-            "lpm-trie" | "lpm_trie" | "lpmtrie" => Some(MapKind::LpmTrie),
-            "lru-hash" | "lru_hash" | "lruhash" => Some(MapKind::LruHash),
-            "per-cpu-hash" | "percpu-hash" | "per_cpu_hash" => Some(MapKind::PerCpuHash),
-            "per-cpu-array" | "percpu-array" | "per_cpu_array" => Some(MapKind::PerCpuArray),
-            "lru-per-cpu-hash" | "lru-percpu-hash" | "lru_per_cpu_hash" | "lrupercpuhash" => {
-                Some(MapKind::LruPerCpuHash)
-            }
-            "array-of-maps" | "array_of_maps" | "arrayofmaps" | "map-array" | "map_array" => {
-                Some(MapKind::ArrayOfMaps)
-            }
-            "hash-of-maps" | "hash_of_maps" | "hashofmaps" | "map-hash" | "map_hash" => {
-                Some(MapKind::HashOfMaps)
-            }
-            "devmap" | "dev-map" | "dev_map" => Some(MapKind::DevMap),
-            "devmap-hash" | "devmap_hash" | "devmaphash" | "dev-map-hash" | "dev_map_hash" => {
-                Some(MapKind::DevMapHash)
-            }
-            "cpumap" | "cpu-map" | "cpu_map" => Some(MapKind::CpuMap),
-            "xskmap" | "xsk-map" | "xsk_map" => Some(MapKind::XskMap),
-            "sock-map" | "sock_map" | "sockmap" => Some(MapKind::SockMap),
-            "sock-hash" | "sock_hash" | "sockhash" => Some(MapKind::SockHash),
-            "reuseport-sockarray"
-            | "reuseport_sockarray"
-            | "reuseportsockarray"
-            | "reuseport-sock-array"
-            | "reuseport_sock_array" => Some(MapKind::ReuseportSockArray),
-            "sk-storage" | "sk_storage" | "skstorage" => Some(MapKind::SkStorage),
-            "inode-storage" | "inode_storage" | "inodestorage" => Some(MapKind::InodeStorage),
-            "task-storage" | "task_storage" | "taskstorage" => Some(MapKind::TaskStorage),
-            "cgrp-storage" | "cgrp_storage" | "cgrpstorage" | "cgroup-storage"
-            | "cgroup_storage" | "cgroupstorage" => Some(MapKind::CgrpStorage),
-            "perf-event-array" | "perf_event_array" | "perfeventarray" | "perf-event"
-            | "perf_event" => Some(MapKind::PerfEventArray),
-            "ringbuf" | "ring-buf" | "ring_buf" | "ring-buffer" | "ring_buffer" => {
-                Some(MapKind::RingBuf)
-            }
-            "struct-ops" | "struct_ops" | "structops" => Some(MapKind::StructOps),
-            "user-ringbuf" | "user_ringbuf" | "userringbuf" | "user-ring-buffer"
-            | "user_ring_buffer" => Some(MapKind::UserRingBuf),
-            "arena" => Some(MapKind::Arena),
-            "deprecated-cgroup-storage"
-            | "deprecated_cgroup_storage"
-            | "cgroup-storage-deprecated"
-            | "cgroup_storage_deprecated" => Some(MapKind::DeprecatedCgroupStorage),
-            "per-cpu-cgroup-storage"
-            | "percpu-cgroup-storage"
-            | "per_cpu_cgroup_storage"
-            | "percpucgroupstorage" => Some(MapKind::DeprecatedPerCpuCgroupStorage),
-            "stack-trace" | "stack_trace" | "stacktrace" => Some(MapKind::StackTrace),
-            "prog-array" | "prog_array" | "progarray" | "program-array" | "program_array"
-            | "programarray" => Some(MapKind::ProgArray),
-            _ => None,
-        }
+        MapKind::from_name(kind)
     }
 
     fn reserved_special_map_kind_error(
