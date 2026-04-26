@@ -3,7 +3,9 @@
 use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, MirType};
-use crate::compiler::{ProbeContext, ProgramValueAccess};
+use crate::compiler::{
+    ContextFieldLoadGuard, ProbeContext, ProgramValueAccess, SockOpsCallbackGuard,
+};
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 
 #[cfg(target_os = "linux")]
@@ -14,6 +16,9 @@ struct SpecContextField {
     semantic_type: Option<String>,
     runtime_type: Option<String>,
     kernel_btf_runtime_type: Option<&'static str>,
+    load_guard: Option<&'static str>,
+    load_guard_witness: Option<String>,
+    load_guard_description: Option<String>,
 }
 
 #[cfg(target_os = "linux")]
@@ -161,6 +166,24 @@ fn trampoline_value_kind_label(kind: TrampolineValueKind) -> &'static str {
 }
 
 #[cfg(target_os = "linux")]
+fn context_field_load_guard_label(guard: ContextFieldLoadGuard) -> &'static str {
+    match guard {
+        ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketData) => {
+            "sock-ops-packet-data"
+        }
+        ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketMetadata) => {
+            "sock-ops-packet-metadata"
+        }
+        ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::TcpFlags) => {
+            "sock-ops-tcp-flags"
+        }
+        ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::Hwtstamp) => {
+            "sock-ops-hwtstamp"
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn optional_string(value: Option<String>, span: Span) -> Value {
     value
         .map(|value| Value::string(value, span))
@@ -202,6 +225,7 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
             field.names.push(entry.name);
         } else {
             let type_spec = spec.ctx_field_type_spec(&entry.field);
+            let load_guard = spec.ctx_field_load_guard(&entry.field);
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
@@ -216,6 +240,11 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                     kernel_btf_runtime_type: type_spec
                         .as_ref()
                         .and_then(|type_spec| type_spec.kernel_btf_runtime_type_name),
+                    load_guard: load_guard.map(context_field_load_guard_label),
+                    load_guard_witness: load_guard
+                        .map(ContextFieldLoadGuard::witness_field)
+                        .map(|field| field.display_name()),
+                    load_guard_description: load_guard.map(|guard| guard.error(&entry.field)),
                 },
             ));
         }
@@ -241,6 +270,9 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "semantic_type" => optional_string(field.semantic_type, span),
                     "runtime_type" => optional_string(field.runtime_type, span),
                     "kernel_btf_runtime_type" => optional_static_str(field.kernel_btf_runtime_type, span),
+                    "load_guard" => optional_static_str(field.load_guard, span),
+                    "load_guard_witness" => optional_string(field.load_guard_witness, span),
+                    "load_guard_description" => optional_string(field.load_guard_description, span),
                 },
                 span,
             )
@@ -637,6 +669,25 @@ mod tests {
             Some("ptr<kernel, struct<task_struct>>")
         );
         assert_eq!(task.kernel_btf_runtime_type, Some("task_struct"));
+    }
+
+    #[test]
+    fn test_spec_context_fields_include_load_guards() {
+        let spec =
+            ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
+        let fields = spec_context_fields(&spec);
+
+        let data = field(&fields, "data");
+        assert_eq!(data.load_guard, Some("sock-ops-packet-data"));
+        assert_eq!(data.load_guard_witness.as_deref(), Some("op"));
+        assert!(
+            data.load_guard_description
+                .as_deref()
+                .is_some_and(|description| description.contains("packet-aware ctx.op"))
+        );
+
+        let skb_len = field(&fields, "skb_len");
+        assert_eq!(skb_len.load_guard, Some("sock-ops-packet-metadata"));
     }
 
     #[test]
