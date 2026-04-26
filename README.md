@@ -68,6 +68,7 @@ Inspect how a target string is modeled before compiling it:
 
 ```nushell
 ebpf spec 'fentry.s:do_sys_openat2'
+ebpf spec --list
 ```
 
 ## Quick Start

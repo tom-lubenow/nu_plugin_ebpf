@@ -1,7 +1,10 @@
 //! `ebpf spec` command - inspect parsed eBPF target metadata.
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
-use nu_protocol::{Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type};
+use nu_protocol::{
+    Category, Example, LabeledError, PipelineData, Signature, Span, SyntaxShape, Type, Value,
+    record,
+};
 
 use crate::EbpfPlugin;
 
@@ -21,21 +24,36 @@ impl PluginCommand for EbpfSpec {
 
     fn signature(&self) -> Signature {
         Signature::build("ebpf spec")
-            .input_output_types(vec![(Type::Nothing, Type::record())])
-            .required(
+            .input_output_types(vec![
+                (Type::Nothing, Type::record()),
+                (Type::Nothing, Type::table()),
+            ])
+            .optional(
                 "probe",
                 SyntaxShape::String,
                 "The probe point to parse, for example 'fentry.s:do_sys_openat2' or 'xdp:lo:frags'.",
+            )
+            .switch(
+                "list",
+                "List representative metadata for every supported program type.",
+                Some('l'),
             )
             .category(Category::Experimental)
     }
 
     fn examples(&self) -> Vec<Example<'_>> {
-        vec![Example {
-            example: "ebpf spec 'fentry.s:do_sys_openat2'",
-            description: "Inspect parsed target metadata and compatibility requirements",
-            result: None,
-        }]
+        vec![
+            Example {
+                example: "ebpf spec 'fentry.s:do_sys_openat2'",
+                description: "Inspect parsed target metadata and compatibility requirements",
+                result: None,
+            },
+            Example {
+                example: "ebpf spec --list",
+                description: "List metadata for all modeled program types",
+                result: None,
+            },
+        ]
     }
 
     fn run(
@@ -58,17 +76,7 @@ impl PluginCommand for EbpfSpec {
 }
 
 #[cfg(target_os = "linux")]
-fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
-    use nu_protocol::{Value, record};
-
-    use crate::program_spec::ProgramSpec;
-
-    let probe: String = call.req(0)?;
-    let spec = ProgramSpec::parse(&probe).map_err(|err| {
-        LabeledError::new("Invalid eBPF target")
-            .with_label(err.to_string(), call.head)
-            .with_help("Use a target like 'kprobe:sys_clone', 'tracepoint:syscalls/sys_enter_openat', or 'xdp:lo'")
-    })?;
+fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span) -> Value {
     let program_type = spec.program_type();
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
@@ -79,32 +87,78 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
         .map(|requirement| {
             Value::record(
                 record! {
-                    "key" => Value::string(requirement.key(), call.head),
-                    "description" => Value::string(requirement.description(), call.head),
+                    "key" => Value::string(requirement.key(), span),
+                    "description" => Value::string(requirement.description(), span),
                 },
-                call.head,
+                span,
             )
         })
         .collect();
 
+    Value::record(
+        record! {
+            "probe" => Value::string(probe, span),
+            "program_type" => Value::string(program_type.canonical_prefix(), span),
+            "kernel_program_type" => Value::string(program_type.kernel_prog_type(), span),
+            "target" => Value::string(spec.target_string(), span),
+            "section" => Value::string(spec.section_name(), span),
+            "attach_kind" => Value::string(format!("{attach_kind:?}"), span),
+            "target_kind" => Value::string(format!("{:?}", program_type.target_kind()), span),
+            "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, span),
+            "live_attach_default_allowed" => Value::bool(live_attach_policy.default_allowed, span),
+            "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
+            "live_attach_note" => Value::string(live_attach_note, span),
+            "compatibility_requirements" => Value::list(requirements, span),
+        },
+        span,
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
+    use crate::compiler::EbpfProgramType;
+    use crate::program_spec::ProgramSpec;
+
+    let list = call.has_flag("list")?;
+    let probe: Option<String> = call.opt(0)?;
+
+    if list {
+        if probe.is_some() {
+            return Err(LabeledError::new("Cannot combine a probe with --list")
+                .with_label("remove either the positional probe or --list", call.head));
+        }
+        let rows = EbpfProgramType::supported_program_types()
+            .iter()
+            .copied()
+            .map(|program_type| {
+                let target = ProgramSpec::representative_target_for_program_type(program_type);
+                let probe = format!("{}:{target}", program_type.canonical_prefix());
+                let spec = ProgramSpec::from_program_type_target(program_type, target)
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "{} representative target should parse: {err}",
+                            program_type.canonical_prefix()
+                        )
+                    });
+                spec_record(probe, spec, call.head)
+            })
+            .collect();
+        return Ok(PipelineData::Value(Value::list(rows, call.head), None));
+    }
+
+    let Some(probe) = probe else {
+        return Err(LabeledError::new("Missing eBPF target")
+            .with_label("provide a target string or pass --list", call.head));
+    };
+
+    let spec = ProgramSpec::parse(&probe).map_err(|err| {
+        LabeledError::new("Invalid eBPF target")
+            .with_label(err.to_string(), call.head)
+            .with_help("Use a target like 'kprobe:sys_clone', 'tracepoint:syscalls/sys_enter_openat', or 'xdp:lo'")
+    })?;
+
     Ok(PipelineData::Value(
-        Value::record(
-            record! {
-                "probe" => Value::string(probe, call.head),
-                "program_type" => Value::string(program_type.canonical_prefix(), call.head),
-                "kernel_program_type" => Value::string(program_type.kernel_prog_type(), call.head),
-                "target" => Value::string(spec.target_string(), call.head),
-                "section" => Value::string(spec.section_name(), call.head),
-                "attach_kind" => Value::string(format!("{attach_kind:?}"), call.head),
-                "target_kind" => Value::string(format!("{:?}", program_type.target_kind()), call.head),
-                "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, call.head),
-                "live_attach_default_allowed" => Value::bool(live_attach_policy.default_allowed, call.head),
-                "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, call.head),
-                "live_attach_note" => Value::string(live_attach_note, call.head),
-                "compatibility_requirements" => Value::list(requirements, call.head),
-            },
-            call.head,
-        ),
+        spec_record(probe, spec, call.head),
         None,
     ))
 }
