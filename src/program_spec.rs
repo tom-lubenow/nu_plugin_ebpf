@@ -2432,6 +2432,15 @@ impl ProgramSpec {
                 &mut requirements,
                 ProgramCompatibilityRequirement::SleepableProgram,
             ),
+            ProgramSpec::StructOpsCallback {
+                value_type_name,
+                callback_name,
+            } if struct_ops_callback_is_sleepable(value_type_name, callback_name) => {
+                push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::SleepableProgram,
+                );
+            }
             _ => {}
         }
 
@@ -3060,6 +3069,40 @@ mod tests {
         );
         assert!(
             sched_ext.requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+
+        let sched_ext_select_cpu = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "select_cpu".to_string(),
+        };
+        assert!(
+            sched_ext_select_cpu
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+        );
+        assert!(
+            sched_ext_select_cpu
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+        assert!(
+            !sched_ext_select_cpu
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SleepableProgram)
+        );
+
+        let sched_ext_init = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "init".to_string(),
+        };
+        assert!(
+            sched_ext_init
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+        );
+        assert!(
+            sched_ext_init
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+        assert!(
+            sched_ext_init
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SleepableProgram)
         );
 
         let cgroup_unix = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
