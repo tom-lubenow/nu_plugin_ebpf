@@ -57,7 +57,25 @@ struct ProgramContextWriteSurfaceSpec {
     surfaces: &'static [ContextWriteSurfaceSpec],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ContextWriteSurface {
+    pub(crate) field_name: &'static str,
+    pub(crate) kind: &'static str,
+    pub(crate) indexed: bool,
+}
+
 impl ContextStoreTargetSpec {
+    fn requires_indexed_assignment(&self) -> bool {
+        matches!(
+            self,
+            Self::SockOpsReplyLongWord
+                | Self::SkbCbWord
+                | Self::CgroupSockAddrUserIp6Word
+                | Self::CgroupSockAddrMsgSrcIp6Word
+                | Self::CgroupSockAddrLocalIp6WordAlias
+        )
+    }
+
     fn resolve(
         &self,
         spec: &ProgramSpec,
@@ -163,6 +181,24 @@ impl ContextStoreTargetSpec {
 }
 
 impl ContextWriteTargetSpec {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Store(_) => "store",
+            Self::SysctlNewValue => "sysctl-new-value",
+            Self::SockoptOptvalByte => "sockopt-optval-byte",
+            Self::AssignSocket => "assign-socket",
+            Self::CgroupSockAddrSunPath => "sun-path",
+        }
+    }
+
+    fn requires_indexed_assignment(&self) -> bool {
+        match self {
+            Self::Store(target) => target.requires_indexed_assignment(),
+            Self::SockoptOptvalByte => true,
+            Self::SysctlNewValue | Self::AssignSocket | Self::CgroupSockAddrSunPath => false,
+        }
+    }
+
     fn resolve(
         &self,
         spec: &ProgramSpec,
@@ -344,6 +380,23 @@ impl ContextWriteSurfaceSpec {
                 self.availability
                     .and_then(|availability| availability.error(spec, self.field_name))
             })
+    }
+
+    fn representative_index(&self) -> Option<usize> {
+        self.target.requires_indexed_assignment().then_some(0)
+    }
+
+    fn is_available(&self, spec: &ProgramSpec) -> bool {
+        self.resolve_write_target(spec, self.representative_index())
+            .is_ok()
+    }
+
+    fn surface(&self) -> ContextWriteSurface {
+        ContextWriteSurface {
+            field_name: self.field_name,
+            kind: self.target.kind(),
+            indexed: self.target.requires_indexed_assignment(),
+        }
     }
 }
 
@@ -793,6 +846,15 @@ impl ProgramSpec {
         self.program_type()
             .base_ctx_store_target_error(store_target)
     }
+
+    pub(crate) fn ctx_write_surfaces_for_spec(&self) -> Vec<ContextWriteSurface> {
+        self.ctx_write_surfaces()
+            .unwrap_or(&[])
+            .iter()
+            .filter(|surface| surface.is_available(self))
+            .map(ContextWriteSurfaceSpec::surface)
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -862,5 +924,38 @@ mod tests {
                 surface.program_type
             );
         }
+    }
+
+    #[test]
+    fn test_context_write_surfaces_for_spec_filter_target_specific_availability() {
+        let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
+        let tc_ingress_writes = tc_ingress.ctx_write_surfaces_for_spec();
+        assert!(tc_ingress_writes.iter().any(|surface| {
+            surface.field_name == "sk" && surface.kind == "assign-socket" && !surface.indexed
+        }));
+        assert!(
+            tc_ingress_writes
+                .iter()
+                .any(|surface| surface.field_name == "cb" && surface.indexed)
+        );
+
+        let tc_egress = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
+        let tc_egress_writes = tc_egress.ctx_write_surfaces_for_spec();
+        assert!(
+            !tc_egress_writes
+                .iter()
+                .any(|surface| surface.field_name == "sk"),
+            "ctx.sk assignment is ingress-only"
+        );
+
+        let cgroup_skb_ingress = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:ingress")
+            .expect("cgroup_skb ingress spec should parse");
+        assert!(
+            !cgroup_skb_ingress
+                .ctx_write_surfaces_for_spec()
+                .iter()
+                .any(|surface| surface.field_name == "tstamp"),
+            "ctx.tstamp assignment is egress-only for cgroup_skb"
+        );
     }
 }

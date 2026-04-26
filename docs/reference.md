@@ -583,7 +583,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, context family, modeled context fields and aliases, argument/return access mode, return aliases, capabilities, section naming, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, context family, modeled context fields and writable context surfaces, argument/return access mode, return aliases, capabilities, section naming, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |

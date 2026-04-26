@@ -83,6 +83,14 @@ struct SpecContextField {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecContextWrite {
+    field: &'static str,
+    kind: &'static str,
+    indexed: bool,
+}
+
+#[cfg(target_os = "linux")]
 fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextField> {
     let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
 
@@ -129,12 +137,42 @@ fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
 }
 
 #[cfg(target_os = "linux")]
+fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextWrite> {
+    spec.ctx_write_surfaces_for_spec()
+        .into_iter()
+        .map(|surface| SpecContextWrite {
+            field: surface.field_name,
+            kind: surface.kind,
+            indexed: surface.indexed,
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
+    spec_context_writes(spec)
+        .into_iter()
+        .map(|surface| {
+            Value::record(
+                record! {
+                    "field" => Value::string(surface.field, span),
+                    "kind" => Value::string(surface.kind, span),
+                    "indexed" => Value::bool(surface.indexed, span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span) -> Value {
     let program_type = spec.program_type();
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
     let context_fields = context_field_records(&spec, span);
+    let context_writes = context_write_records(&spec, span);
     let capabilities = program_type
         .supported_capabilities()
         .iter()
@@ -197,6 +235,7 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
             "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
             "live_attach_note" => Value::string(live_attach_note, span),
             "context_fields" => Value::list(context_fields, span),
+            "context_writes" => Value::list(context_writes, span),
             "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
             "return_aliases" => Value::list(return_aliases, span),
@@ -285,6 +324,22 @@ mod tests {
         assert!(
             !fields.iter().any(|field| field.names.contains(&"cgroup")),
             "ctx.cgroup is a tracepoint payload field name, so it must not be advertised as a builtin"
+        );
+    }
+
+    #[test]
+    fn test_context_write_records_filter_target_specific_writes() {
+        let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
+        let tc_ingress_writes = spec_context_writes(&tc_ingress);
+        assert!(tc_ingress_writes.iter().any(|surface| {
+            surface.field == "sk" && surface.kind == "assign-socket" && !surface.indexed
+        }));
+
+        let tc_egress = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
+        let tc_egress_writes = spec_context_writes(&tc_egress);
+        assert!(
+            !tc_egress_writes.iter().any(|surface| surface.field == "sk"),
+            "ctx.sk assignment should not be advertised on tc egress"
         );
     }
 }
