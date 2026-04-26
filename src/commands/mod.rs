@@ -42,6 +42,8 @@ mod list;
 mod program_intrinsics;
 mod setup;
 mod spec;
+#[cfg(target_os = "linux")]
+mod spec_output;
 mod stacks;
 mod trace;
 
