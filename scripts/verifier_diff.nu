@@ -704,6 +704,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-action-skb-context"
+        category: "context-surface"
+        tags: [tc-action context packet]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "xdp-rejects-pid-context"
         category: "context-policy"
         tags: [xdp reject]
@@ -1121,7 +1135,7 @@ const FIXTURES = [
         target: "lwt_xmit:demo-route"
         program: [
             '{|ctx|'
-            '  ($ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm) | count'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.hash + $ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm) | count'
             '  "reroute"'
             '}'
         ]
