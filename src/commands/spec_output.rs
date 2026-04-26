@@ -4,7 +4,8 @@ use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, MirType};
 use crate::compiler::{
-    ContextFieldLoadGuard, ProbeContext, ProgramValueAccess, SockOpsCallbackGuard,
+    ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramValueAccess,
+    SockOpsCallbackGuard,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 
@@ -166,6 +167,17 @@ fn trampoline_value_kind_label(kind: TrampolineValueKind) -> &'static str {
 }
 
 #[cfg(target_os = "linux")]
+fn packet_context_kind_label(kind: PacketContextKind) -> &'static str {
+    match kind {
+        PacketContextKind::XdpMd => "xdp_md",
+        PacketContextKind::SkBuff => "sk_buff",
+        PacketContextKind::SkReuseport => "sk_reuseport_md",
+        PacketContextKind::SkMsg => "sk_msg_md",
+        PacketContextKind::SockOps => "bpf_sock_ops",
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn context_field_load_guard_label(guard: ContextFieldLoadGuard) -> &'static str {
     match guard {
         ContextFieldLoadGuard::SockOpsCallback(SockOpsCallbackGuard::PacketData) => {
@@ -181,6 +193,13 @@ fn context_field_load_guard_label(guard: ContextFieldLoadGuard) -> &'static str 
             "sock-ops-hwtstamp"
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn optional_packet_context_kind(value: Option<PacketContextKind>, span: Span) -> Value {
+    value
+        .map(|value| Value::string(packet_context_kind_label(value), span))
+        .unwrap_or_else(|| Value::nothing(span))
 }
 
 #[cfg(target_os = "linux")]
@@ -603,6 +622,9 @@ pub(super) fn spec_record(
             "program_type" => Value::string(program_type.canonical_prefix(), span),
             "kernel_program_type" => Value::string(program_type.kernel_prog_type(), span),
             "context_family" => Value::string(program_type.context_family().key(), span),
+            "packet_context_kind" => optional_packet_context_kind(spec.packet_context_kind(), span),
+            "data_meta_context_kind" => optional_packet_context_kind(spec.data_meta_context_kind(), span),
+            "direct_packet_writes" => Value::bool(spec.supports_direct_packet_writes(), span),
             "target" => Value::string(spec.target_string(), span),
             "section" => Value::string(spec.section_name(), span),
             "attach_kind" => Value::string(attach_kind.key(), span),
@@ -688,6 +710,61 @@ mod tests {
 
         let skb_len = field(&fields, "skb_len");
         assert_eq!(skb_len.load_guard, Some("sock-ops-packet-metadata"));
+    }
+
+    #[test]
+    fn test_spec_record_includes_packet_context_metadata() {
+        let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+        let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
+            .into_record()
+            .expect("spec output should be a record");
+
+        assert_eq!(
+            record
+                .get("packet_context_kind")
+                .expect("packet context kind should be present")
+                .as_str()
+                .expect("packet context kind should be a string"),
+            "xdp_md"
+        );
+        assert_eq!(
+            record
+                .get("data_meta_context_kind")
+                .expect("data_meta context kind should be present")
+                .as_str()
+                .expect("data_meta context kind should be a string"),
+            "xdp_md"
+        );
+        assert!(
+            record
+                .get("direct_packet_writes")
+                .expect("direct packet writes should be present")
+                .as_bool()
+                .expect("direct packet writes should be a bool")
+        );
+
+        let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
+        let record = spec_record(
+            "kprobe:sys_read".to_string(),
+            kprobe,
+            Span::test_data(),
+            false,
+        )
+        .into_record()
+        .expect("spec output should be a record");
+        assert!(
+            record
+                .get("packet_context_kind")
+                .expect("packet context kind should be present")
+                .is_nothing()
+        );
+        assert!(
+            !record
+                .get("direct_packet_writes")
+                .expect("direct packet writes should be present")
+                .as_bool()
+                .expect("direct packet writes should be a bool")
+        );
     }
 
     #[test]
