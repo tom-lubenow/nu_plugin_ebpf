@@ -176,6 +176,15 @@ impl StructOpsFamily {
         }
     }
 
+    pub(crate) fn live_attach_risk(self) -> Option<&'static str> {
+        match self {
+            Self::SchedExt => Some(
+                "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
+            ),
+            Self::Generic | Self::TcpCongestion => None,
+        }
+    }
+
     pub(crate) fn callback_is_sleepable(self, callback_name: &str) -> bool {
         match self {
             // sched_ext documents these callbacks as sleepable and they must be

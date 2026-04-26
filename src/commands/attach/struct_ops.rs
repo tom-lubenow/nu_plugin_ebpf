@@ -101,15 +101,6 @@ pub(super) enum StructOpsTopLevelFieldKind {
 }
 
 impl StructOpsFamily {
-    fn live_attach_risk(self) -> Option<&'static str> {
-        match self {
-            Self::SchedExt => Some(
-                "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
-            ),
-            Self::Generic | Self::TcpCongestion => None,
-        }
-    }
-
     fn required_callbacks(self) -> &'static [&'static str] {
         match self {
             Self::TcpCongestion => &["ssthresh", "cong_avoid", "undo_cwnd"],
