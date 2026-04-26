@@ -138,6 +138,75 @@ fn projection<'a>(
 }
 
 #[test]
+fn test_spec_record_includes_registry_shape_metadata() {
+    let fentry = ProgramSpec::parse("fentry:security_file_open").expect("fentry spec should parse");
+    let record = spec_record(
+        "fentry:security_file_open".to_string(),
+        fentry,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+
+    let aliases = record
+        .get("spec_aliases")
+        .expect("spec aliases should be present")
+        .as_list()
+        .expect("spec aliases should be a list")
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .expect("spec aliases should contain strings")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(aliases, vec!["fentry", "fentry.s"]);
+    assert_eq!(
+        record
+            .get("section_prefix")
+            .expect("section prefix should be present")
+            .as_str()
+            .expect("section prefix should be a string"),
+        "fentry"
+    );
+    assert!(
+        record
+            .get("section_uses_target")
+            .expect("section target policy should be present")
+            .as_bool()
+            .expect("section target policy should be a bool")
+    );
+    assert_eq!(
+        record
+            .get("kernel_target_validation")
+            .expect("kernel target validation should be present")
+            .as_str()
+            .expect("kernel target validation should be a string"),
+        "fentry-trampoline"
+    );
+
+    let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    assert!(
+        !record
+            .get("section_uses_target")
+            .expect("section target policy should be present")
+            .as_bool()
+            .expect("section target policy should be a bool")
+    );
+    assert!(
+        record
+            .get("kernel_target_validation")
+            .expect("kernel target validation should be present")
+            .is_nothing()
+    );
+}
+
+#[test]
 fn test_spec_context_projections_include_socket_members() {
     let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
         .expect("cgroup_sock spec should parse");

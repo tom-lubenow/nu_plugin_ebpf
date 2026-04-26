@@ -1277,6 +1277,10 @@ impl EbpfProgramType {
         self.info().canonical_prefix
     }
 
+    pub fn spec_aliases(&self) -> &'static [&'static str] {
+        self.info().spec_aliases
+    }
+
     /// Get the underlying kernel UAPI `BPF_PROG_TYPE_*` enum name.
     pub fn kernel_prog_type(&self) -> &'static str {
         self.info().kernel_prog_type
@@ -1285,6 +1289,10 @@ impl EbpfProgramType {
     /// Get the ELF section name prefix for this program type
     pub fn section_prefix(&self) -> &'static str {
         self.info().section_prefix
+    }
+
+    pub fn section_uses_target(&self) -> bool {
+        self.info().section_uses_target
     }
 
     pub fn attach_kind(&self) -> ProgramAttachKind {
@@ -1740,6 +1748,18 @@ pub enum KernelTargetValidationKind {
     FexitTrampoline,
     FmodRetTrampoline,
     LsmHook,
+}
+
+impl KernelTargetValidationKind {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::SymbolOnly => "symbol-only",
+            Self::FentryTrampoline => "fentry-trampoline",
+            Self::FexitTrampoline => "fexit-trampoline",
+            Self::FmodRetTrampoline => "fmod-ret-trampoline",
+            Self::LsmHook => "lsm-hook",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

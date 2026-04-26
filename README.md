@@ -76,9 +76,9 @@ argument and return-value surfaces when knowable, argument/return access mode,
 packet context kind, direct packet-write support, modeled context fields with
 type labels, pointer verifier facts, and any load guards, tracepoint payload
 fields, nested context projections, writable context surfaces, return aliases,
-target, section name, capability labels, live-attach/default safety, and
-compatibility requirement labels before you attempt to compile or attach a
-closure.
+target, aliases, section construction, kernel-target validation, capability
+labels, live-attach/default safety, and compatibility requirement labels before
+you attempt to compile or attach a closure.
 
 ## Quick Start
 

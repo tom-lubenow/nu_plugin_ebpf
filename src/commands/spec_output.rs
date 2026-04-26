@@ -251,6 +251,14 @@ fn optional_u32(value: Option<u32>, span: Span) -> Value {
 }
 
 #[cfg(target_os = "linux")]
+fn string_list(values: &[&'static str], span: Span) -> Vec<Value> {
+    values
+        .iter()
+        .map(|value| Value::string(*value, span))
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextField> {
     let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
 
@@ -722,6 +730,9 @@ pub(super) fn spec_record(
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
+    let kernel_target_validation = program_type
+        .kernel_target_validation()
+        .map(|validation| validation.key());
     let context_fields = context_field_records(&spec, span);
     let (tracepoint_fields, tracepoint_field_error) =
         spec_tracepoint_fields(&spec, resolve_dynamic_args);
@@ -781,6 +792,7 @@ pub(super) fn spec_record(
         record! {
             "probe" => Value::string(probe, span),
             "program_type" => Value::string(program_type.canonical_prefix(), span),
+            "spec_aliases" => Value::list(string_list(program_type.spec_aliases(), span), span),
             "kernel_program_type" => Value::string(program_type.kernel_prog_type(), span),
             "context_family" => Value::string(program_type.context_family().key(), span),
             "packet_context_kind" => optional_packet_context_kind(spec.packet_context_kind(), span),
@@ -788,8 +800,11 @@ pub(super) fn spec_record(
             "direct_packet_writes" => Value::bool(spec.supports_direct_packet_writes(), span),
             "target" => Value::string(spec.target_string(), span),
             "section" => Value::string(spec.section_name(), span),
+            "section_prefix" => Value::string(program_type.section_prefix(), span),
+            "section_uses_target" => Value::bool(program_type.section_uses_target(), span),
             "attach_kind" => Value::string(attach_kind.key(), span),
             "target_kind" => Value::string(program_type.target_kind().key(), span),
+            "kernel_target_validation" => optional_static_str(kernel_target_validation, span),
             "arg_access" => Value::string(program_type.arg_access().key(), span),
             "retval_access" => Value::string(program_type.retval_access().key(), span),
             "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, span),
