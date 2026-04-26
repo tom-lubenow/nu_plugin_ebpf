@@ -4022,6 +4022,107 @@ fn test_program_type_registry_covers_current_kernel_uapi_program_types() {
 
 #[test]
 fn test_program_attach_kind_loader_live_support_metadata() {
+    let mut target_kind_keys = HashSet::new();
+    for kind in [
+        ProgramTargetKind::KernelFunction,
+        ProgramTargetKind::KernelFunctionPattern,
+        ProgramTargetKind::KernelSyscall,
+        ProgramTargetKind::BtfTracepoint,
+        ProgramTargetKind::LsmHook,
+        ProgramTargetKind::ExtensionFunction,
+        ProgramTargetKind::SyscallProgram,
+        ProgramTargetKind::BpfIteratorTarget,
+        ProgramTargetKind::Tracepoint,
+        ProgramTargetKind::RawTracepoint,
+        ProgramTargetKind::UserFunction,
+        ProgramTargetKind::UserFunctionPattern,
+        ProgramTargetKind::NetworkInterface,
+        ProgramTargetKind::PerfEventTarget,
+        ProgramTargetKind::SocketFilterTarget,
+        ProgramTargetKind::NetworkNamespacePath,
+        ProgramTargetKind::NetfilterHook,
+        ProgramTargetKind::LightweightTunnelRoute,
+        ProgramTargetKind::SocketReuseportMode,
+        ProgramTargetKind::PinnedSockMapPath,
+        ProgramTargetKind::TrafficControlInterface,
+        ProgramTargetKind::TrafficControlAction,
+        ProgramTargetKind::CgroupPathAttachType,
+        ProgramTargetKind::CgroupPathSockAttachType,
+        ProgramTargetKind::CgroupPath,
+        ProgramTargetKind::CgroupPathSockoptAttachType,
+        ProgramTargetKind::CgroupPathSockAddrAttachType,
+        ProgramTargetKind::LircDevicePath,
+        ProgramTargetKind::StructOpsCallback,
+    ] {
+        assert!(
+            target_kind_keys.insert(kind.key()),
+            "program target kind key repeats for {kind:?}"
+        );
+        assert!(
+            !kind.key().is_empty(),
+            "{kind:?} should have a machine-readable key"
+        );
+    }
+
+    let mut attach_kind_keys = HashSet::new();
+    for kind in [
+        ProgramAttachKind::Kprobe,
+        ProgramAttachKind::Kretprobe,
+        ProgramAttachKind::KprobeMulti,
+        ProgramAttachKind::KretprobeMulti,
+        ProgramAttachKind::Ksyscall,
+        ProgramAttachKind::KretSyscall,
+        ProgramAttachKind::Fentry,
+        ProgramAttachKind::Fexit,
+        ProgramAttachKind::FmodRet,
+        ProgramAttachKind::TpBtf,
+        ProgramAttachKind::Tracepoint,
+        ProgramAttachKind::RawTracepoint,
+        ProgramAttachKind::RawTracepointWritable,
+        ProgramAttachKind::Uprobe,
+        ProgramAttachKind::Uretprobe,
+        ProgramAttachKind::UprobeMulti,
+        ProgramAttachKind::UretprobeMulti,
+        ProgramAttachKind::Lsm,
+        ProgramAttachKind::LsmCgroup,
+        ProgramAttachKind::Extension,
+        ProgramAttachKind::Syscall,
+        ProgramAttachKind::Iter,
+        ProgramAttachKind::Xdp,
+        ProgramAttachKind::PerfEvent,
+        ProgramAttachKind::SocketFilter,
+        ProgramAttachKind::CgroupDevice,
+        ProgramAttachKind::SkLookup,
+        ProgramAttachKind::FlowDissector,
+        ProgramAttachKind::Netfilter,
+        ProgramAttachKind::Lwt,
+        ProgramAttachKind::SkReuseport,
+        ProgramAttachKind::SkMsg,
+        ProgramAttachKind::SkSkb,
+        ProgramAttachKind::SkSkbParser,
+        ProgramAttachKind::SockOps,
+        ProgramAttachKind::Tc,
+        ProgramAttachKind::Tcx,
+        ProgramAttachKind::Netkit,
+        ProgramAttachKind::TcAction,
+        ProgramAttachKind::CgroupSkb,
+        ProgramAttachKind::CgroupSock,
+        ProgramAttachKind::CgroupSysctl,
+        ProgramAttachKind::CgroupSockopt,
+        ProgramAttachKind::CgroupSockAddr,
+        ProgramAttachKind::LircMode2,
+        ProgramAttachKind::StructOps,
+    ] {
+        assert!(
+            attach_kind_keys.insert(kind.key()),
+            "program attach kind key repeats for {kind:?}"
+        );
+        assert!(
+            !kind.key().is_empty(),
+            "{kind:?} should have a machine-readable key"
+        );
+    }
+
     for kind in [
         ProgramAttachKind::Kprobe,
         ProgramAttachKind::Kretprobe,

@@ -1434,6 +1434,57 @@ pub enum ProgramAttachKind {
 }
 
 impl ProgramAttachKind {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Kprobe => "kprobe",
+            Self::Kretprobe => "kretprobe",
+            Self::KprobeMulti => "kprobe-multi",
+            Self::KretprobeMulti => "kretprobe-multi",
+            Self::Ksyscall => "ksyscall",
+            Self::KretSyscall => "kret-syscall",
+            Self::Fentry => "fentry",
+            Self::Fexit => "fexit",
+            Self::FmodRet => "fmod-ret",
+            Self::TpBtf => "tp-btf",
+            Self::Tracepoint => "tracepoint",
+            Self::RawTracepoint => "raw-tracepoint",
+            Self::RawTracepointWritable => "raw-tracepoint-writable",
+            Self::Uprobe => "uprobe",
+            Self::Uretprobe => "uretprobe",
+            Self::UprobeMulti => "uprobe-multi",
+            Self::UretprobeMulti => "uretprobe-multi",
+            Self::Lsm => "lsm",
+            Self::LsmCgroup => "lsm-cgroup",
+            Self::Extension => "extension",
+            Self::Syscall => "syscall",
+            Self::Iter => "iter",
+            Self::Xdp => "xdp",
+            Self::PerfEvent => "perf-event",
+            Self::SocketFilter => "socket-filter",
+            Self::CgroupDevice => "cgroup-device",
+            Self::SkLookup => "sk-lookup",
+            Self::FlowDissector => "flow-dissector",
+            Self::Netfilter => "netfilter",
+            Self::Lwt => "lwt",
+            Self::SkReuseport => "sk-reuseport",
+            Self::SkMsg => "sk-msg",
+            Self::SkSkb => "sk-skb",
+            Self::SkSkbParser => "sk-skb-parser",
+            Self::SockOps => "sock-ops",
+            Self::Tc => "tc",
+            Self::Tcx => "tcx",
+            Self::Netkit => "netkit",
+            Self::TcAction => "tc-action",
+            Self::CgroupSkb => "cgroup-skb",
+            Self::CgroupSock => "cgroup-sock",
+            Self::CgroupSysctl => "cgroup-sysctl",
+            Self::CgroupSockopt => "cgroup-sockopt",
+            Self::CgroupSockAddr => "cgroup-sock-addr",
+            Self::LircMode2 => "lirc-mode2",
+            Self::StructOps => "struct-ops",
+        }
+    }
+
     pub fn loader_supports_live_attach(self) -> bool {
         self.unsupported_live_attach_detail().is_none()
     }
@@ -1597,6 +1648,40 @@ pub enum ProgramTargetKind {
 }
 
 impl ProgramTargetKind {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::KernelFunction => "kernel-function",
+            Self::KernelFunctionPattern => "kernel-function-pattern",
+            Self::KernelSyscall => "kernel-syscall",
+            Self::BtfTracepoint => "btf-tracepoint",
+            Self::LsmHook => "lsm-hook",
+            Self::ExtensionFunction => "extension-function",
+            Self::SyscallProgram => "syscall-program",
+            Self::BpfIteratorTarget => "bpf-iterator-target",
+            Self::Tracepoint => "tracepoint",
+            Self::RawTracepoint => "raw-tracepoint",
+            Self::UserFunction => "user-function",
+            Self::UserFunctionPattern => "user-function-pattern",
+            Self::NetworkInterface => "network-interface",
+            Self::PerfEventTarget => "perf-event-target",
+            Self::SocketFilterTarget => "socket-filter-target",
+            Self::NetworkNamespacePath => "network-namespace-path",
+            Self::NetfilterHook => "netfilter-hook",
+            Self::LightweightTunnelRoute => "lightweight-tunnel-route",
+            Self::SocketReuseportMode => "socket-reuseport-mode",
+            Self::PinnedSockMapPath => "pinned-sock-map-path",
+            Self::TrafficControlInterface => "traffic-control-interface",
+            Self::TrafficControlAction => "traffic-control-action",
+            Self::CgroupPathAttachType => "cgroup-path-attach-type",
+            Self::CgroupPathSockAttachType => "cgroup-path-sock-attach-type",
+            Self::CgroupPath => "cgroup-path",
+            Self::CgroupPathSockoptAttachType => "cgroup-path-sockopt-attach-type",
+            Self::CgroupPathSockAddrAttachType => "cgroup-path-sock-addr-attach-type",
+            Self::LircDevicePath => "lirc-device-path",
+            Self::StructOpsCallback => "struct-ops-callback",
+        }
+    }
+
     pub fn is_userspace_function(self) -> bool {
         matches!(self, Self::UserFunction | Self::UserFunctionPattern)
     }
