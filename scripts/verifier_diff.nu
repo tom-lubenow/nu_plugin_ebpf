@@ -2332,6 +2332,41 @@ def fixture-summary [fixture] {
     }
 }
 
+def fixture-status-count [fixtures field: string status: string] {
+    $fixtures
+    | where {|fixture| ($fixture | get $field) == $status }
+    | length
+}
+
+def print-fixture-matrix [fixtures] {
+    for tier in $VALID_TIERS {
+        let tier_fixtures = (
+            $fixtures
+            | where {|fixture| (fixture-tier $fixture) == $tier }
+        )
+
+        if (($tier_fixtures | length) == 0) {
+            continue
+        }
+
+        let categories = (
+            $tier_fixtures
+            | each {|fixture| optional $fixture category "" }
+            | uniq
+            | sort
+        )
+
+        for category in $categories {
+            let category_fixtures = (
+                $tier_fixtures
+                | where {|fixture| (optional $fixture category "") == $category }
+            )
+
+            print $"tier=($tier) category=($category) total=($category_fixtures | length) local_accept=(fixture-status-count $category_fixtures local accept) local_reject=(fixture-status-count $category_fixtures local reject) local_skip=(fixture-status-count $category_fixtures local skip) kernel_accept=(fixture-status-count $category_fixtures kernel accept) kernel_reject=(fixture-status-count $category_fixtures kernel reject) kernel_skip=(fixture-status-count $category_fixtures kernel skip)"
+        }
+    }
+}
+
 def validate-tier-option [label: string value] {
     if $value == null {
         return
@@ -2581,6 +2616,7 @@ def select-fixtures [fixture_name category tag tier exclude_tier local_status ke
 
 def main [
     --list         # List verifier fixtures and exit.
+    --matrix       # Print verifier fixture counts by tier and category, then exit.
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
     --fast         # Run only fixtures in the fast tier.
@@ -2594,6 +2630,9 @@ def main [
 ] {
     if $kernel and $no_kernel {
         fail "--kernel and --no-kernel are mutually exclusive"
+    }
+    if $list and $matrix {
+        fail "--list and --matrix are mutually exclusive"
     }
     if $fast and $tier != null {
         fail "--fast and --tier are mutually exclusive"
@@ -2612,6 +2651,10 @@ def main [
             let summary = (fixture-summary $fixture)
             print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags)"
         }
+        return
+    }
+    if $matrix {
+        print-fixture-matrix $fixtures
         return
     }
 
