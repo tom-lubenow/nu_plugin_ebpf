@@ -37,6 +37,7 @@ impl Plugin for EbpfPlugin {
             Box::new(EbpfHistogram),
             Box::new(EbpfList),
             Box::new(EbpfSetup),
+            Box::new(EbpfSpec),
             Box::new(EbpfStacks),
             Box::new(EbpfTrace),
             // Helper commands for use in eBPF closures
@@ -86,6 +87,11 @@ mod tests {
             .iter()
             .map(|command| command.name())
             .collect::<HashSet<_>>();
+
+        assert!(
+            command_names.contains("ebpf spec"),
+            "plugin should export target metadata inspection command"
+        );
 
         for intrinsic in ProgramIntrinsic::all() {
             assert!(

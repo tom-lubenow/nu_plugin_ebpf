@@ -1502,6 +1502,33 @@ pub enum ProgramCompatibilityRequirement {
 }
 
 impl ProgramCompatibilityRequirement {
+    pub fn key(&self) -> &'static str {
+        match self {
+            Self::KernelBtf => "kernel-btf",
+            Self::BpfTrampoline => "bpf-trampoline",
+            Self::SleepableProgram => "sleepable-program",
+            Self::KprobeMulti => "kprobe-multi",
+            Self::UprobeMulti => "uprobe-multi",
+            Self::RawTracepointWritable => "raw-tracepoint-writable",
+            Self::CgroupLsm => "cgroup-lsm",
+            Self::ExtensionProgram => "extension-program",
+            Self::SyscallProgram => "syscall-program",
+            Self::BpfIterator => "bpf-iterator",
+            Self::XdpMultiBuffer => "xdp-multi-buffer",
+            Self::FlowDissector => "flow-dissector",
+            Self::Tcx => "tcx",
+            Self::Netkit => "netkit",
+            Self::NetfilterLink => "netfilter-link",
+            Self::RouteLwt => "route-lwt",
+            Self::SockMapAttach => "sockmap-attach",
+            Self::CgroupV2 => "cgroup-v2",
+            Self::LircMode2 => "lirc-mode2",
+            Self::StructOps => "struct-ops",
+            Self::SchedExt => "sched-ext",
+            Self::CgroupUnixSockAddr => "cgroup-unix-sock-addr",
+        }
+    }
+
     pub fn description(&self) -> &'static str {
         match self {
             Self::KernelBtf => "kernel BTF for typed BTF-backed program targets",

@@ -4232,6 +4232,45 @@ fn test_program_capability_surfaces_are_unique() {
 
 #[test]
 fn test_program_compatibility_requirement_surfaces_are_unique() {
+    let mut requirement_keys = HashSet::new();
+    for requirement in [
+        ProgramCompatibilityRequirement::KernelBtf,
+        ProgramCompatibilityRequirement::BpfTrampoline,
+        ProgramCompatibilityRequirement::SleepableProgram,
+        ProgramCompatibilityRequirement::KprobeMulti,
+        ProgramCompatibilityRequirement::UprobeMulti,
+        ProgramCompatibilityRequirement::RawTracepointWritable,
+        ProgramCompatibilityRequirement::CgroupLsm,
+        ProgramCompatibilityRequirement::ExtensionProgram,
+        ProgramCompatibilityRequirement::SyscallProgram,
+        ProgramCompatibilityRequirement::BpfIterator,
+        ProgramCompatibilityRequirement::XdpMultiBuffer,
+        ProgramCompatibilityRequirement::FlowDissector,
+        ProgramCompatibilityRequirement::Tcx,
+        ProgramCompatibilityRequirement::Netkit,
+        ProgramCompatibilityRequirement::NetfilterLink,
+        ProgramCompatibilityRequirement::RouteLwt,
+        ProgramCompatibilityRequirement::SockMapAttach,
+        ProgramCompatibilityRequirement::CgroupV2,
+        ProgramCompatibilityRequirement::LircMode2,
+        ProgramCompatibilityRequirement::StructOps,
+        ProgramCompatibilityRequirement::SchedExt,
+        ProgramCompatibilityRequirement::CgroupUnixSockAddr,
+    ] {
+        assert!(
+            requirement_keys.insert(requirement.key()),
+            "compatibility requirement key repeats for {requirement:?}"
+        );
+        assert!(
+            !requirement.key().is_empty(),
+            "{requirement:?} should have a machine-readable key"
+        );
+        assert!(
+            !requirement.description().is_empty(),
+            "{requirement:?} should have a diagnostic description"
+        );
+    }
+
     for program_type in EbpfProgramType::supported_program_types() {
         let mut seen = HashSet::new();
         for requirement in program_type.compatibility_requirements() {

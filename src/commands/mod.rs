@@ -5,6 +5,7 @@
 //! - [`EbpfAttach`] - Compile and attach a closure to a probe point
 //! - [`EbpfDetach`] - Detach a probe by ID
 //! - [`EbpfList`] - List active probes
+//! - [`EbpfSpec`] - Inspect parsed target metadata
 //!
 //! ## Data Commands
 //!
@@ -40,6 +41,7 @@ mod histogram;
 mod list;
 mod program_intrinsics;
 mod setup;
+mod spec;
 mod stacks;
 mod trace;
 
@@ -82,5 +84,6 @@ pub use program_intrinsics::{
     AdjustMessage, AdjustPacket, AssignSocket, Redirect, RedirectMap, RedirectSocket,
 };
 pub use setup::EbpfSetup;
+pub use spec::EbpfSpec;
 pub use stacks::EbpfStacks;
 pub use trace::EbpfTrace;
