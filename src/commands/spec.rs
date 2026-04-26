@@ -107,6 +107,24 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
             )
         })
         .collect();
+    let return_aliases = program_type
+        .return_action_alias_pairs()
+        .into_iter()
+        .map(|(alias, value)| {
+            let const_value = value
+                .const_value()
+                .map(|value| Value::int(value, span))
+                .unwrap_or_else(|| Value::nothing(span));
+            Value::record(
+                record! {
+                    "alias" => Value::string(alias, span),
+                    "kind" => Value::string(value.key(), span),
+                    "const_value" => const_value,
+                },
+                span,
+            )
+        })
+        .collect();
 
     Value::record(
         record! {
@@ -126,6 +144,7 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
             "live_attach_note" => Value::string(live_attach_note, span),
             "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
+            "return_aliases" => Value::list(return_aliases, span),
         },
         span,
     )

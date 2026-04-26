@@ -1789,6 +1789,28 @@ pub(crate) enum ProgramReturnAlias {
     PacketLen,
 }
 
+impl ProgramReturnAlias {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Const(_) => "const",
+            Self::PacketLen => "packet-len",
+        }
+    }
+
+    pub(crate) fn const_value(self) -> Option<i64> {
+        match self {
+            Self::Const(value) => Some(value),
+            Self::PacketLen => None,
+        }
+    }
+}
+
+impl fmt::Display for ProgramReturnAlias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CtxWriteTarget {
     StoreField(CtxStoreTarget),

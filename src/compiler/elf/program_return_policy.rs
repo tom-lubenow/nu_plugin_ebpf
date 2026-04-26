@@ -362,6 +362,14 @@ impl EbpfProgramType {
             .find(|entry| entry.alias == alias)
             .map(|entry| entry.value)
     }
+
+    pub(crate) fn return_action_alias_pairs(&self) -> Vec<(&'static str, ProgramReturnAlias)> {
+        self.return_action_alias_entries()
+            .unwrap_or(&[])
+            .iter()
+            .map(|entry| (entry.alias, entry.value))
+            .collect()
+    }
 }
 
 #[cfg(test)]

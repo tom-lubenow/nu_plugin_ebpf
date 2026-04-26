@@ -741,6 +741,20 @@ fn test_program_type_return_action_aliases_cover_const_families() {
         EbpfProgramType::Xdp.return_action_alias("PaSs"),
         Some(ProgramReturnAlias::Const(2))
     );
+    assert_eq!(ProgramReturnAlias::Const(2).key(), "const");
+    assert_eq!(ProgramReturnAlias::Const(2).const_value(), Some(2));
+    assert_eq!(ProgramReturnAlias::PacketLen.key(), "packet-len");
+    assert_eq!(ProgramReturnAlias::PacketLen.const_value(), None);
+    assert!(
+        EbpfProgramType::Xdp
+            .return_action_alias_pairs()
+            .contains(&("pass", ProgramReturnAlias::Const(2)))
+    );
+    assert!(
+        EbpfProgramType::SocketFilter
+            .return_action_alias_pairs()
+            .contains(&("keep", ProgramReturnAlias::PacketLen))
+    );
     assert_eq!(
         EbpfProgramType::Tc.return_action_alias("trap"),
         Some(ProgramReturnAlias::Const(8))
