@@ -5113,6 +5113,14 @@ fn test_struct_ops_object_spec_accepts_callbacks_from_mir_compile_results() {
             .expect("struct_ops callback section name should build"),
         "struct_ops/demo_select_cpu"
     );
+    assert_eq!(object.programs[0].target, "demo_select_cpu");
+    assert_eq!(
+        object.programs[0].parsed_program_spec(),
+        Some(&ProgramSpec::StructOpsCallback {
+            value_type_name: "file".to_string(),
+            callback_name: "f_inode".to_string(),
+        })
+    );
 }
 
 #[test]

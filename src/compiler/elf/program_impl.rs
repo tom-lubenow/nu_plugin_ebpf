@@ -286,7 +286,10 @@ impl EbpfProgram {
         ));
         section.prog_type = EbpfProgramType::StructOps;
         section.target = callback_name.clone();
-        section.program_spec = None;
+        section.program_spec = Some(ProgramSpec::StructOpsCallback {
+            value_type_name: value_type_name.to_string(),
+            callback_name: slot_name.to_string(),
+        });
         section.name = callback_name;
         section
     }
