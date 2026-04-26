@@ -4217,6 +4217,52 @@ fn test_program_type_supports_probe_capabilities() {
 
 #[test]
 fn test_program_capability_surfaces_are_unique() {
+    let mut access_keys = HashSet::new();
+    for access in [
+        ProgramValueAccess::None,
+        ProgramValueAccess::PtRegs,
+        ProgramValueAccess::RawTracepoint,
+        ProgramValueAccess::Trampoline,
+    ] {
+        assert!(
+            access_keys.insert(access.key()),
+            "program value access key repeats for {access:?}"
+        );
+        assert!(
+            !access.key().is_empty(),
+            "{access:?} should have a machine-readable key"
+        );
+    }
+
+    let mut capability_keys = HashSet::new();
+    for capability in [
+        ProgramCapability::Emit,
+        ProgramCapability::Counters,
+        ProgramCapability::Histograms,
+        ProgramCapability::Timers,
+        ProgramCapability::StackTraces,
+        ProgramCapability::ReadUserString,
+        ProgramCapability::ReadKernelString,
+        ProgramCapability::HelperCalls,
+        ProgramCapability::KfuncCalls,
+        ProgramCapability::Globals,
+        ProgramCapability::GenericMaps,
+        ProgramCapability::TailCalls,
+    ] {
+        assert!(
+            capability_keys.insert(capability.key()),
+            "program capability key repeats for {capability:?}"
+        );
+        assert!(
+            !capability.key().is_empty(),
+            "{capability:?} should have a machine-readable key"
+        );
+        assert!(
+            !capability.description().is_empty(),
+            "{capability:?} should have a diagnostic description"
+        );
+    }
+
     for program_type in EbpfProgramType::supported_program_types() {
         let mut seen = HashSet::new();
         for capability in program_type.supported_capabilities() {

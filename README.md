@@ -71,6 +71,11 @@ ebpf spec 'fentry.s:do_sys_openat2'
 ebpf spec --list
 ```
 
+`ebpf spec` reports the parsed program type, context family, argument/return
+access mode, target, section name, capability labels, live-attach/default
+safety, and compatibility requirement labels before you attempt to compile or
+attach a closure.
+
 ## Quick Start
 
 ### Count syscalls by process

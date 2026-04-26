@@ -81,6 +81,19 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
+    let capabilities = program_type
+        .supported_capabilities()
+        .iter()
+        .map(|capability| {
+            Value::record(
+                record! {
+                    "key" => Value::string(capability.key(), span),
+                    "description" => Value::string(capability.description(), span),
+                },
+                span,
+            )
+        })
+        .collect();
     let requirements = spec
         .compatibility_requirements()
         .into_iter()
@@ -100,14 +113,18 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
             "probe" => Value::string(probe, span),
             "program_type" => Value::string(program_type.canonical_prefix(), span),
             "kernel_program_type" => Value::string(program_type.kernel_prog_type(), span),
+            "context_family" => Value::string(program_type.context_family().key(), span),
             "target" => Value::string(spec.target_string(), span),
             "section" => Value::string(spec.section_name(), span),
             "attach_kind" => Value::string(format!("{attach_kind:?}"), span),
             "target_kind" => Value::string(format!("{:?}", program_type.target_kind()), span),
+            "arg_access" => Value::string(program_type.arg_access().key(), span),
+            "retval_access" => Value::string(program_type.retval_access().key(), span),
             "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, span),
             "live_attach_default_allowed" => Value::bool(live_attach_policy.default_allowed, span),
             "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
             "live_attach_note" => Value::string(live_attach_note, span),
+            "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
         },
         span,

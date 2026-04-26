@@ -1641,6 +1641,15 @@ pub enum ProgramValueAccess {
 }
 
 impl ProgramValueAccess {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::PtRegs => "pt-regs",
+            Self::RawTracepoint => "raw-tracepoint",
+            Self::Trampoline => "trampoline",
+        }
+    }
+
     pub fn exposes_value(self) -> bool {
         !matches!(self, ProgramValueAccess::None)
     }
@@ -1849,6 +1858,23 @@ pub enum ProgramCapability {
 }
 
 impl ProgramCapability {
+    pub fn key(&self) -> &'static str {
+        match self {
+            ProgramCapability::Emit => "emit",
+            ProgramCapability::Counters => "counters",
+            ProgramCapability::Histograms => "histograms",
+            ProgramCapability::Timers => "timers",
+            ProgramCapability::StackTraces => "stack-traces",
+            ProgramCapability::ReadUserString => "read-user-string",
+            ProgramCapability::ReadKernelString => "read-kernel-string",
+            ProgramCapability::HelperCalls => "helper-calls",
+            ProgramCapability::KfuncCalls => "kfunc-calls",
+            ProgramCapability::Globals => "globals",
+            ProgramCapability::GenericMaps => "generic-maps",
+            ProgramCapability::TailCalls => "tail-calls",
+        }
+    }
+
     pub fn description(&self) -> &'static str {
         match self {
             ProgramCapability::Emit => "event emission",

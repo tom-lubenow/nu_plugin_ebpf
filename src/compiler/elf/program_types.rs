@@ -25,6 +25,31 @@ pub enum ProgramContextFamily {
 }
 
 impl ProgramContextFamily {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Probe => "probe",
+            Self::PerfEvent => "perf-event",
+            Self::Xdp => "xdp",
+            Self::SkBuffPacket => "skbuff-packet",
+            Self::SkLookup => "sk-lookup",
+            Self::FlowDissector => "flow-dissector",
+            Self::Netfilter => "netfilter",
+            Self::SkReuseport => "sk-reuseport",
+            Self::SkMsg => "sk-msg",
+            Self::SockOps => "sock-ops",
+            Self::CgroupSock => "cgroup-sock",
+            Self::CgroupSysctl => "cgroup-sysctl",
+            Self::CgroupSockopt => "cgroup-sockopt",
+            Self::CgroupSockAddr => "cgroup-sock-addr",
+            Self::CgroupDevice => "cgroup-device",
+            Self::LircMode2 => "lirc-mode2",
+            Self::StructOps => "struct-ops",
+            Self::Extension => "extension",
+            Self::Syscall => "syscall",
+            Self::Iter => "iter",
+        }
+    }
+
     pub fn is_perf_event(self) -> bool {
         matches!(self, Self::PerfEvent)
     }
@@ -1352,6 +1377,39 @@ mod tests {
     fn test_program_type_registry_prefixes_are_unique_and_complete() {
         let mut program_types = HashSet::new();
         let mut listed_prefixes = HashSet::new();
+        let mut context_family_keys = HashSet::new();
+
+        for family in [
+            ProgramContextFamily::Probe,
+            ProgramContextFamily::PerfEvent,
+            ProgramContextFamily::Xdp,
+            ProgramContextFamily::SkBuffPacket,
+            ProgramContextFamily::SkLookup,
+            ProgramContextFamily::FlowDissector,
+            ProgramContextFamily::Netfilter,
+            ProgramContextFamily::SkReuseport,
+            ProgramContextFamily::SkMsg,
+            ProgramContextFamily::SockOps,
+            ProgramContextFamily::CgroupSock,
+            ProgramContextFamily::CgroupSysctl,
+            ProgramContextFamily::CgroupSockopt,
+            ProgramContextFamily::CgroupSockAddr,
+            ProgramContextFamily::CgroupDevice,
+            ProgramContextFamily::LircMode2,
+            ProgramContextFamily::StructOps,
+            ProgramContextFamily::Extension,
+            ProgramContextFamily::Syscall,
+            ProgramContextFamily::Iter,
+        ] {
+            assert!(
+                context_family_keys.insert(family.key()),
+                "program context family key repeats for {family:?}"
+            );
+            assert!(
+                !family.key().is_empty(),
+                "{family:?} should have a machine-readable key"
+            );
+        }
 
         for prefix in PROGRAM_SPEC_PREFIXES {
             assert!(
