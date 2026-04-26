@@ -76,11 +76,65 @@ impl PluginCommand for EbpfSpec {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecContextField {
+    field: String,
+    names: Vec<&'static str>,
+}
+
+#[cfg(target_os = "linux")]
+fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextField> {
+    let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
+
+    for entry in spec.program_type().ctx_field_name_entries() {
+        if spec.ctx_field_access_error(&entry.field).is_some() {
+            continue;
+        }
+
+        if let Some((_, field)) = fields.iter_mut().find(|(field, _)| field == &entry.field) {
+            field.names.push(entry.name);
+        } else {
+            fields.push((
+                entry.field.clone(),
+                SpecContextField {
+                    field: entry.field.display_name(),
+                    names: vec![entry.name],
+                },
+            ));
+        }
+    }
+
+    fields.into_iter().map(|(_, field)| field).collect()
+}
+
+#[cfg(target_os = "linux")]
+fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
+    spec_context_fields(spec)
+        .into_iter()
+        .map(|field| {
+            let names = field
+                .names
+                .into_iter()
+                .map(|name| Value::string(name, span))
+                .collect();
+            Value::record(
+                record! {
+                    "field" => Value::string(field.field, span),
+                    "names" => Value::list(names, span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span) -> Value {
     let program_type = spec.program_type();
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
+    let context_fields = context_field_records(&spec, span);
     let capabilities = program_type
         .supported_capabilities()
         .iter()
@@ -142,6 +196,7 @@ fn spec_record(probe: String, spec: crate::program_spec::ProgramSpec, span: Span
             "live_attach_default_allowed" => Value::bool(live_attach_policy.default_allowed, span),
             "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
             "live_attach_note" => Value::string(live_attach_note, span),
+            "context_fields" => Value::list(context_fields, span),
             "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
             "return_aliases" => Value::list(return_aliases, span),
@@ -197,4 +252,39 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
         spec_record(probe, spec, call.head),
         None,
     ))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::program_spec::ProgramSpec;
+
+    fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContextField {
+        fields
+            .iter()
+            .find(|field| field.field == field_name)
+            .unwrap_or_else(|| panic!("expected ctx.{field_name} in spec context fields"))
+    }
+
+    #[test]
+    fn test_spec_context_fields_include_program_specific_aliases() {
+        let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+        let fields = spec_context_fields(&spec);
+
+        assert!(field(&fields, "ingress_ifindex").names.contains(&"ifindex"));
+        assert!(field(&fields, "packet_len").names.contains(&"packet_len"));
+    }
+
+    #[test]
+    fn test_spec_context_fields_preserve_tracepoint_payload_names() {
+        let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+            .expect("tracepoint spec should parse");
+        let fields = spec_context_fields(&spec);
+
+        assert!(field(&fields, "cgroup").names.contains(&"current_cgroup"));
+        assert!(
+            !fields.iter().any(|field| field.names.contains(&"cgroup")),
+            "ctx.cgroup is a tracepoint payload field name, so it must not be advertised as a builtin"
+        );
+    }
 }

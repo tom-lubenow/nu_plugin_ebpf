@@ -3,6 +3,12 @@ use crate::program_spec::ProgramSpec;
 
 type CtxFieldNameEntry = (&'static str, CtxField);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ContextFieldNameEntry {
+    pub(crate) name: &'static str,
+    pub(crate) field: CtxField,
+}
+
 struct CtxFieldAliasSurface {
     program_types: &'static [EbpfProgramType],
     entries: &'static [CtxFieldNameEntry],
@@ -405,6 +411,36 @@ fn tracepoint_preserves_builtin_ctx_field_name(field_name: &str) -> bool {
     TRACEPOINT_PRESERVED_CTX_FIELD_NAMES.contains(&field_name) || is_ctx_arg_field_name(field_name)
 }
 
+fn push_unique_ctx_field_name_entries(
+    out: &mut Vec<ContextFieldNameEntry>,
+    entries: &[CtxFieldNameEntry],
+) {
+    for (name, field) in entries {
+        if out.iter().any(|entry| entry.name == *name) {
+            continue;
+        }
+
+        out.push(ContextFieldNameEntry {
+            name: *name,
+            field: field.clone(),
+        });
+    }
+}
+
+fn push_tracepoint_preserved_ctx_field_name_entries(out: &mut Vec<ContextFieldNameEntry>) {
+    for name in TRACEPOINT_PRESERVED_CTX_FIELD_NAMES {
+        if out.iter().any(|entry| entry.name == *name) {
+            continue;
+        }
+
+        let Ok(field) = generic_ctx_field_from_name(name) else {
+            continue;
+        };
+
+        out.push(ContextFieldNameEntry { name: *name, field });
+    }
+}
+
 impl EbpfProgramType {
     fn ctx_field_alias_entries(&self) -> Option<&'static [CtxFieldNameEntry]> {
         CTX_FIELD_ALIAS_SURFACES
@@ -415,6 +451,29 @@ impl EbpfProgramType {
 
     fn preserves_tracepoint_builtin_ctx_field_names(&self) -> bool {
         TRACEPOINT_PRESERVE_BUILTIN_CTX_FIELD_PROGRAMS.contains(self)
+    }
+
+    pub(crate) fn ctx_field_name_entries(&self) -> Vec<ContextFieldNameEntry> {
+        let mut entries = Vec::new();
+
+        if let Some(alias_entries) = self.ctx_field_alias_entries() {
+            push_unique_ctx_field_name_entries(&mut entries, alias_entries);
+        }
+
+        match ctx_field_name_resolution_mode(*self) {
+            CtxFieldNameResolutionMode::Default => {
+                push_unique_ctx_field_name_entries(
+                    &mut entries,
+                    NON_TRACEPOINT_CTX_FIELD_NAME_ENTRIES,
+                );
+                push_unique_ctx_field_name_entries(&mut entries, GENERIC_CTX_FIELD_NAME_ENTRIES);
+            }
+            CtxFieldNameResolutionMode::TracepointPreserveBuiltins => {
+                push_tracepoint_preserved_ctx_field_name_entries(&mut entries);
+            }
+        }
+
+        entries
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -477,6 +536,16 @@ mod tests {
                 "duplicate context field alias '{name}' in {table_name} for {field:?}"
             );
         }
+    }
+
+    fn resolved_field_from_entries(
+        entries: &[ContextFieldNameEntry],
+        name: &str,
+    ) -> Option<CtxField> {
+        entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.field.clone())
     }
 
     #[test]
@@ -562,6 +631,40 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_context_field_name_entries_follow_program_resolution_precedence() {
+        let xdp_entries = EbpfProgramType::Xdp.ctx_field_name_entries();
+        assert_eq!(
+            resolved_field_from_entries(&xdp_entries, "ifindex"),
+            Some(CtxField::IngressIfindex)
+        );
+        assert_eq!(
+            xdp_entries
+                .iter()
+                .filter(|entry| entry.name == "ifindex")
+                .count(),
+            1,
+            "program-specific ctx.ifindex alias should shadow the generic name"
+        );
+
+        let netfilter_entries = EbpfProgramType::Netfilter.ctx_field_name_entries();
+        assert_eq!(
+            resolved_field_from_entries(&netfilter_entries, "state"),
+            Some(CtxField::NetfilterState)
+        );
+
+        let tracepoint_entries = EbpfProgramType::Tracepoint.ctx_field_name_entries();
+        assert_eq!(
+            resolved_field_from_entries(&tracepoint_entries, "current_cgroup"),
+            Some(CtxField::Cgroup)
+        );
+        assert_eq!(
+            resolved_field_from_entries(&tracepoint_entries, "cgroup"),
+            None,
+            "ctx.cgroup on tracepoints is a payload field name, not the current cgroup builtin"
+        );
     }
 
     #[test]

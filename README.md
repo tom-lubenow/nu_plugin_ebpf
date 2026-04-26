@@ -72,9 +72,9 @@ ebpf spec --list
 ```
 
 `ebpf spec` reports the parsed program type, context family, argument/return
-access mode, return aliases, target, section name, capability labels,
-live-attach/default safety, and compatibility requirement labels before you
-attempt to compile or attach a closure.
+access mode, modeled context fields and aliases, return aliases, target,
+section name, capability labels, live-attach/default safety, and compatibility
+requirement labels before you attempt to compile or attach a closure.
 
 ## Quick Start
 
