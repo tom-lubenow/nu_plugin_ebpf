@@ -114,6 +114,18 @@ struct SpecContextArg {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecContextRetval {
+    name: &'static str,
+    source: &'static str,
+    kind: &'static str,
+    ty: Option<String>,
+    supported: bool,
+    note: Option<String>,
+    unsupported_reason: Option<String>,
+}
+
+#[cfg(target_os = "linux")]
 fn address_space_label(address_space: AddressSpace) -> &'static str {
     match address_space {
         AddressSpace::Stack => "stack",
@@ -388,6 +400,84 @@ fn context_arg_records(args: Vec<SpecContextArg>, span: Span) -> Vec<Value> {
 }
 
 #[cfg(target_os = "linux")]
+fn spec_context_retval(
+    spec: &crate::program_spec::ProgramSpec,
+    resolve_dynamic_args: bool,
+) -> (Option<SpecContextRetval>, Option<String>) {
+    match spec.program_type().retval_access() {
+        ProgramValueAccess::None => (None, None),
+        ProgramValueAccess::PtRegs => (
+            Some(SpecContextRetval {
+                name: "retval",
+                source: "pt_regs",
+                kind: "scalar",
+                ty: Some("u64".to_string()),
+                supported: true,
+                note: None,
+                unsupported_reason: None,
+            }),
+            None,
+        ),
+        ProgramValueAccess::RawTracepoint => (None, None),
+        ProgramValueAccess::Trampoline if !resolve_dynamic_args => (None, None),
+        ProgramValueAccess::Trampoline => {
+            let ctx = ProbeContext::from_program_spec(spec.clone());
+            let type_info = match ctx.btf_ret_type_info() {
+                Ok(Some(type_info)) => type_info,
+                Ok(None) => return (None, None),
+                Err(err) => return (None, Some(err)),
+            };
+            match ctx.btf_ret_spec() {
+                Ok(Some(value)) => (
+                    Some(SpecContextRetval {
+                        name: "retval",
+                        source: "btf_trampoline",
+                        kind: trampoline_value_kind_label(value.kind),
+                        ty: Some(type_info_label(&type_info)),
+                        supported: true,
+                        note: None,
+                        unsupported_reason: None,
+                    }),
+                    None,
+                ),
+                Ok(None) => (None, None),
+                Err(err) => (
+                    Some(SpecContextRetval {
+                        name: "retval",
+                        source: "btf_trampoline",
+                        kind: "unsupported",
+                        ty: Some(type_info_label(&type_info)),
+                        supported: false,
+                        note: None,
+                        unsupported_reason: Some(err),
+                    }),
+                    None,
+                ),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn context_retval_record(retval: Option<SpecContextRetval>, span: Span) -> Value {
+    let Some(retval) = retval else {
+        return Value::nothing(span);
+    };
+    Value::record(
+        record! {
+            "name" => Value::string(retval.name, span),
+            "source" => Value::string(retval.source, span),
+            "kind" => Value::string(retval.kind, span),
+            "type" => optional_string(retval.ty, span),
+            "supported" => Value::bool(retval.supported, span),
+            "note" => optional_string(retval.note, span),
+            "unsupported_reason" => optional_string(retval.unsupported_reason, span),
+        },
+        span,
+    )
+}
+
+#[cfg(target_os = "linux")]
 fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextWrite> {
     spec.ctx_write_surfaces_for_spec()
         .into_iter()
@@ -430,6 +520,8 @@ fn spec_record(
     let context_fields = context_field_records(&spec, span);
     let (context_args, context_arg_error) = spec_context_args(&spec, resolve_dynamic_args);
     let context_args = context_arg_records(context_args, span);
+    let (context_retval, context_retval_error) = spec_context_retval(&spec, resolve_dynamic_args);
+    let context_retval = context_retval_record(context_retval, span);
     let context_writes = context_write_records(&spec, span);
     let capabilities = program_type
         .supported_capabilities()
@@ -495,6 +587,8 @@ fn spec_record(
             "context_fields" => Value::list(context_fields, span),
             "context_args" => Value::list(context_args, span),
             "context_arg_error" => optional_string(context_arg_error, span),
+            "context_retval" => context_retval,
+            "context_retval_error" => optional_string(context_retval_error, span),
             "context_writes" => Value::list(context_writes, span),
             "capabilities" => Value::list(capabilities, span),
             "compatibility_requirements" => Value::list(requirements, span),
@@ -666,6 +760,48 @@ mod tests {
         assert_eq!(file_arg.source, "btf_trampoline");
         assert!(file_arg.supported);
         assert!(file_arg.ty.as_deref().is_some_and(|ty| ty.contains("file")));
+    }
+
+    #[test]
+    fn test_spec_context_retval_includes_pt_regs_surface() {
+        let spec = ProgramSpec::parse("kretprobe:sys_read").expect("kretprobe spec should parse");
+        let (retval, err) = spec_context_retval(&spec, true);
+        let retval = retval.expect("kretprobe should expose ctx.retval");
+
+        assert!(err.is_none());
+        assert_eq!(retval.name, "retval");
+        assert_eq!(retval.source, "pt_regs");
+        assert_eq!(retval.kind, "scalar");
+        assert_eq!(retval.ty.as_deref(), Some("u64"));
+        assert!(retval.supported);
+    }
+
+    #[test]
+    fn test_spec_context_retval_is_absent_on_entry_probe() {
+        let spec = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
+        let (retval, err) = spec_context_retval(&spec, true);
+
+        assert!(retval.is_none());
+        assert!(err.is_none());
+    }
+
+    #[test]
+    fn test_spec_context_retval_includes_btf_trampoline_metadata_when_available() {
+        let spec = ProgramSpec::parse("fexit:security_file_open").expect("fexit spec should parse");
+        let (retval, err) = spec_context_retval(&spec, true);
+
+        let Some(retval) = retval else {
+            assert!(
+                err.is_some(),
+                "expected BTF retval metadata or an unavailable-BTF skip"
+            );
+            return;
+        };
+
+        assert_eq!(retval.name, "retval");
+        assert_eq!(retval.source, "btf_trampoline");
+        assert!(retval.supported);
+        assert!(retval.ty.is_some());
     }
 
     #[test]

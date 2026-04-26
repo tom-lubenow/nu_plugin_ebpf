@@ -72,10 +72,11 @@ ebpf spec --list
 ```
 
 `ebpf spec` reports the parsed program type, context family, concrete context
-argument surfaces when knowable, argument/return access mode, modeled context
-fields with type labels, writable context surfaces, return aliases, target,
-section name, capability labels, live-attach/default safety, and compatibility
-requirement labels before you attempt to compile or attach a closure.
+argument and return-value surfaces when knowable, argument/return access mode,
+modeled context fields with type labels, writable context surfaces, return
+aliases, target, section name, capability labels, live-attach/default safety,
+and compatibility requirement labels before you attempt to compile or attach a
+closure.
 
 ## Quick Start
 
