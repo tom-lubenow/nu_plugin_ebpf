@@ -45,6 +45,7 @@ Use `scripts/verifier_diff.nu` for small compiler/VCC fixtures that should be co
 ```bash
 nu ./scripts/verifier_diff.nu --list
 nu ./scripts/verifier_diff.nu --matrix
+nu ./scripts/verifier_diff.nu --matrix --json
 nu ./scripts/verifier_diff.nu --fast --no-kernel
 nu ./scripts/verifier_diff.nu --no-kernel
 nu ./scripts/verifier_diff.nu --fixture raw-tracepoint-count
@@ -54,4 +55,4 @@ nu ./scripts/verifier_diff.nu --tag reject --local-status reject --no-kernel
 sudo nu ./scripts/verifier_diff.nu --kernel
 ```
 
-Fixtures carry expected local/kernel status, category tags, tier metadata, optional local host-feature requirements, optional kernel-only requirements, and optional `min_kernel` plus `min_kernel_source` metadata for source-verified minimum kernel versions. Use `--fixture`, `--category`, `--tag`, `--tier`, `--exclude-tier`, `--local-status`, and `--kernel-status` to run focused slices as the fixture set grows. `--matrix` prints coverage counts by tier/category. `--fast` is shorthand for `--tier fast`; fixtures that require kernel BTF or tracefs infer as `btf` unless explicitly annotated, while other fixtures infer as `fast`. Requirements are auto-skipped in broad runs and treated as hard failures when `--kernel` is requested. Keep normal development runs local-only or auto-skip capable. Add kernel-required fixtures only when they are load-only, deterministic, and safe for the host; behavior-changing families should stay dry-run-only here and move to an isolated VM lane.
+Fixtures carry expected local/kernel status, category tags, tier metadata, optional local host-feature requirements, optional kernel-only requirements, and optional `min_kernel` plus `min_kernel_source` metadata for source-verified minimum kernel versions. Use `--fixture`, `--category`, `--tag`, `--tier`, `--exclude-tier`, `--local-status`, and `--kernel-status` to run focused slices as the fixture set grows. `--list --json` and `--matrix --json` emit machine-readable fixture metadata for CI and compatibility dashboards. `--matrix` prints coverage counts by tier/category. `--fast` is shorthand for `--tier fast`; fixtures that require kernel BTF or tracefs infer as `btf` unless explicitly annotated, while other fixtures infer as `fast`. Requirements are auto-skipped in broad runs and treated as hard failures when `--kernel` is requested. Keep normal development runs local-only or auto-skip capable. Add kernel-required fixtures only when they are load-only, deterministic, and safe for the host; behavior-changing families should stay dry-run-only here and move to an isolated VM lane.

@@ -2338,11 +2338,11 @@ def fixture-summary [fixture] {
         tier: (fixture-tier $fixture)
         local: $fixture.local
         kernel: $fixture.kernel
-        requires: ((optional $fixture requires []) | str join ",")
-        kernel_requires: ((optional $fixture kernel_requires []) | str join ",")
+        requires: (optional $fixture requires [])
+        kernel_requires: (optional $fixture kernel_requires [])
         min_kernel: (optional $fixture min_kernel "")
         min_kernel_source: (optional $fixture min_kernel_source "")
-        tags: ((optional $fixture tags []) | str join ",")
+        tags: (optional $fixture tags [])
     }
 }
 
@@ -2352,7 +2352,9 @@ def fixture-status-count [fixtures field: string status: string] {
     | length
 }
 
-def print-fixture-matrix [fixtures] {
+def fixture-matrix-rows [fixtures] {
+    mut rows = []
+
     for tier in $VALID_TIERS {
         let tier_fixtures = (
             $fixtures
@@ -2376,8 +2378,29 @@ def print-fixture-matrix [fixtures] {
                 | where {|fixture| (optional $fixture category "") == $category }
             )
 
-            print $"tier=($tier) category=($category) total=($category_fixtures | length) local_accept=(fixture-status-count $category_fixtures local accept) local_reject=(fixture-status-count $category_fixtures local reject) local_skip=(fixture-status-count $category_fixtures local skip) kernel_accept=(fixture-status-count $category_fixtures kernel accept) kernel_reject=(fixture-status-count $category_fixtures kernel reject) kernel_skip=(fixture-status-count $category_fixtures kernel skip)"
+            $rows = (
+                $rows
+                | append {
+                    tier: $tier
+                    category: $category
+                    total: ($category_fixtures | length)
+                    local_accept: (fixture-status-count $category_fixtures local accept)
+                    local_reject: (fixture-status-count $category_fixtures local reject)
+                    local_skip: (fixture-status-count $category_fixtures local skip)
+                    kernel_accept: (fixture-status-count $category_fixtures kernel accept)
+                    kernel_reject: (fixture-status-count $category_fixtures kernel reject)
+                    kernel_skip: (fixture-status-count $category_fixtures kernel skip)
+                }
+            )
         }
+    }
+
+    $rows
+}
+
+def print-fixture-matrix [fixtures] {
+    for row in (fixture-matrix-rows $fixtures) {
+        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip)"
     }
 }
 
@@ -2402,8 +2425,19 @@ def validate-status-option [label: string value] {
 }
 
 def validate-fixture-metadata [fixtures] {
+    let names = ($fixtures | each {|fixture| $fixture.name })
+
+    for name in ($names | uniq) {
+        let count = ($names | where {|candidate| $candidate == $name } | length)
+        if $count > 1 {
+            fail $"duplicate verifier fixture name: ($name)"
+        }
+    }
+
     for fixture in $fixtures {
         validate-tier-option $"fixture ($fixture.name)" ($fixture | get -o tier)
+        validate-status-option $"fixture ($fixture.name) local" $fixture.local
+        validate-status-option $"fixture ($fixture.name) kernel" $fixture.kernel
 
         let min_kernel = ($fixture | get -o min_kernel)
         let min_kernel_source = ($fixture | get -o min_kernel_source)
@@ -2631,6 +2665,7 @@ def select-fixtures [fixture_name category tag tier exclude_tier local_status ke
 def main [
     --list         # List verifier fixtures and exit.
     --matrix       # Print verifier fixture counts by tier and category, then exit.
+    --json         # Emit JSON for --list or --matrix.
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
     --fast         # Run only fixtures in the fast tier.
@@ -2648,6 +2683,9 @@ def main [
     if $list and $matrix {
         fail "--list and --matrix are mutually exclusive"
     }
+    if $json and not ($list or $matrix) {
+        fail "--json is only supported with --list or --matrix"
+    }
     if $fast and $tier != null {
         fail "--fast and --tier are mutually exclusive"
     }
@@ -2661,14 +2699,23 @@ def main [
     let fixtures = (select-fixtures $fixture $category $tag $selected_tier $exclude_tier $local_status $kernel_status)
 
     if $list {
-        for fixture in $fixtures {
-            let summary = (fixture-summary $fixture)
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires) kernel_requires=($summary.kernel_requires) min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags)"
+        let summaries = ($fixtures | each {|fixture| fixture-summary $fixture })
+        if $json {
+            print ($summaries | to json)
+            return
+        }
+
+        for summary in $summaries {
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags | str join ',')"
         }
         return
     }
     if $matrix {
-        print-fixture-matrix $fixtures
+        if $json {
+            print ((fixture-matrix-rows $fixtures) | to json)
+        } else {
+            print-fixture-matrix $fixtures
+        }
         return
     }
 
