@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::BpfHelper;
 use crate::program_spec::ProgramSpec;
 
 fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContextField {
@@ -145,6 +146,8 @@ fn test_spec_context_projections_include_socket_members() {
     let family = projection(&projections, "sk.family");
     assert_eq!(family.root, "sk");
     assert_eq!(family.name, "family");
+    assert_eq!(family.source, "context_field");
+    assert_eq!(family.helper, None);
     assert_eq!(family.ty, "u32");
     assert_eq!(family.offset, 4);
     assert!(family.supported);
@@ -157,6 +160,32 @@ fn test_spec_context_projections_include_socket_members() {
             .unsupported_reason
             .as_deref()
             .is_some_and(|reason| { reason.contains("cgroup_sock post_bind4") })
+    );
+}
+
+#[test]
+fn test_spec_context_projections_include_helper_backed_socket_members() {
+    let spec =
+        ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg spec should parse");
+    let projections = spec_context_projections(&spec);
+
+    let tcp_snd_cwnd = projection(&projections, "sk.tcp.snd_cwnd");
+    assert_eq!(tcp_snd_cwnd.root, "sk.tcp");
+    assert_eq!(tcp_snd_cwnd.name, "snd_cwnd");
+    assert_eq!(tcp_snd_cwnd.source, "helper_return");
+    assert_eq!(tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
+    assert_eq!(tcp_snd_cwnd.ty, "u32");
+    assert_eq!(
+        tcp_snd_cwnd.supported,
+        spec.helper_call_error(BpfHelper::TcpSock).is_none()
+    );
+
+    let full_family = projection(&projections, "sk.full.family");
+    assert_eq!(full_family.helper, Some("bpf_sk_fullsock"));
+    assert_eq!(full_family.ty, "u32");
+    assert_eq!(
+        full_family.supported,
+        spec.helper_call_error(BpfHelper::SkFullsock).is_none()
     );
 }
 

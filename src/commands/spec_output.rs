@@ -4,8 +4,8 @@ use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
-    ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramValueAccess,
-    SockOpsCallbackGuard,
+    BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramValueAccess,
+    SockOpsCallbackGuard, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 
@@ -39,6 +39,8 @@ struct SpecContextProjection {
     root: String,
     name: String,
     path: String,
+    source: &'static str,
+    helper: Option<&'static str>,
     ty: String,
     offset: usize,
     bit_offset: Option<u32>,
@@ -356,6 +358,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 root: root.clone(),
                 path: format!("{root}.{}", field.name),
                 name: field.name,
+                source: "context_field",
+                helper: None,
                 ty: mir_type_label(&field.ty),
                 offset: field.offset,
                 bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
@@ -364,9 +368,70 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 unsupported_reason,
             });
         }
+
+        if matches!(entry.field, CtxField::Socket) {
+            push_helper_backed_socket_projections(spec, &mut projections);
+        }
     }
 
     projections
+}
+
+#[cfg(target_os = "linux")]
+fn push_struct_field_projections(
+    projections: &mut Vec<SpecContextProjection>,
+    root: &str,
+    source: &'static str,
+    helper: Option<BpfHelper>,
+    ty: MirType,
+    unsupported_reason: Option<String>,
+) {
+    let MirType::Struct { fields, .. } = ty else {
+        return;
+    };
+    let helper_name = helper.map(BpfHelper::name);
+
+    for field in fields.into_iter().filter(|field| !field.synthetic) {
+        let supported = unsupported_reason.is_none();
+        projections.push(SpecContextProjection {
+            root: root.to_string(),
+            path: format!("{root}.{}", field.name),
+            name: field.name,
+            source,
+            helper: helper_name,
+            ty: mir_type_label(&field.ty),
+            offset: field.offset,
+            bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+            bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+            supported,
+            unsupported_reason: unsupported_reason.clone(),
+        });
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn push_helper_backed_socket_projections(
+    spec: &crate::program_spec::ProgramSpec,
+    projections: &mut Vec<SpecContextProjection>,
+) {
+    for (root, helper, ty) in [
+        ("sk.tcp", BpfHelper::TcpSock, synthetic_bpf_tcp_sock_type()),
+        ("sk.full", BpfHelper::SkFullsock, synthetic_bpf_sock_type()),
+        (
+            "sk.listener",
+            BpfHelper::GetListenerSock,
+            synthetic_bpf_sock_type(),
+        ),
+    ] {
+        push_struct_field_projections(
+            projections,
+            root,
+            "helper_return",
+            Some(helper),
+            ty,
+            spec.helper_call_error(helper),
+        );
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -379,6 +444,8 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "root" => Value::string(projection.root, span),
                     "name" => Value::string(projection.name, span),
                     "path" => Value::string(projection.path, span),
+                    "source" => Value::string(projection.source, span),
+                    "helper" => optional_static_str(projection.helper, span),
                     "type" => Value::string(projection.ty, span),
                     "offset" => optional_usize(Some(projection.offset), span),
                     "bit_offset" => optional_u32(projection.bit_offset, span),

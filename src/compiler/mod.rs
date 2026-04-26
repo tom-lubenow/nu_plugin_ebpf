@@ -45,6 +45,7 @@ pub use crate::program_spec::{
     UprobeTarget,
 };
 pub use ctx_field_schema::{ContextFieldLoadGuard, SockOpsCallbackGuard};
+pub(crate) use ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema,
     CounterKeySchemaField, DataGlobal, EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram,
