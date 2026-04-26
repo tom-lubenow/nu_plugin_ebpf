@@ -3,6 +3,14 @@
 const REPO_ROOT = (path self | path dirname | path dirname)
 const BPFFS = "/sys/fs/bpf"
 const VALID_TIERS = ["fast" "btf" "kernel" "vm-only"]
+const VALID_HOST_FEATURES = [
+    "cgroup-v2"
+    "kernel-btf"
+    "lirc-device"
+    "loopback-interface"
+    "netns-self"
+    "tracefs"
+]
 
 const FIXTURES = [
     {
@@ -2424,6 +2432,14 @@ def validate-status-option [label: string value] {
     }
 }
 
+def validate-host-features [fixture field: string] {
+    for feature in (optional $fixture $field []) {
+        if $feature not-in $VALID_HOST_FEATURES {
+            fail $"fixture ($fixture.name) declares unknown ($field) feature '($feature)'; expected one of ($VALID_HOST_FEATURES | str join ', ')"
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     let names = ($fixtures | each {|fixture| $fixture.name })
 
@@ -2438,6 +2454,8 @@ def validate-fixture-metadata [fixtures] {
         validate-tier-option $"fixture ($fixture.name)" ($fixture | get -o tier)
         validate-status-option $"fixture ($fixture.name) local" $fixture.local
         validate-status-option $"fixture ($fixture.name) kernel" $fixture.kernel
+        validate-host-features $fixture requires
+        validate-host-features $fixture kernel_requires
 
         let min_kernel = ($fixture | get -o min_kernel)
         let min_kernel_source = ($fixture | get -o min_kernel_source)
