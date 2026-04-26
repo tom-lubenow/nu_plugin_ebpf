@@ -1085,7 +1085,7 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     if map_ref.kind.is_local_storage() {
                         return Err(CompileError::UnsupportedInstruction(format!(
-                            "map-define --max-entries is not supported for object-local storage map kind {:?}",
+                            "map-define --max-entries is not supported for object-local storage map kind {}",
                             map_ref.kind
                         )));
                     }
@@ -2093,13 +2093,13 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_ref.kind.is_keyless_map() || map_ref.kind.is_local_storage() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --key-type is not supported for keyless or object-keyed map kind {:?}",
+                "{context} --key-type is not supported for keyless or object-keyed map kind {}",
                 map_ref.kind
             )));
         }
         if map_ref.kind.is_array_index_map() && key_ty != &MirType::U32 {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --key-type for {:?} maps must be u32",
+                "{context} --key-type for {} maps must be u32",
                 map_ref.kind
             )));
         }
@@ -2287,7 +2287,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let helper = Self::socket_map_update_helper_for_kind(map_ref.kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "map-put does not support socket map kind {:?}",
+                "map-put does not support socket map kind {}",
                 map_ref.kind
             ))
         })?;
@@ -2379,7 +2379,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let helper = Self::local_storage_get_helper_for_kind(map_ref.kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "map-get does not support local-storage map kind {:?}",
+                "map-get does not support local-storage map kind {}",
                 map_ref.kind
             ))
         })?;
@@ -2474,7 +2474,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let helper = Self::local_storage_delete_helper_for_kind(map_ref.kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "map-delete does not support local-storage map kind {:?}",
+                "map-delete does not support local-storage map kind {}",
                 map_ref.kind
             ))
         })?;
@@ -2691,7 +2691,7 @@ impl<'a> HirToMirLowering<'a> {
                 map_kind,
             ),
             other => Err(CompileError::UnsupportedInstruction(format!(
-                "{CONTEXT} does not support map kind {:?}",
+                "{CONTEXT} does not support map kind {}",
                 other
             ))),
         }
