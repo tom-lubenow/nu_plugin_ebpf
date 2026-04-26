@@ -4251,6 +4251,8 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         ProgramCompatibilityRequirement::NetfilterLink,
         ProgramCompatibilityRequirement::RouteLwt,
         ProgramCompatibilityRequirement::SockMapAttach,
+        ProgramCompatibilityRequirement::SkReuseportAttach,
+        ProgramCompatibilityRequirement::TcActionProgram,
         ProgramCompatibilityRequirement::CgroupV2,
         ProgramCompatibilityRequirement::LircMode2,
         ProgramCompatibilityRequirement::StructOps,
@@ -4310,6 +4312,14 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
     assert!(
         EbpfProgramType::CgroupSockAddr
             .requires_compatibility_feature(ProgramCompatibilityRequirement::CgroupV2)
+    );
+    assert!(
+        EbpfProgramType::SkReuseport
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::SkReuseportAttach)
+    );
+    assert!(
+        EbpfProgramType::TcAction
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::TcActionProgram)
     );
     assert!(
         EbpfProgramType::Kprobe

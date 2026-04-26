@@ -118,6 +118,10 @@ const LWT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::RouteLwt];
 const SOCKMAP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::SockMapAttach];
+const SK_REUSEPORT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::SkReuseportAttach];
+const TC_ACTION_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::TcActionProgram];
 const CGROUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::CgroupV2];
 const LIRC_MODE2_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
@@ -225,6 +229,14 @@ const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurfa
             EbpfProgramType::SkSkbParser,
         ],
         requirements: SOCKMAP_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::SkReuseport],
+        requirements: SK_REUSEPORT_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::TcAction],
+        requirements: TC_ACTION_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
         program_types: &[
