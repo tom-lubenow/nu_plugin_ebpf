@@ -293,6 +293,85 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("xdp frags should be a bool")
     );
 
+    let perf_event = ProgramSpec::parse("perf_event:hardware:instructions:cpu=2:pid=42:freq=99")
+        .expect("perf_event spec should parse");
+    let record = spec_record(
+        "perf_event:hardware:instructions:cpu=2:pid=42:freq=99".to_string(),
+        perf_event,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "perf-event"
+    );
+    assert_eq!(
+        attach_shape
+            .get("source")
+            .expect("perf_event source should be present")
+            .as_str()
+            .expect("perf_event source should be a string"),
+        "hardware"
+    );
+    assert_eq!(
+        attach_shape
+            .get("event")
+            .expect("perf_event selector should be present")
+            .as_str()
+            .expect("perf_event selector should be a string"),
+        "instructions"
+    );
+    assert_eq!(
+        attach_shape
+            .get("cpu")
+            .expect("perf_event cpu should be present")
+            .as_int()
+            .expect("perf_event cpu should be an int"),
+        2
+    );
+    assert_eq!(
+        attach_shape
+            .get("pid")
+            .expect("perf_event pid should be present")
+            .as_int()
+            .expect("perf_event pid should be an int"),
+        42
+    );
+    assert_eq!(
+        attach_shape
+            .get("sample_policy")
+            .expect("perf_event sample policy should be present")
+            .as_str()
+            .expect("perf_event sample policy should be a string"),
+        "freq"
+    );
+    assert_eq!(
+        attach_shape
+            .get("sample_value")
+            .expect("perf_event sample value should be present")
+            .as_int()
+            .expect("perf_event sample value should be an int"),
+        99
+    );
+    assert!(
+        !attach_shape
+            .get("default_sample")
+            .expect("perf_event default sample should be present")
+            .as_bool()
+            .expect("perf_event default sample should be a bool")
+    );
+
     let tc = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
     let record = spec_record("tc:lo:egress".to_string(), tc, Span::test_data(), false)
         .into_record()

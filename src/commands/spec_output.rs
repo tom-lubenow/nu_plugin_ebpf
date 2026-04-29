@@ -252,6 +252,13 @@ fn optional_u32(value: Option<u32>, span: Span) -> Value {
 }
 
 #[cfg(target_os = "linux")]
+fn u64_value(value: u64, span: Span) -> Value {
+    i64::try_from(value)
+        .map(|value| Value::int(value, span))
+        .unwrap_or_else(|_| Value::string(value.to_string(), span))
+}
+
+#[cfg(target_os = "linux")]
 fn string_list(values: &[&'static str], span: Span) -> Vec<Value> {
     values
         .iter()
@@ -273,6 +280,24 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
                 "kind" => Value::string("xdp", span),
                 "mode" => Value::string(mode.key(), span),
                 "frags" => Value::bool(frags, span),
+            },
+            span,
+        ),
+        ProgramAttachShape::PerfEvent {
+            event,
+            cpu,
+            pid,
+            sample_policy,
+        } => Value::record(
+            record! {
+                "kind" => Value::string("perf-event", span),
+                "source" => Value::string(event.source_name(), span),
+                "event" => Value::string(event.event_name(), span),
+                "cpu" => optional_u32(cpu, span),
+                "pid" => optional_u32(pid, span),
+                "sample_policy" => Value::string(sample_policy.key(), span),
+                "sample_value" => u64_value(sample_policy.value(), span),
+                "default_sample" => Value::bool(sample_policy.is_default(), span),
             },
             span,
         ),

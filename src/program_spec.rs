@@ -1682,6 +1682,19 @@ impl PerfEventSamplePolicy {
             PerfEventSamplePolicy::Period(DEFAULT_PERF_EVENT_PERIOD)
         )
     }
+
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Period(_) => "period",
+            Self::Frequency(_) => "freq",
+        }
+    }
+
+    pub(crate) fn value(self) -> u64 {
+        match self {
+            Self::Period(value) | Self::Frequency(value) => value,
+        }
+    }
 }
 
 /// Parsed perf_event target information.
@@ -2117,6 +2130,12 @@ pub(crate) enum ProgramAttachShape {
     Xdp {
         mode: XdpAttachMode,
         frags: bool,
+    },
+    PerfEvent {
+        event: PerfEventEvent,
+        cpu: Option<u32>,
+        pid: Option<u32>,
+        sample_policy: PerfEventSamplePolicy,
     },
     Netkit {
         endpoint: NetkitAttachType,
@@ -2968,6 +2987,12 @@ impl ProgramSpec {
                 mode: target.attach_mode,
                 frags: target.frags,
             },
+            ProgramSpec::PerfEvent { target } => ProgramAttachShape::PerfEvent {
+                event: target.event,
+                cpu: target.cpu,
+                pid: target.pid,
+                sample_policy: target.sample_policy,
+            },
             ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => ProgramAttachShape::Tc {
                 ingress: target.is_ingress(),
             },
@@ -3133,6 +3158,9 @@ mod tests {
     #[test]
     fn test_program_spec_attach_shape_tracks_typed_targets() {
         let xdp = ProgramSpec::parse("xdp:lo:drv:frags").expect("xdp spec should parse");
+        let perf_event =
+            ProgramSpec::parse("perf_event:hardware:instructions:cpu=2:pid=42:freq=99")
+                .expect("perf_event spec should parse");
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("tc target should parse");
         let tcx = ProgramSpec::from_program_type_target(EbpfProgramType::Tcx, "lo:egress")
@@ -3183,6 +3211,15 @@ mod tests {
             ProgramAttachShape::Xdp {
                 mode: XdpAttachMode::Driver,
                 frags: true,
+            }
+        );
+        assert_eq!(
+            perf_event.attach_shape(),
+            ProgramAttachShape::PerfEvent {
+                event: PerfEventEvent::Hardware(PerfEventHardwareEvent::Instructions),
+                cpu: Some(2),
+                pid: Some(42),
+                sample_policy: PerfEventSamplePolicy::Frequency(99),
             }
         );
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
