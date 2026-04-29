@@ -819,6 +819,20 @@ const FIXTURES = [
         error_contains: "ctx.data is not available on socket_filter programs"
     }
     {
+        name: "socket-filter-tcp6-context"
+        category: "context-surface"
+        tags: [socket-filter context ipv6]
+        target: "socket_filter:tcp6:[::1]:8080"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.socket_cookie + $ctx.sk.family) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-skb-egress-context"
         category: "context-surface"
         tags: [cgroup-skb context]
