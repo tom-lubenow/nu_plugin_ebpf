@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature,
-    KfuncSignature, helper_acquire_ref_kind,
+    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind,
 };
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, MapOpKind, STRING_COUNTER_MAP_NAME,
@@ -768,7 +768,8 @@ impl<'a> HirToMirLowering<'a> {
                     .iter()
                     .any(|(_, arg_reg)| self.is_context_reg(*arg_reg));
                 let mut args = Vec::new();
-                let is_known_zero_arg = KfuncSignature::for_name_or_kernel_btf(&kfunc)
+                let kfunc_signature = KfuncSignature::for_name_or_kernel_btf(&kfunc);
+                let is_known_zero_arg = kfunc_signature
                     .map(|sig| sig.max_args == 0)
                     .unwrap_or(false);
                 if let Some(input) = self.pipeline_input {
@@ -821,12 +822,31 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
 
+                let call_dst_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+                let ret_hint = kfunc_signature.map(|sig| match sig.ret_kind {
+                    KfuncRetKind::Scalar | KfuncRetKind::Void => MirType::I64,
+                    KfuncRetKind::PointerMaybeNull => TypeInference::precise_kfunc_return_mir_type(
+                        &kfunc,
+                    )
+                    .unwrap_or(MirType::Ptr {
+                        pointee: Box::new(MirType::Unknown),
+                        address_space: AddressSpace::Kernel,
+                    }),
+                });
+
                 self.emit(MirInst::CallKfunc {
-                    dst: dst_vreg,
+                    dst: call_dst_vreg,
                     kfunc,
                     btf_id,
                     args: call_args,
                 });
+                if let Some(ret_hint) = ret_hint {
+                    self.vreg_type_hints.insert(call_dst_vreg, ret_hint);
+                }
                 self.write_back_scalar_kfunc_out_args(writebacks)?;
             }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::TypeInference;
 use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::elf::BpfMapType;
 use crate::compiler::hir::{HirBlock, infer_ctx_param};
@@ -108,6 +109,121 @@ fn test_kfunc_call_lowers_with_explicit_btf_id() {
     assert_eq!(call.0, "bpf_cgroup_ancestor");
     assert_eq!(*call.1, Some(4242));
     assert_eq!(call.2.len(), 2, "pipeline input + 1 positional arg");
+}
+
+#[test]
+fn test_kfunc_pointer_return_overrides_reused_hir_register_hint() {
+    let task_var = VarId::new(9);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_task_from_pid".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: task_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(3),
+                    var_id: task_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(b"bpf_task_release".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(DeclId::new(42), "kfunc-call".to_string())]);
+    let hir_types =
+        infer_hir_types(&hir_program, &decl_names).expect("HIR type inference should succeed");
+    assert_eq!(
+        hir_types
+            .main
+            .get(&RegId::new(0))
+            .and_then(|ty| ty.to_mir_type()),
+        Some(MirType::I64),
+        "the final literal intentionally makes the reused HIR register look scalar"
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kfunc-call lowering should succeed");
+
+    let task_call_dst = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find_map(|inst| match inst {
+            MirInst::CallKfunc { dst, kfunc, .. } if kfunc == "bpf_task_from_pid" => Some(*dst),
+            _ => None,
+        })
+        .expect("expected bpf_task_from_pid call");
+
+    assert!(
+        matches!(
+            result.type_hints.main.get(&task_call_dst),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            }) if matches!(
+                pointee.as_ref(),
+                MirType::Struct {
+                    name: Some(name),
+                    ..
+                } if name == "task_struct"
+            )
+        ),
+        "kfunc pointer returns must override stale scalar HIR hints"
+    );
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&result.program.main)
+        .expect("kfunc pointer return should type-check with reused HIR register hints");
 }
 
 #[test]
