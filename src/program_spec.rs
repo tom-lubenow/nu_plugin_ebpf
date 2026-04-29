@@ -411,6 +411,15 @@ pub enum NetkitAttachType {
     Peer,
 }
 
+impl NetkitAttachType {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Peer => "peer",
+        }
+    }
+}
+
 /// Parsed netkit target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NetkitTarget {
@@ -2105,6 +2114,12 @@ impl ProgramAttachSockAddrHook {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProgramAttachShape {
     Generic,
+    Netkit {
+        endpoint: NetkitAttachType,
+    },
+    SkReuseport {
+        mode: SkReuseportMode,
+    },
     Lwt {
         hook: ProgramAttachLwtHook,
     },
@@ -2966,6 +2981,12 @@ impl ProgramSpec {
                 family: target.attach_type.address_family(),
                 hook: target.hook_kind(),
             },
+            ProgramSpec::Netkit { target } => ProgramAttachShape::Netkit {
+                endpoint: target.attach_type,
+            },
+            ProgramSpec::SkReuseport { target } => {
+                ProgramAttachShape::SkReuseport { mode: target.mode }
+            }
             ProgramSpec::LwtIn { .. } => ProgramAttachShape::Lwt {
                 hook: ProgramAttachLwtHook::In,
             },
@@ -3109,6 +3130,8 @@ mod tests {
             .expect("tcx target should parse");
         let netkit = ProgramSpec::from_program_type_target(EbpfProgramType::Netkit, "nk0:primary")
             .expect("netkit target should parse");
+        let sk_reuseport_migrate =
+            ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport spec should parse");
         let lwt_out = ProgramSpec::parse("lwt_out:demo-route").expect("lwt_out spec should parse");
         let netfilter = ProgramSpec::parse("netfilter:ipv6:local_out:priority=-100:defrag")
             .expect("netfilter spec should parse");
@@ -3155,7 +3178,18 @@ mod tests {
         );
         assert!(tcx.attach_shape().is_tc_egress());
         assert_eq!(tcx.section_name(), "tcx/egress");
-        assert_eq!(netkit.attach_shape(), ProgramAttachShape::Generic);
+        assert_eq!(
+            netkit.attach_shape(),
+            ProgramAttachShape::Netkit {
+                endpoint: NetkitAttachType::Primary,
+            }
+        );
+        assert_eq!(
+            sk_reuseport_migrate.attach_shape(),
+            ProgramAttachShape::SkReuseport {
+                mode: SkReuseportMode::Migrate,
+            }
+        );
         assert_eq!(
             lwt_out.attach_shape(),
             ProgramAttachShape::Lwt {

@@ -288,6 +288,76 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("tc ingress should be a bool")
     );
 
+    let netkit = ProgramSpec::parse("netkit:nk0:peer").expect("netkit spec should parse");
+    let record = spec_record(
+        "netkit:nk0:peer".to_string(),
+        netkit,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "netkit"
+    );
+    assert_eq!(
+        attach_shape
+            .get("endpoint")
+            .expect("netkit endpoint should be present")
+            .as_str()
+            .expect("netkit endpoint should be a string"),
+        "peer"
+    );
+    assert!(
+        !attach_shape
+            .get("primary")
+            .expect("netkit primary should be present")
+            .as_bool()
+            .expect("netkit primary should be a bool")
+    );
+
+    let sk_reuseport =
+        ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport spec should parse");
+    let record = spec_record(
+        "sk_reuseport:migrate".to_string(),
+        sk_reuseport,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "sk-reuseport"
+    );
+    assert_eq!(
+        attach_shape
+            .get("mode")
+            .expect("sk_reuseport mode should be present")
+            .as_str()
+            .expect("sk_reuseport mode should be a string"),
+        "migrate"
+    );
+
     let lwt = ProgramSpec::parse("lwt_seg6local:demo-route").expect("lwt spec should parse");
     let record = spec_record(
         "lwt_seg6local:demo-route".to_string(),

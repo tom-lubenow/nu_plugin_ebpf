@@ -268,6 +268,21 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::Netkit { endpoint } => Value::record(
+            record! {
+                "kind" => Value::string("netkit", span),
+                "endpoint" => Value::string(endpoint.key(), span),
+                "primary" => Value::bool(matches!(endpoint, crate::program_spec::NetkitAttachType::Primary), span),
+            },
+            span,
+        ),
+        ProgramAttachShape::SkReuseport { mode } => Value::record(
+            record! {
+                "kind" => Value::string("sk-reuseport", span),
+                "mode" => Value::string(mode.target_name(), span),
+            },
+            span,
+        ),
         ProgramAttachShape::Lwt { hook } => Value::record(
             record! {
                 "kind" => Value::string("lwt", span),
