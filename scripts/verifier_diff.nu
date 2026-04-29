@@ -726,6 +726,39 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "netkit-primary-skb-context-write"
+        category: "context-surface"
+        tags: [netkit context packet writable]
+        requires: [loopback-interface]
+        target: "netkit:lo:primary"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  $ctx.mark = 7'
+            '  $ctx.priority = 3'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netkit-peer-skb-context"
+        category: "context-surface"
+        tags: [netkit context packet]
+        requires: [loopback-interface]
+        target: "netkit:lo:peer"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.hash + $ctx.ingress_ifindex + $ctx.queue_mapping) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "xdp-rejects-pid-context"
         category: "context-policy"
         tags: [xdp reject]
