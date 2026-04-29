@@ -81,6 +81,14 @@ sleepable/BTF-callable metadata, kernel-target validation, capability labels,
 live-attach/default safety, and compatibility requirement labels before you
 attempt to compile or attach a closure.
 
+Structured `attach_shape` records are emitted for attach families where the
+parsed target changes compiler, loader, or verifier policy: XDP mode/frags,
+perf-event source/sampling, socket-filter transport/family, TC/TCX direction,
+Netkit endpoint, sk_reuseport mode, LWT hook, netfilter hook metadata, cgroup
+socket/SKB/sockopt/socket-address variants, and struct_ops callbacks.
+Probe-like and path-only targets intentionally stay `generic` unless there is
+additional attach policy to surface.
+
 ## Quick Start
 
 ### Count syscalls by process

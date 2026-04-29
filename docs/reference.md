@@ -592,6 +592,14 @@ Read-only closure captures now lower as real constants for supported types (`int
 | `ebpf trace` | Read raw trace events |
 | `ebpf setup` | Configure capabilities |
 
+`ebpf spec` uses structured `attach_shape` records for attach-sensitive targets:
+XDP mode/frags, perf-event source and period/frequency sampling,
+socket-filter transport/family, TC/TCX ingress-vs-egress, Netkit endpoint,
+sk_reuseport mode, LWT hook, netfilter family/hook/priority/defrag,
+cgroup socket/SKB/sockopt/socket-address variants, and struct_ops callback
+family/sleepability. Probe-like and path-only targets remain `generic` when the
+target string already carries all currently modeled policy.
+
 ## Helper Commands (inside closures)
 
 | Command | Description |
