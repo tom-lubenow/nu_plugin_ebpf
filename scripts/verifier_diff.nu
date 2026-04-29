@@ -1482,6 +1482,40 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-task-ref-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task != 0 {'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-task-ref-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "timer-init-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
