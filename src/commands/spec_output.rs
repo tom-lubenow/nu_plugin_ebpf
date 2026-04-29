@@ -276,6 +276,18 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::Syscall => Value::record(
+            record! {
+                "kind" => Value::string("syscall", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::Iter => Value::record(
+            record! {
+                "kind" => Value::string("iterator", span),
+            },
+            span,
+        ),
         ProgramAttachShape::Xdp { mode, frags } => Value::record(
             record! {
                 "kind" => Value::string("xdp", span),
@@ -311,11 +323,47 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::SkLookup => Value::record(
+            record! {
+                "kind" => Value::string("sk-lookup", span),
+                "scope" => Value::string("netns", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::FlowDissector => Value::record(
+            record! {
+                "kind" => Value::string("flow-dissector", span),
+                "scope" => Value::string("netns", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::SkMsg => Value::record(
+            record! {
+                "kind" => Value::string("sk-msg", span),
+                "resource" => Value::string("socket-map", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::SkSkb { parser } => Value::record(
+            record! {
+                "kind" => Value::string("sk-skb", span),
+                "hook" => Value::string(if parser { "parser" } else { "verdict" }, span),
+                "parser" => Value::bool(parser, span),
+                "resource" => Value::string("socket-map", span),
+            },
+            span,
+        ),
         ProgramAttachShape::Netkit { endpoint } => Value::record(
             record! {
                 "kind" => Value::string("netkit", span),
                 "endpoint" => Value::string(endpoint.key(), span),
                 "primary" => Value::bool(matches!(endpoint, crate::program_spec::NetkitAttachType::Primary), span),
+            },
+            span,
+        ),
+        ProgramAttachShape::TcAction => Value::record(
+            record! {
+                "kind" => Value::string("tc-action", span),
             },
             span,
         ),
@@ -364,6 +412,27 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::CgroupDevice => Value::record(
+            record! {
+                "kind" => Value::string("cgroup-device", span),
+                "resource" => Value::string("cgroup", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::CgroupSysctl => Value::record(
+            record! {
+                "kind" => Value::string("cgroup-sysctl", span),
+                "resource" => Value::string("cgroup", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::SockOps => Value::record(
+            record! {
+                "kind" => Value::string("sock-ops", span),
+                "resource" => Value::string("cgroup", span),
+            },
+            span,
+        ),
         ProgramAttachShape::CgroupSock { post_bind, family } => Value::record(
             record! {
                 "kind" => Value::string("cgroup-sock", span),
@@ -385,6 +454,20 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
                 "kind" => Value::string("cgroup-sock-addr", span),
                 "family" => Value::string(family.key(), span),
                 "hook" => Value::string(hook.key(), span),
+            },
+            span,
+        ),
+        ProgramAttachShape::LircMode2 => Value::record(
+            record! {
+                "kind" => Value::string("lirc-mode2", span),
+                "resource" => Value::string("lirc-device", span),
+            },
+            span,
+        ),
+        ProgramAttachShape::StructOps { family } => Value::record(
+            record! {
+                "kind" => Value::string("struct-ops", span),
+                "family" => Value::string(family.key(), span),
             },
             span,
         ),

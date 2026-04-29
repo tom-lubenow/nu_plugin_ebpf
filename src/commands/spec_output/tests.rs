@@ -710,6 +710,102 @@ fn test_spec_record_includes_attach_shape_metadata() {
 }
 
 #[test]
+fn test_spec_record_includes_resource_attach_shapes() {
+    let shape_kind = |target: &str| {
+        let spec = ProgramSpec::parse(target).expect("spec should parse");
+        let record = spec_record(target.to_string(), spec, Span::test_data(), false)
+            .into_record()
+            .expect("spec output should be a record");
+        let attach_shape = record
+            .get("attach_shape")
+            .expect("attach shape should be present")
+            .as_record()
+            .expect("attach shape should be a record");
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string")
+            .to_string()
+    };
+
+    assert_eq!(shape_kind("syscall:demo"), "syscall");
+    assert_eq!(shape_kind("iter:task"), "iterator");
+    assert_eq!(shape_kind("sk_lookup:/proc/self/ns/net"), "sk-lookup");
+    assert_eq!(
+        shape_kind("flow_dissector:/proc/self/ns/net"),
+        "flow-dissector"
+    );
+    assert_eq!(shape_kind("sk_msg:/sys/fs/bpf/demo_sockmap"), "sk-msg");
+    assert_eq!(shape_kind("sk_skb:/sys/fs/bpf/demo_sockmap"), "sk-skb");
+    assert_eq!(
+        shape_kind("sk_skb_parser:/sys/fs/bpf/demo_sockmap"),
+        "sk-skb"
+    );
+    assert_eq!(shape_kind("tc_action:demo-action"), "tc-action");
+    assert_eq!(shape_kind("cgroup_device:/sys/fs/cgroup"), "cgroup-device");
+    assert_eq!(shape_kind("cgroup_sysctl:/sys/fs/cgroup"), "cgroup-sysctl");
+    assert_eq!(shape_kind("sock_ops:/sys/fs/cgroup"), "sock-ops");
+    assert_eq!(shape_kind("lirc_mode2:/dev/lirc0"), "lirc-mode2");
+    assert_eq!(shape_kind("struct_ops:sched_ext_ops"), "struct-ops");
+
+    let parser =
+        ProgramSpec::parse("sk_skb_parser:/sys/fs/bpf/demo_sockmap").expect("spec should parse");
+    let record = spec_record(
+        "sk_skb_parser:/sys/fs/bpf/demo_sockmap".to_string(),
+        parser,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("hook")
+            .expect("sk_skb hook should be present")
+            .as_str()
+            .expect("sk_skb hook should be a string"),
+        "parser"
+    );
+    assert!(
+        attach_shape
+            .get("parser")
+            .expect("sk_skb parser flag should be present")
+            .as_bool()
+            .expect("sk_skb parser flag should be a bool")
+    );
+
+    let struct_ops =
+        ProgramSpec::parse("struct_ops:tcp_congestion_ops").expect("struct_ops spec should parse");
+    let record = spec_record(
+        "struct_ops:tcp_congestion_ops".to_string(),
+        struct_ops,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("family")
+            .expect("struct_ops family should be present")
+            .as_str()
+            .expect("struct_ops family should be a string"),
+        "tcp-congestion"
+    );
+}
+
+#[test]
 fn test_spec_context_projections_include_socket_members() {
     let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
         .expect("cgroup_sock spec should parse");

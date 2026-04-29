@@ -2141,6 +2141,8 @@ impl ProgramAttachSockAddrHook {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProgramAttachShape {
     Generic,
+    Syscall,
+    Iter,
     Xdp {
         mode: XdpAttachMode,
         frags: bool,
@@ -2154,9 +2156,16 @@ pub(crate) enum ProgramAttachShape {
     SocketFilter {
         socket_kind: SocketFilterSocketKind,
     },
+    SkLookup,
+    FlowDissector,
+    SkMsg,
+    SkSkb {
+        parser: bool,
+    },
     Netkit {
         endpoint: NetkitAttachType,
     },
+    TcAction,
     SkReuseport {
         mode: SkReuseportMode,
     },
@@ -2175,6 +2184,9 @@ pub(crate) enum ProgramAttachShape {
     CgroupSkb {
         ingress: bool,
     },
+    CgroupDevice,
+    CgroupSysctl,
+    SockOps,
     CgroupSock {
         post_bind: bool,
         family: Option<ProgramAttachAddressFamily>,
@@ -2185,6 +2197,10 @@ pub(crate) enum ProgramAttachShape {
     CgroupSockAddr {
         family: ProgramAttachAddressFamily,
         hook: ProgramAttachSockAddrHook,
+    },
+    LircMode2,
+    StructOps {
+        family: StructOpsFamily,
     },
     StructOpsCallback {
         family: StructOpsFamily,
@@ -3000,6 +3016,8 @@ impl ProgramSpec {
 
     pub(crate) fn attach_shape(&self) -> ProgramAttachShape {
         match self {
+            ProgramSpec::Syscall { .. } => ProgramAttachShape::Syscall,
+            ProgramSpec::Iter { .. } => ProgramAttachShape::Iter,
             ProgramSpec::Xdp { target } => ProgramAttachShape::Xdp {
                 mode: target.attach_mode,
                 frags: target.frags,
@@ -3013,12 +3031,21 @@ impl ProgramSpec {
             ProgramSpec::SocketFilter { target } => ProgramAttachShape::SocketFilter {
                 socket_kind: target.socket_kind,
             },
+            ProgramSpec::SkLookup { .. } => ProgramAttachShape::SkLookup,
+            ProgramSpec::FlowDissector { .. } => ProgramAttachShape::FlowDissector,
+            ProgramSpec::SkMsg { .. } => ProgramAttachShape::SkMsg,
+            ProgramSpec::SkSkb { .. } => ProgramAttachShape::SkSkb { parser: false },
+            ProgramSpec::SkSkbParser { .. } => ProgramAttachShape::SkSkb { parser: true },
             ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => ProgramAttachShape::Tc {
                 ingress: target.is_ingress(),
             },
+            ProgramSpec::TcAction { .. } => ProgramAttachShape::TcAction,
             ProgramSpec::CgroupSkb { target } => ProgramAttachShape::CgroupSkb {
                 ingress: target.is_ingress(),
             },
+            ProgramSpec::CgroupDevice { .. } => ProgramAttachShape::CgroupDevice,
+            ProgramSpec::CgroupSysctl { .. } => ProgramAttachShape::CgroupSysctl,
+            ProgramSpec::SockOps { .. } => ProgramAttachShape::SockOps,
             ProgramSpec::CgroupSock { target } => ProgramAttachShape::CgroupSock {
                 post_bind: target.is_post_bind(),
                 family: match target.attach_type {
@@ -3057,6 +3084,10 @@ impl ProgramSpec {
                 hook: target.hook,
                 priority: target.priority,
                 defrag: target.defrag,
+            },
+            ProgramSpec::LircMode2 { .. } => ProgramAttachShape::LircMode2,
+            ProgramSpec::StructOps { value_type_name } => ProgramAttachShape::StructOps {
+                family: StructOpsFamily::from_value_type_name(value_type_name),
             },
             ProgramSpec::StructOpsCallback {
                 value_type_name,
@@ -3183,10 +3214,24 @@ mod tests {
                 .expect("perf_event spec should parse");
         let socket_filter = ProgramSpec::parse("socket_filter:tcp6:[::1]:8080")
             .expect("socket_filter spec should parse");
+        let syscall = ProgramSpec::parse("syscall:demo").expect("syscall spec should parse");
+        let iter = ProgramSpec::parse("iter:task").expect("iter spec should parse");
+        let sk_lookup =
+            ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("sk_lookup spec should parse");
+        let flow_dissector = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
+            .expect("flow_dissector spec should parse");
+        let sk_msg =
+            ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo").expect("sk_msg spec should parse");
+        let sk_skb =
+            ProgramSpec::parse("sk_skb:/sys/fs/bpf/demo").expect("sk_skb spec should parse");
+        let sk_skb_parser = ProgramSpec::parse("sk_skb_parser:/sys/fs/bpf/demo")
+            .expect("sk_skb_parser spec should parse");
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("tc target should parse");
         let tcx = ProgramSpec::from_program_type_target(EbpfProgramType::Tcx, "lo:egress")
             .expect("tcx target should parse");
+        let tc_action =
+            ProgramSpec::parse("tc_action:demo-action").expect("tc_action spec should parse");
         let netkit = ProgramSpec::from_program_type_target(EbpfProgramType::Netkit, "nk0:primary")
             .expect("netkit target should parse");
         let sk_reuseport_migrate =
@@ -3199,6 +3244,12 @@ mod tests {
             "/sys/fs/cgroup:egress",
         )
         .expect("cgroup_skb egress target should parse");
+        let cgroup_device = ProgramSpec::parse("cgroup_device:/sys/fs/cgroup")
+            .expect("cgroup_device spec should parse");
+        let cgroup_sysctl = ProgramSpec::parse("cgroup_sysctl:/sys/fs/cgroup")
+            .expect("cgroup_sysctl spec should parse");
+        let sock_ops =
+            ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
         let sock_post_bind = ProgramSpec::from_program_type_target(
             EbpfProgramType::CgroupSock,
             "/sys/fs/cgroup:post_bind6",
@@ -3219,6 +3270,11 @@ mod tests {
             "/sys/fs/cgroup:connect_unix",
         )
         .expect("cgroup_sock_addr connect_unix target should parse");
+        let lirc_mode2 =
+            ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
+        let sched_ext_struct_ops = ProgramSpec::StructOps {
+            value_type_name: "sched_ext_ops".to_string(),
+        };
         let sched_ext_select_cpu = ProgramSpec::StructOpsCallback {
             value_type_name: "sched_ext_ops".to_string(),
             callback_name: "select_cpu".to_string(),
@@ -3250,6 +3306,22 @@ mod tests {
                 socket_kind: SocketFilterSocketKind::Tcp6,
             }
         );
+        assert_eq!(syscall.attach_shape(), ProgramAttachShape::Syscall);
+        assert_eq!(iter.attach_shape(), ProgramAttachShape::Iter);
+        assert_eq!(sk_lookup.attach_shape(), ProgramAttachShape::SkLookup);
+        assert_eq!(
+            flow_dissector.attach_shape(),
+            ProgramAttachShape::FlowDissector
+        );
+        assert_eq!(sk_msg.attach_shape(), ProgramAttachShape::SkMsg);
+        assert_eq!(
+            sk_skb.attach_shape(),
+            ProgramAttachShape::SkSkb { parser: false }
+        );
+        assert_eq!(
+            sk_skb_parser.attach_shape(),
+            ProgramAttachShape::SkSkb { parser: true }
+        );
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
         assert!(tc.attach_shape().is_tc_ingress());
         assert!(!tc.attach_shape().is_tc_egress());
@@ -3259,6 +3331,7 @@ mod tests {
         );
         assert!(tcx.attach_shape().is_tc_egress());
         assert_eq!(tcx.section_name(), "tcx/egress");
+        assert_eq!(tc_action.attach_shape(), ProgramAttachShape::TcAction);
         assert_eq!(
             netkit.attach_shape(),
             ProgramAttachShape::Netkit {
@@ -3292,6 +3365,15 @@ mod tests {
             ProgramAttachShape::CgroupSkb { ingress: false }
         );
         assert!(!cgroup_skb.attach_shape().is_cgroup_skb_ingress());
+        assert_eq!(
+            cgroup_device.attach_shape(),
+            ProgramAttachShape::CgroupDevice
+        );
+        assert_eq!(
+            cgroup_sysctl.attach_shape(),
+            ProgramAttachShape::CgroupSysctl
+        );
+        assert_eq!(sock_ops.attach_shape(), ProgramAttachShape::SockOps);
         assert_eq!(
             sock_post_bind.attach_shape(),
             ProgramAttachShape::CgroupSock {
@@ -3339,6 +3421,13 @@ mod tests {
             }
         );
         assert_eq!(connect_unix.section_name(), "cgroup/connect_unix");
+        assert_eq!(lirc_mode2.attach_shape(), ProgramAttachShape::LircMode2);
+        assert_eq!(
+            sched_ext_struct_ops.attach_shape(),
+            ProgramAttachShape::StructOps {
+                family: StructOpsFamily::SchedExt,
+            }
+        );
         assert_eq!(
             sched_ext_select_cpu.attach_shape(),
             ProgramAttachShape::StructOpsCallback {

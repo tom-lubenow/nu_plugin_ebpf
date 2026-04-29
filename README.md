@@ -82,12 +82,14 @@ live-attach/default safety, and compatibility requirement labels before you
 attempt to compile or attach a closure.
 
 Structured `attach_shape` records are emitted for attach families where the
-parsed target changes compiler, loader, or verifier policy: XDP mode/frags,
-perf-event source/sampling, socket-filter transport/family, TC/TCX direction,
-Netkit endpoint, sk_reuseport mode, LWT hook, netfilter hook metadata, cgroup
-socket/SKB/sockopt/socket-address variants, and struct_ops callbacks.
-Probe-like and path-only targets intentionally stay `generic` unless there is
-additional attach policy to surface.
+parsed target or attach resource changes compiler, loader, or verifier policy:
+XDP mode/frags, perf-event source/sampling, socket-filter transport/family,
+netns-scoped sk_lookup/flow_dissector, socket-map sk_msg/sk_skb hooks,
+TC/TCX direction, TC action metadata, Netkit endpoint, sk_reuseport mode,
+LWT hook, netfilter hook metadata, cgroup device/sysctl/sock_ops plus
+socket/SKB/sockopt/socket-address variants, lirc devices, syscall/iterator
+programs, and struct_ops roots/callbacks. Probe-like targets stay `generic`
+when the target string already carries all currently modeled policy.
 
 ## Quick Start
 
