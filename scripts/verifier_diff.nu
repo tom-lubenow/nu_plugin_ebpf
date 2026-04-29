@@ -1151,6 +1151,48 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-in-helper-context"
+        category: "context-surface"
+        tags: [lwt context helper-backed]
+        target: "lwt_in:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.ingress_ifindex + $ctx.mark) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-out-helper-context"
+        category: "context-surface"
+        tags: [lwt context helper-backed]
+        target: "lwt_out:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.queue_mapping + $ctx.protocol + $ctx.priority) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-helper-context"
+        category: "context-surface"
+        tags: [lwt context helper-backed seg6local]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.hash + $ctx.route_realm + $ctx.gso_size) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lirc-mode2-context"
         category: "context-surface"
         tags: [lirc context]
