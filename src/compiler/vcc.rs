@@ -832,10 +832,13 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                     AddressSpace::Kernel => VccAddrSpace::Kernel,
                     AddressSpace::User => VccAddrSpace::User,
                     AddressSpace::Packet => VccAddrSpace::Packet,
+                    AddressSpace::Context => VccAddrSpace::Context,
                     AddressSpace::Map => VccAddrSpace::MapValue,
                 },
                 nullability: match address_space {
-                    AddressSpace::Stack | AddressSpace::Packet => VccNullability::NonNull,
+                    AddressSpace::Stack | AddressSpace::Packet | AddressSpace::Context => {
+                        VccNullability::NonNull
+                    }
                     AddressSpace::Map | AddressSpace::Kernel | AddressSpace::User => {
                         VccNullability::MaybeNull
                     }

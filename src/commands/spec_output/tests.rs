@@ -55,6 +55,24 @@ fn test_spec_context_fields_include_pointer_verifier_facts() {
 }
 
 #[test]
+fn test_spec_context_fields_label_flow_keys_as_context_pointer() {
+    let spec = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
+        .expect("flow_dissector spec should parse");
+    let fields = spec_context_fields(&spec);
+
+    let flow_keys = field(&fields, "flow_keys");
+    assert_eq!(
+        flow_keys.semantic_type.as_deref(),
+        Some("ptr<context, struct<bpf_flow_keys>>")
+    );
+    assert_eq!(
+        flow_keys.runtime_type.as_deref(),
+        Some("ptr<context, struct<bpf_flow_keys>>")
+    );
+    assert!(flow_keys.pointer_non_null);
+}
+
+#[test]
 fn test_spec_context_fields_include_load_guards() {
     let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
     let fields = spec_context_fields(&spec);

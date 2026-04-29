@@ -38,6 +38,7 @@ pub(super) fn apply_load_inst(
             AddressSpace::Stack,
             AddressSpace::Map,
             AddressSpace::Packet,
+            AddressSpace::Context,
             AddressSpace::Kernel,
         ],
         offset,

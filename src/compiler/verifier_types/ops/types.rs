@@ -37,7 +37,9 @@ pub(in crate::compiler::verifier_types) fn verifier_type_from_mir(ty: &MirType) 
         MirType::Ptr { address_space, .. } => VerifierType::Ptr {
             space: *address_space,
             nullability: match address_space {
-                AddressSpace::Stack | AddressSpace::Packet => Nullability::NonNull,
+                AddressSpace::Stack | AddressSpace::Packet | AddressSpace::Context => {
+                    Nullability::NonNull
+                }
                 AddressSpace::Map => Nullability::MaybeNull,
                 AddressSpace::Kernel | AddressSpace::User => Nullability::MaybeNull,
             },

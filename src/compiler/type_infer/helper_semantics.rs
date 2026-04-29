@@ -159,7 +159,7 @@ impl<'a> TypeInference<'a> {
             AddressSpace::Map => allow_map,
             AddressSpace::Kernel => allow_kernel,
             AddressSpace::User => allow_user,
-            AddressSpace::Packet => false,
+            AddressSpace::Packet | AddressSpace::Context => false,
         }
     }
 
@@ -513,7 +513,8 @@ impl<'a> TypeInference<'a> {
                                 }
                                 AddressSpace::Kernel
                                 | AddressSpace::User
-                                | AddressSpace::Packet => {}
+                                | AddressSpace::Packet
+                                | AddressSpace::Context => {}
                             }
                         }
                     }
@@ -879,7 +880,10 @@ impl<'a> TypeInference<'a> {
                                     )));
                                 }
                             }
-                            AddressSpace::Kernel | AddressSpace::User | AddressSpace::Packet => {}
+                            AddressSpace::Kernel
+                            | AddressSpace::User
+                            | AddressSpace::Packet
+                            | AddressSpace::Context => {}
                         }
                     }
                 }
@@ -962,7 +966,10 @@ impl<'a> TypeInference<'a> {
                             )));
                         }
                     }
-                    AddressSpace::Kernel | AddressSpace::User | AddressSpace::Packet => {}
+                    AddressSpace::Kernel
+                    | AddressSpace::User
+                    | AddressSpace::Packet
+                    | AddressSpace::Context => {}
                 },
                 _ => {}
             }

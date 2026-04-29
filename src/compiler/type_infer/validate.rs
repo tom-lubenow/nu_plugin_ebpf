@@ -953,7 +953,7 @@ impl<'a> TypeInference<'a> {
                     ),
                 }
             }
-            AddressSpace::Map => Ok(()),
+            AddressSpace::Map | AddressSpace::Context => Ok(()),
             AddressSpace::Kernel | AddressSpace::User | AddressSpace::Packet => {
                 match self.value_range_for(offset, value_ranges) {
                     ValueRange::Known { min, .. } if min >= 0 => Ok(()),

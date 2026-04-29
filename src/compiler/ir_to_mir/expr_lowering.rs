@@ -955,7 +955,7 @@ impl<'a> HirToMirLowering<'a> {
                 let ptr_vreg = self.func.alloc_vreg();
                 self.vreg_type_hints.insert(ptr_vreg, ptr_ty.clone());
                 match current_address_space {
-                    AddressSpace::Stack | AddressSpace::Map => {
+                    AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context => {
                         self.emit(MirInst::Load {
                             dst: ptr_vreg,
                             ptr: current_base_vreg,
@@ -1211,7 +1211,7 @@ impl<'a> HirToMirLowering<'a> {
             if is_last {
                 if projected_by_ref(&next_ty) {
                     match address_space {
-                        AddressSpace::Stack | AddressSpace::Map => {
+                        AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context => {
                             if let Some(AnnotatedValueSemantics::NumericList { max_len }) =
                                 projected_semantics
                             {
@@ -1386,7 +1386,7 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 } else {
                     match address_space {
-                        AddressSpace::Stack | AddressSpace::Map => {
+                        AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context => {
                             let loaded_vreg = if bitfield.is_some() {
                                 let storage_vreg = self.func.alloc_vreg();
                                 self.vreg_type_hints.insert(storage_vreg, next_ty.clone());

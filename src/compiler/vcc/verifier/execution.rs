@@ -899,6 +899,7 @@ impl VccVerifier {
                             VccAddrSpace::Stack(_)
                                 | VccAddrSpace::MapValue
                                 | VccAddrSpace::Packet
+                                | VccAddrSpace::Context
                                 | VccAddrSpace::KernelBtf
                         ) || (ptr_info.space == VccAddrSpace::Kernel
                             && ptr_info.context_buffer_root.is_some());
@@ -906,7 +907,7 @@ impl VccVerifier {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 format!(
-                                    "load requires pointer in [Stack, Map, Packet, guarded ContextBuffer], got {}",
+                                    "load requires pointer in [Stack, Map, Packet, Context, guarded ContextBuffer], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
                             ));

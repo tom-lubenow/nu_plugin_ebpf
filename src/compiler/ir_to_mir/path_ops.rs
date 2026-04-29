@@ -304,7 +304,7 @@ impl<'a> HirToMirLowering<'a> {
                     &path_desc,
                 )?;
             }
-            AddressSpace::Stack | AddressSpace::Map => {
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context => {
                 if matches!(element_ty, MirType::Array { .. } | MirType::Struct { .. }) {
                     self.vreg_type_hints.insert(
                         dst_vreg,

@@ -722,11 +722,11 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         }
         CtxField::FlowKeys => {
             // The verifier treats __sk_buff::flow_keys as a trusted direct-access
-            // pointer for flow_dissector; use Map space so projections emit direct
-            // loads instead of probe-read helper calls.
+            // pointer for flow_dissector; use Context space so projections emit
+            // direct loads without treating it as a writable map-value buffer.
             BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(synthetic_bpf_flow_keys_type()),
-                address_space: AddressSpace::Map,
+                address_space: AddressSpace::Context,
             }))
             .non_null_pointer()
         }

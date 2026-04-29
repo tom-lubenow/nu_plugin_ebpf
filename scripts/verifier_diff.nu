@@ -1043,6 +1043,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-rejects-flow-keys-helper-buffer"
+        category: "context-policy"
+        tags: [flow-dissector reject helper-call]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_load_bytes" $ctx 0 $ctx.flow_keys 4'
+            '  "fallback"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects pointer in [Stack, Map], got Context"
+    }
+    {
         name: "netfilter-state-context"
         category: "context-surface"
         tags: [netfilter context]

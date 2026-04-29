@@ -94,6 +94,7 @@ fn address_space_label(address_space: AddressSpace) -> &'static str {
         AddressSpace::Kernel => "kernel",
         AddressSpace::User => "user",
         AddressSpace::Packet => "packet",
+        AddressSpace::Context => "context",
         AddressSpace::Map => "map",
     }
 }

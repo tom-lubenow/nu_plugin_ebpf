@@ -843,6 +843,8 @@ pub enum AddressSpace {
     User,
     /// XDP packet data pointer, direct-accessible after a data_end bounds check
     Packet,
+    /// Trusted context-owned subobject pointer with direct loads but no map-value semantics
+    Context,
     /// Map value pointer (trusted after null check)
     Map,
 }
