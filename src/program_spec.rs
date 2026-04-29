@@ -261,7 +261,7 @@ pub enum XdpAttachMode {
 }
 
 impl XdpAttachMode {
-    fn target_option_name(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Skb => "skb",
             Self::Driver => "drv",
@@ -334,7 +334,7 @@ impl XdpTarget {
         let mut target = self.interface.clone();
         if self.attach_mode != XdpAttachMode::Skb {
             target.push(':');
-            target.push_str(self.attach_mode.target_option_name());
+            target.push_str(self.attach_mode.key());
         }
         if self.frags {
             target.push_str(":frags");
@@ -2114,6 +2114,10 @@ impl ProgramAttachSockAddrHook {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProgramAttachShape {
     Generic,
+    Xdp {
+        mode: XdpAttachMode,
+        frags: bool,
+    },
     Netkit {
         endpoint: NetkitAttachType,
     },
@@ -2960,6 +2964,10 @@ impl ProgramSpec {
 
     pub(crate) fn attach_shape(&self) -> ProgramAttachShape {
         match self {
+            ProgramSpec::Xdp { target } => ProgramAttachShape::Xdp {
+                mode: target.attach_mode,
+                frags: target.frags,
+            },
             ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => ProgramAttachShape::Tc {
                 ingress: target.is_ingress(),
             },
@@ -3124,6 +3132,7 @@ mod tests {
 
     #[test]
     fn test_program_spec_attach_shape_tracks_typed_targets() {
+        let xdp = ProgramSpec::parse("xdp:lo:drv:frags").expect("xdp spec should parse");
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("tc target should parse");
         let tcx = ProgramSpec::from_program_type_target(EbpfProgramType::Tcx, "lo:egress")
@@ -3169,6 +3178,13 @@ mod tests {
             callback_name: "init".to_string(),
         };
 
+        assert_eq!(
+            xdp.attach_shape(),
+            ProgramAttachShape::Xdp {
+                mode: XdpAttachMode::Driver,
+                frags: true,
+            }
+        );
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
         assert!(tc.attach_shape().is_tc_ingress());
         assert!(!tc.attach_shape().is_tc_egress());

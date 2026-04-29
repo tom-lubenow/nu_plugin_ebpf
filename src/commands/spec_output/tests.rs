@@ -255,6 +255,44 @@ fn test_spec_record_includes_registry_shape_metadata() {
 
 #[test]
 fn test_spec_record_includes_attach_shape_metadata() {
+    let xdp = ProgramSpec::parse("xdp:lo:drv:frags").expect("xdp frags spec should parse");
+    let record = spec_record(
+        "xdp:lo:drv:frags".to_string(),
+        xdp,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "xdp"
+    );
+    assert_eq!(
+        attach_shape
+            .get("mode")
+            .expect("xdp mode should be present")
+            .as_str()
+            .expect("xdp mode should be a string"),
+        "drv"
+    );
+    assert!(
+        attach_shape
+            .get("frags")
+            .expect("xdp frags should be present")
+            .as_bool()
+            .expect("xdp frags should be a bool")
+    );
+
     let tc = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
     let record = spec_record("tc:lo:egress".to_string(), tc, Span::test_data(), false)
         .into_record()

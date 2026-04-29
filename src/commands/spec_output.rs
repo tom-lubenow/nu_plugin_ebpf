@@ -268,6 +268,14 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::Xdp { mode, frags } => Value::record(
+            record! {
+                "kind" => Value::string("xdp", span),
+                "mode" => Value::string(mode.key(), span),
+                "frags" => Value::bool(frags, span),
+            },
+            span,
+        ),
         ProgramAttachShape::Netkit { endpoint } => Value::record(
             record! {
                 "kind" => Value::string("netkit", span),
