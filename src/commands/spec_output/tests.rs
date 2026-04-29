@@ -288,6 +288,92 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("tc ingress should be a bool")
     );
 
+    let lwt = ProgramSpec::parse("lwt_seg6local:demo-route").expect("lwt spec should parse");
+    let record = spec_record(
+        "lwt_seg6local:demo-route".to_string(),
+        lwt,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "lwt"
+    );
+    assert_eq!(
+        attach_shape
+            .get("hook")
+            .expect("lwt hook should be present")
+            .as_str()
+            .expect("lwt hook should be a string"),
+        "seg6local"
+    );
+
+    let netfilter = ProgramSpec::parse("netfilter:ipv6:local_out:priority=-100:defrag")
+        .expect("netfilter spec should parse");
+    let record = spec_record(
+        "netfilter:ipv6:local_out:priority=-100:defrag".to_string(),
+        netfilter,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "netfilter"
+    );
+    assert_eq!(
+        attach_shape
+            .get("family")
+            .expect("netfilter family should be present")
+            .as_str()
+            .expect("netfilter family should be a string"),
+        "ipv6"
+    );
+    assert_eq!(
+        attach_shape
+            .get("hook")
+            .expect("netfilter hook should be present")
+            .as_str()
+            .expect("netfilter hook should be a string"),
+        "local_out"
+    );
+    assert_eq!(
+        attach_shape
+            .get("priority")
+            .expect("netfilter priority should be present")
+            .as_int()
+            .expect("netfilter priority should be an int"),
+        -100
+    );
+    assert!(
+        attach_shape
+            .get("defrag")
+            .expect("netfilter defrag should be present")
+            .as_bool()
+            .expect("netfilter defrag should be a bool")
+    );
+
     let sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg6")
         .expect("cgroup sock addr spec should parse");
     let record = spec_record(

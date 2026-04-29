@@ -268,6 +268,28 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::Lwt { hook } => Value::record(
+            record! {
+                "kind" => Value::string("lwt", span),
+                "hook" => Value::string(hook.key(), span),
+            },
+            span,
+        ),
+        ProgramAttachShape::Netfilter {
+            family,
+            hook,
+            priority,
+            defrag,
+        } => Value::record(
+            record! {
+                "kind" => Value::string("netfilter", span),
+                "family" => Value::string(family.target_name(), span),
+                "hook" => Value::string(hook.target_name(), span),
+                "priority" => Value::int(i64::from(priority), span),
+                "defrag" => Value::bool(defrag, span),
+            },
+            span,
+        ),
         ProgramAttachShape::Tc { ingress } => Value::record(
             record! {
                 "kind" => Value::string("tc", span),

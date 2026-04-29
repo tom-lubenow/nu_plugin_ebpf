@@ -1476,6 +1476,25 @@ impl LwtTarget {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProgramAttachLwtHook {
+    In,
+    Out,
+    Xmit,
+    Seg6Local,
+}
+
+impl ProgramAttachLwtHook {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::In => "in",
+            Self::Out => "out",
+            Self::Xmit => "xmit",
+            Self::Seg6Local => "seg6local",
+        }
+    }
+}
+
 /// Supported sk_reuseport section modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkReuseportMode {
@@ -2086,6 +2105,15 @@ impl ProgramAttachSockAddrHook {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProgramAttachShape {
     Generic,
+    Lwt {
+        hook: ProgramAttachLwtHook,
+    },
+    Netfilter {
+        family: NetfilterProtocolFamily,
+        hook: NetfilterHook,
+        priority: i32,
+        defrag: bool,
+    },
     Tc {
         ingress: bool,
     },
@@ -2938,6 +2966,24 @@ impl ProgramSpec {
                 family: target.attach_type.address_family(),
                 hook: target.hook_kind(),
             },
+            ProgramSpec::LwtIn { .. } => ProgramAttachShape::Lwt {
+                hook: ProgramAttachLwtHook::In,
+            },
+            ProgramSpec::LwtOut { .. } => ProgramAttachShape::Lwt {
+                hook: ProgramAttachLwtHook::Out,
+            },
+            ProgramSpec::LwtXmit { .. } => ProgramAttachShape::Lwt {
+                hook: ProgramAttachLwtHook::Xmit,
+            },
+            ProgramSpec::LwtSeg6Local { .. } => ProgramAttachShape::Lwt {
+                hook: ProgramAttachLwtHook::Seg6Local,
+            },
+            ProgramSpec::Netfilter { target } => ProgramAttachShape::Netfilter {
+                family: target.family,
+                hook: target.hook,
+                priority: target.priority,
+                defrag: target.defrag,
+            },
             ProgramSpec::StructOpsCallback {
                 value_type_name,
                 callback_name,
@@ -3063,6 +3109,9 @@ mod tests {
             .expect("tcx target should parse");
         let netkit = ProgramSpec::from_program_type_target(EbpfProgramType::Netkit, "nk0:primary")
             .expect("netkit target should parse");
+        let lwt_out = ProgramSpec::parse("lwt_out:demo-route").expect("lwt_out spec should parse");
+        let netfilter = ProgramSpec::parse("netfilter:ipv6:local_out:priority=-100:defrag")
+            .expect("netfilter spec should parse");
         let cgroup_skb = ProgramSpec::from_program_type_target(
             EbpfProgramType::CgroupSkb,
             "/sys/fs/cgroup:egress",
@@ -3107,6 +3156,21 @@ mod tests {
         assert!(tcx.attach_shape().is_tc_egress());
         assert_eq!(tcx.section_name(), "tcx/egress");
         assert_eq!(netkit.attach_shape(), ProgramAttachShape::Generic);
+        assert_eq!(
+            lwt_out.attach_shape(),
+            ProgramAttachShape::Lwt {
+                hook: ProgramAttachLwtHook::Out,
+            }
+        );
+        assert_eq!(
+            netfilter.attach_shape(),
+            ProgramAttachShape::Netfilter {
+                family: NetfilterProtocolFamily::Ipv6,
+                hook: NetfilterHook::LocalOut,
+                priority: -100,
+                defrag: true,
+            }
+        );
         assert_eq!(netkit.section_name(), "netkit/primary");
         assert_eq!(
             cgroup_skb.attach_shape(),
