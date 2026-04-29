@@ -372,6 +372,54 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("perf_event default sample should be a bool")
     );
 
+    let socket_filter = ProgramSpec::parse("socket_filter:tcp6:[::1]:8080")
+        .expect("socket_filter spec should parse");
+    let record = spec_record(
+        "socket_filter:tcp6:[::1]:8080".to_string(),
+        socket_filter,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "socket-filter"
+    );
+    assert_eq!(
+        attach_shape
+            .get("socket_kind")
+            .expect("socket_filter socket kind should be present")
+            .as_str()
+            .expect("socket_filter socket kind should be a string"),
+        "tcp6"
+    );
+    assert_eq!(
+        attach_shape
+            .get("transport")
+            .expect("socket_filter transport should be present")
+            .as_str()
+            .expect("socket_filter transport should be a string"),
+        "tcp"
+    );
+    assert_eq!(
+        attach_shape
+            .get("family")
+            .expect("socket_filter family should be present")
+            .as_str()
+            .expect("socket_filter family should be a string"),
+        "ipv6"
+    );
+
     let tc = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
     let record = spec_record("tc:lo:egress".to_string(), tc, Span::test_data(), false)
         .into_record()

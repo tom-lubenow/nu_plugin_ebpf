@@ -301,6 +301,15 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::SocketFilter { socket_kind } => Value::record(
+            record! {
+                "kind" => Value::string("socket-filter", span),
+                "socket_kind" => Value::string(socket_kind.name(), span),
+                "transport" => Value::string(socket_kind.transport_key(), span),
+                "family" => Value::string(socket_kind.address_family().key(), span),
+            },
+            span,
+        ),
         ProgramAttachShape::Netkit { endpoint } => Value::record(
             record! {
                 "kind" => Value::string("netkit", span),

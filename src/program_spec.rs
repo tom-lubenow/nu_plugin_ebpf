@@ -880,6 +880,20 @@ impl SocketFilterSocketKind {
             SocketFilterSocketKind::Tcp6 => "tcp6",
         }
     }
+
+    pub(crate) fn transport_key(self) -> &'static str {
+        match self {
+            Self::Udp4 | Self::Udp6 => "udp",
+            Self::Tcp4 | Self::Tcp6 => "tcp",
+        }
+    }
+
+    pub(crate) fn address_family(self) -> ProgramAttachAddressFamily {
+        match self {
+            Self::Udp4 | Self::Tcp4 => ProgramAttachAddressFamily::Ipv4,
+            Self::Udp6 | Self::Tcp6 => ProgramAttachAddressFamily::Ipv6,
+        }
+    }
 }
 
 /// Parsed socket_filter target information.
@@ -2137,6 +2151,9 @@ pub(crate) enum ProgramAttachShape {
         pid: Option<u32>,
         sample_policy: PerfEventSamplePolicy,
     },
+    SocketFilter {
+        socket_kind: SocketFilterSocketKind,
+    },
     Netkit {
         endpoint: NetkitAttachType,
     },
@@ -2993,6 +3010,9 @@ impl ProgramSpec {
                 pid: target.pid,
                 sample_policy: target.sample_policy,
             },
+            ProgramSpec::SocketFilter { target } => ProgramAttachShape::SocketFilter {
+                socket_kind: target.socket_kind,
+            },
             ProgramSpec::Tc { target } | ProgramSpec::Tcx { target } => ProgramAttachShape::Tc {
                 ingress: target.is_ingress(),
             },
@@ -3161,6 +3181,8 @@ mod tests {
         let perf_event =
             ProgramSpec::parse("perf_event:hardware:instructions:cpu=2:pid=42:freq=99")
                 .expect("perf_event spec should parse");
+        let socket_filter = ProgramSpec::parse("socket_filter:tcp6:[::1]:8080")
+            .expect("socket_filter spec should parse");
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("tc target should parse");
         let tcx = ProgramSpec::from_program_type_target(EbpfProgramType::Tcx, "lo:egress")
@@ -3220,6 +3242,12 @@ mod tests {
                 cpu: Some(2),
                 pid: Some(42),
                 sample_policy: PerfEventSamplePolicy::Frequency(99),
+            }
+        );
+        assert_eq!(
+            socket_filter.attach_shape(),
+            ProgramAttachShape::SocketFilter {
+                socket_kind: SocketFilterSocketKind::Tcp6,
             }
         );
         assert_eq!(tc.attach_shape(), ProgramAttachShape::Tc { ingress: true });
