@@ -214,6 +214,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-frags-driver-context"
+        category: "context-surface"
+        tags: [xdp context frags]
+        requires: [loopback-interface]
+        target: "xdp:lo:drv:frags"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.rx_queue_index) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-put-get-null-checked"
         category: "maps"
         tags: [hash-map null-check]
