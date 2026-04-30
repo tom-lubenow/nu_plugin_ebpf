@@ -1147,6 +1147,99 @@ fn test_type_error_read_str_non_ptr() {
 }
 
 #[test]
+fn test_read_str_kernel_accepts_stack_pointer() {
+    use crate::compiler::mir::StackSlotKind;
+
+    let mut func = make_test_function();
+    let ptr = func.alloc_vreg();
+    let src = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(src),
+    });
+    block.instructions.push(MirInst::ReadStr {
+        dst,
+        ptr,
+        user_space: false,
+        max_len: 16,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&func)
+        .expect("kernel read_str should accept stack-backed source pointers");
+}
+
+#[test]
+fn test_read_str_kernel_accepts_map_pointer() {
+    use crate::compiler::mir::StackSlotKind;
+
+    let mut func = make_test_function();
+    let ptr = func.alloc_vreg();
+    let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::ReadStr {
+        dst,
+        ptr,
+        user_space: false,
+        max_len: 16,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Map,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    ti.infer(&func)
+        .expect("kernel read_str should accept map-backed source pointers");
+}
+
+#[test]
+fn test_type_error_read_str_kernel_rejects_user_pointer() {
+    use crate::compiler::mir::StackSlotKind;
+
+    let mut func = make_test_function();
+    let ptr = func.alloc_vreg();
+    let dst = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::ReadStr {
+        dst,
+        ptr,
+        user_space: false,
+        max_len: 16,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("kernel read_str should reject user source pointers");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("read_str expects pointer in [Stack, Map, Kernel], got User")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_emit_record_string_scalar() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();

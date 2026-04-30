@@ -367,16 +367,22 @@ impl<'a> TypeInference<'a> {
             MirInst::ReadStr {
                 ptr, user_space, ..
             } => {
+                // Kernel string reads can source from stack, map, or kernel
+                // memory. HM constraints cannot express that union, so defer
+                // the multi-space check to validate_types after other uses and
+                // type hints have resolved the pointer space.
+                if !*user_space {
+                    return Ok(());
+                }
                 let ptr_ty = self.vreg_type(*ptr);
-                let expected = HMType::Ptr {
-                    pointee: Box::new(HMType::U8),
-                    address_space: if *user_space {
-                        AddressSpace::User
-                    } else {
-                        AddressSpace::Kernel
+                self.constrain(
+                    ptr_ty,
+                    HMType::Ptr {
+                        pointee: Box::new(HMType::U8),
+                        address_space: AddressSpace::User,
                     },
-                };
-                self.constrain(ptr_ty, expected, "read_str_ptr");
+                    "read_str_ptr",
+                );
             }
 
             MirInst::StringAppend {

@@ -395,15 +395,27 @@ impl<'a> TypeInference<'a> {
                 let ptr_ty = self.mir_type_for_vreg(*ptr, types);
                 match ptr_ty {
                     MirType::Ptr { address_space, .. } => {
-                        let expected = if *user_space {
-                            AddressSpace::User
+                        let (allow_stack, allow_map, allow_kernel, allow_user) = if *user_space {
+                            (false, false, false, true)
                         } else {
-                            AddressSpace::Kernel
+                            (true, true, true, false)
                         };
-                        if address_space != expected {
+                        if !Self::helper_ptr_space_allowed(
+                            address_space,
+                            allow_stack,
+                            allow_map,
+                            allow_kernel,
+                            allow_user,
+                        ) {
+                            let allowed = Self::helper_allowed_spaces_label(
+                                allow_stack,
+                                allow_map,
+                                allow_kernel,
+                                allow_user,
+                            );
                             errors.push(TypeError::new(format!(
-                                "read_str expects {:?} pointer, got {:?}",
-                                expected, address_space
+                                "read_str expects pointer in {allowed}, got {:?}",
+                                address_space
                             )));
                         }
                     }
