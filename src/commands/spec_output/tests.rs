@@ -383,6 +383,14 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
         .expect("compatibility requirements should be present")
         .as_list()
         .expect("compatibility requirements should be a list");
+    assert_eq!(
+        record
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "6.4"
+    );
     let requirement = requirements
         .iter()
         .find_map(|requirement| {

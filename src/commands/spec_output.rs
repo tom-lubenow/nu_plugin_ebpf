@@ -1,11 +1,14 @@
 //! Output model for `ebpf spec` records.
 
+use std::cmp::Ordering;
+
 use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
-    BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramIntrinsic,
-    ProgramValueAccess, SockOpsCallbackGuard, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
+    BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext,
+    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
+    synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -235,6 +238,49 @@ fn optional_static_str(value: Option<&'static str>, span: Span) -> Value {
     value
         .map(|value| Value::string(value, span))
         .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
+fn kernel_version_part(part: Option<&str>) -> u32 {
+    part.unwrap_or("0").parse().unwrap_or(0)
+}
+
+#[cfg(target_os = "linux")]
+fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
+    let mut left_parts = left.split('.');
+    let mut right_parts = right.split('.');
+    let left_version = [
+        kernel_version_part(left_parts.next()),
+        kernel_version_part(left_parts.next()),
+        kernel_version_part(left_parts.next()),
+    ];
+    let right_version = [
+        kernel_version_part(right_parts.next()),
+        kernel_version_part(right_parts.next()),
+        kernel_version_part(right_parts.next()),
+    ];
+
+    left_version.cmp(&right_version)
+}
+
+#[cfg(target_os = "linux")]
+fn compatibility_minimum_kernel(
+    requirements: &[ProgramCompatibilityRequirement],
+) -> Option<&'static str> {
+    let mut minimum = None;
+    for requirement in requirements {
+        let Some(candidate) = requirement.minimum_kernel() else {
+            continue;
+        };
+        let should_replace = match minimum {
+            Some(current) => kernel_version_cmp(candidate, current).is_gt(),
+            None => true,
+        };
+        if should_replace {
+            minimum = Some(candidate);
+        }
+    }
+    minimum
 }
 
 #[cfg(target_os = "linux")]
@@ -1044,9 +1090,10 @@ pub(super) fn spec_record(
             )
         })
         .collect();
-    let requirements = spec
-        .compatibility_requirements()
-        .into_iter()
+    let compatibility_requirements = spec.compatibility_requirements();
+    let compatibility_minimum_kernel = compatibility_minimum_kernel(&compatibility_requirements);
+    let requirements = compatibility_requirements
+        .iter()
         .map(|requirement| {
             Value::record(
                 record! {
@@ -1118,6 +1165,7 @@ pub(super) fn spec_record(
             "capabilities" => Value::list(capabilities, span),
             "intrinsics" => Value::list(intrinsics, span),
             "compatibility_requirements" => Value::list(requirements, span),
+            "compatibility_minimum_kernel" => optional_static_str(compatibility_minimum_kernel, span),
             "return_aliases" => Value::list(return_aliases, span),
         },
         span,

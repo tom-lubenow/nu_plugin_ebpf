@@ -31,9 +31,11 @@ The compiler also tracks feature-style compatibility requirements for parsed
 program specs. `ebpf spec` reports each requirement with a category, a default
 test lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel fields. Source-verified feature requirements carry minimum
-kernel versions; mixed requirements stay nullable until they are split precisely
-enough to avoid misleading compatibility claims. The kernel verifier remains
-the final authority for unmodeled or version-specific behavior.
+kernel versions, and `compatibility_minimum_kernel` reports the maximum known
+requirement for that parsed target. Mixed requirements stay nullable until they
+are split precisely enough to avoid misleading compatibility claims. The kernel
+verifier remains the final authority for unmodeled or version-specific
+behavior.
 
 ## Installation
 
