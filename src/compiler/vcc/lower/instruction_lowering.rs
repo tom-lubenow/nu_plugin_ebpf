@@ -1524,6 +1524,45 @@ impl<'a> VccLowerer<'a> {
                         "record store size out of range",
                     ));
                 }
+                if record_field_requires_pointer(ty) {
+                    let ptr_info = self.value_ptr_info(val).ok_or_else(|| {
+                        VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: match val {
+                                    MirValue::VReg(vreg) => self
+                                        .types
+                                        .get(vreg)
+                                        .map(vcc_type_from_mir)
+                                        .unwrap_or(VccValueType::Unknown)
+                                        .class(),
+                                    MirValue::Const(_) => VccTypeClass::Scalar,
+                                    MirValue::StackSlot(_) => VccTypeClass::Unknown,
+                                },
+                            },
+                            "record store requires pointer value",
+                        )
+                    })?;
+                    if !matches!(
+                        ptr_info.space,
+                        VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Unknown
+                    ) {
+                        return Err(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!(
+                                "record store expects pointer in [Stack, Map], got {}",
+                                self.helper_space_name(ptr_info.space)
+                            ),
+                        ));
+                    }
+                    if let MirValue::VReg(vreg) = val {
+                        self.check_ptr_range(
+                            *vreg,
+                            record_pointer_access_size(ty, self.types.get(vreg)),
+                            out,
+                        )?;
+                    }
+                }
                 let base = self.stack_addr_temp(*buffer, out);
                 let vcc_val = self.lower_value(val, out);
                 out.push(VccInst::Store {
