@@ -1073,6 +1073,24 @@ const FIXTURES = [
         error_contains: "expects pointer in [Stack, Map], got Context"
     }
     {
+        name: "flow-dissector-rejects-flow-keys-kernel-helper-arg"
+        category: "context-policy"
+        tags: [flow-dissector reject helper-call]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  map-define kptr_slots --kind hash --value-type int'
+            '  let entry = (0 | map-get kptr_slots --kind hash)'
+            '  if $entry != 0 { helper-call "bpf_kptr_xchg" $entry $ctx.flow_keys | count }'
+            '  "fallback"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper kptr_xchg ptr expects pointer in [Kernel], got Context"
+    }
+    {
         name: "netfilter-state-context"
         category: "context-surface"
         tags: [netfilter context]

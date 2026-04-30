@@ -750,6 +750,21 @@ impl<'a> VccLowerer<'a> {
             ptr.space
         };
 
+        if effective_space == VccAddrSpace::Context
+            && allow_kernel
+            && self.helper_arg_is_non_raw_context_pointer(arg)
+        {
+            let allowed =
+                self.helper_allowed_spaces_label(allow_stack, allow_map, allow_kernel, allow_user);
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "{op} expects pointer in {allowed}, got {}",
+                    self.helper_space_name(effective_space)
+                ),
+            ));
+        }
+
         if !self.helper_space_allowed(
             effective_space,
             allow_stack,
@@ -1384,6 +1399,22 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    fn helper_arg_is_non_raw_context_pointer(&self, arg: &MirValue) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => self
+                .direct_ctx_field_regs
+                .get(&VccReg(vreg.0))
+                .is_some_and(|field| !self.ctx_field_is_raw_context_pointer(field)),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        }
+    }
+
+    fn vreg_is_non_raw_context_pointer(&self, vreg: VReg) -> bool {
+        self.direct_ctx_field_regs
+            .get(&VccReg(vreg.0))
+            .is_some_and(|field| !self.ctx_field_is_raw_context_pointer(field))
+    }
+
     fn ctx_field_is_raw_context_pointer(&self, field: &CtxField) -> bool {
         if let Some(ctx) = self.probe_ctx {
             return ctx.ctx_field_is_raw_context_pointer(field);
@@ -1625,6 +1656,25 @@ impl<'a> VccLowerer<'a> {
         } else {
             ptr.space
         };
+
+        let context_as_kernel = effective_space == VccAddrSpace::Context
+            && allow_kernel
+            && Self::kfunc_pointer_arg_allows_context_as_kernel(kfunc, arg_idx);
+        if effective_space == VccAddrSpace::Context
+            && allow_kernel
+            && !context_as_kernel
+            && self.vreg_is_non_raw_context_pointer(arg)
+        {
+            let allowed =
+                self.helper_allowed_spaces_label(allow_stack, allow_map, allow_kernel, allow_user);
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "{op} expects pointer in {allowed}, got {}",
+                    self.helper_space_name(effective_space)
+                ),
+            ));
+        }
 
         if !self.helper_space_allowed(
             effective_space,
