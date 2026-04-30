@@ -2779,6 +2779,17 @@ def fixture-status-count [fixtures field: string status: string] {
     | length
 }
 
+def fixture-has-effective-min-kernel [fixture] {
+    (fixture-effective-min-kernel $fixture) != null
+}
+
+def kernel-accept-versioned-count [fixtures versioned: bool] {
+    $fixtures
+    | where {|fixture| $fixture.kernel == "accept" }
+    | where {|fixture| (fixture-has-effective-min-kernel $fixture) == $versioned }
+    | length
+}
+
 def fixture-matrix-rows [fixtures] {
     mut rows = []
 
@@ -2817,6 +2828,8 @@ def fixture-matrix-rows [fixtures] {
                     kernel_accept: (fixture-status-count $category_fixtures kernel accept)
                     kernel_reject: (fixture-status-count $category_fixtures kernel reject)
                     kernel_skip: (fixture-status-count $category_fixtures kernel skip)
+                    kernel_accept_versioned: (kernel-accept-versioned-count $category_fixtures true)
+                    kernel_accept_unversioned: (kernel-accept-versioned-count $category_fixtures false)
                 }
             )
         }
@@ -2827,7 +2840,7 @@ def fixture-matrix-rows [fixtures] {
 
 def print-fixture-matrix [fixtures] {
     for row in (fixture-matrix-rows $fixtures) {
-        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip)"
+        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned)"
     }
 }
 
