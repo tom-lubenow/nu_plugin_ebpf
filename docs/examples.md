@@ -280,7 +280,7 @@ ebpf counters $id | sort-by count --reverse
 let id = ebpf attach 'fentry:security_file_open' {|ctx|
     $ctx.arg.file.f_path | map-put seen_paths $ctx.pid --kind hash
     let entry = ($ctx.pid | map-get seen_paths --kind hash)
-    if $entry != 0 { $entry | count }
+    if $entry { $entry | count }
 }
 
 sleep 5sec
