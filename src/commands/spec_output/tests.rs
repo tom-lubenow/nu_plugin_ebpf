@@ -52,6 +52,14 @@ fn test_spec_context_fields_include_pointer_verifier_facts() {
     assert!(socket.raw_context_pointer);
     assert!(socket.pointer_non_null);
     assert!(!socket.trusted_btf_kernel_pointer);
+
+    let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    for field_name in ["data", "data_meta", "data_end"] {
+        let packet_ptr = field(&fields, field_name);
+        assert_eq!(packet_ptr.semantic_type.as_deref(), Some("ptr<packet, u8>"));
+        assert!(packet_ptr.pointer_non_null);
+    }
 }
 
 #[test]

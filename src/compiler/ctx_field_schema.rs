@@ -779,6 +779,7 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
                 pointee: Box::new(MirType::U8),
                 address_space: AddressSpace::Packet,
             }))
+            .non_null_pointer()
             .with_sock_ops_load_guard(SockOpsCallbackGuard::PacketData)
         }
         CtxField::DataMeta => {
@@ -786,12 +787,14 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
                 pointee: Box::new(MirType::U8),
                 address_space: AddressSpace::Packet,
             }))
+            .non_null_pointer()
         }
         CtxField::DataEnd => {
             BaseContextFieldSchemaSpec::direct(ContextFieldTypeSpec::value(MirType::Ptr {
                 pointee: Box::new(MirType::U8),
                 address_space: AddressSpace::Packet,
             }))
+            .non_null_pointer()
             .with_sock_ops_load_guard(SockOpsCallbackGuard::PacketData)
         }
         CtxField::Comm => BaseContextFieldSchemaSpec::stack_backed(
