@@ -440,15 +440,40 @@ pub(super) fn apply_emit_record_inst(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     for field in fields {
-        if let Some(MirType::Array { .. }) | Some(MirType::Ptr { .. }) = types.get(&field.value) {
-            require_ptr_with_space(
+        let value_ty = types.get(&field.value);
+        let value_is_ptr_like = matches!(
+            value_ty,
+            Some(MirType::Array { .. } | MirType::Ptr { .. } | MirType::Struct { .. })
+        );
+        if mir_requires_pointer_value(&field.ty) || value_is_ptr_like {
+            check_ptr_access(
                 field.value,
                 "emit record",
                 &[AddressSpace::Stack, AddressSpace::Map],
+                0,
+                record_pointer_access_size(&field.ty, value_ty),
                 state,
                 errors,
             );
         }
+    }
+}
+
+fn mir_requires_pointer_value(ty: &MirType) -> bool {
+    matches!(ty, MirType::Array { .. } | MirType::Struct { .. }) || ty.size() > 8
+}
+
+fn record_pointer_access_size(field_ty: &MirType, value_ty: Option<&MirType>) -> usize {
+    match value_ty {
+        Some(MirType::Ptr { pointee, .. })
+            if matches!(
+                pointee.as_ref(),
+                MirType::Array { .. } | MirType::Struct { .. }
+            ) =>
+        {
+            pointee.size().max(1)
+        }
+        _ => field_ty.size().max(1),
     }
 }
 
