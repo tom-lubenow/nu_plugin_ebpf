@@ -1382,6 +1382,7 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::RouteLwt,
     ProgramCompatibilityRequirement::SockMapAttach,
     ProgramCompatibilityRequirement::SkReuseportAttach,
+    ProgramCompatibilityRequirement::SkReuseportMigration,
     ProgramCompatibilityRequirement::TcActionProgram,
     ProgramCompatibilityRequirement::CgroupV2,
     ProgramCompatibilityRequirement::LircMode2,

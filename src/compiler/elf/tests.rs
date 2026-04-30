@@ -4555,6 +4555,29 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             .compatibility_requirements()
             .is_empty()
     );
+
+    assert_eq!(
+        ProgramCompatibilityRequirement::NetfilterLink.minimum_kernel(),
+        Some("6.4")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SchedExt.minimum_kernel(),
+        Some("6.12")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SkReuseportAttach.minimum_kernel(),
+        Some("4.19")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SkReuseportMigration.minimum_kernel(),
+        Some("5.14")
+    );
+    assert!(
+        ProgramCompatibilityRequirement::SockMapAttach
+            .minimum_kernel()
+            .is_none(),
+        "mixed sk_msg/sk_skb attach requirement should stay nullable until split"
+    );
 }
 
 #[test]

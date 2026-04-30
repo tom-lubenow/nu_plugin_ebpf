@@ -189,13 +189,13 @@ The compiler tracks compatibility requirements at both the program-family and
 parsed-target level. Live-attach rejection messages include these feature
 requirements, for example kernel BTF, BPF trampolines, TCX, netfilter links,
 route LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and
-cgroup UNIX socket-address hooks. These labels describe feature surfaces, not a
-complete minimum-kernel-version matrix yet. `ebpf spec` reports each
-requirement with a feature category, a default test lane (`host-safe`,
-`host-gated`, `dry-run`, or `vm-only`), and nullable minimum-kernel/source
-fields that stay empty until verified against kernel sources. When a feature is
-unmodeled or kernel-version-specific, the kernel verifier and loader remain
-authoritative.
+cgroup UNIX socket-address hooks. These labels describe feature surfaces.
+`ebpf spec` reports each requirement with a feature category, a default test
+lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
+minimum-kernel/source fields. Source-verified requirements carry minimum
+versions; mixed requirements stay empty until they are split precisely enough
+to avoid over- or under-stating compatibility. When a feature is unmodeled or
+kernel-version-specific, the kernel verifier and loader remain authoritative.
 
 Kernel-BTF-backed attach specs accept both the normal and sleepable
 section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,

@@ -416,13 +416,17 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
         requirement
             .get("minimum_kernel")
             .expect("minimum kernel should be present")
-            .is_nothing()
+            .as_str()
+            .expect("minimum kernel should be a string")
+            == "6.4"
     );
-    assert!(
+    assert_eq!(
         requirement
             .get("minimum_kernel_source")
             .expect("minimum kernel source should be present")
-            .is_nothing()
+            .as_str()
+            .expect("minimum kernel source should be a string"),
+        "https://docs.ebpf.io/linux/timeline/"
     );
 }
 

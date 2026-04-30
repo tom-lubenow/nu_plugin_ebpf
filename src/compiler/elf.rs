@@ -1567,6 +1567,7 @@ pub enum ProgramCompatibilityRequirement {
     RouteLwt,
     SockMapAttach,
     SkReuseportAttach,
+    SkReuseportMigration,
     TcActionProgram,
     CgroupV2,
     LircMode2,
@@ -1574,6 +1575,13 @@ pub enum ProgramCompatibilityRequirement {
     SchedExt,
     CgroupUnixSockAddr,
 }
+
+const EBPF_TIMELINE_SOURCE: &str = "https://docs.ebpf.io/linux/timeline/";
+const LINUX_5_2_SOURCE: &str = "https://kernelnewbies.org/Linux_5.2";
+const SK_REUSEPORT_SOURCE: &str =
+    "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/";
+const SCHED_EXT_OPS_SOURCE: &str =
+    "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_STRUCT_OPS/sched_ext_ops/";
 
 impl ProgramCompatibilityRequirement {
     pub fn all() -> &'static [ProgramCompatibilityRequirement] {
@@ -1600,6 +1608,7 @@ impl ProgramCompatibilityRequirement {
             Self::RouteLwt => "route-lwt",
             Self::SockMapAttach => "sockmap-attach",
             Self::SkReuseportAttach => "sk-reuseport-attach",
+            Self::SkReuseportMigration => "sk-reuseport-migration",
             Self::TcActionProgram => "tc-action-program",
             Self::CgroupV2 => "cgroup-v2",
             Self::LircMode2 => "lirc-mode2",
@@ -1629,6 +1638,7 @@ impl ProgramCompatibilityRequirement {
             Self::RouteLwt => "route lightweight-tunnel BPF attach support",
             Self::SockMapAttach => "sockmap or sockhash attach support",
             Self::SkReuseportAttach => "SO_REUSEPORT BPF attach support",
+            Self::SkReuseportMigration => "SO_REUSEPORT socket migration program support",
             Self::TcActionProgram => "traffic-control action BPF program support",
             Self::CgroupV2 => "cgroup v2 attach hierarchy",
             Self::LircMode2 => "LIRC mode2 device attach support",
@@ -1643,6 +1653,7 @@ impl ProgramCompatibilityRequirement {
             Self::KernelBtf => "kernel-metadata",
             Self::CgroupV2 | Self::LircMode2 => "attach-resource",
             Self::SchedExt => "struct-ops-family",
+            Self::SkReuseportMigration => "attach-mode",
             Self::SleepableProgram | Self::XdpMultiBuffer => "section-feature",
             Self::StructOps => "object-loader",
             _ => "program-feature",
@@ -1661,6 +1672,7 @@ impl ProgramCompatibilityRequirement {
             | Self::Netkit
             | Self::SockMapAttach
             | Self::SkReuseportAttach
+            | Self::SkReuseportMigration
             | Self::TcActionProgram
             | Self::CgroupV2
             | Self::LircMode2
@@ -1675,11 +1687,43 @@ impl ProgramCompatibilityRequirement {
     }
 
     pub fn minimum_kernel(&self) -> Option<&'static str> {
-        None
+        match self {
+            Self::KernelBtf => Some("5.2"),
+            Self::BpfTrampoline => Some("5.5"),
+            Self::SleepableProgram => Some("5.10"),
+            Self::KprobeMulti => Some("5.18"),
+            Self::RawTracepointWritable => Some("5.2"),
+            Self::CgroupLsm => Some("6.0"),
+            Self::ExtensionProgram => Some("5.6"),
+            Self::SyscallProgram => Some("5.14"),
+            Self::BpfIterator => Some("5.8"),
+            Self::XdpMultiBuffer => Some("5.18"),
+            Self::FlowDissector => Some("4.20"),
+            Self::Tcx => Some("6.6"),
+            Self::Netkit => Some("6.7"),
+            Self::NetfilterLink => Some("6.4"),
+            Self::SkReuseportAttach => Some("4.19"),
+            Self::SkReuseportMigration => Some("5.14"),
+            Self::TcActionProgram => Some("4.1"),
+            Self::LircMode2 => Some("4.18"),
+            Self::StructOps => Some("5.6"),
+            Self::SchedExt => Some("6.12"),
+            Self::UprobeMulti
+            | Self::RouteLwt
+            | Self::SockMapAttach
+            | Self::CgroupV2
+            | Self::CgroupUnixSockAddr => None,
+        }
     }
 
     pub fn minimum_kernel_source(&self) -> Option<&'static str> {
-        None
+        self.minimum_kernel()?;
+        Some(match self {
+            Self::KernelBtf | Self::RawTracepointWritable => LINUX_5_2_SOURCE,
+            Self::SkReuseportAttach | Self::SkReuseportMigration => SK_REUSEPORT_SOURCE,
+            Self::SchedExt => SCHED_EXT_OPS_SOURCE,
+            _ => EBPF_TIMELINE_SOURCE,
+        })
     }
 }
 

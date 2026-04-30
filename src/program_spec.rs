@@ -2685,6 +2685,15 @@ impl ProgramSpec {
             }
         }
 
+        if let ProgramSpec::SkReuseport { target } = self {
+            if target.mode == SkReuseportMode::Migrate {
+                push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::SkReuseportMigration,
+                );
+            }
+        }
+
         requirements
     }
 
@@ -3539,6 +3548,30 @@ mod tests {
         assert!(
             cgroup_unix.requires_compatibility_feature(
                 ProgramCompatibilityRequirement::CgroupUnixSockAddr
+            )
+        );
+
+        let sk_reuseport_select =
+            ProgramSpec::parse("sk_reuseport:select").expect("sk_reuseport select should parse");
+        assert!(
+            sk_reuseport_select
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SkReuseportAttach)
+        );
+        assert!(
+            !sk_reuseport_select.requires_compatibility_feature(
+                ProgramCompatibilityRequirement::SkReuseportMigration
+            )
+        );
+
+        let sk_reuseport_migrate =
+            ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport migrate should parse");
+        assert!(
+            sk_reuseport_migrate
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SkReuseportAttach)
+        );
+        assert!(
+            sk_reuseport_migrate.requires_compatibility_feature(
+                ProgramCompatibilityRequirement::SkReuseportMigration
             )
         );
     }
