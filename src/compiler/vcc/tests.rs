@@ -10,6 +10,7 @@ mod core;
 mod helpers;
 mod kfuncs;
 mod map_ops;
+mod records;
 mod scalar_ranges;
 
 fn verify_ok(func: &VccFunction) {

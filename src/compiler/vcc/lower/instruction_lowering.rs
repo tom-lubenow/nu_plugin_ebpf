@@ -625,13 +625,45 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::EmitRecord { fields } => {
                 for field in fields {
-                    if let Some(MirType::Ptr { pointee, .. }) = self.types.get(&field.value) {
-                        let size = match pointee.as_ref() {
-                            MirType::Array { .. } | MirType::Struct { .. } => {
-                                pointee.size().max(1)
-                            }
-                            _ => record_field_size(&field.ty),
-                        };
+                    let value_ty = self.types.get(&field.value);
+                    let value_is_ptr = value_ty
+                        .map(vcc_type_from_mir)
+                        .is_some_and(|ty| ty.class() == VccTypeClass::Ptr)
+                        || self.ptr_regs.contains_key(&VccReg(field.value.0));
+                    let value_is_ptr_like = matches!(
+                        value_ty,
+                        Some(MirType::Array { .. } | MirType::Struct { .. })
+                    );
+                    if record_field_requires_pointer(&field.ty) || value_is_ptr || value_is_ptr_like
+                    {
+                        let ptr_info = self
+                            .value_ptr_info(&MirValue::VReg(field.value))
+                            .ok_or_else(|| {
+                                let actual = value_ty
+                                    .map(vcc_type_from_mir)
+                                    .unwrap_or(VccValueType::Unknown)
+                                    .class();
+                                VccError::new(
+                                    VccErrorKind::TypeMismatch {
+                                        expected: VccTypeClass::Ptr,
+                                        actual,
+                                    },
+                                    "emit record requires pointer value",
+                                )
+                            })?;
+                        if !matches!(
+                            ptr_info.space,
+                            VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Unknown
+                        ) {
+                            return Err(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                format!(
+                                    "emit record expects pointer in [Stack, Map], got {}",
+                                    self.helper_space_name(ptr_info.space)
+                                ),
+                            ));
+                        }
+                        let size = record_pointer_access_size(&field.ty, value_ty);
                         self.check_ptr_range(field.value, size, out)?;
                     } else {
                         self.assert_scalar_reg(field.value, out);

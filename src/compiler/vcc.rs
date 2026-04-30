@@ -802,6 +802,24 @@ fn record_field_size(ty: &MirType) -> usize {
     }
 }
 
+fn record_field_requires_pointer(ty: &MirType) -> bool {
+    matches!(ty, MirType::Array { .. } | MirType::Struct { .. }) || ty.size() > 8
+}
+
+fn record_pointer_access_size(field_ty: &MirType, value_ty: Option<&MirType>) -> usize {
+    match value_ty {
+        Some(MirType::Ptr { pointee, .. })
+            if matches!(
+                pointee.as_ref(),
+                MirType::Array { .. } | MirType::Struct { .. }
+            ) =>
+        {
+            pointee.size().max(1)
+        }
+        _ => record_field_size(field_ty).max(1),
+    }
+}
+
 include!("vcc/map_layout.rs");
 fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
     match ty {
