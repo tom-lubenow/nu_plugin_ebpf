@@ -4241,6 +4241,28 @@ fn test_program_attach_kind_loader_live_support_metadata() {
 
 #[test]
 fn test_program_intrinsic_command_registry() {
+    let mut command_names = HashSet::new();
+    let all_capabilities = ProgramCapability::all()
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    for intrinsic in ProgramIntrinsic::all() {
+        assert!(
+            command_names.insert(intrinsic.command_name()),
+            "program intrinsic command repeats for {intrinsic:?}"
+        );
+        assert_eq!(
+            ProgramIntrinsic::from_command_name(intrinsic.command_name()),
+            Some(*intrinsic),
+            "{intrinsic:?} command should round-trip through the registry"
+        );
+        assert!(
+            all_capabilities.contains(&intrinsic.required_capability()),
+            "{intrinsic:?} should require a declared program capability"
+        );
+    }
+    assert_eq!(ProgramIntrinsic::command_names().len(), command_names.len());
+
     assert_eq!(
         ProgramIntrinsic::from_command_name("helper-call"),
         Some(ProgramIntrinsic::HelperCall)
