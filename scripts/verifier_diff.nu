@@ -2908,6 +2908,25 @@ def fixture-effective-min-kernel-sources [fixture] {
     | uniq
 }
 
+def fixture-kernel-compatibility [fixture kernel_release] {
+    let min_kernel = (fixture-effective-min-kernel $fixture)
+
+    if $kernel_release == null or $min_kernel == null {
+        return {
+            compatible: true
+            required: ""
+            reason: ""
+        }
+    }
+
+    let compatible = (kernel-version-at-least $kernel_release $min_kernel)
+    {
+        compatible: $compatible
+        required: $min_kernel
+        reason: (if $compatible { "" } else { $"kernel>=($min_kernel)" })
+    }
+}
+
 def kernel-feature-labels [features] {
     $features
     | each {|feature| $"($feature.key)>=($feature.min_kernel)" }
@@ -2931,7 +2950,9 @@ def fixture-tier [fixture] {
     }
 }
 
-def fixture-summary [fixture] {
+def fixture-summary [fixture compat_kernel] {
+    let compatibility = (fixture-kernel-compatibility $fixture $compat_kernel)
+
     {
         name: $fixture.name
         category: (optional $fixture category "")
@@ -2943,6 +2964,9 @@ def fixture-summary [fixture] {
         kernel_features: (fixture-kernel-features $fixture)
         effective_min_kernel: (fixture-effective-min-kernel $fixture | default "")
         effective_min_kernel_sources: (fixture-effective-min-kernel-sources $fixture)
+        compat_kernel: ($compat_kernel | default "")
+        compatible_with_compat_kernel: $compatibility.compatible
+        compat_kernel_reason: $compatibility.reason
         min_kernel: (optional $fixture min_kernel "")
         min_kernel_source: (optional $fixture min_kernel_source "")
         tags: (optional $fixture tags [])
@@ -2966,7 +2990,15 @@ def kernel-accept-versioned-count [fixtures versioned: bool] {
     | length
 }
 
-def fixture-matrix-rows [fixtures] {
+def kernel-accept-compatible-count [fixtures kernel_release compatible: bool] {
+    $fixtures
+    | where {|fixture| $fixture.kernel == "accept" }
+    | where {|fixture| fixture-has-effective-min-kernel $fixture }
+    | where {|fixture| (fixture-kernel-compatibility $fixture $kernel_release).compatible == $compatible }
+    | length
+}
+
+def fixture-matrix-rows [fixtures compat_kernel] {
     mut rows = []
 
     for tier in $VALID_TIERS {
@@ -2992,31 +3024,44 @@ def fixture-matrix-rows [fixtures] {
                 | where {|fixture| (optional $fixture category "") == $category }
             )
 
-            $rows = (
-                $rows
-                | append {
-                    tier: $tier
-                    category: $category
-                    total: ($category_fixtures | length)
-                    local_accept: (fixture-status-count $category_fixtures local accept)
-                    local_reject: (fixture-status-count $category_fixtures local reject)
-                    local_skip: (fixture-status-count $category_fixtures local skip)
-                    kernel_accept: (fixture-status-count $category_fixtures kernel accept)
-                    kernel_reject: (fixture-status-count $category_fixtures kernel reject)
-                    kernel_skip: (fixture-status-count $category_fixtures kernel skip)
-                    kernel_accept_versioned: (kernel-accept-versioned-count $category_fixtures true)
-                    kernel_accept_unversioned: (kernel-accept-versioned-count $category_fixtures false)
-                }
-            )
+            let base = {
+                tier: $tier
+                category: $category
+                total: ($category_fixtures | length)
+                local_accept: (fixture-status-count $category_fixtures local accept)
+                local_reject: (fixture-status-count $category_fixtures local reject)
+                local_skip: (fixture-status-count $category_fixtures local skip)
+                kernel_accept: (fixture-status-count $category_fixtures kernel accept)
+                kernel_reject: (fixture-status-count $category_fixtures kernel reject)
+                kernel_skip: (fixture-status-count $category_fixtures kernel skip)
+                kernel_accept_versioned: (kernel-accept-versioned-count $category_fixtures true)
+                kernel_accept_unversioned: (kernel-accept-versioned-count $category_fixtures false)
+            }
+
+            let row = if $compat_kernel == null {
+                $base
+            } else {
+                $base
+                | upsert compat_kernel $compat_kernel
+                | upsert kernel_accept_compatible (kernel-accept-compatible-count $category_fixtures $compat_kernel true)
+                | upsert kernel_accept_requires_newer (kernel-accept-compatible-count $category_fixtures $compat_kernel false)
+            }
+
+            $rows = ($rows | append $row)
         }
     }
 
     $rows
 }
 
-def print-fixture-matrix [fixtures] {
-    for row in (fixture-matrix-rows $fixtures) {
-        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned)"
+def print-fixture-matrix [fixtures compat_kernel] {
+    for row in (fixture-matrix-rows $fixtures $compat_kernel) {
+        let compat_text = if (($row | get -o compat_kernel) == null) {
+            ""
+        } else {
+            $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer)"
+        }
+        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned)($compat_text)"
     }
 }
 
@@ -3331,6 +3376,7 @@ def main [
     --list         # List verifier fixtures and exit.
     --matrix       # Print verifier fixture counts by tier and category, then exit.
     --json         # Emit JSON for --list or --matrix.
+    --compat-kernel: string # With --list or --matrix, compare effective minimums against this kernel release.
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
     --fast         # Run only fixtures in the fast tier.
@@ -3351,6 +3397,9 @@ def main [
     if $json and not ($list or $matrix) {
         fail "--json is only supported with --list or --matrix"
     }
+    if $compat_kernel != null and not ($list or $matrix) {
+        fail "--compat-kernel is only supported with --list or --matrix"
+    }
     if $fast and $tier != null {
         fail "--fast and --tier are mutually exclusive"
     }
@@ -3359,27 +3408,35 @@ def main [
     }
 
     validate-fixture-metadata $FIXTURES
+    if $compat_kernel != null {
+        parse-kernel-version $compat_kernel | ignore
+    }
 
     let selected_tier = if $fast { "fast" } else { $tier }
     let fixtures = (select-fixtures $fixture $category $tag $selected_tier $exclude_tier $local_status $kernel_status)
 
     if $list {
-        let summaries = ($fixtures | each {|fixture| fixture-summary $fixture })
+        let summaries = ($fixtures | each {|fixture| fixture-summary $fixture $compat_kernel })
         if $json {
             print ($summaries | to json)
             return
         }
 
         for summary in $summaries {
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')"
+            let compat_text = if $compat_kernel == null {
+                ""
+            } else {
+                $" compat_kernel=($summary.compat_kernel) compatible=($summary.compatible_with_compat_kernel) compat_reason=($summary.compat_kernel_reason)"
+            }
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')($compat_text)"
         }
         return
     }
     if $matrix {
         if $json {
-            print ((fixture-matrix-rows $fixtures) | to json)
+            print ((fixture-matrix-rows $fixtures $compat_kernel) | to json)
         } else {
-            print-fixture-matrix $fixtures
+            print-fixture-matrix $fixtures $compat_kernel
         }
         return
     }
