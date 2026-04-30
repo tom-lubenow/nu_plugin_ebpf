@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::BpfHelper;
+use crate::compiler::EbpfProgramType;
 use crate::program_spec::ProgramSpec;
 
 fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContextField {
@@ -179,6 +179,13 @@ fn projection<'a>(
         .iter()
         .find(|projection| projection.path == path)
         .unwrap_or_else(|| panic!("expected {path} in spec context projections"))
+}
+
+fn projection_absent(projections: &[SpecContextProjection], path: &str) {
+    assert!(
+        !projections.iter().any(|projection| projection.path == path),
+        "did not expect {path} in spec context projections"
+    );
 }
 
 #[test]
@@ -847,20 +854,12 @@ fn test_spec_context_projections_include_socket_members() {
     assert!(family.supported);
     assert!(family.unsupported_reason.is_none());
 
-    let src_ip4 = projection(&projections, "sk.src_ip4");
-    assert!(!src_ip4.supported);
-    assert!(
-        src_ip4
-            .unsupported_reason
-            .as_deref()
-            .is_some_and(|reason| { reason.contains("cgroup_sock post_bind4") })
-    );
+    projection_absent(&projections, "sk.src_ip4");
 }
 
 #[test]
 fn test_spec_context_projections_include_helper_backed_socket_members() {
-    let spec =
-        ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg spec should parse");
+    let spec = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
     let projections = spec_context_projections(&spec);
 
     let tcp_snd_cwnd = projection(&projections, "sk.tcp.snd_cwnd");
@@ -869,18 +868,14 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(tcp_snd_cwnd.source, "helper_return");
     assert_eq!(tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
     assert_eq!(tcp_snd_cwnd.ty, "u32");
-    assert_eq!(
-        tcp_snd_cwnd.supported,
-        spec.helper_call_error(BpfHelper::TcpSock).is_none()
-    );
+    assert!(tcp_snd_cwnd.supported);
+    assert!(tcp_snd_cwnd.unsupported_reason.is_none());
 
     let full_family = projection(&projections, "sk.full.family");
     assert_eq!(full_family.helper, Some("bpf_sk_fullsock"));
     assert_eq!(full_family.ty, "u32");
-    assert_eq!(
-        full_family.supported,
-        spec.helper_call_error(BpfHelper::SkFullsock).is_none()
-    );
+    assert!(full_family.supported);
+    assert!(full_family.unsupported_reason.is_none());
 }
 
 #[test]
@@ -893,14 +888,25 @@ fn test_spec_context_projections_respect_attach_sensitive_socket_members() {
     assert!(src_ip4.supported);
     assert!(src_ip4.unsupported_reason.is_none());
 
-    let src_ip6 = projection(&projections, "sk.src_ip6");
-    assert!(!src_ip6.supported);
-    assert!(
-        src_ip6
-            .unsupported_reason
-            .as_deref()
-            .is_some_and(|reason| { reason.contains("cgroup_sock post_bind6") })
-    );
+    projection_absent(&projections, "sk.src_ip6");
+}
+
+#[test]
+fn test_spec_context_projections_only_include_supported_entries() {
+    for program_type in EbpfProgramType::supported_program_types() {
+        let target = ProgramSpec::representative_target_for_program_type(*program_type);
+        let spec = ProgramSpec::from_program_type_target(*program_type, target)
+            .unwrap_or_else(|err| panic!("{program_type:?} representative target failed: {err}"));
+
+        for projection in spec_context_projections(&spec) {
+            assert!(projection.supported);
+            assert!(
+                projection.unsupported_reason.is_none(),
+                "{program_type:?} exposed unsupported projection {}",
+                projection.path
+            );
+        }
+    }
 }
 
 #[test]

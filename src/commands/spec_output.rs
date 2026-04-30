@@ -627,7 +627,9 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 CtxField::Socket => spec.socket_projection_access_error(&field.name),
                 _ => None,
             };
-            let supported = unsupported_reason.is_none();
+            if unsupported_reason.is_some() {
+                continue;
+            }
             projections.push(SpecContextProjection {
                 root: root.clone(),
                 path: format!("{root}.{}", field.name),
@@ -638,8 +640,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 offset: field.offset,
                 bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
                 bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
-                supported,
-                unsupported_reason,
+                supported: true,
+                unsupported_reason: None,
             });
         }
 
@@ -663,10 +665,12 @@ fn push_struct_field_projections(
     let MirType::Struct { fields, .. } = ty else {
         return;
     };
+    if unsupported_reason.is_some() {
+        return;
+    }
     let helper_name = helper.map(BpfHelper::name);
 
     for field in fields.into_iter().filter(|field| !field.synthetic) {
-        let supported = unsupported_reason.is_none();
         projections.push(SpecContextProjection {
             root: root.to_string(),
             path: format!("{root}.{}", field.name),
@@ -677,8 +681,8 @@ fn push_struct_field_projections(
             offset: field.offset,
             bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
             bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
-            supported,
-            unsupported_reason: unsupported_reason.clone(),
+            supported: true,
+            unsupported_reason: None,
         });
     }
 }

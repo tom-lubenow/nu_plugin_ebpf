@@ -603,6 +603,12 @@ programs, and struct_ops roots/callback family metadata. Probe-like targets
 remain `generic` when the target string already carries all currently modeled
 policy.
 
+`context_projections` is target-specific and only advertises projections that
+are valid for the parsed attach shape. For example, socket fields or
+helper-backed socket projections that are invalid on a particular hook are
+omitted from the projection table; attempting to use them in a program still
+produces the normal compiler diagnostic.
+
 ## Helper Commands (inside closures)
 
 | Command | Description |

@@ -80,6 +80,9 @@ target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
 live-attach/default safety, and compatibility requirement labels before you
 attempt to compile or attach a closure.
+The `context_projections` table lists projections that are valid for that
+specific parsed target; attach-sensitive projections that would be rejected by
+the compiler are omitted rather than advertised as unusable rows.
 
 Structured `attach_shape` records are emitted for attach families where the
 parsed target or attach resource changes compiler, loader, or verifier policy:
