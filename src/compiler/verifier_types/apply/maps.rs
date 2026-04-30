@@ -135,10 +135,12 @@ fn check_map_key_access(
     }
 
     if let VerifierType::Ptr { .. } = state.get(key) {
-        require_ptr_with_space(
+        check_ptr_access(
             key,
             "map key",
             &[AddressSpace::Stack, AddressSpace::Map],
+            0,
+            map_operand_access_size(key, types),
             state,
             errors,
         );
@@ -152,19 +154,22 @@ fn check_map_value_access(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     if let VerifierType::Ptr { .. } = state.get(val) {
-        let access_size = match types.get(&val) {
-            Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
-            Some(ty) => ty.size().max(1),
-            None => 1,
-        };
         check_ptr_access(
             val,
             "map value",
             &[AddressSpace::Stack, AddressSpace::Map],
             0,
-            access_size,
+            map_operand_access_size(val, types),
             state,
             errors,
         );
+    }
+}
+
+fn map_operand_access_size(vreg: VReg, types: &HashMap<VReg, MirType>) -> usize {
+    match types.get(&vreg) {
+        Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+        Some(ty) => ty.size().max(1),
+        None => 1,
     }
 }
