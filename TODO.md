@@ -41,7 +41,7 @@ history and release notes, not here.
 - [~] Add a verifier differential suite.
   - Grow `scripts/verifier_diff.nu` from the initial tagged fixture set and optional-`bpftool` kernel load path into the compatibility matrix driver.
   - Use fixture tiers (`fast`, `btf`, `kernel`, `vm-only`) to keep focused local lanes cheap while preserving heavier BTF/kernel coverage.
-  - Track expected accept/reject status, verifier log fragments, required kernel features, and source-verified minimum kernel versions.
+  - Track expected accept/reject status, verifier log fragments, required kernel features, and source-verified per-feature minimum kernel versions.
   - Add fixture coverage for maps, helpers, kfuncs, callbacks, context fields, packet bounds, ref lifetimes, dynptrs, timers, and by-reference stack objects.
   - Keep dangerous fixtures dry-run-only or VM-only; the default host lane must remain auto-skip safe.
 
@@ -72,7 +72,7 @@ history and release notes, not here.
 
 - [~] Add kernel-version and feature metadata.
   - Keep the program-family and parsed-target compatibility requirement registry authoritative for feature-style requirements such as kernel BTF, BPF trampolines, TCX, netfilter links, LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and cgroup UNIX socket-address hooks.
-  - Track minimum kernel versions for program families, helpers, kfuncs, map kinds, context fields, attach modes, and loader features once each value is verified against kernel sources.
+  - Track minimum kernel versions for program families, helpers, kfuncs, map kinds, context fields, attach modes, and loader features once each value is source-verified; keep per-fixture compatibility metadata feature-granular instead of collapsing mixed dependencies into one scalar.
   - Surface compatibility diagnostics before backend or kernel load when a feature is known to require a newer kernel/config.
   - Document local-kernel detection limits and when the kernel verifier remains authoritative.
 

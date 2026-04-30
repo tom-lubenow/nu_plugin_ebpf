@@ -482,8 +482,13 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        min_kernel: "5.8"
-        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_query/"
+        kernel_features: [
+            {
+                key: "helper:bpf_ringbuf_query"
+                min_kernel: "5.8"
+                source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_query/"
+            }
+        ]
     }
     {
         name: "ringbuf-reserve-submit-balanced"
@@ -501,8 +506,13 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        min_kernel: "5.8"
-        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve/"
+        kernel_features: [
+            {
+                key: "helper:bpf_ringbuf_reserve"
+                min_kernel: "5.8"
+                source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve/"
+            }
+        ]
     }
     {
         name: "ringbuf-reserve-discard-balanced"
@@ -520,8 +530,13 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        min_kernel: "5.8"
-        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_discard/"
+        kernel_features: [
+            {
+                key: "helper:bpf_ringbuf_discard"
+                min_kernel: "5.8"
+                source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_discard/"
+            }
+        ]
     }
     {
         name: "ringbuf-reserve-rejects-leak"
@@ -725,8 +740,13 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        min_kernel: "4.6"
-        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_get_stackid/"
+        kernel_features: [
+            {
+                key: "helper:bpf_get_stackid"
+                min_kernel: "4.6"
+                source: "https://docs.ebpf.io/linux/helper-function/bpf_get_stackid/"
+            }
+        ]
     }
     {
         name: "global-scalar-mut"
@@ -2147,8 +2167,13 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        min_kernel: "5.17"
-        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_loop/"
+        kernel_features: [
+            {
+                key: "helper:bpf_loop"
+                min_kernel: "5.17"
+                source: "https://docs.ebpf.io/linux/helper-function/bpf_loop/"
+            }
+        ]
     }
     {
         name: "callback-for-each-map-elem"
@@ -2163,8 +2188,13 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        min_kernel: "5.13"
-        min_kernel_source: "https://docs.ebpf.io/linux/helper-function/bpf_for_each_map_elem/"
+        kernel_features: [
+            {
+                key: "helper:bpf_for_each_map_elem"
+                min_kernel: "5.13"
+                source: "https://docs.ebpf.io/linux/helper-function/bpf_for_each_map_elem/"
+            }
+        ]
     }
     {
         name: "callback-user-ringbuf-drain"
@@ -2503,16 +2533,43 @@ def parse-kernel-version [version: string] {
 }
 
 def kernel-version-at-least [current: string required: string] {
-    let have = (parse-kernel-version $current)
-    let need = (parse-kernel-version $required)
+    (kernel-version-compare $current $required) >= 0
+}
+
+def kernel-version-compare [left: string right: string] {
+    let have = (parse-kernel-version $left)
+    let need = (parse-kernel-version $right)
 
     if $have.major != $need.major {
-        return ($have.major > $need.major)
+        if $have.major > $need.major { return 1 }
+        return (-1)
     }
     if $have.minor != $need.minor {
-        return ($have.minor > $need.minor)
+        if $have.minor > $need.minor { return 1 }
+        return (-1)
     }
-    $have.patch >= $need.patch
+    if $have.patch != $need.patch {
+        if $have.patch > $need.patch { return 1 }
+        return (-1)
+    }
+
+    0
+}
+
+def kernel-version-max [versions: list<string>] {
+    mut max = ""
+    mut has_max = false
+
+    for version in $versions {
+        if not $has_max {
+            $max = $version
+            $has_max = true
+        } else if (kernel-version-compare $version $max) > 0 {
+            $max = $version
+        }
+    }
+
+    if $has_max { $max } else { null }
 }
 
 def current-kernel-release [] {
@@ -2554,6 +2611,51 @@ def optional [record field fallback] {
     if $value == null { $fallback } else { $value }
 }
 
+def fixture-kernel-features [fixture] {
+    mut features = (optional $fixture kernel_features [])
+
+    let legacy_min_kernel = ($fixture | get -o min_kernel)
+    let legacy_min_kernel_source = ($fixture | get -o min_kernel_source)
+    if $legacy_min_kernel != null {
+        $features = (
+            $features
+            | append {
+                key: "fixture"
+                min_kernel: $legacy_min_kernel
+                source: $legacy_min_kernel_source
+            }
+        )
+    }
+
+    $features
+}
+
+def fixture-effective-min-kernel [fixture] {
+    let versions = (
+        fixture-kernel-features $fixture
+        | each {|feature| $feature.min_kernel }
+    )
+
+    kernel-version-max $versions
+}
+
+def fixture-effective-min-kernel-sources [fixture] {
+    let min_kernel = (fixture-effective-min-kernel $fixture)
+    if $min_kernel == null {
+        return []
+    }
+
+    fixture-kernel-features $fixture
+    | where {|feature| $feature.min_kernel == $min_kernel }
+    | each {|feature| $feature.source }
+    | uniq
+}
+
+def kernel-feature-labels [features] {
+    $features
+    | each {|feature| $"($feature.key)>=($feature.min_kernel)" }
+}
+
 def fixture-tier [fixture] {
     let explicit = ($fixture | get -o tier)
     if $explicit != null {
@@ -2581,6 +2683,9 @@ def fixture-summary [fixture] {
         kernel: $fixture.kernel
         requires: (optional $fixture requires [])
         kernel_requires: (optional $fixture kernel_requires [])
+        kernel_features: (fixture-kernel-features $fixture)
+        effective_min_kernel: (fixture-effective-min-kernel $fixture | default "")
+        effective_min_kernel_sources: (fixture-effective-min-kernel-sources $fixture)
         min_kernel: (optional $fixture min_kernel "")
         min_kernel_source: (optional $fixture min_kernel_source "")
         tags: (optional $fixture tags [])
@@ -2673,6 +2778,40 @@ def validate-host-features [fixture field: string] {
     }
 }
 
+def validate-kernel-feature-metadata [fixture] {
+    let features = (optional $fixture kernel_features [])
+    let keys = ($features | each {|feature| $feature | get -o key })
+
+    for key in ($keys | uniq) {
+        if $key == null or $key == "" {
+            fail $"fixture ($fixture.name) declares a kernel feature without key"
+        }
+
+        let count = ($keys | where {|candidate| $candidate == $key } | length)
+        if $count > 1 {
+            fail $"fixture ($fixture.name) declares duplicate kernel feature key: ($key)"
+        }
+    }
+
+    for feature in $features {
+        let key = ($feature | get -o key)
+        let min_kernel = ($feature | get -o min_kernel)
+        let source = ($feature | get -o source)
+
+        if $key == null or $key == "" {
+            fail $"fixture ($fixture.name) declares a kernel feature without key"
+        }
+        if $min_kernel == null or $min_kernel == "" {
+            fail $"fixture ($fixture.name) kernel feature ($key) missing min_kernel"
+        }
+        if $source == null or $source == "" {
+            fail $"fixture ($fixture.name) kernel feature ($key) missing source"
+        }
+
+        parse-kernel-version $min_kernel | ignore
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     let names = ($fixtures | each {|fixture| $fixture.name })
 
@@ -2689,6 +2828,7 @@ def validate-fixture-metadata [fixtures] {
         validate-status-option $"fixture ($fixture.name) kernel" $fixture.kernel
         validate-host-features $fixture requires
         validate-host-features $fixture kernel_requires
+        validate-kernel-feature-metadata $fixture
 
         let min_kernel = ($fixture | get -o min_kernel)
         let min_kernel_source = ($fixture | get -o min_kernel_source)
@@ -2699,6 +2839,10 @@ def validate-fixture-metadata [fixtures] {
 
         if $min_kernel == null and $min_kernel_source != null {
             fail $"fixture ($fixture.name) declares min_kernel_source without min_kernel"
+        }
+
+        if $min_kernel != null {
+            parse-kernel-version $min_kernel | ignore
         }
     }
 }
@@ -2800,7 +2944,7 @@ def fixture-missing-kernel-requirements [fixture] {
     )
     $missing = ($missing | append $kernel_features)
 
-    let min_kernel = ($fixture | get -o min_kernel)
+    let min_kernel = (fixture-effective-min-kernel $fixture)
     if $min_kernel != null {
         let current = (current-kernel-release)
         if not (kernel-version-at-least $current $min_kernel) {
@@ -2957,7 +3101,7 @@ def main [
         }
 
         for summary in $summaries {
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') min_kernel=($summary.min_kernel) min_kernel_source=($summary.min_kernel_source) tags=($summary.tags | str join ',')"
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')"
         }
         return
     }
