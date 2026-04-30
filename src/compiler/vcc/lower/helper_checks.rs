@@ -1591,6 +1591,21 @@ impl<'a> VccLowerer<'a> {
             || self.ptr_regs.contains_key(&VccReg(reg.0));
 
         if is_ptr {
+            let ptr_info = self
+                .value_ptr_info(&MirValue::VReg(reg))
+                .ok_or_else(|| VccError::new(VccErrorKind::PointerBounds, "expected pointer value"))?;
+            if !matches!(
+                ptr_info.space,
+                VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Unknown
+            ) {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!(
+                        "{what} expects pointer in [Stack, Map], got {}",
+                        self.helper_space_name(ptr_info.space)
+                    ),
+                ));
+            }
             let size = match self.types.get(&reg) {
                 Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
                 _ => 1,
