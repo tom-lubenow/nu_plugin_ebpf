@@ -755,6 +755,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-helper-backed-socket-projections"
+        category: "context-surface"
+        tags: [tc context socket helper-backed]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sk.tcp.snd_cwnd + $ctx.sk.full.family + $ctx.sk.listener.family) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "netkit-primary-skb-context-write"
         category: "context-surface"
         tags: [netkit context packet writable]
@@ -1199,6 +1213,21 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "sk-msg-rejects-fullsock-projection"
+        category: "context-policy"
+        tags: [sk-msg reject socket helper-backed]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk.full.family | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_fullsock' is only valid"
     }
     {
         name: "sk-skb-basic-context"
