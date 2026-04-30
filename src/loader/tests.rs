@@ -1,3 +1,4 @@
+use super::attach::kernel_minimum_requirement_detail;
 use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
@@ -1669,6 +1670,33 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
             }
         }
     }
+}
+
+#[test]
+fn test_kernel_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [
+        ProgramCompatibilityRequirement::KernelBtf,
+        ProgramCompatibilityRequirement::BpfTrampoline,
+        ProgramCompatibilityRequirement::SleepableProgram,
+    ];
+    let msg = kernel_minimum_requirement_detail(&requirements, "5.4.0-test")
+        .expect("kernel 5.4 should be too old for sleepable trampoline programs");
+
+    assert!(msg.contains("parsed target requires kernel>=5.10"));
+    assert!(msg.contains("current kernel is 5.4.0-test"));
+    assert!(msg.contains(ProgramCompatibilityRequirement::SleepableProgram.description()));
+    assert!(msg.contains("kernel>=5.10"));
+}
+
+#[test]
+fn test_kernel_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [
+        ProgramCompatibilityRequirement::KernelBtf,
+        ProgramCompatibilityRequirement::BpfTrampoline,
+        ProgramCompatibilityRequirement::SleepableProgram,
+    ];
+    assert!(kernel_minimum_requirement_detail(&requirements, "5.10.0").is_none());
+    assert!(kernel_minimum_requirement_detail(&requirements, "6.1.12").is_none());
 }
 
 #[test]

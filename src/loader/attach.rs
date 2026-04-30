@@ -2,6 +2,7 @@ use super::*;
 use aya::programs::perf_event::perf_hw_id;
 use object::{Object as _, ObjectSymbol as _, SymbolKind as ObjectSymbolKind};
 use std::io::BufRead as _;
+use std::process::Command;
 
 fn unsupported_live_attach_error(
     prog_type: crate::compiler::EbpfProgramType,
@@ -51,6 +52,40 @@ fn compatibility_requirements_detail(
             .join(", ");
         format!("; feature requirements: {descriptions}")
     }
+}
+
+fn current_kernel_release() -> Option<String> {
+    let output = Command::new("uname").arg("-r").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub(super) fn kernel_minimum_requirement_detail(
+    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
+    current_kernel: &str,
+) -> Option<String> {
+    let minimum =
+        crate::compiler::ProgramCompatibilityRequirement::effective_minimum_kernel(requirements)?;
+    if crate::compiler::ProgramCompatibilityRequirement::kernel_version_at_least(
+        current_kernel,
+        minimum,
+    ) {
+        return None;
+    }
+
+    Some(format!(
+        "parsed target requires kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        compatibility_requirements_detail(requirements)
+    ))
+}
+
+fn current_kernel_minimum_error(
+    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
+) -> Option<LoadError> {
+    let current_kernel = current_kernel_release()?;
+    kernel_minimum_requirement_detail(requirements, &current_kernel).map(LoadError::Attach)
 }
 
 const SYSCALL_SYMBOL_PREFIXES: &[&str] = &[
@@ -386,6 +421,9 @@ impl EbpfState {
             if target.is_unix() {
                 return Err(unsupported_cgroup_sock_addr_target_error(target));
             }
+        }
+        if let Some(err) = current_kernel_minimum_error(&compatibility_requirements) {
+            return Err(err);
         }
         let syscall_probe_symbols = match &spec {
             ProgramSpec::Ksyscall { syscall } | ProgramSpec::KretSyscall { syscall } => {

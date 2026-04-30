@@ -4578,6 +4578,21 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             .is_none(),
         "mixed sk_msg/sk_skb attach requirement should stay nullable until split"
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_minimum_kernel(&[
+            ProgramCompatibilityRequirement::KernelBtf,
+            ProgramCompatibilityRequirement::BpfTrampoline,
+            ProgramCompatibilityRequirement::SleepableProgram,
+        ]),
+        Some("5.10")
+    );
+    assert!(ProgramCompatibilityRequirement::kernel_version_at_least(
+        "6.1.12-generic",
+        "5.10"
+    ));
+    assert!(!ProgramCompatibilityRequirement::kernel_version_at_least(
+        "5.4.0", "5.10"
+    ));
 }
 
 #[test]

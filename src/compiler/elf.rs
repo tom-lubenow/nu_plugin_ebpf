@@ -6,6 +6,7 @@
 //! - A "license" section containing the license string (required for most helpers)
 //! - Optional ".maps" section for BPF map definitions
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -1724,6 +1725,50 @@ impl ProgramCompatibilityRequirement {
             Self::SchedExt => SCHED_EXT_OPS_SOURCE,
             _ => EBPF_TIMELINE_SOURCE,
         })
+    }
+
+    pub fn effective_minimum_kernel(
+        requirements: &[ProgramCompatibilityRequirement],
+    ) -> Option<&'static str> {
+        let mut minimum = None;
+        for requirement in requirements {
+            let Some(candidate) = requirement.minimum_kernel() else {
+                continue;
+            };
+            let should_replace = match minimum {
+                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                None => true,
+            };
+            if should_replace {
+                minimum = Some(candidate);
+            }
+        }
+        minimum
+    }
+
+    pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
+        !Self::kernel_version_cmp(current, minimum).is_lt()
+    }
+
+    fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
+        let mut left_parts = left.split(['.', '-']);
+        let mut right_parts = right.split(['.', '-']);
+        let left_version = [
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+        ];
+        let right_version = [
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+        ];
+
+        left_version.cmp(&right_version)
+    }
+
+    fn kernel_version_part(part: Option<&str>) -> u32 {
+        part.unwrap_or("0").parse().unwrap_or(0)
     }
 }
 
