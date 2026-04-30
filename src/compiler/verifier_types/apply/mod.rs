@@ -171,7 +171,7 @@ pub(super) fn apply_inst(
             apply_string_len_write_inst(*dst_len, state, errors);
         }
         MirInst::RecordStore { val, ty, .. } => {
-            apply_record_store_inst(val, ty, state, errors);
+            apply_record_store_inst(val, ty, types, state, errors);
         }
     }
 }

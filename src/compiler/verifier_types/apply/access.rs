@@ -502,19 +502,30 @@ pub(super) fn apply_string_len_write_inst(
 pub(super) fn apply_record_store_inst(
     val: &MirValue,
     ty: &MirType,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if !matches!(ty, MirType::Array { .. } | MirType::Ptr { .. }) {
+    if !mir_requires_pointer_value(ty) {
         return;
     }
-    if let MirValue::VReg(vreg) = val {
-        require_ptr_with_space(
-            *vreg,
-            "record store",
-            &[AddressSpace::Stack, AddressSpace::Map],
-            state,
-            errors,
-        );
+    match val {
+        MirValue::VReg(vreg) => {
+            check_ptr_access(
+                *vreg,
+                "record store",
+                &[AddressSpace::Stack, AddressSpace::Map],
+                0,
+                record_pointer_access_size(ty, types.get(vreg)),
+                state,
+                errors,
+            );
+        }
+        MirValue::StackSlot(_) => {}
+        MirValue::Const(_) => {
+            errors.push(VerifierTypeError::new(
+                "record store requires pointer value".to_string(),
+            ));
+        }
     }
 }
