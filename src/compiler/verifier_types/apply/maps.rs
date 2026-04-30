@@ -77,6 +77,7 @@ pub(super) fn apply_map_update_inst(
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_operand_scalar_size(val, "map value", types, errors);
     check_map_key_access(map, key, types, state, errors);
+    check_map_value_access(val, types, state, errors);
 }
 
 pub(super) fn apply_map_delete_inst(
@@ -138,6 +139,30 @@ fn check_map_key_access(
             key,
             "map key",
             &[AddressSpace::Stack, AddressSpace::Map],
+            state,
+            errors,
+        );
+    }
+}
+
+fn check_map_value_access(
+    val: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if let VerifierType::Ptr { .. } = state.get(val) {
+        let access_size = match types.get(&val) {
+            Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+            Some(ty) => ty.size().max(1),
+            None => 1,
+        };
+        check_ptr_access(
+            val,
+            "map value",
+            &[AddressSpace::Stack, AddressSpace::Map],
+            0,
+            access_size,
             state,
             errors,
         );
