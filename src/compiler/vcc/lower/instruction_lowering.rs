@@ -30,6 +30,117 @@ impl<'a> VccLowerer<'a> {
         source
     }
 
+    fn push_iter_lifecycle_inst(
+        kfunc: &str,
+        out: &mut Vec<VccInst>,
+        lifecycle: KfuncUnknownIterLifecycle,
+        iter: VccReg,
+    ) {
+        match kfunc {
+            "scx_bpf_dsq_move" => {
+                out.push(VccInst::IterScxDsqMove { iter });
+                return;
+            }
+            "scx_bpf_dsq_move_set_slice" => {
+                out.push(VccInst::IterScxDsqMoveSetSlice { iter });
+                return;
+            }
+            "scx_bpf_dsq_move_set_vtime" => {
+                out.push(VccInst::IterScxDsqMoveSetVtime { iter });
+                return;
+            }
+            "scx_bpf_dsq_move_vtime" => {
+                out.push(VccInst::IterScxDsqMoveVtime { iter });
+                return;
+            }
+            _ => {}
+        }
+
+        match (lifecycle.family, lifecycle.op) {
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterTaskVmaNew { iter });
+            }
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterTaskVmaNext { iter });
+            }
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterTaskVmaDestroy { iter });
+            }
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterTaskNew { iter });
+            }
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterTaskNext { iter });
+            }
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterTaskDestroy { iter });
+            }
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterScxDsqNew { iter });
+            }
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterScxDsqNext { iter });
+            }
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterScxDsqDestroy { iter });
+            }
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterNumNew { iter });
+            }
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterNumNext { iter });
+            }
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterNumDestroy { iter });
+            }
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterBitsNew { iter });
+            }
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterBitsNext { iter });
+            }
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterBitsDestroy { iter });
+            }
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterCssNew { iter });
+            }
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterCssNext { iter });
+            }
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterCssDestroy { iter });
+            }
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterCssTaskNew { iter });
+            }
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterCssTaskNext { iter });
+            }
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterCssTaskDestroy { iter });
+            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterDmabufNew { iter });
+            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterDmabufNext { iter });
+            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterDmabufDestroy { iter });
+            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New) => {
+                out.push(VccInst::IterKmemCacheNew { iter });
+            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Next) => {
+                out.push(VccInst::IterKmemCacheNext { iter });
+            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Destroy) => {
+                out.push(VccInst::IterKmemCacheDestroy { iter });
+            }
+        }
+    }
+
     pub(super) fn lower_inst(
         &mut self,
         inst: &MirInst,
@@ -908,310 +1019,10 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                 }
-                if kfunc == "bpf_iter_task_vma_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterTaskVmaNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_task_vma_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterTaskVmaNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_task_vma_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterTaskVmaDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_task_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterTaskNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_task_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterTaskNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_task_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterTaskDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_scx_dsq_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_scx_dsq_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_scx_dsq_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "scx_bpf_dsq_move" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqMove {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "scx_bpf_dsq_move_set_slice" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqMoveSetSlice {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "scx_bpf_dsq_move_set_vtime" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqMoveSetVtime {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "scx_bpf_dsq_move_vtime" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterScxDsqMoveVtime {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_num_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterNumNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_num_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterNumNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_num_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterNumDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_bits_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterBitsNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_bits_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterBitsNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_bits_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterBitsDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_css_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterCssNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_css_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterCssNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_css_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterCssDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_css_task_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterCssTaskNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_css_task_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterCssTaskNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_css_task_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterCssTaskDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_dmabuf_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterDmabufNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_dmabuf_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterDmabufNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_dmabuf_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterDmabufDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_kmem_cache_new" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterKmemCacheNew {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_kmem_cache_next" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterKmemCacheNext {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if kfunc == "bpf_iter_kmem_cache_destroy" {
-                    if let Some(iter) = args.first() {
-                        out.push(VccInst::IterKmemCacheDestroy {
-                            iter: VccReg(iter.0),
-                        });
-                    }
-                }
-                if let Some(lifecycle) = Self::kfunc_unknown_iter_lifecycle(kfunc)
+                if let Some(lifecycle) = Self::kfunc_iter_lifecycle(kfunc)
                     && let Some(iter) = args.get(lifecycle.arg_idx)
                 {
-                    let iter = VccReg(iter.0);
-                    match (lifecycle.family, lifecycle.op) {
-                        (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterTaskVmaNew { iter });
-                        }
-                        (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterTaskVmaNext { iter });
-                        }
-                        (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterTaskVmaDestroy { iter });
-                        }
-                        (KfuncIterFamily::Task, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterTaskNew { iter });
-                        }
-                        (KfuncIterFamily::Task, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterTaskNext { iter });
-                        }
-                        (KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterTaskDestroy { iter });
-                        }
-                        (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterScxDsqNew { iter });
-                        }
-                        (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterScxDsqNext { iter });
-                        }
-                        (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterScxDsqDestroy { iter });
-                        }
-                        (KfuncIterFamily::Num, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterNumNew { iter });
-                        }
-                        (KfuncIterFamily::Num, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterNumNext { iter });
-                        }
-                        (KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterNumDestroy { iter });
-                        }
-                        (KfuncIterFamily::Bits, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterBitsNew { iter });
-                        }
-                        (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterBitsNext { iter });
-                        }
-                        (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterBitsDestroy { iter });
-                        }
-                        (KfuncIterFamily::Css, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterCssNew { iter });
-                        }
-                        (KfuncIterFamily::Css, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterCssNext { iter });
-                        }
-                        (KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterCssDestroy { iter });
-                        }
-                        (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterCssTaskNew { iter });
-                        }
-                        (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterCssTaskNext { iter });
-                        }
-                        (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterCssTaskDestroy { iter });
-                        }
-                        (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterDmabufNew { iter });
-                        }
-                        (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterDmabufNext { iter });
-                        }
-                        (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterDmabufDestroy { iter });
-                        }
-                        (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New) => {
-                            out.push(VccInst::IterKmemCacheNew { iter });
-                        }
-                        (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Next) => {
-                            out.push(VccInst::IterKmemCacheNext { iter });
-                        }
-                        (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Destroy) => {
-                            out.push(VccInst::IterKmemCacheDestroy { iter });
-                        }
-                    }
+                    Self::push_iter_lifecycle_inst(kfunc, out, lifecycle, VccReg(iter.0));
                 }
                 let unknown_dynptr_copies = Self::kfunc_unknown_dynptr_copy(kfunc);
                 let unknown_dynptr_args = Self::kfunc_unknown_dynptr_args(kfunc);

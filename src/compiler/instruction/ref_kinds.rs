@@ -107,6 +107,64 @@ pub struct KfuncUnknownIterLifecycle {
     pub arg_idx: usize,
 }
 
+pub fn kfunc_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifecycle> {
+    let known = match kfunc {
+        "bpf_iter_task_vma_new" => Some((KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New)),
+        "bpf_iter_task_vma_next" => Some((KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_task_vma_destroy" => {
+            Some((KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Destroy))
+        }
+        "bpf_iter_task_new" => Some((KfuncIterFamily::Task, KfuncIterLifecycleOp::New)),
+        "bpf_iter_task_next" => Some((KfuncIterFamily::Task, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_task_destroy" => Some((KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy)),
+        "bpf_iter_scx_dsq_new" => Some((KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New)),
+        "bpf_iter_scx_dsq_next" => Some((KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_scx_dsq_destroy" => {
+            Some((KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Destroy))
+        }
+        "scx_bpf_dsq_move"
+        | "scx_bpf_dsq_move_vtime"
+        | "scx_bpf_dsq_move_set_slice"
+        | "scx_bpf_dsq_move_set_vtime" => {
+            Some((KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next))
+        }
+        "bpf_iter_num_new" => Some((KfuncIterFamily::Num, KfuncIterLifecycleOp::New)),
+        "bpf_iter_num_next" => Some((KfuncIterFamily::Num, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_num_destroy" => Some((KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy)),
+        "bpf_iter_bits_new" => Some((KfuncIterFamily::Bits, KfuncIterLifecycleOp::New)),
+        "bpf_iter_bits_next" => Some((KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_bits_destroy" => Some((KfuncIterFamily::Bits, KfuncIterLifecycleOp::Destroy)),
+        "bpf_iter_css_new" => Some((KfuncIterFamily::Css, KfuncIterLifecycleOp::New)),
+        "bpf_iter_css_next" => Some((KfuncIterFamily::Css, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_css_destroy" => Some((KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy)),
+        "bpf_iter_css_task_new" => Some((KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New)),
+        "bpf_iter_css_task_next" => Some((KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_css_task_destroy" => {
+            Some((KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Destroy))
+        }
+        "bpf_iter_dmabuf_new" => Some((KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New)),
+        "bpf_iter_dmabuf_next" => Some((KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Next)),
+        "bpf_iter_dmabuf_destroy" => Some((KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Destroy)),
+        "bpf_iter_kmem_cache_new" => Some((KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New)),
+        "bpf_iter_kmem_cache_next" => {
+            Some((KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Next))
+        }
+        "bpf_iter_kmem_cache_destroy" => {
+            Some((KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Destroy))
+        }
+        _ => None,
+    };
+    if let Some((family, op)) = known {
+        return Some(KfuncUnknownIterLifecycle {
+            family,
+            op,
+            arg_idx: 0,
+        });
+    }
+
+    kfunc_unknown_iter_lifecycle(kfunc)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KfuncUnknownDynptrArgRole {
     In,

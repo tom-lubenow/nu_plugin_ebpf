@@ -12,7 +12,7 @@ use super::instruction::{
     KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy, KfuncUnknownIterLifecycle,
     KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
     KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_release_ref_kind,
-    kfunc_acquire_ref_kind,
+    kfunc_acquire_ref_kind, kfunc_iter_lifecycle as kfunc_iter_lifecycle_shared,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
     kfunc_pointer_arg_min_access_size as kfunc_pointer_arg_min_access_size_shared,
@@ -28,7 +28,6 @@ use super::instruction::{
     kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
     kfunc_semantics, kfunc_unknown_dynptr_args as kfunc_unknown_dynptr_args_shared,
     kfunc_unknown_dynptr_copy as kfunc_unknown_dynptr_copy_shared,
-    kfunc_unknown_iter_lifecycle as kfunc_unknown_iter_lifecycle_shared,
     kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
     kfunc_unknown_stack_object_lifecycle as kfunc_unknown_stack_object_lifecycle_shared,
 };

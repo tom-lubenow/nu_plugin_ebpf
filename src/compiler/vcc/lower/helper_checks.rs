@@ -334,10 +334,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
     }
 
-    pub(super) fn kfunc_unknown_iter_lifecycle(
+    pub(super) fn kfunc_iter_lifecycle(
         kfunc: &str,
     ) -> Option<KfuncUnknownIterLifecycle> {
-        kfunc_unknown_iter_lifecycle_shared(kfunc)
+        kfunc_iter_lifecycle_shared(kfunc)
     }
 
     pub(super) fn kfunc_unknown_dynptr_args(

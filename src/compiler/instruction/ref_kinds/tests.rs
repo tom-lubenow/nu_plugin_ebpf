@@ -87,6 +87,35 @@ fn test_iter_family_from_stack_object_type_name() {
 }
 
 #[test]
+fn test_known_kfunc_iter_lifecycle_table() {
+    assert_eq!(
+        kfunc_iter_lifecycle("bpf_iter_task_vma_new"),
+        Some(KfuncUnknownIterLifecycle {
+            family: KfuncIterFamily::TaskVma,
+            op: KfuncIterLifecycleOp::New,
+            arg_idx: 0,
+        })
+    );
+    assert_eq!(
+        kfunc_iter_lifecycle("bpf_iter_css_task_destroy"),
+        Some(KfuncUnknownIterLifecycle {
+            family: KfuncIterFamily::CssTask,
+            op: KfuncIterLifecycleOp::Destroy,
+            arg_idx: 0,
+        })
+    );
+    assert_eq!(
+        kfunc_iter_lifecycle("scx_bpf_dsq_move_set_slice"),
+        Some(KfuncUnknownIterLifecycle {
+            family: KfuncIterFamily::ScxDsq,
+            op: KfuncIterLifecycleOp::Next,
+            arg_idx: 0,
+        })
+    );
+    assert_eq!(kfunc_iter_lifecycle("bpf_task_from_pid"), None);
+}
+
+#[test]
 fn test_is_dynptr_stack_object_type_name() {
     assert!(is_dynptr_stack_object_type_name("bpf_dynptr"));
     assert!(is_dynptr_stack_object_type_name("bpf_dynptr_kern"));
