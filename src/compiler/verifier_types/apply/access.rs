@@ -489,18 +489,27 @@ pub(super) fn apply_list_push_inst(
     require_scalar_reg(item, "list push item", state, errors);
 }
 
-pub(super) fn apply_string_len_write_inst(
+pub(super) fn apply_string_append_inst(
     dst_len: VReg,
+    val: &MirValue,
+    val_type: &StringAppendType,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    let ty = state.get(dst_len);
-    if matches!(ty, VerifierType::Uninit) {
-        errors.push(VerifierTypeError::new(format!(
-            "string length uses uninitialized v{}",
-            dst_len.0
-        )));
+    require_scalar_reg(dst_len, "string append length", state, errors);
+    if matches!(val_type, StringAppendType::Integer) {
+        require_scalar_value(val, "string append integer", state, errors);
     }
+}
+
+pub(super) fn apply_int_to_string_inst(
+    dst_len: VReg,
+    val: VReg,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    require_scalar_reg(dst_len, "int to string length", state, errors);
+    require_scalar_reg(val, "int to string value", state, errors);
 }
 
 pub(super) fn apply_histogram_inst(

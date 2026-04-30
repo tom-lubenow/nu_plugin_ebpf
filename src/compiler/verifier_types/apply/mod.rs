@@ -169,8 +169,16 @@ pub(super) fn apply_inst(
         MirInst::ListPush { list, item } => {
             apply_list_push_inst(*list, *item, state, errors);
         }
-        MirInst::StringAppend { dst_len, .. } | MirInst::IntToString { dst_len, .. } => {
-            apply_string_len_write_inst(*dst_len, state, errors);
+        MirInst::StringAppend {
+            dst_len,
+            val,
+            val_type,
+            ..
+        } => {
+            apply_string_append_inst(*dst_len, val, val_type, state, errors);
+        }
+        MirInst::IntToString { dst_len, val, .. } => {
+            apply_int_to_string_inst(*dst_len, *val, state, errors);
         }
         MirInst::RecordStore { val, ty, .. } => {
             apply_record_store_inst(val, ty, types, state, errors);
