@@ -12,6 +12,66 @@ const VALID_HOST_FEATURES = [
     "tracefs"
 ]
 
+const KERNEL_FEATURE_PROG_RAW_TRACEPOINT = {
+    key: "program:BPF_PROG_TYPE_RAW_TRACEPOINT"
+    min_kernel: "4.17"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_RAW_TRACEPOINT/"
+}
+const KERNEL_FEATURE_PROG_XDP = {
+    key: "program:BPF_PROG_TYPE_XDP"
+    min_kernel: "4.8"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_XDP/"
+}
+const KERNEL_FEATURE_PROG_SCHED_ACT = {
+    key: "program:BPF_PROG_TYPE_SCHED_ACT"
+    min_kernel: "4.1"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SCHED_ACT/"
+}
+const KERNEL_FEATURE_PROG_SK_LOOKUP = {
+    key: "program:BPF_PROG_TYPE_SK_LOOKUP"
+    min_kernel: "5.9"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_LOOKUP/"
+}
+const KERNEL_FEATURE_PROG_SK_MSG = {
+    key: "program:BPF_PROG_TYPE_SK_MSG"
+    min_kernel: "4.17"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_MSG/"
+}
+const KERNEL_FEATURE_PROG_SK_SKB = {
+    key: "program:BPF_PROG_TYPE_SK_SKB"
+    min_kernel: "4.14"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_SKB/"
+}
+const KERNEL_FEATURE_MAP_HASH = {
+    key: "map:BPF_MAP_TYPE_HASH"
+    min_kernel: "3.19"
+    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_HASH/"
+}
+const KERNEL_FEATURE_MAP_CGROUP_ARRAY = {
+    key: "map:BPF_MAP_TYPE_CGROUP_ARRAY"
+    min_kernel: "4.8"
+    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_CGROUP_ARRAY/"
+}
+const KERNEL_FEATURE_MAP_DEVMAP = {
+    key: "map:BPF_MAP_TYPE_DEVMAP"
+    min_kernel: "4.14"
+    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_DEVMAP/"
+}
+const KERNEL_FEATURE_MAP_PROG_ARRAY = {
+    key: "map:BPF_MAP_TYPE_PROG_ARRAY"
+    min_kernel: "4.2"
+    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_PROG_ARRAY/"
+}
+const KERNEL_FEATURE_MAP_SOCKMAP = {
+    key: "map:BPF_MAP_TYPE_SOCKMAP"
+    min_kernel: "4.14"
+    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_SOCKMAP/"
+}
+const KERNEL_FEATURE_GLOBAL_DATA_SECTIONS = {
+    key: "global:bpf-data-sections"
+    min_kernel: "5.2"
+    source: "https://kernelnewbies.org/Linux_5.2"
+}
 const KERNEL_FEATURE_BPF_RINGBUF_QUERY = {
     key: "helper:bpf_ringbuf_query"
     min_kernel: "5.8"
@@ -31,6 +91,66 @@ const KERNEL_FEATURE_BPF_GET_STACKID = {
     key: "helper:bpf_get_stackid"
     min_kernel: "4.6"
     source: "https://docs.ebpf.io/linux/helper-function/bpf_get_stackid/"
+}
+const KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP = {
+    key: "helper:bpf_skb_under_cgroup"
+    min_kernel: "4.8"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_skb_under_cgroup/"
+}
+const KERNEL_FEATURE_BPF_CSUM_DIFF = {
+    key: "helper:bpf_csum_diff"
+    min_kernel: "4.6"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_csum_diff/"
+}
+const KERNEL_FEATURE_BPF_REDIRECT_NEIGH = {
+    key: "helper:bpf_redirect_neigh"
+    min_kernel: "5.10"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_redirect_neigh/"
+}
+const KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD = {
+    key: "helper:bpf_xdp_adjust_head"
+    min_kernel: "4.10"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_xdp_adjust_head/"
+}
+const KERNEL_FEATURE_BPF_REDIRECT = {
+    key: "helper:bpf_redirect"
+    min_kernel: "4.4"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_redirect/"
+}
+const KERNEL_FEATURE_BPF_REDIRECT_MAP = {
+    key: "helper:bpf_redirect_map"
+    min_kernel: "4.14"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_redirect_map/"
+}
+const KERNEL_FEATURE_BPF_TAIL_CALL = {
+    key: "helper:bpf_tail_call"
+    min_kernel: "4.2"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_tail_call/"
+}
+const KERNEL_FEATURE_BPF_SK_ASSIGN = {
+    key: "helper:bpf_sk_assign"
+    min_kernel: "5.7"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_sk_assign/"
+}
+const KERNEL_FEATURE_BPF_MSG_APPLY_BYTES = {
+    key: "helper:bpf_msg_apply_bytes"
+    min_kernel: "4.17"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_msg_apply_bytes/"
+}
+const KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP = {
+    key: "helper:bpf_msg_redirect_map"
+    min_kernel: "4.17"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_msg_redirect_map/"
+}
+const KERNEL_FEATURE_BPF_SKB_PULL_DATA = {
+    key: "helper:bpf_skb_pull_data"
+    min_kernel: "4.9"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_skb_pull_data/"
+}
+const KERNEL_FEATURE_BPF_SK_REDIRECT_MAP = {
+    key: "helper:bpf_sk_redirect_map"
+    min_kernel: "4.14"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_sk_redirect_map/"
 }
 const KERNEL_FEATURE_BPF_TIMER_INIT = {
     key: "helper:bpf_timer_init"
@@ -102,6 +222,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_PROG_RAW_TRACEPOINT]
     }
     {
         name: "kprobe-multi-context"
@@ -302,6 +423,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_PROG_XDP]
     }
     {
         name: "xdp-frags-driver-context"
@@ -335,6 +457,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_MAP_HASH]
     }
     {
         name: "map-get-direct-pointer-branch"
@@ -353,6 +476,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_MAP_HASH]
     }
     {
         name: "map-define-record-key-put-get"
@@ -843,6 +967,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
     }
     {
         name: "tc-action-cgroup-array-contains"
@@ -857,6 +982,11 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SCHED_ACT
+            $KERNEL_FEATURE_MAP_CGROUP_ARRAY
+            $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP
+        ]
     }
     {
         name: "tc-action-skb-context"
@@ -2334,6 +2464,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_BPF_CSUM_DIFF]
     }
     {
         name: "csum-diff-rejects-null-nonzero-side"
@@ -2377,6 +2508,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [$KERNEL_FEATURE_BPF_REDIRECT_NEIGH]
     }
     {
         name: "redirect-neigh-rejects-null-nonzero-plen"
@@ -2406,6 +2538,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_XDP
+            $KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD
+        ]
     }
     {
         name: "redirect-xdp-ifindex"
@@ -2420,6 +2556,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_XDP
+            $KERNEL_FEATURE_BPF_REDIRECT
+        ]
     }
     {
         name: "redirect-map-xdp-devmap"
@@ -2434,6 +2574,11 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_XDP
+            $KERNEL_FEATURE_MAP_DEVMAP
+            $KERNEL_FEATURE_BPF_REDIRECT_MAP
+        ]
     }
     {
         name: "tail-call-prog-array"
@@ -2447,6 +2592,11 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_RAW_TRACEPOINT
+            $KERNEL_FEATURE_MAP_PROG_ARRAY
+            $KERNEL_FEATURE_BPF_TAIL_CALL
+        ]
     }
     {
         name: "assign-socket-sk-lookup-clear"
@@ -2462,6 +2612,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SK_LOOKUP
+            $KERNEL_FEATURE_BPF_SK_ASSIGN
+        ]
     }
     {
         name: "adjust-message-sk-msg-apply"
@@ -2476,6 +2630,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SK_MSG
+            $KERNEL_FEATURE_BPF_MSG_APPLY_BYTES
+        ]
     }
     {
         name: "redirect-socket-sk-msg-sockmap"
@@ -2489,6 +2647,11 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SK_MSG
+            $KERNEL_FEATURE_MAP_SOCKMAP
+            $KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP
+        ]
     }
     {
         name: "adjust-packet-sk-skb-pull"
@@ -2503,6 +2666,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SK_SKB
+            $KERNEL_FEATURE_BPF_SKB_PULL_DATA
+        ]
     }
     {
         name: "redirect-socket-sk-skb-sockmap"
@@ -2516,6 +2683,11 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SK_SKB
+            $KERNEL_FEATURE_MAP_SOCKMAP
+            $KERNEL_FEATURE_BPF_SK_REDIRECT_MAP
+        ]
     }
     {
         name: "redirect-socket-sk-reuseport-sockarray"
@@ -2543,6 +2715,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_SK_SKB
+            $KERNEL_FEATURE_BPF_SKB_PULL_DATA
+        ]
     }
 ]
 
