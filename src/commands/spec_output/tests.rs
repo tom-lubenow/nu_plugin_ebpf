@@ -12,7 +12,7 @@ fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContex
 #[test]
 fn test_spec_context_fields_include_program_specific_aliases() {
     let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
-    let fields = spec_context_fields(&spec);
+    let fields = spec_context_fields(&spec, false);
 
     assert!(field(&fields, "ingress_ifindex").names.contains(&"ifindex"));
     let packet_len = field(&fields, "packet_len");
@@ -24,7 +24,7 @@ fn test_spec_context_fields_include_program_specific_aliases() {
 #[test]
 fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
     let spec = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
-    let fields = spec_context_fields(&spec);
+    let fields = spec_context_fields(&spec, false);
 
     let task = field(&fields, "task");
     assert!(task.names.contains(&"current_task"));
@@ -46,7 +46,7 @@ fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
 fn test_spec_context_fields_include_pointer_verifier_facts() {
     let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
         .expect("cgroup_sock spec should parse");
-    let fields = spec_context_fields(&spec);
+    let fields = spec_context_fields(&spec, false);
 
     let socket = field(&fields, "sk");
     assert!(socket.raw_context_pointer);
@@ -58,7 +58,7 @@ fn test_spec_context_fields_include_pointer_verifier_facts() {
 fn test_spec_context_fields_label_flow_keys_as_context_pointer() {
     let spec = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
         .expect("flow_dissector spec should parse");
-    let fields = spec_context_fields(&spec);
+    let fields = spec_context_fields(&spec, false);
 
     let flow_keys = field(&fields, "flow_keys");
     assert_eq!(
@@ -73,9 +73,27 @@ fn test_spec_context_fields_label_flow_keys_as_context_pointer() {
 }
 
 #[test]
+fn test_spec_context_fields_label_helper_backed_scalar_fields() {
+    let spec = ProgramSpec::parse("kretprobe:sys_read").expect("kretprobe spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    let retval = field(&fields, "retval");
+    assert_eq!(retval.semantic_type.as_deref(), Some("u64"));
+    assert_eq!(retval.runtime_type.as_deref(), Some("u64"));
+
+    let kstack = field(&fields, "kstack");
+    assert_eq!(kstack.semantic_type.as_deref(), Some("i64"));
+    assert_eq!(kstack.runtime_type.as_deref(), Some("i64"));
+
+    let ustack = field(&fields, "ustack");
+    assert_eq!(ustack.semantic_type.as_deref(), Some("i64"));
+    assert_eq!(ustack.runtime_type.as_deref(), Some("i64"));
+}
+
+#[test]
 fn test_spec_context_fields_include_load_guards() {
     let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
-    let fields = spec_context_fields(&spec);
+    let fields = spec_context_fields(&spec, false);
 
     let data = field(&fields, "data");
     assert_eq!(data.load_guard, Some("sock-ops-packet-data"));
@@ -881,7 +899,7 @@ fn test_spec_context_projections_respect_attach_sensitive_socket_members() {
 fn test_spec_context_fields_preserve_tracepoint_payload_names() {
     let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
         .expect("tracepoint spec should parse");
-    let fields = spec_context_fields(&spec);
+    let fields = spec_context_fields(&spec, false);
 
     assert!(field(&fields, "cgroup").names.contains(&"current_cgroup"));
     assert!(
@@ -1024,6 +1042,24 @@ fn test_spec_context_retval_includes_btf_trampoline_metadata_when_available() {
     assert_eq!(retval.source, "btf_trampoline");
     assert!(retval.supported);
     assert!(retval.ty.is_some());
+}
+
+#[test]
+fn test_spec_context_fields_resolve_btf_retval_when_available() {
+    let spec = ProgramSpec::parse("fexit:security_file_open").expect("fexit spec should parse");
+    let fields = spec_context_fields(&spec, true);
+    let retval = field(&fields, "retval");
+
+    if retval.semantic_type.is_none() {
+        let (metadata, err) = spec_context_retval(&spec, true);
+        assert!(
+            metadata.is_none() && err.is_some(),
+            "missing ctx.retval field type should only happen when BTF retval metadata is unavailable"
+        );
+        return;
+    }
+
+    assert!(retval.runtime_type.is_some());
 }
 
 #[test]

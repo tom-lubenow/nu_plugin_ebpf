@@ -483,7 +483,41 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
 }
 
 #[cfg(target_os = "linux")]
-fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextField> {
+fn dynamic_context_field_type_labels(
+    spec: &crate::program_spec::ProgramSpec,
+    field: &CtxField,
+    resolve_dynamic_fields: bool,
+) -> Option<(String, String)> {
+    match field {
+        CtxField::RetVal => match spec.program_type().retval_access() {
+            ProgramValueAccess::PtRegs => Some(("u64".to_string(), "u64".to_string())),
+            ProgramValueAccess::Trampoline if resolve_dynamic_fields => {
+                let ctx = ProbeContext::from_program_spec(spec.clone());
+                let type_info = ctx.btf_ret_type_info().ok().flatten()?;
+                let value = ctx.btf_ret_spec().ok().flatten()?;
+                let semantic_type = type_info_label(&type_info);
+                let runtime_type = match value.kind {
+                    TrampolineValueKind::Aggregate { .. } => {
+                        format!("ptr<stack, {semantic_type}>")
+                    }
+                    TrampolineValueKind::Scalar | TrampolineValueKind::Pointer { .. } => {
+                        semantic_type.clone()
+                    }
+                };
+                Some((semantic_type, runtime_type))
+            }
+            _ => None,
+        },
+        CtxField::KStack | CtxField::UStack => Some(("i64".to_string(), "i64".to_string())),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn spec_context_fields(
+    spec: &crate::program_spec::ProgramSpec,
+    resolve_dynamic_fields: bool,
+) -> Vec<SpecContextField> {
     let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
 
     for entry in spec.program_type().ctx_field_name_entries() {
@@ -495,6 +529,8 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
             field.names.push(entry.name);
         } else {
             let type_spec = spec.ctx_field_type_spec(&entry.field);
+            let dynamic_type_labels =
+                dynamic_context_field_type_labels(spec, &entry.field, resolve_dynamic_fields);
             let load_guard = spec.ctx_field_load_guard(&entry.field);
             fields.push((
                 entry.field.clone(),
@@ -503,10 +539,12 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                     names: vec![entry.name],
                     semantic_type: type_spec
                         .as_ref()
-                        .map(|type_spec| mir_type_label(&type_spec.semantic_ty)),
+                        .map(|type_spec| mir_type_label(&type_spec.semantic_ty))
+                        .or_else(|| dynamic_type_labels.as_ref().map(|(ty, _)| ty.clone())),
                     runtime_type: type_spec
                         .as_ref()
-                        .map(|type_spec| mir_type_label(&type_spec.runtime_ty)),
+                        .map(|type_spec| mir_type_label(&type_spec.runtime_ty))
+                        .or_else(|| dynamic_type_labels.as_ref().map(|(_, ty)| ty.clone())),
                     kernel_btf_runtime_type: type_spec
                         .as_ref()
                         .and_then(|type_spec| type_spec.kernel_btf_runtime_type_name),
@@ -528,8 +566,12 @@ fn spec_context_fields(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
 }
 
 #[cfg(target_os = "linux")]
-fn context_field_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
-    spec_context_fields(spec)
+fn context_field_records(
+    spec: &crate::program_spec::ProgramSpec,
+    span: Span,
+    resolve_dynamic_fields: bool,
+) -> Vec<Value> {
+    spec_context_fields(spec, resolve_dynamic_fields)
         .into_iter()
         .map(|field| {
             let names = field
@@ -960,7 +1002,7 @@ pub(super) fn spec_record(
     let btf_callable_surface = program_type
         .btf_callable_surface()
         .map(|surface| surface.key());
-    let context_fields = context_field_records(&spec, span);
+    let context_fields = context_field_records(&spec, span, resolve_dynamic_args);
     let (tracepoint_fields, tracepoint_field_error) =
         spec_tracepoint_fields(&spec, resolve_dynamic_args);
     let tracepoint_fields = tracepoint_field_records(tracepoint_fields, span);
