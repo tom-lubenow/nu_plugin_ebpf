@@ -4,8 +4,8 @@ use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
-    BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramValueAccess,
-    SockOpsCallbackGuard, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
+    BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext, ProgramIntrinsic,
+    ProgramValueAccess, SockOpsCallbackGuard, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -1029,6 +1029,21 @@ pub(super) fn spec_record(
             )
         })
         .collect();
+    let intrinsics = ProgramIntrinsic::all()
+        .iter()
+        .filter(|intrinsic| program_type.supports_intrinsic(**intrinsic))
+        .map(|intrinsic| {
+            let capability = intrinsic.required_capability();
+            Value::record(
+                record! {
+                    "command" => Value::string(intrinsic.command_name(), span),
+                    "capability" => Value::string(capability.key(), span),
+                    "capability_description" => Value::string(capability.description(), span),
+                },
+                span,
+            )
+        })
+        .collect();
     let requirements = spec
         .compatibility_requirements()
         .into_iter()
@@ -1101,6 +1116,7 @@ pub(super) fn spec_record(
             "context_writes" => Value::list(context_writes, span),
             "context_projections" => Value::list(context_projections, span),
             "capabilities" => Value::list(capabilities, span),
+            "intrinsics" => Value::list(intrinsics, span),
             "compatibility_requirements" => Value::list(requirements, span),
             "return_aliases" => Value::list(return_aliases, span),
         },

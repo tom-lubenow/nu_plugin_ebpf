@@ -305,6 +305,68 @@ fn test_spec_record_includes_registry_shape_metadata() {
 }
 
 #[test]
+fn test_spec_record_includes_intrinsic_command_metadata() {
+    let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let intrinsics = record
+        .get("intrinsics")
+        .expect("intrinsics should be present")
+        .as_list()
+        .expect("intrinsics should be a list");
+
+    let commands = intrinsics
+        .iter()
+        .map(|intrinsic| {
+            intrinsic
+                .as_record()
+                .expect("intrinsic should be a record")
+                .get("command")
+                .expect("intrinsic command should be present")
+                .as_str()
+                .expect("intrinsic command should be a string")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(commands.contains(&"helper-call".to_string()));
+    assert!(commands.contains(&"kfunc-call".to_string()));
+    assert!(commands.contains(&"map-get".to_string()));
+    assert!(commands.contains(&"global-get".to_string()));
+    assert!(!commands.contains(&"read-str".to_string()));
+
+    let kfunc = intrinsics
+        .iter()
+        .find_map(|intrinsic| {
+            let intrinsic = intrinsic.as_record().ok()?;
+            (intrinsic
+                .get("command")?
+                .as_str()
+                .ok()
+                .is_some_and(|command| command == "kfunc-call"))
+            .then_some(intrinsic)
+        })
+        .expect("kfunc-call intrinsic should be present");
+    assert_eq!(
+        kfunc
+            .get("capability")
+            .expect("intrinsic capability should be present")
+            .as_str()
+            .expect("intrinsic capability should be a string"),
+        "kfunc-calls"
+    );
+    assert_eq!(
+        kfunc
+            .get("capability_description")
+            .expect("intrinsic capability description should be present")
+            .as_str()
+            .expect("intrinsic capability description should be a string"),
+        "kfunc calls"
+    );
+}
+
+#[test]
 fn test_spec_record_includes_compatibility_requirement_metadata() {
     let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
         .expect("netfilter spec should parse");

@@ -79,8 +79,9 @@ type labels, pointer verifier facts, and any load guards, tracepoint payload
 fields, nested context projections, writable context surfaces, return aliases,
 target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
-live-attach/default safety, and compatibility requirement labels before you
-attempt to compile or attach a closure.
+supported first-class intrinsic commands, live-attach/default safety, and
+compatibility requirement labels before you attempt to compile or attach a
+closure.
 The `context_projections` table lists projections that are valid for that
 specific parsed target; attach-sensitive projections that would be rejected by
 the compiler are omitted rather than advertised as unusable rows.
