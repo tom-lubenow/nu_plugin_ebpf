@@ -1431,6 +1431,74 @@ fn test_type_infer_rejects_array_map_delete() {
 }
 
 #[test]
+fn test_type_infer_rejects_out_of_range_map_update_flags() {
+    let mut func = make_test_function();
+    let key = func.alloc_vreg();
+    let val = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: "slots".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val,
+        flags: i32::MAX as u64 + 1,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errors = ti
+        .infer(&func)
+        .expect_err("out-of-range map update flags should be rejected");
+
+    assert!(errors.iter().any(|e| {
+        e.message
+            .contains("map update flags 2147483648 exceed supported 32-bit immediate range")
+    }));
+}
+
+#[test]
+fn test_type_infer_rejects_out_of_range_map_push_flags() {
+    let mut func = make_test_function();
+    let val = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "queue".to_string(),
+            kind: MapKind::Queue,
+        },
+        val,
+        flags: i32::MAX as u64 + 1,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errors = ti
+        .infer(&func)
+        .expect_err("out-of-range map push flags should be rejected");
+
+    assert!(errors.iter().any(|e| {
+        e.message
+            .contains("map push flags 2147483648 exceed supported 32-bit immediate range")
+    }));
+}
+
+#[test]
 fn test_type_infer_rejects_queue_map_lookup() {
     let mut func = make_test_function();
     let key = func.alloc_vreg();
