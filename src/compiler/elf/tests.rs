@@ -4496,6 +4496,18 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             !requirement.description().is_empty(),
             "{requirement:?} should have a diagnostic description"
         );
+        assert!(
+            !requirement.category().is_empty(),
+            "{requirement:?} should have a compatibility category"
+        );
+        assert!(
+            !requirement.default_test_lane().is_empty(),
+            "{requirement:?} should have a default test lane"
+        );
+        assert!(
+            requirement.minimum_kernel().is_some() == requirement.minimum_kernel_source().is_some(),
+            "{requirement:?} should only report a minimum kernel with a source"
+        );
     }
 
     for program_type in EbpfProgramType::supported_program_types() {
@@ -4510,6 +4522,14 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             assert!(
                 !requirement.description().is_empty(),
                 "{requirement:?} should have a diagnostic description"
+            );
+            assert!(
+                !requirement.category().is_empty(),
+                "{requirement:?} should have a compatibility category"
+            );
+            assert!(
+                !requirement.default_test_lane().is_empty(),
+                "{requirement:?} should have a default test lane"
             );
         }
     }

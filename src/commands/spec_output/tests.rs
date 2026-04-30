@@ -305,6 +305,66 @@ fn test_spec_record_includes_registry_shape_metadata() {
 }
 
 #[test]
+fn test_spec_record_includes_compatibility_requirement_metadata() {
+    let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
+        .expect("netfilter spec should parse");
+    let record = spec_record(
+        "netfilter:ipv4:pre_routing:priority=-100:defrag".to_string(),
+        spec,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let requirements = record
+        .get("compatibility_requirements")
+        .expect("compatibility requirements should be present")
+        .as_list()
+        .expect("compatibility requirements should be a list");
+    let requirement = requirements
+        .iter()
+        .find_map(|requirement| {
+            let requirement = requirement.as_record().ok()?;
+            (requirement
+                .get("key")?
+                .as_str()
+                .ok()
+                .is_some_and(|key| key == "netfilter-link"))
+            .then_some(requirement)
+        })
+        .expect("netfilter-link requirement should be present");
+
+    assert_eq!(
+        requirement
+            .get("category")
+            .expect("requirement category should be present")
+            .as_str()
+            .expect("requirement category should be a string"),
+        "program-feature"
+    );
+    assert_eq!(
+        requirement
+            .get("default_test_lane")
+            .expect("requirement test lane should be present")
+            .as_str()
+            .expect("requirement test lane should be a string"),
+        "vm-only"
+    );
+    assert!(
+        requirement
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .is_nothing()
+    );
+    assert!(
+        requirement
+            .get("minimum_kernel_source")
+            .expect("minimum kernel source should be present")
+            .is_nothing()
+    );
+}
+
+#[test]
 fn test_spec_record_includes_attach_shape_metadata() {
     let xdp = ProgramSpec::parse("xdp:lo:drv:frags").expect("xdp frags spec should parse");
     let record = spec_record(

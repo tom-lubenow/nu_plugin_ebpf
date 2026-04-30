@@ -1037,6 +1037,10 @@ pub(super) fn spec_record(
                 record! {
                     "key" => Value::string(requirement.key(), span),
                     "description" => Value::string(requirement.description(), span),
+                    "category" => Value::string(requirement.category(), span),
+                    "default_test_lane" => Value::string(requirement.default_test_lane(), span),
+                    "minimum_kernel" => optional_static_str(requirement.minimum_kernel(), span),
+                    "minimum_kernel_source" => optional_static_str(requirement.minimum_kernel_source(), span),
                 },
                 span,
             )

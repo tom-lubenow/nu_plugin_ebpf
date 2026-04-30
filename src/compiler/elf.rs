@@ -1633,6 +1633,50 @@ impl ProgramCompatibilityRequirement {
             Self::CgroupUnixSockAddr => "cgroup UNIX socket-address hook support",
         }
     }
+
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::KernelBtf => "kernel-metadata",
+            Self::CgroupV2 | Self::LircMode2 => "attach-resource",
+            Self::SchedExt => "struct-ops-family",
+            Self::SleepableProgram | Self::XdpMultiBuffer => "section-feature",
+            Self::StructOps => "object-loader",
+            _ => "program-feature",
+        }
+    }
+
+    pub fn default_test_lane(&self) -> &'static str {
+        match self {
+            Self::ExtensionProgram | Self::SyscallProgram => "dry-run",
+            Self::NetfilterLink | Self::RouteLwt | Self::StructOps | Self::SchedExt => "vm-only",
+            Self::RawTracepointWritable
+            | Self::CgroupLsm
+            | Self::XdpMultiBuffer
+            | Self::FlowDissector
+            | Self::Tcx
+            | Self::Netkit
+            | Self::SockMapAttach
+            | Self::SkReuseportAttach
+            | Self::TcActionProgram
+            | Self::CgroupV2
+            | Self::LircMode2
+            | Self::CgroupUnixSockAddr => "host-gated",
+            Self::KernelBtf
+            | Self::BpfTrampoline
+            | Self::SleepableProgram
+            | Self::KprobeMulti
+            | Self::UprobeMulti
+            | Self::BpfIterator => "host-safe",
+        }
+    }
+
+    pub fn minimum_kernel(&self) -> Option<&'static str> {
+        None
+    }
+
+    pub fn minimum_kernel_source(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 impl fmt::Display for ProgramCompatibilityRequirement {
