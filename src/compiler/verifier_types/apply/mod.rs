@@ -153,7 +153,9 @@ pub(super) fn apply_inst(
         MirInst::MapDelete { map, key } => {
             apply_map_delete_inst(map, *key, types, state, errors);
         }
-        MirInst::MapPush { .. } => {}
+        MirInst::MapPush { map, val, flags } => {
+            apply_map_push_inst(map, *val, *flags, types, state, errors);
+        }
         MirInst::Histogram { .. }
         | MirInst::StartTimer
         | MirInst::TailCall { .. }

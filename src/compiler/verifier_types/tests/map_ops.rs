@@ -583,6 +583,166 @@ fn test_map_update_rejects_user_value_pointer() {
 }
 
 #[test]
+fn test_map_push_rejects_unsupported_map_kind() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let val = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "m".to_string(),
+            kind: MapKind::Hash,
+        },
+        val,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-push kind error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("map-push requires queue, stack, or bloom-filter map kind")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_map_push_rejects_out_of_range_flags() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let val = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "m".to_string(),
+            kind: MapKind::Queue,
+        },
+        val,
+        flags: i32::MAX as u64 + 1,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-push flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("map push flags 2147483648 exceed supported 32-bit immediate range")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_map_push_rejects_user_value_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let val = func.alloc_vreg();
+    func.param_count = 1;
+    let cond = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(val),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: call,
+        if_false: done,
+    };
+
+    func.block_mut(call).instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "m".to_string(),
+            kind: MapKind::Queue,
+        },
+        val,
+        flags: 0,
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        val,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected map-push value space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("map value expects pointer in [Stack, Map], got User")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_map_push_rejects_out_of_bounds_value_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let val = func.alloc_vreg();
+    let val_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::StackSlot(val_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "m".to_string(),
+            kind: MapKind::Queue,
+        },
+        val,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        val,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected map-push value bounds error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("map value out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_string_counter_map_requires_pointer_key() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

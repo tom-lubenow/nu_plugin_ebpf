@@ -96,6 +96,29 @@ pub(super) fn apply_map_delete_inst(
     check_map_key_access(map, key, types, state, errors);
 }
 
+pub(super) fn apply_map_push_inst(
+    map: &MapRef,
+    val: VReg,
+    flags: u64,
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !map.kind.supports_generic_map_op(MapOpKind::Push) {
+        errors.push(VerifierTypeError::new(
+            map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
+        ));
+    }
+    if flags > i32::MAX as u64 {
+        errors.push(VerifierTypeError::new(format!(
+            "map push flags {} exceed supported 32-bit immediate range",
+            flags
+        )));
+    }
+    check_map_operand_scalar_size(val, "map value", types, errors);
+    check_map_value_access(val, types, state, errors);
+}
+
 fn check_map_key_access(
     map: &MapRef,
     key: VReg,
