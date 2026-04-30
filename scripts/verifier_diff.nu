@@ -12,6 +12,82 @@ const VALID_HOST_FEATURES = [
     "tracefs"
 ]
 
+const KERNEL_FEATURE_BPF_RINGBUF_QUERY = {
+    key: "helper:bpf_ringbuf_query"
+    min_kernel: "5.8"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_query/"
+}
+const KERNEL_FEATURE_BPF_RINGBUF_RESERVE = {
+    key: "helper:bpf_ringbuf_reserve"
+    min_kernel: "5.8"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve/"
+}
+const KERNEL_FEATURE_BPF_RINGBUF_DISCARD = {
+    key: "helper:bpf_ringbuf_discard"
+    min_kernel: "5.8"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_discard/"
+}
+const KERNEL_FEATURE_BPF_GET_STACKID = {
+    key: "helper:bpf_get_stackid"
+    min_kernel: "4.6"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_get_stackid/"
+}
+const KERNEL_FEATURE_BPF_TIMER_INIT = {
+    key: "helper:bpf_timer_init"
+    min_kernel: "5.15"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_timer_init/"
+}
+const KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK = {
+    key: "helper:bpf_timer_set_callback"
+    min_kernel: "5.15"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_timer_set_callback/"
+}
+const KERNEL_FEATURE_BPF_TIMER_START = {
+    key: "helper:bpf_timer_start"
+    min_kernel: "5.15"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_timer_start/"
+}
+const KERNEL_FEATURE_BPF_TIMER_CANCEL = {
+    key: "helper:bpf_timer_cancel"
+    min_kernel: "5.15"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_timer_cancel/"
+}
+const KERNEL_FEATURE_BPF_LOOP = {
+    key: "helper:bpf_loop"
+    min_kernel: "5.17"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_loop/"
+}
+const KERNEL_FEATURE_BPF_FOR_EACH_MAP_ELEM = {
+    key: "helper:bpf_for_each_map_elem"
+    min_kernel: "5.13"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_for_each_map_elem/"
+}
+const KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR = {
+    key: "helper:bpf_ringbuf_reserve_dynptr"
+    min_kernel: "5.19"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve_dynptr/"
+}
+const KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR = {
+    key: "helper:bpf_ringbuf_submit_dynptr"
+    min_kernel: "5.19"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_submit_dynptr/"
+}
+const KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR = {
+    key: "helper:bpf_ringbuf_discard_dynptr"
+    min_kernel: "5.19"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_discard_dynptr/"
+}
+const KERNEL_FEATURE_BPF_DYNPTR_DATA = {
+    key: "helper:bpf_dynptr_data"
+    min_kernel: "5.19"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_dynptr_data/"
+}
+const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
+    key: "helper:bpf_user_ringbuf_drain"
+    min_kernel: "6.1"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_user_ringbuf_drain/"
+}
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -482,13 +558,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            {
-                key: "helper:bpf_ringbuf_query"
-                min_kernel: "5.8"
-                source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_query/"
-            }
-        ]
+        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_QUERY]
     }
     {
         name: "ringbuf-reserve-submit-balanced"
@@ -506,13 +576,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            {
-                key: "helper:bpf_ringbuf_reserve"
-                min_kernel: "5.8"
-                source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_reserve/"
-            }
-        ]
+        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_RESERVE]
     }
     {
         name: "ringbuf-reserve-discard-balanced"
@@ -530,13 +594,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            {
-                key: "helper:bpf_ringbuf_discard"
-                min_kernel: "5.8"
-                source: "https://docs.ebpf.io/linux/helper-function/bpf_ringbuf_discard/"
-            }
-        ]
+        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_DISCARD]
     }
     {
         name: "ringbuf-reserve-rejects-leak"
@@ -606,6 +664,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+        ]
     }
     {
         name: "ringbuf-dynptr-reserve-discard-balanced"
@@ -622,6 +684,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
+        ]
     }
     {
         name: "ringbuf-dynptr-rejects-leak"
@@ -637,6 +703,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR]
         error_contains: "unreleased ringbuf dynptr reservation"
     }
     {
@@ -656,6 +723,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+        ]
     }
     {
         name: "ringbuf-dynptr-allows-slot-reuse-after-discard"
@@ -674,6 +745,11 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+        ]
     }
     {
         name: "ringbuf-dynptr-rejects-double-submit"
@@ -691,6 +767,10 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+        ]
         error_contains: "ringbuf dynptr reservation already released"
     }
     {
@@ -709,6 +789,11 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+        ]
         error_contains: "ringbuf dynptr reservation already released"
     }
     {
@@ -725,6 +810,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_DYNPTR_DATA]
         error_contains: "requires initialized dynptr stack object"
     }
     {
@@ -740,13 +826,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            {
-                key: "helper:bpf_get_stackid"
-                min_kernel: "4.6"
-                source: "https://docs.ebpf.io/linux/helper-function/bpf_get_stackid/"
-            }
-        ]
+        kernel_features: [$KERNEL_FEATURE_BPF_GET_STACKID]
     }
     {
         name: "global-scalar-mut"
@@ -1699,6 +1779,12 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_TIMER_INIT
+            $KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK
+            $KERNEL_FEATURE_BPF_TIMER_START
+            $KERNEL_FEATURE_BPF_TIMER_CANCEL
+        ]
     }
     {
         name: "source-kfunc-task-ref-release"
@@ -1747,6 +1833,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_INIT]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -1857,6 +1944,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -1871,6 +1959,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_START]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -1886,6 +1975,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_CANCEL]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -1931,6 +2021,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN]
         error_contains: "helper 'bpf_user_ringbuf_drain' requires arg3 flags"
     }
     {
@@ -2167,13 +2258,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            {
-                key: "helper:bpf_loop"
-                min_kernel: "5.17"
-                source: "https://docs.ebpf.io/linux/helper-function/bpf_loop/"
-            }
-        ]
+        kernel_features: [$KERNEL_FEATURE_BPF_LOOP]
     }
     {
         name: "callback-for-each-map-elem"
@@ -2188,13 +2273,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            {
-                key: "helper:bpf_for_each_map_elem"
-                min_kernel: "5.13"
-                source: "https://docs.ebpf.io/linux/helper-function/bpf_for_each_map_elem/"
-            }
-        ]
+        kernel_features: [$KERNEL_FEATURE_BPF_FOR_EACH_MAP_ELEM]
     }
     {
         name: "callback-user-ringbuf-drain"
@@ -2209,6 +2288,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN]
     }
     {
         name: "reserved-events-rejects-user-ringbuf"
@@ -2223,6 +2303,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN]
         error_contains: "map name 'events' is reserved"
     }
     {
