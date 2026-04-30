@@ -499,6 +499,20 @@ pub(super) fn apply_string_len_write_inst(
     }
 }
 
+pub(super) fn apply_histogram_inst(
+    value: VReg,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    match state.get(value) {
+        VerifierType::Scalar | VerifierType::Bool => {}
+        other => errors.push(VerifierTypeError::new(format!(
+            "histogram expects scalar, got {:?}",
+            other
+        ))),
+    }
+}
+
 pub(super) fn apply_record_store_inst(
     val: &MirValue,
     ty: &MirType,

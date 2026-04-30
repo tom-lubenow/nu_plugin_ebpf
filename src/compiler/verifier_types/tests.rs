@@ -11,6 +11,7 @@ mod kfuncs;
 mod map_ops;
 mod pointer_ranges;
 mod records;
+mod scalars;
 
 fn map_lookup_types(func: &MirFunction, vreg: VReg) -> HashMap<VReg, MirType> {
     let mut types = HashMap::new();

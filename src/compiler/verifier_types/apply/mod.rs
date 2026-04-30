@@ -156,8 +156,10 @@ pub(super) fn apply_inst(
         MirInst::MapPush { map, val, flags } => {
             apply_map_push_inst(map, *val, *flags, types, state, errors);
         }
-        MirInst::Histogram { .. }
-        | MirInst::StartTimer
+        MirInst::Histogram { value } => {
+            apply_histogram_inst(*value, state, errors);
+        }
+        MirInst::StartTimer
         | MirInst::TailCall { .. }
         | MirInst::Jump { .. }
         | MirInst::Branch { .. }
