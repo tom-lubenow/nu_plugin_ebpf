@@ -612,6 +612,29 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::EmitEvent { data, size } => {
                 if let Some(MirType::Ptr { pointee, .. }) = self.types.get(data) {
+                    let ptr_info = self
+                        .value_ptr_info(&MirValue::VReg(*data))
+                        .ok_or_else(|| {
+                            VccError::new(
+                                VccErrorKind::TypeMismatch {
+                                    expected: VccTypeClass::Ptr,
+                                    actual: VccTypeClass::Unknown,
+                                },
+                                "emit event requires pointer value",
+                            )
+                        })?;
+                    if !matches!(
+                        ptr_info.space,
+                        VccAddrSpace::Stack(_) | VccAddrSpace::MapValue | VccAddrSpace::Unknown
+                    ) {
+                        return Err(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!(
+                                "emit event expects pointer in [Stack, Map], got {}",
+                                self.helper_space_name(ptr_info.space)
+                            ),
+                        ));
+                    }
                     let access_size = match pointee.as_ref() {
                         MirType::Array { .. } | MirType::Struct { .. } => pointee.size().max(1),
                         _ => (*size).max(1),

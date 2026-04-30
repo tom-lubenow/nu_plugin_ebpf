@@ -1266,6 +1266,38 @@ fn test_type_error_emit_record_string_scalar() {
 }
 
 #[test]
+fn test_type_error_emit_event_rejects_user_pointer_even_for_scalar_size() {
+    let mut func = make_test_function();
+    let data = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block
+        .instructions
+        .push(MirInst::EmitEvent { data, size: 8 });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errors = ti
+        .infer(&func)
+        .expect_err("user pointer emit payload should be rejected");
+
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("emit event expects stack/map pointer")),
+        "unexpected errors: {:?}",
+        errors
+    );
+}
+
+#[test]
 fn test_required_program_capability_classifies_counter_map_updates() {
     let inst = MirInst::MapUpdate {
         map: MapRef {

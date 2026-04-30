@@ -430,17 +430,18 @@ impl<'a> TypeInference<'a> {
 
             MirInst::EmitEvent { data, size } => {
                 let data_ty = self.mir_type_for_vreg(*data, types);
-                if !Self::mir_is_stack_or_map_ptr(&data_ty) && *size > 8 {
-                    match data_ty {
-                        MirType::Ptr { .. } => errors.push(TypeError::new(format!(
-                            "emit event of size {} expects stack/map pointer, got {:?}",
-                            size, data_ty
-                        ))),
-                        _ => errors.push(TypeError::new(format!(
-                            "emit event of size {} expects stack/map pointer, got {:?}",
-                            size, data_ty
-                        ))),
+                if matches!(data_ty, MirType::Ptr { .. }) {
+                    if !Self::mir_is_stack_or_map_ptr(&data_ty) {
+                        errors.push(TypeError::new(format!(
+                            "emit event expects stack/map pointer, got {:?}",
+                            data_ty
+                        )));
                     }
+                } else if *size > 8 {
+                    errors.push(TypeError::new(format!(
+                        "emit event of size {} expects stack/map pointer, got {:?}",
+                        size, data_ty
+                    )));
                 }
             }
 

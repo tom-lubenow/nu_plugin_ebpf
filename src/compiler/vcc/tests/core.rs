@@ -1721,6 +1721,36 @@ fn test_verify_mir_emit_event_requires_ptr() {
 }
 
 #[test]
+fn test_verify_mir_emit_event_rejects_user_pointer_even_for_scalar_size() {
+    let (mut func, entry) = new_mir_function();
+    let data = func.alloc_vreg();
+    func.param_count = 1;
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data, size: 8 });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected emit pointer-space error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds
+            && e.message
+                .contains("emit event expects pointer in [Stack, Map], got User")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_strcmp_bounds() {
     let (mut func, entry) = new_mir_function();
     let lhs = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
