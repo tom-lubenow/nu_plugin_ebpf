@@ -4404,20 +4404,7 @@ fn test_program_capability_surfaces_are_unique() {
     }
 
     let mut capability_keys = HashSet::new();
-    for capability in [
-        ProgramCapability::Emit,
-        ProgramCapability::Counters,
-        ProgramCapability::Histograms,
-        ProgramCapability::Timers,
-        ProgramCapability::StackTraces,
-        ProgramCapability::ReadUserString,
-        ProgramCapability::ReadKernelString,
-        ProgramCapability::HelperCalls,
-        ProgramCapability::KfuncCalls,
-        ProgramCapability::Globals,
-        ProgramCapability::GenericMaps,
-        ProgramCapability::TailCalls,
-    ] {
+    for capability in ProgramCapability::all() {
         assert!(
             capability_keys.insert(capability.key()),
             "program capability key repeats for {capability:?}"
@@ -4453,32 +4440,7 @@ fn test_program_capability_surfaces_are_unique() {
 #[test]
 fn test_program_compatibility_requirement_surfaces_are_unique() {
     let mut requirement_keys = HashSet::new();
-    for requirement in [
-        ProgramCompatibilityRequirement::KernelBtf,
-        ProgramCompatibilityRequirement::BpfTrampoline,
-        ProgramCompatibilityRequirement::SleepableProgram,
-        ProgramCompatibilityRequirement::KprobeMulti,
-        ProgramCompatibilityRequirement::UprobeMulti,
-        ProgramCompatibilityRequirement::RawTracepointWritable,
-        ProgramCompatibilityRequirement::CgroupLsm,
-        ProgramCompatibilityRequirement::ExtensionProgram,
-        ProgramCompatibilityRequirement::SyscallProgram,
-        ProgramCompatibilityRequirement::BpfIterator,
-        ProgramCompatibilityRequirement::XdpMultiBuffer,
-        ProgramCompatibilityRequirement::FlowDissector,
-        ProgramCompatibilityRequirement::Tcx,
-        ProgramCompatibilityRequirement::Netkit,
-        ProgramCompatibilityRequirement::NetfilterLink,
-        ProgramCompatibilityRequirement::RouteLwt,
-        ProgramCompatibilityRequirement::SockMapAttach,
-        ProgramCompatibilityRequirement::SkReuseportAttach,
-        ProgramCompatibilityRequirement::TcActionProgram,
-        ProgramCompatibilityRequirement::CgroupV2,
-        ProgramCompatibilityRequirement::LircMode2,
-        ProgramCompatibilityRequirement::StructOps,
-        ProgramCompatibilityRequirement::SchedExt,
-        ProgramCompatibilityRequirement::CgroupUnixSockAddr,
-    ] {
+    for requirement in ProgramCompatibilityRequirement::all() {
         assert!(
             requirement_keys.insert(requirement.key()),
             "compatibility requirement key repeats for {requirement:?}"

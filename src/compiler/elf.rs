@@ -1576,6 +1576,10 @@ pub enum ProgramCompatibilityRequirement {
 }
 
 impl ProgramCompatibilityRequirement {
+    pub fn all() -> &'static [ProgramCompatibilityRequirement] {
+        PROGRAM_COMPATIBILITY_REQUIREMENTS
+    }
+
     pub fn key(&self) -> &'static str {
         match self {
             Self::KernelBtf => "kernel-btf",
@@ -2071,6 +2075,10 @@ pub enum ProgramCapability {
 }
 
 impl ProgramCapability {
+    pub fn all() -> &'static [ProgramCapability] {
+        PROGRAM_CAPABILITIES
+    }
+
     pub fn key(&self) -> &'static str {
         match self {
             ProgramCapability::Emit => "emit",

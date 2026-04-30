@@ -1348,6 +1348,48 @@ pub(super) const PROGRAM_INTRINSICS: &[ProgramIntrinsic] = &[
     ProgramIntrinsic::MapPop,
 ];
 
+pub(super) const PROGRAM_CAPABILITIES: &[ProgramCapability] = &[
+    ProgramCapability::Emit,
+    ProgramCapability::Counters,
+    ProgramCapability::Histograms,
+    ProgramCapability::Timers,
+    ProgramCapability::StackTraces,
+    ProgramCapability::ReadUserString,
+    ProgramCapability::ReadKernelString,
+    ProgramCapability::HelperCalls,
+    ProgramCapability::KfuncCalls,
+    ProgramCapability::Globals,
+    ProgramCapability::GenericMaps,
+    ProgramCapability::TailCalls,
+];
+
+pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::BpfTrampoline,
+    ProgramCompatibilityRequirement::SleepableProgram,
+    ProgramCompatibilityRequirement::KprobeMulti,
+    ProgramCompatibilityRequirement::UprobeMulti,
+    ProgramCompatibilityRequirement::RawTracepointWritable,
+    ProgramCompatibilityRequirement::CgroupLsm,
+    ProgramCompatibilityRequirement::ExtensionProgram,
+    ProgramCompatibilityRequirement::SyscallProgram,
+    ProgramCompatibilityRequirement::BpfIterator,
+    ProgramCompatibilityRequirement::XdpMultiBuffer,
+    ProgramCompatibilityRequirement::FlowDissector,
+    ProgramCompatibilityRequirement::Tcx,
+    ProgramCompatibilityRequirement::Netkit,
+    ProgramCompatibilityRequirement::NetfilterLink,
+    ProgramCompatibilityRequirement::RouteLwt,
+    ProgramCompatibilityRequirement::SockMapAttach,
+    ProgramCompatibilityRequirement::SkReuseportAttach,
+    ProgramCompatibilityRequirement::TcActionProgram,
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::LircMode2,
+    ProgramCompatibilityRequirement::StructOps,
+    ProgramCompatibilityRequirement::SchedExt,
+    ProgramCompatibilityRequirement::CgroupUnixSockAddr,
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
