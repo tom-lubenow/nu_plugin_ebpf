@@ -94,16 +94,10 @@ impl<'a> HirToMirLowering<'a> {
                             if_false,
                         });
                     } else {
-                        let tmp = self.func.alloc_vreg();
-                        self.emit(MirInst::UnaryOp {
-                            dst: tmp,
-                            op: crate::compiler::mir::UnaryOpKind::Not,
-                            src: MirValue::VReg(src_vreg),
-                        });
                         self.terminate(MirInst::Branch {
-                            cond: tmp,
-                            if_true,
-                            if_false,
+                            cond: src_vreg,
+                            if_true: if_false,
+                            if_false: if_true,
                         });
                     }
                 }

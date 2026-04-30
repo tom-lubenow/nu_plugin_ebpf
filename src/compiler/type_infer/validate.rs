@@ -377,10 +377,12 @@ impl<'a> TypeInference<'a> {
             MirInst::UnaryOp { op, src, .. } => {
                 let src_ty = self.mir_type_for_value(src, types);
                 if Self::mir_ptr_space(&src_ty).is_some() {
-                    errors.push(TypeError::new(format!(
-                        "unary {:?} is not supported for pointers",
-                        op
-                    )));
+                    if !matches!(op, UnaryOpKind::Not) {
+                        errors.push(TypeError::new(format!(
+                            "unary {:?} is not supported for pointers",
+                            op
+                        )));
+                    }
                 } else if !Self::mir_is_numeric(&src_ty) {
                     errors.push(TypeError::new(format!(
                         "unary {:?} expects numeric type, got {:?}",

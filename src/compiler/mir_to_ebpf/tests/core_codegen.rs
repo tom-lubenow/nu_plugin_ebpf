@@ -4,7 +4,7 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
-use crate::compiler::mir::{CtxStoreTarget, MirInst};
+use crate::compiler::mir::{CtxStoreTarget, MirInst, UnaryOpKind};
 use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
 use crate::compiler::{EbpfProgramType, ProbeContext};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
@@ -6704,6 +6704,33 @@ fn test_logical_not() {
     assert!(
         !mir_result.bytecode.is_empty(),
         "Should produce empty bytecode"
+    );
+}
+
+#[test]
+fn test_logical_not_codegen_materializes_zero_for_nonzero_values() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+
+    compiler
+        .compile_instruction(&LirInst::UnaryOp {
+            dst: VReg(0),
+            op: UnaryOpKind::Not,
+            src: MirValue::Const(2),
+        })
+        .expect("logical not should compile");
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == (opcode::BPF_JMP | opcode::BPF_JEQ | opcode::BPF_K)
+            && insn.imm == 0
+            && insn.offset == 2
+    }));
+    assert!(
+        compiler
+            .instructions
+            .iter()
+            .any(|insn| insn.opcode == opcode::MOV64_IMM && insn.imm == 0),
+        "expected non-zero path to materialize false"
     );
 }
 

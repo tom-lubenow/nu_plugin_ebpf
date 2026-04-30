@@ -12,6 +12,35 @@ impl VccVerifier {
             }
         }
         if let VccValue::Reg(cond_reg) = cond {
+            match state.reg_type(cond_reg) {
+                Ok(VccValueType::Ptr(ptr)) => {
+                    let refinement = VccCondRefinement::PtrNull {
+                        ptr_reg: cond_reg,
+                        ringbuf_ref: ptr.ringbuf_ref,
+                        kfunc_ref: ptr.kfunc_ref,
+                        true_means_non_null: true,
+                    };
+                    self.refine_ptr_nullability(&mut true_state, refinement, true);
+                    self.refine_ptr_nullability(&mut false_state, refinement, false);
+                }
+                Ok(VccValueType::Scalar { .. } | VccValueType::Bool) => {
+                    self.refine_scalar_compare_const(
+                        &mut true_state,
+                        cond_reg,
+                        VccBinOp::Ne,
+                        0,
+                        true,
+                    );
+                    self.refine_scalar_compare_const(
+                        &mut false_state,
+                        cond_reg,
+                        VccBinOp::Ne,
+                        0,
+                        false,
+                    );
+                }
+                Ok(VccValueType::Uninit | VccValueType::Unknown) | Err(_) => {}
+            }
             if let Some(refinement) = state.cond_refinement(cond_reg) {
                 match refinement {
                     VccCondRefinement::PtrNull {

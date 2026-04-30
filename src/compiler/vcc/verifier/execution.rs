@@ -2186,13 +2186,16 @@ impl VccVerifier {
             VccTerminator::Jump { .. } => {}
             VccTerminator::Branch { cond, .. } => match state.value_type(*cond) {
                 Ok(ty) => {
-                    if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    if ty.class() != VccTypeClass::Scalar
+                        && ty.class() != VccTypeClass::Bool
+                        && ty.class() != VccTypeClass::Ptr
+                    {
                         self.errors.push(VccError::new(
                             VccErrorKind::TypeMismatch {
                                 expected: VccTypeClass::Bool,
                                 actual: ty.class(),
                             },
-                            "branch condition must be scalar/bool",
+                            "branch condition must be scalar/bool/pointer",
                         ));
                     }
                 }

@@ -120,7 +120,20 @@ pub(super) fn apply_unary_inst(
     };
     let guard = if matches!(op, UnaryOpKind::Not) {
         if let MirValue::VReg(src_reg) = src {
-            state.guard(*src_reg).and_then(invert_guard)
+            state
+                .guard(*src_reg)
+                .and_then(invert_guard)
+                .or_else(|| match state.get(*src_reg) {
+                    VerifierType::Ptr { .. } => Some(Guard::Ptr {
+                        ptr: *src_reg,
+                        true_is_non_null: false,
+                    }),
+                    VerifierType::Scalar | VerifierType::Bool => Some(Guard::NonZero {
+                        reg: *src_reg,
+                        true_is_non_zero: false,
+                    }),
+                    VerifierType::Uninit | VerifierType::Unknown => None,
+                })
         } else {
             None
         }

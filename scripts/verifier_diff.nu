@@ -261,6 +261,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-get-direct-pointer-branch"
+        category: "maps"
+        tags: [hash-map null-check branch]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0 | map-put direct_seen_args 0 --kind hash'
+            '  let entry = (0 | map-get direct_seen_args --kind hash)'
+            '  if $entry {'
+            '    $entry | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "map-define-record-key-put-get"
         category: "maps"
         tags: [maps map-define accept]

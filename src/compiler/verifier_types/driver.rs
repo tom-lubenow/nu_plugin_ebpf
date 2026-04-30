@@ -189,7 +189,9 @@ fn verify_mir_with_subfunction_summaries_impl(
                         cond_ty
                     )));
                 }
-                let guard = state.guard(*cond);
+                let guard = state
+                    .guard(*cond)
+                    .or_else(|| direct_branch_guard(*cond, cond_ty));
                 let true_state = refine_on_branch(&state, guard, true);
                 let false_state = refine_on_branch(&state, guard, false);
                 propagate_state(*if_true, &true_state, &mut in_states, &mut worklist);
@@ -432,6 +434,20 @@ fn verify_mir_with_subfunction_summaries_impl(
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn direct_branch_guard(cond: VReg, cond_ty: VerifierType) -> Option<Guard> {
+    match cond_ty {
+        VerifierType::Scalar | VerifierType::Bool => Some(Guard::NonZero {
+            reg: cond,
+            true_is_non_zero: true,
+        }),
+        VerifierType::Ptr { .. } => Some(Guard::Ptr {
+            ptr: cond,
+            true_is_non_null: true,
+        }),
+        VerifierType::Uninit | VerifierType::Unknown => None,
     }
 }
 

@@ -1462,8 +1462,10 @@ fn test_div_range_with_non_zero_guard() {
     let ok = func.alloc_block();
     let bad = func.alloc_block();
     func.entry = entry;
+    func.param_count = 1;
 
     let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let flag = func.alloc_vreg();
     let ptr = func.alloc_vreg();
     let idx = func.alloc_vreg();
     let div = func.alloc_vreg();
@@ -1477,7 +1479,7 @@ fn test_div_range_with_non_zero_guard() {
         src: MirValue::StackSlot(slot),
     });
     func.block_mut(entry).terminator = MirInst::Branch {
-        cond: ptr,
+        cond: flag,
         if_true: left,
         if_false: right,
     };
@@ -1537,6 +1539,7 @@ fn test_div_range_with_non_zero_guard() {
     func.block_mut(bad).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
+    types.insert(flag, MirType::I64);
     types.insert(
         ptr,
         MirType::Ptr {

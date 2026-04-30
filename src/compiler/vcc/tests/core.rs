@@ -1864,6 +1864,49 @@ fn test_verify_mir_map_lookup_null_check_then_load_ok() {
 }
 
 #[test]
+fn test_verify_mir_map_lookup_direct_pointer_branch_then_load_ok() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let load_block = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let load_dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: ptr,
+        map: MapRef {
+            name: "test".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: ptr,
+        if_true: load_block,
+        if_false: done,
+    };
+
+    func.block_mut(load_block).instructions.push(MirInst::Load {
+        dst: load_dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(load_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let types = map_lookup_types(&func, ptr);
+    verify_mir(&func, &types).expect("expected direct pointer branch to refine map lookup result");
+}
+
+#[test]
 fn test_verify_mir_map_value_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -252,9 +252,17 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         match op {
             UnaryOpKind::Not => {
-                // Logical not: 0 -> 1, non-zero -> 0
-                self.instructions.push(EbpfInsn::xor64_imm(dst_reg, 1));
-                self.instructions.push(EbpfInsn::and64_imm(dst_reg, 1));
+                // Logical not: 0 -> 1, non-zero -> 0.
+                self.instructions.push(EbpfInsn::new(
+                    opcode::BPF_JMP | opcode::BPF_JEQ | opcode::BPF_K,
+                    dst_reg.as_u8(),
+                    0,
+                    2,
+                    0,
+                ));
+                self.instructions.push(EbpfInsn::mov64_imm(dst_reg, 0));
+                self.instructions.push(EbpfInsn::jump(1));
+                self.instructions.push(EbpfInsn::mov64_imm(dst_reg, 1));
             }
             UnaryOpKind::BitNot => {
                 self.instructions.push(EbpfInsn::xor64_imm(dst_reg, -1));

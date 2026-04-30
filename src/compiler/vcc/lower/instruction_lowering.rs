@@ -227,7 +227,6 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::UnaryOp { dst, op, src } => {
                 let vcc_src = self.lower_value(src, out);
-                out.push(VccInst::AssertScalar { value: vcc_src });
                 let dst_ty = self
                     .types
                     .get(dst)
@@ -243,6 +242,7 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                     _ => {
+                        out.push(VccInst::AssertScalar { value: vcc_src });
                         out.push(VccInst::Assume {
                             dst: VccReg(dst.0),
                             ty: dst_ty,
