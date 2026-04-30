@@ -4572,6 +4572,22 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         ProgramCompatibilityRequirement::SkReuseportMigration.minimum_kernel(),
         Some("5.14")
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::RouteLwt.minimum_kernel(),
+        Some("4.10")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::RouteLwtSeg6Local.minimum_kernel(),
+        Some("4.18")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SkMsgSockMapAttach.minimum_kernel(),
+        Some("4.17")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SkSkbSockMapAttach.minimum_kernel(),
+        Some("4.14")
+    );
     assert!(
         ProgramCompatibilityRequirement::SockMapAttach
             .minimum_kernel()

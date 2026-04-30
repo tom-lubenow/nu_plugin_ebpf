@@ -3574,6 +3574,45 @@ mod tests {
                 ProgramCompatibilityRequirement::SkReuseportMigration
             )
         );
+
+        let lwt_in = ProgramSpec::parse("lwt_in:demo-route").expect("lwt_in should parse");
+        assert!(lwt_in.requires_compatibility_feature(ProgramCompatibilityRequirement::RouteLwt));
+        assert!(
+            !lwt_in
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::RouteLwtSeg6Local)
+        );
+
+        let lwt_seg6local =
+            ProgramSpec::parse("lwt_seg6local:demo-route").expect("lwt_seg6local should parse");
+        assert!(
+            lwt_seg6local.requires_compatibility_feature(ProgramCompatibilityRequirement::RouteLwt)
+        );
+        assert!(
+            lwt_seg6local
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::RouteLwtSeg6Local)
+        );
+
+        let sk_msg =
+            ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg should parse");
+        assert!(
+            sk_msg.requires_compatibility_feature(ProgramCompatibilityRequirement::SockMapAttach)
+        );
+        assert!(
+            sk_msg.requires_compatibility_feature(
+                ProgramCompatibilityRequirement::SkMsgSockMapAttach
+            )
+        );
+
+        let sk_skb =
+            ProgramSpec::parse("sk_skb:/sys/fs/bpf/demo_sockmap").expect("sk_skb should parse");
+        assert!(
+            sk_skb.requires_compatibility_feature(ProgramCompatibilityRequirement::SockMapAttach)
+        );
+        assert!(
+            sk_skb.requires_compatibility_feature(
+                ProgramCompatibilityRequirement::SkSkbSockMapAttach
+            )
+        );
     }
 
     #[test]

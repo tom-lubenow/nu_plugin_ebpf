@@ -1566,7 +1566,10 @@ pub enum ProgramCompatibilityRequirement {
     Netkit,
     NetfilterLink,
     RouteLwt,
+    RouteLwtSeg6Local,
     SockMapAttach,
+    SkMsgSockMapAttach,
+    SkSkbSockMapAttach,
     SkReuseportAttach,
     SkReuseportMigration,
     TcActionProgram,
@@ -1579,6 +1582,10 @@ pub enum ProgramCompatibilityRequirement {
 
 const EBPF_TIMELINE_SOURCE: &str = "https://docs.ebpf.io/linux/timeline/";
 const LINUX_5_2_SOURCE: &str = "https://kernelnewbies.org/Linux_5.2";
+const LWT_SEG6LOCAL_SOURCE: &str =
+    "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_LWT_SEG6LOCAL/";
+const SK_MSG_SOURCE: &str = "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_MSG/";
+const SK_SKB_SOURCE: &str = "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_SKB/";
 const SK_REUSEPORT_SOURCE: &str =
     "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/";
 const SCHED_EXT_OPS_SOURCE: &str =
@@ -1607,7 +1614,10 @@ impl ProgramCompatibilityRequirement {
             Self::Netkit => "netkit",
             Self::NetfilterLink => "netfilter-link",
             Self::RouteLwt => "route-lwt",
+            Self::RouteLwtSeg6Local => "route-lwt-seg6local",
             Self::SockMapAttach => "sockmap-attach",
+            Self::SkMsgSockMapAttach => "sk-msg-sockmap-attach",
+            Self::SkSkbSockMapAttach => "sk-skb-sockmap-attach",
             Self::SkReuseportAttach => "sk-reuseport-attach",
             Self::SkReuseportMigration => "sk-reuseport-migration",
             Self::TcActionProgram => "tc-action-program",
@@ -1637,7 +1647,10 @@ impl ProgramCompatibilityRequirement {
             Self::Netkit => "netkit attach support",
             Self::NetfilterLink => "BPF-link netfilter attach support",
             Self::RouteLwt => "route lightweight-tunnel BPF attach support",
+            Self::RouteLwtSeg6Local => "SEG6 local lightweight-tunnel BPF program support",
             Self::SockMapAttach => "sockmap or sockhash attach support",
+            Self::SkMsgSockMapAttach => "sk_msg sockmap or sockhash attach support",
+            Self::SkSkbSockMapAttach => "sk_skb sockmap or sockhash attach support",
             Self::SkReuseportAttach => "SO_REUSEPORT BPF attach support",
             Self::SkReuseportMigration => "SO_REUSEPORT socket migration program support",
             Self::TcActionProgram => "traffic-control action BPF program support",
@@ -1671,7 +1684,10 @@ impl ProgramCompatibilityRequirement {
             | Self::FlowDissector
             | Self::Tcx
             | Self::Netkit
+            | Self::RouteLwtSeg6Local
             | Self::SockMapAttach
+            | Self::SkMsgSockMapAttach
+            | Self::SkSkbSockMapAttach
             | Self::SkReuseportAttach
             | Self::SkReuseportMigration
             | Self::TcActionProgram
@@ -1703,17 +1719,19 @@ impl ProgramCompatibilityRequirement {
             Self::Tcx => Some("6.6"),
             Self::Netkit => Some("6.7"),
             Self::NetfilterLink => Some("6.4"),
+            Self::RouteLwt => Some("4.10"),
+            Self::RouteLwtSeg6Local => Some("4.18"),
+            Self::SkMsgSockMapAttach => Some("4.17"),
+            Self::SkSkbSockMapAttach => Some("4.14"),
             Self::SkReuseportAttach => Some("4.19"),
             Self::SkReuseportMigration => Some("5.14"),
             Self::TcActionProgram => Some("4.1"),
             Self::LircMode2 => Some("4.18"),
             Self::StructOps => Some("5.6"),
             Self::SchedExt => Some("6.12"),
-            Self::UprobeMulti
-            | Self::RouteLwt
-            | Self::SockMapAttach
-            | Self::CgroupV2
-            | Self::CgroupUnixSockAddr => None,
+            Self::UprobeMulti | Self::SockMapAttach | Self::CgroupV2 | Self::CgroupUnixSockAddr => {
+                None
+            }
         }
     }
 
@@ -1721,6 +1739,9 @@ impl ProgramCompatibilityRequirement {
         self.minimum_kernel()?;
         Some(match self {
             Self::KernelBtf | Self::RawTracepointWritable => LINUX_5_2_SOURCE,
+            Self::RouteLwtSeg6Local => LWT_SEG6LOCAL_SOURCE,
+            Self::SkMsgSockMapAttach => SK_MSG_SOURCE,
+            Self::SkSkbSockMapAttach => SK_SKB_SOURCE,
             Self::SkReuseportAttach | Self::SkReuseportMigration => SK_REUSEPORT_SOURCE,
             Self::SchedExt => SCHED_EXT_OPS_SOURCE,
             _ => EBPF_TIMELINE_SOURCE,

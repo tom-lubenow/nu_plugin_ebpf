@@ -147,8 +147,18 @@ const NETFILTER_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::NetfilterLink];
 const LWT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::RouteLwt];
-const SOCKMAP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
-    &[ProgramCompatibilityRequirement::SockMapAttach];
+const LWT_SEG6LOCAL_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::RouteLwt,
+    ProgramCompatibilityRequirement::RouteLwtSeg6Local,
+];
+const SK_MSG_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::SockMapAttach,
+    ProgramCompatibilityRequirement::SkMsgSockMapAttach,
+];
+const SK_SKB_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::SockMapAttach,
+    ProgramCompatibilityRequirement::SkSkbSockMapAttach,
+];
 const SK_REUSEPORT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::SkReuseportAttach];
 const TC_ACTION_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
@@ -249,17 +259,20 @@ const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurfa
             EbpfProgramType::LwtIn,
             EbpfProgramType::LwtOut,
             EbpfProgramType::LwtXmit,
-            EbpfProgramType::LwtSeg6Local,
         ],
         requirements: LWT_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
-        program_types: &[
-            EbpfProgramType::SkMsg,
-            EbpfProgramType::SkSkb,
-            EbpfProgramType::SkSkbParser,
-        ],
-        requirements: SOCKMAP_COMPATIBILITY_REQUIREMENTS,
+        program_types: &[EbpfProgramType::LwtSeg6Local],
+        requirements: LWT_SEG6LOCAL_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::SkMsg],
+        requirements: SK_MSG_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::SkSkb, EbpfProgramType::SkSkbParser],
+        requirements: SK_SKB_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
         program_types: &[EbpfProgramType::SkReuseport],
@@ -1380,7 +1393,10 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::Netkit,
     ProgramCompatibilityRequirement::NetfilterLink,
     ProgramCompatibilityRequirement::RouteLwt,
+    ProgramCompatibilityRequirement::RouteLwtSeg6Local,
     ProgramCompatibilityRequirement::SockMapAttach,
+    ProgramCompatibilityRequirement::SkMsgSockMapAttach,
+    ProgramCompatibilityRequirement::SkSkbSockMapAttach,
     ProgramCompatibilityRequirement::SkReuseportAttach,
     ProgramCompatibilityRequirement::SkReuseportMigration,
     ProgramCompatibilityRequirement::TcActionProgram,
