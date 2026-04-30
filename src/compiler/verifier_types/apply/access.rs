@@ -187,11 +187,13 @@ pub(super) fn apply_list_len_inst(
 pub(super) fn apply_list_get_inst(
     dst: VReg,
     list: VReg,
+    idx: &MirValue,
     types: &HashMap<VReg, MirType>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     require_ptr_with_space(list, "list", &[AddressSpace::Stack], state, errors);
+    require_scalar_value(idx, "list index", state, errors);
     let ty = types
         .get(&dst)
         .map(verifier_type_from_mir)
@@ -479,10 +481,12 @@ fn record_pointer_access_size(field_ty: &MirType, value_ty: Option<&MirType>) ->
 
 pub(super) fn apply_list_push_inst(
     list: VReg,
+    item: VReg,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     require_ptr_with_space(list, "list", &[AddressSpace::Stack], state, errors);
+    require_scalar_reg(item, "list push item", state, errors);
 }
 
 pub(super) fn apply_string_len_write_inst(
@@ -504,11 +508,35 @@ pub(super) fn apply_histogram_inst(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    require_scalar_reg(value, "histogram", state, errors);
+}
+
+fn require_scalar_reg(
+    value: VReg,
+    op: &str,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
     match state.get(value) {
         VerifierType::Scalar | VerifierType::Bool => {}
         other => errors.push(VerifierTypeError::new(format!(
-            "histogram expects scalar, got {:?}",
+            "{op} expects scalar, got {:?}",
             other
+        ))),
+    }
+}
+
+fn require_scalar_value(
+    value: &MirValue,
+    op: &str,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    match value {
+        MirValue::Const(_) => {}
+        MirValue::VReg(vreg) => require_scalar_reg(*vreg, op, state, errors),
+        MirValue::StackSlot(_) => errors.push(VerifierTypeError::new(format!(
+            "{op} expects scalar, got stack pointer"
         ))),
     }
 }

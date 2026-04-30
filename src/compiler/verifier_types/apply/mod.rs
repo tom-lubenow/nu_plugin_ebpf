@@ -120,8 +120,8 @@ pub(super) fn apply_inst(
         MirInst::ListLen { dst, list } => {
             apply_list_len_inst(*dst, *list, types, state, errors);
         }
-        MirInst::ListGet { dst, list, .. } => {
-            apply_list_get_inst(*dst, *list, types, state, errors);
+        MirInst::ListGet { dst, list, idx } => {
+            apply_list_get_inst(*dst, *list, idx, types, state, errors);
         }
         MirInst::LoadCtxField { dst, field, slot } => {
             apply_load_ctx_field_inst(
@@ -166,8 +166,8 @@ pub(super) fn apply_inst(
         | MirInst::Return { .. }
         | MirInst::LoopBack { .. }
         | MirInst::Placeholder => {}
-        MirInst::ListPush { list, .. } => {
-            apply_list_push_inst(*list, state, errors);
+        MirInst::ListPush { list, item } => {
+            apply_list_push_inst(*list, *item, state, errors);
         }
         MirInst::StringAppend { dst_len, .. } | MirInst::IntToString { dst_len, .. } => {
             apply_string_len_write_inst(*dst_len, state, errors);
