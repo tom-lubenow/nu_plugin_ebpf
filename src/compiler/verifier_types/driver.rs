@@ -179,6 +179,16 @@ fn verify_mir_with_subfunction_summaries_impl(
                 if_true,
                 if_false,
             } => {
+                let cond_ty = state.get(*cond);
+                if !matches!(
+                    cond_ty,
+                    VerifierType::Scalar | VerifierType::Bool | VerifierType::Ptr { .. }
+                ) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "branch condition expects scalar or pointer, got {:?}",
+                        cond_ty
+                    )));
+                }
                 let guard = state.guard(*cond);
                 let true_state = refine_on_branch(&state, guard, true);
                 let false_state = refine_on_branch(&state, guard, false);
