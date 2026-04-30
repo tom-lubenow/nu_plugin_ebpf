@@ -251,7 +251,7 @@ const FIXTURES = [
             '{|ctx|'
             '  $ctx.arg0 | map-put seen_args 0 --kind hash'
             '  let entry = (0 | map-get seen_args --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry | count'
             '  }'
             '  0'
@@ -289,7 +289,7 @@ const FIXTURES = [
             '  let key = { pid: 1, cookie: 7 }'
             '  42 | map-put keyed $key --kind hash'
             '  let entry = ($key | map-get keyed --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry | count'
             '  }'
             '  0'
@@ -309,7 +309,7 @@ const FIXTURES = [
             '  let key = { tag: 7, flag: true }'
             '  42 | map-put keyed_aligned $key --kind hash'
             '  let entry = ($key | map-get keyed_aligned --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry | count'
             '  }'
             '  0'
@@ -343,7 +343,7 @@ const FIXTURES = [
             '  map-define null_only --kind hash --value-type int'
             '  42 | map-put null_only 0 --kind hash'
             '  let entry = (0 | map-get null_only --kind hash)'
-            '  if $entry != 0 { 0 }'
+            '  if $entry { 0 }'
             '  0'
             '}'
         ]
@@ -360,7 +360,7 @@ const FIXTURES = [
             '  map-define small_seen --kind hash --value-type int --max-entries 32'
             '  42 | map-put small_seen 0 --kind hash'
             '  let entry = (0 | map-get small_seen --kind hash)'
-            '  if $entry != 0 { $entry | count }'
+            '  if $entry { $entry | count }'
             '  0'
             '}'
         ]
@@ -376,7 +376,7 @@ const FIXTURES = [
             '{|ctx|'
             '  { pid: $ctx.arg0, cookie: 7 } | map-push recent_args --kind queue'
             '  let entry = (map-peek recent_args --kind queue)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry.pid | count'
             '  }'
             '  0'
@@ -394,7 +394,7 @@ const FIXTURES = [
             '{|ctx|'
             '  { pid: $ctx.arg0, cookie: 7 } | map-push recent_args --kind stack'
             '  let entry = (map-pop recent_args --kind stack)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry.cookie | count'
             '  }'
             '  0'
@@ -427,7 +427,7 @@ const FIXTURES = [
             '{|ctx|'
             '  $ctx.arg0 | map-put cpu_seen 0 --kind per-cpu-hash'
             '  let entry = (0 | map-get cpu_seen --kind per-cpu-hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry | count'
             '  }'
             '  0'
@@ -460,7 +460,7 @@ const FIXTURES = [
             '{|ctx|'
             '  { pid: $ctx.arg0, cookie: 7 } | map-put src_records 0 --kind hash'
             '  let entry = (0 | map-get src_records --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    $entry | map-put dst_records 0 --kind hash'
             '  }'
             '  0'
@@ -493,7 +493,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
-            '  if $rec != 0 {'
+            '  if $rec {'
             '    helper-call "bpf_ringbuf_submit" $rec 0'
             '  }'
             '  0'
@@ -512,7 +512,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
-            '  if $rec != 0 {'
+            '  if $rec {'
             '    helper-call "bpf_ringbuf_discard" $rec 0'
             '  }'
             '  0'
@@ -546,7 +546,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
-            '  if $rec != 0 {'
+            '  if $rec {'
             '    helper-call "bpf_ringbuf_submit" $rec 0'
             '    helper-call "bpf_ringbuf_submit" $rec 0'
             '  }'
@@ -565,7 +565,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
-            '  if $rec != 0 {'
+            '  if $rec {'
             '    helper-call "bpf_ringbuf_discard" $rec 0'
             '    helper-call "bpf_ringbuf_submit" $rec 0'
             '  }'
@@ -1100,7 +1100,7 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define kptr_slots --kind hash --value-type int'
             '  let entry = (0 | map-get kptr_slots --kind hash)'
-            '  if $entry != 0 { helper-call "bpf_kptr_xchg" $entry $ctx.flow_keys | count }'
+            '  if $entry { helper-call "bpf_kptr_xchg" $entry $ctx.flow_keys | count }'
             '  "fallback"'
             '}'
         ]
@@ -1385,8 +1385,8 @@ const FIXTURES = [
         target: "iter:task"
         program: [
             '{|ctx|'
-            '  if $ctx.meta != 0 { 1 | count }'
-            '  if $ctx.task != 0 { 1 | count }'
+            '  if $ctx.meta { 1 | count }'
+            '  if $ctx.task { 1 | count }'
             '  0'
             '}'
         ]
@@ -1401,8 +1401,8 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.fd | count'
-            '  if $ctx.task != 0 { 1 | count }'
-            '  if $ctx.file != 0 { 1 | count }'
+            '  if $ctx.task { 1 | count }'
+            '  if $ctx.file { 1 | count }'
             '  0'
             '}'
         ]
@@ -1416,8 +1416,8 @@ const FIXTURES = [
         target: "iter:task_vma"
         program: [
             '{|ctx|'
-            '  if $ctx.task != 0 { 1 | count }'
-            '  if $ctx.vma != 0 { 1 | count }'
+            '  if $ctx.task { 1 | count }'
+            '  if $ctx.vma { 1 | count }'
             '  0'
             '}'
         ]
@@ -1431,7 +1431,7 @@ const FIXTURES = [
         target: "iter:cgroup"
         program: [
             '{|ctx|'
-            '  if $ctx.cgroup != 0 { 1 | count }'
+            '  if $ctx.cgroup { 1 | count }'
             '  0'
             '}'
         ]
@@ -1445,7 +1445,7 @@ const FIXTURES = [
         target: "iter:bpf_map"
         program: [
             '{|ctx|'
-            '  if $ctx.map != 0 { 1 | count }'
+            '  if $ctx.map { 1 | count }'
             '  0'
             '}'
         ]
@@ -1459,9 +1459,9 @@ const FIXTURES = [
         target: "iter:bpf_map_elem"
         program: [
             '{|ctx|'
-            '  if $ctx.map != 0 { 1 | count }'
-            '  if $ctx.key != 0 { 1 | count }'
-            '  if $ctx.value != 0 { 1 | count }'
+            '  if $ctx.map { 1 | count }'
+            '  if $ctx.key { 1 | count }'
+            '  if $ctx.value { 1 | count }'
             '  0'
             '}'
         ]
@@ -1475,9 +1475,9 @@ const FIXTURES = [
         target: "iter:bpf_sk_storage_map"
         program: [
             '{|ctx|'
-            '  if $ctx.map != 0 { 1 | count }'
-            '  if $ctx.value != 0 { 1 | count }'
-            '  if $ctx.sk != 0 { 1 | count }'
+            '  if $ctx.map { 1 | count }'
+            '  if $ctx.value { 1 | count }'
+            '  if $ctx.sk { 1 | count }'
             '  0'
             '}'
         ]
@@ -1491,9 +1491,9 @@ const FIXTURES = [
         target: "iter:sockmap"
         program: [
             '{|ctx|'
-            '  if $ctx.map != 0 { 1 | count }'
-            '  if $ctx.key != 0 { 1 | count }'
-            '  if $ctx.sk != 0 { 1 | count }'
+            '  if $ctx.map { 1 | count }'
+            '  if $ctx.key { 1 | count }'
+            '  if $ctx.sk { 1 | count }'
             '  0'
             '}'
         ]
@@ -1507,7 +1507,7 @@ const FIXTURES = [
         target: "iter:bpf_prog"
         program: [
             '{|ctx|'
-            '  if $ctx.prog != 0 { 1 | count }'
+            '  if $ctx.prog { 1 | count }'
             '  0'
             '}'
         ]
@@ -1521,7 +1521,7 @@ const FIXTURES = [
         target: "iter:bpf_link"
         program: [
             '{|ctx|'
-            '  if $ctx.link != 0 { 1 | count }'
+            '  if $ctx.link { 1 | count }'
             '  0'
             '}'
         ]
@@ -1536,8 +1536,8 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.uid | count'
-            '  if $ctx.sk_common != 0 { 1 | count }'
-            '  if $ctx.sock_common != 0 { 1 | count }'
+            '  if $ctx.sk_common { 1 | count }'
+            '  if $ctx.sock_common { 1 | count }'
             '  0'
             '}'
         ]
@@ -1552,7 +1552,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.uid + $ctx.bucket) | count'
-            '  if $ctx.udp_sk != 0 { 1 | count }'
+            '  if $ctx.udp_sk { 1 | count }'
             '  0'
             '}'
         ]
@@ -1567,7 +1567,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.uid | count'
-            '  if $ctx.unix_sk != 0 { 1 | count }'
+            '  if $ctx.unix_sk { 1 | count }'
             '  0'
             '}'
         ]
@@ -1581,7 +1581,7 @@ const FIXTURES = [
         target: "iter:dmabuf"
         program: [
             '{|ctx|'
-            '  if $ctx.dmabuf != 0 { 1 | count }'
+            '  if $ctx.dmabuf { 1 | count }'
             '  0'
             '}'
         ]
@@ -1595,8 +1595,8 @@ const FIXTURES = [
         target: "iter:ipv6_route"
         program: [
             '{|ctx|'
-            '  if $ctx.rt != 0 { 1 | count }'
-            '  if $ctx.ipv6_route != 0 { 1 | count }'
+            '  if $ctx.rt { 1 | count }'
+            '  if $ctx.ipv6_route { 1 | count }'
             '  0'
             '}'
         ]
@@ -1610,7 +1610,7 @@ const FIXTURES = [
         target: "iter:kmem_cache"
         program: [
             '{|ctx|'
-            '  if $ctx.kmem_cache != 0 { 1 | count }'
+            '  if $ctx.kmem_cache { 1 | count }'
             '  0'
             '}'
         ]
@@ -1624,7 +1624,7 @@ const FIXTURES = [
         target: "iter:ksym"
         program: [
             '{|ctx|'
-            '  if $ctx.ksym != 0 { 1 | count }'
+            '  if $ctx.ksym { 1 | count }'
             '  0'
             '}'
         ]
@@ -1638,7 +1638,7 @@ const FIXTURES = [
         target: "iter:netlink"
         program: [
             '{|ctx|'
-            '  if $ctx.netlink_sk != 0 { 1 | count }'
+            '  if $ctx.netlink_sk { 1 | count }'
             '  0'
             '}'
         ]
@@ -1668,7 +1668,7 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
             '  let entry = (0 | map-get timers --kind array)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    helper-call "bpf_timer_init" $entry.timer timers 0 --kind array'
             '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val| 0}'
             '    helper-call "bpf_timer_start" $entry.timer 1000 0'
@@ -1689,7 +1689,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let task = (kfunc-call "bpf_task_from_pid" 1)'
-            '  if $task != 0 {'
+            '  if $task {'
             '    kfunc-call "bpf_task_release" $task'
             '  }'
             '  0'
@@ -1738,7 +1738,7 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
             '  let entry = (0 | map-get locks --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    helper-call "bpf_spin_lock" $entry.lock'
             '    helper-call "bpf_spin_unlock" $entry.lock'
             '  }'
@@ -1757,7 +1757,7 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
             '  let entry = (0 | map-get locks --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    helper-call "bpf_spin_lock" $entry.lock'
             '  }'
             '  "pass"'
@@ -1776,7 +1776,7 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
             '  let entry = (0 | map-get locks --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    helper-call "bpf_spin_lock" $entry.lock'
             '    helper-call "bpf_spin_lock" $entry.lock'
             '    helper-call "bpf_spin_unlock" $entry.lock'
@@ -1797,7 +1797,7 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
             '  let entry = (0 | map-get locks --kind hash)'
-            '  if $entry != 0 {'
+            '  if $entry {'
             '    helper-call "bpf_spin_lock" $entry.lock'
             '    helper-call "bpf_get_prandom_u32"'
             '    helper-call "bpf_spin_unlock" $entry.lock'

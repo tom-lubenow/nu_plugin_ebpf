@@ -225,7 +225,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
         let prev = $ctx.arg.prev_cpu
         let wake = $ctx.arg.wake_flags
         let mask = (kfunc-call 'scx_bpf_get_online_cpumask')
-        if $mask != 0 {
+        if $mask {
             let cpu = (kfunc-call 'scx_bpf_select_cpu_and' $p $prev $wake $mask 0)
             kfunc-call 'scx_bpf_put_cpumask' $mask
             $cpu
