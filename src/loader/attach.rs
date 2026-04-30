@@ -40,7 +40,13 @@ fn compatibility_requirements_detail(
     } else {
         let descriptions = requirements
             .iter()
-            .map(crate::compiler::ProgramCompatibilityRequirement::description)
+            .map(|requirement| {
+                let mut detail = requirement.description().to_string();
+                if let Some(minimum_kernel) = requirement.minimum_kernel() {
+                    detail.push_str(&format!(" (kernel>={minimum_kernel})"));
+                }
+                detail
+            })
             .collect::<Vec<_>>()
             .join(", ");
         format!("; feature requirements: {descriptions}")

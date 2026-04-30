@@ -1585,6 +1585,12 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
                     msg.contains(requirement.description()),
                     "{label} live-attach error should mention compatibility requirement {requirement:?}: {msg}"
                 );
+                if let Some(minimum_kernel) = requirement.minimum_kernel() {
+                    assert!(
+                        msg.contains(&format!("kernel>={minimum_kernel}")),
+                        "{label} live-attach error should mention minimum kernel for {requirement:?}: {msg}"
+                    );
+                }
             }
         }
     }
@@ -1615,6 +1621,9 @@ fn test_attach_rejects_compile_only_programs_with_spec_requirements() {
     assert!(msg.contains(ProgramCompatibilityRequirement::KernelBtf.description()));
     assert!(msg.contains(ProgramCompatibilityRequirement::BpfTrampoline.description()));
     assert!(msg.contains(ProgramCompatibilityRequirement::SleepableProgram.description()));
+    assert!(msg.contains("kernel>=5.2"));
+    assert!(msg.contains("kernel>=5.5"));
+    assert!(msg.contains("kernel>=5.10"));
 }
 
 #[test]
@@ -1652,6 +1661,12 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
                 msg.contains(requirement.description()),
                 "cgroup_sock_addr unix live-attach error should mention compatibility requirement {requirement:?}: {msg}"
             );
+            if let Some(minimum_kernel) = requirement.minimum_kernel() {
+                assert!(
+                    msg.contains(&format!("kernel>={minimum_kernel}")),
+                    "cgroup_sock_addr unix live-attach error should mention minimum kernel for {requirement:?}: {msg}"
+                );
+            }
         }
     }
 }
