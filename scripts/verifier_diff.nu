@@ -996,6 +996,196 @@ const KERNEL_FEATURE_CTX_SKB_HWTSTAMP = {
     min_kernel: "6.2"
     source: "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_PID = {
+    key: "ctx:pid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TGID = {
+    key: "ctx:tgid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_PID_TGID = {
+    key: "ctx:pid_tgid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_UID = {
+    key: "ctx:uid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_GID = {
+    key: "ctx:gid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_UID_GID = {
+    key: "ctx:uid_gid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_COMM = {
+    key: "ctx:comm"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_CLASSID = {
+    key: "ctx:cgroup_classid"
+    min_kernel: "4.3"
+    source: "https://github.com/torvalds/linux/blob/v4.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_ROUTE_REALM = {
+    key: "ctx:route_realm"
+    min_kernel: "4.4"
+    source: "https://github.com/torvalds/linux/blob/v4.4/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CPU = {
+    key: "ctx:cpu"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_NUMA_NODE = {
+    key: "ctx:numa_node"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_RANDOM = {
+    key: "ctx:random"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TIMESTAMP = {
+    key: "ctx:timestamp"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TASK = {
+    key: "ctx:task"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_KTIME_BOOT = {
+    key: "ctx:ktime_boot"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_KTIME_COARSE = {
+    key: "ctx:ktime_coarse"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_KTIME_TAI = {
+    key: "ctx:ktime_tai"
+    min_kernel: "6.1"
+    source: "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_JIFFIES = {
+    key: "ctx:jiffies"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_FUNC_IP = {
+    key: "ctx:func_ip"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_ATTACH_COOKIE = {
+    key: "ctx:attach_cookie"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_ID = {
+    key: "ctx:cgroup_id"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_PERF_COUNTER = {
+    key: "ctx:perf_counter"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_PERF_ENABLED = {
+    key: "ctx:perf_enabled"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_PERF_RUNNING = {
+    key: "ctx:perf_running"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKET_COOKIE = {
+    key: "ctx:socket_cookie"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKET_UID = {
+    key: "ctx:socket_uid"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_NETNS_COOKIE = {
+    key: "ctx:netns_cookie"
+    min_kernel: "5.7"
+    source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CSUM_LEVEL = {
+    key: "ctx:csum_level"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_HASH_RECALC = {
+    key: "ctx:hash_recalc"
+    min_kernel: "4.8"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SKB_CGROUP_ID = {
+    key: "ctx:skb_cgroup_id"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_XDP_BUFF_LEN = {
+    key: "ctx:xdp_buff_len"
+    min_kernel: "5.18"
+    source: "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SYSCTL_NAME = {
+    key: "ctx:sysctl_name"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SYSCTL_BASE_NAME = {
+    key: "ctx:sysctl_base_name"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SYSCTL_CURRENT_VALUE = {
+    key: "ctx:sysctl_current_value"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SYSCTL_NEW_VALUE = {
+    key: "ctx:sysctl_new_value"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_ARG_COUNT = {
+    key: "ctx:arg_count"
+    min_kernel: "5.17"
+    source: "https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_KSTACK = {
+    key: "ctx:kstack"
+    min_kernel: "4.6"
+    source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_USTACK = {
+    key: "ctx:ustack"
+    min_kernel: "4.6"
+    source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
+}
 
 const MAP_KIND_KERNEL_FEATURES = [
     { kind: "array", feature: $KERNEL_FEATURE_MAP_ARRAY }
@@ -1160,6 +1350,61 @@ const CONTEXT_FIELD_KERNEL_FEATURES = [
     { field: "hwtstamp", feature: $KERNEL_FEATURE_CTX_HWTSTAMP }
     { field: "tstamp_type", feature: $KERNEL_FEATURE_CTX_TSTAMP_TYPE }
     { field: "skb_hwtstamp", feature: $KERNEL_FEATURE_CTX_SKB_HWTSTAMP }
+    { field: "pid", feature: $KERNEL_FEATURE_CTX_PID }
+    { field: "tid", feature: $KERNEL_FEATURE_CTX_PID }
+    { field: "tgid", feature: $KERNEL_FEATURE_CTX_TGID }
+    { field: "pid_tgid", feature: $KERNEL_FEATURE_CTX_PID_TGID }
+    { field: "current_pid_tgid", feature: $KERNEL_FEATURE_CTX_PID_TGID }
+    { field: "uid", feature: $KERNEL_FEATURE_CTX_UID }
+    { field: "gid", feature: $KERNEL_FEATURE_CTX_GID }
+    { field: "uid_gid", feature: $KERNEL_FEATURE_CTX_UID_GID }
+    { field: "current_uid_gid", feature: $KERNEL_FEATURE_CTX_UID_GID }
+    { field: "comm", feature: $KERNEL_FEATURE_CTX_COMM }
+    { field: "cgroup_classid", feature: $KERNEL_FEATURE_CTX_CGROUP_CLASSID }
+    { field: "route_realm", feature: $KERNEL_FEATURE_CTX_ROUTE_REALM }
+    { field: "cpu", feature: $KERNEL_FEATURE_CTX_CPU }
+    { field: "numa_node", feature: $KERNEL_FEATURE_CTX_NUMA_NODE }
+    { field: "numa_node_id", feature: $KERNEL_FEATURE_CTX_NUMA_NODE }
+    { field: "random", feature: $KERNEL_FEATURE_CTX_RANDOM }
+    { field: "prandom_u32", feature: $KERNEL_FEATURE_CTX_RANDOM }
+    { field: "ktime", feature: $KERNEL_FEATURE_CTX_TIMESTAMP }
+    { field: "timestamp", feature: $KERNEL_FEATURE_CTX_TIMESTAMP }
+    { field: "task", feature: $KERNEL_FEATURE_CTX_TASK }
+    { field: "current_task", feature: $KERNEL_FEATURE_CTX_TASK }
+    { field: "ktime_boot", feature: $KERNEL_FEATURE_CTX_KTIME_BOOT }
+    { field: "boot_ktime", feature: $KERNEL_FEATURE_CTX_KTIME_BOOT }
+    { field: "boot_time", feature: $KERNEL_FEATURE_CTX_KTIME_BOOT }
+    { field: "ktime_coarse", feature: $KERNEL_FEATURE_CTX_KTIME_COARSE }
+    { field: "coarse_ktime", feature: $KERNEL_FEATURE_CTX_KTIME_COARSE }
+    { field: "coarse_time", feature: $KERNEL_FEATURE_CTX_KTIME_COARSE }
+    { field: "ktime_tai", feature: $KERNEL_FEATURE_CTX_KTIME_TAI }
+    { field: "tai_ktime", feature: $KERNEL_FEATURE_CTX_KTIME_TAI }
+    { field: "tai_time", feature: $KERNEL_FEATURE_CTX_KTIME_TAI }
+    { field: "jiffies", feature: $KERNEL_FEATURE_CTX_JIFFIES }
+    { field: "func_ip", feature: $KERNEL_FEATURE_CTX_FUNC_IP }
+    { field: "function_ip", feature: $KERNEL_FEATURE_CTX_FUNC_IP }
+    { field: "attach_cookie", feature: $KERNEL_FEATURE_CTX_ATTACH_COOKIE }
+    { field: "bpf_cookie", feature: $KERNEL_FEATURE_CTX_ATTACH_COOKIE }
+    { field: "cgroup_id", feature: $KERNEL_FEATURE_CTX_CGROUP_ID }
+    { field: "perf_counter", feature: $KERNEL_FEATURE_CTX_PERF_COUNTER }
+    { field: "perf_enabled", feature: $KERNEL_FEATURE_CTX_PERF_ENABLED }
+    { field: "perf_running", feature: $KERNEL_FEATURE_CTX_PERF_RUNNING }
+    { field: "socket_cookie", feature: $KERNEL_FEATURE_CTX_SOCKET_COOKIE }
+    { field: "socket_uid", feature: $KERNEL_FEATURE_CTX_SOCKET_UID }
+    { field: "netns_cookie", feature: $KERNEL_FEATURE_CTX_NETNS_COOKIE }
+    { field: "csum_level", feature: $KERNEL_FEATURE_CTX_CSUM_LEVEL }
+    { field: "hash_recalc", feature: $KERNEL_FEATURE_CTX_HASH_RECALC }
+    { field: "recalc_hash", feature: $KERNEL_FEATURE_CTX_HASH_RECALC }
+    { field: "skb_cgroup_id", feature: $KERNEL_FEATURE_CTX_SKB_CGROUP_ID }
+    { field: "xdp_buff_len", feature: $KERNEL_FEATURE_CTX_XDP_BUFF_LEN }
+    { field: "xdp_buffer_len", feature: $KERNEL_FEATURE_CTX_XDP_BUFF_LEN }
+    { field: "sysctl_name", feature: $KERNEL_FEATURE_CTX_SYSCTL_NAME }
+    { field: "sysctl_base_name", feature: $KERNEL_FEATURE_CTX_SYSCTL_BASE_NAME }
+    { field: "sysctl_current_value", feature: $KERNEL_FEATURE_CTX_SYSCTL_CURRENT_VALUE }
+    { field: "sysctl_new_value", feature: $KERNEL_FEATURE_CTX_SYSCTL_NEW_VALUE }
+    { field: "arg_count", feature: $KERNEL_FEATURE_CTX_ARG_COUNT }
+    { field: "kstack", feature: $KERNEL_FEATURE_CTX_KSTACK }
+    { field: "ustack", feature: $KERNEL_FEATURE_CTX_USTACK }
 ]
 
 const FIXTURES = [
@@ -4636,7 +4881,93 @@ def kfunc-kernel-feature [name: string] {
     }
 }
 
-def context-field-kernel-feature [field: string] {
+def target-context-field-alias-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+
+    if ($target_text | str starts-with "xdp:") and $field == "ifindex" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_INGRESS_IFINDEX }
+    }
+    if ($target_text | str starts-with "sk_msg:") and $field == "size" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
+    }
+    if ($target_text | str starts-with "cgroup_sysctl:") {
+        if $field == "name" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_NAME }
+        }
+        if $field == "base_name" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_BASE_NAME }
+        }
+        if $field == "current_value" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_CURRENT_VALUE }
+        }
+        if $field == "new_value" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_NEW_VALUE }
+        }
+    }
+
+    if ($target_text | str starts-with "iter:") and ($field in [
+        "task"
+        "iter_task"
+        "meta"
+        "iter_meta"
+        "fd"
+        "iter_fd"
+        "file"
+        "iter_file"
+        "vma"
+        "iter_vma"
+        "cgroup"
+        "iter_cgroup"
+        "map"
+        "iter_map"
+        "key"
+        "iter_key"
+        "value"
+        "iter_value"
+        "prog"
+        "iter_prog"
+        "link"
+        "iter_link"
+        "sk_common"
+        "sock_common"
+        "iter_sk_common"
+        "udp_sk"
+        "iter_udp_sk"
+        "unix_sk"
+        "iter_unix_sk"
+        "uid"
+        "iter_uid"
+        "bucket"
+        "iter_bucket"
+        "dmabuf"
+        "iter_dmabuf"
+        "rt"
+        "route"
+        "ipv6_route"
+        "iter_ipv6_route"
+        "cache"
+        "kmem_cache"
+        "iter_kmem_cache"
+        "ksym"
+        "iter_ksym"
+        "netlink_sk"
+        "iter_netlink_sk"
+        "sk"
+        "sock"
+        "iter_sock"
+    ]) {
+        return { matched: true, feature: null }
+    }
+
+    { matched: false, feature: null }
+}
+
+def context-field-kernel-feature [field: string target] {
+    let target_alias = (target-context-field-alias-kernel-feature $field $target)
+    if $target_alias.matched {
+        return $target_alias.feature
+    }
+
     let matches = ($CONTEXT_FIELD_KERNEL_FEATURES | where {|entry| $entry.field == $field })
     if ($matches | is-empty) {
         null
@@ -4762,7 +5093,7 @@ def program-kfunc-kernel-features [source: string] {
     $features
 }
 
-def program-context-field-kernel-features [source: string] {
+def program-context-field-kernel-features [source: string target] {
     mut features = []
 
     for line in ($source | lines) {
@@ -4777,7 +5108,7 @@ def program-context-field-kernel-features [source: string] {
                 continue
             }
 
-            let feature = (context-field-kernel-feature $field)
+            let feature = (context-field-kernel-feature $field $target)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
@@ -5014,7 +5345,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program))
-    $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
