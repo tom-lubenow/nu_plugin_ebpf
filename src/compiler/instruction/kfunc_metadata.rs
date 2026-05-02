@@ -108,7 +108,11 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
     Some(match name {
         "bpf_dynptr_size" => "bpf_dynptr_size",
         "bpf_dynptr_slice" => "bpf_dynptr_slice",
+        "bpf_dynptr_slice_rdwr" => "bpf_dynptr_slice_rdwr",
         "bpf_dynptr_clone" => "bpf_dynptr_clone",
+        "bpf_dynptr_adjust" => "bpf_dynptr_adjust",
+        "bpf_dynptr_is_null" => "bpf_dynptr_is_null",
+        "bpf_dynptr_is_rdonly" => "bpf_dynptr_is_rdonly",
         "bpf_task_acquire" => "bpf_task_acquire",
         "bpf_task_from_pid" => "bpf_task_from_pid",
         "bpf_task_release" => "bpf_task_release",
@@ -177,11 +181,15 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_cpumask_test_and_set_cpu"
         | "bpf_cpumask_test_cpu"
         | "bpf_cpumask_xor" => "6.3",
-        "bpf_dynptr_slice" | "bpf_cgroup_from_id" => "6.4",
+        "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr" | "bpf_cgroup_from_id" => "6.4",
         "bpf_cpumask_any_and_distribute"
         | "bpf_cpumask_any_distribute"
         | "bpf_cpumask_first_and" => "6.5",
-        "bpf_dynptr_size" | "bpf_dynptr_clone" => "6.5",
+        "bpf_dynptr_size"
+        | "bpf_dynptr_clone"
+        | "bpf_dynptr_adjust"
+        | "bpf_dynptr_is_null"
+        | "bpf_dynptr_is_rdonly" => "6.5",
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => "6.8",
         "bpf_get_task_exe_file" | "bpf_put_file" => "6.12",
         _ => return None,
@@ -218,11 +226,17 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_cpumask_test_and_set_cpu"
         | "bpf_cpumask_test_cpu"
         | "bpf_cpumask_xor" => LINUX_CPUMASK_C_V6_3_SOURCE,
-        "bpf_dynptr_slice" | "bpf_cgroup_from_id" => LINUX_HELPERS_C_V6_4_SOURCE,
+        "bpf_dynptr_slice" | "bpf_dynptr_slice_rdwr" | "bpf_cgroup_from_id" => {
+            LINUX_HELPERS_C_V6_4_SOURCE
+        }
         "bpf_cpumask_any_and_distribute"
         | "bpf_cpumask_any_distribute"
         | "bpf_cpumask_first_and" => LINUX_CPUMASK_C_V6_5_SOURCE,
-        "bpf_dynptr_size" | "bpf_dynptr_clone" => LINUX_HELPERS_C_V6_5_SOURCE,
+        "bpf_dynptr_size"
+        | "bpf_dynptr_clone"
+        | "bpf_dynptr_adjust"
+        | "bpf_dynptr_is_null"
+        | "bpf_dynptr_is_rdonly" => LINUX_HELPERS_C_V6_5_SOURCE,
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => LINUX_CPUMASK_C_V6_8_SOURCE,
         "bpf_get_task_exe_file" | "bpf_put_file" => LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE,
         _ => return None,

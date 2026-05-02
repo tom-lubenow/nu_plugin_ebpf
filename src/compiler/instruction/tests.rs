@@ -4053,6 +4053,18 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/bpf/helpers.c",
         ),
         (
+            "bpf_dynptr_slice_rdwr",
+            "kfunc:bpf_dynptr_slice_rdwr",
+            "6.4",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
+            "bpf_dynptr_adjust",
+            "kfunc:bpf_dynptr_adjust",
+            "6.5",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
             "bpf_get_task_exe_file",
             "kfunc:bpf_get_task_exe_file",
             "6.12",
