@@ -3140,7 +3140,10 @@ fn iterator_target_compatibility_requirement(
     target: &str,
 ) -> Option<ProgramCompatibilityRequirement> {
     Some(match target {
+        "task" => ProgramCompatibilityRequirement::BpfIteratorTaskTarget,
+        "task_file" => ProgramCompatibilityRequirement::BpfIteratorTaskFileTarget,
         "task_vma" => ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
+        "bpf_map" => ProgramCompatibilityRequirement::BpfIteratorBpfMapTarget,
         "cgroup" => ProgramCompatibilityRequirement::BpfIteratorCgroupTarget,
         "bpf_map_elem" => ProgramCompatibilityRequirement::BpfIteratorBpfMapElemTarget,
         "bpf_sk_storage_map" => ProgramCompatibilityRequirement::BpfIteratorBpfSkStorageMapTarget,
@@ -3702,9 +3705,24 @@ mod tests {
 
         for (spec_text, requirement, minimum_kernel) in [
             (
+                "iter:task",
+                ProgramCompatibilityRequirement::BpfIteratorTaskTarget,
+                "5.8",
+            ),
+            (
+                "iter:task_file",
+                ProgramCompatibilityRequirement::BpfIteratorTaskFileTarget,
+                "5.8",
+            ),
+            (
                 "iter:task_vma",
                 ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
                 "5.12",
+            ),
+            (
+                "iter:bpf_map",
+                ProgramCompatibilityRequirement::BpfIteratorBpfMapTarget,
+                "5.8",
             ),
             (
                 "iter:cgroup",

@@ -227,10 +227,25 @@ const KERNEL_FEATURE_PROG_ITER = {
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_ITER_TARGET_TASK = {
+    key: "iter-target:task"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_TASK_FILE = {
+    key: "iter-target:task_file"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c"
+}
 const KERNEL_FEATURE_ITER_TARGET_TASK_VMA = {
     key: "iter-target:task_vma"
     min_kernel: "5.12"
     source: "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_BPF_MAP = {
+    key: "iter-target:bpf_map"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/map_iter.c"
 }
 const KERNEL_FEATURE_ITER_TARGET_CGROUP = {
     key: "iter-target:cgroup"
@@ -6535,8 +6550,14 @@ def target-kernel-features [target] {
     } else if ($target | str starts-with "iter:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_ITER)
         let iter_target = ($target | split row ":" | get 1)
-        if $iter_target == "task_vma" {
+        if $iter_target == "task" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK)
+        } else if $iter_target == "task_file" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK_FILE)
+        } else if $iter_target == "task_vma" {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK_VMA)
+        } else if $iter_target == "bpf_map" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_MAP)
         } else if $iter_target == "cgroup" {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_CGROUP)
         } else if $iter_target == "bpf_map_elem" {

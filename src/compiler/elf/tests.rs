@@ -4688,8 +4688,20 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         Some("6.7")
     );
     assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorTaskTarget.minimum_kernel(),
+        Some("5.8")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorTaskFileTarget.minimum_kernel(),
+        Some("5.8")
+    );
+    assert_eq!(
         ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget.minimum_kernel(),
         Some("5.12")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorBpfMapTarget.minimum_kernel(),
+        Some("5.8")
     );
     assert_eq!(
         ProgramCompatibilityRequirement::BpfIteratorCgroupTarget.minimum_kernel(),
