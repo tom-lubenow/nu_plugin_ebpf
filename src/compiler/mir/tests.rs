@@ -323,6 +323,8 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::GsoSegs, "gso_segs", "5.1"),
         (CtxField::GsoSize, "gso_size", "5.7"),
         (CtxField::EgressIfindex, "egress_ifindex", "5.8"),
+        (CtxField::SockOpsSkbLen, "skb_len", "5.10"),
+        (CtxField::SockOpsSkbTcpFlags, "skb_tcp_flags", "5.10"),
         (CtxField::Hwtstamp, "hwtstamp", "5.16"),
         (CtxField::TstampType, "tstamp_type", "5.18"),
         (CtxField::SockOpsSkbHwtstamp, "skb_hwtstamp", "6.2"),
@@ -342,6 +344,22 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
             "source should point at the Linux tag where ctx.{field_name} first appears"
         );
     }
+
+    let generic_packet_len = ContextFieldCompatibilityRequirement::for_field(&CtxField::PacketLen)
+        .expect("generic ctx.packet_len should remain versioned");
+    assert_eq!(generic_packet_len.minimum_kernel(), "4.1");
+
+    let sock_ops_packet_len = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::PacketLen,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.packet_len alias should be versioned");
+    assert_eq!(sock_ops_packet_len.minimum_kernel(), "5.10");
+    assert!(
+        sock_ops_packet_len
+            .minimum_kernel_source()
+            .contains("/v5.10/")
+    );
 
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(

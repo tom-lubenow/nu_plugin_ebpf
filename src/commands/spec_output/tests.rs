@@ -143,6 +143,15 @@ fn test_spec_context_fields_include_load_guards() {
 
     let skb_len = field(&fields, "skb_len");
     assert_eq!(skb_len.load_guard, Some("sock-ops-packet-metadata"));
+    assert_eq!(skb_len.minimum_kernel, Some("5.10"));
+
+    let packet_len = field(&fields, "packet_len");
+    assert_eq!(packet_len.minimum_kernel, Some("5.10"));
+    assert!(
+        packet_len
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.10/"))
+    );
 }
 
 #[test]

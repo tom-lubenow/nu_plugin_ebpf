@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-use crate::compiler::ctx_field_backing_helper;
+use crate::compiler::{EbpfProgramType, ctx_field_backing_helper};
 
 use super::CtxField;
 
@@ -25,6 +25,8 @@ const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_18_SOURCE: &str =
@@ -36,13 +38,24 @@ const LINUX_BPF_H_V6_2_SOURCE: &str =
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContextFieldCompatibilityRequirement {
     field: CtxField,
+    minimum_kernel: &'static str,
+    minimum_kernel_source: &'static str,
 }
 
 impl ContextFieldCompatibilityRequirement {
     pub fn for_field(field: &CtxField) -> Option<Self> {
-        context_field_kernel_floor(field)?;
+        Self::for_field_on_program(field, None)
+    }
+
+    pub fn for_field_on_program(
+        field: &CtxField,
+        prog_type: Option<EbpfProgramType>,
+    ) -> Option<Self> {
+        let (minimum_kernel, minimum_kernel_source) = context_field_kernel_floor(field, prog_type)?;
         Some(Self {
             field: field.clone(),
+            minimum_kernel,
+            minimum_kernel_source,
         })
     }
 
@@ -59,15 +72,11 @@ impl ContextFieldCompatibilityRequirement {
     }
 
     pub fn minimum_kernel(&self) -> &'static str {
-        context_field_kernel_floor(&self.field)
-            .expect("context-field requirement is constructed only for versioned fields")
-            .0
+        self.minimum_kernel
     }
 
     pub fn minimum_kernel_source(&self) -> &'static str {
-        context_field_kernel_floor(&self.field)
-            .expect("context-field requirement is constructed only for versioned fields")
-            .1
+        self.minimum_kernel_source
     }
 
     pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
@@ -117,8 +126,14 @@ impl fmt::Display for ContextFieldCompatibilityRequirement {
     }
 }
 
-fn direct_context_field_kernel_floor(field: &CtxField) -> Option<(&'static str, &'static str)> {
+fn direct_context_field_kernel_floor(
+    field: &CtxField,
+    prog_type: Option<EbpfProgramType>,
+) -> Option<(&'static str, &'static str)> {
     Some(match field {
+        CtxField::PacketLen if prog_type == Some(EbpfProgramType::SockOps) => {
+            ("5.10", LINUX_BPF_H_V5_10_SOURCE)
+        }
         CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping
@@ -151,6 +166,9 @@ fn direct_context_field_kernel_floor(field: &CtxField) -> Option<(&'static str, 
         CtxField::GsoSegs => ("5.1", LINUX_BPF_H_V5_1_SOURCE),
         CtxField::GsoSize => ("5.7", LINUX_BPF_H_V5_7_SOURCE),
         CtxField::EgressIfindex => ("5.8", LINUX_BPF_H_V5_8_SOURCE),
+        CtxField::SockOpsSkbLen | CtxField::SockOpsSkbTcpFlags => {
+            ("5.10", LINUX_BPF_H_V5_10_SOURCE)
+        }
         CtxField::Hwtstamp => ("5.16", LINUX_BPF_H_V5_16_SOURCE),
         CtxField::TstampType => ("5.18", LINUX_BPF_H_V5_18_SOURCE),
         CtxField::SockOpsSkbHwtstamp => ("6.2", LINUX_BPF_H_V6_2_SOURCE),
@@ -158,8 +176,11 @@ fn direct_context_field_kernel_floor(field: &CtxField) -> Option<(&'static str, 
     })
 }
 
-fn context_field_kernel_floor(field: &CtxField) -> Option<(&'static str, &'static str)> {
-    direct_context_field_kernel_floor(field).or_else(|| {
+fn context_field_kernel_floor(
+    field: &CtxField,
+    prog_type: Option<EbpfProgramType>,
+) -> Option<(&'static str, &'static str)> {
+    direct_context_field_kernel_floor(field, prog_type).or_else(|| {
         let helper = ctx_field_backing_helper(field)?;
         Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?))
     })

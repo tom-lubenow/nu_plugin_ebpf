@@ -996,6 +996,21 @@ const KERNEL_FEATURE_CTX_EGRESS_IFINDEX = {
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN = {
+    key: "ctx:packet_len"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCK_OPS_SKB_LEN = {
+    key: "ctx:skb_len"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCK_OPS_SKB_TCP_FLAGS = {
+    key: "ctx:skb_tcp_flags"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_HWTSTAMP = {
     key: "ctx:hwtstamp"
     min_kernel: "5.16"
@@ -1369,6 +1384,8 @@ const CONTEXT_FIELD_KERNEL_FEATURES = [
     { field: "gso_segs", feature: $KERNEL_FEATURE_CTX_GSO_SEGS }
     { field: "gso_size", feature: $KERNEL_FEATURE_CTX_GSO_SIZE }
     { field: "egress_ifindex", feature: $KERNEL_FEATURE_CTX_EGRESS_IFINDEX }
+    { field: "skb_len", feature: $KERNEL_FEATURE_CTX_SOCK_OPS_SKB_LEN }
+    { field: "skb_tcp_flags", feature: $KERNEL_FEATURE_CTX_SOCK_OPS_SKB_TCP_FLAGS }
     { field: "hwtstamp", feature: $KERNEL_FEATURE_CTX_HWTSTAMP }
     { field: "tstamp_type", feature: $KERNEL_FEATURE_CTX_TSTAMP_TYPE }
     { field: "skb_hwtstamp", feature: $KERNEL_FEATURE_CTX_SKB_HWTSTAMP }
@@ -4986,6 +5003,9 @@ def target-context-field-alias-kernel-feature [field: string target] {
     }
     if ($target_text | str starts-with "sk_msg:") and $field == "size" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
+    }
+    if ($target_text | str starts-with "sock_ops:") and $field == "packet_len" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }
     }
     if ($target_text | str starts-with "cgroup_sysctl:") {
         if $field == "name" {

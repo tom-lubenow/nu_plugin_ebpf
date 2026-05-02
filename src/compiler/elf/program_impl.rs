@@ -234,10 +234,13 @@ fn used_context_fields_for_programs(programs: &[EbpfProgramSection]) -> Vec<CtxF
 
 fn context_field_compatibility_requirements_for_fields(
     used_ctx_fields: &HashSet<CtxField>,
+    prog_type: Option<EbpfProgramType>,
 ) -> Vec<ContextFieldCompatibilityRequirement> {
     let mut requirements = used_ctx_fields
         .iter()
-        .filter_map(ContextFieldCompatibilityRequirement::for_field)
+        .filter_map(|field| {
+            ContextFieldCompatibilityRequirement::for_field_on_program(field, prog_type)
+        })
         .collect::<Vec<_>>();
     requirements.sort_by_key(ContextFieldCompatibilityRequirement::key);
     requirements
@@ -246,11 +249,29 @@ fn context_field_compatibility_requirements_for_fields(
 fn context_field_compatibility_requirements_for_programs(
     programs: &[EbpfProgramSection],
 ) -> Vec<ContextFieldCompatibilityRequirement> {
-    let mut used_ctx_fields = HashSet::new();
+    let mut requirements_by_key: HashMap<String, ContextFieldCompatibilityRequirement> =
+        HashMap::new();
     for program in programs {
-        used_ctx_fields.extend(program.used_ctx_fields.iter().cloned());
+        for requirement in context_field_compatibility_requirements_for_fields(
+            &program.used_ctx_fields,
+            Some(program.prog_type),
+        ) {
+            let key = requirement.key();
+            let should_replace = match requirements_by_key.get(&key) {
+                Some(existing) => !ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                    existing.minimum_kernel(),
+                    requirement.minimum_kernel(),
+                ),
+                None => true,
+            };
+            if should_replace {
+                requirements_by_key.insert(key, requirement);
+            }
+        }
     }
-    context_field_compatibility_requirements_for_fields(&used_ctx_fields)
+    let mut requirements = requirements_by_key.into_values().collect::<Vec<_>>();
+    requirements.sort_by_key(ContextFieldCompatibilityRequirement::key);
+    requirements
 }
 
 fn section_name_for_program(
@@ -900,7 +921,10 @@ impl EbpfProgramSection {
     pub fn context_field_compatibility_requirements(
         &self,
     ) -> Vec<ContextFieldCompatibilityRequirement> {
-        context_field_compatibility_requirements_for_fields(&self.used_ctx_fields)
+        context_field_compatibility_requirements_for_fields(
+            &self.used_ctx_fields,
+            Some(self.prog_type),
+        )
     }
 
     pub fn context_field_compatibility_minimum_kernel(&self) -> Option<&'static str> {
@@ -1950,7 +1974,10 @@ impl EbpfProgram {
     pub fn context_field_compatibility_requirements(
         &self,
     ) -> Vec<ContextFieldCompatibilityRequirement> {
-        context_field_compatibility_requirements_for_fields(&self.used_ctx_fields)
+        context_field_compatibility_requirements_for_fields(
+            &self.used_ctx_fields,
+            Some(self.prog_type),
+        )
     }
 
     pub fn context_field_compatibility_minimum_kernel(&self) -> Option<&'static str> {

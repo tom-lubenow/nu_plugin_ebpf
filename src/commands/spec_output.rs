@@ -541,7 +541,10 @@ fn spec_context_fields(
             let load_guard = spec.ctx_field_load_guard(&entry.field);
             let backing_helper = ctx_field_backing_helper(&entry.field);
             let compatibility_requirement =
-                ContextFieldCompatibilityRequirement::for_field(&entry.field);
+                ContextFieldCompatibilityRequirement::for_field_on_program(
+                    &entry.field,
+                    Some(spec.program_type()),
+                );
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
