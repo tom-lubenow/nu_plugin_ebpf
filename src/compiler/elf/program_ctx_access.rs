@@ -1942,6 +1942,7 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::ctx_field_schema::static_ctx_field_type_spec;
     use crate::compiler::instruction::BpfHelper;
     use std::collections::HashSet;
 
@@ -1997,6 +1998,10 @@ mod tests {
                 surface.field
             );
         }
+    }
+
+    fn field_may_omit_static_schema(field: &CtxField) -> bool {
+        matches!(field, CtxField::KStack | CtxField::UStack)
     }
 
     #[test]
@@ -2100,6 +2105,11 @@ mod tests {
                     "duplicate base context access field {field:?}"
                 );
                 fields.push(field.clone());
+                assert!(
+                    static_ctx_field_type_spec(field).is_some()
+                        || field_may_omit_static_schema(field),
+                    "base context access field {field:?} must have a static schema or an explicit helper-backed exception"
+                );
             }
         }
 

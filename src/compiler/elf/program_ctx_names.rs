@@ -668,6 +668,21 @@ mod tests {
     }
 
     #[test]
+    fn test_context_field_name_entries_resolve_consistently() {
+        for program_type in EbpfProgramType::supported_program_types() {
+            for entry in program_type.ctx_field_name_entries() {
+                assert_eq!(
+                    program_type.resolve_ctx_field_name(entry.name),
+                    Ok(entry.field.clone()),
+                    "{program_type:?} surfaced ctx.{} should resolve to {:?}",
+                    entry.name,
+                    entry.field
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_tracepoint_preserved_names_resolve_to_builtins() {
         for name in TRACEPOINT_PRESERVED_CTX_FIELD_NAMES {
             let field = EbpfProgramType::Tracepoint
