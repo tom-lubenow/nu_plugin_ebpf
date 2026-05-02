@@ -165,6 +165,11 @@ fn direct_context_field_kernel_floor(
         | CtxField::LocalIp6
         | CtxField::LocalPort => ("4.14", LINUX_BPF_H_V4_14_SOURCE),
         CtxField::DataMeta => ("4.15", LINUX_BPF_H_V4_15_SOURCE),
+        CtxField::DeviceAccessType
+        | CtxField::DeviceAccess
+        | CtxField::DeviceType
+        | CtxField::DeviceMajor
+        | CtxField::DeviceMinor => ("4.15", LINUX_BPF_H_V4_15_SOURCE),
         CtxField::RxQueueIndex => ("4.17", LINUX_BPF_H_V4_17_SOURCE),
         CtxField::FlowKeys => ("4.20", LINUX_BPF_H_V4_20_SOURCE),
         CtxField::Tstamp | CtxField::WireLen => ("5.0", LINUX_BPF_H_V5_0_SOURCE),

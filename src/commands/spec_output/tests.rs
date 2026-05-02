@@ -537,6 +537,29 @@ fn test_spec_context_fields_include_netfilter_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_cgroup_device_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("cgroup_device:/sys/fs/cgroup")
+        .expect("cgroup_device spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for field_name in [
+        "access_type",
+        "device_access",
+        "device_type",
+        "major",
+        "minor",
+    ] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.15"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.15/include/uapi/linux/bpf.h"))
+        );
+    }
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");

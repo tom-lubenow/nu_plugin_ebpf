@@ -961,6 +961,31 @@ const KERNEL_FEATURE_CTX_DATA_META = {
     min_kernel: "4.15"
     source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_DEVICE_ACCESS_TYPE = {
+    key: "ctx:access_type"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DEVICE_ACCESS = {
+    key: "ctx:device_access"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DEVICE_TYPE = {
+    key: "ctx:device_type"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DEVICE_MAJOR = {
+    key: "ctx:major"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DEVICE_MINOR = {
+    key: "ctx:minor"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_RX_QUEUE_INDEX = {
     key: "ctx:rx_queue_index"
     min_kernel: "4.17"
@@ -5090,6 +5115,23 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "pf" or $field == "protocol_family" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_NETFILTER_PROTOCOL_FAMILY }
+        }
+    }
+    if ($target_text | str starts-with "cgroup_device:") {
+        if $field == "access_type" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_DEVICE_ACCESS_TYPE }
+        }
+        if $field == "device_access" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_DEVICE_ACCESS }
+        }
+        if $field == "device_type" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_DEVICE_TYPE }
+        }
+        if $field == "major" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_DEVICE_MAJOR }
+        }
+        if $field == "minor" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_DEVICE_MINOR }
         }
     }
     if ($target_text | str starts-with "cgroup_sysctl:") {
