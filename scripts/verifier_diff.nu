@@ -4438,6 +4438,27 @@ def normalize-kfunc-name-token [token: string] {
     normalize-helper-name-token $token
 }
 
+def program-kfunc-names [source: string] {
+    mut names = []
+
+    for line in ($source | lines) {
+        let parts = ($line | split row "kfunc-call ")
+        if ($parts | length) <= 1 {
+            continue
+        }
+
+        for raw_call in ($parts | skip 1) {
+            let raw_name = ($raw_call | str trim | split row " " | first)
+            let kfunc_name = (normalize-kfunc-name-token $raw_name)
+            if $kfunc_name not-in $names {
+                $names = ($names | append $kfunc_name)
+            }
+        }
+    }
+
+    $names
+}
+
 def program-map-kernel-features [source: string] {
     mut features = []
 
@@ -4485,19 +4506,10 @@ def program-helper-kernel-features [source: string] {
 def program-kfunc-kernel-features [source: string] {
     mut features = []
 
-    for line in ($source | lines) {
-        let parts = ($line | split row "kfunc-call ")
-        if ($parts | length) <= 1 {
-            continue
-        }
-
-        for raw_call in ($parts | skip 1) {
-            let raw_name = ($raw_call | str trim | split row " " | first)
-            let kfunc_name = (normalize-kfunc-name-token $raw_name)
-            let feature = (kfunc-kernel-feature $kfunc_name)
-            if $feature != null {
-                $features = (append-missing-kernel-features $features [$feature])
-            }
+    for kfunc_name in (program-kfunc-names $source) {
+        let feature = (kfunc-kernel-feature $kfunc_name)
+        if $feature != null {
+            $features = (append-missing-kernel-features $features [$feature])
         }
     }
 
@@ -5030,6 +5042,15 @@ def validate-kernel-feature-metadata [fixture] {
             if (kernel-version-compare $max_kernel $min_kernel) <= 0 {
                 fail $"fixture ($fixture.name) kernel feature ($key) max_kernel_exclusive=($max_kernel) must be greater than min_kernel=($min_kernel)"
             }
+        }
+    }
+
+    for kfunc_name in (program-kfunc-names (fixture-program $fixture)) {
+        let key = $"kfunc:($kfunc_name)"
+        let known_feature = (kfunc-kernel-feature $kfunc_name)
+        let explicit_feature = ($keys | any {|candidate| $candidate == $key })
+        if $known_feature == null and not $explicit_feature {
+            fail $"fixture ($fixture.name) calls kfunc ($kfunc_name) without source-backed kernel metadata; add it to KFUNC_KERNEL_FEATURES or declare explicit kernel_features metadata"
         }
     }
 }
