@@ -3945,10 +3945,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_XDP
-            $KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD
-        ]
     }
     {
         name: "redirect-xdp-ifindex"
@@ -3963,10 +3959,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_XDP
-            $KERNEL_FEATURE_BPF_REDIRECT
-        ]
     }
     {
         name: "redirect-map-xdp-devmap"
@@ -3981,11 +3973,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_XDP
-            $KERNEL_FEATURE_MAP_DEVMAP
-            $KERNEL_FEATURE_BPF_REDIRECT_MAP
-        ]
     }
     {
         name: "tail-call-prog-array"
@@ -3999,11 +3986,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_RAW_TRACEPOINT
-            $KERNEL_FEATURE_MAP_PROG_ARRAY
-            $KERNEL_FEATURE_BPF_TAIL_CALL
-        ]
     }
     {
         name: "assign-socket-sk-lookup-clear"
@@ -4019,10 +4001,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SK_LOOKUP
-            $KERNEL_FEATURE_BPF_SK_ASSIGN
-        ]
     }
     {
         name: "adjust-message-sk-msg-apply"
@@ -4037,10 +4015,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SK_MSG
-            $KERNEL_FEATURE_BPF_MSG_APPLY_BYTES
-        ]
     }
     {
         name: "redirect-socket-sk-msg-sockmap"
@@ -4054,11 +4028,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SK_MSG
-            $KERNEL_FEATURE_MAP_SOCKMAP
-            $KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP
-        ]
     }
     {
         name: "adjust-packet-sk-skb-pull"
@@ -4073,10 +4042,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SK_SKB
-            $KERNEL_FEATURE_BPF_SKB_PULL_DATA
-        ]
     }
     {
         name: "redirect-socket-sk-skb-sockmap"
@@ -4090,11 +4055,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SK_SKB
-            $KERNEL_FEATURE_MAP_SOCKMAP
-            $KERNEL_FEATURE_BPF_SK_REDIRECT_MAP
-        ]
     }
     {
         name: "redirect-socket-sk-reuseport-sockarray"
@@ -4122,10 +4082,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SK_SKB
-            $KERNEL_FEATURE_BPF_SKB_PULL_DATA
-        ]
     }
 ]
 
@@ -4369,6 +4325,51 @@ def program-helper-kernel-features [source: string] {
     $features
 }
 
+def program-surface-helper-kernel-features [source: string target] {
+    mut features = []
+    let target_text = ($target | default "")
+
+    if ($source | str contains "tail-call") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_TAIL_CALL])
+    }
+
+    for line in ($source | lines) {
+        if ($line | str contains "helper-call ") {
+            continue
+        }
+
+        if ($line | str contains "redirect-map ") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
+        }
+        if ($line | str contains "assign-socket ") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
+        }
+        if ($line | str contains "adjust-message --apply") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_APPLY_BYTES])
+        }
+        if ($line | str contains "adjust-packet --pull") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_PULL_DATA])
+        }
+        if ($line | str contains "redirect-socket ") {
+            if ($target_text | str starts-with "sk_msg:") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
+            } else if ($target_text | str starts-with "sk_skb:") or ($target_text | str starts-with "sk_skb_parser:") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
+            }
+        }
+        if ($target_text | str starts-with "xdp:") {
+            if ($line | str contains "adjust-packet --head") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD])
+            }
+            if ($line | str contains "redirect ") and not ($line | str contains "redirect-map") and not ($line | str contains "redirect-socket") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT])
+            }
+        }
+    }
+
+    $features
+}
+
 def target-kernel-features [target] {
     if $target == null {
         return []
@@ -4506,6 +4507,7 @@ def fixture-kernel-features [fixture] {
     let program = (fixture-program $fixture)
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
     let legacy_min_kernel_source = ($fixture | get -o min_kernel_source)
