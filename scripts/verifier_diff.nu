@@ -282,6 +282,16 @@ const KERNEL_FEATURE_ITER_TARGET_KSYM = {
     min_kernel: "6.0"
     source: "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c"
 }
+const KERNEL_FEATURE_ITER_TARGET_KMEM_CACHE = {
+    key: "iter-target:kmem_cache"
+    min_kernel: "6.13"
+    source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_DMABUF = {
+    key: "iter-target:dmabuf"
+    min_kernel: "6.16"
+    source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c"
+}
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
@@ -1510,6 +1520,16 @@ const KERNEL_FEATURE_CTX_ITER_NETLINK_SK = {
     key: "ctx:iter_netlink_sk"
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/net/netlink/af_netlink.c"
+}
+const KERNEL_FEATURE_CTX_ITER_KMEM_CACHE = {
+    key: "ctx:iter_kmem_cache"
+    min_kernel: "6.13"
+    source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_DMABUF = {
+    key: "ctx:iter_dmabuf"
+    min_kernel: "6.16"
+    source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c"
 }
 const KERNEL_FEATURE_CTX_SK_REUSEPORT_PACKET_LEN = {
     key: "ctx:packet_len"
@@ -6108,8 +6128,11 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if ($field == "netlink_sk" or $field == "iter_netlink_sk") and $iter_target == "netlink" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_NETLINK_SK }
         }
-        if $field in ["dmabuf" "iter_dmabuf" "cache" "kmem_cache" "iter_kmem_cache"] {
-            return { matched: true, feature: null }
+        if ($field == "cache" or $field == "kmem_cache" or $field == "iter_kmem_cache") and $iter_target == "kmem_cache" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_KMEM_CACHE }
+        }
+        if ($field == "dmabuf" or $field == "iter_dmabuf") and $iter_target == "dmabuf" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_DMABUF }
         }
     }
 
@@ -6524,6 +6547,10 @@ def target-kernel-features [target] {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UNIX)
         } else if $iter_target == "ksym" {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KSYM)
+        } else if $iter_target == "kmem_cache" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KMEM_CACHE)
+        } else if $iter_target == "dmabuf" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_DMABUF)
         }
     } else if ($target | str starts-with "syscall:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_SYSCALL)

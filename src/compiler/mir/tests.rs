@@ -582,6 +582,16 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::IterLink, "5.19", "/v5.19/kernel/bpf/link_iter.c"),
         (CtxField::IterUnixSk, "5.15", "/v5.15/net/unix/af_unix.c"),
         (CtxField::IterKsym, "6.0", "/v6.0/kernel/kallsyms.c"),
+        (
+            CtxField::IterKmemCache,
+            "6.13",
+            "/v6.13/kernel/bpf/kmem_cache_iter.c",
+        ),
+        (
+            CtxField::IterDmabuf,
+            "6.16",
+            "/v6.16/kernel/bpf/dmabuf_iter.c",
+        ),
     ] {
         let requirement = ContextFieldCompatibilityRequirement::for_field_on_program(
             &field,
@@ -603,15 +613,6 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
             source_fragment
         );
     }
-
-    assert!(
-        ContextFieldCompatibilityRequirement::for_field_on_program(
-            &CtxField::IterDmabuf,
-            Some(crate::compiler::EbpfProgramType::Iter),
-        )
-        .is_none(),
-        "iterator fields without a source-checked mainline registration should stay unversioned"
-    );
 
     for (field, target, minimum_kernel, source_fragment) in [
         (

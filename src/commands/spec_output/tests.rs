@@ -980,6 +980,18 @@ fn test_spec_context_fields_include_iterator_minimum_kernel_metadata() {
             "/v5.15/net/unix/af_unix.c",
         ),
         ("iter:ksym", "iter_ksym", "6.0", "/v6.0/kernel/kallsyms.c"),
+        (
+            "iter:kmem_cache",
+            "iter_kmem_cache",
+            "6.13",
+            "/v6.13/kernel/bpf/kmem_cache_iter.c",
+        ),
+        (
+            "iter:dmabuf",
+            "iter_dmabuf",
+            "6.16",
+            "/v6.16/kernel/bpf/dmabuf_iter.c",
+        ),
     ] {
         let spec = ProgramSpec::parse(spec_text).expect("iter spec should parse");
         let fields = spec_context_fields(&spec, false);

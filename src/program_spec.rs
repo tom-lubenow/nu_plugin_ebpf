@@ -3131,6 +3131,8 @@ fn iterator_target_compatibility_requirement(
         "udp" => ProgramCompatibilityRequirement::BpfIteratorUdpTarget,
         "unix" => ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
         "ksym" => ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
+        "kmem_cache" => ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget,
+        "dmabuf" => ProgramCompatibilityRequirement::BpfIteratorDmabufTarget,
         _ => return None,
     })
 }
@@ -3716,6 +3718,16 @@ mod tests {
                 "iter:ksym",
                 ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
                 "6.0",
+            ),
+            (
+                "iter:kmem_cache",
+                ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget,
+                "6.13",
+            ),
+            (
+                "iter:dmabuf",
+                ProgramCompatibilityRequirement::BpfIteratorDmabufTarget,
+                "6.16",
             ),
         ] {
             let spec = ProgramSpec::parse(spec_text).expect("iter spec should parse");

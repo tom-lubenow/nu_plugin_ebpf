@@ -1518,6 +1518,8 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::BpfIteratorUdpTarget,
     ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
     ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
+    ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget,
+    ProgramCompatibilityRequirement::BpfIteratorDmabufTarget,
     ProgramCompatibilityRequirement::XdpMultiBuffer,
     ProgramCompatibilityRequirement::FlowDissector,
     ProgramCompatibilityRequirement::Tcx,

@@ -84,6 +84,10 @@ const LINUX_KALLSYMS_V6_0_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c";
 const LINUX_AF_NETLINK_V5_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.8/net/netlink/af_netlink.c";
+const LINUX_KMEM_CACHE_ITER_V6_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c";
+const LINUX_DMABUF_ITER_V6_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c";
 
 /// Source-backed kernel compatibility metadata for a source-level context field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -458,6 +462,12 @@ fn direct_context_field_kernel_floor(
         }
         CtxField::IterNetlinkSk if prog_type == Some(EbpfProgramType::Iter) => {
             ("5.8", LINUX_AF_NETLINK_V5_8_SOURCE)
+        }
+        CtxField::IterKmemCache if prog_type == Some(EbpfProgramType::Iter) => {
+            ("6.13", LINUX_KMEM_CACHE_ITER_V6_13_SOURCE)
+        }
+        CtxField::IterDmabuf if prog_type == Some(EbpfProgramType::Iter) => {
+            ("6.16", LINUX_DMABUF_ITER_V6_16_SOURCE)
         }
         _ => return None,
     })

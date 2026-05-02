@@ -4707,6 +4707,14 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         ProgramCompatibilityRequirement::BpfIteratorKsymTarget.minimum_kernel(),
         Some("6.0")
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget.minimum_kernel(),
+        Some("6.13")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorDmabufTarget.minimum_kernel(),
+        Some("6.16")
+    );
     assert!(
         ProgramCompatibilityRequirement::SockMapAttach
             .minimum_kernel()

@@ -1585,6 +1585,8 @@ pub enum ProgramCompatibilityRequirement {
     BpfIteratorUdpTarget,
     BpfIteratorUnixTarget,
     BpfIteratorKsymTarget,
+    BpfIteratorKmemCacheTarget,
+    BpfIteratorDmabufTarget,
     XdpMultiBuffer,
     FlowDissector,
     Tcx,
@@ -1679,6 +1681,10 @@ const LINUX_AF_UNIX_V5_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c";
 const LINUX_KALLSYMS_V6_0_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c";
+const LINUX_KMEM_CACHE_ITER_V6_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c";
+const LINUX_DMABUF_ITER_V6_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c";
 
 impl ProgramCompatibilityRequirement {
     pub fn all() -> &'static [ProgramCompatibilityRequirement] {
@@ -1718,6 +1724,8 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorUdpTarget => "bpf-iterator-target-udp",
             Self::BpfIteratorUnixTarget => "bpf-iterator-target-unix",
             Self::BpfIteratorKsymTarget => "bpf-iterator-target-ksym",
+            Self::BpfIteratorKmemCacheTarget => "bpf-iterator-target-kmem-cache",
+            Self::BpfIteratorDmabufTarget => "bpf-iterator-target-dmabuf",
             Self::XdpMultiBuffer => "xdp-multi-buffer",
             Self::FlowDissector => "flow-dissector",
             Self::Tcx => "tcx",
@@ -1781,6 +1789,8 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorUdpTarget => "BPF UDP iterator target support",
             Self::BpfIteratorUnixTarget => "BPF UNIX iterator target support",
             Self::BpfIteratorKsymTarget => "BPF ksymbol iterator target support",
+            Self::BpfIteratorKmemCacheTarget => "BPF kmem_cache iterator target support",
+            Self::BpfIteratorDmabufTarget => "BPF dma-buf iterator target support",
             Self::XdpMultiBuffer => "XDP multi-buffer section support",
             Self::FlowDissector => "BPF flow-dissector attach support",
             Self::Tcx => "TCX attach support",
@@ -1826,7 +1836,9 @@ impl ProgramCompatibilityRequirement {
             | Self::BpfIteratorTcpTarget
             | Self::BpfIteratorUdpTarget
             | Self::BpfIteratorUnixTarget
-            | Self::BpfIteratorKsymTarget => "iterator-target",
+            | Self::BpfIteratorKsymTarget
+            | Self::BpfIteratorKmemCacheTarget
+            | Self::BpfIteratorDmabufTarget => "iterator-target",
             Self::StructOps => "object-loader",
             _ => "program-feature",
         }
@@ -1885,7 +1897,9 @@ impl ProgramCompatibilityRequirement {
             | Self::BpfIteratorTcpTarget
             | Self::BpfIteratorUdpTarget
             | Self::BpfIteratorUnixTarget
-            | Self::BpfIteratorKsymTarget => "host-safe",
+            | Self::BpfIteratorKsymTarget
+            | Self::BpfIteratorKmemCacheTarget
+            | Self::BpfIteratorDmabufTarget => "host-safe",
         }
     }
 
@@ -1921,6 +1935,8 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorUdpTarget => Some("5.9"),
             Self::BpfIteratorUnixTarget => Some("5.15"),
             Self::BpfIteratorKsymTarget => Some("6.0"),
+            Self::BpfIteratorKmemCacheTarget => Some("6.13"),
+            Self::BpfIteratorDmabufTarget => Some("6.16"),
             Self::XdpMultiBuffer => Some("5.18"),
             Self::FlowDissector => Some("4.20"),
             Self::Tcx => Some("6.6"),
@@ -1985,6 +2001,8 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorUdpTarget => LINUX_UDP_V5_9_SOURCE,
             Self::BpfIteratorUnixTarget => LINUX_AF_UNIX_V5_15_SOURCE,
             Self::BpfIteratorKsymTarget => LINUX_KALLSYMS_V6_0_SOURCE,
+            Self::BpfIteratorKmemCacheTarget => LINUX_KMEM_CACHE_ITER_V6_13_SOURCE,
+            Self::BpfIteratorDmabufTarget => LINUX_DMABUF_ITER_V6_16_SOURCE,
             _ => EBPF_TIMELINE_SOURCE,
         })
     }
