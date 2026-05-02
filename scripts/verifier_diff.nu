@@ -816,6 +816,186 @@ const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     min_kernel: "6.1"
     source: "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_PACKET_LEN = {
+    key: "ctx:packet_len"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_PKT_TYPE = {
+    key: "ctx:pkt_type"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_QUEUE_MAPPING = {
+    key: "ctx:queue_mapping"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_ETH_PROTOCOL = {
+    key: "ctx:eth_protocol"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_VLAN_PRESENT = {
+    key: "ctx:vlan_present"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_VLAN_TCI = {
+    key: "ctx:vlan_tci"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_VLAN_PROTO = {
+    key: "ctx:vlan_proto"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_MARK = {
+    key: "ctx:mark"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_PRIORITY = {
+    key: "ctx:priority"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_IFINDEX = {
+    key: "ctx:ifindex"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_INGRESS_IFINDEX = {
+    key: "ctx:ingress_ifindex"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TC_INDEX = {
+    key: "ctx:tc_index"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_HASH = {
+    key: "ctx:hash"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CB = {
+    key: "ctx:cb"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TC_CLASSID = {
+    key: "ctx:tc_classid"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DATA = {
+    key: "ctx:data"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DATA_END = {
+    key: "ctx:data_end"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_FAMILY = {
+    key: "ctx:family"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_NAPI_ID = {
+    key: "ctx:napi_id"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_REMOTE_IP4 = {
+    key: "ctx:remote_ip4"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_REMOTE_IP6 = {
+    key: "ctx:remote_ip6"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_REMOTE_PORT = {
+    key: "ctx:remote_port"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_LOCAL_IP4 = {
+    key: "ctx:local_ip4"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_LOCAL_IP6 = {
+    key: "ctx:local_ip6"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_LOCAL_PORT = {
+    key: "ctx:local_port"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_DATA_META = {
+    key: "ctx:data_meta"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_RX_QUEUE_INDEX = {
+    key: "ctx:rx_queue_index"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_FLOW_KEYS = {
+    key: "ctx:flow_keys"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TSTAMP = {
+    key: "ctx:tstamp"
+    min_kernel: "5.0"
+    source: "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_WIRE_LEN = {
+    key: "ctx:wire_len"
+    min_kernel: "5.0"
+    source: "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_GSO_SEGS = {
+    key: "ctx:gso_segs"
+    min_kernel: "5.1"
+    source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_GSO_SIZE = {
+    key: "ctx:gso_size"
+    min_kernel: "5.7"
+    source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_EGRESS_IFINDEX = {
+    key: "ctx:egress_ifindex"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_HWTSTAMP = {
+    key: "ctx:hwtstamp"
+    min_kernel: "5.16"
+    source: "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_TSTAMP_TYPE = {
+    key: "ctx:tstamp_type"
+    min_kernel: "5.18"
+    source: "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SKB_HWTSTAMP = {
+    key: "ctx:skb_hwtstamp"
+    min_kernel: "6.2"
+    source: "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h"
+}
 
 const MAP_KIND_KERNEL_FEATURES = [
     { kind: "array", feature: $KERNEL_FEATURE_MAP_ARRAY }
@@ -940,6 +1120,46 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
     { name: "scx_bpf_pick_any_cpu", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU }
     { name: "scx_bpf_put_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PUT_IDLE_CPUMASK }
+]
+
+const CONTEXT_FIELD_KERNEL_FEATURES = [
+    { field: "packet_len", feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
+    { field: "len", feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
+    { field: "pkt_type", feature: $KERNEL_FEATURE_CTX_PKT_TYPE }
+    { field: "queue_mapping", feature: $KERNEL_FEATURE_CTX_QUEUE_MAPPING }
+    { field: "eth_protocol", feature: $KERNEL_FEATURE_CTX_ETH_PROTOCOL }
+    { field: "vlan_present", feature: $KERNEL_FEATURE_CTX_VLAN_PRESENT }
+    { field: "vlan_tci", feature: $KERNEL_FEATURE_CTX_VLAN_TCI }
+    { field: "vlan_proto", feature: $KERNEL_FEATURE_CTX_VLAN_PROTO }
+    { field: "mark", feature: $KERNEL_FEATURE_CTX_MARK }
+    { field: "priority", feature: $KERNEL_FEATURE_CTX_PRIORITY }
+    { field: "ifindex", feature: $KERNEL_FEATURE_CTX_IFINDEX }
+    { field: "ingress_ifindex", feature: $KERNEL_FEATURE_CTX_INGRESS_IFINDEX }
+    { field: "tc_index", feature: $KERNEL_FEATURE_CTX_TC_INDEX }
+    { field: "hash", feature: $KERNEL_FEATURE_CTX_HASH }
+    { field: "cb", feature: $KERNEL_FEATURE_CTX_CB }
+    { field: "tc_classid", feature: $KERNEL_FEATURE_CTX_TC_CLASSID }
+    { field: "data", feature: $KERNEL_FEATURE_CTX_DATA }
+    { field: "data_end", feature: $KERNEL_FEATURE_CTX_DATA_END }
+    { field: "family", feature: $KERNEL_FEATURE_CTX_FAMILY }
+    { field: "napi_id", feature: $KERNEL_FEATURE_CTX_NAPI_ID }
+    { field: "remote_ip4", feature: $KERNEL_FEATURE_CTX_REMOTE_IP4 }
+    { field: "remote_ip6", feature: $KERNEL_FEATURE_CTX_REMOTE_IP6 }
+    { field: "remote_port", feature: $KERNEL_FEATURE_CTX_REMOTE_PORT }
+    { field: "local_ip4", feature: $KERNEL_FEATURE_CTX_LOCAL_IP4 }
+    { field: "local_ip6", feature: $KERNEL_FEATURE_CTX_LOCAL_IP6 }
+    { field: "local_port", feature: $KERNEL_FEATURE_CTX_LOCAL_PORT }
+    { field: "data_meta", feature: $KERNEL_FEATURE_CTX_DATA_META }
+    { field: "rx_queue_index", feature: $KERNEL_FEATURE_CTX_RX_QUEUE_INDEX }
+    { field: "flow_keys", feature: $KERNEL_FEATURE_CTX_FLOW_KEYS }
+    { field: "tstamp", feature: $KERNEL_FEATURE_CTX_TSTAMP }
+    { field: "wire_len", feature: $KERNEL_FEATURE_CTX_WIRE_LEN }
+    { field: "gso_segs", feature: $KERNEL_FEATURE_CTX_GSO_SEGS }
+    { field: "gso_size", feature: $KERNEL_FEATURE_CTX_GSO_SIZE }
+    { field: "egress_ifindex", feature: $KERNEL_FEATURE_CTX_EGRESS_IFINDEX }
+    { field: "hwtstamp", feature: $KERNEL_FEATURE_CTX_HWTSTAMP }
+    { field: "tstamp_type", feature: $KERNEL_FEATURE_CTX_TSTAMP_TYPE }
+    { field: "skb_hwtstamp", feature: $KERNEL_FEATURE_CTX_SKB_HWTSTAMP }
 ]
 
 const FIXTURES = [
@@ -4416,6 +4636,15 @@ def kfunc-kernel-feature [name: string] {
     }
 }
 
+def context-field-kernel-feature [field: string] {
+    let matches = ($CONTEXT_FIELD_KERNEL_FEATURES | where {|entry| $entry.field == $field })
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first | get feature
+    }
+}
+
 def normalize-map-kind-token [token: string] {
     $token
     | str trim
@@ -4436,6 +4665,23 @@ def normalize-helper-name-token [token: string] {
 
 def normalize-kfunc-name-token [token: string] {
     normalize-helper-name-token $token
+}
+
+def normalize-context-field-token [token: string] {
+    $token
+    | str trim
+    | split row " "
+    | first
+    | split row "."
+    | first
+    | str replace --all ")" ""
+    | str replace --all "(" ""
+    | str replace --all "," ""
+    | str replace --all "\"" ""
+    | str replace --all "'" ""
+    | str replace --all "}" ""
+    | str replace --all "]" ""
+    | str replace --all ";" ""
 }
 
 def program-kfunc-names [source: string] {
@@ -4510,6 +4756,31 @@ def program-kfunc-kernel-features [source: string] {
         let feature = (kfunc-kernel-feature $kfunc_name)
         if $feature != null {
             $features = (append-missing-kernel-features $features [$feature])
+        }
+    }
+
+    $features
+}
+
+def program-context-field-kernel-features [source: string] {
+    mut features = []
+
+    for line in ($source | lines) {
+        let parts = ($line | split row '$ctx.')
+        if ($parts | length) <= 1 {
+            continue
+        }
+
+        for raw_access in ($parts | skip 1) {
+            let field = (normalize-context-field-token $raw_access)
+            if $field == "" {
+                continue
+            }
+
+            let feature = (context-field-kernel-feature $field)
+            if $feature != null {
+                $features = (append-missing-kernel-features $features [$feature])
+            }
         }
     }
 
@@ -4743,6 +5014,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
