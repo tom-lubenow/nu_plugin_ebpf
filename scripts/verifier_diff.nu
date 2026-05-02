@@ -1061,6 +1061,51 @@ const KERNEL_FEATURE_CTX_CGROUP_SOCK_RX_QUEUE_MAPPING = {
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SK_LOOKUP_FAMILY = {
+    key: "ctx:family"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_PROTOCOL = {
+    key: "ctx:protocol"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_REMOTE_IP4 = {
+    key: "ctx:remote_ip4"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_REMOTE_IP6 = {
+    key: "ctx:remote_ip6"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_REMOTE_PORT = {
+    key: "ctx:remote_port"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_LOCAL_IP4 = {
+    key: "ctx:local_ip4"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_LOCAL_IP6 = {
+    key: "ctx:local_ip6"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_LOCAL_PORT = {
+    key: "ctx:local_port"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_LOOKUP_COOKIE = {
+    key: "ctx:cookie"
+    min_kernel: "5.13"
+    source: "https://github.com/torvalds/linux/blob/v5.13/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_FAMILY = {
     key: "ctx:family"
     min_kernel: "4.17"
@@ -5401,6 +5446,35 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "rx_queue_mapping" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_RX_QUEUE_MAPPING }
+        }
+    }
+    if ($target_text | str starts-with "sk_lookup:") {
+        if $field == "family" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_FAMILY }
+        }
+        if $field == "protocol" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_PROTOCOL }
+        }
+        if $field == "remote_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_REMOTE_IP4 }
+        }
+        if $field == "remote_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_REMOTE_IP6 }
+        }
+        if $field == "remote_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_REMOTE_PORT }
+        }
+        if $field == "local_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_LOCAL_IP4 }
+        }
+        if $field == "local_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_LOCAL_IP6 }
+        }
+        if $field == "local_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_LOCAL_PORT }
+        }
+        if $field == "cookie" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_COOKIE }
         }
     }
     if ($target_text | str starts-with "cgroup_sock_addr:") {

@@ -430,6 +430,20 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("cgroup_sock ctx.rx_queue_mapping should use bpf_sock field floor");
     assert_eq!(cgroup_sock_rx_queue.minimum_kernel(), "5.8");
 
+    let sk_lookup_family = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Family,
+        Some(crate::compiler::EbpfProgramType::SkLookup),
+    )
+    .expect("sk_lookup ctx.family should use bpf_sk_lookup field floor");
+    assert_eq!(sk_lookup_family.minimum_kernel(), "5.9");
+
+    let sk_lookup_cookie = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::LookupCookie,
+        Some(crate::compiler::EbpfProgramType::SkLookup),
+    )
+    .expect("sk_lookup ctx.cookie should use bpf_sk_lookup cookie floor");
+    assert_eq!(sk_lookup_cookie.minimum_kernel(), "5.13");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

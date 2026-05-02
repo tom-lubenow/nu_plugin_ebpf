@@ -33,8 +33,12 @@ const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.13/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_18_SOURCE: &str =
@@ -169,6 +173,21 @@ fn direct_context_field_kernel_floor(
         }
         CtxField::SockRxQueueMapping if prog_type == Some(EbpfProgramType::CgroupSock) => {
             ("5.8", LINUX_BPF_H_V5_8_SOURCE)
+        }
+        CtxField::Family
+        | CtxField::Protocol
+        | CtxField::RemoteIp4
+        | CtxField::RemoteIp6
+        | CtxField::RemotePort
+        | CtxField::LocalIp4
+        | CtxField::LocalIp6
+        | CtxField::LocalPort
+            if prog_type == Some(EbpfProgramType::SkLookup) =>
+        {
+            ("5.9", LINUX_BPF_H_V5_9_SOURCE)
+        }
+        CtxField::LookupCookie if prog_type == Some(EbpfProgramType::SkLookup) => {
+            ("5.13", LINUX_BPF_H_V5_13_SOURCE)
         }
         CtxField::Family
         | CtxField::RemoteIp4
