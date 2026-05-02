@@ -1877,6 +1877,27 @@ const KERNEL_FEATURE_CTX_USTACK = {
     source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
 }
 
+const ITER_TARGET_KERNEL_FEATURES = [
+    { target: "task", feature: $KERNEL_FEATURE_ITER_TARGET_TASK }
+    { target: "task_file", feature: $KERNEL_FEATURE_ITER_TARGET_TASK_FILE }
+    { target: "task_vma", feature: $KERNEL_FEATURE_ITER_TARGET_TASK_VMA }
+    { target: "bpf_map", feature: $KERNEL_FEATURE_ITER_TARGET_BPF_MAP }
+    { target: "cgroup", feature: $KERNEL_FEATURE_ITER_TARGET_CGROUP }
+    { target: "bpf_map_elem", feature: $KERNEL_FEATURE_ITER_TARGET_BPF_MAP_ELEM }
+    { target: "bpf_sk_storage_map", feature: $KERNEL_FEATURE_ITER_TARGET_BPF_SK_STORAGE_MAP }
+    { target: "sockmap", feature: $KERNEL_FEATURE_ITER_TARGET_SOCKMAP }
+    { target: "bpf_prog", feature: $KERNEL_FEATURE_ITER_TARGET_BPF_PROG }
+    { target: "bpf_link", feature: $KERNEL_FEATURE_ITER_TARGET_BPF_LINK }
+    { target: "tcp", feature: $KERNEL_FEATURE_ITER_TARGET_TCP }
+    { target: "udp", feature: $KERNEL_FEATURE_ITER_TARGET_UDP }
+    { target: "unix", feature: $KERNEL_FEATURE_ITER_TARGET_UNIX }
+    { target: "ipv6_route", feature: $KERNEL_FEATURE_ITER_TARGET_IPV6_ROUTE }
+    { target: "ksym", feature: $KERNEL_FEATURE_ITER_TARGET_KSYM }
+    { target: "netlink", feature: $KERNEL_FEATURE_ITER_TARGET_NETLINK }
+    { target: "kmem_cache", feature: $KERNEL_FEATURE_ITER_TARGET_KMEM_CACHE }
+    { target: "dmabuf", feature: $KERNEL_FEATURE_ITER_TARGET_DMABUF }
+]
+
 const MAP_KIND_KERNEL_FEATURES = [
     { kind: "array", feature: $KERNEL_FEATURE_MAP_ARRAY }
     { kind: "array-of-maps", feature: $KERNEL_FEATURE_MAP_ARRAY_OF_MAPS }
@@ -6178,6 +6199,15 @@ def context-field-kernel-feature [field: string target] {
     }
 }
 
+def iter-target-kernel-feature [target: string] {
+    let matches = ($ITER_TARGET_KERNEL_FEATURES | where {|entry| $entry.target == $target })
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first | get feature
+    }
+}
+
 def normalize-map-kind-token [token: string] {
     $token
     | str trim
@@ -6550,42 +6580,9 @@ def target-kernel-features [target] {
     } else if ($target | str starts-with "iter:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_ITER)
         let iter_target = ($target | split row ":" | get 1)
-        if $iter_target == "task" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK)
-        } else if $iter_target == "task_file" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK_FILE)
-        } else if $iter_target == "task_vma" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK_VMA)
-        } else if $iter_target == "bpf_map" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_MAP)
-        } else if $iter_target == "cgroup" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_CGROUP)
-        } else if $iter_target == "bpf_map_elem" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_MAP_ELEM)
-        } else if $iter_target == "bpf_sk_storage_map" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_SK_STORAGE_MAP)
-        } else if $iter_target == "sockmap" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_SOCKMAP)
-        } else if $iter_target == "bpf_prog" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_PROG)
-        } else if $iter_target == "bpf_link" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_LINK)
-        } else if $iter_target == "tcp" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TCP)
-        } else if $iter_target == "udp" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UDP)
-        } else if $iter_target == "unix" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UNIX)
-        } else if $iter_target == "ipv6_route" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_IPV6_ROUTE)
-        } else if $iter_target == "ksym" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KSYM)
-        } else if $iter_target == "netlink" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_NETLINK)
-        } else if $iter_target == "kmem_cache" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KMEM_CACHE)
-        } else if $iter_target == "dmabuf" {
-            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_DMABUF)
+        let iter_feature = (iter-target-kernel-feature $iter_target)
+        if $iter_feature != null {
+            $features = ($features | append $iter_feature)
         }
     } else if ($target | str starts-with "syscall:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_SYSCALL)
