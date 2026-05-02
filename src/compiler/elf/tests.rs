@@ -9647,6 +9647,45 @@ fn test_bpf_map_def_reports_modeled_map_kind() {
 }
 
 #[test]
+fn test_ebpf_program_reports_map_compatibility_requirements() {
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        vec![],
+        0,
+        vec![
+            EbpfMap {
+                name: "seen".to_string(),
+                def: BpfMapDef::hash(4, 8, 128),
+            },
+            EbpfMap {
+                name: "events".to_string(),
+                def: BpfMapDef::ring_buffer(256 * 1024),
+            },
+            EbpfMap {
+                name: "other_events".to_string(),
+                def: BpfMapDef::ring_buffer(256 * 1024),
+            },
+        ],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let requirements = program.map_compatibility_requirements();
+    assert_eq!(requirements.len(), 2);
+    assert_eq!(requirements[0].kind(), MapKind::Hash);
+    assert_eq!(requirements[0].key(), "map:BPF_MAP_TYPE_HASH");
+    assert_eq!(requirements[1].kind(), MapKind::RingBuf);
+    assert_eq!(requirements[1].key(), "map:BPF_MAP_TYPE_RINGBUF");
+    assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
+}
+
+#[test]
 fn test_validate_runtime_artifacts_rejects_unknown_runtime_map_type() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Xdp,

@@ -1523,4 +1523,26 @@ impl EbpfProgram {
     pub fn has_maps(&self) -> bool {
         !self.maps.is_empty()
     }
+
+    pub fn map_compatibility_requirements(&self) -> Vec<MapCompatibilityRequirement> {
+        let mut seen = HashSet::new();
+        let mut requirements = Vec::new();
+
+        for map in &self.maps {
+            let Some(kind) = map.def.map_kind() else {
+                continue;
+            };
+            if seen.insert(kind) {
+                requirements.push(kind.compatibility_requirement());
+            }
+        }
+
+        requirements
+    }
+
+    pub fn map_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        MapCompatibilityRequirement::effective_minimum_kernel(
+            &self.map_compatibility_requirements(),
+        )
+    }
 }

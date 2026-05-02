@@ -114,3 +114,116 @@ fn test_map_kind_surface_classification() {
     assert!(MapKind::UserRingBuf.is_keyless_map());
     assert!(!MapKind::Array.is_keyless_map());
 }
+
+#[test]
+fn test_map_kind_kernel_compatibility_metadata() {
+    let expected = [
+        (MapKind::Hash, "BPF_MAP_TYPE_HASH", "3.19"),
+        (MapKind::Array, "BPF_MAP_TYPE_ARRAY", "3.19"),
+        (MapKind::CgroupArray, "BPF_MAP_TYPE_CGROUP_ARRAY", "4.8"),
+        (MapKind::LpmTrie, "BPF_MAP_TYPE_LPM_TRIE", "4.11"),
+        (MapKind::LruHash, "BPF_MAP_TYPE_LRU_HASH", "4.10"),
+        (MapKind::PerCpuHash, "BPF_MAP_TYPE_PERCPU_HASH", "4.6"),
+        (MapKind::PerCpuArray, "BPF_MAP_TYPE_PERCPU_ARRAY", "4.6"),
+        (
+            MapKind::LruPerCpuHash,
+            "BPF_MAP_TYPE_LRU_PERCPU_HASH",
+            "4.10",
+        ),
+        (
+            MapKind::PerfEventArray,
+            "BPF_MAP_TYPE_PERF_EVENT_ARRAY",
+            "4.3",
+        ),
+        (MapKind::ArrayOfMaps, "BPF_MAP_TYPE_ARRAY_OF_MAPS", "4.12"),
+        (MapKind::HashOfMaps, "BPF_MAP_TYPE_HASH_OF_MAPS", "4.12"),
+        (
+            MapKind::DeprecatedCgroupStorage,
+            "BPF_MAP_TYPE_CGROUP_STORAGE",
+            "4.19",
+        ),
+        (
+            MapKind::DeprecatedPerCpuCgroupStorage,
+            "BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE",
+            "4.20",
+        ),
+        (MapKind::Queue, "BPF_MAP_TYPE_QUEUE", "4.20"),
+        (MapKind::Stack, "BPF_MAP_TYPE_STACK", "4.20"),
+        (MapKind::BloomFilter, "BPF_MAP_TYPE_BLOOM_FILTER", "5.16"),
+        (MapKind::RingBuf, "BPF_MAP_TYPE_RINGBUF", "5.8"),
+        (MapKind::StructOps, "BPF_MAP_TYPE_STRUCT_OPS", "5.6"),
+        (MapKind::UserRingBuf, "BPF_MAP_TYPE_USER_RINGBUF", "6.1"),
+        (MapKind::Arena, "BPF_MAP_TYPE_ARENA", "6.9"),
+        (MapKind::StackTrace, "BPF_MAP_TYPE_STACK_TRACE", "4.6"),
+        (MapKind::DevMap, "BPF_MAP_TYPE_DEVMAP", "4.14"),
+        (MapKind::DevMapHash, "BPF_MAP_TYPE_DEVMAP_HASH", "5.4"),
+        (MapKind::CpuMap, "BPF_MAP_TYPE_CPUMAP", "4.15"),
+        (MapKind::XskMap, "BPF_MAP_TYPE_XSKMAP", "4.18"),
+        (MapKind::SockMap, "BPF_MAP_TYPE_SOCKMAP", "4.14"),
+        (MapKind::SockHash, "BPF_MAP_TYPE_SOCKHASH", "4.18"),
+        (
+            MapKind::ReuseportSockArray,
+            "BPF_MAP_TYPE_REUSEPORT_SOCKARRAY",
+            "4.19",
+        ),
+        (MapKind::SkStorage, "BPF_MAP_TYPE_SK_STORAGE", "5.2"),
+        (MapKind::InodeStorage, "BPF_MAP_TYPE_INODE_STORAGE", "5.10"),
+        (MapKind::TaskStorage, "BPF_MAP_TYPE_TASK_STORAGE", "5.11"),
+        (MapKind::CgrpStorage, "BPF_MAP_TYPE_CGRP_STORAGE", "6.2"),
+        (MapKind::ProgArray, "BPF_MAP_TYPE_PROG_ARRAY", "4.2"),
+    ];
+    let expected_kinds = expected
+        .iter()
+        .map(|(kind, _, _)| *kind)
+        .collect::<HashSet<_>>();
+    assert_eq!(expected.len(), MapKind::all().len());
+    assert_eq!(expected_kinds.len(), MapKind::all().len());
+
+    for kind in MapKind::all() {
+        assert!(
+            expected_kinds.contains(kind),
+            "missing compatibility metadata assertion for {kind:?}"
+        );
+    }
+
+    for (kind, kernel_type, minimum_kernel) in expected {
+        let requirement = kind.compatibility_requirement();
+        assert_eq!(kind.kernel_map_type_name(), kernel_type);
+        assert_eq!(
+            kind.compatibility_feature_key(),
+            format!("map:{kernel_type}")
+        );
+        assert_eq!(kind.minimum_kernel(), minimum_kernel);
+        assert_eq!(requirement.kind(), kind);
+        assert_eq!(requirement.key(), format!("map:{kernel_type}"));
+        assert_eq!(requirement.category(), "map-kind");
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/")),
+            "source should point at the Linux tag where {kernel_type} first appears"
+        );
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .ends_with("/include/uapi/linux/bpf.h")
+        );
+    }
+
+    let requirements = [
+        MapKind::Hash.compatibility_requirement(),
+        MapKind::RingBuf.compatibility_requirement(),
+        MapKind::UserRingBuf.compatibility_requirement(),
+    ];
+    assert_eq!(
+        MapCompatibilityRequirement::effective_minimum_kernel(&requirements),
+        Some("6.1")
+    );
+    assert!(MapCompatibilityRequirement::kernel_version_at_least(
+        "6.1.12", "6.1"
+    ));
+    assert!(!MapCompatibilityRequirement::kernel_version_at_least(
+        "5.15", "6.1"
+    ));
+}

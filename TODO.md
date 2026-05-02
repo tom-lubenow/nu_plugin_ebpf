@@ -72,7 +72,8 @@ history and release notes, not here.
 
 - [~] Add kernel-version and feature metadata.
   - Keep the program-family and parsed-target compatibility requirement registry authoritative for feature-style requirements. Base program families, BTF tracing/LSM floors, cgroup families, TCX, netfilter links, LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and cgroup UNIX socket-address hooks now carry source-verified minimums where a kernel version is a meaningful claim.
-  - Track minimum kernel versions for helpers, kfuncs, map kinds, context fields, attach modes, and loader features once each value is source-verified; keep per-fixture compatibility metadata feature-granular instead of collapsing mixed dependencies into one scalar.
+  - Map-kind kernel floors are now source-backed in `MapKind` and aggregated from compiled program map lists; continue wiring that metadata into fixture derivation and live-load diagnostics.
+  - Track minimum kernel versions for helpers, kfuncs, context fields, attach modes, and loader features once each value is source-verified; keep per-fixture compatibility metadata feature-granular instead of collapsing mixed dependencies into one scalar.
   - Keep verifier fixture target metadata derived from target strings where possible; use explicit fixture `kernel_features` for helper, kfunc, map, context-field, or target-specific requirements the target cannot imply.
   - Surface compatibility diagnostics before backend or kernel load when a feature is known to require a newer kernel/config.
   - Document local-kernel detection limits and when the kernel verifier remains authoritative.
