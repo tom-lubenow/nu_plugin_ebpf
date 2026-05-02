@@ -577,6 +577,30 @@ fn test_spec_context_fields_include_cgroup_sysctl_direct_minimum_kernel_metadata
 }
 
 #[test]
+fn test_spec_context_fields_include_cgroup_sockopt_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("cgroup_sockopt:/sys/fs/cgroup:get")
+        .expect("cgroup_sockopt spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for field_name in [
+        "level",
+        "optname",
+        "optlen",
+        "optval",
+        "optval_end",
+        "sockopt_retval",
+    ] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("5.3"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v5.3/include/uapi/linux/bpf.h"))
+        );
+    }
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");

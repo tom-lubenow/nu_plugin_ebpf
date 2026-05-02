@@ -1266,6 +1266,36 @@ const KERNEL_FEATURE_CTX_SYSCTL_FILE_POS = {
     min_kernel: "5.2"
     source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SOCKOPT_LEVEL = {
+    key: "ctx:level"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKOPT_OPTNAME = {
+    key: "ctx:optname"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKOPT_OPTLEN = {
+    key: "ctx:optlen"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKOPT_OPTVAL = {
+    key: "ctx:optval"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKOPT_OPTVAL_END = {
+    key: "ctx:optval_end"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCKOPT_RETVAL = {
+    key: "ctx:sockopt_retval"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_ARG_COUNT = {
     key: "ctx:arg_count"
     min_kernel: "5.17"
@@ -5162,6 +5192,26 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "file_pos" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_FILE_POS }
+        }
+    }
+    if ($target_text | str starts-with "cgroup_sockopt:") {
+        if $field == "level" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_LEVEL }
+        }
+        if $field == "optname" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_OPTNAME }
+        }
+        if $field == "optlen" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_OPTLEN }
+        }
+        if $field == "optval" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_OPTVAL }
+        }
+        if $field == "optval_end" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_OPTVAL_END }
+        }
+        if $field == "retval" or $field == "sockopt_retval" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_RETVAL }
         }
     }
 
