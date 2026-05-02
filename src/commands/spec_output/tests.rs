@@ -242,6 +242,50 @@ fn test_spec_record_includes_packet_context_metadata() {
 }
 
 #[test]
+fn test_spec_record_reports_target_specific_live_attach_policy() {
+    let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+        .expect("cgroup_sock_addr unix spec should parse");
+    let record = spec_record(
+        "cgroup_sock_addr:/sys/fs/cgroup:connect_unix".to_string(),
+        spec,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+
+    assert!(
+        !record
+            .get("live_attach_supported")
+            .expect("live_attach_supported should be present")
+            .as_bool()
+            .expect("live_attach_supported should be a bool")
+    );
+    assert!(
+        !record
+            .get("live_attach_default_allowed")
+            .expect("live_attach_default_allowed should be present")
+            .as_bool()
+            .expect("live_attach_default_allowed should be a bool")
+    );
+    assert!(
+        !record
+            .get("live_attach_requires_opt_in")
+            .expect("live_attach_requires_opt_in should be present")
+            .as_bool()
+            .expect("live_attach_requires_opt_in should be a bool")
+    );
+    assert!(
+        record
+            .get("live_attach_note")
+            .expect("live_attach_note should be present")
+            .as_str()
+            .expect("live_attach_note should be a string")
+            .contains("BPF_CGROUP_UNIX")
+    );
+}
+
+#[test]
 fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
     let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
     let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)

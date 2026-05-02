@@ -26,9 +26,14 @@ fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> L
         target: target.clone(),
     };
     let requirements = compatibility_requirements_detail(&spec.compatibility_requirements());
+    let policy = spec.live_attach_policy();
+    let reason = policy
+        .note
+        .unwrap_or(crate::program_spec::CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED);
     LoadError::Attach(format!(
-        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks{}; use --dry-run to compile",
+        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; {}{}; use --dry-run to compile",
         target.attach_type_name(),
+        reason,
         requirements
     ))
 }

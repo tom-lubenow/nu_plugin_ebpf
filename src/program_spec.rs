@@ -225,7 +225,19 @@ pub struct ProgramLiveAttachPolicy {
     pub note: Option<&'static str>,
 }
 
+pub(crate) const CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED: &str =
+    "the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks";
+
 impl ProgramLiveAttachPolicy {
+    fn unsupported(note: &'static str) -> Self {
+        Self {
+            loader_supported: false,
+            default_allowed: false,
+            requires_opt_in: false,
+            note: Some(note),
+        }
+    }
+
     fn from_attach_kind_and_risk(
         attach_kind: ProgramAttachKind,
         risk: Option<&'static str>,
@@ -2745,6 +2757,14 @@ impl ProgramSpec {
     }
 
     pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
+        if let ProgramSpec::CgroupSockAddr { target } = self {
+            if target.is_unix() {
+                return ProgramLiveAttachPolicy::unsupported(
+                    CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED,
+                );
+            }
+        }
+
         let risk = self
             .struct_ops_value_type_name()
             .and_then(|value_type_name| {
@@ -3767,6 +3787,19 @@ mod tests {
             raw_policy
                 .note
                 .is_some_and(|note| note.contains("writable raw-tracepoint"))
+        );
+
+        let cgroup_sock_addr_unix =
+            ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+                .expect("cgroup_sock_addr unix spec should parse");
+        let cgroup_unix_policy = cgroup_sock_addr_unix.live_attach_policy();
+        assert!(!cgroup_unix_policy.loader_supported);
+        assert!(!cgroup_unix_policy.default_allowed);
+        assert!(!cgroup_unix_policy.requires_opt_in);
+        assert!(
+            cgroup_unix_policy
+                .note
+                .is_some_and(|note| note.contains("BPF_CGROUP_UNIX"))
         );
 
         let sched_ext =
