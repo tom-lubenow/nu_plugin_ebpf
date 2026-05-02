@@ -54,6 +54,14 @@ const LINUX_SCHED_EXT_C_V6_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.16/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.17/kernel/bpf/helpers.c";
+const LINUX_CPUMASK_C_V6_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.18/kernel/bpf/cpumask.c";
+const LINUX_BPF_FS_KFUNCS_C_V6_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.18/fs/bpf_fs_kfuncs.c";
+const LINUX_NET_CORE_FILTER_C_V6_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.18/net/core/filter.c";
+const LINUX_SCHED_EXT_C_V6_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c";
 
 /// Source-backed kernel compatibility metadata for a named BPF kfunc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -209,6 +217,7 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_cpumask_full" => "bpf_cpumask_full",
         "bpf_cpumask_intersects" => "bpf_cpumask_intersects",
         "bpf_cpumask_or" => "bpf_cpumask_or",
+        "bpf_cpumask_populate" => "bpf_cpumask_populate",
         "bpf_cpumask_release_dtor" => "bpf_cpumask_release_dtor",
         "bpf_cpumask_setall" => "bpf_cpumask_setall",
         "bpf_cpumask_subset" => "bpf_cpumask_subset",
@@ -219,6 +228,7 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_cpumask_xor" => "bpf_cpumask_xor",
         "bpf_map_sum_elem_count" => "bpf_map_sum_elem_count",
         "bpf_sock_addr_set_sun_path" => "bpf_sock_addr_set_sun_path",
+        "bpf_sock_ops_enable_tx_tstamp" => "bpf_sock_ops_enable_tx_tstamp",
         "bpf_iter_bits_destroy" => "bpf_iter_bits_destroy",
         "bpf_iter_bits_new" => "bpf_iter_bits_new",
         "bpf_iter_bits_next" => "bpf_iter_bits_next",
@@ -267,6 +277,7 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_rcu_read_lock" => "bpf_rcu_read_lock",
         "bpf_rcu_read_unlock" => "bpf_rcu_read_unlock",
         "bpf_throw" => "bpf_throw",
+        "bpf_path_d_path" => "bpf_path_d_path",
         "bpf_iter_scx_dsq_destroy" => "bpf_iter_scx_dsq_destroy",
         "bpf_iter_scx_dsq_new" => "bpf_iter_scx_dsq_new",
         "bpf_iter_scx_dsq_next" => "bpf_iter_scx_dsq_next",
@@ -303,6 +314,7 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "scx_bpf_put_cpumask" => "scx_bpf_put_cpumask",
         "scx_bpf_put_idle_cpumask" => "scx_bpf_put_idle_cpumask",
         "scx_bpf_reenqueue_local" => "scx_bpf_reenqueue_local",
+        "scx_bpf_reenqueue_local___v2" => "scx_bpf_reenqueue_local___v2",
         "scx_bpf_select_cpu_and" => "scx_bpf_select_cpu_and",
         "scx_bpf_select_cpu_dfl" => "scx_bpf_select_cpu_dfl",
         "scx_bpf_task_cgroup" => "scx_bpf_task_cgroup",
@@ -457,6 +469,8 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_rbtree_root"
         | "scx_bpf_select_cpu_and" => "6.16",
         "bpf_dynptr_memset" => "6.17",
+        "bpf_cpumask_populate" | "bpf_path_d_path" | "bpf_sock_ops_enable_tx_tstamp" => "6.18",
+        "scx_bpf_reenqueue_local___v2" => "6.19",
         _ => return None,
     })
 }
@@ -616,6 +630,10 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_rbtree_root" => LINUX_HELPERS_C_V6_16_SOURCE,
         "scx_bpf_select_cpu_and" => LINUX_SCHED_EXT_C_V6_16_SOURCE,
         "bpf_dynptr_memset" => LINUX_HELPERS_C_V6_17_SOURCE,
+        "bpf_cpumask_populate" => LINUX_CPUMASK_C_V6_18_SOURCE,
+        "bpf_path_d_path" => LINUX_BPF_FS_KFUNCS_C_V6_18_SOURCE,
+        "bpf_sock_ops_enable_tx_tstamp" => LINUX_NET_CORE_FILTER_C_V6_18_SOURCE,
+        "scx_bpf_reenqueue_local___v2" => LINUX_SCHED_EXT_C_V6_19_SOURCE,
         _ => return None,
     })
 }

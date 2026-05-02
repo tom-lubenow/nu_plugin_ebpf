@@ -4214,6 +4214,30 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "6.17",
             "/kernel/bpf/helpers.c",
         ),
+        (
+            "bpf_cpumask_populate",
+            "kfunc:bpf_cpumask_populate",
+            "6.18",
+            "/kernel/bpf/cpumask.c",
+        ),
+        (
+            "bpf_path_d_path",
+            "kfunc:bpf_path_d_path",
+            "6.18",
+            "/fs/bpf_fs_kfuncs.c",
+        ),
+        (
+            "bpf_sock_ops_enable_tx_tstamp",
+            "kfunc:bpf_sock_ops_enable_tx_tstamp",
+            "6.18",
+            "/net/core/filter.c",
+        ),
+        (
+            "scx_bpf_reenqueue_local___v2",
+            "kfunc:scx_bpf_reenqueue_local___v2",
+            "6.19",
+            "/kernel/sched/ext.c",
+        ),
     ];
 
     for (name, key, minimum_kernel, source_suffix) in expected {
