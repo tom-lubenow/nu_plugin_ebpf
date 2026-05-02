@@ -9683,6 +9683,13 @@ fn test_ebpf_program_reports_map_compatibility_requirements() {
     assert_eq!(requirements[1].kind(), MapKind::RingBuf);
     assert_eq!(requirements[1].key(), "map:BPF_MAP_TYPE_RINGBUF");
     assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
+    assert_eq!(
+        program
+            .clone()
+            .into_object()
+            .map_compatibility_minimum_kernel(),
+        Some("5.8")
+    );
 }
 
 #[test]

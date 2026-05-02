@@ -29,6 +29,22 @@ fn require_program_spec_for_program(
         .map_err(|err| CompileError::InvalidProgram(err.to_string()))
 }
 
+fn map_compatibility_requirements_for_maps(maps: &[EbpfMap]) -> Vec<MapCompatibilityRequirement> {
+    let mut seen = HashSet::new();
+    let mut requirements = Vec::new();
+
+    for map in maps {
+        let Some(kind) = map.def.map_kind() else {
+            continue;
+        };
+        if seen.insert(kind) {
+            requirements.push(kind.compatibility_requirement());
+        }
+    }
+
+    requirements
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -1138,6 +1154,16 @@ impl EbpfObject {
         !self.maps.is_empty()
     }
 
+    pub fn map_compatibility_requirements(&self) -> Vec<MapCompatibilityRequirement> {
+        map_compatibility_requirements_for_maps(&self.maps)
+    }
+
+    pub fn map_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        MapCompatibilityRequirement::effective_minimum_kernel(
+            &self.map_compatibility_requirements(),
+        )
+    }
+
     fn local_btf_int_name(size: u32, signed: bool) -> &'static str {
         match (size, signed) {
             (1, false) => "u8",
@@ -1525,19 +1551,7 @@ impl EbpfProgram {
     }
 
     pub fn map_compatibility_requirements(&self) -> Vec<MapCompatibilityRequirement> {
-        let mut seen = HashSet::new();
-        let mut requirements = Vec::new();
-
-        for map in &self.maps {
-            let Some(kind) = map.def.map_kind() else {
-                continue;
-            };
-            if seen.insert(kind) {
-                requirements.push(kind.compatibility_requirement());
-            }
-        }
-
-        requirements
+        map_compatibility_requirements_for_maps(&self.maps)
     }
 
     pub fn map_compatibility_minimum_kernel(&self) -> Option<&'static str> {

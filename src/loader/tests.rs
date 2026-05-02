@@ -1,4 +1,4 @@
-use super::attach::kernel_minimum_requirement_detail;
+use super::attach::{kernel_map_minimum_requirement_detail, kernel_minimum_requirement_detail};
 use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
@@ -1697,6 +1697,32 @@ fn test_kernel_minimum_requirement_detail_accepts_newer_kernel() {
     ];
     assert!(kernel_minimum_requirement_detail(&requirements, "5.10.0").is_none());
     assert!(kernel_minimum_requirement_detail(&requirements, "6.1.12").is_none());
+}
+
+#[test]
+fn test_kernel_map_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [
+        MapKind::Hash.compatibility_requirement(),
+        MapKind::RingBuf.compatibility_requirement(),
+    ];
+    let msg = kernel_map_minimum_requirement_detail(&requirements, "5.4.0-test")
+        .expect("kernel 5.4 should be too old for ringbuf maps");
+
+    assert!(msg.contains("compiled maps require kernel>=5.8"));
+    assert!(msg.contains("current kernel is 5.4.0-test"));
+    assert!(msg.contains("BPF_MAP_TYPE_RINGBUF map support"));
+    assert!(msg.contains("kernel>=5.8"));
+}
+
+#[test]
+fn test_kernel_map_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [
+        MapKind::Hash.compatibility_requirement(),
+        MapKind::RingBuf.compatibility_requirement(),
+    ];
+    assert!(kernel_map_minimum_requirement_detail(&requirements, "5.8.0").is_none());
+    assert!(kernel_map_minimum_requirement_detail(&requirements, "6.1.12").is_none());
+    assert!(kernel_map_minimum_requirement_detail(&[], "3.19").is_none());
 }
 
 #[test]
