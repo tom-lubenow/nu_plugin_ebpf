@@ -635,6 +635,65 @@ fn test_spec_context_fields_include_cgroup_sock_addr_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_cgroup_sock_minimum_kernel_metadata() {
+    let create = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
+        .expect("cgroup_sock spec should parse");
+    let create_fields = spec_context_fields(&create, false);
+
+    for field_name in ["bound_dev_if", "family", "sock_type", "protocol"] {
+        let field = field(&create_fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.10"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.10/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    for field_name in ["mark", "priority"] {
+        let field = field(&create_fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.14"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.14/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    let post_bind = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:post_bind6")
+        .expect("cgroup_sock post_bind spec should parse");
+    let post_bind_fields = spec_context_fields(&post_bind, false);
+
+    for field_name in ["local_ip6", "local_port"] {
+        let field = field(&post_bind_fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.17"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.17/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    for field_name in ["remote_ip6", "remote_port", "state"] {
+        let field = field(&post_bind_fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("5.1"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v5.1/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    let rx_queue_mapping = field(&post_bind_fields, "rx_queue_mapping");
+    assert_eq!(rx_queue_mapping.minimum_kernel, Some("5.8"));
+    assert!(
+        rx_queue_mapping
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.8/include/uapi/linux/bpf.h"))
+    );
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");

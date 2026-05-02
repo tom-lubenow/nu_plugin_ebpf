@@ -402,6 +402,34 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("cgroup_sock_addr ctx.family should be target-versioned");
     assert_eq!(cgroup_sock_addr_family.minimum_kernel(), "4.17");
 
+    let cgroup_sock_family = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Family,
+        Some(crate::compiler::EbpfProgramType::CgroupSock),
+    )
+    .expect("cgroup_sock ctx.family should be target-versioned");
+    assert_eq!(cgroup_sock_family.minimum_kernel(), "4.10");
+
+    let cgroup_sock_mark = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SockMark,
+        Some(crate::compiler::EbpfProgramType::CgroupSock),
+    )
+    .expect("cgroup_sock ctx.mark should use bpf_sock field floor");
+    assert_eq!(cgroup_sock_mark.minimum_kernel(), "4.14");
+
+    let cgroup_sock_remote_port = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::RemotePort,
+        Some(crate::compiler::EbpfProgramType::CgroupSock),
+    )
+    .expect("cgroup_sock ctx.remote_port should use bpf_sock dst field floor");
+    assert_eq!(cgroup_sock_remote_port.minimum_kernel(), "5.1");
+
+    let cgroup_sock_rx_queue = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SockRxQueueMapping,
+        Some(crate::compiler::EbpfProgramType::CgroupSock),
+    )
+    .expect("cgroup_sock ctx.rx_queue_mapping should use bpf_sock field floor");
+    assert_eq!(cgroup_sock_rx_queue.minimum_kernel(), "5.8");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()
