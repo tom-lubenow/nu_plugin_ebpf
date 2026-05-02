@@ -504,6 +504,79 @@ fn test_verify_mir_for_probe_context_accepts_guarded_sock_ops_packet_len_load() 
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_accepts_inverted_sock_ops_packet_metadata_guard() {
+    let (mut func, entry) = new_mir_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let not_matches = func.alloc_vreg();
+    let packet_len = func.alloc_vreg();
+    let skb_len = func.alloc_vreg();
+    let tcp_flags = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(op),
+        rhs: MirValue::Const(BPF_SOCK_OPS_PARSE_HDR_OPT_CB),
+    });
+    func.block_mut(entry).instructions.push(MirInst::UnaryOp {
+        dst: not_matches,
+        op: crate::compiler::mir::UnaryOpKind::Not,
+        src: MirValue::VReg(matches),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: not_matches,
+        if_true: done,
+        if_false: guarded,
+    };
+
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: packet_len,
+            field: CtxField::PacketLen,
+            slot: None,
+        });
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: skb_len,
+            field: CtxField::SockOpsSkbLen,
+            slot: None,
+        });
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: tcp_flags,
+            field: CtxField::SockOpsSkbTcpFlags,
+            slot: None,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(op, MirType::I32);
+    types.insert(matches, MirType::Bool);
+    types.insert(not_matches, MirType::Bool);
+    types.insert(packet_len, MirType::U32);
+    types.insert(skb_len, MirType::U32);
+    types.insert(tcp_flags, MirType::U32);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected inverted parse_hdr_opt guard to allow packet metadata loads");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_rejects_sock_ops_data_load_for_non_packet_callback() {
     let (mut func, entry) = new_mir_function();
     let guarded = func.alloc_block();

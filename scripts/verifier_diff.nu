@@ -2810,6 +2810,39 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sock-ops-packet-metadata-requires-op-guard"
+        category: "context-policy"
+        tags: [sock-ops context packet reject]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.skb_len + $ctx.skb_tcp_flags) | count'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.packet_len on sock_ops requires proving a packet-aware ctx.op callback before use"
+    }
+    {
+        name: "sock-ops-packet-metadata-op-guard"
+        category: "context-surface"
+        tags: [sock-ops context packet accept]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  if ($ctx.op == 13) {'
+            '    ($ctx.packet_len + $ctx.skb_len + $ctx.skb_tcp_flags) | count'
+            '  }'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-reuseport-select-context"
         category: "context-surface"
         tags: [sk-reuseport context]

@@ -552,6 +552,9 @@ impl VccVerifier {
                         let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
                         let ptr_cond_cmp =
                             self.ptr_cond_comparison(*op, *lhs, lhs_ty, *rhs, rhs_ty, state);
+                        let cond_result_cmp = self.condition_result_comparison(
+                            *op, *lhs, lhs_ty, *rhs, rhs_ty, state,
+                        );
                         let scalar_cmp =
                             self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
@@ -642,6 +645,8 @@ impl VccVerifier {
                                     true_means_non_null,
                                 },
                             );
+                        } else if let Some(refinement) = cond_result_cmp {
+                            state.set_cond_refinement(*dst, refinement);
                         } else if let Some((reg, cmp_op, value)) = scalar_cmp {
                             state.set_cond_refinement(
                                 *dst,

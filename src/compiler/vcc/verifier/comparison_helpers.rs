@@ -64,6 +64,81 @@ impl VccVerifier {
         map_cond(lhs, lhs_ty, rhs, rhs_ty).or_else(|| map_cond(rhs, rhs_ty, lhs, lhs_ty))
     }
 
+    pub(super) fn condition_result_comparison(
+        &self,
+        op: VccBinOp,
+        lhs: VccValue,
+        lhs_ty: VccValueType,
+        rhs: VccValue,
+        rhs_ty: VccValueType,
+        state: &VccState,
+    ) -> Option<VccCondRefinement> {
+        let map_cond =
+            |cond: VccValue, cond_ty: VccValueType, other: VccValue, other_ty: VccValueType| {
+                let VccValue::Reg(cond_reg) = cond else {
+                    return None;
+                };
+                if cond_ty.class() != VccTypeClass::Bool {
+                    return None;
+                }
+                let refinement = state.cond_refinement(cond_reg)?;
+                let value = Self::const_scalar_value(other, other_ty)?;
+                match (op, value) {
+                    (VccBinOp::Eq, 1) | (VccBinOp::Ne, 0) => Some(refinement),
+                    (VccBinOp::Eq, 0) | (VccBinOp::Ne, 1) => {
+                        Self::invert_cond_refinement(refinement)
+                    }
+                    _ => None,
+                }
+            };
+
+        map_cond(lhs, lhs_ty, rhs, rhs_ty).or_else(|| map_cond(rhs, rhs_ty, lhs, lhs_ty))
+    }
+
+    pub(super) fn invert_cond_refinement(
+        refinement: VccCondRefinement,
+    ) -> Option<VccCondRefinement> {
+        match refinement {
+            VccCondRefinement::PtrNull {
+                ptr_reg,
+                ringbuf_ref,
+                kfunc_ref,
+                true_means_non_null,
+            } => Some(VccCondRefinement::PtrNull {
+                ptr_reg,
+                ringbuf_ref,
+                kfunc_ref,
+                true_means_non_null: !true_means_non_null,
+            }),
+            VccCondRefinement::PacketEnd { ptr_reg, op } => {
+                Some(VccCondRefinement::PacketEnd {
+                    ptr_reg,
+                    op: Self::invert_compare(op)?,
+                })
+            }
+            VccCondRefinement::ContextBufferEnd { ptr_reg, op } => {
+                Some(VccCondRefinement::ContextBufferEnd {
+                    ptr_reg,
+                    op: Self::invert_compare(op)?,
+                })
+            }
+            VccCondRefinement::ScalarCmpConst { reg, op, value } => {
+                Some(VccCondRefinement::ScalarCmpConst {
+                    reg,
+                    op: Self::invert_compare(op)?,
+                    value,
+                })
+            }
+            VccCondRefinement::ScalarCmpRegs { lhs, rhs, op } => {
+                Some(VccCondRefinement::ScalarCmpRegs {
+                    lhs,
+                    rhs,
+                    op: Self::invert_compare(op)?,
+                })
+            }
+        }
+    }
+
     pub(super) fn scalar_const_comparison(
         &self,
         lhs: VccValue,
