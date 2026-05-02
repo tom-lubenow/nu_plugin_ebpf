@@ -227,6 +227,16 @@ const KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE = {
     min_kernel: "6.2"
     source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_release/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE = {
+    key: "kfunc:bpf_cgroup_acquire"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_acquire/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE = {
+    key: "kfunc:bpf_cgroup_release"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_release/"
+}
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
     min_kernel: "6.1"
@@ -2048,6 +2058,45 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cgroup-acquire-release"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let cgrp = (kfunc-call "bpf_cgroup_acquire" $ctx.cgroup)'
+            '  if $cgrp {'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
+        ]
+    }
+    {
+        name: "source-kfunc-cgroup-acquire-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let cgrp = (kfunc-call "bpf_cgroup_acquire" $ctx.cgroup)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
