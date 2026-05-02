@@ -1645,6 +1645,8 @@ const LINUX_BPF_H_V6_6_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h";
+const LINUX_BPF_TYPES_H_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/include/linux/bpf_types.h";
 
 impl ProgramCompatibilityRequirement {
     pub fn all() -> &'static [ProgramCompatibilityRequirement] {
@@ -1881,6 +1883,7 @@ impl ProgramCompatibilityRequirement {
             Self::CgroupSysctlProgram => LINUX_BPF_H_V5_2_SOURCE,
             Self::CgroupSockoptProgram => LINUX_BPF_H_V5_3_SOURCE,
             Self::SockOpsProgram => LINUX_BPF_H_V4_14_SOURCE,
+            Self::NetfilterLink => LINUX_BPF_TYPES_H_V6_4_SOURCE,
             Self::CgroupUnixSockAddr => LINUX_BPF_H_V6_7_SOURCE,
             _ => EBPF_TIMELINE_SOURCE,
         })

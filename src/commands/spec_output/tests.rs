@@ -515,8 +515,25 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             .expect("minimum kernel source should be present")
             .as_str()
             .expect("minimum kernel source should be a string"),
-        "https://docs.ebpf.io/linux/timeline/"
+        "https://github.com/torvalds/linux/blob/v6.4/include/linux/bpf_types.h"
     );
+}
+
+#[test]
+fn test_spec_context_fields_include_netfilter_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
+        .expect("netfilter spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for field_name in ["state", "skb", "hook", "pf"] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("6.4"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v6.4/net/netfilter/nf_bpf_link.c"))
+        );
+    }
 }
 
 #[test]

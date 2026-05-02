@@ -33,6 +33,8 @@ const LINUX_BPF_H_V5_18_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
+const LINUX_NF_BPF_LINK_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c";
 
 /// Source-backed kernel compatibility metadata for a source-level context field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -175,6 +177,10 @@ fn direct_context_field_kernel_floor(
         CtxField::Hwtstamp => ("5.16", LINUX_BPF_H_V5_16_SOURCE),
         CtxField::TstampType => ("5.18", LINUX_BPF_H_V5_18_SOURCE),
         CtxField::SockOpsSkbHwtstamp => ("6.2", LINUX_BPF_H_V6_2_SOURCE),
+        CtxField::NetfilterState
+        | CtxField::NetfilterSkb
+        | CtxField::NetfilterHook
+        | CtxField::NetfilterProtocolFamily => ("6.4", LINUX_NF_BPF_LINK_V6_4_SOURCE),
         _ => return None,
     })
 }

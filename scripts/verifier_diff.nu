@@ -1036,6 +1036,26 @@ const KERNEL_FEATURE_CTX_SKB_HWTSTAMP = {
     min_kernel: "6.2"
     source: "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_NETFILTER_STATE = {
+    key: "ctx:state"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c"
+}
+const KERNEL_FEATURE_CTX_NETFILTER_SKB = {
+    key: "ctx:skb"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c"
+}
+const KERNEL_FEATURE_CTX_NETFILTER_HOOK = {
+    key: "ctx:hook"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c"
+}
+const KERNEL_FEATURE_CTX_NETFILTER_PROTOCOL_FAMILY = {
+    key: "ctx:pf"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c"
+}
 const KERNEL_FEATURE_CTX_PID = {
     key: "ctx:pid"
     min_kernel: "4.2"
@@ -5057,6 +5077,20 @@ def target-context-field-alias-kernel-feature [field: string target] {
     }
     if ($target_text | str starts-with "sock_ops:") and $field == "data_end" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA_END }
+    }
+    if ($target_text | str starts-with "netfilter:") {
+        if $field == "state" or $field == "nf_state" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_NETFILTER_STATE }
+        }
+        if $field == "skb" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_NETFILTER_SKB }
+        }
+        if $field == "hook" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_NETFILTER_HOOK }
+        }
+        if $field == "pf" or $field == "protocol_family" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_NETFILTER_PROTOCOL_FAMILY }
+        }
     }
     if ($target_text | str starts-with "cgroup_sysctl:") {
         if $field == "name" {

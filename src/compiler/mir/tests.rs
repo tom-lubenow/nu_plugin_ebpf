@@ -328,6 +328,10 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::Hwtstamp, "hwtstamp", "5.16"),
         (CtxField::TstampType, "tstamp_type", "5.18"),
         (CtxField::SockOpsSkbHwtstamp, "skb_hwtstamp", "6.2"),
+        (CtxField::NetfilterState, "state", "6.4"),
+        (CtxField::NetfilterSkb, "skb", "6.4"),
+        (CtxField::NetfilterHook, "hook", "6.4"),
+        (CtxField::NetfilterProtocolFamily, "pf", "6.4"),
     ];
 
     for (field, field_name, minimum_kernel) in expected {
