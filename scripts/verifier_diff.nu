@@ -694,18 +694,18 @@ const KERNEL_FEATURE_BPF_DYNPTR_DATA = {
 }
 const KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE = {
     key: "kfunc:bpf_dynptr_size"
-    min_kernel: "6.4"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_dynptr_size/"
+    min_kernel: "6.5"
+    source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE = {
     key: "kfunc:bpf_dynptr_slice"
     min_kernel: "6.4"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_dynptr_slice/"
+    source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE = {
     key: "kfunc:bpf_dynptr_clone"
     min_kernel: "6.5"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_dynptr_clone/"
+    source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_MAP_VALUE_KPTR = {
     key: "map-value:kptr"
@@ -720,72 +720,72 @@ const KERNEL_FEATURE_BPF_KPTR_XCHG = {
 const KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE = {
     key: "kfunc:bpf_task_acquire"
     min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_acquire/"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID = {
     key: "kfunc:bpf_task_from_pid"
     min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_from_pid/"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE = {
     key: "kfunc:bpf_task_release"
     min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_release/"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE = {
     key: "kfunc:bpf_cgroup_acquire"
     min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_acquire/"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CGROUP_ANCESTOR = {
     key: "kfunc:bpf_cgroup_ancestor"
     min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_ancestor/"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID = {
     key: "kfunc:bpf_cgroup_from_id"
-    min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_from_id/"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE = {
     key: "kfunc:bpf_cgroup_release"
     min_kernel: "6.2"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_release/"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE = {
     key: "kfunc:bpf_get_task_exe_file"
     min_kernel: "6.12"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_get_task_exe_file/"
+    source: "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_PUT_FILE = {
     key: "kfunc:bpf_put_file"
     min_kernel: "6.12"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_put_file/"
+    source: "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE = {
     key: "kfunc:bpf_cpumask_create"
     min_kernel: "6.3"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_create/"
+    source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE = {
     key: "kfunc:bpf_cpumask_acquire"
     min_kernel: "6.3"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_acquire/"
+    source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE = {
     key: "kfunc:bpf_cpumask_release"
     min_kernel: "6.3"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_release/"
+    source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST = {
     key: "kfunc:bpf_cpumask_first"
     min_kernel: "6.3"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_first/"
+    source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
 const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU = {
     key: "kfunc:bpf_cpumask_set_cpu"
     min_kernel: "6.3"
-    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_set_cpu/"
+    source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
