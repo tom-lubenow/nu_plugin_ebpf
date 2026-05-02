@@ -3074,6 +3074,14 @@ fn test_map_value_type_spec_supports_kptr_slot() {
     .expect("kptr map value type should parse");
 
     assert!(semantics.is_none());
+    let map_ptr_ty = MirType::Ptr {
+        pointee: Box::new(ty.clone()),
+        address_space: AddressSpace::Map,
+    };
+    assert_eq!(
+        map_ptr_ty.map_pointer_kptr_slot_pointee_name(),
+        Some("task_struct")
+    );
     let MirType::Struct { fields, .. } = ty else {
         panic!("expected record map value type, got {ty:?}");
     };

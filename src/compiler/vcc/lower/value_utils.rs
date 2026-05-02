@@ -77,6 +77,16 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    pub(super) fn kptr_slot_ref_kind(&self, value: &MirValue) -> Option<KfuncRefKind> {
+        let MirValue::VReg(vreg) = value else {
+            return None;
+        };
+        self.types
+            .get(vreg)?
+            .map_pointer_kptr_slot_pointee_name()
+            .and_then(kfunc_ref_kind_from_bpf_type_name)
+    }
+
     pub(super) fn maybe_assume_type(&mut self, dst: VReg, ty: &MirType, out: &mut Vec<VccInst>) {
         let vcc_ty = if let Some((min, max)) = ty.scalar_value_range() {
             VccValueType::Scalar {

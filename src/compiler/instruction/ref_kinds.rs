@@ -25,6 +25,21 @@ fn ref_kind_from_btf_family(family: KfuncPointerRefFamily) -> KfuncRefKind {
     }
 }
 
+pub fn kfunc_ref_kind_from_bpf_type_name(type_name: &str) -> Option<KfuncRefKind> {
+    let type_name = type_name.strip_prefix("struct ").unwrap_or(type_name);
+    match type_name {
+        "task_struct" => Some(KfuncRefKind::Task),
+        "cgroup" => Some(KfuncRefKind::Cgroup),
+        "inode" => Some(KfuncRefKind::Inode),
+        "bpf_cpumask" | "cpumask" => Some(KfuncRefKind::Cpumask),
+        "bpf_crypto_ctx" => Some(KfuncRefKind::CryptoCtx),
+        "file" => Some(KfuncRefKind::File),
+        "sock" | "socket" | "tcp_sock" | "inet_sock" | "udp_sock" | "unix_sock"
+        | "request_sock" | "inet_timewait_sock" => Some(KfuncRefKind::Socket),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct KfuncAllowedPtrSpaces {
     pub allow_stack: bool,

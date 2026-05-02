@@ -648,6 +648,25 @@ impl MirType {
         self.bpf_kptr_pointee_name().is_some()
     }
 
+    pub fn map_pointer_kptr_slot_pointee_name(&self) -> Option<&str> {
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Map,
+        } = self
+        else {
+            return None;
+        };
+        pointee.bpf_kptr_pointee_name().or_else(|| {
+            let MirType::Struct { fields, .. } = pointee.as_ref() else {
+                return None;
+            };
+            fields
+                .iter()
+                .find(|field| !field.synthetic && field.offset == 0)
+                .and_then(|field| field.ty.bpf_kptr_pointee_name())
+        })
+    }
+
     pub fn kernel_struct_ptr_pointee_name(&self) -> Option<&str> {
         let MirType::Ptr {
             pointee,

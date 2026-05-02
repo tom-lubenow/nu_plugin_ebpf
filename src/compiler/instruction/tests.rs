@@ -4660,6 +4660,18 @@ fn test_kfunc_signature_scx_task_cgroup_and_select_cpu() {
 #[test]
 fn test_kfunc_ref_kind_mappings() {
     assert_eq!(
+        kfunc_ref_kind_from_bpf_type_name("task_struct"),
+        Some(KfuncRefKind::Task)
+    );
+    assert_eq!(
+        kfunc_ref_kind_from_bpf_type_name("struct cgroup"),
+        Some(KfuncRefKind::Cgroup)
+    );
+    assert_eq!(
+        kfunc_ref_kind_from_bpf_type_name("bpf_cpumask"),
+        Some(KfuncRefKind::Cpumask)
+    );
+    assert_eq!(
         kfunc_acquire_ref_kind("bpf_task_from_pid"),
         Some(KfuncRefKind::Task)
     );

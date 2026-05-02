@@ -851,10 +851,12 @@ impl<'a> VccLowerer<'a> {
                 if matches!(helper_kind, Some(BpfHelper::KptrXchg))
                     && let Some(arg1) = args.get(1)
                 {
+                    let dst_slot_kind = args.get(0).and_then(|arg0| self.kptr_slot_ref_kind(arg0));
                     let src = self.lower_value(arg1, out);
                     out.push(VccInst::KptrXchgTransfer {
                         dst: VccReg(dst.0),
                         src,
+                        dst_slot_kind,
                     });
                 }
                 if matches!(helper_kind, Some(helper) if helper.invalidates_packet_pointers()) {

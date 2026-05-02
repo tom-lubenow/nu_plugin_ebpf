@@ -2,7 +2,8 @@ use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     HelperDynptrArgRole, KfuncRefKind, helper_pointer_arg_ref_kind,
-    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
+    kfunc_ref_kind_from_bpf_type_name, scalar_range_contains_only_allowed_values,
+    scalar_range_contains_only_bitmask,
 };
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
@@ -367,6 +368,19 @@ pub(in crate::compiler::verifier_types) fn helper_pointer_arg_expected_ref_kind(
     helper_pointer_arg_ref_kind(helper, arg_idx)
 }
 
+fn kptr_xchg_dst_slot_ref_kind(
+    args: &[MirValue],
+    types: &HashMap<VReg, MirType>,
+) -> Option<KfuncRefKind> {
+    let Some(MirValue::VReg(dst)) = args.first() else {
+        return None;
+    };
+    types
+        .get(dst)?
+        .map_pointer_kptr_slot_pointee_name()
+        .and_then(kfunc_ref_kind_from_bpf_type_name)
+}
+
 pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     helper_id: u32,
     args: &[MirValue],
@@ -706,21 +720,36 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         }
     }
 
-    if matches!(helper, BpfHelper::KptrXchg)
-        && let Some(MirValue::VReg(src)) = args.get(1)
-        && let VerifierType::Ptr {
-            kfunc_ref: Some(ref_id),
-            ..
-        } = state.get(*src)
-    {
-        if state.is_live_kfunc_ref(ref_id) {
-            acquire_kind = state.kfunc_ref_kind(ref_id);
-            state.invalidate_kfunc_ref(ref_id);
-        } else {
-            errors.push(VerifierTypeError::new(format!(
-                "helper {} arg1 reference already released",
-                helper_id
-            )));
+    if matches!(helper, BpfHelper::KptrXchg) {
+        let dst_slot_kind = kptr_xchg_dst_slot_ref_kind(args, types);
+        acquire_kind = dst_slot_kind;
+        if let Some(MirValue::VReg(src)) = args.get(1)
+            && let VerifierType::Ptr {
+                kfunc_ref: Some(ref_id),
+                ..
+            } = state.get(*src)
+        {
+            if state.is_live_kfunc_ref(ref_id) {
+                let src_kind = state.kfunc_ref_kind(ref_id);
+                if let (Some(expected), Some(actual)) = (dst_slot_kind, src_kind)
+                    && expected != actual
+                {
+                    errors.push(VerifierTypeError::new(format!(
+                        "helper {} arg1 stores {} reference into {} kptr slot",
+                        helper_id,
+                        actual.label(),
+                        expected.label()
+                    )));
+                } else {
+                    acquire_kind = dst_slot_kind.or(src_kind);
+                    state.invalidate_kfunc_ref(ref_id);
+                }
+            } else {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg1 reference already released",
+                    helper_id
+                )));
+            }
         }
     }
 

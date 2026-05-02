@@ -2257,6 +2257,58 @@ const FIXTURES = [
         ]
     }
     {
+        name: "source-kptr-xchg-cgroup-clear-release"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  if $entry {'
+            '    let old = (helper-call "bpf_kptr_xchg" $entry.cgrp 0)'
+            '    if $old {'
+            '      $old | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
+        ]
+    }
+    {
+        name: "source-kptr-xchg-cgroup-clear-rejects-old-ref-leak"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  if $entry {'
+            '    let old = (helper-call "bpf_kptr_xchg" $entry.cgrp 0)'
+            '    0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+        ]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-kptr-xchg-rejects-pointee-mismatch"
         category: "helper-state"
         tags: [kfunc helper-call kptr cgroup ref-lifetime source reject]

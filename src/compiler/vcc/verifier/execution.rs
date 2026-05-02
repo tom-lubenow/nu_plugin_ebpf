@@ -2096,7 +2096,13 @@ impl VccVerifier {
                     }
                 }
             }
-            VccInst::KptrXchgTransfer { dst, src } => {
+            VccInst::KptrXchgTransfer {
+                dst,
+                src,
+                dst_slot_kind,
+            } => {
+                let mut returned_ref_kind = *dst_slot_kind;
+                let mut tracks_returned_ref = dst_slot_kind.is_some();
                 let ty = match state.value_type(*src) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -2114,14 +2120,32 @@ impl VccVerifier {
                         ));
                         return;
                     }
-                    let kind = state.kfunc_ref_kind(ref_id);
-                    state.invalidate_kfunc_ref(ref_id);
-                    state.set_live_kfunc_ref(*dst, true, kind);
-
-                    if let Ok(VccValueType::Ptr(mut dst_info)) = state.reg_type(*dst) {
-                        dst_info.kfunc_ref = Some(*dst);
-                        state.set_reg(*dst, VccValueType::Ptr(dst_info));
+                    let src_kind = state.kfunc_ref_kind(ref_id);
+                    if let (Some(expected), Some(actual)) = (*dst_slot_kind, src_kind)
+                        && expected != actual
+                    {
+                        self.errors.push(VccError::new(
+                            VccErrorKind::PointerBounds,
+                            format!(
+                                "helper 194 arg1 stores {} reference into {} kptr slot",
+                                actual.label(),
+                                expected.label()
+                            ),
+                        ));
+                        return;
                     }
+                    returned_ref_kind = returned_ref_kind.or(src_kind);
+                    tracks_returned_ref = true;
+                    state.invalidate_kfunc_ref(ref_id);
+                }
+                if tracks_returned_ref {
+                    state.set_live_kfunc_ref(*dst, true, returned_ref_kind);
+                }
+                if tracks_returned_ref
+                    && let Ok(VccValueType::Ptr(mut dst_info)) = state.reg_type(*dst)
+                {
+                    dst_info.kfunc_ref = Some(*dst);
+                    state.set_reg(*dst, VccValueType::Ptr(dst_info));
                 }
             }
         }

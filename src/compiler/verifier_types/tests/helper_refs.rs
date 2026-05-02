@@ -390,6 +390,78 @@ fn test_helper_kptr_xchg_transfers_reference_and_releases_old_value() {
 }
 
 #[test]
+fn test_helper_kptr_xchg_clear_returns_typed_cgroup_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let swap = func.alloc_block();
+    let release_old = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let dst_ptr = func.alloc_vreg();
+    let dst_non_null = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    let swapped_non_null = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: dst_non_null,
+        if_true: swap,
+        if_false: done,
+    };
+
+    func.block_mut(swap).instructions.push(MirInst::CallHelper {
+        dst: swapped,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+    });
+    func.block_mut(swap).instructions.push(MirInst::BinOp {
+        dst: swapped_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(swapped),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(swap).terminator = MirInst::Branch {
+        cond: swapped_non_null,
+        if_true: release_old,
+        if_false: done,
+    };
+
+    func.block_mut(release_old)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_cgroup_release".to_string(),
+            btf_id: None,
+            args: vec![swapped],
+        });
+    func.block_mut(release_old).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_kptr_slot_struct("cgroup")),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(dst_non_null, MirType::Bool);
+    types.insert(swapped, MirType::named_kernel_struct_ptr("cgroup"));
+    types.insert(swapped_non_null, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected typed kptr clear/release semantics");
+}
+
+#[test]
 fn test_helper_sk_lookup_release_socket_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
