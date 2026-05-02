@@ -894,6 +894,26 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_user_ringbuf_drain", feature: $KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN }
 ]
 
+const KFUNC_KERNEL_FEATURES = [
+    { name: "bpf_dynptr_size", feature: $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE }
+    { name: "bpf_dynptr_slice", feature: $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE }
+    { name: "bpf_dynptr_clone", feature: $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE }
+    { name: "bpf_task_acquire", feature: $KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE }
+    { name: "bpf_task_from_pid", feature: $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID }
+    { name: "bpf_task_release", feature: $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE }
+    { name: "bpf_cgroup_acquire", feature: $KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE }
+    { name: "bpf_cgroup_ancestor", feature: $KERNEL_FEATURE_KFUNC_BPF_CGROUP_ANCESTOR }
+    { name: "bpf_cgroup_from_id", feature: $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID }
+    { name: "bpf_cgroup_release", feature: $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE }
+    { name: "bpf_get_task_exe_file", feature: $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE }
+    { name: "bpf_put_file", feature: $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE }
+    { name: "bpf_cpumask_create", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE }
+    { name: "bpf_cpumask_acquire", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE }
+    { name: "bpf_cpumask_release", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE }
+    { name: "bpf_cpumask_first", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST }
+    { name: "bpf_cpumask_set_cpu", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -1674,7 +1694,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE]
         error_contains: "kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object"
     }
     {
@@ -2876,7 +2895,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4341,6 +4359,15 @@ def helper-kernel-feature [name: string] {
     }
 }
 
+def kfunc-kernel-feature [name: string] {
+    let matches = ($KFUNC_KERNEL_FEATURES | where {|entry| $entry.name == $name })
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first | get feature
+    }
+}
+
 def normalize-map-kind-token [token: string] {
     $token
     | str trim
@@ -4357,6 +4384,10 @@ def normalize-helper-name-token [token: string] {
     | str replace --all "," ""
     | str replace --all "\"" ""
     | str replace --all "'" ""
+}
+
+def normalize-kfunc-name-token [token: string] {
+    normalize-helper-name-token $token
 }
 
 def program-map-kernel-features [source: string] {
@@ -4394,6 +4425,28 @@ def program-helper-kernel-features [source: string] {
             let raw_name = ($raw_call | str trim | split row " " | first)
             let helper_name = (normalize-helper-name-token $raw_name)
             let feature = (helper-kernel-feature $helper_name)
+            if $feature != null {
+                $features = (append-missing-kernel-features $features [$feature])
+            }
+        }
+    }
+
+    $features
+}
+
+def program-kfunc-kernel-features [source: string] {
+    mut features = []
+
+    for line in ($source | lines) {
+        let parts = ($line | split row "kfunc-call ")
+        if ($parts | length) <= 1 {
+            continue
+        }
+
+        for raw_call in ($parts | skip 1) {
+            let raw_name = ($raw_call | str trim | split row " " | first)
+            let kfunc_name = (normalize-kfunc-name-token $raw_name)
+            let feature = (kfunc-kernel-feature $kfunc_name)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
@@ -4629,6 +4682,7 @@ def fixture-kernel-features [fixture] {
     let program = (fixture-program $fixture)
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
