@@ -412,6 +412,11 @@ const KERNEL_FEATURE_BPF_MAP_DELETE_ELEM = {
     min_kernel: "3.19"
     source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_GET_PRANDOM_U32 = {
+    key: "helper:bpf_get_prandom_u32"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_RINGBUF_QUERY = {
     key: "helper:bpf_ringbuf_query"
     min_kernel: "5.8"
@@ -451,6 +456,11 @@ const KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP = {
     key: "helper:bpf_skb_under_cgroup"
     min_kernel: "4.8"
     source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SKB_LOAD_BYTES = {
+    key: "helper:bpf_skb_load_bytes"
+    min_kernel: "4.5"
+    source: "https://github.com/torvalds/linux/blob/v4.5/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_CSUM_DIFF = {
     key: "helper:bpf_csum_diff"
@@ -492,8 +502,23 @@ const KERNEL_FEATURE_BPF_PERF_EVENT_READ_VALUE = {
     min_kernel: "4.15"
     source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_OVERRIDE_RETURN = {
+    key: "helper:bpf_override_return"
+    min_kernel: "4.16"
+    source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SYS_BPF = {
     key: "helper:bpf_sys_bpf"
+    min_kernel: "5.14"
+    source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SYS_CLOSE = {
+    key: "helper:bpf_sys_close"
+    min_kernel: "5.14"
+    source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND = {
+    key: "helper:bpf_btf_find_by_name_kind"
     min_kernel: "5.14"
     source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
 }
@@ -506,6 +531,16 @@ const KERNEL_FEATURE_BPF_BPRM_OPTS_SET = {
     key: "helper:bpf_bprm_opts_set"
     min_kernel: "5.11"
     source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SPIN_LOCK = {
+    key: "helper:bpf_spin_lock"
+    min_kernel: "5.1"
+    source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SPIN_UNLOCK = {
+    key: "helper:bpf_spin_unlock"
+    min_kernel: "5.1"
+    source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_SK_ASSIGN = {
     key: "helper:bpf_sk_assign"
@@ -561,6 +596,16 @@ const KERNEL_FEATURE_BPF_FOR_EACH_MAP_ELEM = {
     key: "helper:bpf_for_each_map_elem"
     min_kernel: "5.13"
     source: "https://github.com/torvalds/linux/blob/v5.13/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SEQ_PRINTF = {
+    key: "helper:bpf_seq_printf"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SEQ_WRITE = {
+    key: "helper:bpf_seq_write"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR = {
     key: "helper:bpf_ringbuf_reserve_dynptr"
@@ -724,13 +769,16 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_lookup_elem", feature: $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM }
     { name: "bpf_map_update_elem", feature: $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM }
     { name: "bpf_map_delete_elem", feature: $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM }
+    { name: "bpf_get_prandom_u32", feature: $KERNEL_FEATURE_BPF_GET_PRANDOM_U32 }
     { name: "bpf_tail_call", feature: $KERNEL_FEATURE_BPF_TAIL_CALL }
     { name: "bpf_perf_event_read", feature: $KERNEL_FEATURE_BPF_PERF_EVENT_READ }
     { name: "bpf_perf_event_read_value", feature: $KERNEL_FEATURE_BPF_PERF_EVENT_READ_VALUE }
+    { name: "bpf_override_return", feature: $KERNEL_FEATURE_BPF_OVERRIDE_RETURN }
     { name: "bpf_redirect", feature: $KERNEL_FEATURE_BPF_REDIRECT }
     { name: "bpf_get_stackid", feature: $KERNEL_FEATURE_BPF_GET_STACKID }
     { name: "bpf_get_stack", feature: $KERNEL_FEATURE_BPF_GET_STACK }
     { name: "bpf_csum_diff", feature: $KERNEL_FEATURE_BPF_CSUM_DIFF }
+    { name: "bpf_skb_load_bytes", feature: $KERNEL_FEATURE_BPF_SKB_LOAD_BYTES }
     { name: "bpf_skb_under_cgroup", feature: $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP }
     { name: "bpf_skb_pull_data", feature: $KERNEL_FEATURE_BPF_SKB_PULL_DATA }
     { name: "bpf_xdp_adjust_head", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD }
@@ -746,8 +794,14 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_ringbuf_query", feature: $KERNEL_FEATURE_BPF_RINGBUF_QUERY }
     { name: "bpf_redirect_neigh", feature: $KERNEL_FEATURE_BPF_REDIRECT_NEIGH }
     { name: "bpf_bprm_opts_set", feature: $KERNEL_FEATURE_BPF_BPRM_OPTS_SET }
+    { name: "bpf_spin_lock", feature: $KERNEL_FEATURE_BPF_SPIN_LOCK }
+    { name: "bpf_spin_unlock", feature: $KERNEL_FEATURE_BPF_SPIN_UNLOCK }
     { name: "bpf_for_each_map_elem", feature: $KERNEL_FEATURE_BPF_FOR_EACH_MAP_ELEM }
+    { name: "bpf_seq_printf", feature: $KERNEL_FEATURE_BPF_SEQ_PRINTF }
+    { name: "bpf_seq_write", feature: $KERNEL_FEATURE_BPF_SEQ_WRITE }
     { name: "bpf_sys_bpf", feature: $KERNEL_FEATURE_BPF_SYS_BPF }
+    { name: "bpf_sys_close", feature: $KERNEL_FEATURE_BPF_SYS_CLOSE }
+    { name: "bpf_btf_find_by_name_kind", feature: $KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND }
     { name: "bpf_timer_init", feature: $KERNEL_FEATURE_BPF_TIMER_INIT }
     { name: "bpf_timer_set_callback", feature: $KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK }
     { name: "bpf_timer_start", feature: $KERNEL_FEATURE_BPF_TIMER_START }

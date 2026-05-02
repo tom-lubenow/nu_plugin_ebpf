@@ -7,12 +7,16 @@ mod semantics;
 
 const LINUX_BPF_H_V3_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_3_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.3/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_4_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.4/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.5/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_6_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_8_SOURCE: &str =
@@ -25,8 +29,12 @@ const LINUX_BPF_H_V4_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_8_SOURCE: &str =
@@ -141,26 +149,32 @@ impl BpfHelper {
     pub fn minimum_kernel(self) -> Option<&'static str> {
         Some(match self {
             Self::MapLookupElem | Self::MapUpdateElem | Self::MapDeleteElem => "3.19",
+            Self::GetPrandomU32 => "4.1",
             Self::TailCall => "4.2",
             Self::PerfEventRead => "4.3",
             Self::Redirect => "4.4",
+            Self::SkbLoadBytes => "4.5",
             Self::GetStackId | Self::GetStack | Self::CsumDiff => "4.6",
             Self::SkbUnderCgroup => "4.8",
             Self::SkbPullData => "4.9",
             Self::XdpAdjustHead => "4.10",
             Self::RedirectMap | Self::SkRedirectMap => "4.14",
             Self::PerfEventReadValue => "4.15",
+            Self::OverrideReturn => "4.16",
             Self::MsgApplyBytes | Self::MsgRedirectMap => "4.17",
+            Self::SpinLock | Self::SpinUnlock => "5.1",
             Self::SkAssign => "5.7",
             Self::RingbufOutput
             | Self::RingbufReserve
             | Self::RingbufSubmit
             | Self::RingbufDiscard
+            | Self::SeqPrintf
+            | Self::SeqWrite
             | Self::RingbufQuery => "5.8",
             Self::RedirectNeigh => "5.10",
             Self::BprmOptsSet => "5.11",
             Self::ForEachMapElem => "5.13",
-            Self::SysBpf => "5.14",
+            Self::SysBpf | Self::SysClose | Self::BtfFindByNameKind => "5.14",
             Self::TimerInit | Self::TimerSetCallback | Self::TimerStart | Self::TimerCancel => {
                 "5.15"
             }
@@ -182,26 +196,32 @@ impl BpfHelper {
             Self::MapLookupElem | Self::MapUpdateElem | Self::MapDeleteElem => {
                 LINUX_BPF_H_V3_19_SOURCE
             }
+            Self::GetPrandomU32 => LINUX_BPF_H_V4_1_SOURCE,
             Self::TailCall => LINUX_BPF_H_V4_2_SOURCE,
             Self::PerfEventRead => LINUX_BPF_H_V4_3_SOURCE,
             Self::Redirect => LINUX_BPF_H_V4_4_SOURCE,
+            Self::SkbLoadBytes => LINUX_BPF_H_V4_5_SOURCE,
             Self::GetStackId | Self::GetStack | Self::CsumDiff => LINUX_BPF_H_V4_6_SOURCE,
             Self::SkbUnderCgroup => LINUX_BPF_H_V4_8_SOURCE,
             Self::SkbPullData => LINUX_BPF_H_V4_9_SOURCE,
             Self::XdpAdjustHead => LINUX_BPF_H_V4_10_SOURCE,
             Self::RedirectMap | Self::SkRedirectMap => LINUX_BPF_H_V4_14_SOURCE,
             Self::PerfEventReadValue => LINUX_BPF_H_V4_15_SOURCE,
+            Self::OverrideReturn => LINUX_BPF_H_V4_16_SOURCE,
             Self::MsgApplyBytes | Self::MsgRedirectMap => LINUX_BPF_H_V4_17_SOURCE,
+            Self::SpinLock | Self::SpinUnlock => LINUX_BPF_H_V5_1_SOURCE,
             Self::SkAssign => LINUX_BPF_H_V5_7_SOURCE,
             Self::RingbufOutput
             | Self::RingbufReserve
             | Self::RingbufSubmit
             | Self::RingbufDiscard
+            | Self::SeqPrintf
+            | Self::SeqWrite
             | Self::RingbufQuery => LINUX_BPF_H_V5_8_SOURCE,
             Self::RedirectNeigh => LINUX_BPF_H_V5_10_SOURCE,
             Self::BprmOptsSet => LINUX_BPF_H_V5_11_SOURCE,
             Self::ForEachMapElem => LINUX_BPF_H_V5_13_SOURCE,
-            Self::SysBpf => LINUX_BPF_H_V5_14_SOURCE,
+            Self::SysBpf | Self::SysClose | Self::BtfFindByNameKind => LINUX_BPF_H_V5_14_SOURCE,
             Self::TimerInit | Self::TimerSetCallback | Self::TimerStart | Self::TimerCancel => {
                 LINUX_BPF_H_V5_15_SOURCE
             }

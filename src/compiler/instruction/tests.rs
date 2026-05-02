@@ -577,6 +577,11 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "helper:bpf_map_lookup_elem",
             "3.19",
         ),
+        (
+            BpfHelper::GetPrandomU32,
+            "helper:bpf_get_prandom_u32",
+            "4.1",
+        ),
         (BpfHelper::TailCall, "helper:bpf_tail_call", "4.2"),
         (
             BpfHelper::PerfEventRead,
@@ -584,6 +589,7 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "4.3",
         ),
         (BpfHelper::Redirect, "helper:bpf_redirect", "4.4"),
+        (BpfHelper::SkbLoadBytes, "helper:bpf_skb_load_bytes", "4.5"),
         (BpfHelper::GetStackId, "helper:bpf_get_stackid", "4.6"),
         (BpfHelper::CsumDiff, "helper:bpf_csum_diff", "4.6"),
         (
@@ -604,16 +610,23 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "4.15",
         ),
         (
+            BpfHelper::OverrideReturn,
+            "helper:bpf_override_return",
+            "4.16",
+        ),
+        (
             BpfHelper::MsgApplyBytes,
             "helper:bpf_msg_apply_bytes",
             "4.17",
         ),
+        (BpfHelper::SpinLock, "helper:bpf_spin_lock", "5.1"),
         (BpfHelper::SkAssign, "helper:bpf_sk_assign", "5.7"),
         (
             BpfHelper::RingbufReserve,
             "helper:bpf_ringbuf_reserve",
             "5.8",
         ),
+        (BpfHelper::SeqPrintf, "helper:bpf_seq_printf", "5.8"),
         (
             BpfHelper::RedirectNeigh,
             "helper:bpf_redirect_neigh",
@@ -626,6 +639,7 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "5.13",
         ),
         (BpfHelper::SysBpf, "helper:bpf_sys_bpf", "5.14"),
+        (BpfHelper::SysClose, "helper:bpf_sys_close", "5.14"),
         (BpfHelper::TimerInit, "helper:bpf_timer_init", "5.15"),
         (
             BpfHelper::KallsymsLookupName,
