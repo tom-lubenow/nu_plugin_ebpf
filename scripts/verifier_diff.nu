@@ -277,10 +277,20 @@ const KERNEL_FEATURE_ITER_TARGET_UNIX = {
     min_kernel: "5.15"
     source: "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c"
 }
+const KERNEL_FEATURE_ITER_TARGET_IPV6_ROUTE = {
+    key: "iter-target:ipv6_route"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/net/ipv6/route.c"
+}
 const KERNEL_FEATURE_ITER_TARGET_KSYM = {
     key: "iter-target:ksym"
     min_kernel: "6.0"
     source: "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_NETLINK = {
+    key: "iter-target:netlink"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/net/netlink/af_netlink.c"
 }
 const KERNEL_FEATURE_ITER_TARGET_KMEM_CACHE = {
     key: "iter-target:kmem_cache"
@@ -6545,8 +6555,12 @@ def target-kernel-features [target] {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UDP)
         } else if $iter_target == "unix" {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UNIX)
+        } else if $iter_target == "ipv6_route" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_IPV6_ROUTE)
         } else if $iter_target == "ksym" {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KSYM)
+        } else if $iter_target == "netlink" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_NETLINK)
         } else if $iter_target == "kmem_cache" {
             $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KMEM_CACHE)
         } else if $iter_target == "dmabuf" {

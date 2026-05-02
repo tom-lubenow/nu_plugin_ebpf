@@ -3150,7 +3150,9 @@ fn iterator_target_compatibility_requirement(
         "tcp" => ProgramCompatibilityRequirement::BpfIteratorTcpTarget,
         "udp" => ProgramCompatibilityRequirement::BpfIteratorUdpTarget,
         "unix" => ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
+        "ipv6_route" => ProgramCompatibilityRequirement::BpfIteratorIpv6RouteTarget,
         "ksym" => ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
+        "netlink" => ProgramCompatibilityRequirement::BpfIteratorNetlinkTarget,
         "kmem_cache" => ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget,
         "dmabuf" => ProgramCompatibilityRequirement::BpfIteratorDmabufTarget,
         _ => return None,
@@ -3735,9 +3737,19 @@ mod tests {
                 "5.15",
             ),
             (
+                "iter:ipv6_route",
+                ProgramCompatibilityRequirement::BpfIteratorIpv6RouteTarget,
+                "5.8",
+            ),
+            (
                 "iter:ksym",
                 ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
                 "6.0",
+            ),
+            (
+                "iter:netlink",
+                ProgramCompatibilityRequirement::BpfIteratorNetlinkTarget,
+                "5.8",
             ),
             (
                 "iter:kmem_cache",

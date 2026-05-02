@@ -4704,8 +4704,16 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         Some("5.15")
     );
     assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorIpv6RouteTarget.minimum_kernel(),
+        Some("5.8")
+    );
+    assert_eq!(
         ProgramCompatibilityRequirement::BpfIteratorKsymTarget.minimum_kernel(),
         Some("6.0")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorNetlinkTarget.minimum_kernel(),
+        Some("5.8")
     );
     assert_eq!(
         ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget.minimum_kernel(),

@@ -1584,7 +1584,9 @@ pub enum ProgramCompatibilityRequirement {
     BpfIteratorTcpTarget,
     BpfIteratorUdpTarget,
     BpfIteratorUnixTarget,
+    BpfIteratorIpv6RouteTarget,
     BpfIteratorKsymTarget,
+    BpfIteratorNetlinkTarget,
     BpfIteratorKmemCacheTarget,
     BpfIteratorDmabufTarget,
     XdpMultiBuffer,
@@ -1693,8 +1695,12 @@ const LINUX_TCP_IPV4_V5_9_SOURCE: &str =
 const LINUX_UDP_V5_9_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c";
 const LINUX_AF_UNIX_V5_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c";
+const LINUX_IPV6_ROUTE_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/net/ipv6/route.c";
 const LINUX_KALLSYMS_V6_0_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c";
+const LINUX_NETLINK_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/net/netlink/af_netlink.c";
 const LINUX_KMEM_CACHE_ITER_V6_13_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c";
 const LINUX_DMABUF_ITER_V6_16_SOURCE: &str =
@@ -1737,7 +1743,9 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorTcpTarget => "bpf-iterator-target-tcp",
             Self::BpfIteratorUdpTarget => "bpf-iterator-target-udp",
             Self::BpfIteratorUnixTarget => "bpf-iterator-target-unix",
+            Self::BpfIteratorIpv6RouteTarget => "bpf-iterator-target-ipv6-route",
             Self::BpfIteratorKsymTarget => "bpf-iterator-target-ksym",
+            Self::BpfIteratorNetlinkTarget => "bpf-iterator-target-netlink",
             Self::BpfIteratorKmemCacheTarget => "bpf-iterator-target-kmem-cache",
             Self::BpfIteratorDmabufTarget => "bpf-iterator-target-dmabuf",
             Self::XdpMultiBuffer => "xdp-multi-buffer",
@@ -1802,7 +1810,9 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorTcpTarget => "BPF TCP iterator target support",
             Self::BpfIteratorUdpTarget => "BPF UDP iterator target support",
             Self::BpfIteratorUnixTarget => "BPF UNIX iterator target support",
+            Self::BpfIteratorIpv6RouteTarget => "BPF IPv6 route iterator target support",
             Self::BpfIteratorKsymTarget => "BPF ksymbol iterator target support",
+            Self::BpfIteratorNetlinkTarget => "BPF netlink iterator target support",
             Self::BpfIteratorKmemCacheTarget => "BPF kmem_cache iterator target support",
             Self::BpfIteratorDmabufTarget => "BPF dma-buf iterator target support",
             Self::XdpMultiBuffer => "XDP multi-buffer section support",
@@ -1850,7 +1860,9 @@ impl ProgramCompatibilityRequirement {
             | Self::BpfIteratorTcpTarget
             | Self::BpfIteratorUdpTarget
             | Self::BpfIteratorUnixTarget
+            | Self::BpfIteratorIpv6RouteTarget
             | Self::BpfIteratorKsymTarget
+            | Self::BpfIteratorNetlinkTarget
             | Self::BpfIteratorKmemCacheTarget
             | Self::BpfIteratorDmabufTarget => "iterator-target",
             Self::StructOps => "object-loader",
@@ -1911,7 +1923,9 @@ impl ProgramCompatibilityRequirement {
             | Self::BpfIteratorTcpTarget
             | Self::BpfIteratorUdpTarget
             | Self::BpfIteratorUnixTarget
+            | Self::BpfIteratorIpv6RouteTarget
             | Self::BpfIteratorKsymTarget
+            | Self::BpfIteratorNetlinkTarget
             | Self::BpfIteratorKmemCacheTarget
             | Self::BpfIteratorDmabufTarget => "host-safe",
         }
@@ -1948,7 +1962,9 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorTcpTarget => Some("5.9"),
             Self::BpfIteratorUdpTarget => Some("5.9"),
             Self::BpfIteratorUnixTarget => Some("5.15"),
+            Self::BpfIteratorIpv6RouteTarget => Some("5.8"),
             Self::BpfIteratorKsymTarget => Some("6.0"),
+            Self::BpfIteratorNetlinkTarget => Some("5.8"),
             Self::BpfIteratorKmemCacheTarget => Some("6.13"),
             Self::BpfIteratorDmabufTarget => Some("6.16"),
             Self::XdpMultiBuffer => Some("5.18"),
@@ -2028,7 +2044,9 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorTcpTarget => LINUX_TCP_IPV4_V5_9_SOURCE,
             Self::BpfIteratorUdpTarget => LINUX_UDP_V5_9_SOURCE,
             Self::BpfIteratorUnixTarget => LINUX_AF_UNIX_V5_15_SOURCE,
+            Self::BpfIteratorIpv6RouteTarget => LINUX_IPV6_ROUTE_V5_8_SOURCE,
             Self::BpfIteratorKsymTarget => LINUX_KALLSYMS_V6_0_SOURCE,
+            Self::BpfIteratorNetlinkTarget => LINUX_NETLINK_V5_8_SOURCE,
             Self::BpfIteratorKmemCacheTarget => LINUX_KMEM_CACHE_ITER_V6_13_SOURCE,
             Self::BpfIteratorDmabufTarget => LINUX_DMABUF_ITER_V6_16_SOURCE,
             Self::SockMapAttach | Self::CgroupV2 => {
