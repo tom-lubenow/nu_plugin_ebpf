@@ -25,6 +25,12 @@ const LINUX_BPF_H_V4_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_11_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.11/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.13/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_15_SOURCE: &str =
@@ -43,14 +49,28 @@ const LINUX_BPF_H_V5_0_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_3_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.4/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_6_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_11_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.12/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_13_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.13/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_14_SOURCE: &str =
@@ -61,10 +81,64 @@ const LINUX_BPF_H_V5_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_0_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.0/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
+
+// The BPF helper ABI is append-only. Each entry is the highest helper ID
+// present in the Linux UAPI tag where that batch first appears.
+const HELPER_KERNEL_FLOORS_BY_MAX_ID: &[(u32, &str, &str)] = &[
+    (3, "3.19", LINUX_BPF_H_V3_19_SOURCE),
+    (11, "4.1", LINUX_BPF_H_V4_1_SOURCE),
+    (16, "4.2", LINUX_BPF_H_V4_2_SOURCE),
+    (22, "4.3", LINUX_BPF_H_V4_3_SOURCE),
+    (25, "4.4", LINUX_BPF_H_V4_4_SOURCE),
+    (26, "4.5", LINUX_BPF_H_V4_5_SOURCE),
+    (30, "4.6", LINUX_BPF_H_V4_6_SOURCE),
+    (36, "4.8", LINUX_BPF_H_V4_8_SOURCE),
+    (41, "4.9", LINUX_BPF_H_V4_9_SOURCE),
+    (44, "4.10", LINUX_BPF_H_V4_10_SOURCE),
+    (45, "4.11", LINUX_BPF_H_V4_11_SOURCE),
+    (47, "4.12", LINUX_BPF_H_V4_12_SOURCE),
+    (50, "4.13", LINUX_BPF_H_V4_13_SOURCE),
+    (53, "4.14", LINUX_BPF_H_V4_14_SOURCE),
+    (57, "4.15", LINUX_BPF_H_V4_15_SOURCE),
+    (59, "4.16", LINUX_BPF_H_V4_16_SOURCE),
+    (64, "4.17", LINUX_BPF_H_V4_17_SOURCE),
+    (80, "4.18", LINUX_BPF_H_V4_18_SOURCE),
+    (83, "4.19", LINUX_BPF_H_V4_19_SOURCE),
+    (90, "4.20", LINUX_BPF_H_V4_20_SOURCE),
+    (92, "5.0", LINUX_BPF_H_V5_0_SOURCE),
+    (98, "5.1", LINUX_BPF_H_V5_1_SOURCE),
+    (108, "5.2", LINUX_BPF_H_V5_2_SOURCE),
+    (109, "5.3", LINUX_BPF_H_V5_3_SOURCE),
+    (110, "5.4", LINUX_BPF_H_V5_4_SOURCE),
+    (115, "5.5", LINUX_BPF_H_V5_5_SOURCE),
+    (118, "5.6", LINUX_BPF_H_V5_6_SOURCE),
+    (124, "5.7", LINUX_BPF_H_V5_7_SOURCE),
+    (135, "5.8", LINUX_BPF_H_V5_8_SOURCE),
+    (141, "5.9", LINUX_BPF_H_V5_9_SOURCE),
+    (155, "5.10", LINUX_BPF_H_V5_10_SOURCE),
+    (162, "5.11", LINUX_BPF_H_V5_11_SOURCE),
+    (163, "5.12", LINUX_BPF_H_V5_12_SOURCE),
+    (165, "5.13", LINUX_BPF_H_V5_13_SOURCE),
+    (168, "5.14", LINUX_BPF_H_V5_14_SOURCE),
+    (175, "5.15", LINUX_BPF_H_V5_15_SOURCE),
+    (179, "5.16", LINUX_BPF_H_V5_16_SOURCE),
+    (185, "5.17", LINUX_BPF_H_V5_17_SOURCE),
+    (193, "5.18", LINUX_BPF_H_V5_18_SOURCE),
+    (203, "5.19", LINUX_BPF_H_V5_19_SOURCE),
+    (207, "6.0", LINUX_BPF_H_V6_0_SOURCE),
+    (209, "6.1", LINUX_BPF_H_V6_1_SOURCE),
+    (211, "6.2", LINUX_BPF_H_V6_2_SOURCE),
+];
 
 /// Source-backed kernel compatibility metadata for a BPF helper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -149,122 +223,25 @@ impl fmt::Display for HelperCompatibilityRequirement {
     }
 }
 
+fn helper_kernel_floor(helper: BpfHelper) -> Option<(&'static str, &'static str)> {
+    let helper_id = helper as u32;
+    HELPER_KERNEL_FLOORS_BY_MAX_ID
+        .iter()
+        .find(|(max_helper_id, _, _)| helper_id <= *max_helper_id)
+        .map(|(_, minimum_kernel, source)| (*minimum_kernel, *source))
+}
+
 impl BpfHelper {
     pub fn compatibility_requirement(self) -> Option<HelperCompatibilityRequirement> {
         HelperCompatibilityRequirement::for_helper(self)
     }
 
     pub fn minimum_kernel(self) -> Option<&'static str> {
-        Some(match self {
-            Self::MapLookupElem | Self::MapUpdateElem | Self::MapDeleteElem => "3.19",
-            Self::GetPrandomU32 => "4.1",
-            Self::TailCall => "4.2",
-            Self::PerfEventRead => "4.3",
-            Self::Redirect => "4.4",
-            Self::SkbLoadBytes => "4.5",
-            Self::GetStackId | Self::GetStack | Self::CsumDiff => "4.6",
-            Self::SkbUnderCgroup => "4.8",
-            Self::SkbPullData => "4.9",
-            Self::XdpAdjustHead => "4.10",
-            Self::RedirectMap
-            | Self::SkRedirectMap
-            | Self::SkbAdjustRoom
-            | Self::SkbChangeHead
-            | Self::SkbChangeTail => "4.14",
-            Self::PerfEventReadValue | Self::XdpAdjustMeta => "4.15",
-            Self::OverrideReturn => "4.16",
-            Self::MsgApplyBytes | Self::MsgCorkBytes | Self::MsgPullData | Self::MsgRedirectMap => {
-                "4.17"
-            }
-            Self::MsgRedirectHash | Self::SkRedirectHash | Self::XdpAdjustTail => "4.18",
-            Self::SkSelectReuseport => "4.19",
-            Self::MsgPushData => "4.20",
-            Self::MsgPopData => "5.0",
-            Self::SpinLock | Self::SpinUnlock => "5.1",
-            Self::SkAssign => "5.7",
-            Self::RingbufOutput
-            | Self::RingbufReserve
-            | Self::RingbufSubmit
-            | Self::RingbufDiscard
-            | Self::SeqPrintf
-            | Self::SeqWrite
-            | Self::RingbufQuery => "5.8",
-            Self::RedirectNeigh | Self::RedirectPeer => "5.10",
-            Self::BprmOptsSet => "5.11",
-            Self::ForEachMapElem => "5.13",
-            Self::SysBpf | Self::SysClose | Self::BtfFindByNameKind => "5.14",
-            Self::TimerInit | Self::TimerSetCallback | Self::TimerStart | Self::TimerCancel => {
-                "5.15"
-            }
-            Self::KallsymsLookupName => "5.16",
-            Self::BpfLoop => "5.17",
-            Self::KptrXchg
-            | Self::RingbufReserveDynptr
-            | Self::RingbufSubmitDynptr
-            | Self::RingbufDiscardDynptr
-            | Self::DynptrData => "5.19",
-            Self::UserRingbufDrain => "6.1",
-            _ => return None,
-        })
+        helper_kernel_floor(self).map(|(minimum_kernel, _)| minimum_kernel)
     }
 
     pub fn minimum_kernel_source(self) -> Option<&'static str> {
-        self.minimum_kernel()?;
-        Some(match self {
-            Self::MapLookupElem | Self::MapUpdateElem | Self::MapDeleteElem => {
-                LINUX_BPF_H_V3_19_SOURCE
-            }
-            Self::GetPrandomU32 => LINUX_BPF_H_V4_1_SOURCE,
-            Self::TailCall => LINUX_BPF_H_V4_2_SOURCE,
-            Self::PerfEventRead => LINUX_BPF_H_V4_3_SOURCE,
-            Self::Redirect => LINUX_BPF_H_V4_4_SOURCE,
-            Self::SkbLoadBytes => LINUX_BPF_H_V4_5_SOURCE,
-            Self::GetStackId | Self::GetStack | Self::CsumDiff => LINUX_BPF_H_V4_6_SOURCE,
-            Self::SkbUnderCgroup => LINUX_BPF_H_V4_8_SOURCE,
-            Self::SkbPullData => LINUX_BPF_H_V4_9_SOURCE,
-            Self::XdpAdjustHead => LINUX_BPF_H_V4_10_SOURCE,
-            Self::RedirectMap
-            | Self::SkRedirectMap
-            | Self::SkbAdjustRoom
-            | Self::SkbChangeHead
-            | Self::SkbChangeTail => LINUX_BPF_H_V4_14_SOURCE,
-            Self::PerfEventReadValue | Self::XdpAdjustMeta => LINUX_BPF_H_V4_15_SOURCE,
-            Self::OverrideReturn => LINUX_BPF_H_V4_16_SOURCE,
-            Self::MsgApplyBytes | Self::MsgCorkBytes | Self::MsgPullData | Self::MsgRedirectMap => {
-                LINUX_BPF_H_V4_17_SOURCE
-            }
-            Self::MsgRedirectHash | Self::SkRedirectHash | Self::XdpAdjustTail => {
-                LINUX_BPF_H_V4_18_SOURCE
-            }
-            Self::SkSelectReuseport => LINUX_BPF_H_V4_19_SOURCE,
-            Self::MsgPushData => LINUX_BPF_H_V4_20_SOURCE,
-            Self::MsgPopData => LINUX_BPF_H_V5_0_SOURCE,
-            Self::SpinLock | Self::SpinUnlock => LINUX_BPF_H_V5_1_SOURCE,
-            Self::SkAssign => LINUX_BPF_H_V5_7_SOURCE,
-            Self::RingbufOutput
-            | Self::RingbufReserve
-            | Self::RingbufSubmit
-            | Self::RingbufDiscard
-            | Self::SeqPrintf
-            | Self::SeqWrite
-            | Self::RingbufQuery => LINUX_BPF_H_V5_8_SOURCE,
-            Self::RedirectNeigh | Self::RedirectPeer => LINUX_BPF_H_V5_10_SOURCE,
-            Self::BprmOptsSet => LINUX_BPF_H_V5_11_SOURCE,
-            Self::ForEachMapElem => LINUX_BPF_H_V5_13_SOURCE,
-            Self::SysBpf | Self::SysClose | Self::BtfFindByNameKind => LINUX_BPF_H_V5_14_SOURCE,
-            Self::TimerInit | Self::TimerSetCallback | Self::TimerStart | Self::TimerCancel => {
-                LINUX_BPF_H_V5_15_SOURCE
-            }
-            Self::KallsymsLookupName => LINUX_BPF_H_V5_16_SOURCE,
-            Self::BpfLoop => LINUX_BPF_H_V5_17_SOURCE,
-            Self::KptrXchg
-            | Self::RingbufReserveDynptr
-            | Self::RingbufSubmitDynptr
-            | Self::RingbufDiscardDynptr
-            | Self::DynptrData => LINUX_BPF_H_V5_19_SOURCE,
-            Self::UserRingbufDrain => LINUX_BPF_H_V6_1_SOURCE,
-            _ => return None,
-        })
+        helper_kernel_floor(self).map(|(_, source)| source)
     }
 
     pub const fn from_u32(helper_id: u32) -> Option<Self> {

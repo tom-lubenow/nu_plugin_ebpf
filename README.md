@@ -34,8 +34,8 @@ minimum-kernel fields. Source-verified feature requirements carry minimum
 kernel versions for base program families, cgroup program families,
 `uprobe.multi`, and cgroup UNIX socket-address hooks, and
 `compatibility_minimum_kernel` reports the maximum known requirement for that
-parsed target. Live-load preflight also checks source-verified map-kind,
-helper, and source-preserved known-kfunc floors from the compiled object.
+parsed target. Live-load preflight also checks source-verified map-kind, all
+modeled helper, and source-preserved known-kfunc floors from the compiled object.
 Mixed requirements stay nullable until they are split precisely enough to avoid
 misleading compatibility claims. The kernel verifier remains the final
 authority for unmodeled or version-specific behavior.

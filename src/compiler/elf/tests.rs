@@ -9707,11 +9707,13 @@ fn test_ebpf_program_reports_helper_compatibility_requirements() {
     let program = EbpfProgram::new(EbpfProgramType::Kprobe, "do_sys_openat2", "main", builder);
 
     let requirements = program.helper_compatibility_requirements();
-    assert_eq!(requirements.len(), 2);
+    assert_eq!(requirements.len(), 3);
     assert_eq!(requirements[0].helper(), BpfHelper::RingbufReserve);
     assert_eq!(requirements[0].key(), "helper:bpf_ringbuf_reserve");
-    assert_eq!(requirements[1].helper(), BpfHelper::UserRingbufDrain);
-    assert_eq!(requirements[1].key(), "helper:bpf_user_ringbuf_drain");
+    assert_eq!(requirements[1].helper(), BpfHelper::TracePrintk);
+    assert_eq!(requirements[1].key(), "helper:bpf_trace_printk");
+    assert_eq!(requirements[2].helper(), BpfHelper::UserRingbufDrain);
+    assert_eq!(requirements[2].key(), "helper:bpf_user_ringbuf_drain");
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
     assert_eq!(
         program

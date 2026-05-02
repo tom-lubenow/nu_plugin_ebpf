@@ -190,9 +190,9 @@ parsed-target level. Live-attach rejection messages include these feature
 requirements, for example base program families, kernel BTF, BPF trampolines,
 TCX, netfilter links, route LWT, struct_ops, sched_ext, XDP multi-buffer
 sections, cgroup v2, cgroup program families, and cgroup UNIX socket-address
-hooks. Live-load preflight also reports source-verified map-kind, helper, and
-source-preserved known-kfunc requirements from the compiled object. These
-labels describe feature surfaces.
+hooks. Live-load preflight also reports source-verified map-kind, modeled
+helper, and source-preserved known-kfunc requirements from the compiled object.
+These labels describe feature surfaces.
 `ebpf spec` reports each requirement with a feature category, a default test
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel/source fields. Source-verified requirements carry minimum

@@ -606,7 +606,7 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
         (
             BpfHelper::SkbAdjustRoom,
             "helper:bpf_skb_adjust_room",
-            "4.14",
+            "4.13",
         ),
         (BpfHelper::RedirectMap, "helper:bpf_redirect_map", "4.14"),
         (
@@ -671,6 +671,7 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "5.16",
         ),
         (BpfHelper::BpfLoop, "helper:bpf_loop", "5.17"),
+        (BpfHelper::SetRetval, "helper:bpf_set_retval", "5.18"),
         (BpfHelper::KptrXchg, "helper:bpf_kptr_xchg", "5.19"),
         (
             BpfHelper::RingbufReserveDynptr,
@@ -678,9 +679,19 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "5.19",
         ),
         (
+            BpfHelper::TcpRawGenSyncookieIpv4,
+            "helper:bpf_tcp_raw_gen_syncookie_ipv4",
+            "6.0",
+        ),
+        (
             BpfHelper::UserRingbufDrain,
             "helper:bpf_user_ringbuf_drain",
             "6.1",
+        ),
+        (
+            BpfHelper::CgrpStorageGet,
+            "helper:bpf_cgrp_storage_get",
+            "6.2",
         ),
     ];
 
@@ -707,7 +718,20 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
         );
     }
 
-    assert_eq!(BpfHelper::TracePrintk.compatibility_requirement(), None);
+    let mut modeled_helper_count = 0;
+    for helper_id in 1..=211 {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            continue;
+        };
+        modeled_helper_count += 1;
+        assert!(
+            helper.compatibility_requirement().is_some(),
+            "modeled helper {} should have source-backed kernel metadata",
+            helper.name()
+        );
+    }
+    assert_eq!(modeled_helper_count, 211);
+
     let requirements = [
         BpfHelper::MapLookupElem
             .compatibility_requirement()
