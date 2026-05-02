@@ -262,6 +262,11 @@ const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE = {
     min_kernel: "6.3"
     source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_create/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE = {
+    key: "kfunc:bpf_cpumask_acquire"
+    min_kernel: "6.3"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_acquire/"
+}
 const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE = {
     key: "kfunc:bpf_cpumask_release"
     min_kernel: "6.3"
@@ -2254,6 +2259,58 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cpumask-acquire-release"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    let owned = (kfunc-call "bpf_cpumask_acquire" $mask)'
+            '    if $owned {'
+            '      $owned | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
+        ]
+    }
+    {
+        name: "source-kfunc-cpumask-acquire-rejects-owned-leak"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    let owned = (kfunc-call "bpf_cpumask_acquire" $mask)'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
+        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
