@@ -247,6 +247,16 @@ const KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE = {
     min_kernel: "6.2"
     source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_release/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE = {
+    key: "kfunc:bpf_get_task_exe_file"
+    min_kernel: "6.12"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_get_task_exe_file/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_PUT_FILE = {
+    key: "kfunc:bpf_put_file"
+    min_kernel: "6.12"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_put_file/"
+}
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
     min_kernel: "6.1"
@@ -2071,6 +2081,45 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-file-ref-release"
+        category: "helper-state"
+        tags: [kfunc file ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let file = (kfunc-call "bpf_get_task_exe_file" $ctx.current_task)'
+            '  if $file {'
+            '    $file | kfunc-call "bpf_put_file"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE
+            $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE
+        ]
+    }
+    {
+        name: "source-kfunc-file-ref-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc file ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let file = (kfunc-call "bpf_get_task_exe_file" $ctx.current_task)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-kfunc-cgroup-acquire-release"
         category: "helper-state"
         tags: [kfunc cgroup ref-lifetime source accept]
@@ -2220,6 +2269,71 @@ const FIXTURES = [
             $KERNEL_FEATURE_BPF_KPTR_XCHG
             $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
             $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
+        ]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kptr-xchg-file-ref-transfer"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr file ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  map-define file_slots --kind array --key-type u32 --value-type "record{file:kptr:file,cookie:u64}" --max-entries 1'
+            '  let file = (kfunc-call "bpf_get_task_exe_file" $ctx.current_task)'
+            '  if $file {'
+            '    let entry = (0 | map-get file_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.file $file)'
+            '      if $old {'
+            '        $old | kfunc-call "bpf_put_file"'
+            '      }'
+            '    } else {'
+            '      $file | kfunc-call "bpf_put_file"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE
+            $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE
+        ]
+    }
+    {
+        name: "source-kptr-xchg-file-rejects-old-ref-leak"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr file ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  map-define file_slots --kind array --key-type u32 --value-type "record{file:kptr:file,cookie:u64}" --max-entries 1'
+            '  let file = (kfunc-call "bpf_get_task_exe_file" $ctx.current_task)'
+            '  if $file {'
+            '    let entry = (0 | map-get file_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.file $file)'
+            '      0'
+            '    } else {'
+            '      $file | kfunc-call "bpf_put_file"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE
+            $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE
         ]
         error_contains: "unreleased kfunc reference at function exit"
     }
