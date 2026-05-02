@@ -26,6 +26,8 @@ const LINUX_CPUMASK_C_V6_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c";
 const LINUX_HELPERS_C_V6_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/helpers.c";
+const LINUX_BPF_CRYPTO_C_V6_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/crypto.c";
 const LINUX_HELPERS_C_V6_11_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c";
 const LINUX_HELPERS_C_V6_12_SOURCE: &str =
@@ -158,6 +160,11 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_cgroup_release" => "bpf_cgroup_release",
         "bpf_get_task_exe_file" => "bpf_get_task_exe_file",
         "bpf_put_file" => "bpf_put_file",
+        "bpf_crypto_ctx_acquire" => "bpf_crypto_ctx_acquire",
+        "bpf_crypto_ctx_create" => "bpf_crypto_ctx_create",
+        "bpf_crypto_ctx_release" => "bpf_crypto_ctx_release",
+        "bpf_crypto_decrypt" => "bpf_crypto_decrypt",
+        "bpf_crypto_encrypt" => "bpf_crypto_encrypt",
         "bpf_cpumask_create" => "bpf_cpumask_create",
         "bpf_cpumask_acquire" => "bpf_cpumask_acquire",
         "bpf_cpumask_release" => "bpf_cpumask_release",
@@ -312,7 +319,13 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_throw" => "6.7",
         "bpf_task_get_cgroup1" => "6.8",
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => "6.8",
-        "bpf_preempt_disable" | "bpf_preempt_enable" => "6.10",
+        "bpf_preempt_disable"
+        | "bpf_preempt_enable"
+        | "bpf_crypto_ctx_acquire"
+        | "bpf_crypto_ctx_create"
+        | "bpf_crypto_ctx_release"
+        | "bpf_crypto_decrypt"
+        | "bpf_crypto_encrypt" => "6.10",
         "bpf_iter_bits_destroy" | "bpf_iter_bits_new" | "bpf_iter_bits_next" => "6.11",
         "bpf_copy_from_user_str" => "6.12",
         "bpf_get_task_exe_file" | "bpf_put_file" => "6.12",
@@ -414,6 +427,11 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         "bpf_task_get_cgroup1" => LINUX_HELPERS_C_V6_8_SOURCE,
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => LINUX_CPUMASK_C_V6_8_SOURCE,
         "bpf_preempt_disable" | "bpf_preempt_enable" => LINUX_HELPERS_C_V6_10_SOURCE,
+        "bpf_crypto_ctx_acquire"
+        | "bpf_crypto_ctx_create"
+        | "bpf_crypto_ctx_release"
+        | "bpf_crypto_decrypt"
+        | "bpf_crypto_encrypt" => LINUX_BPF_CRYPTO_C_V6_10_SOURCE,
         "bpf_iter_bits_destroy" | "bpf_iter_bits_new" | "bpf_iter_bits_next" => {
             LINUX_HELPERS_C_V6_11_SOURCE
         }

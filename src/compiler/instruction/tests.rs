@@ -4125,6 +4125,12 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/bpf/helpers.c",
         ),
         (
+            "bpf_crypto_ctx_create",
+            "kfunc:bpf_crypto_ctx_create",
+            "6.10",
+            "/kernel/bpf/crypto.c",
+        ),
+        (
             "bpf_iter_bits_new",
             "kfunc:bpf_iter_bits_new",
             "6.11",
