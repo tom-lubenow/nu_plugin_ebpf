@@ -105,11 +105,16 @@ fn kfunc_compatibility_requirements_detail(
         let descriptions = requirements
             .iter()
             .map(|requirement| {
-                format!(
-                    "{} kfunc support (kernel>={})",
+                let mut detail = format!(
+                    "{} kfunc support (kernel>={}",
                     requirement.name(),
                     requirement.minimum_kernel()
-                )
+                );
+                if let Some(maximum) = requirement.maximum_kernel_exclusive() {
+                    detail.push_str(&format!(", kernel<{maximum}"));
+                }
+                detail.push(')');
+                detail
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -188,15 +193,22 @@ pub(super) fn kernel_kfunc_minimum_requirement_detail(
 ) -> Option<String> {
     let minimum =
         crate::compiler::KfuncCompatibilityRequirement::effective_minimum_kernel(requirements)?;
-    if crate::compiler::KfuncCompatibilityRequirement::kernel_version_at_least(
+    if !crate::compiler::KfuncCompatibilityRequirement::kernel_version_at_least(
         current_kernel,
         minimum,
     ) {
-        return None;
+        return Some(format!(
+            "compiled kfuncs require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+            kfunc_compatibility_requirements_detail(requirements)
+        ));
     }
 
+    let unsupported = requirements
+        .iter()
+        .find(|requirement| !requirement.supports_kernel(current_kernel))?;
+    let unavailable_from = unsupported.maximum_kernel_exclusive()?;
     Some(format!(
-        "compiled kfuncs require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled kfuncs include kfuncs unavailable on kernel>={unavailable_from}; current kernel is {current_kernel}{}; use --dry-run to compile or use a compatible kernel",
         kfunc_compatibility_requirements_detail(requirements)
     ))
 }

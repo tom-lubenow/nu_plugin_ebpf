@@ -89,6 +89,10 @@ impl KfuncCompatibilityRequirement {
             .expect("kfunc requirement is constructed only for versioned kfuncs")
     }
 
+    pub fn maximum_kernel_exclusive(self) -> Option<&'static str> {
+        kfunc_maximum_kernel_exclusive(self.name)
+    }
+
     pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
         let mut minimum = None;
         for requirement in requirements {
@@ -106,6 +110,18 @@ impl KfuncCompatibilityRequirement {
 
     pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
         !Self::kernel_version_cmp(current, minimum).is_lt()
+    }
+
+    pub fn kernel_version_before(current: &str, maximum_exclusive: &str) -> bool {
+        Self::kernel_version_cmp(current, maximum_exclusive).is_lt()
+    }
+
+    pub fn supports_kernel(self, current: &str) -> bool {
+        Self::kernel_version_at_least(current, self.minimum_kernel())
+            && match self.maximum_kernel_exclusive() {
+                Some(maximum) => Self::kernel_version_before(current, maximum),
+                None => true,
+            }
     }
 
     fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
@@ -274,14 +290,18 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "scx_bpf_error_bstr" => "scx_bpf_error_bstr",
         "scx_bpf_events" => "scx_bpf_events",
         "scx_bpf_exit_bstr" => "scx_bpf_exit_bstr",
+        "scx_bpf_get_idle_cpumask" => "scx_bpf_get_idle_cpumask",
+        "scx_bpf_get_idle_smtmask" => "scx_bpf_get_idle_smtmask",
         "scx_bpf_get_online_cpumask" => "scx_bpf_get_online_cpumask",
         "scx_bpf_get_possible_cpumask" => "scx_bpf_get_possible_cpumask",
         "scx_bpf_kick_cpu" => "scx_bpf_kick_cpu",
         "scx_bpf_now" => "scx_bpf_now",
         "scx_bpf_nr_cpu_ids" => "scx_bpf_nr_cpu_ids",
         "scx_bpf_nr_node_ids" => "scx_bpf_nr_node_ids",
+        "scx_bpf_pick_any_cpu" => "scx_bpf_pick_any_cpu",
         "scx_bpf_pick_idle_cpu" => "scx_bpf_pick_idle_cpu",
         "scx_bpf_put_cpumask" => "scx_bpf_put_cpumask",
+        "scx_bpf_put_idle_cpumask" => "scx_bpf_put_idle_cpumask",
         "scx_bpf_reenqueue_local" => "scx_bpf_reenqueue_local",
         "scx_bpf_select_cpu_and" => "scx_bpf_select_cpu_and",
         "scx_bpf_select_cpu_dfl" => "scx_bpf_select_cpu_dfl",
@@ -391,12 +411,16 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "scx_bpf_dump_bstr"
         | "scx_bpf_error_bstr"
         | "scx_bpf_exit_bstr"
+        | "scx_bpf_get_idle_cpumask"
+        | "scx_bpf_get_idle_smtmask"
         | "scx_bpf_get_online_cpumask"
         | "scx_bpf_get_possible_cpumask"
         | "scx_bpf_kick_cpu"
         | "scx_bpf_nr_cpu_ids"
+        | "scx_bpf_pick_any_cpu"
         | "scx_bpf_pick_idle_cpu"
         | "scx_bpf_put_cpumask"
+        | "scx_bpf_put_idle_cpumask"
         | "scx_bpf_reenqueue_local"
         | "scx_bpf_select_cpu_dfl"
         | "scx_bpf_task_cgroup"
@@ -433,6 +457,16 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_rbtree_root"
         | "scx_bpf_select_cpu_and" => "6.16",
         "bpf_dynptr_memset" => "6.17",
+        _ => return None,
+    })
+}
+
+fn kfunc_maximum_kernel_exclusive(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "scx_bpf_get_idle_cpumask"
+        | "scx_bpf_get_idle_smtmask"
+        | "scx_bpf_pick_any_cpu"
+        | "scx_bpf_put_idle_cpumask" => "6.15",
         _ => return None,
     })
 }
@@ -537,12 +571,16 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "scx_bpf_dump_bstr"
         | "scx_bpf_error_bstr"
         | "scx_bpf_exit_bstr"
+        | "scx_bpf_get_idle_cpumask"
+        | "scx_bpf_get_idle_smtmask"
         | "scx_bpf_get_online_cpumask"
         | "scx_bpf_get_possible_cpumask"
         | "scx_bpf_kick_cpu"
         | "scx_bpf_nr_cpu_ids"
+        | "scx_bpf_pick_any_cpu"
         | "scx_bpf_pick_idle_cpu"
         | "scx_bpf_put_cpumask"
+        | "scx_bpf_put_idle_cpumask"
         | "scx_bpf_reenqueue_local"
         | "scx_bpf_select_cpu_dfl"
         | "scx_bpf_task_cgroup"

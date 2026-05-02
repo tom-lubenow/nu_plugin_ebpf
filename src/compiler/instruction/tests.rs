@@ -4155,6 +4155,12 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/sched/ext.c",
         ),
         (
+            "scx_bpf_get_idle_cpumask",
+            "kfunc:scx_bpf_get_idle_cpumask",
+            "6.12",
+            "/kernel/sched/ext.c",
+        ),
+        (
             "scx_bpf_dsq_insert",
             "kfunc:scx_bpf_dsq_insert",
             "6.13",
@@ -4232,6 +4238,15 @@ fn test_kfunc_kernel_compatibility_metadata() {
             .map(KfuncCompatibilityRequirement::minimum_kernel),
         Some("6.5")
     );
+    let removed_scx_requirement =
+        KfuncCompatibilityRequirement::for_name("scx_bpf_get_idle_cpumask")
+            .expect("source-checked removed scx kfunc should be versioned");
+    assert_eq!(
+        removed_scx_requirement.maximum_kernel_exclusive(),
+        Some("6.15")
+    );
+    assert!(removed_scx_requirement.supports_kernel("6.14.9"));
+    assert!(!removed_scx_requirement.supports_kernel("6.15.0"));
 
     let requirements = [
         KfuncCompatibilityRequirement::for_name("bpf_task_acquire")

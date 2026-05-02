@@ -1794,6 +1794,22 @@ fn test_kernel_kfunc_minimum_requirement_detail_accepts_newer_kernel() {
 }
 
 #[test]
+fn test_kernel_kfunc_minimum_requirement_detail_reports_too_new_kernel() {
+    let requirements = [
+        KfuncCompatibilityRequirement::for_name("scx_bpf_get_idle_cpumask")
+            .expect("removed scx kfunc should have bounded compatibility metadata"),
+    ];
+    let msg = kernel_kfunc_minimum_requirement_detail(&requirements, "6.15.0-test")
+        .expect("kernel 6.15 should be too new for scx_bpf_get_idle_cpumask");
+
+    assert!(msg.contains("compiled kfuncs include kfuncs unavailable on kernel>=6.15"));
+    assert!(msg.contains("current kernel is 6.15.0-test"));
+    assert!(msg.contains("scx_bpf_get_idle_cpumask kfunc support"));
+    assert!(msg.contains("kernel>=6.12, kernel<6.15"));
+    assert!(kernel_kfunc_minimum_requirement_detail(&requirements, "6.14.9").is_none());
+}
+
+#[test]
 fn test_structured_event_string_respects_field_size() {
     let schema = EventSchema {
         fields: vec![
