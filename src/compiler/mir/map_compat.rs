@@ -53,6 +53,8 @@ const LINUX_BPF_H_V6_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.9/include/uapi/linux/bpf.h";
+const LINUX_BTF_C_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/btf.c";
 const LINUX_BPF_VERIFIER_C_V5_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/verifier.c";
 const LINUX_INTERNAL_BPF_H_V6_10_SOURCE: &str =
@@ -143,6 +145,7 @@ pub enum MapValueCompatibilityRequirement {
     BpfTimer,
     BpfKptr,
     BpfWorkqueue,
+    BpfRefcount,
 }
 
 impl MapValueCompatibilityRequirement {
@@ -152,6 +155,7 @@ impl MapValueCompatibilityRequirement {
             Self::BpfTimer => "map-value:bpf_timer",
             Self::BpfKptr => "map-value:kptr",
             Self::BpfWorkqueue => "map-value:bpf_wq",
+            Self::BpfRefcount => "map-value:bpf_refcount",
         }
     }
 
@@ -165,6 +169,7 @@ impl MapValueCompatibilityRequirement {
             Self::BpfTimer => "BPF map-value timer field support",
             Self::BpfKptr => "BPF map-value kptr field support",
             Self::BpfWorkqueue => "BPF map-value workqueue field support",
+            Self::BpfRefcount => "BPF map-value refcount field support",
         }
     }
 
@@ -174,6 +179,7 @@ impl MapValueCompatibilityRequirement {
             Self::BpfTimer => "5.15",
             Self::BpfKptr => "5.19",
             Self::BpfWorkqueue => "6.10",
+            Self::BpfRefcount => "6.4",
         }
     }
 
@@ -183,6 +189,7 @@ impl MapValueCompatibilityRequirement {
             Self::BpfTimer => LINUX_BPF_H_V5_15_SOURCE,
             Self::BpfKptr => LINUX_BPF_VERIFIER_C_V5_19_SOURCE,
             Self::BpfWorkqueue => LINUX_INTERNAL_BPF_H_V6_10_SOURCE,
+            Self::BpfRefcount => LINUX_BTF_C_V6_4_SOURCE,
         }
     }
 

@@ -658,6 +658,7 @@ impl<'a> HirToMirLowering<'a> {
             timers: &mut Vec<ManagedField>,
             spin_locks: &mut Vec<ManagedField>,
             wqs: &mut Vec<ManagedField>,
+            refcounts: &mut Vec<ManagedField>,
             kptrs: &mut Vec<ManagedField>,
         ) {
             if ty.is_bpf_timer_struct() {
@@ -684,6 +685,17 @@ impl<'a> HirToMirLowering<'a> {
             }
             if ty.is_bpf_wq_struct() {
                 wqs.push(ManagedField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    pointee_name: None,
+                });
+                return;
+            }
+            if ty.is_bpf_refcount_struct() {
+                refcounts.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -723,6 +735,7 @@ impl<'a> HirToMirLowering<'a> {
                             timers,
                             spin_locks,
                             wqs,
+                            refcounts,
                             kptrs,
                         );
                     }
@@ -738,6 +751,7 @@ impl<'a> HirToMirLowering<'a> {
                         timers,
                         spin_locks,
                         wqs,
+                        refcounts,
                         kptrs,
                     );
                 }
@@ -752,6 +766,7 @@ impl<'a> HirToMirLowering<'a> {
         let mut timers = Vec::new();
         let mut spin_locks = Vec::new();
         let mut wqs = Vec::new();
+        let mut refcounts = Vec::new();
         let mut kptrs = Vec::new();
         collect_managed_fields(
             ty,
@@ -763,6 +778,7 @@ impl<'a> HirToMirLowering<'a> {
             &mut timers,
             &mut spin_locks,
             &mut wqs,
+            &mut refcounts,
             &mut kptrs,
         );
 
@@ -898,6 +914,47 @@ impl<'a> HirToMirLowering<'a> {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{context} for '{}' has bpf_wq at byte offset {}, but bpf_wq must be 8-byte aligned",
                     map.name, wq.offset
+                )));
+            }
+        }
+
+        let refcount_count = total_occurrences(&refcounts);
+        if refcount_count > 0 {
+            if !matches!(map.kind, MapKind::Hash | MapKind::Array | MapKind::LruHash) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' contains bpf_refcount, which is currently supported for hash, array, and lru-hash maps",
+                    map.name
+                )));
+            }
+            let refcount = &refcounts[0];
+            if refcount.depth == 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must wrap bpf_refcount in a map-value record field",
+                    map.name
+                )));
+            }
+            if let Some(refcount) = refcounts.iter().find(|refcount| refcount.in_array) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_refcount at '{}', but arrays of verifier-managed bpf_refcount fields are not supported",
+                    map.name, refcount.path
+                )));
+            }
+            if refcount_count != 1 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must contain exactly one bpf_refcount field, got {}",
+                    map.name, refcount_count
+                )));
+            }
+            if refcount.depth != 1 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_refcount at '{}', but bpf_refcount must be a top-level map-value record field",
+                    map.name, refcount.path
+                )));
+            }
+            if refcount.offset % 4 != 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_refcount at byte offset {}, but bpf_refcount must be 4-byte aligned",
+                    map.name, refcount.offset
                 )));
             }
         }

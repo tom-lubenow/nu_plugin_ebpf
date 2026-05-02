@@ -130,6 +130,8 @@ fn collect_map_value_compatibility_requirements_for_type(
         Some(MapValueCompatibilityRequirement::BpfKptr)
     } else if ty.is_bpf_wq_struct() {
         Some(MapValueCompatibilityRequirement::BpfWorkqueue)
+    } else if ty.is_bpf_refcount_struct() {
+        Some(MapValueCompatibilityRequirement::BpfRefcount)
     } else {
         None
     };

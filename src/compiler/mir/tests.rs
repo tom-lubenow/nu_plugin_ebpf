@@ -259,6 +259,13 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
             "6.10",
             "/v6.10/include/linux/bpf.h",
         ),
+        (
+            MapValueCompatibilityRequirement::BpfRefcount,
+            "map-value:bpf_refcount",
+            "BPF map-value refcount field support",
+            "6.4",
+            "/v6.4/kernel/bpf/btf.c",
+        ),
     ];
     for (requirement, key, description, minimum, source_suffix) in expected {
         assert_eq!(requirement.key(), key);
@@ -272,6 +279,7 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
         MapValueCompatibilityRequirement::BpfSpinLock,
         MapValueCompatibilityRequirement::BpfTimer,
         MapValueCompatibilityRequirement::BpfKptr,
+        MapValueCompatibilityRequirement::BpfRefcount,
         MapValueCompatibilityRequirement::BpfWorkqueue,
     ];
     assert_eq!(

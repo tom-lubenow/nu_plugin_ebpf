@@ -817,6 +817,11 @@ const KERNEL_FEATURE_MAP_VALUE_BPF_WQ = {
     min_kernel: "6.10"
     source: "https://github.com/torvalds/linux/blob/v6.10/include/linux/bpf.h"
 }
+const KERNEL_FEATURE_MAP_VALUE_BPF_REFCOUNT = {
+    key: "map-value:bpf_refcount"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/btf.c"
+}
 const KERNEL_FEATURE_BPF_KPTR_XCHG = {
     key: "helper:bpf_kptr_xchg"
     min_kernel: "5.19"
@@ -1940,6 +1945,7 @@ const MAP_VALUE_KERNEL_FEATURES = [
     { token: "bpf_timer", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_TIMER }
     { token: "kptr:", feature: $KERNEL_FEATURE_MAP_VALUE_KPTR }
     { token: "bpf_wq", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_WQ }
+    { token: "bpf_refcount", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_REFCOUNT }
 ]
 
 const HELPER_KERNEL_FEATURES = [
@@ -4115,6 +4121,50 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "arrays of verifier-managed bpf_wq"
+    }
+    {
+        name: "map-define-bpf-refcount-slot"
+        category: "maps"
+        tags: [maps map-define bpf_refcount accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define refcounted_items --kind array --value-type "record{refs:bpf_refcount,cookie:u64}" --max-entries 1'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "map-define-bpf-refcount-rejects-queue"
+        category: "maps"
+        tags: [maps map-define bpf_refcount reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define refcounted_items --kind queue --value-type "record{refs:bpf_refcount,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "contains bpf_refcount, which is currently supported for hash, array, and lru-hash maps"
+    }
+    {
+        name: "map-define-bpf-refcount-rejects-array-field"
+        category: "maps"
+        tags: [maps map-define bpf_refcount reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define refcounted_items --kind array --value-type "record{refs:array{bpf_refcount:2},cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arrays of verifier-managed bpf_refcount"
     }
     {
         name: "timer-map-define-lowers-init-start-cancel"

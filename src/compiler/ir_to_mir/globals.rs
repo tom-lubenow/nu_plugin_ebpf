@@ -52,6 +52,7 @@ enum NamedGlobalTypeShape {
     BpfTimer,
     BpfSpinLock,
     BpfWq,
+    BpfRefcount,
     BpfKptr {
         pointee_name: String,
     },
@@ -213,6 +214,7 @@ impl ParsedNamedGlobalType {
                     | NamedGlobalTypeShape::BpfTimer
                     | NamedGlobalTypeShape::BpfSpinLock
                     | NamedGlobalTypeShape::BpfWq
+                    | NamedGlobalTypeShape::BpfRefcount
                     | NamedGlobalTypeShape::FixedArray { .. }
                     | NamedGlobalTypeShape::Record(_)
             )
@@ -279,6 +281,17 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape: NamedGlobalTypeShape::BpfWq,
+            });
+        }
+
+        if context == NamedTypeSpecContext::MapValue && spec == "bpf_refcount" {
+            return Ok(Self {
+                ty: MirType::bpf_refcount_struct(),
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::BpfRefcount,
             });
         }
 
@@ -566,7 +579,7 @@ impl ParsedNamedGlobalType {
             NamedTypeSpecContext::MapValue => "map value",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
-            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, and kptr:TYPE"
+            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, and kptr:TYPE"
         } else {
             ""
         };
@@ -804,6 +817,12 @@ impl ParsedNamedGlobalType {
                 "global type spec '{}' cannot initialize verifier-managed bpf_wq objects",
                 spec
             ))),
+            NamedGlobalTypeShape::BpfRefcount => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "global type spec '{}' cannot initialize verifier-managed bpf_refcount objects",
+                    spec
+                )))
+            }
             NamedGlobalTypeShape::BpfKptr { pointee_name } => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "global type spec '{}' cannot initialize verifier-managed kptr slots for {}",

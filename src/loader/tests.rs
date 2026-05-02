@@ -1774,17 +1774,19 @@ fn test_kernel_map_value_minimum_requirement_detail_reports_too_old_kernel() {
     let requirements = [
         MapValueCompatibilityRequirement::BpfSpinLock,
         MapValueCompatibilityRequirement::BpfTimer,
+        MapValueCompatibilityRequirement::BpfRefcount,
         MapValueCompatibilityRequirement::BpfKptr,
     ];
-    let msg = kernel_map_value_minimum_requirement_detail(&requirements, "5.18.12-test")
-        .expect("kernel 5.18 should be too old for kptr map-value fields");
+    let msg = kernel_map_value_minimum_requirement_detail(&requirements, "6.3.12-test")
+        .expect("kernel 6.3 should be too old for refcount map-value fields");
 
-    assert!(msg.contains("compiled map-value fields require kernel>=5.19"));
-    assert!(msg.contains("current kernel is 5.18.12-test"));
+    assert!(msg.contains("compiled map-value fields require kernel>=6.4"));
+    assert!(msg.contains("current kernel is 6.3.12-test"));
     assert!(msg.contains("BPF map-value spin lock field support"));
     assert!(msg.contains("BPF map-value timer field support"));
+    assert!(msg.contains("BPF map-value refcount field support"));
     assert!(msg.contains("BPF map-value kptr field support"));
-    assert!(msg.contains("kernel>=5.19"));
+    assert!(msg.contains("kernel>=6.4"));
 }
 
 #[test]
@@ -1793,6 +1795,7 @@ fn test_kernel_map_value_minimum_requirement_detail_accepts_newer_kernel() {
         MapValueCompatibilityRequirement::BpfSpinLock,
         MapValueCompatibilityRequirement::BpfTimer,
         MapValueCompatibilityRequirement::BpfKptr,
+        MapValueCompatibilityRequirement::BpfRefcount,
         MapValueCompatibilityRequirement::BpfWorkqueue,
     ];
     assert!(kernel_map_value_minimum_requirement_detail(&requirements, "6.10.0").is_none());

@@ -5103,6 +5103,73 @@ fn test_elf_map_btf_emits_bpf_wq_value_type() {
 }
 
 #[test]
+fn test_elf_map_btf_emits_bpf_refcount_value_type() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let map_ref = MapRef {
+        name: "refcounted_items".to_string(),
+        kind: MapKind::Array,
+    };
+    let value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "refs".to_string(),
+                ty: MirType::bpf_refcount_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "typed_map",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![EbpfMap {
+            name: "refcounted_items".to_string(),
+            def: BpfMapDef::array(value_ty.size() as u32, 16),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(map_ref, value_ty)]),
+        HashMap::new(),
+    );
+
+    let elf = program.to_elf().expect("typed map ELF should emit");
+    let aya = AyaObject::parse(&elf).expect("Aya should parse bpf_refcount typed map BTF");
+    assert!(aya.maps.get("refcounted_items").is_some());
+
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    let btf = Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+
+    assert!(
+        btf.id_by_type_name_kind("bpf_refcount", BtfKind::Struct)
+            .is_ok()
+    );
+}
+
+#[test]
 fn test_struct_ops_object_emits_btf_without_generic_maps() {
     let object = EbpfObject::struct_ops("demo", "fake_ops", vec![0; 32])
         .with_callback_slot("select_cpu", 8)
@@ -9972,6 +10039,13 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
                 synthetic: false,
                 bitfield: None,
             },
+            StructField {
+                name: "refs".to_string(),
+                ty: MirType::bpf_refcount_struct(),
+                offset: 48,
+                synthetic: false,
+                bitfield: None,
+            },
         ],
     };
     let program = EbpfProgram::with_maps(
@@ -10000,12 +10074,14 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
             MapValueCompatibilityRequirement::BpfTimer,
             MapValueCompatibilityRequirement::BpfKptr,
             MapValueCompatibilityRequirement::BpfWorkqueue,
+            MapValueCompatibilityRequirement::BpfRefcount,
         ]
     );
     assert_eq!(requirements[0].key(), "map-value:bpf_spin_lock");
     assert_eq!(requirements[1].key(), "map-value:bpf_timer");
     assert_eq!(requirements[2].key(), "map-value:kptr");
     assert_eq!(requirements[3].key(), "map-value:bpf_wq");
+    assert_eq!(requirements[4].key(), "map-value:bpf_refcount");
     assert_eq!(
         program.map_value_compatibility_minimum_kernel(),
         Some("6.10")

@@ -620,6 +620,10 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_wq", 16)
     }
 
+    pub fn bpf_refcount_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_refcount", 4)
+    }
+
     pub fn bpf_kptr_slot_struct(pointee_name: &str) -> Self {
         Self::opaque_named_struct_with_size(
             &format!("{BPF_KPTR_SLOT_STRUCT_PREFIX}{pointee_name}"),
@@ -637,6 +641,10 @@ impl MirType {
 
     pub fn is_bpf_wq_struct(&self) -> bool {
         self.has_struct_name(&["bpf_wq"])
+    }
+
+    pub fn is_bpf_refcount_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_refcount"])
     }
 
     pub fn bpf_kptr_pointee_name(&self) -> Option<&str> {
@@ -813,6 +821,17 @@ impl MirType {
         pointee.has_struct_name(&["bpf_wq"]) || pointee.has_zero_offset_bpf_wq_field()
     }
 
+    pub fn is_bpf_refcount_map_ptr(&self) -> bool {
+        let MirType::Ptr {
+            address_space: AddressSpace::Map,
+            pointee,
+        } = self
+        else {
+            return false;
+        };
+        pointee.has_struct_name(&["bpf_refcount"]) || pointee.has_zero_offset_bpf_refcount_field()
+    }
+
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
         let MirType::Ptr {
             address_space: AddressSpace::Kernel,
@@ -862,6 +881,15 @@ impl MirType {
         fields
             .iter()
             .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_wq"]))
+    }
+
+    fn has_zero_offset_bpf_refcount_field(&self) -> bool {
+        let MirType::Struct { fields, .. } = self else {
+            return false;
+        };
+        fields
+            .iter()
+            .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_refcount"]))
     }
 
     fn is_socket_cookie_socket_pointee(&self) -> bool {
@@ -916,6 +944,9 @@ impl MirType {
         }
         if self.is_bpf_wq_struct() {
             return 8;
+        }
+        if self.is_bpf_refcount_struct() {
+            return 4;
         }
         if self.is_bpf_kptr_slot_struct() {
             return 8;

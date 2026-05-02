@@ -3094,6 +3094,40 @@ fn test_map_value_type_spec_supports_bpf_wq() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_bpf_refcount() {
+    let (ty, semantics) =
+        HirToMirLowering::parse_named_map_value_type_spec("record{refs:bpf_refcount,counter:u64}")
+            .expect("bpf_refcount map value type should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let user_fields = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_fields.len(), 2);
+    assert_eq!(user_fields[0].name, "refs");
+    assert_eq!(user_fields[0].ty, MirType::bpf_refcount_struct());
+    assert_eq!(user_fields[0].offset, 0);
+    assert_eq!(user_fields[1].name, "counter");
+    assert_eq!(user_fields[1].ty, MirType::U64);
+    assert_eq!(user_fields[1].offset, 8);
+    assert_eq!(
+        fields.iter().map(|field| field.ty.size()).sum::<usize>(),
+        16
+    );
+    assert_eq!(
+        fields
+            .iter()
+            .find(|field| field.synthetic && field.offset == 4)
+            .map(|field| field.ty.size()),
+        Some(4)
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_supports_kptr_slot() {
     let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
         "record{task:kptr:task_struct,cookie:u64}",
@@ -3145,6 +3179,8 @@ fn test_map_value_type_validation_accepts_managed_fields() {
     .expect("aligned kptr slot in array map should validate");
     validate_map_value_type_spec_for_kind("record{work:bpf_wq,cookie:u64}", MapKind::LruHash)
         .expect("aligned bpf_wq in lru hash map should validate");
+    validate_map_value_type_spec_for_kind("record{refs:bpf_refcount,cookie:u64}", MapKind::LruHash)
+        .expect("aligned bpf_refcount in lru hash map should validate");
 }
 
 #[test]
@@ -3254,6 +3290,45 @@ fn test_map_value_type_validation_rejects_wq_on_queue() {
         err.to_string()
             .contains("only supported for hash, array, and lru-hash")
     );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_refcount_array() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{refs:array{bpf_refcount:2},counter:u64}",
+        MapKind::Hash,
+    )
+    .expect_err("arrays of bpf_refcount should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("arrays of verifier-managed bpf_refcount")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_refcount_on_queue() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{refs:bpf_refcount,cookie:u64}",
+        MapKind::Queue,
+    )
+    .expect_err("bpf_refcount on queue should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("currently supported for hash, array, and lru-hash")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_nested_refcount() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{nested:record{refs:bpf_refcount},cookie:u64}",
+        MapKind::Hash,
+    )
+    .expect_err("nested bpf_refcount should be rejected");
+
+    assert!(err.to_string().contains("top-level map-value record field"));
 }
 
 #[test]
