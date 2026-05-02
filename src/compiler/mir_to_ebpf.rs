@@ -86,6 +86,8 @@ pub struct MirCompileResult {
     pub relocations: Vec<SymbolRelocation>,
     /// Subfunction symbols for BPF-to-BPF relocation
     pub subfunction_symbols: Vec<SubfunctionSymbol>,
+    /// Context fields referenced by this compiled program
+    pub used_ctx_fields: HashSet<CtxField>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
@@ -117,6 +119,7 @@ impl MirCompileResult {
             bss_globals,
             relocations,
             subfunction_symbols,
+            used_ctx_fields,
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types,
@@ -137,6 +140,7 @@ impl MirCompileResult {
             generic_map_value_types,
             generic_map_value_semantics,
         )
+        .with_used_context_fields(used_ctx_fields)
         .with_generic_map_key_types(generic_map_key_types)
         .with_generic_map_max_entries(generic_map_max_entries)
         .with_readonly_globals(readonly_globals)
@@ -167,6 +171,41 @@ impl MirCompileResult {
             ),
         }
     }
+}
+
+fn collect_used_context_fields_from_inst(inst: &LirInst, fields: &mut HashSet<CtxField>) {
+    match inst {
+        LirInst::LoadCtxField { field, .. } => {
+            fields.insert(field.clone());
+        }
+        LirInst::StoreCtxField { target, .. } => {
+            if let Some(field) = target.ctx_field() {
+                fields.insert(field);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_used_context_fields_from_function(
+    function: &LirFunction,
+    fields: &mut HashSet<CtxField>,
+) {
+    for block in &function.blocks {
+        for inst in &block.instructions {
+            collect_used_context_fields_from_inst(inst, fields);
+        }
+        collect_used_context_fields_from_inst(&block.terminator, fields);
+    }
+}
+
+fn collect_used_context_fields(lir: &LirProgram) -> HashSet<CtxField> {
+    let mut fields = HashSet::new();
+    collect_used_context_fields_from_function(&lir.main, &mut fields);
+    for subfunction in &lir.subfunctions {
+        collect_used_context_fields_from_function(subfunction, &mut fields);
+    }
+    fields
 }
 
 #[derive(Debug, Clone, Default)]
@@ -501,6 +540,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             bss_globals: Vec::new(),
             relocations: self.relocations,
             subfunction_symbols,
+            used_ctx_fields: collect_used_context_fields(self.lir),
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,

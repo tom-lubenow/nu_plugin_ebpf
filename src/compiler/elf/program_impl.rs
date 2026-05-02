@@ -123,6 +123,20 @@ fn kfunc_compatibility_requirements_for_programs(
     kfunc_compatibility_requirements_for_names(&used_kfuncs)
 }
 
+fn sorted_context_fields(used_ctx_fields: &HashSet<CtxField>) -> Vec<CtxField> {
+    let mut fields = used_ctx_fields.iter().cloned().collect::<Vec<_>>();
+    fields.sort_by_key(CtxField::display_name);
+    fields
+}
+
+fn used_context_fields_for_programs(programs: &[EbpfProgramSection]) -> Vec<CtxField> {
+    let mut used_ctx_fields = HashSet::new();
+    for program in programs {
+        used_ctx_fields.extend(program.used_ctx_fields.iter().cloned());
+    }
+    sorted_context_fields(&used_ctx_fields)
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -155,6 +169,7 @@ impl EbpfProgram {
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             used_kfuncs: HashSet::new(),
+            used_ctx_fields: HashSet::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_key_types: HashMap::new(),
@@ -188,6 +203,7 @@ impl EbpfProgram {
             relocations: Vec::new(),
             subfunctions: Vec::new(),
             used_kfuncs: HashSet::new(),
+            used_ctx_fields: HashSet::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_key_types: HashMap::new(),
@@ -228,6 +244,7 @@ impl EbpfProgram {
             relocations,
             subfunctions,
             used_kfuncs: HashSet::new(),
+            used_ctx_fields: HashSet::new(),
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types: HashMap::new(),
@@ -278,6 +295,15 @@ impl EbpfProgram {
         self
     }
 
+    /// Attach context fields recovered before bytecode emission.
+    pub fn with_used_context_fields<I>(mut self, used_ctx_fields: I) -> Self
+    where
+        I: IntoIterator<Item = CtxField>,
+    {
+        self.used_ctx_fields = used_ctx_fields.into_iter().collect();
+        self
+    }
+
     /// Attach typed generic map key schemas recovered during lowering.
     pub fn with_generic_map_key_types(
         mut self,
@@ -321,6 +347,7 @@ impl EbpfProgram {
             relocations,
             subfunctions,
             used_kfuncs,
+            used_ctx_fields,
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types,
@@ -348,6 +375,7 @@ impl EbpfProgram {
                 relocations,
                 subfunctions,
                 used_kfuncs,
+                used_ctx_fields,
                 event_schema,
                 bytes_counter_key_schema,
                 generic_map_key_types,
@@ -371,6 +399,7 @@ impl EbpfProgram {
             relocations: self.relocations,
             subfunctions: self.subfunctions,
             used_kfuncs: self.used_kfuncs,
+            used_ctx_fields: self.used_ctx_fields,
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,
@@ -747,6 +776,10 @@ impl EbpfProgramSection {
             &self.kfunc_compatibility_requirements(),
         )
     }
+
+    pub fn used_context_fields(&self) -> Vec<CtxField> {
+        sorted_context_fields(&self.used_ctx_fields)
+    }
 }
 
 impl EbpfObject {
@@ -963,6 +996,7 @@ impl EbpfObject {
                 relocations: program.relocations.clone(),
                 subfunctions: program.subfunctions.clone(),
                 used_kfuncs: program.used_kfuncs.clone(),
+                used_ctx_fields: program.used_ctx_fields.clone(),
                 event_schema: program.event_schema.clone(),
                 bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
                 generic_map_key_types: program.generic_map_key_types.clone(),
@@ -1297,6 +1331,10 @@ impl EbpfObject {
         KfuncCompatibilityRequirement::effective_minimum_kernel(
             &self.kfunc_compatibility_requirements(),
         )
+    }
+
+    pub fn used_context_fields(&self) -> Vec<CtxField> {
+        used_context_fields_for_programs(&self.programs)
     }
 
     fn local_btf_int_name(size: u32, signed: bool) -> &'static str {
@@ -1713,5 +1751,9 @@ impl EbpfProgram {
         KfuncCompatibilityRequirement::effective_minimum_kernel(
             &self.kfunc_compatibility_requirements(),
         )
+    }
+
+    pub fn used_context_fields(&self) -> Vec<CtxField> {
+        sorted_context_fields(&self.used_ctx_fields)
     }
 }

@@ -9756,6 +9756,62 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
 }
 
 #[test]
+fn test_ebpf_program_preserves_used_context_fields() {
+    use crate::compiler::mir::{
+        BasicBlock, BlockId, MirFunction, MirInst, MirProgram, MirValue, VReg,
+    };
+
+    let mut func = MirFunction::new();
+    let mut entry_block = BasicBlock::new(BlockId(0));
+    entry_block.instructions.push(MirInst::LoadCtxField {
+        dst: VReg(0),
+        field: CtxField::Pid,
+        slot: None,
+    });
+    entry_block.instructions.push(MirInst::LoadCtxField {
+        dst: VReg(1),
+        field: CtxField::Cpu,
+        slot: None,
+    });
+    entry_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(VReg(0))),
+    };
+    func.blocks.push(entry_block);
+    func.vreg_count = 2;
+
+    let mir = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_openat2");
+    let compiled =
+        compile_mir_to_ebpf(&mir, Some(&probe_ctx)).expect("context load program should compile");
+    assert_eq!(compiled.used_ctx_fields.len(), 2);
+
+    let program = compiled.into_program(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    assert_eq!(
+        program.used_context_fields(),
+        vec![CtxField::Cpu, CtxField::Pid]
+    );
+    let object = program.clone().into_object();
+    assert_eq!(
+        object.programs[0].used_context_fields(),
+        vec![CtxField::Cpu, CtxField::Pid]
+    );
+    assert_eq!(
+        object.used_context_fields(),
+        vec![CtxField::Cpu, CtxField::Pid]
+    );
+}
+
+#[test]
 fn test_validate_runtime_artifacts_rejects_unknown_runtime_map_type() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Xdp,

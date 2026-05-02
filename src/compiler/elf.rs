@@ -2387,6 +2387,8 @@ pub struct EbpfProgramSection {
     pub subfunctions: Vec<SubfunctionSymbol>,
     /// Source-level kfunc names used by this program section when available.
     pub used_kfuncs: HashSet<String>,
+    /// Context fields used by this program section when available.
+    pub used_ctx_fields: HashSet<CtxField>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
@@ -2539,6 +2541,8 @@ pub struct EbpfProgram {
     pub subfunctions: Vec<SubfunctionSymbol>,
     /// Source-level kfunc names used by this program when available.
     pub used_kfuncs: HashSet<String>,
+    /// Context fields used by this program when available.
+    pub used_ctx_fields: HashSet<CtxField>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
