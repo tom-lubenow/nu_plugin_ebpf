@@ -472,10 +472,25 @@ const KERNEL_FEATURE_BPF_REDIRECT_NEIGH = {
     min_kernel: "5.10"
     source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_REDIRECT_PEER = {
+    key: "helper:bpf_redirect_peer"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD = {
     key: "helper:bpf_xdp_adjust_head"
     min_kernel: "4.10"
     source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_XDP_ADJUST_META = {
+    key: "helper:bpf_xdp_adjust_meta"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL = {
+    key: "helper:bpf_xdp_adjust_tail"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_REDIRECT = {
     key: "helper:bpf_redirect"
@@ -552,20 +567,70 @@ const KERNEL_FEATURE_BPF_MSG_APPLY_BYTES = {
     min_kernel: "4.17"
     source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_MSG_CORK_BYTES = {
+    key: "helper:bpf_msg_cork_bytes"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_MSG_PULL_DATA = {
+    key: "helper:bpf_msg_pull_data"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_MSG_PUSH_DATA = {
+    key: "helper:bpf_msg_push_data"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_MSG_POP_DATA = {
+    key: "helper:bpf_msg_pop_data"
+    min_kernel: "5.0"
+    source: "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP = {
     key: "helper:bpf_msg_redirect_map"
     min_kernel: "4.17"
     source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH = {
+    key: "helper:bpf_msg_redirect_hash"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_SKB_PULL_DATA = {
     key: "helper:bpf_skb_pull_data"
     min_kernel: "4.9"
     source: "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SKB_ADJUST_ROOM = {
+    key: "helper:bpf_skb_adjust_room"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SKB_CHANGE_HEAD = {
+    key: "helper:bpf_skb_change_head"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SKB_CHANGE_TAIL = {
+    key: "helper:bpf_skb_change_tail"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SK_REDIRECT_MAP = {
     key: "helper:bpf_sk_redirect_map"
     min_kernel: "4.14"
     source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SK_REDIRECT_HASH = {
+    key: "helper:bpf_sk_redirect_hash"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT = {
+    key: "helper:bpf_sk_select_reuseport"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_TIMER_INIT = {
     key: "helper:bpf_timer_init"
@@ -781,18 +846,31 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_skb_load_bytes", feature: $KERNEL_FEATURE_BPF_SKB_LOAD_BYTES }
     { name: "bpf_skb_under_cgroup", feature: $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP }
     { name: "bpf_skb_pull_data", feature: $KERNEL_FEATURE_BPF_SKB_PULL_DATA }
+    { name: "bpf_skb_adjust_room", feature: $KERNEL_FEATURE_BPF_SKB_ADJUST_ROOM }
+    { name: "bpf_skb_change_head", feature: $KERNEL_FEATURE_BPF_SKB_CHANGE_HEAD }
+    { name: "bpf_skb_change_tail", feature: $KERNEL_FEATURE_BPF_SKB_CHANGE_TAIL }
     { name: "bpf_xdp_adjust_head", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD }
+    { name: "bpf_xdp_adjust_meta", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_META }
+    { name: "bpf_xdp_adjust_tail", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL }
     { name: "bpf_redirect_map", feature: $KERNEL_FEATURE_BPF_REDIRECT_MAP }
     { name: "bpf_sk_redirect_map", feature: $KERNEL_FEATURE_BPF_SK_REDIRECT_MAP }
+    { name: "bpf_sk_redirect_hash", feature: $KERNEL_FEATURE_BPF_SK_REDIRECT_HASH }
     { name: "bpf_msg_apply_bytes", feature: $KERNEL_FEATURE_BPF_MSG_APPLY_BYTES }
+    { name: "bpf_msg_cork_bytes", feature: $KERNEL_FEATURE_BPF_MSG_CORK_BYTES }
+    { name: "bpf_msg_pull_data", feature: $KERNEL_FEATURE_BPF_MSG_PULL_DATA }
+    { name: "bpf_msg_push_data", feature: $KERNEL_FEATURE_BPF_MSG_PUSH_DATA }
+    { name: "bpf_msg_pop_data", feature: $KERNEL_FEATURE_BPF_MSG_POP_DATA }
     { name: "bpf_msg_redirect_map", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP }
+    { name: "bpf_msg_redirect_hash", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH }
     { name: "bpf_sk_assign", feature: $KERNEL_FEATURE_BPF_SK_ASSIGN }
+    { name: "bpf_sk_select_reuseport", feature: $KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT }
     { name: "bpf_ringbuf_output", feature: $KERNEL_FEATURE_BPF_RINGBUF_OUTPUT }
     { name: "bpf_ringbuf_reserve", feature: $KERNEL_FEATURE_BPF_RINGBUF_RESERVE }
     { name: "bpf_ringbuf_submit", feature: $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT }
     { name: "bpf_ringbuf_discard", feature: $KERNEL_FEATURE_BPF_RINGBUF_DISCARD }
     { name: "bpf_ringbuf_query", feature: $KERNEL_FEATURE_BPF_RINGBUF_QUERY }
     { name: "bpf_redirect_neigh", feature: $KERNEL_FEATURE_BPF_REDIRECT_NEIGH }
+    { name: "bpf_redirect_peer", feature: $KERNEL_FEATURE_BPF_REDIRECT_PEER }
     { name: "bpf_bprm_opts_set", feature: $KERNEL_FEATURE_BPF_BPRM_OPTS_SET }
     { name: "bpf_spin_lock", feature: $KERNEL_FEATURE_BPF_SPIN_LOCK }
     { name: "bpf_spin_unlock", feature: $KERNEL_FEATURE_BPF_SPIN_UNLOCK }
@@ -4347,21 +4425,65 @@ def program-surface-helper-kernel-features [source: string target] {
         if ($line | str contains "adjust-message --apply") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_APPLY_BYTES])
         }
+        if ($line | str contains "adjust-message --cork") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_CORK_BYTES])
+        }
+        if ($line | str contains "adjust-message --pull") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_PULL_DATA])
+        }
+        if ($line | str contains "adjust-message --push") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_PUSH_DATA])
+        }
+        if ($line | str contains "adjust-message --pop") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_POP_DATA])
+        }
         if ($line | str contains "adjust-packet --pull") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_PULL_DATA])
         }
         if ($line | str contains "redirect-socket ") {
             if ($target_text | str starts-with "sk_msg:") {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
+                if ($line | str contains "--kind sockhash") {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH])
+                } else {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
+                }
             } else if ($target_text | str starts-with "sk_skb:") or ($target_text | str starts-with "sk_skb_parser:") {
-                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
+                if ($line | str contains "--kind sockhash") {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_HASH])
+                } else {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
+                }
+            } else if ($target_text | str starts-with "sk_reuseport:") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
             }
         }
         if ($target_text | str starts-with "xdp:") {
             if ($line | str contains "adjust-packet --head") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD])
             }
-            if ($line | str contains "redirect ") and not ($line | str contains "redirect-map") and not ($line | str contains "redirect-socket") {
+            if ($line | str contains "adjust-packet --meta") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_META])
+            }
+            if ($line | str contains "adjust-packet --tail") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL])
+            }
+        } else {
+            if ($line | str contains "adjust-packet --head") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_CHANGE_HEAD])
+            }
+            if ($line | str contains "adjust-packet --tail") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_CHANGE_TAIL])
+            }
+            if ($line | str contains "adjust-packet --room") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_ADJUST_ROOM])
+            }
+        }
+        if ($line | str contains "redirect ") and not ($line | str contains "redirect-map") and not ($line | str contains "redirect-socket") {
+            if ($line | str contains "--peer") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_PEER])
+            } else if ($line | str contains "--neigh") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_NEIGH])
+            } else if ($target_text | str starts-with "xdp:") or ($target_text | str starts-with "tc:") or ($target_text | str starts-with "tcx:") or ($target_text | str starts-with "netkit:") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT])
             }
         }

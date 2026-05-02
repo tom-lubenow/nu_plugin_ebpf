@@ -33,6 +33,14 @@ const LINUX_BPF_H_V4_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_20_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_0_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_7_SOURCE: &str =
@@ -158,10 +166,20 @@ impl BpfHelper {
             Self::SkbUnderCgroup => "4.8",
             Self::SkbPullData => "4.9",
             Self::XdpAdjustHead => "4.10",
-            Self::RedirectMap | Self::SkRedirectMap => "4.14",
-            Self::PerfEventReadValue => "4.15",
+            Self::RedirectMap
+            | Self::SkRedirectMap
+            | Self::SkbAdjustRoom
+            | Self::SkbChangeHead
+            | Self::SkbChangeTail => "4.14",
+            Self::PerfEventReadValue | Self::XdpAdjustMeta => "4.15",
             Self::OverrideReturn => "4.16",
-            Self::MsgApplyBytes | Self::MsgRedirectMap => "4.17",
+            Self::MsgApplyBytes | Self::MsgCorkBytes | Self::MsgPullData | Self::MsgRedirectMap => {
+                "4.17"
+            }
+            Self::MsgRedirectHash | Self::SkRedirectHash | Self::XdpAdjustTail => "4.18",
+            Self::SkSelectReuseport => "4.19",
+            Self::MsgPushData => "4.20",
+            Self::MsgPopData => "5.0",
             Self::SpinLock | Self::SpinUnlock => "5.1",
             Self::SkAssign => "5.7",
             Self::RingbufOutput
@@ -171,7 +189,7 @@ impl BpfHelper {
             | Self::SeqPrintf
             | Self::SeqWrite
             | Self::RingbufQuery => "5.8",
-            Self::RedirectNeigh => "5.10",
+            Self::RedirectNeigh | Self::RedirectPeer => "5.10",
             Self::BprmOptsSet => "5.11",
             Self::ForEachMapElem => "5.13",
             Self::SysBpf | Self::SysClose | Self::BtfFindByNameKind => "5.14",
@@ -205,10 +223,22 @@ impl BpfHelper {
             Self::SkbUnderCgroup => LINUX_BPF_H_V4_8_SOURCE,
             Self::SkbPullData => LINUX_BPF_H_V4_9_SOURCE,
             Self::XdpAdjustHead => LINUX_BPF_H_V4_10_SOURCE,
-            Self::RedirectMap | Self::SkRedirectMap => LINUX_BPF_H_V4_14_SOURCE,
-            Self::PerfEventReadValue => LINUX_BPF_H_V4_15_SOURCE,
+            Self::RedirectMap
+            | Self::SkRedirectMap
+            | Self::SkbAdjustRoom
+            | Self::SkbChangeHead
+            | Self::SkbChangeTail => LINUX_BPF_H_V4_14_SOURCE,
+            Self::PerfEventReadValue | Self::XdpAdjustMeta => LINUX_BPF_H_V4_15_SOURCE,
             Self::OverrideReturn => LINUX_BPF_H_V4_16_SOURCE,
-            Self::MsgApplyBytes | Self::MsgRedirectMap => LINUX_BPF_H_V4_17_SOURCE,
+            Self::MsgApplyBytes | Self::MsgCorkBytes | Self::MsgPullData | Self::MsgRedirectMap => {
+                LINUX_BPF_H_V4_17_SOURCE
+            }
+            Self::MsgRedirectHash | Self::SkRedirectHash | Self::XdpAdjustTail => {
+                LINUX_BPF_H_V4_18_SOURCE
+            }
+            Self::SkSelectReuseport => LINUX_BPF_H_V4_19_SOURCE,
+            Self::MsgPushData => LINUX_BPF_H_V4_20_SOURCE,
+            Self::MsgPopData => LINUX_BPF_H_V5_0_SOURCE,
             Self::SpinLock | Self::SpinUnlock => LINUX_BPF_H_V5_1_SOURCE,
             Self::SkAssign => LINUX_BPF_H_V5_7_SOURCE,
             Self::RingbufOutput
@@ -218,7 +248,7 @@ impl BpfHelper {
             | Self::SeqPrintf
             | Self::SeqWrite
             | Self::RingbufQuery => LINUX_BPF_H_V5_8_SOURCE,
-            Self::RedirectNeigh => LINUX_BPF_H_V5_10_SOURCE,
+            Self::RedirectNeigh | Self::RedirectPeer => LINUX_BPF_H_V5_10_SOURCE,
             Self::BprmOptsSet => LINUX_BPF_H_V5_11_SOURCE,
             Self::ForEachMapElem => LINUX_BPF_H_V5_13_SOURCE,
             Self::SysBpf | Self::SysClose | Self::BtfFindByNameKind => LINUX_BPF_H_V5_14_SOURCE,

@@ -603,6 +603,11 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "helper:bpf_xdp_adjust_head",
             "4.10",
         ),
+        (
+            BpfHelper::SkbAdjustRoom,
+            "helper:bpf_skb_adjust_room",
+            "4.14",
+        ),
         (BpfHelper::RedirectMap, "helper:bpf_redirect_map", "4.14"),
         (
             BpfHelper::PerfEventReadValue,
@@ -610,15 +615,33 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "4.15",
         ),
         (
+            BpfHelper::XdpAdjustMeta,
+            "helper:bpf_xdp_adjust_meta",
+            "4.15",
+        ),
+        (
             BpfHelper::OverrideReturn,
             "helper:bpf_override_return",
             "4.16",
         ),
+        (BpfHelper::MsgCorkBytes, "helper:bpf_msg_cork_bytes", "4.17"),
         (
             BpfHelper::MsgApplyBytes,
             "helper:bpf_msg_apply_bytes",
             "4.17",
         ),
+        (
+            BpfHelper::MsgRedirectHash,
+            "helper:bpf_msg_redirect_hash",
+            "4.18",
+        ),
+        (
+            BpfHelper::SkSelectReuseport,
+            "helper:bpf_sk_select_reuseport",
+            "4.19",
+        ),
+        (BpfHelper::MsgPushData, "helper:bpf_msg_push_data", "4.20"),
+        (BpfHelper::MsgPopData, "helper:bpf_msg_pop_data", "5.0"),
         (BpfHelper::SpinLock, "helper:bpf_spin_lock", "5.1"),
         (BpfHelper::SkAssign, "helper:bpf_sk_assign", "5.7"),
         (
@@ -632,6 +655,7 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "helper:bpf_redirect_neigh",
             "5.10",
         ),
+        (BpfHelper::RedirectPeer, "helper:bpf_redirect_peer", "5.10"),
         (BpfHelper::BprmOptsSet, "helper:bpf_bprm_opts_set", "5.11"),
         (
             BpfHelper::ForEachMapElem,
