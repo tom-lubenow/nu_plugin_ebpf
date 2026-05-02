@@ -724,20 +724,16 @@ impl EbpfState {
                 ))
             })?;
         let compatibility_requirements = object.program_compatibility_requirements();
-        if !program
-            .prog_type
-            .attach_kind()
-            .loader_supports_live_attach()
-        {
+        if !spec.live_attach_policy().loader_supported {
+            if let ProgramSpec::CgroupSockAddr { target } = &spec {
+                if target.is_unix() {
+                    return Err(unsupported_cgroup_sock_addr_target_error(target));
+                }
+            }
             return Err(unsupported_live_attach_error(
                 program.prog_type,
                 &compatibility_requirements,
             ));
-        }
-        if let ProgramSpec::CgroupSockAddr { target } = &spec {
-            if target.is_unix() {
-                return Err(unsupported_cgroup_sock_addr_target_error(target));
-            }
         }
         if let Some(err) = current_kernel_program_minimum_error(object) {
             return Err(err);
