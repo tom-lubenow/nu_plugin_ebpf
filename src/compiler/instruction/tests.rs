@@ -3990,6 +3990,84 @@ fn test_kfunc_signature_file_kfuncs() {
 }
 
 #[test]
+fn test_kfunc_kernel_compatibility_metadata() {
+    let expected = [
+        (
+            "bpf_task_acquire",
+            "kfunc:bpf_task_acquire",
+            "6.2",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
+            "bpf_cpumask_create",
+            "kfunc:bpf_cpumask_create",
+            "6.3",
+            "/kernel/bpf/cpumask.c",
+        ),
+        (
+            "bpf_cgroup_from_id",
+            "kfunc:bpf_cgroup_from_id",
+            "6.4",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
+            "bpf_dynptr_size",
+            "kfunc:bpf_dynptr_size",
+            "6.5",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
+            "bpf_get_task_exe_file",
+            "kfunc:bpf_get_task_exe_file",
+            "6.12",
+            "/fs/bpf_fs_kfuncs.c",
+        ),
+    ];
+
+    for (name, key, minimum_kernel, source_suffix) in expected {
+        let requirement = KfuncCompatibilityRequirement::for_name(name)
+            .expect("selected kfunc should have compatibility metadata");
+        assert_eq!(requirement.name(), name);
+        assert_eq!(requirement.key(), key);
+        assert_eq!(requirement.category(), "kfunc");
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/")),
+            "source should point at the Linux tag where {name} first appears"
+        );
+        assert!(requirement.minimum_kernel_source().ends_with(source_suffix));
+    }
+
+    assert_eq!(KfuncCompatibilityRequirement::for_name("missing"), None);
+    assert_eq!(
+        KfuncSignature::compatibility_requirement_for_name("bpf_dynptr_size")
+            .map(KfuncCompatibilityRequirement::minimum_kernel),
+        Some("6.5")
+    );
+
+    let requirements = [
+        KfuncCompatibilityRequirement::for_name("bpf_task_acquire")
+            .expect("task acquire should be versioned"),
+        KfuncCompatibilityRequirement::for_name("bpf_dynptr_size")
+            .expect("dynptr size should be versioned"),
+        KfuncCompatibilityRequirement::for_name("bpf_get_task_exe_file")
+            .expect("file kfunc should be versioned"),
+    ];
+    assert_eq!(
+        KfuncCompatibilityRequirement::effective_minimum_kernel(&requirements),
+        Some("6.12")
+    );
+    assert!(KfuncCompatibilityRequirement::kernel_version_at_least(
+        "6.5.0", "6.5"
+    ));
+    assert!(!KfuncCompatibilityRequirement::kernel_version_at_least(
+        "6.4.0", "6.5"
+    ));
+}
+
+#[test]
 fn test_kfunc_signature_crypto_ctx_kfuncs() {
     let sig = KfuncSignature::for_name("bpf_crypto_ctx_acquire")
         .expect("expected bpf_crypto_ctx_acquire kfunc signature");

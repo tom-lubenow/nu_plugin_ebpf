@@ -191,7 +191,10 @@ requirements, for example base program families, kernel BTF, BPF trampolines,
 TCX, netfilter links, route LWT, struct_ops, sched_ext, XDP multi-buffer
 sections, cgroup v2, cgroup program families, and cgroup UNIX socket-address
 hooks. Live-load preflight also reports source-verified map-kind and helper
-requirements from the compiled object. These labels describe feature surfaces.
+requirements from the compiled object. Known fixture kfuncs carry source-backed
+minimum-kernel metadata in the compiler and verifier harness, while live-load
+kfunc preflight still needs name preservation beyond compiled BTF IDs. These
+labels describe feature surfaces.
 `ebpf spec` reports each requirement with a feature category, a default test
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel/source fields. Source-verified requirements carry minimum

@@ -1,0 +1,165 @@
+use super::*;
+use std::cmp::Ordering;
+use std::fmt;
+
+const LINUX_HELPERS_C_V6_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c";
+const LINUX_CPUMASK_C_V6_3_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c";
+const LINUX_HELPERS_C_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c";
+const LINUX_HELPERS_C_V6_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c";
+const LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c";
+
+/// Source-backed kernel compatibility metadata for a named BPF kfunc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct KfuncCompatibilityRequirement {
+    name: &'static str,
+}
+
+impl KfuncCompatibilityRequirement {
+    pub fn for_name(name: &str) -> Option<Self> {
+        let name = known_kfunc_name(name)?;
+        Some(Self { name })
+    }
+
+    pub fn name(self) -> &'static str {
+        self.name
+    }
+
+    pub fn key(self) -> String {
+        format!("kfunc:{}", self.name)
+    }
+
+    pub fn category(self) -> &'static str {
+        "kfunc"
+    }
+
+    pub fn minimum_kernel(self) -> &'static str {
+        kfunc_minimum_kernel(self.name)
+            .expect("kfunc requirement is constructed only for versioned kfuncs")
+    }
+
+    pub fn minimum_kernel_source(self) -> &'static str {
+        kfunc_minimum_kernel_source(self.name)
+            .expect("kfunc requirement is constructed only for versioned kfuncs")
+    }
+
+    pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
+        let mut minimum = None;
+        for requirement in requirements {
+            let candidate = requirement.minimum_kernel();
+            let should_replace = match minimum {
+                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                None => true,
+            };
+            if should_replace {
+                minimum = Some(candidate);
+            }
+        }
+        minimum
+    }
+
+    pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
+        !Self::kernel_version_cmp(current, minimum).is_lt()
+    }
+
+    fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
+        let mut left_parts = left.split(['.', '-']);
+        let mut right_parts = right.split(['.', '-']);
+        let left_version = [
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+        ];
+        let right_version = [
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+        ];
+
+        left_version.cmp(&right_version)
+    }
+
+    fn kernel_version_part(part: Option<&str>) -> u32 {
+        part.unwrap_or("0").parse().unwrap_or(0)
+    }
+}
+
+impl fmt::Display for KfuncCompatibilityRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.key())
+    }
+}
+
+impl KfuncSignature {
+    pub fn compatibility_requirement_for_name(name: &str) -> Option<KfuncCompatibilityRequirement> {
+        KfuncCompatibilityRequirement::for_name(name)
+    }
+}
+
+fn known_kfunc_name(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "bpf_dynptr_size" => "bpf_dynptr_size",
+        "bpf_dynptr_slice" => "bpf_dynptr_slice",
+        "bpf_dynptr_clone" => "bpf_dynptr_clone",
+        "bpf_task_acquire" => "bpf_task_acquire",
+        "bpf_task_from_pid" => "bpf_task_from_pid",
+        "bpf_task_release" => "bpf_task_release",
+        "bpf_cgroup_acquire" => "bpf_cgroup_acquire",
+        "bpf_cgroup_ancestor" => "bpf_cgroup_ancestor",
+        "bpf_cgroup_from_id" => "bpf_cgroup_from_id",
+        "bpf_cgroup_release" => "bpf_cgroup_release",
+        "bpf_get_task_exe_file" => "bpf_get_task_exe_file",
+        "bpf_put_file" => "bpf_put_file",
+        "bpf_cpumask_create" => "bpf_cpumask_create",
+        "bpf_cpumask_acquire" => "bpf_cpumask_acquire",
+        "bpf_cpumask_release" => "bpf_cpumask_release",
+        "bpf_cpumask_first" => "bpf_cpumask_first",
+        "bpf_cpumask_set_cpu" => "bpf_cpumask_set_cpu",
+        _ => return None,
+    })
+}
+
+fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "bpf_task_acquire"
+        | "bpf_task_from_pid"
+        | "bpf_task_release"
+        | "bpf_cgroup_acquire"
+        | "bpf_cgroup_ancestor"
+        | "bpf_cgroup_release" => "6.2",
+        "bpf_cpumask_create"
+        | "bpf_cpumask_acquire"
+        | "bpf_cpumask_release"
+        | "bpf_cpumask_first"
+        | "bpf_cpumask_set_cpu" => "6.3",
+        "bpf_dynptr_slice" | "bpf_cgroup_from_id" => "6.4",
+        "bpf_dynptr_size" | "bpf_dynptr_clone" => "6.5",
+        "bpf_get_task_exe_file" | "bpf_put_file" => "6.12",
+        _ => return None,
+    })
+}
+
+fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
+    kfunc_minimum_kernel(name)?;
+    Some(match name {
+        "bpf_task_acquire"
+        | "bpf_task_from_pid"
+        | "bpf_task_release"
+        | "bpf_cgroup_acquire"
+        | "bpf_cgroup_ancestor"
+        | "bpf_cgroup_release" => LINUX_HELPERS_C_V6_2_SOURCE,
+        "bpf_cpumask_create"
+        | "bpf_cpumask_acquire"
+        | "bpf_cpumask_release"
+        | "bpf_cpumask_first"
+        | "bpf_cpumask_set_cpu" => LINUX_CPUMASK_C_V6_3_SOURCE,
+        "bpf_dynptr_slice" | "bpf_cgroup_from_id" => LINUX_HELPERS_C_V6_4_SOURCE,
+        "bpf_dynptr_size" | "bpf_dynptr_clone" => LINUX_HELPERS_C_V6_5_SOURCE,
+        "bpf_get_task_exe_file" | "bpf_put_file" => LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE,
+        _ => return None,
+    })
+}

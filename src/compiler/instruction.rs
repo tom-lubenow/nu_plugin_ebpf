@@ -1732,9 +1732,13 @@ pub struct KfuncSignature {
 #[path = "instruction/kfunc_signature.rs"]
 mod kfunc_signature;
 
+#[path = "instruction/kfunc_metadata.rs"]
+mod kfunc_metadata;
+
 #[path = "instruction/ref_kinds.rs"]
 mod ref_kinds;
 
+pub use kfunc_metadata::KfuncCompatibilityRequirement;
 pub use kfunc_signature::unknown_kfunc_signature_message;
 pub use ref_kinds::{
     KfuncAllowedPtrSpaces, KfuncIterFamily, KfuncIterLifecycleOp, KfuncPtrArgRule, KfuncSemantics,

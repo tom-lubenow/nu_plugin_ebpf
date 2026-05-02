@@ -63,7 +63,9 @@ pub use hir_to_mir::{
     lower_hir_to_mir_with_hints_and_maps, lower_hir_to_mir_with_hints_key_value_maps_and_semantics,
     lower_hir_to_mir_with_hints_maps_and_semantics,
 };
-pub use instruction::{BpfHelper, EbpfInsn, EbpfReg, HelperCompatibilityRequirement};
+pub use instruction::{
+    BpfHelper, EbpfInsn, EbpfReg, HelperCompatibilityRequirement, KfuncCompatibilityRequirement,
+};
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
 pub use mir::{MapCompatibilityRequirement, MapKind, MapRef, MirType, MirTypeHints};
 pub use mir_to_ebpf::{
