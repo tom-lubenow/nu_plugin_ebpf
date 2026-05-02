@@ -42,6 +42,7 @@ history and release notes, not here.
   - Grow `scripts/verifier_diff.nu` from the initial tagged fixture set and optional-`bpftool` kernel load path into the compatibility matrix driver.
   - Use fixture tiers (`fast`, `btf`, `kernel`, `vm-only`) to keep focused local lanes cheap while preserving heavier BTF/kernel coverage.
   - Track expected accept/reject status, verifier log fragments, required kernel features, and source-verified per-feature minimum kernel versions.
+  - Kernel feature records can express minimum and maximum-exclusive kernel windows; keep verifier fixtures aligned with bounded kfunc compatibility when source-checked kfuncs are renamed or removed.
   - Add fixture coverage for maps, helpers, kfuncs, callbacks, context fields, packet bounds, ref lifetimes, dynptrs, timers, and by-reference stack objects.
   - Keep dangerous fixtures dry-run-only or VM-only; the default host lane must remain auto-skip safe.
 

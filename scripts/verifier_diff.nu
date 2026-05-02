@@ -787,6 +787,30 @@ const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU = {
     min_kernel: "6.3"
     source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
+const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK = {
+    key: "kfunc:scx_bpf_get_idle_cpumask"
+    min_kernel: "6.12"
+    max_kernel_exclusive: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK = {
+    key: "kfunc:scx_bpf_get_idle_smtmask"
+    min_kernel: "6.12"
+    max_kernel_exclusive: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU = {
+    key: "kfunc:scx_bpf_pick_any_cpu"
+    min_kernel: "6.12"
+    max_kernel_exclusive: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_PUT_IDLE_CPUMASK = {
+    key: "kfunc:scx_bpf_put_idle_cpumask"
+    min_kernel: "6.12"
+    max_kernel_exclusive: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
+}
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
     min_kernel: "6.1"
@@ -912,6 +936,10 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "bpf_cpumask_release", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE }
     { name: "bpf_cpumask_first", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST }
     { name: "bpf_cpumask_set_cpu", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU }
+    { name: "scx_bpf_get_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK }
+    { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
+    { name: "scx_bpf_pick_any_cpu", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU }
+    { name: "scx_bpf_put_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PUT_IDLE_CPUMASK }
 ]
 
 const FIXTURES = [
@@ -4252,6 +4280,10 @@ def kernel-version-at-least [current: string required: string] {
     (kernel-version-compare $current $required) >= 0
 }
 
+def kernel-version-before [current: string maximum_exclusive: string] {
+    (kernel-version-compare $current $maximum_exclusive) < 0
+}
+
 def kernel-version-compare [left: string right: string] {
     let have = (parse-kernel-version $left)
     let need = (parse-kernel-version $right)
@@ -4286,6 +4318,22 @@ def kernel-version-max [versions: list<string>] {
     }
 
     if $has_max { $max } else { null }
+}
+
+def kernel-version-min [versions: list<string>] {
+    mut min = ""
+    mut has_min = false
+
+    for version in $versions {
+        if not $has_min {
+            $min = $version
+            $has_min = true
+        } else if (kernel-version-compare $version $min) < 0 {
+            $min = $version
+        }
+    }
+
+    if $has_min { $min } else { null }
 }
 
 def current-kernel-release [] {
@@ -4710,6 +4758,16 @@ def fixture-effective-min-kernel [fixture] {
     kernel-version-max $versions
 }
 
+def fixture-effective-max-kernel-exclusive [fixture] {
+    let versions = (
+        fixture-kernel-features $fixture
+        | each {|feature| $feature | get -o max_kernel_exclusive }
+        | where {|version| $version != null and $version != "" }
+    )
+
+    kernel-version-min $versions
+}
+
 def fixture-effective-min-kernel-sources [fixture] {
     let min_kernel = (fixture-effective-min-kernel $fixture)
     if $min_kernel == null {
@@ -4724,8 +4782,9 @@ def fixture-effective-min-kernel-sources [fixture] {
 
 def fixture-kernel-compatibility [fixture kernel_release] {
     let min_kernel = (fixture-effective-min-kernel $fixture)
+    let max_kernel = (fixture-effective-max-kernel-exclusive $fixture)
 
-    if $kernel_release == null or $min_kernel == null {
+    if $kernel_release == null or ($min_kernel == null and $max_kernel == null) {
         return {
             compatible: true
             required: ""
@@ -4733,17 +4792,34 @@ def fixture-kernel-compatibility [fixture kernel_release] {
         }
     }
 
-    let compatible = (kernel-version-at-least $kernel_release $min_kernel)
+    let too_old = ($min_kernel != null and not (kernel-version-at-least $kernel_release $min_kernel))
+    let too_new = ($max_kernel != null and not (kernel-version-before $kernel_release $max_kernel))
+    let compatible = (not $too_old and not $too_new)
+    let reason = if $too_old {
+        $"kernel>=($min_kernel)"
+    } else if $too_new {
+        $"kernel<($max_kernel)"
+    } else {
+        ""
+    }
     {
         compatible: $compatible
-        required: $min_kernel
-        reason: (if $compatible { "" } else { $"kernel>=($min_kernel)" })
+        required: ($min_kernel | default "")
+        maximum_exclusive: ($max_kernel | default "")
+        reason: $reason
     }
 }
 
 def kernel-feature-labels [features] {
     $features
-    | each {|feature| $"($feature.key)>=($feature.min_kernel)" }
+    | each {|feature|
+        let max_kernel = ($feature | get -o max_kernel_exclusive)
+        if $max_kernel == null or $max_kernel == "" {
+            $"($feature.key)>=($feature.min_kernel)"
+        } else {
+            $"($feature.key)>=($feature.min_kernel),<($max_kernel)"
+        }
+    }
 }
 
 def fixture-tier [fixture] {
@@ -4777,6 +4853,7 @@ def fixture-summary [fixture compat_kernel] {
         kernel_requires: (optional $fixture kernel_requires [])
         kernel_features: (fixture-kernel-features $fixture)
         effective_min_kernel: (fixture-effective-min-kernel $fixture | default "")
+        effective_max_kernel_exclusive: (fixture-effective-max-kernel-exclusive $fixture | default "")
         effective_min_kernel_sources: (fixture-effective-min-kernel-sources $fixture)
         compat_kernel: ($compat_kernel | default "")
         compatible_with_compat_kernel: $compatibility.compatible
@@ -4809,6 +4886,13 @@ def kernel-accept-compatible-count [fixtures kernel_release compatible: bool] {
     | where {|fixture| $fixture.kernel == "accept" }
     | where {|fixture| fixture-has-effective-min-kernel $fixture }
     | where {|fixture| (fixture-kernel-compatibility $fixture $kernel_release).compatible == $compatible }
+    | length
+}
+
+def kernel-accept-compat-reason-count [fixtures kernel_release reason_prefix: string] {
+    $fixtures
+    | where {|fixture| $fixture.kernel == "accept" }
+    | where {|fixture| ((fixture-kernel-compatibility $fixture $kernel_release).reason | str starts-with $reason_prefix) }
     | length
 }
 
@@ -4858,7 +4942,9 @@ def fixture-matrix-rows [fixtures compat_kernel] {
                 $base
                 | upsert compat_kernel $compat_kernel
                 | upsert kernel_accept_compatible (kernel-accept-compatible-count $category_fixtures $compat_kernel true)
-                | upsert kernel_accept_requires_newer (kernel-accept-compatible-count $category_fixtures $compat_kernel false)
+                | upsert kernel_accept_incompatible (kernel-accept-compatible-count $category_fixtures $compat_kernel false)
+                | upsert kernel_accept_requires_newer (kernel-accept-compat-reason-count $category_fixtures $compat_kernel "kernel>=")
+                | upsert kernel_accept_requires_older (kernel-accept-compat-reason-count $category_fixtures $compat_kernel "kernel<")
             }
 
             $rows = ($rows | append $row)
@@ -4873,7 +4959,7 @@ def print-fixture-matrix [fixtures compat_kernel] {
         let compat_text = if (($row | get -o compat_kernel) == null) {
             ""
         } else {
-            $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer)"
+            $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_incompatible=($row.kernel_accept_incompatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer) kernel_accept_requires_older=($row.kernel_accept_requires_older)"
         }
         print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned)($compat_text)"
     }
@@ -4925,6 +5011,7 @@ def validate-kernel-feature-metadata [fixture] {
     for feature in $features {
         let key = ($feature | get -o key)
         let min_kernel = ($feature | get -o min_kernel)
+        let max_kernel = ($feature | get -o max_kernel_exclusive)
         let source = ($feature | get -o source)
 
         if $key == null or $key == "" {
@@ -4938,6 +5025,12 @@ def validate-kernel-feature-metadata [fixture] {
         }
 
         parse-kernel-version $min_kernel | ignore
+        if $max_kernel != null and $max_kernel != "" {
+            parse-kernel-version $max_kernel | ignore
+            if (kernel-version-compare $max_kernel $min_kernel) <= 0 {
+                fail $"fixture ($fixture.name) kernel feature ($key) max_kernel_exclusive=($max_kernel) must be greater than min_kernel=($min_kernel)"
+            }
+        }
     }
 }
 
@@ -5078,6 +5171,13 @@ def fixture-missing-kernel-requirements [fixture] {
         let current = (current-kernel-release)
         if not (kernel-version-at-least $current $min_kernel) {
             $missing = ($missing | append $"kernel>=($min_kernel),current=($current)")
+        }
+    }
+    let max_kernel = (fixture-effective-max-kernel-exclusive $fixture)
+    if $max_kernel != null {
+        let current = (current-kernel-release)
+        if not (kernel-version-before $current $max_kernel) {
+            $missing = ($missing | append $"kernel<($max_kernel),current=($current)")
         }
     }
 
@@ -5242,7 +5342,7 @@ def main [
             } else {
                 $" compat_kernel=($summary.compat_kernel) compatible=($summary.compatible_with_compat_kernel) compat_reason=($summary.compat_kernel_reason)"
             }
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')($compat_text)"
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) effective_max_kernel_exclusive=($summary.effective_max_kernel_exclusive) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')($compat_text)"
         }
         return
     }
