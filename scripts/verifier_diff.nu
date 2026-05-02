@@ -202,6 +202,26 @@ const KERNEL_FEATURE_BPF_DYNPTR_DATA = {
     min_kernel: "5.19"
     source: "https://docs.ebpf.io/linux/helper-function/bpf_dynptr_data/"
 }
+const KERNEL_FEATURE_MAP_VALUE_KPTR = {
+    key: "map-value:kptr"
+    min_kernel: "5.19"
+    source: "https://kernelnewbies.org/Linux_5.19"
+}
+const KERNEL_FEATURE_BPF_KPTR_XCHG = {
+    key: "helper:bpf_kptr_xchg"
+    min_kernel: "5.19"
+    source: "https://docs.ebpf.io/linux/helper-function/bpf_kptr_xchg/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID = {
+    key: "kfunc:bpf_task_from_pid"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_from_pid/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE = {
+    key: "kfunc:bpf_task_release"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_release/"
+}
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
     min_kernel: "6.1"
@@ -1902,6 +1922,7 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_KPTR]
     }
     {
         name: "map-define-kptr-slot-rejects-queue"
@@ -1916,6 +1937,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_KPTR]
         error_contains: "kptr fields, which are currently supported for hash, array, and lru-hash maps"
     }
     {
@@ -1962,6 +1984,10 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
+        ]
     }
     {
         name: "source-kfunc-task-ref-rejects-leak"
@@ -1977,6 +2003,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -2005,6 +2032,12 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
+        ]
     }
     {
         name: "source-kptr-xchg-rejects-old-ref-leak"
@@ -2030,6 +2063,12 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
+        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
