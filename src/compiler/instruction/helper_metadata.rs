@@ -1,9 +1,218 @@
 use super::*;
+use std::cmp::Ordering;
+use std::fmt;
 
 #[path = "helper_metadata/semantics.rs"]
 mod semantics;
 
+const LINUX_BPF_H_V3_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_3_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.3/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.4/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_6_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_14_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_17_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_11_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.13/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_14_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_17_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h";
+
+/// Source-backed kernel compatibility metadata for a BPF helper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HelperCompatibilityRequirement {
+    helper: BpfHelper,
+}
+
+impl HelperCompatibilityRequirement {
+    pub fn for_helper(helper: BpfHelper) -> Option<Self> {
+        helper.minimum_kernel()?;
+        Some(Self { helper })
+    }
+
+    pub fn helper(self) -> BpfHelper {
+        self.helper
+    }
+
+    pub fn key(self) -> String {
+        format!("helper:{}", self.helper.name())
+    }
+
+    pub fn category(self) -> &'static str {
+        "helper"
+    }
+
+    pub fn minimum_kernel(self) -> &'static str {
+        self.helper
+            .minimum_kernel()
+            .expect("helper requirement is constructed only for versioned helpers")
+    }
+
+    pub fn minimum_kernel_source(self) -> &'static str {
+        self.helper
+            .minimum_kernel_source()
+            .expect("helper requirement is constructed only for versioned helpers")
+    }
+
+    pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
+        let mut minimum = None;
+        for requirement in requirements {
+            let candidate = requirement.minimum_kernel();
+            let should_replace = match minimum {
+                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                None => true,
+            };
+            if should_replace {
+                minimum = Some(candidate);
+            }
+        }
+        minimum
+    }
+
+    fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
+        let mut left_parts = left.split(['.', '-']);
+        let mut right_parts = right.split(['.', '-']);
+        let left_version = [
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+        ];
+        let right_version = [
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+        ];
+
+        left_version.cmp(&right_version)
+    }
+
+    fn kernel_version_part(part: Option<&str>) -> u32 {
+        part.unwrap_or("0").parse().unwrap_or(0)
+    }
+}
+
+impl fmt::Display for HelperCompatibilityRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.key())
+    }
+}
+
 impl BpfHelper {
+    pub fn compatibility_requirement(self) -> Option<HelperCompatibilityRequirement> {
+        HelperCompatibilityRequirement::for_helper(self)
+    }
+
+    pub fn minimum_kernel(self) -> Option<&'static str> {
+        Some(match self {
+            Self::MapLookupElem | Self::MapUpdateElem | Self::MapDeleteElem => "3.19",
+            Self::TailCall => "4.2",
+            Self::PerfEventRead => "4.3",
+            Self::Redirect => "4.4",
+            Self::GetStackId | Self::GetStack | Self::CsumDiff => "4.6",
+            Self::SkbUnderCgroup => "4.8",
+            Self::SkbPullData => "4.9",
+            Self::XdpAdjustHead => "4.10",
+            Self::RedirectMap | Self::SkRedirectMap => "4.14",
+            Self::PerfEventReadValue => "4.15",
+            Self::MsgApplyBytes | Self::MsgRedirectMap => "4.17",
+            Self::SkAssign => "5.7",
+            Self::RingbufOutput
+            | Self::RingbufReserve
+            | Self::RingbufSubmit
+            | Self::RingbufDiscard
+            | Self::RingbufQuery => "5.8",
+            Self::RedirectNeigh => "5.10",
+            Self::BprmOptsSet => "5.11",
+            Self::ForEachMapElem => "5.13",
+            Self::SysBpf => "5.14",
+            Self::TimerInit | Self::TimerSetCallback | Self::TimerStart | Self::TimerCancel => {
+                "5.15"
+            }
+            Self::KallsymsLookupName => "5.16",
+            Self::BpfLoop => "5.17",
+            Self::KptrXchg
+            | Self::RingbufReserveDynptr
+            | Self::RingbufSubmitDynptr
+            | Self::RingbufDiscardDynptr
+            | Self::DynptrData => "5.19",
+            Self::UserRingbufDrain => "6.1",
+            _ => return None,
+        })
+    }
+
+    pub fn minimum_kernel_source(self) -> Option<&'static str> {
+        self.minimum_kernel()?;
+        Some(match self {
+            Self::MapLookupElem | Self::MapUpdateElem | Self::MapDeleteElem => {
+                LINUX_BPF_H_V3_19_SOURCE
+            }
+            Self::TailCall => LINUX_BPF_H_V4_2_SOURCE,
+            Self::PerfEventRead => LINUX_BPF_H_V4_3_SOURCE,
+            Self::Redirect => LINUX_BPF_H_V4_4_SOURCE,
+            Self::GetStackId | Self::GetStack | Self::CsumDiff => LINUX_BPF_H_V4_6_SOURCE,
+            Self::SkbUnderCgroup => LINUX_BPF_H_V4_8_SOURCE,
+            Self::SkbPullData => LINUX_BPF_H_V4_9_SOURCE,
+            Self::XdpAdjustHead => LINUX_BPF_H_V4_10_SOURCE,
+            Self::RedirectMap | Self::SkRedirectMap => LINUX_BPF_H_V4_14_SOURCE,
+            Self::PerfEventReadValue => LINUX_BPF_H_V4_15_SOURCE,
+            Self::MsgApplyBytes | Self::MsgRedirectMap => LINUX_BPF_H_V4_17_SOURCE,
+            Self::SkAssign => LINUX_BPF_H_V5_7_SOURCE,
+            Self::RingbufOutput
+            | Self::RingbufReserve
+            | Self::RingbufSubmit
+            | Self::RingbufDiscard
+            | Self::RingbufQuery => LINUX_BPF_H_V5_8_SOURCE,
+            Self::RedirectNeigh => LINUX_BPF_H_V5_10_SOURCE,
+            Self::BprmOptsSet => LINUX_BPF_H_V5_11_SOURCE,
+            Self::ForEachMapElem => LINUX_BPF_H_V5_13_SOURCE,
+            Self::SysBpf => LINUX_BPF_H_V5_14_SOURCE,
+            Self::TimerInit | Self::TimerSetCallback | Self::TimerStart | Self::TimerCancel => {
+                LINUX_BPF_H_V5_15_SOURCE
+            }
+            Self::KallsymsLookupName => LINUX_BPF_H_V5_16_SOURCE,
+            Self::BpfLoop => LINUX_BPF_H_V5_17_SOURCE,
+            Self::KptrXchg
+            | Self::RingbufReserveDynptr
+            | Self::RingbufSubmitDynptr
+            | Self::RingbufDiscardDynptr
+            | Self::DynptrData => LINUX_BPF_H_V5_19_SOURCE,
+            Self::UserRingbufDrain => LINUX_BPF_H_V6_1_SOURCE,
+            _ => return None,
+        })
+    }
+
     pub const fn from_u32(helper_id: u32) -> Option<Self> {
         match helper_id {
             1 => Some(Self::MapLookupElem),

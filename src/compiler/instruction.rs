@@ -104,7 +104,7 @@ impl EbpfReg {
 ///
 /// These are the kernel helper functions that eBPF programs can call.
 /// See: https://man7.org/linux/man-pages/man7/bpf-helpers.7.html
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum BpfHelper {
     /// void *bpf_map_lookup_elem(map, key)
@@ -1755,6 +1755,8 @@ pub use ref_kinds::{
 
 #[path = "instruction/helper_metadata.rs"]
 mod helper_metadata;
+
+pub use helper_metadata::HelperCompatibilityRequirement;
 
 #[path = "instruction/encoding.rs"]
 mod encoding;

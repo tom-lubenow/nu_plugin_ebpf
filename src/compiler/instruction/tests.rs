@@ -570,6 +570,124 @@ fn test_bpf_helper_name_roundtrip() {
 }
 
 #[test]
+fn test_bpf_helper_kernel_compatibility_metadata() {
+    let expected = [
+        (
+            BpfHelper::MapLookupElem,
+            "helper:bpf_map_lookup_elem",
+            "3.19",
+        ),
+        (BpfHelper::TailCall, "helper:bpf_tail_call", "4.2"),
+        (
+            BpfHelper::PerfEventRead,
+            "helper:bpf_perf_event_read",
+            "4.3",
+        ),
+        (BpfHelper::Redirect, "helper:bpf_redirect", "4.4"),
+        (BpfHelper::GetStackId, "helper:bpf_get_stackid", "4.6"),
+        (BpfHelper::CsumDiff, "helper:bpf_csum_diff", "4.6"),
+        (
+            BpfHelper::SkbUnderCgroup,
+            "helper:bpf_skb_under_cgroup",
+            "4.8",
+        ),
+        (BpfHelper::SkbPullData, "helper:bpf_skb_pull_data", "4.9"),
+        (
+            BpfHelper::XdpAdjustHead,
+            "helper:bpf_xdp_adjust_head",
+            "4.10",
+        ),
+        (BpfHelper::RedirectMap, "helper:bpf_redirect_map", "4.14"),
+        (
+            BpfHelper::PerfEventReadValue,
+            "helper:bpf_perf_event_read_value",
+            "4.15",
+        ),
+        (
+            BpfHelper::MsgApplyBytes,
+            "helper:bpf_msg_apply_bytes",
+            "4.17",
+        ),
+        (BpfHelper::SkAssign, "helper:bpf_sk_assign", "5.7"),
+        (
+            BpfHelper::RingbufReserve,
+            "helper:bpf_ringbuf_reserve",
+            "5.8",
+        ),
+        (
+            BpfHelper::RedirectNeigh,
+            "helper:bpf_redirect_neigh",
+            "5.10",
+        ),
+        (BpfHelper::BprmOptsSet, "helper:bpf_bprm_opts_set", "5.11"),
+        (
+            BpfHelper::ForEachMapElem,
+            "helper:bpf_for_each_map_elem",
+            "5.13",
+        ),
+        (BpfHelper::SysBpf, "helper:bpf_sys_bpf", "5.14"),
+        (BpfHelper::TimerInit, "helper:bpf_timer_init", "5.15"),
+        (
+            BpfHelper::KallsymsLookupName,
+            "helper:bpf_kallsyms_lookup_name",
+            "5.16",
+        ),
+        (BpfHelper::BpfLoop, "helper:bpf_loop", "5.17"),
+        (BpfHelper::KptrXchg, "helper:bpf_kptr_xchg", "5.19"),
+        (
+            BpfHelper::RingbufReserveDynptr,
+            "helper:bpf_ringbuf_reserve_dynptr",
+            "5.19",
+        ),
+        (
+            BpfHelper::UserRingbufDrain,
+            "helper:bpf_user_ringbuf_drain",
+            "6.1",
+        ),
+    ];
+
+    for (helper, key, minimum_kernel) in expected {
+        let requirement = helper
+            .compatibility_requirement()
+            .expect("selected helper should have compatibility metadata");
+        assert_eq!(requirement.helper(), helper);
+        assert_eq!(requirement.key(), key);
+        assert_eq!(requirement.category(), "helper");
+        assert_eq!(helper.minimum_kernel(), Some(minimum_kernel));
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/")),
+            "source should point at the Linux tag where {} first appears",
+            helper.name()
+        );
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .ends_with("/include/uapi/linux/bpf.h")
+        );
+    }
+
+    assert_eq!(BpfHelper::TracePrintk.compatibility_requirement(), None);
+    let requirements = [
+        BpfHelper::MapLookupElem
+            .compatibility_requirement()
+            .expect("map lookup should be versioned"),
+        BpfHelper::RingbufReserve
+            .compatibility_requirement()
+            .expect("ringbuf reserve should be versioned"),
+        BpfHelper::UserRingbufDrain
+            .compatibility_requirement()
+            .expect("user ringbuf drain should be versioned"),
+    ];
+    assert_eq!(
+        HelperCompatibilityRequirement::effective_minimum_kernel(&requirements),
+        Some("6.1")
+    );
+}
+
+#[test]
 fn test_call_kfunc() {
     let insn = EbpfInsn::call_kfunc(1234);
     let bytes = insn.encode();
