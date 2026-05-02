@@ -42,3 +42,21 @@ fn test_btf_fwd_and_type_tag() {
     );
     assert!(data.windows(b"__kptr\0".len()).any(|w| w == b"__kptr\0"));
 }
+
+#[test]
+fn test_btf_decl_tag() {
+    let mut btf = BtfBuilder::new();
+    let u64_ty = btf.add_int("u64", 8, false);
+    let root_ty = btf.add_struct_with_offsets("map_value", 8, &[("head", u64_ty, 0)]);
+    let tag_ty = btf.add_decl_tag("contains:node_data:node", root_ty, 0);
+
+    assert_eq!(u64_ty, 1);
+    assert_eq!(root_ty, 2);
+    assert_eq!(tag_ty, 3);
+
+    let data = btf.build();
+    assert!(
+        data.windows(b"contains:node_data:node\0".len())
+            .any(|w| w == b"contains:node_data:node\0")
+    );
+}

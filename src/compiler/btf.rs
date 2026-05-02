@@ -154,6 +154,25 @@ impl BtfBuilder {
         type_id
     }
 
+    /// Add a declaration tag, return its type ID.
+    ///
+    /// `component_idx` is `-1` for a tag attached to the target declaration
+    /// itself, or a zero-based struct/union member index for field tags.
+    #[allow(dead_code)]
+    pub fn add_decl_tag(&mut self, tag: &str, target_type_id: u32, component_idx: i32) -> u32 {
+        let name_off = self.add_string(tag);
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+
+        self.types.extend_from_slice(&name_off.to_le_bytes());
+        self.types
+            .extend_from_slice(&Self::encode_info(BtfKind::DeclTag, 0, false).to_le_bytes());
+        self.types.extend_from_slice(&target_type_id.to_le_bytes());
+        self.types.extend_from_slice(&component_idx.to_le_bytes());
+
+        type_id
+    }
+
     /// Add an array type, return its type ID
     ///
     /// Arrays in BTF have an element type, index type (usually u32), and number of elements.

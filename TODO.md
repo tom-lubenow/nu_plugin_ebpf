@@ -35,7 +35,7 @@ history and release notes, not here.
   - Keep type inference, verifier_types, VCC, and backend assumptions in lockstep.
   - Extend pointer-state transitions for helper/kfunc families that mutate provenance, nullability, packet-pointer validity, ref ownership, dynptr state, timer state, and stack-object initialization.
   - Continue modeling branch refinement, range facts, CFG joins, bounded loops, and helper size/bounds constraints.
-  - Add BTF-aware validation for remaining map-value fields that carry verifier-sensitive objects such as dynptrs, graph nodes, workqueues, and nested kernel structs.
+  - Add BTF-aware validation for remaining map-value fields that carry verifier-sensitive objects such as dynptrs, graph roots/nodes, refcounts, and nested kernel structs. BTF declaration-tag emission is now available as the prerequisite for `contains:TYPE:FIELD` graph-root metadata; source syntax still needs a named object-type story before exposing list/rbtree roots.
   - Preserve clear diagnostics when VCC rejects a program that the compiler can describe precisely.
 
 - [~] Add a verifier differential suite.
