@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-04-26.
+Last updated: 2026-05-02.
 
 This file tracks remaining scope. Detailed historical progress belongs in git
 history and release notes, not here.
@@ -18,7 +18,7 @@ history and release notes, not here.
 1. Build a verifier differential suite and kernel compatibility matrix so correctness is measured against real kernels.
 2. Tighten VCC/verifier parity for helper/kfunc state transitions: provenance, nullability, mutability, ref lifetime, dynptrs, timers, and by-reference stack objects.
 3. Continue shrinking raw `helper-call` usage only where an ordinary Nushell form or typed context projection is honest.
-4. Add kernel-version and feature metadata for helpers, kfuncs, map kinds, program families, and loader features.
+4. Extend kernel-version and feature metadata beyond program families into helpers, kfuncs, map kinds, context fields, and loader features.
 5. Turn the current internal-alpha surface into a documented external-alpha surface with feature gates, compatibility notes, and safe examples.
 
 ## Workstream Division
@@ -71,8 +71,9 @@ history and release notes, not here.
   - Prefer compile/dry-run coverage first for behavior-changing families, then add live attach only when the loader path and test environment are safe.
 
 - [~] Add kernel-version and feature metadata.
-  - Keep the program-family and parsed-target compatibility requirement registry authoritative for feature-style requirements such as kernel BTF, BPF trampolines, TCX, netfilter links, LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and cgroup UNIX socket-address hooks.
-  - Track minimum kernel versions for program families, helpers, kfuncs, map kinds, context fields, attach modes, and loader features once each value is source-verified; keep per-fixture compatibility metadata feature-granular instead of collapsing mixed dependencies into one scalar.
+  - Keep the program-family and parsed-target compatibility requirement registry authoritative for feature-style requirements. Base program families, BTF tracing/LSM floors, cgroup families, TCX, netfilter links, LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and cgroup UNIX socket-address hooks now carry source-verified minimums where a kernel version is a meaningful claim.
+  - Track minimum kernel versions for helpers, kfuncs, map kinds, context fields, attach modes, and loader features once each value is source-verified; keep per-fixture compatibility metadata feature-granular instead of collapsing mixed dependencies into one scalar.
+  - Keep verifier fixture target metadata derived from target strings where possible; use explicit fixture `kernel_features` for helper, kfunc, map, context-field, or target-specific requirements the target cannot imply.
   - Surface compatibility diagnostics before backend or kernel load when a feature is known to require a newer kernel/config.
   - Document local-kernel detection limits and when the kernel verifier remains authoritative.
 
