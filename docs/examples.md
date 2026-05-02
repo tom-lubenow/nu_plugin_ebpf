@@ -140,11 +140,11 @@ let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.snd_cwnd | count; 1 }
 # Count sock_ops TCP progress counters on loopback socket events
 let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.snd_nxt + $ctx.bytes_acked + $ctx.mss_cache + $ctx.segs_out) | count; 1 }
 
-# Count sock_ops packet-length observations when packet metadata is available
-let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| $ctx.skb_len | count; 1 }
+# Count sock_ops packet-length observations on packet-aware established callbacks
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| if ($ctx.op == 4) { $ctx.skb_len | count }; if ($ctx.op == 5) { $ctx.skb_len | count }; 1 }
 
-# Count first-byte observations from packet-aware sock_ops callbacks
-let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| ($ctx.data | get 0) | count; 1 }
+# Count first-byte observations from packet-aware established callbacks
+let id = ebpf attach 'sock_ops:/sys/fs/cgroup' {|ctx| if ($ctx.op == 4) { ($ctx.data | get 0) | count }; if ($ctx.op == 5) { ($ctx.data | get 0) | count }; 1 }
 
 # Count first-byte observations on a pinned sockmap or sockhash sk_msg hook
 let id = ebpf attach 'sk_msg:/sys/fs/bpf/demo_sockmap' {|ctx| ($ctx.data | get 0) | count; 'pass' }

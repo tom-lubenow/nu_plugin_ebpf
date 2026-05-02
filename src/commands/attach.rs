@@ -475,10 +475,10 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.args }    - Get the four sock_ops callback argument words as a fixed array
     {|ctx| mut ctx = $ctx; $ctx.reply = 1; 1 } - Write the raw sock_ops reply word through ordinary assignment
     {|ctx| mut ctx = $ctx; $ctx.replylong.0 = 7; 1 } - Write a raw replylong u32 word through ordinary assignment
-    {|ctx| $ctx.packet_len } - Get the packet length when packet metadata is available
+    {|ctx| if ($ctx.op == 4) { $ctx.packet_len }; 1 } - Get the packet length on a proven packet-aware callback
     {|ctx| $ctx.len } - Alias for ctx.packet_len
-    {|ctx| $ctx.data }    - Get the packet data pointer when packet metadata is available
-    {|ctx| $ctx.data_end } - Get the packet end pointer when packet metadata is available
+    {|ctx| if ($ctx.op == 4) { $ctx.data }; 1 }    - Get the packet data pointer on a proven packet-aware callback
+    {|ctx| if ($ctx.op == 4) { $ctx.data_end }; 1 } - Get the packet end pointer on a proven packet-aware callback
     {|ctx| $ctx.family }  - Get socket family
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
@@ -515,9 +515,9 @@ Context parameter syntax (recommended):
     {|ctx| mut ctx = $ctx; $ctx.sk_txhash = 7; 1 } - Write the socket transmit hash through ordinary assignment
     {|ctx| $ctx.bytes_received } - Get the total received byte count
     {|ctx| $ctx.bytes_acked } - Get the total acknowledged byte count
-    {|ctx| $ctx.skb_len } - Get the total packet length when packet metadata is available
-    {|ctx| $ctx.skb_tcp_flags } - Get packet TCP flags when packet metadata is available
-    {|ctx| $ctx.skb_hwtstamp } - Get packet hardware timestamp when packet metadata is available
+    {|ctx| if ($ctx.op == 4) { $ctx.skb_len }; 1 } - Get the total packet length on a proven packet-aware callback
+    {|ctx| if ($ctx.op == 4) { $ctx.skb_tcp_flags }; 1 } - Get packet TCP flags on a proven packet-aware callback
+    {|ctx| if ($ctx.op == 4) { $ctx.skb_hwtstamp }; 1 } - Get packet hardware timestamp on a proven packet-aware callback
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     Note: sock_ops uses raw integer return codes. Observation-only examples
     should return `1`. `ctx.reply`, `ctx.replylong.<0-3>`, and
@@ -528,8 +528,8 @@ Context parameter syntax (recommended):
     `($ctx.remote_ip6 | get 3)`. `ctx.args` uses the same fixed-array model,
     for example `($ctx.args | get 0)`. `ctx.data` / `ctx.data_end` use the
     same guarded packet access model as XDP and tc when packet metadata is
-    available, so forms like `($ctx.data | get 0)` are valid on packet-aware
-    sock_ops callbacks. `ctx.sk` uses the same typed `bpf_sock` projection
+    available, so guarded forms like `if ($ctx.op == 4) { ($ctx.data | get 0) }`
+    are valid on packet-aware sock_ops callbacks. `ctx.sk` uses the same typed `bpf_sock` projection
     model as `cgroup_sock`, `cgroup_sockopt`, `cgroup_sock_addr`, `sk_lookup`,
     and `sk_msg`. Modeled sock_ops helpers also use the ordinary helper
     surface here, including `bpf_getsockopt`, `bpf_setsockopt`,

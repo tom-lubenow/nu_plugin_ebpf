@@ -737,7 +737,12 @@ step 48 "sock_ops root cgroup skb_len counter" {
         print "Skipping sock_ops skb_len smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
-            ($ctx.skb_len + ($ctx.bytes_received mod 1024) + ($ctx.bytes_acked mod 1024)) | count
+            if ($ctx.op == 4) {
+                ($ctx.skb_len + ($ctx.bytes_received mod 1024) + ($ctx.bytes_acked mod 1024)) | count
+            }
+            if ($ctx.op == 5) {
+                ($ctx.skb_len + ($ctx.bytes_received mod 1024) + ($ctx.bytes_acked mod 1024)) | count
+            }
             1
         } { trigger-loopback-connect } "sock_ops skb_len counter"
     }
@@ -1093,7 +1098,12 @@ step 66 "sock_ops root cgroup packet first byte counter" {
         print "Skipping sock_ops packet-data smoke: /sys/fs/cgroup is not a unified cgroup v2 mount"
     } else {
         count-at-least-one "sock_ops:/sys/fs/cgroup" {|ctx|
-            ($ctx.data | get 0) | count
+            if ($ctx.op == 4) {
+                ($ctx.data | get 0) | count
+            }
+            if ($ctx.op == 5) {
+                ($ctx.data | get 0) | count
+            }
             1
         } { trigger-loopback-connect } "sock_ops packet first-byte counter"
     }
