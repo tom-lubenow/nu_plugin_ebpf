@@ -7,7 +7,7 @@
 //! - Optional ".maps" section for BPF map definitions
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use object::write::{Object, Relocation, Symbol, SymbolSection};
@@ -19,7 +19,9 @@ use object::{
 use super::CompileError;
 use super::btf::BtfBuilder;
 use super::instruction::EbpfBuilder;
-use super::instruction::{BpfHelper, HelperCompatibilityRequirement, opcode};
+use super::instruction::{
+    BpfHelper, HelperCompatibilityRequirement, KfuncCompatibilityRequirement, opcode,
+};
 use super::mir::CtxStoreTarget;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
@@ -2383,6 +2385,8 @@ pub struct EbpfProgramSection {
     pub relocations: Vec<SymbolRelocation>,
     /// Subfunction symbols for BPF-to-BPF calls
     pub subfunctions: Vec<SubfunctionSymbol>,
+    /// Source-level kfunc names used by this program section when available.
+    pub used_kfuncs: HashSet<String>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
@@ -2533,6 +2537,8 @@ pub struct EbpfProgram {
     pub relocations: Vec<SymbolRelocation>,
     /// Subfunction symbols for BPF-to-BPF calls
     pub subfunctions: Vec<SubfunctionSymbol>,
+    /// Source-level kfunc names used by this program when available.
+    pub used_kfuncs: HashSet<String>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys

@@ -100,6 +100,29 @@ fn helper_compatibility_requirements_for_programs(
     requirements
 }
 
+fn kfunc_compatibility_requirements_for_names(
+    used_kfuncs: &HashSet<String>,
+) -> Vec<KfuncCompatibilityRequirement> {
+    let mut names = used_kfuncs.iter().map(String::as_str).collect::<Vec<_>>();
+    names.sort_unstable();
+    names.dedup();
+
+    names
+        .into_iter()
+        .filter_map(KfuncCompatibilityRequirement::for_name)
+        .collect()
+}
+
+fn kfunc_compatibility_requirements_for_programs(
+    programs: &[EbpfProgramSection],
+) -> Vec<KfuncCompatibilityRequirement> {
+    let mut used_kfuncs = HashSet::new();
+    for program in programs {
+        used_kfuncs.extend(program.used_kfuncs.iter().cloned());
+    }
+    kfunc_compatibility_requirements_for_names(&used_kfuncs)
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -131,6 +154,7 @@ impl EbpfProgram {
             bss_globals: Vec::new(),
             relocations: Vec::new(),
             subfunctions: Vec::new(),
+            used_kfuncs: HashSet::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_key_types: HashMap::new(),
@@ -163,6 +187,7 @@ impl EbpfProgram {
             bss_globals: Vec::new(),
             relocations: Vec::new(),
             subfunctions: Vec::new(),
+            used_kfuncs: HashSet::new(),
             event_schema: None,
             bytes_counter_key_schema: None,
             generic_map_key_types: HashMap::new(),
@@ -202,6 +227,7 @@ impl EbpfProgram {
             bss_globals: Vec::new(),
             relocations,
             subfunctions,
+            used_kfuncs: HashSet::new(),
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types: HashMap::new(),
@@ -239,6 +265,16 @@ impl EbpfProgram {
     /// Attach writable zero-initialized globals to this program's `.bss` section.
     pub fn with_bss_globals(mut self, bss_globals: Vec<BssGlobal>) -> Self {
         self.bss_globals = bss_globals;
+        self
+    }
+
+    /// Attach source-level kfunc names recovered before bytecode emission.
+    pub fn with_used_kfuncs<I, S>(mut self, used_kfuncs: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.used_kfuncs = used_kfuncs.into_iter().map(Into::into).collect();
         self
     }
 
@@ -284,6 +320,7 @@ impl EbpfProgram {
             bss_globals,
             relocations,
             subfunctions,
+            used_kfuncs,
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types,
@@ -310,6 +347,7 @@ impl EbpfProgram {
                 main_size,
                 relocations,
                 subfunctions,
+                used_kfuncs,
                 event_schema,
                 bytes_counter_key_schema,
                 generic_map_key_types,
@@ -332,6 +370,7 @@ impl EbpfProgram {
             main_size: self.main_size,
             relocations: self.relocations,
             subfunctions: self.subfunctions,
+            used_kfuncs: self.used_kfuncs,
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,
@@ -698,6 +737,16 @@ impl EbpfProgramSection {
             &self.helper_compatibility_requirements(),
         )
     }
+
+    pub fn kfunc_compatibility_requirements(&self) -> Vec<KfuncCompatibilityRequirement> {
+        kfunc_compatibility_requirements_for_names(&self.used_kfuncs)
+    }
+
+    pub fn kfunc_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_minimum_kernel(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
 }
 
 impl EbpfObject {
@@ -913,6 +962,7 @@ impl EbpfObject {
                 bss_globals: self.bss_globals.clone(),
                 relocations: program.relocations.clone(),
                 subfunctions: program.subfunctions.clone(),
+                used_kfuncs: program.used_kfuncs.clone(),
                 event_schema: program.event_schema.clone(),
                 bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
                 generic_map_key_types: program.generic_map_key_types.clone(),
@@ -1236,6 +1286,16 @@ impl EbpfObject {
     pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         HelperCompatibilityRequirement::effective_minimum_kernel(
             &self.helper_compatibility_requirements(),
+        )
+    }
+
+    pub fn kfunc_compatibility_requirements(&self) -> Vec<KfuncCompatibilityRequirement> {
+        kfunc_compatibility_requirements_for_programs(&self.programs)
+    }
+
+    pub fn kfunc_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_minimum_kernel(
+            &self.kfunc_compatibility_requirements(),
         )
     }
 
@@ -1642,6 +1702,16 @@ impl EbpfProgram {
     pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         HelperCompatibilityRequirement::effective_minimum_kernel(
             &self.helper_compatibility_requirements(),
+        )
+    }
+
+    pub fn kfunc_compatibility_requirements(&self) -> Vec<KfuncCompatibilityRequirement> {
+        kfunc_compatibility_requirements_for_names(&self.used_kfuncs)
+    }
+
+    pub fn kfunc_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_minimum_kernel(
+            &self.kfunc_compatibility_requirements(),
         )
     }
 }

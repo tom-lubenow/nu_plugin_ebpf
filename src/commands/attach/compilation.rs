@@ -1657,12 +1657,14 @@ pub(super) fn compile_struct_ops_object(
                 );
                 callback_fields.insert(field_name.to_string());
                 callback_kfuncs.insert(field_name.to_string(), compiled.used_kfuncs.clone());
-                callbacks.push(compiled.compile_result.into_struct_ops_callback(
+                let mut callback = compiled.compile_result.into_struct_ops_callback(
                     field_name.as_str(),
                     callback_name,
                     compiled.generic_map_value_types,
                     compiled.generic_map_value_semantics,
-                ));
+                );
+                callback.program = callback.program.with_used_kfuncs(compiled.used_kfuncs);
+                callbacks.push(callback);
             }
             _ => {
                 validate_struct_ops_top_level_field_kind(

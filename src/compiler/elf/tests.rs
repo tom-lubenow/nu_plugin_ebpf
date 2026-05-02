@@ -9723,6 +9723,37 @@ fn test_ebpf_program_reports_helper_compatibility_requirements() {
 }
 
 #[test]
+fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
+    let program = EbpfProgram::new(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_kfuncs([
+        "bpf_get_task_exe_file",
+        "bpf_task_acquire",
+        "unknown_kernel_kfunc",
+        "bpf_get_task_exe_file",
+    ]);
+
+    let requirements = program.kfunc_compatibility_requirements();
+    assert_eq!(requirements.len(), 2);
+    assert_eq!(requirements[0].name(), "bpf_get_task_exe_file");
+    assert_eq!(requirements[0].key(), "kfunc:bpf_get_task_exe_file");
+    assert_eq!(requirements[1].name(), "bpf_task_acquire");
+    assert_eq!(requirements[1].key(), "kfunc:bpf_task_acquire");
+    assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(
+        program
+            .clone()
+            .into_object()
+            .kfunc_compatibility_minimum_kernel(),
+        Some("6.12")
+    );
+}
+
+#[test]
 fn test_validate_runtime_artifacts_rejects_unknown_runtime_map_type() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Xdp,
