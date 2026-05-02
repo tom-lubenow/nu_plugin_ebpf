@@ -10,6 +10,10 @@ const LINUX_HELPERS_C_V6_4_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c";
 const LINUX_HELPERS_C_V6_5_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c";
+const LINUX_CPUMASK_C_V6_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c";
+const LINUX_CPUMASK_C_V6_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c";
 const LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c";
 
@@ -119,6 +123,27 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_cpumask_release" => "bpf_cpumask_release",
         "bpf_cpumask_first" => "bpf_cpumask_first",
         "bpf_cpumask_set_cpu" => "bpf_cpumask_set_cpu",
+        "bpf_cpumask_and" => "bpf_cpumask_and",
+        "bpf_cpumask_any_and_distribute" => "bpf_cpumask_any_and_distribute",
+        "bpf_cpumask_any_distribute" => "bpf_cpumask_any_distribute",
+        "bpf_cpumask_clear" => "bpf_cpumask_clear",
+        "bpf_cpumask_clear_cpu" => "bpf_cpumask_clear_cpu",
+        "bpf_cpumask_copy" => "bpf_cpumask_copy",
+        "bpf_cpumask_empty" => "bpf_cpumask_empty",
+        "bpf_cpumask_equal" => "bpf_cpumask_equal",
+        "bpf_cpumask_first_and" => "bpf_cpumask_first_and",
+        "bpf_cpumask_first_zero" => "bpf_cpumask_first_zero",
+        "bpf_cpumask_full" => "bpf_cpumask_full",
+        "bpf_cpumask_intersects" => "bpf_cpumask_intersects",
+        "bpf_cpumask_or" => "bpf_cpumask_or",
+        "bpf_cpumask_release_dtor" => "bpf_cpumask_release_dtor",
+        "bpf_cpumask_setall" => "bpf_cpumask_setall",
+        "bpf_cpumask_subset" => "bpf_cpumask_subset",
+        "bpf_cpumask_test_and_clear_cpu" => "bpf_cpumask_test_and_clear_cpu",
+        "bpf_cpumask_test_and_set_cpu" => "bpf_cpumask_test_and_set_cpu",
+        "bpf_cpumask_test_cpu" => "bpf_cpumask_test_cpu",
+        "bpf_cpumask_weight" => "bpf_cpumask_weight",
+        "bpf_cpumask_xor" => "bpf_cpumask_xor",
         _ => return None,
     })
 }
@@ -135,9 +160,29 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_cpumask_acquire"
         | "bpf_cpumask_release"
         | "bpf_cpumask_first"
-        | "bpf_cpumask_set_cpu" => "6.3",
+        | "bpf_cpumask_set_cpu"
+        | "bpf_cpumask_and"
+        | "bpf_cpumask_clear"
+        | "bpf_cpumask_clear_cpu"
+        | "bpf_cpumask_copy"
+        | "bpf_cpumask_empty"
+        | "bpf_cpumask_equal"
+        | "bpf_cpumask_first_zero"
+        | "bpf_cpumask_full"
+        | "bpf_cpumask_intersects"
+        | "bpf_cpumask_or"
+        | "bpf_cpumask_setall"
+        | "bpf_cpumask_subset"
+        | "bpf_cpumask_test_and_clear_cpu"
+        | "bpf_cpumask_test_and_set_cpu"
+        | "bpf_cpumask_test_cpu"
+        | "bpf_cpumask_xor" => "6.3",
         "bpf_dynptr_slice" | "bpf_cgroup_from_id" => "6.4",
+        "bpf_cpumask_any_and_distribute"
+        | "bpf_cpumask_any_distribute"
+        | "bpf_cpumask_first_and" => "6.5",
         "bpf_dynptr_size" | "bpf_dynptr_clone" => "6.5",
+        "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => "6.8",
         "bpf_get_task_exe_file" | "bpf_put_file" => "6.12",
         _ => return None,
     })
@@ -156,9 +201,29 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_cpumask_acquire"
         | "bpf_cpumask_release"
         | "bpf_cpumask_first"
-        | "bpf_cpumask_set_cpu" => LINUX_CPUMASK_C_V6_3_SOURCE,
+        | "bpf_cpumask_set_cpu"
+        | "bpf_cpumask_and"
+        | "bpf_cpumask_clear"
+        | "bpf_cpumask_clear_cpu"
+        | "bpf_cpumask_copy"
+        | "bpf_cpumask_empty"
+        | "bpf_cpumask_equal"
+        | "bpf_cpumask_first_zero"
+        | "bpf_cpumask_full"
+        | "bpf_cpumask_intersects"
+        | "bpf_cpumask_or"
+        | "bpf_cpumask_setall"
+        | "bpf_cpumask_subset"
+        | "bpf_cpumask_test_and_clear_cpu"
+        | "bpf_cpumask_test_and_set_cpu"
+        | "bpf_cpumask_test_cpu"
+        | "bpf_cpumask_xor" => LINUX_CPUMASK_C_V6_3_SOURCE,
         "bpf_dynptr_slice" | "bpf_cgroup_from_id" => LINUX_HELPERS_C_V6_4_SOURCE,
+        "bpf_cpumask_any_and_distribute"
+        | "bpf_cpumask_any_distribute"
+        | "bpf_cpumask_first_and" => LINUX_CPUMASK_C_V6_5_SOURCE,
         "bpf_dynptr_size" | "bpf_dynptr_clone" => LINUX_HELPERS_C_V6_5_SOURCE,
+        "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => LINUX_CPUMASK_C_V6_8_SOURCE,
         "bpf_get_task_exe_file" | "bpf_put_file" => LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE,
         _ => return None,
     })

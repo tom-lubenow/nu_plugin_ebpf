@@ -4029,6 +4029,18 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/bpf/cpumask.c",
         ),
         (
+            "bpf_cpumask_any_distribute",
+            "kfunc:bpf_cpumask_any_distribute",
+            "6.5",
+            "/kernel/bpf/cpumask.c",
+        ),
+        (
+            "bpf_cpumask_release_dtor",
+            "kfunc:bpf_cpumask_release_dtor",
+            "6.8",
+            "/kernel/bpf/cpumask.c",
+        ),
+        (
             "bpf_cgroup_from_id",
             "kfunc:bpf_cgroup_from_id",
             "6.4",
