@@ -1477,6 +1477,27 @@ fn test_attach_with_pin_rejects_struct_ops_objects() {
 }
 
 #[test]
+fn test_attach_rejects_risky_struct_ops_without_explicit_opt_in() {
+    let state = EbpfState::new();
+    let object = EbpfObject::struct_ops("sched_ext_ops", "sched_ext_ops", vec![0; 8]).build();
+
+    let err = state
+        .attach(&object)
+        .expect_err("risky struct_ops objects should require explicit opt-in");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Attach(ref msg)
+                if msg.contains("requires explicit opt-in")
+                    && msg.contains("sched_ext")
+                    && msg.contains("--unsafe-struct-ops")
+        ),
+        "unexpected risky struct_ops attach error: {err:?}"
+    );
+}
+
+#[test]
 fn test_attach_rejects_compile_only_programs_before_loading() {
     let state = EbpfState::new();
 

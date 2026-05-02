@@ -693,6 +693,15 @@ impl EbpfState {
         object: &EbpfObject,
         pin_group: Option<&str>,
     ) -> Result<u32, LoadError> {
+        self.attach_with_pin_options(object, pin_group, AttachOptions::default())
+    }
+
+    pub fn attach_with_pin_options(
+        &self,
+        object: &EbpfObject,
+        pin_group: Option<&str>,
+        options: AttachOptions,
+    ) -> Result<u32, LoadError> {
         match &object.kind {
             crate::compiler::EbpfObjectKind::Program => {
                 self.attach_program_object(object, pin_group)
@@ -700,7 +709,7 @@ impl EbpfState {
             crate::compiler::EbpfObjectKind::StructOps {
                 name,
                 value_type_name,
-            } => self.attach_struct_ops_object(object, pin_group, name, value_type_name),
+            } => self.attach_struct_ops_object(object, pin_group, name, value_type_name, options),
         }
     }
 
@@ -1707,11 +1716,25 @@ impl EbpfState {
         pin_group: Option<&str>,
         name: &str,
         value_type_name: &str,
+        options: AttachOptions,
     ) -> Result<u32, LoadError> {
         if pin_group.is_some() {
             return Err(LoadError::Load(
                 "struct_ops objects do not yet support pinned map sharing".to_string(),
             ));
+        }
+
+        let spec = ProgramSpec::StructOps {
+            value_type_name: value_type_name.to_string(),
+        };
+        let policy = spec.live_attach_policy();
+        if policy.requires_opt_in && !options.allow_unsafe_struct_ops {
+            let reason = policy
+                .note
+                .unwrap_or("live attach requires explicit opt-in");
+            return Err(LoadError::Attach(format!(
+                "live attach for struct_ops {value_type_name} requires explicit opt-in; {reason}; use --dry-run to compile or pass --unsafe-struct-ops for an intentional live load"
+            )));
         }
 
         if let Some(err) = current_kernel_program_minimum_error(object) {

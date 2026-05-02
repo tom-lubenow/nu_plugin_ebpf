@@ -1359,7 +1359,7 @@ fn run_attach(
     engine: &EngineInterface,
     call: &EvaluatedCall,
 ) -> Result<PipelineData, LabeledError> {
-    use crate::loader::{LoadError, get_state, parse_program_spec_for_attach};
+    use crate::loader::{AttachOptions, LoadError, get_state, parse_program_spec_for_attach};
 
     let probe_spec: String = call.req(0)?;
     let body: Value = call.req(1)?;
@@ -1484,8 +1484,11 @@ fn run_attach(
     }
 
     // Load and attach
+    let attach_options = AttachOptions {
+        allow_unsafe_struct_ops,
+    };
     let probe_id = state
-        .attach_with_pin(&object, pin_group.as_deref())
+        .attach_with_pin_options(&object, pin_group.as_deref(), attach_options)
         .map_err(|e| {
             let help = match &e {
                 LoadError::PermissionDenied => {

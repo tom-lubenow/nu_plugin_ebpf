@@ -326,6 +326,11 @@ pub struct EbpfState {
     pin_group_refs: Mutex<HashMap<String, u32>>,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AttachOptions {
+    pub allow_unsafe_struct_ops: bool,
+}
+
 impl Default for EbpfState {
     fn default() -> Self {
         Self::new()
