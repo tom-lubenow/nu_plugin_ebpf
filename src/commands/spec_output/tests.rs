@@ -14,11 +14,19 @@ fn test_spec_context_fields_include_program_specific_aliases() {
     let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
     let fields = spec_context_fields(&spec, false);
 
-    assert!(field(&fields, "ingress_ifindex").names.contains(&"ifindex"));
+    let ifindex = field(&fields, "ingress_ifindex");
+    assert!(ifindex.names.contains(&"ifindex"));
+    assert_eq!(ifindex.minimum_kernel, Some("4.7"));
     let packet_len = field(&fields, "packet_len");
     assert!(packet_len.names.contains(&"packet_len"));
     assert_eq!(packet_len.semantic_type.as_deref(), Some("u32"));
     assert_eq!(packet_len.runtime_type.as_deref(), Some("u32"));
+    assert_eq!(packet_len.minimum_kernel, Some("4.1"));
+    assert!(
+        packet_len
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.1/"))
+    );
 }
 
 #[test]
@@ -40,6 +48,7 @@ fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
     assert!(task.pointer_non_null);
     assert!(task.trusted_btf_kernel_pointer);
     assert!(!task.raw_context_pointer);
+    assert_eq!(task.minimum_kernel, Some("5.11"));
     assert_eq!(task.backing_helper, Some("bpf_get_current_task_btf"));
     assert_eq!(task.backing_helper_minimum_kernel, Some("5.11"));
     assert!(
@@ -94,17 +103,24 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     let pid = field(&fields, "pid");
     assert_eq!(pid.backing_helper, Some("bpf_get_current_pid_tgid"));
     assert_eq!(pid.backing_helper_minimum_kernel, Some("4.2"));
+    assert_eq!(pid.minimum_kernel, Some("4.2"));
+    assert!(
+        pid.minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.2/"))
+    );
 
     let retval = field(&fields, "retval");
     assert_eq!(retval.semantic_type.as_deref(), Some("u64"));
     assert_eq!(retval.runtime_type.as_deref(), Some("u64"));
     assert_eq!(retval.backing_helper, None);
+    assert_eq!(retval.minimum_kernel, None);
 
     let kstack = field(&fields, "kstack");
     assert_eq!(kstack.semantic_type.as_deref(), Some("i64"));
     assert_eq!(kstack.runtime_type.as_deref(), Some("i64"));
     assert_eq!(kstack.backing_helper, Some("bpf_get_stackid"));
     assert_eq!(kstack.backing_helper_minimum_kernel, Some("4.6"));
+    assert_eq!(kstack.minimum_kernel, Some("4.6"));
 
     let ustack = field(&fields, "ustack");
     assert_eq!(ustack.semantic_type.as_deref(), Some("i64"));
@@ -181,6 +197,48 @@ fn test_spec_record_includes_packet_context_metadata() {
             .expect("direct packet writes should be present")
             .as_bool()
             .expect("direct packet writes should be a bool")
+    );
+}
+
+#[test]
+fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
+    let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let context_fields = record
+        .get("context_fields")
+        .expect("context fields should be present")
+        .as_list()
+        .expect("context fields should be a list");
+    let packet_len = context_fields
+        .iter()
+        .find_map(|value| {
+            let field = value.as_record().ok()?;
+            (field
+                .get("field")?
+                .as_str()
+                .ok()
+                .is_some_and(|field_name| field_name == "packet_len"))
+            .then_some(field)
+        })
+        .expect("packet_len context field should be present");
+
+    assert_eq!(
+        packet_len
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .as_str()
+            .expect("minimum kernel should be a string"),
+        "4.1"
+    );
+    assert!(
+        packet_len
+            .get("minimum_kernel_source")
+            .expect("minimum kernel source should be present")
+            .as_str()
+            .expect("minimum kernel source should be a string")
+            .contains("/v4.1/")
     );
 }
 

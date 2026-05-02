@@ -4,9 +4,10 @@ use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
-    BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext,
-    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
-    ctx_field_backing_helper, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
+    BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard, PacketContextKind,
+    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
+    SockOpsCallbackGuard, ctx_field_backing_helper, synthetic_bpf_sock_type,
+    synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -25,6 +26,8 @@ struct SpecContextField {
     backing_helper: Option<&'static str>,
     backing_helper_minimum_kernel: Option<&'static str>,
     backing_helper_minimum_kernel_source: Option<&'static str>,
+    minimum_kernel: Option<&'static str>,
+    minimum_kernel_source: Option<&'static str>,
     load_guard: Option<&'static str>,
     load_guard_witness: Option<String>,
     load_guard_description: Option<String>,
@@ -537,6 +540,8 @@ fn spec_context_fields(
                 dynamic_context_field_type_labels(spec, &entry.field, resolve_dynamic_fields);
             let load_guard = spec.ctx_field_load_guard(&entry.field);
             let backing_helper = ctx_field_backing_helper(&entry.field);
+            let compatibility_requirement =
+                ContextFieldCompatibilityRequirement::for_field(&entry.field);
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
@@ -562,6 +567,12 @@ fn spec_context_fields(
                         .and_then(BpfHelper::minimum_kernel),
                     backing_helper_minimum_kernel_source: backing_helper
                         .and_then(BpfHelper::minimum_kernel_source),
+                    minimum_kernel: compatibility_requirement
+                        .as_ref()
+                        .map(ContextFieldCompatibilityRequirement::minimum_kernel),
+                    minimum_kernel_source: compatibility_requirement
+                        .as_ref()
+                        .map(ContextFieldCompatibilityRequirement::minimum_kernel_source),
                     load_guard: load_guard.map(context_field_load_guard_label),
                     load_guard_witness: load_guard
                         .map(ContextFieldLoadGuard::witness_field)
@@ -602,6 +613,8 @@ fn context_field_records(
                     "backing_helper" => optional_static_str(field.backing_helper, span),
                     "backing_helper_minimum_kernel" => optional_static_str(field.backing_helper_minimum_kernel, span),
                     "backing_helper_minimum_kernel_source" => optional_static_str(field.backing_helper_minimum_kernel_source, span),
+                    "minimum_kernel" => optional_static_str(field.minimum_kernel, span),
+                    "minimum_kernel_source" => optional_static_str(field.minimum_kernel_source, span),
                     "load_guard" => optional_static_str(field.load_guard, span),
                     "load_guard_witness" => optional_string(field.load_guard_witness, span),
                     "load_guard_description" => optional_string(field.load_guard_description, span),

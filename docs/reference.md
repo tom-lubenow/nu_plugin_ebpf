@@ -200,10 +200,12 @@ known. These labels describe feature surfaces.
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel/source fields. Source-verified requirements carry minimum
 versions, and `compatibility_minimum_kernel` reports the maximum known
-requirement for the parsed target. Mixed requirements stay empty until they are
-split precisely enough to avoid over- or under-stating compatibility. When a
-feature is unmodeled or kernel-version-specific, the kernel verifier and loader
-remain authoritative.
+requirement for the parsed target. Individual context-field records also carry
+nullable `minimum_kernel` and `minimum_kernel_source` fields when direct UAPI
+fields or backing helpers have source-checked introduction points. Mixed
+requirements stay empty until they are split precisely enough to avoid over- or
+under-stating compatibility. When a feature is unmodeled or
+kernel-version-specific, the kernel verifier and loader remain authoritative.
 
 Kernel-BTF-backed attach specs accept both the normal and sleepable
 section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,
