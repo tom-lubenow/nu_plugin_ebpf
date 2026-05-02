@@ -4070,6 +4070,30 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "6.12",
             "/fs/bpf_fs_kfuncs.c",
         ),
+        (
+            "bpf_task_under_cgroup",
+            "kfunc:bpf_task_under_cgroup",
+            "6.5",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
+            "bpf_map_sum_elem_count",
+            "kfunc:bpf_map_sum_elem_count",
+            "6.6",
+            "/kernel/bpf/map_iter.c",
+        ),
+        (
+            "bpf_sock_addr_set_sun_path",
+            "kfunc:bpf_sock_addr_set_sun_path",
+            "6.7",
+            "/net/core/filter.c",
+        ),
+        (
+            "bpf_task_get_cgroup1",
+            "kfunc:bpf_task_get_cgroup1",
+            "6.8",
+            "/kernel/bpf/helpers.c",
+        ),
     ];
 
     for (name, key, minimum_kernel, source_suffix) in expected {

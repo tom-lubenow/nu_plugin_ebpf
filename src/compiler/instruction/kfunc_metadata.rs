@@ -12,6 +12,12 @@ const LINUX_HELPERS_C_V6_5_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c";
 const LINUX_CPUMASK_C_V6_5_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c";
+const LINUX_MAP_ITER_C_V6_6_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.6/kernel/bpf/map_iter.c";
+const LINUX_NET_CORE_FILTER_C_V6_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.7/net/core/filter.c";
+const LINUX_HELPERS_C_V6_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/helpers.c";
 const LINUX_CPUMASK_C_V6_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c";
 const LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE: &str =
@@ -115,7 +121,9 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_dynptr_is_rdonly" => "bpf_dynptr_is_rdonly",
         "bpf_task_acquire" => "bpf_task_acquire",
         "bpf_task_from_pid" => "bpf_task_from_pid",
+        "bpf_task_get_cgroup1" => "bpf_task_get_cgroup1",
         "bpf_task_release" => "bpf_task_release",
+        "bpf_task_under_cgroup" => "bpf_task_under_cgroup",
         "bpf_cgroup_acquire" => "bpf_cgroup_acquire",
         "bpf_cgroup_ancestor" => "bpf_cgroup_ancestor",
         "bpf_cgroup_from_id" => "bpf_cgroup_from_id",
@@ -148,6 +156,8 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_cpumask_test_cpu" => "bpf_cpumask_test_cpu",
         "bpf_cpumask_weight" => "bpf_cpumask_weight",
         "bpf_cpumask_xor" => "bpf_cpumask_xor",
+        "bpf_map_sum_elem_count" => "bpf_map_sum_elem_count",
+        "bpf_sock_addr_set_sun_path" => "bpf_sock_addr_set_sun_path",
         _ => return None,
     })
 }
@@ -189,7 +199,11 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_dynptr_clone"
         | "bpf_dynptr_adjust"
         | "bpf_dynptr_is_null"
-        | "bpf_dynptr_is_rdonly" => "6.5",
+        | "bpf_dynptr_is_rdonly"
+        | "bpf_task_under_cgroup" => "6.5",
+        "bpf_map_sum_elem_count" => "6.6",
+        "bpf_sock_addr_set_sun_path" => "6.7",
+        "bpf_task_get_cgroup1" => "6.8",
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => "6.8",
         "bpf_get_task_exe_file" | "bpf_put_file" => "6.12",
         _ => return None,
@@ -236,7 +250,11 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_dynptr_clone"
         | "bpf_dynptr_adjust"
         | "bpf_dynptr_is_null"
-        | "bpf_dynptr_is_rdonly" => LINUX_HELPERS_C_V6_5_SOURCE,
+        | "bpf_dynptr_is_rdonly"
+        | "bpf_task_under_cgroup" => LINUX_HELPERS_C_V6_5_SOURCE,
+        "bpf_map_sum_elem_count" => LINUX_MAP_ITER_C_V6_6_SOURCE,
+        "bpf_sock_addr_set_sun_path" => LINUX_NET_CORE_FILTER_C_V6_7_SOURCE,
+        "bpf_task_get_cgroup1" => LINUX_HELPERS_C_V6_8_SOURCE,
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => LINUX_CPUMASK_C_V6_8_SOURCE,
         "bpf_get_task_exe_file" | "bpf_put_file" => LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE,
         _ => return None,
