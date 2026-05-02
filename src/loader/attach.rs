@@ -334,19 +334,9 @@ pub(super) fn kernel_context_field_minimum_requirement_detail(
     ))
 }
 
-fn current_kernel_minimum_error(
-    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
-) -> Option<LoadError> {
+fn current_kernel_program_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let current_kernel = current_kernel_release()?;
-    kernel_minimum_requirement_detail(requirements, &current_kernel).map(LoadError::Attach)
-}
-
-fn current_kernel_struct_ops_minimum_error(value_type_name: &str) -> Option<LoadError> {
-    let current_kernel = current_kernel_release()?;
-    let requirements = ProgramSpec::StructOps {
-        value_type_name: value_type_name.to_string(),
-    }
-    .compatibility_requirements();
+    let requirements = object.program_compatibility_requirements();
     kernel_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
 }
 
@@ -728,7 +718,7 @@ impl EbpfState {
                     program.target
                 ))
             })?;
-        let compatibility_requirements = spec.compatibility_requirements();
+        let compatibility_requirements = object.program_compatibility_requirements();
         if !program
             .prog_type
             .attach_kind()
@@ -744,7 +734,7 @@ impl EbpfState {
                 return Err(unsupported_cgroup_sock_addr_target_error(target));
             }
         }
-        if let Some(err) = current_kernel_minimum_error(&compatibility_requirements) {
+        if let Some(err) = current_kernel_program_minimum_error(object) {
             return Err(err);
         }
         if let Some(err) = current_kernel_map_minimum_error(object) {
@@ -1723,7 +1713,7 @@ impl EbpfState {
             ));
         }
 
-        if let Some(err) = current_kernel_struct_ops_minimum_error(value_type_name) {
+        if let Some(err) = current_kernel_program_minimum_error(object) {
             return Err(err);
         }
         if let Some(err) = current_kernel_map_minimum_error(object) {

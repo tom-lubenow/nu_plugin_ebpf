@@ -45,6 +45,48 @@ fn map_compatibility_requirements_for_maps(maps: &[EbpfMap]) -> Vec<MapCompatibi
     requirements
 }
 
+fn push_program_compatibility_requirements(
+    requirements: impl IntoIterator<Item = ProgramCompatibilityRequirement>,
+    seen: &mut HashSet<ProgramCompatibilityRequirement>,
+    out: &mut Vec<ProgramCompatibilityRequirement>,
+) {
+    for requirement in requirements {
+        if seen.insert(requirement) {
+            out.push(requirement);
+        }
+    }
+}
+
+fn program_compatibility_requirements_for_section(
+    program: &EbpfProgramSection,
+) -> Vec<ProgramCompatibilityRequirement> {
+    if let Some(program_spec) = &program.program_spec {
+        return program_spec.compatibility_requirements();
+    }
+
+    parsed_program_spec_for_program(program.prog_type, &program.target)
+        .map(|program_spec| program_spec.compatibility_requirements())
+        .unwrap_or_else(|| program.prog_type.compatibility_requirements().to_vec())
+}
+
+fn program_compatibility_requirements_for_programs(
+    programs: &[EbpfProgramSection],
+) -> Vec<ProgramCompatibilityRequirement> {
+    let mut seen = HashSet::new();
+    let mut requirements = Vec::new();
+
+    for program in programs {
+        push_program_compatibility_requirements(
+            program_compatibility_requirements_for_section(program),
+            &mut seen,
+            &mut requirements,
+        );
+    }
+
+    requirements.sort_by_key(ProgramCompatibilityRequirement::key);
+    requirements
+}
+
 fn extra_data_symbol_is_global_data_section(data_symbol: &ObjectDataSymbol) -> bool {
     let section = data_symbol.section_name.as_str();
     section == ".data"
@@ -922,6 +964,16 @@ impl EbpfProgramSection {
         sorted_context_fields(&self.used_ctx_fields)
     }
 
+    pub fn program_compatibility_requirements(&self) -> Vec<ProgramCompatibilityRequirement> {
+        program_compatibility_requirements_for_section(self)
+    }
+
+    pub fn program_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        ProgramCompatibilityRequirement::effective_minimum_kernel(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
     pub fn context_field_compatibility_requirements(
         &self,
     ) -> Vec<ContextFieldCompatibilityRequirement> {
@@ -1460,6 +1512,40 @@ impl EbpfObject {
         !self.maps.is_empty()
     }
 
+    pub fn program_compatibility_requirements(&self) -> Vec<ProgramCompatibilityRequirement> {
+        let mut seen = HashSet::new();
+        let mut requirements = Vec::new();
+
+        if let EbpfObjectKind::StructOps {
+            value_type_name, ..
+        } = &self.kind
+        {
+            push_program_compatibility_requirements(
+                ProgramSpec::StructOps {
+                    value_type_name: value_type_name.clone(),
+                }
+                .compatibility_requirements(),
+                &mut seen,
+                &mut requirements,
+            );
+        }
+
+        push_program_compatibility_requirements(
+            program_compatibility_requirements_for_programs(&self.programs),
+            &mut seen,
+            &mut requirements,
+        );
+
+        requirements.sort_by_key(ProgramCompatibilityRequirement::key);
+        requirements
+    }
+
+    pub fn program_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        ProgramCompatibilityRequirement::effective_minimum_kernel(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
     pub fn map_compatibility_requirements(&self) -> Vec<MapCompatibilityRequirement> {
         map_compatibility_requirements_for_maps(&self.maps)
     }
@@ -1974,6 +2060,17 @@ impl EbpfProgram {
 
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         sorted_context_fields(&self.used_ctx_fields)
+    }
+
+    pub fn program_compatibility_requirements(&self) -> Vec<ProgramCompatibilityRequirement> {
+        let section = self.clone().into_program_section();
+        program_compatibility_requirements_for_section(&section)
+    }
+
+    pub fn program_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        ProgramCompatibilityRequirement::effective_minimum_kernel(
+            &self.program_compatibility_requirements(),
+        )
     }
 
     pub fn context_field_compatibility_requirements(

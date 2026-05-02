@@ -9739,6 +9739,64 @@ fn test_bpf_map_def_reports_modeled_map_kind() {
 }
 
 #[test]
+fn test_ebpf_object_reports_program_compatibility_requirements() {
+    let xdp_frags = EbpfProgram::new(EbpfProgramType::Xdp, "lo:frags", "main", EbpfBuilder::new());
+    let requirements = xdp_frags.program_compatibility_requirements();
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::XdpProgram),
+        "xdp program should include base xdp compatibility"
+    );
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::XdpMultiBuffer),
+        "xdp frags target should include multi-buffer compatibility"
+    );
+    assert_eq!(
+        xdp_frags.program_compatibility_minimum_kernel(),
+        Some("5.18")
+    );
+
+    let object = xdp_frags.into_object();
+    assert!(
+        object
+            .program_compatibility_requirements()
+            .contains(&ProgramCompatibilityRequirement::XdpMultiBuffer)
+    );
+    assert_eq!(object.program_compatibility_minimum_kernel(), Some("5.18"));
+
+    let struct_ops = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8]).build();
+    let requirements = struct_ops.program_compatibility_requirements();
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::StructOps),
+        "struct_ops object kind should include base struct_ops compatibility"
+    );
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::SchedExt),
+        "sched_ext_ops object kind should include sched_ext compatibility"
+    );
+    assert_eq!(
+        struct_ops.program_compatibility_minimum_kernel(),
+        Some("6.12")
+    );
+
+    let sleepable_callback = EbpfProgram::new(
+        EbpfProgramType::StructOps,
+        "init",
+        "init",
+        EbpfBuilder::new(),
+    )
+    .with_program_spec(ProgramSpec::StructOpsCallback {
+        value_type_name: "sched_ext_ops".to_string(),
+        callback_name: "init".to_string(),
+    })
+    .into_struct_ops_callback("sched_ext_ops", "init", "init");
+    let requirements = sleepable_callback.program_compatibility_requirements();
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::SleepableProgram),
+        "sleepable struct_ops callback should preserve callback-specific compatibility"
+    );
+}
+
+#[test]
 fn test_ebpf_program_reports_map_compatibility_requirements() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Kprobe,
