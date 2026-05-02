@@ -202,6 +202,16 @@ const KERNEL_FEATURE_BPF_DYNPTR_DATA = {
     min_kernel: "5.19"
     source: "https://docs.ebpf.io/linux/helper-function/bpf_dynptr_data/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE = {
+    key: "kfunc:bpf_dynptr_size"
+    min_kernel: "6.4"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_dynptr_size/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE = {
+    key: "kfunc:bpf_dynptr_slice"
+    min_kernel: "6.4"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_dynptr_slice/"
+}
 const KERNEL_FEATURE_MAP_VALUE_KPTR = {
     key: "map-value:kptr"
     min_kernel: "5.19"
@@ -1016,6 +1026,89 @@ const FIXTURES = [
         kernel: "skip"
         kernel_features: [$KERNEL_FEATURE_BPF_DYNPTR_DATA]
         error_contains: "requires initialized dynptr stack object"
+    }
+    {
+        name: "dynptr-kfunc-size-initialized-ringbuf"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE
+        ]
+    }
+    {
+        name: "dynptr-kfunc-size-rejects-uninitialized"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_size" $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE]
+        error_contains: "kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object"
+    }
+    {
+        name: "dynptr-kfunc-slice-initialized-ringbuf"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let ptr = (kfunc-call "bpf_dynptr_slice" $d 0 0 4)'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
+            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE
+        ]
+    }
+    {
+        name: "dynptr-kfunc-slice-rejects-uninitialized"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let ptr = (kfunc-call "bpf_dynptr_slice" $d 0 0 4)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE]
+        error_contains: "kfunc 'bpf_dynptr_slice' arg0 requires initialized dynptr stack object"
     }
     {
         name: "stackid-built-in-kstacks"

@@ -1326,6 +1326,99 @@ fn test_verify_mir_kfunc_dynptr_clone_rejects_same_stack_slot_src_and_dst() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_dynptr_size_requires_initialized_stack_slot() {
+    let (mut func, entry) = new_mir_function();
+
+    let dptr = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_dynptr_size".to_string(),
+        btf_id: None,
+        args: vec![dptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected uninitialized dynptr error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_dynptr_clone_initializes_destination_stack_slot() {
+    let (mut func, entry) = new_mir_function();
+
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let clone_ret = func.alloc_vreg();
+    let size_ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.entry_initialized_dynptr_slots.insert(src_slot);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: clone_ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![src, dst],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: size_ret,
+        kfunc: "bpf_dynptr_size".to_string(),
+        btf_id: None,
+        args: vec![dst],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(clone_ret, MirType::I64);
+    types.insert(size_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected clone destination dynptr to be initialized");
+}
+
+#[test]
 fn test_verify_mir_kfunc_scx_events_buffer_requires_stack_or_map_space() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
@@ -12571,6 +12664,7 @@ fn test_verify_mir_kfunc_dynptr_slice_buffer_allows_const_zero_scalar() {
     let size = func.alloc_vreg();
     let ret = func.alloc_vreg();
     let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.entry_initialized_dynptr_slots.insert(dptr_slot);
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: dptr,
         src: MirValue::StackSlot(dptr_slot),
@@ -12628,6 +12722,7 @@ fn test_verify_mir_kfunc_dynptr_slice_buffer_rejects_non_zero_scalar() {
     let size = func.alloc_vreg();
     let ret = func.alloc_vreg();
     let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.entry_initialized_dynptr_slots.insert(dptr_slot);
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: dptr,
         src: MirValue::StackSlot(dptr_slot),
@@ -12692,6 +12787,7 @@ fn test_verify_mir_kfunc_dynptr_slice_buffer_allows_known_zero_vreg() {
     let size = func.alloc_vreg();
     let ret = func.alloc_vreg();
     let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.entry_initialized_dynptr_slots.insert(dptr_slot);
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: dptr,
         src: MirValue::StackSlot(dptr_slot),
@@ -12749,6 +12845,7 @@ fn test_verify_mir_kfunc_dynptr_slice_buffer_rejects_non_zero_vreg() {
     let size = func.alloc_vreg();
     let ret = func.alloc_vreg();
     let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.entry_initialized_dynptr_slots.insert(dptr_slot);
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: dptr,
         src: MirValue::StackSlot(dptr_slot),

@@ -358,19 +358,6 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
         );
     }
 
-    if kfunc == "bpf_dynptr_clone"
-        && let (Some(src), Some(dst)) = (args.first(), args.get(1))
-        && let (Some(src_slot), Some(dst_slot)) = (
-            stack_slot_from_arg(state, *src),
-            stack_slot_from_arg(state, *dst),
-        )
-        && src_slot == dst_slot
-    {
-        errors.push(VerifierTypeError::new(
-            "kfunc 'bpf_dynptr_clone' arg1 must reference distinct stack slot from arg0",
-        ));
-    }
-
     for (idx, arg) in args.iter().enumerate() {
         if !kfunc_scalar_arg_requires_known_const(kfunc, idx) {
             continue;

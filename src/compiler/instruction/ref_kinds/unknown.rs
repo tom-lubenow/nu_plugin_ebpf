@@ -74,6 +74,9 @@ pub fn kfunc_unknown_iter_lifecycle(kfunc: &str) -> Option<KfuncUnknownIterLifec
 }
 
 pub fn kfunc_unknown_dynptr_args(kfunc: &str) -> Vec<KfuncUnknownDynptrArg> {
+    if let Some(args) = known_dynptr_args(kfunc) {
+        return args.to_vec();
+    }
     if KfuncSignature::for_name(kfunc).is_some() {
         return Vec::new();
     }
@@ -98,6 +101,55 @@ pub fn kfunc_unknown_dynptr_args(kfunc: &str) -> Vec<KfuncUnknownDynptrArg> {
         args.push(KfuncUnknownDynptrArg { arg_idx, role });
     }
     args
+}
+
+fn known_dynptr_args(kfunc: &str) -> Option<&'static [KfuncUnknownDynptrArg]> {
+    use KfuncUnknownDynptrArgRole::{In, Out};
+
+    const ARG0_IN: &[KfuncUnknownDynptrArg] = &[KfuncUnknownDynptrArg {
+        arg_idx: 0,
+        role: In,
+    }];
+    const ARG0_OUT: &[KfuncUnknownDynptrArg] = &[KfuncUnknownDynptrArg {
+        arg_idx: 0,
+        role: Out,
+    }];
+    const DYNPTR_CLONE: &[KfuncUnknownDynptrArg] = &[
+        KfuncUnknownDynptrArg {
+            arg_idx: 0,
+            role: In,
+        },
+        KfuncUnknownDynptrArg {
+            arg_idx: 1,
+            role: Out,
+        },
+    ];
+    const DYNPTR_COPY: &[KfuncUnknownDynptrArg] = &[
+        KfuncUnknownDynptrArg {
+            arg_idx: 0,
+            role: In,
+        },
+        KfuncUnknownDynptrArg {
+            arg_idx: 2,
+            role: In,
+        },
+    ];
+
+    Some(match kfunc {
+        "bpf_copy_from_user_dynptr"
+        | "bpf_copy_from_user_task_dynptr"
+        | "bpf_copy_from_user_task_str_dynptr" => ARG0_OUT,
+        "bpf_dynptr_adjust"
+        | "bpf_dynptr_size"
+        | "bpf_dynptr_is_null"
+        | "bpf_dynptr_is_rdonly"
+        | "bpf_dynptr_memset"
+        | "bpf_dynptr_slice"
+        | "bpf_dynptr_slice_rdwr" => ARG0_IN,
+        "bpf_dynptr_clone" => DYNPTR_CLONE,
+        "bpf_dynptr_copy" => DYNPTR_COPY,
+        _ => return None,
+    })
 }
 
 pub(super) fn infer_unknown_dynptr_copy_args(
@@ -233,6 +285,13 @@ pub(super) fn unknown_copy_move_semantics_with_named_pair_fallback(kfunc: &str) 
 }
 
 pub fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
+    if kfunc == "bpf_dynptr_clone" {
+        return vec![KfuncUnknownDynptrCopy {
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+            move_semantics: false,
+        }];
+    }
     if KfuncSignature::for_name(kfunc).is_some() {
         return Vec::new();
     }

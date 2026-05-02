@@ -1784,6 +1784,32 @@ fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_requires_uni
 }
 
 #[test]
+fn test_known_dynptr_kfunc_args_are_modeled() {
+    assert_eq!(
+        kfunc_unknown_dynptr_args("bpf_dynptr_size"),
+        vec![KfuncUnknownDynptrArg {
+            arg_idx: 0,
+            role: KfuncUnknownDynptrArgRole::In,
+        }]
+    );
+    assert_eq!(
+        kfunc_unknown_dynptr_args("bpf_copy_from_user_dynptr"),
+        vec![KfuncUnknownDynptrArg {
+            arg_idx: 0,
+            role: KfuncUnknownDynptrArgRole::Out,
+        }]
+    );
+    assert_eq!(
+        kfunc_unknown_dynptr_copy("bpf_dynptr_clone"),
+        vec![KfuncUnknownDynptrCopy {
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+            move_semantics: false,
+        }]
+    );
+}
+
+#[test]
 fn test_infer_unknown_dynptr_copy_args_prefers_named_input() {
     let args = vec![
         KfuncUnknownDynptrArg {
