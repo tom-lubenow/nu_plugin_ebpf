@@ -3467,14 +3467,29 @@ mod tests {
     fn test_program_spec_compatibility_requirements_add_target_features() {
         let plain_xdp = ProgramSpec::parse("xdp:lo").expect("plain xdp spec should parse");
         assert!(
+            plain_xdp.requires_compatibility_feature(ProgramCompatibilityRequirement::XdpProgram)
+        );
+        assert!(
             !plain_xdp
                 .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpMultiBuffer)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &plain_xdp.compatibility_requirements()
+            ),
+            Some("4.8")
         );
 
         let xdp_frags = ProgramSpec::parse("xdp:lo:frags").expect("xdp frags spec should parse");
         assert!(
             xdp_frags
                 .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpMultiBuffer)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &xdp_frags.compatibility_requirements()
+            ),
+            Some("5.18")
         );
 
         let fentry_sleepable =

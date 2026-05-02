@@ -105,6 +105,30 @@ const STRUCT_OPS_BTF_CALLABLE_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::
 
 const NO_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[];
 
+const SOCKET_FILTER_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::SocketFilterProgram];
+const KPROBE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::KprobeProgram];
+const KPROBE_MULTI_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KprobeProgram,
+    ProgramCompatibilityRequirement::KprobeMulti,
+];
+const UPROBE_MULTI_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KprobeProgram,
+    ProgramCompatibilityRequirement::UprobeMulti,
+];
+const TRACEPOINT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::TracepointProgram];
+const RAW_TRACEPOINT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::RawTracepointProgram];
+const PERF_EVENT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::PerfEventProgram];
+const XDP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::XdpProgram];
+const TC_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::TcProgram];
+const SK_LOOKUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
+    &[ProgramCompatibilityRequirement::SkLookupProgram];
 const BTF_TRAMPOLINE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
     ProgramCompatibilityRequirement::KernelBtf,
     ProgramCompatibilityRequirement::BpfTrampoline,
@@ -120,12 +144,10 @@ const STRUCT_OPS_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] 
     ProgramCompatibilityRequirement::BpfTrampoline,
     ProgramCompatibilityRequirement::StructOps,
 ];
-const KPROBE_MULTI_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
-    &[ProgramCompatibilityRequirement::KprobeMulti];
-const UPROBE_MULTI_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
-    &[ProgramCompatibilityRequirement::UprobeMulti];
-const RAW_TRACEPOINT_WRITABLE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
-    &[ProgramCompatibilityRequirement::RawTracepointWritable];
+const RAW_TRACEPOINT_WRITABLE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::RawTracepointProgram,
+    ProgramCompatibilityRequirement::RawTracepointWritable,
+];
 const LSM_CGROUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
     ProgramCompatibilityRequirement::KernelBtf,
     ProgramCompatibilityRequirement::BpfTrampoline,
@@ -215,8 +237,27 @@ const BTF_CALLABLE_SURFACES: &[ProgramBtfCallableSurfaceSpec] = &[
 
 const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurface] = &[
     ProgramCompatibilityRequirementSurface {
+        program_types: &[
+            EbpfProgramType::Kprobe,
+            EbpfProgramType::Kretprobe,
+            EbpfProgramType::Ksyscall,
+            EbpfProgramType::KretSyscall,
+            EbpfProgramType::Uprobe,
+            EbpfProgramType::Uretprobe,
+        ],
+        requirements: KPROBE_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
         program_types: FUNCTION_TRAMPOLINE_BTF_CALLABLE_PROGRAMS,
         requirements: BTF_TRAMPOLINE_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Tracepoint],
+        requirements: TRACEPOINT_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::RawTracepoint],
+        requirements: RAW_TRACEPOINT_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
         program_types: TP_BTF_CALLABLE_PROGRAMS,
@@ -247,6 +288,22 @@ const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurfa
             EbpfProgramType::UretprobeMulti,
         ],
         requirements: UPROBE_MULTI_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::PerfEvent],
+        requirements: PERF_EVENT_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Xdp],
+        requirements: XDP_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::SocketFilter],
+        requirements: SOCKET_FILTER_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::SkLookup],
+        requirements: SK_LOOKUP_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
         program_types: &[EbpfProgramType::RawTracepointWritable],
@@ -307,6 +364,10 @@ const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurfa
     ProgramCompatibilityRequirementSurface {
         program_types: &[EbpfProgramType::TcAction],
         requirements: TC_ACTION_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::Tc],
+        requirements: TC_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
         program_types: &[EbpfProgramType::CgroupSkb],
@@ -1419,6 +1480,14 @@ pub(super) const PROGRAM_CAPABILITIES: &[ProgramCapability] = &[
 ];
 
 pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::SocketFilterProgram,
+    ProgramCompatibilityRequirement::KprobeProgram,
+    ProgramCompatibilityRequirement::TracepointProgram,
+    ProgramCompatibilityRequirement::RawTracepointProgram,
+    ProgramCompatibilityRequirement::PerfEventProgram,
+    ProgramCompatibilityRequirement::XdpProgram,
+    ProgramCompatibilityRequirement::TcProgram,
+    ProgramCompatibilityRequirement::SkLookupProgram,
     ProgramCompatibilityRequirement::KernelBtf,
     ProgramCompatibilityRequirement::BpfTrampoline,
     ProgramCompatibilityRequirement::SleepableProgram,

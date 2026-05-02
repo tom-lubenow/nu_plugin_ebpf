@@ -1550,6 +1550,14 @@ impl fmt::Display for ProgramAttachKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProgramCompatibilityRequirement {
+    SocketFilterProgram,
+    KprobeProgram,
+    TracepointProgram,
+    RawTracepointProgram,
+    PerfEventProgram,
+    XdpProgram,
+    TcProgram,
+    SkLookupProgram,
     KernelBtf,
     BpfTrampoline,
     SleepableProgram,
@@ -1597,6 +1605,16 @@ const SK_REUSEPORT_SOURCE: &str =
     "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/";
 const SCHED_EXT_OPS_SOURCE: &str =
     "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_STRUCT_OPS/sched_ext_ops/";
+const LINUX_BPF_H_V3_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_14_SOURCE: &str =
@@ -1609,6 +1627,8 @@ const LINUX_BPF_H_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_3_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_6_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_7_SOURCE: &str =
@@ -1621,6 +1641,14 @@ impl ProgramCompatibilityRequirement {
 
     pub fn key(&self) -> &'static str {
         match self {
+            Self::SocketFilterProgram => "socket-filter-program",
+            Self::KprobeProgram => "kprobe-program",
+            Self::TracepointProgram => "tracepoint-program",
+            Self::RawTracepointProgram => "raw-tracepoint-program",
+            Self::PerfEventProgram => "perf-event-program",
+            Self::XdpProgram => "xdp-program",
+            Self::TcProgram => "tc-program",
+            Self::SkLookupProgram => "sk-lookup-program",
             Self::KernelBtf => "kernel-btf",
             Self::BpfTrampoline => "bpf-trampoline",
             Self::SleepableProgram => "sleepable-program",
@@ -1661,6 +1689,14 @@ impl ProgramCompatibilityRequirement {
 
     pub fn description(&self) -> &'static str {
         match self {
+            Self::SocketFilterProgram => "socket-filter BPF program support",
+            Self::KprobeProgram => "kprobe/uprobe BPF program support",
+            Self::TracepointProgram => "tracepoint BPF program support",
+            Self::RawTracepointProgram => "raw-tracepoint BPF program support",
+            Self::PerfEventProgram => "perf-event BPF program support",
+            Self::XdpProgram => "XDP BPF program support",
+            Self::TcProgram => "traffic-control classifier BPF program support",
+            Self::SkLookupProgram => "socket lookup BPF program support",
             Self::KernelBtf => "kernel BTF for typed BTF-backed program targets",
             Self::BpfTrampoline => "BPF trampoline target support",
             Self::SleepableProgram => "sleepable BPF program section support",
@@ -1716,6 +1752,10 @@ impl ProgramCompatibilityRequirement {
             Self::ExtensionProgram | Self::SyscallProgram => "dry-run",
             Self::NetfilterLink | Self::RouteLwt | Self::StructOps | Self::SchedExt => "vm-only",
             Self::RawTracepointWritable
+            | Self::SocketFilterProgram
+            | Self::XdpProgram
+            | Self::TcProgram
+            | Self::SkLookupProgram
             | Self::CgroupLsm
             | Self::XdpMultiBuffer
             | Self::FlowDissector
@@ -1739,6 +1779,10 @@ impl ProgramCompatibilityRequirement {
             | Self::LircMode2
             | Self::CgroupUnixSockAddr => "host-gated",
             Self::KernelBtf
+            | Self::KprobeProgram
+            | Self::TracepointProgram
+            | Self::RawTracepointProgram
+            | Self::PerfEventProgram
             | Self::BpfTrampoline
             | Self::SleepableProgram
             | Self::KprobeMulti
@@ -1749,6 +1793,13 @@ impl ProgramCompatibilityRequirement {
 
     pub fn minimum_kernel(&self) -> Option<&'static str> {
         match self {
+            Self::SocketFilterProgram => Some("3.19"),
+            Self::KprobeProgram | Self::TcProgram => Some("4.1"),
+            Self::TracepointProgram => Some("4.7"),
+            Self::XdpProgram => Some("4.8"),
+            Self::PerfEventProgram => Some("4.9"),
+            Self::RawTracepointProgram => Some("4.17"),
+            Self::SkLookupProgram => Some("5.9"),
             Self::KernelBtf => Some("5.2"),
             Self::BpfTrampoline => Some("5.5"),
             Self::SleepableProgram => Some("5.10"),
@@ -1794,6 +1845,13 @@ impl ProgramCompatibilityRequirement {
             Self::SkSkbSockMapAttach => SK_SKB_SOURCE,
             Self::SkReuseportAttach | Self::SkReuseportMigration => SK_REUSEPORT_SOURCE,
             Self::SchedExt => SCHED_EXT_OPS_SOURCE,
+            Self::SocketFilterProgram => LINUX_BPF_H_V3_19_SOURCE,
+            Self::KprobeProgram | Self::TcProgram => LINUX_BPF_H_V4_1_SOURCE,
+            Self::TracepointProgram => LINUX_BPF_H_V4_7_SOURCE,
+            Self::XdpProgram => LINUX_BPF_H_V4_8_SOURCE,
+            Self::PerfEventProgram => LINUX_BPF_H_V4_9_SOURCE,
+            Self::RawTracepointProgram => LINUX_BPF_H_V4_17_SOURCE,
+            Self::SkLookupProgram => LINUX_BPF_H_V5_9_SOURCE,
             Self::UprobeMulti => LINUX_BPF_H_V6_6_SOURCE,
             Self::CgroupSkbProgram | Self::CgroupSockProgram => LINUX_BPF_H_V4_10_SOURCE,
             Self::CgroupDeviceProgram => LINUX_BPF_H_V4_15_SOURCE,

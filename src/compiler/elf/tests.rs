@@ -4556,10 +4556,49 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
     );
     assert!(
         EbpfProgramType::Kprobe
-            .compatibility_requirements()
-            .is_empty()
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::KprobeProgram)
+    );
+    assert!(
+        EbpfProgramType::Xdp
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpProgram)
+    );
+    assert!(
+        EbpfProgramType::SocketFilter
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::SocketFilterProgram)
     );
 
+    assert_eq!(
+        ProgramCompatibilityRequirement::SocketFilterProgram.minimum_kernel(),
+        Some("3.19")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::KprobeProgram.minimum_kernel(),
+        Some("4.1")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::TracepointProgram.minimum_kernel(),
+        Some("4.7")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::XdpProgram.minimum_kernel(),
+        Some("4.8")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::PerfEventProgram.minimum_kernel(),
+        Some("4.9")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::RawTracepointProgram.minimum_kernel(),
+        Some("4.17")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SkLookupProgram.minimum_kernel(),
+        Some("5.9")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::TcProgram.minimum_kernel(),
+        Some("4.1")
+    );
     assert_eq!(
         ProgramCompatibilityRequirement::NetfilterLink.minimum_kernel(),
         Some("6.4")
