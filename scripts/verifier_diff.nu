@@ -4167,6 +4167,21 @@ const FIXTURES = [
         error_contains: "arrays of verifier-managed bpf_refcount"
     }
     {
+        name: "map-define-rejects-bare-graph-field"
+        category: "maps"
+        tags: [maps map-define graph reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "map value graph type spec"
+    }
+    {
         name: "timer-map-define-lowers-init-start-cancel"
         category: "helper-state"
         tags: [timer map-define accept]

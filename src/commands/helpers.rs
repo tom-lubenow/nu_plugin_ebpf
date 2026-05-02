@@ -409,6 +409,9 @@ map. `bpf_wq` and `bpf_refcount` are also top-level verifier-managed fields
 for hash, array, or lru-hash maps. `kptr:TYPE` declares an 8-byte-aligned
 top-level map-value kptr slot for hash, array, or lru-hash maps and emits the
 required `__kptr` BTF type tag.
+Graph fields such as `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, and
+`bpf_rb_node` are intentionally not accepted as bare field tokens yet because
+they require a named object schema and `contains:TYPE:FIELD` BTF tags.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource.
 
