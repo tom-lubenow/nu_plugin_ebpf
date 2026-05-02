@@ -42,6 +42,51 @@ const KERNEL_FEATURE_PROG_SK_SKB = {
     min_kernel: "4.14"
     source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_SKB/"
 }
+const KERNEL_FEATURE_PROG_CGROUP_SKB = {
+    key: "program:BPF_PROG_TYPE_CGROUP_SKB"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_CGROUP_SOCK = {
+    key: "program:BPF_PROG_TYPE_CGROUP_SOCK"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_CGROUP_DEVICE = {
+    key: "program:BPF_PROG_TYPE_CGROUP_DEVICE"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR = {
+    key: "program:BPF_PROG_TYPE_CGROUP_SOCK_ADDR"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_CGROUP_SYSCTL = {
+    key: "program:BPF_PROG_TYPE_CGROUP_SYSCTL"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_CGROUP_SOCKOPT = {
+    key: "program:BPF_PROG_TYPE_CGROUP_SOCKOPT"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_SOCK_OPS = {
+    key: "program:BPF_PROG_TYPE_SOCK_OPS"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_ATTACH_UPROBE_MULTI = {
+    key: "attach:BPF_TRACE_UPROBE_MULTI"
+    min_kernel: "6.6"
+    source: "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR = {
+    key: "attach:BPF_CGROUP_UNIX_SOCK_ADDR"
+    min_kernel: "6.7"
+    source: "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
@@ -332,6 +377,21 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "uprobe-multi-context"
+        category: "tracing"
+        tags: [uprobe-multi context]
+        target: "uprobe.multi:/bin/true:*"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pid + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_ATTACH_UPROBE_MULTI]
     }
     {
         name: "kretprobe-context"
@@ -1350,6 +1410,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-skb context]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SKB]
         target: "cgroup_skb:/sys/fs/cgroup:egress"
         program: [
             '{|ctx|'
@@ -1365,6 +1426,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-skb context writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SKB]
         target: "cgroup_skb:/sys/fs/cgroup:ingress"
         program: [
             '{|ctx|'
@@ -1383,6 +1445,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock context writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:sock_create"
         program: [
             '{|ctx|'
@@ -1402,6 +1465,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock context ipv6]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:post_bind6"
         program: [
             '{|ctx|'
@@ -1417,6 +1481,7 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock reject writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
         program: [
             '{|ctx|'
@@ -1434,6 +1499,7 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock reject]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:sock_create"
         program: [
             '{|ctx|'
@@ -1450,6 +1516,7 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock reject ipv6]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
         program: [
             '{|ctx|'
@@ -1466,6 +1533,7 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock-addr reject]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -1482,6 +1550,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -1497,6 +1566,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -1514,6 +1584,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context ipv6]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect6"
         program: [
             '{|ctx|'
@@ -1529,6 +1600,10 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context unix writable kfunc]
         requires: [cgroup-v2]
+        kernel_features: [
+            $KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR
+            $KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR
+        ]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
         program: [
             '{|ctx|'
@@ -1608,6 +1683,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sockopt context writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCKOPT]
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -1624,6 +1700,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-device context]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_DEVICE]
         target: "cgroup_device:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -1639,6 +1716,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sysctl context writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SYSCTL]
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -1657,6 +1735,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [sock-ops context writable]
         requires: [cgroup-v2]
+        kernel_features: [$KERNEL_FEATURE_PROG_SOCK_OPS]
         target: "sock_ops:/sys/fs/cgroup"
         program: [
             '{|ctx|'

@@ -3545,10 +3545,32 @@ mod tests {
         assert!(
             cgroup_unix.requires_compatibility_feature(ProgramCompatibilityRequirement::CgroupV2)
         );
+        assert!(cgroup_unix.requires_compatibility_feature(
+            ProgramCompatibilityRequirement::CgroupSockAddrProgram
+        ));
         assert!(
             cgroup_unix.requires_compatibility_feature(
                 ProgramCompatibilityRequirement::CgroupUnixSockAddr
             )
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &cgroup_unix.compatibility_requirements()
+            ),
+            Some("6.7")
+        );
+
+        let uprobe_multi =
+            ProgramSpec::parse("uprobe.multi:/bin/bash:read*").expect("uprobe.multi should parse");
+        assert!(
+            uprobe_multi
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::UprobeMulti)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &uprobe_multi.compatibility_requirements()
+            ),
+            Some("6.6")
         );
 
         let sk_reuseport_select =

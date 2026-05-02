@@ -188,8 +188,9 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 The compiler tracks compatibility requirements at both the program-family and
 parsed-target level. Live-attach rejection messages include these feature
 requirements, for example kernel BTF, BPF trampolines, TCX, netfilter links,
-route LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2, and
-cgroup UNIX socket-address hooks. These labels describe feature surfaces.
+route LWT, struct_ops, sched_ext, XDP multi-buffer sections, cgroup v2,
+cgroup program families, and cgroup UNIX socket-address hooks. These labels
+describe feature surfaces.
 `ebpf spec` reports each requirement with a feature category, a default test
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel/source fields. Source-verified requirements carry minimum

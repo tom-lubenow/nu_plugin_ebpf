@@ -163,8 +163,34 @@ const SK_REUSEPORT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement
     &[ProgramCompatibilityRequirement::SkReuseportAttach];
 const TC_ACTION_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::TcActionProgram];
-const CGROUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
-    &[ProgramCompatibilityRequirement::CgroupV2];
+const CGROUP_SKB_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::CgroupSkbProgram,
+];
+const CGROUP_SOCK_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::CgroupSockProgram,
+];
+const CGROUP_DEVICE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::CgroupDeviceProgram,
+];
+const CGROUP_SOCK_ADDR_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::CgroupSockAddrProgram,
+];
+const CGROUP_SYSCTL_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::CgroupSysctlProgram,
+];
+const CGROUP_SOCKOPT_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::CgroupSockoptProgram,
+];
+const SOCK_OPS_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::CgroupV2,
+    ProgramCompatibilityRequirement::SockOpsProgram,
+];
 const LIRC_MODE2_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::LircMode2];
 
@@ -283,16 +309,32 @@ const COMPATIBILITY_REQUIREMENT_SURFACES: &[ProgramCompatibilityRequirementSurfa
         requirements: TC_ACTION_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
-        program_types: &[
-            EbpfProgramType::CgroupDevice,
-            EbpfProgramType::CgroupSkb,
-            EbpfProgramType::CgroupSock,
-            EbpfProgramType::CgroupSysctl,
-            EbpfProgramType::CgroupSockopt,
-            EbpfProgramType::CgroupSockAddr,
-            EbpfProgramType::SockOps,
-        ],
-        requirements: CGROUP_COMPATIBILITY_REQUIREMENTS,
+        program_types: &[EbpfProgramType::CgroupSkb],
+        requirements: CGROUP_SKB_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::CgroupSock],
+        requirements: CGROUP_SOCK_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::CgroupDevice],
+        requirements: CGROUP_DEVICE_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::CgroupSockAddr],
+        requirements: CGROUP_SOCK_ADDR_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::CgroupSysctl],
+        requirements: CGROUP_SYSCTL_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::CgroupSockopt],
+        requirements: CGROUP_SOCKOPT_COMPATIBILITY_REQUIREMENTS,
+    },
+    ProgramCompatibilityRequirementSurface {
+        program_types: &[EbpfProgramType::SockOps],
+        requirements: SOCK_OPS_COMPATIBILITY_REQUIREMENTS,
     },
     ProgramCompatibilityRequirementSurface {
         program_types: &[EbpfProgramType::LircMode2],
@@ -1400,6 +1442,13 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::SkReuseportAttach,
     ProgramCompatibilityRequirement::SkReuseportMigration,
     ProgramCompatibilityRequirement::TcActionProgram,
+    ProgramCompatibilityRequirement::CgroupSkbProgram,
+    ProgramCompatibilityRequirement::CgroupSockProgram,
+    ProgramCompatibilityRequirement::CgroupDeviceProgram,
+    ProgramCompatibilityRequirement::CgroupSockAddrProgram,
+    ProgramCompatibilityRequirement::CgroupSysctlProgram,
+    ProgramCompatibilityRequirement::CgroupSockoptProgram,
+    ProgramCompatibilityRequirement::SockOpsProgram,
     ProgramCompatibilityRequirement::CgroupV2,
     ProgramCompatibilityRequirement::LircMode2,
     ProgramCompatibilityRequirement::StructOps,

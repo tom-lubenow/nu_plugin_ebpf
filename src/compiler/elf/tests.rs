@@ -4543,6 +4543,10 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             .requires_compatibility_feature(ProgramCompatibilityRequirement::CgroupV2)
     );
     assert!(
+        EbpfProgramType::CgroupSockAddr
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::CgroupSockAddrProgram)
+    );
+    assert!(
         EbpfProgramType::SkReuseport
             .requires_compatibility_feature(ProgramCompatibilityRequirement::SkReuseportAttach)
     );
@@ -4588,11 +4592,53 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         ProgramCompatibilityRequirement::SkSkbSockMapAttach.minimum_kernel(),
         Some("4.14")
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::UprobeMulti.minimum_kernel(),
+        Some("6.6")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupSkbProgram.minimum_kernel(),
+        Some("4.10")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupSockProgram.minimum_kernel(),
+        Some("4.10")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupDeviceProgram.minimum_kernel(),
+        Some("4.15")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupSockAddrProgram.minimum_kernel(),
+        Some("4.17")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupSysctlProgram.minimum_kernel(),
+        Some("5.2")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupSockoptProgram.minimum_kernel(),
+        Some("5.3")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::SockOpsProgram.minimum_kernel(),
+        Some("4.14")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::CgroupUnixSockAddr.minimum_kernel(),
+        Some("6.7")
+    );
     assert!(
         ProgramCompatibilityRequirement::SockMapAttach
             .minimum_kernel()
             .is_none(),
         "mixed sk_msg/sk_skb attach requirement should stay nullable until split"
+    );
+    assert!(
+        ProgramCompatibilityRequirement::CgroupV2
+            .minimum_kernel()
+            .is_none(),
+        "cgroup v2 remains a runtime attach-resource requirement, not a sufficient kernel-version check"
     );
     assert_eq!(
         ProgramCompatibilityRequirement::effective_minimum_kernel(&[

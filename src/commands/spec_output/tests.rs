@@ -439,6 +439,72 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
 }
 
 #[test]
+fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
+    let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+        .expect("cgroup unix socket-address spec should parse");
+    let record = spec_record(
+        "cgroup_sock_addr:/sys/fs/cgroup:connect_unix".to_string(),
+        spec,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let requirements = record
+        .get("compatibility_requirements")
+        .expect("compatibility requirements should be present")
+        .as_list()
+        .expect("compatibility requirements should be a list");
+
+    assert_eq!(
+        record
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "6.7"
+    );
+
+    let requirement = requirements
+        .iter()
+        .find_map(|requirement| {
+            let requirement = requirement.as_record().ok()?;
+            (requirement
+                .get("key")?
+                .as_str()
+                .ok()
+                .is_some_and(|key| key == "cgroup-unix-sock-addr"))
+            .then_some(requirement)
+        })
+        .expect("cgroup unix requirement should be present");
+
+    assert_eq!(
+        requirement
+            .get("category")
+            .expect("requirement category should be present")
+            .as_str()
+            .expect("requirement category should be a string"),
+        "attach-mode"
+    );
+    assert_eq!(
+        requirement
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .as_str()
+            .expect("minimum kernel should be a string"),
+        "6.7"
+    );
+    assert_eq!(
+        requirement
+            .get("minimum_kernel_source")
+            .expect("minimum kernel source should be present")
+            .as_str()
+            .expect("minimum kernel source should be a string"),
+        "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h"
+    );
+}
+
+#[test]
 fn test_spec_record_includes_attach_shape_metadata() {
     let xdp = ProgramSpec::parse("xdp:lo:drv:frags").expect("xdp frags spec should parse");
     let record = spec_record(

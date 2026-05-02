@@ -1573,6 +1573,13 @@ pub enum ProgramCompatibilityRequirement {
     SkReuseportAttach,
     SkReuseportMigration,
     TcActionProgram,
+    CgroupSkbProgram,
+    CgroupSockProgram,
+    CgroupDeviceProgram,
+    CgroupSockAddrProgram,
+    CgroupSysctlProgram,
+    CgroupSockoptProgram,
+    SockOpsProgram,
     CgroupV2,
     LircMode2,
     StructOps,
@@ -1590,6 +1597,22 @@ const SK_REUSEPORT_SOURCE: &str =
     "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/";
 const SCHED_EXT_OPS_SOURCE: &str =
     "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_STRUCT_OPS/sched_ext_ops/";
+const LINUX_BPF_H_V4_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_14_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_17_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_3_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_6_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h";
 
 impl ProgramCompatibilityRequirement {
     pub fn all() -> &'static [ProgramCompatibilityRequirement] {
@@ -1621,6 +1644,13 @@ impl ProgramCompatibilityRequirement {
             Self::SkReuseportAttach => "sk-reuseport-attach",
             Self::SkReuseportMigration => "sk-reuseport-migration",
             Self::TcActionProgram => "tc-action-program",
+            Self::CgroupSkbProgram => "cgroup-skb-program",
+            Self::CgroupSockProgram => "cgroup-sock-program",
+            Self::CgroupDeviceProgram => "cgroup-device-program",
+            Self::CgroupSockAddrProgram => "cgroup-sock-addr-program",
+            Self::CgroupSysctlProgram => "cgroup-sysctl-program",
+            Self::CgroupSockoptProgram => "cgroup-sockopt-program",
+            Self::SockOpsProgram => "sock-ops-program",
             Self::CgroupV2 => "cgroup-v2",
             Self::LircMode2 => "lirc-mode2",
             Self::StructOps => "struct-ops",
@@ -1654,6 +1684,13 @@ impl ProgramCompatibilityRequirement {
             Self::SkReuseportAttach => "SO_REUSEPORT BPF attach support",
             Self::SkReuseportMigration => "SO_REUSEPORT socket migration program support",
             Self::TcActionProgram => "traffic-control action BPF program support",
+            Self::CgroupSkbProgram => "cgroup SKB BPF program support",
+            Self::CgroupSockProgram => "cgroup socket BPF program support",
+            Self::CgroupDeviceProgram => "cgroup device BPF program support",
+            Self::CgroupSockAddrProgram => "cgroup socket-address BPF program support",
+            Self::CgroupSysctlProgram => "cgroup sysctl BPF program support",
+            Self::CgroupSockoptProgram => "cgroup sockopt BPF program support",
+            Self::SockOpsProgram => "sock_ops BPF program support",
             Self::CgroupV2 => "cgroup v2 attach hierarchy",
             Self::LircMode2 => "LIRC mode2 device attach support",
             Self::StructOps => "BPF struct_ops object support",
@@ -1667,7 +1704,7 @@ impl ProgramCompatibilityRequirement {
             Self::KernelBtf => "kernel-metadata",
             Self::CgroupV2 | Self::LircMode2 => "attach-resource",
             Self::SchedExt => "struct-ops-family",
-            Self::SkReuseportMigration => "attach-mode",
+            Self::SkReuseportMigration | Self::CgroupUnixSockAddr => "attach-mode",
             Self::SleepableProgram | Self::XdpMultiBuffer => "section-feature",
             Self::StructOps => "object-loader",
             _ => "program-feature",
@@ -1691,6 +1728,13 @@ impl ProgramCompatibilityRequirement {
             | Self::SkReuseportAttach
             | Self::SkReuseportMigration
             | Self::TcActionProgram
+            | Self::CgroupSkbProgram
+            | Self::CgroupSockProgram
+            | Self::CgroupDeviceProgram
+            | Self::CgroupSockAddrProgram
+            | Self::CgroupSysctlProgram
+            | Self::CgroupSockoptProgram
+            | Self::SockOpsProgram
             | Self::CgroupV2
             | Self::LircMode2
             | Self::CgroupUnixSockAddr => "host-gated",
@@ -1709,6 +1753,7 @@ impl ProgramCompatibilityRequirement {
             Self::BpfTrampoline => Some("5.5"),
             Self::SleepableProgram => Some("5.10"),
             Self::KprobeMulti => Some("5.18"),
+            Self::UprobeMulti => Some("6.6"),
             Self::RawTracepointWritable => Some("5.2"),
             Self::CgroupLsm => Some("6.0"),
             Self::ExtensionProgram => Some("5.6"),
@@ -1726,12 +1771,17 @@ impl ProgramCompatibilityRequirement {
             Self::SkReuseportAttach => Some("4.19"),
             Self::SkReuseportMigration => Some("5.14"),
             Self::TcActionProgram => Some("4.1"),
+            Self::CgroupSkbProgram | Self::CgroupSockProgram => Some("4.10"),
+            Self::CgroupDeviceProgram => Some("4.15"),
+            Self::CgroupSockAddrProgram => Some("4.17"),
+            Self::CgroupSysctlProgram => Some("5.2"),
+            Self::CgroupSockoptProgram => Some("5.3"),
+            Self::SockOpsProgram => Some("4.14"),
             Self::LircMode2 => Some("4.18"),
             Self::StructOps => Some("5.6"),
             Self::SchedExt => Some("6.12"),
-            Self::UprobeMulti | Self::SockMapAttach | Self::CgroupV2 | Self::CgroupUnixSockAddr => {
-                None
-            }
+            Self::CgroupUnixSockAddr => Some("6.7"),
+            Self::SockMapAttach | Self::CgroupV2 => None,
         }
     }
 
@@ -1744,6 +1794,14 @@ impl ProgramCompatibilityRequirement {
             Self::SkSkbSockMapAttach => SK_SKB_SOURCE,
             Self::SkReuseportAttach | Self::SkReuseportMigration => SK_REUSEPORT_SOURCE,
             Self::SchedExt => SCHED_EXT_OPS_SOURCE,
+            Self::UprobeMulti => LINUX_BPF_H_V6_6_SOURCE,
+            Self::CgroupSkbProgram | Self::CgroupSockProgram => LINUX_BPF_H_V4_10_SOURCE,
+            Self::CgroupDeviceProgram => LINUX_BPF_H_V4_15_SOURCE,
+            Self::CgroupSockAddrProgram => LINUX_BPF_H_V4_17_SOURCE,
+            Self::CgroupSysctlProgram => LINUX_BPF_H_V5_2_SOURCE,
+            Self::CgroupSockoptProgram => LINUX_BPF_H_V5_3_SOURCE,
+            Self::SockOpsProgram => LINUX_BPF_H_V4_14_SOURCE,
+            Self::CgroupUnixSockAddr => LINUX_BPF_H_V6_7_SOURCE,
             _ => EBPF_TIMELINE_SOURCE,
         })
     }
