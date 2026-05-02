@@ -18,8 +18,8 @@ use object::{
 
 use super::CompileError;
 use super::btf::BtfBuilder;
-use super::instruction::BpfHelper;
 use super::instruction::EbpfBuilder;
+use super::instruction::{BpfHelper, HelperCompatibilityRequirement, opcode};
 use super::mir::CtxStoreTarget;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,

@@ -101,6 +101,10 @@ impl HelperCompatibilityRequirement {
         minimum
     }
 
+    pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
+        !Self::kernel_version_cmp(current, minimum).is_lt()
+    }
+
     fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
         let mut left_parts = left.split(['.', '-']);
         let mut right_parts = right.split(['.', '-']);

@@ -45,6 +45,61 @@ fn map_compatibility_requirements_for_maps(maps: &[EbpfMap]) -> Vec<MapCompatibi
     requirements
 }
 
+fn helper_compatibility_requirements_for_bytecode(
+    bytecode: &[u8],
+) -> Vec<HelperCompatibilityRequirement> {
+    let mut seen = HashSet::new();
+    let mut requirements = Vec::new();
+
+    for instruction in bytecode.chunks_exact(8) {
+        if instruction[0] != opcode::CALL {
+            continue;
+        }
+        let src_reg = instruction[1] >> 4;
+        if src_reg != 0 {
+            continue;
+        }
+
+        let helper_id = i32::from_le_bytes([
+            instruction[4],
+            instruction[5],
+            instruction[6],
+            instruction[7],
+        ]);
+        if helper_id < 0 {
+            continue;
+        }
+        let Some(helper) = BpfHelper::from_u32(helper_id as u32) else {
+            continue;
+        };
+        let Some(requirement) = helper.compatibility_requirement() else {
+            continue;
+        };
+        if seen.insert(helper) {
+            requirements.push(requirement);
+        }
+    }
+
+    requirements
+}
+
+fn helper_compatibility_requirements_for_programs(
+    programs: &[EbpfProgramSection],
+) -> Vec<HelperCompatibilityRequirement> {
+    let mut seen = HashSet::new();
+    let mut requirements = Vec::new();
+
+    for program in programs {
+        for requirement in program.helper_compatibility_requirements() {
+            if seen.insert(requirement.helper()) {
+                requirements.push(requirement);
+            }
+        }
+    }
+
+    requirements
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -633,6 +688,16 @@ impl EbpfProgramSection {
         }
         section_name_for_program(self.prog_type, &self.target)
     }
+
+    pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
+        helper_compatibility_requirements_for_bytecode(&self.bytecode)
+    }
+
+    pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        HelperCompatibilityRequirement::effective_minimum_kernel(
+            &self.helper_compatibility_requirements(),
+        )
+    }
 }
 
 impl EbpfObject {
@@ -1164,6 +1229,16 @@ impl EbpfObject {
         )
     }
 
+    pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
+        helper_compatibility_requirements_for_programs(&self.programs)
+    }
+
+    pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        HelperCompatibilityRequirement::effective_minimum_kernel(
+            &self.helper_compatibility_requirements(),
+        )
+    }
+
     fn local_btf_int_name(size: u32, signed: bool) -> &'static str {
         match (size, signed) {
             (1, false) => "u8",
@@ -1557,6 +1632,16 @@ impl EbpfProgram {
     pub fn map_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         MapCompatibilityRequirement::effective_minimum_kernel(
             &self.map_compatibility_requirements(),
+        )
+    }
+
+    pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
+        helper_compatibility_requirements_for_bytecode(&self.bytecode)
+    }
+
+    pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        HelperCompatibilityRequirement::effective_minimum_kernel(
+            &self.helper_compatibility_requirements(),
         )
     }
 }

@@ -1,9 +1,12 @@
-use super::attach::{kernel_map_minimum_requirement_detail, kernel_minimum_requirement_detail};
+use super::attach::{
+    kernel_helper_minimum_requirement_detail, kernel_map_minimum_requirement_detail,
+    kernel_minimum_requirement_detail,
+};
 use super::*;
 use crate::compiler::mir::MapKind;
 use crate::compiler::{
-    CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgram, EbpfProgramType, MapRef,
-    MirType, ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
+    BpfHelper, CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgram, EbpfProgramType,
+    MapRef, MirType, ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1723,6 +1726,40 @@ fn test_kernel_map_minimum_requirement_detail_accepts_newer_kernel() {
     assert!(kernel_map_minimum_requirement_detail(&requirements, "5.8.0").is_none());
     assert!(kernel_map_minimum_requirement_detail(&requirements, "6.1.12").is_none());
     assert!(kernel_map_minimum_requirement_detail(&[], "3.19").is_none());
+}
+
+#[test]
+fn test_kernel_helper_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [
+        BpfHelper::MapLookupElem
+            .compatibility_requirement()
+            .expect("map lookup helper should be versioned"),
+        BpfHelper::RingbufReserve
+            .compatibility_requirement()
+            .expect("ringbuf reserve helper should be versioned"),
+    ];
+    let msg = kernel_helper_minimum_requirement_detail(&requirements, "5.4.0-test")
+        .expect("kernel 5.4 should be too old for ringbuf helpers");
+
+    assert!(msg.contains("compiled helpers require kernel>=5.8"));
+    assert!(msg.contains("current kernel is 5.4.0-test"));
+    assert!(msg.contains("bpf_ringbuf_reserve helper support"));
+    assert!(msg.contains("kernel>=5.8"));
+}
+
+#[test]
+fn test_kernel_helper_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [
+        BpfHelper::MapLookupElem
+            .compatibility_requirement()
+            .expect("map lookup helper should be versioned"),
+        BpfHelper::RingbufReserve
+            .compatibility_requirement()
+            .expect("ringbuf reserve helper should be versioned"),
+    ];
+    assert!(kernel_helper_minimum_requirement_detail(&requirements, "5.8.0").is_none());
+    assert!(kernel_helper_minimum_requirement_detail(&requirements, "6.1.12").is_none());
+    assert!(kernel_helper_minimum_requirement_detail(&[], "3.19").is_none());
 }
 
 #[test]

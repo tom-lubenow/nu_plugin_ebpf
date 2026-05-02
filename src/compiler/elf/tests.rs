@@ -3,7 +3,7 @@ use crate::compiler::BpfHelper;
 use crate::compiler::hindley_milner::HMType;
 use crate::compiler::mir::{CtxField, CtxStoreTarget, MapKind, MirType, StructField};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf;
-use crate::compiler::{ContextFieldLoadGuard, SockOpsCallbackGuard};
+use crate::compiler::{ContextFieldLoadGuard, EbpfInsn, SockOpsCallbackGuard};
 use crate::kernel_btf::KernelBtf;
 use crate::program_spec::ProgramSpec;
 use aya_obj::{
@@ -9689,6 +9689,36 @@ fn test_ebpf_program_reports_map_compatibility_requirements() {
             .into_object()
             .map_compatibility_minimum_kernel(),
         Some("5.8")
+    );
+}
+
+#[test]
+fn test_ebpf_program_reports_helper_compatibility_requirements() {
+    let mut builder = EbpfBuilder::new();
+    builder
+        .push(EbpfInsn::call(BpfHelper::RingbufReserve))
+        .push(EbpfInsn::call(BpfHelper::TracePrintk))
+        .push(EbpfInsn::call_local(0))
+        .push(EbpfInsn::call_kfunc(123))
+        .push(EbpfInsn::call(BpfHelper::UserRingbufDrain))
+        .push(EbpfInsn::call(BpfHelper::RingbufReserve))
+        .push(EbpfInsn::exit());
+
+    let program = EbpfProgram::new(EbpfProgramType::Kprobe, "do_sys_openat2", "main", builder);
+
+    let requirements = program.helper_compatibility_requirements();
+    assert_eq!(requirements.len(), 2);
+    assert_eq!(requirements[0].helper(), BpfHelper::RingbufReserve);
+    assert_eq!(requirements[0].key(), "helper:bpf_ringbuf_reserve");
+    assert_eq!(requirements[1].helper(), BpfHelper::UserRingbufDrain);
+    assert_eq!(requirements[1].key(), "helper:bpf_user_ringbuf_drain");
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
+    assert_eq!(
+        program
+            .clone()
+            .into_object()
+            .helper_compatibility_minimum_kernel(),
+        Some("6.1")
     );
 }
 
