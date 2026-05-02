@@ -212,6 +212,11 @@ const KERNEL_FEATURE_BPF_KPTR_XCHG = {
     min_kernel: "5.19"
     source: "https://docs.ebpf.io/linux/helper-function/bpf_kptr_xchg/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE = {
+    key: "kfunc:bpf_task_acquire"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_task_acquire/"
+}
 const KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID = {
     key: "kfunc:bpf_task_from_pid"
     min_kernel: "6.2"
@@ -2004,6 +2009,45 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-task-acquire-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE
+            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
+        ]
+    }
+    {
+        name: "source-kfunc-task-acquire-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
