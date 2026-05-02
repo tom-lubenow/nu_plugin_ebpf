@@ -4524,7 +4524,19 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
     );
     assert!(
         EbpfProgramType::Fentry
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::TracingProgram)
+    );
+    assert!(
+        EbpfProgramType::Fentry
             .requires_compatibility_feature(ProgramCompatibilityRequirement::BpfTrampoline)
+    );
+    assert!(
+        EbpfProgramType::TpBtf
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::TracingProgram)
+    );
+    assert!(
+        EbpfProgramType::Lsm
+            .requires_compatibility_feature(ProgramCompatibilityRequirement::LsmProgram)
     );
     assert!(
         EbpfProgramType::RawTracepointWritable
@@ -4594,6 +4606,14 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
     assert_eq!(
         ProgramCompatibilityRequirement::SkLookupProgram.minimum_kernel(),
         Some("5.9")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::TracingProgram.minimum_kernel(),
+        Some("5.5")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::LsmProgram.minimum_kernel(),
+        Some("5.7")
     );
     assert_eq!(
         ProgramCompatibilityRequirement::TcProgram.minimum_kernel(),

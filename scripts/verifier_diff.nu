@@ -47,6 +47,16 @@ const KERNEL_FEATURE_PROG_PERF_EVENT = {
     min_kernel: "4.9"
     source: "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_PROG_TRACING = {
+    key: "program:BPF_PROG_TYPE_TRACING"
+    min_kernel: "5.5"
+    source: "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_LSM = {
+    key: "program:BPF_PROG_TYPE_LSM"
+    min_kernel: "5.7"
+    source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_KERNEL_BTF = {
     key: "kernel:btf-vmlinux"
     min_kernel: "5.2"
@@ -3960,24 +3970,33 @@ def target-kernel-features [target] {
 
     if ($target | str starts-with "fentry.s:") or ($target | str starts-with "fexit.s:") or ($target | str starts-with "fmod_ret.s:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACING)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
         $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
     } else if ($target | str starts-with "fentry:") or ($target | str starts-with "fexit:") or ($target | str starts-with "fmod_ret:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACING)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
     } else if ($target | str starts-with "tp_btf:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACING)
     } else if ($target | str starts-with "lsm_cgroup:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACING)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_PROG_LSM)
         $features = ($features | append $KERNEL_FEATURE_PROG_LSM_CGROUP)
     } else if ($target | str starts-with "lsm.s:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACING)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_PROG_LSM)
         $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
     } else if ($target | str starts-with "lsm:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACING)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_PROG_LSM)
     } else if ($target | str starts-with "struct_ops:") {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)

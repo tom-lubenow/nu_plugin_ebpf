@@ -1558,6 +1558,8 @@ pub enum ProgramCompatibilityRequirement {
     XdpProgram,
     TcProgram,
     SkLookupProgram,
+    TracingProgram,
+    LsmProgram,
     KernelBtf,
     BpfTrampoline,
     SleepableProgram,
@@ -1627,6 +1629,10 @@ const LINUX_BPF_H_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_3_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_6_SOURCE: &str =
@@ -1649,6 +1655,8 @@ impl ProgramCompatibilityRequirement {
             Self::XdpProgram => "xdp-program",
             Self::TcProgram => "tc-program",
             Self::SkLookupProgram => "sk-lookup-program",
+            Self::TracingProgram => "tracing-program",
+            Self::LsmProgram => "lsm-program",
             Self::KernelBtf => "kernel-btf",
             Self::BpfTrampoline => "bpf-trampoline",
             Self::SleepableProgram => "sleepable-program",
@@ -1697,6 +1705,8 @@ impl ProgramCompatibilityRequirement {
             Self::XdpProgram => "XDP BPF program support",
             Self::TcProgram => "traffic-control classifier BPF program support",
             Self::SkLookupProgram => "socket lookup BPF program support",
+            Self::TracingProgram => "BPF tracing program support",
+            Self::LsmProgram => "BPF LSM program support",
             Self::KernelBtf => "kernel BTF for typed BTF-backed program targets",
             Self::BpfTrampoline => "BPF trampoline target support",
             Self::SleepableProgram => "sleepable BPF program section support",
@@ -1783,6 +1793,8 @@ impl ProgramCompatibilityRequirement {
             | Self::TracepointProgram
             | Self::RawTracepointProgram
             | Self::PerfEventProgram
+            | Self::TracingProgram
+            | Self::LsmProgram
             | Self::BpfTrampoline
             | Self::SleepableProgram
             | Self::KprobeMulti
@@ -1800,6 +1812,8 @@ impl ProgramCompatibilityRequirement {
             Self::PerfEventProgram => Some("4.9"),
             Self::RawTracepointProgram => Some("4.17"),
             Self::SkLookupProgram => Some("5.9"),
+            Self::TracingProgram => Some("5.5"),
+            Self::LsmProgram => Some("5.7"),
             Self::KernelBtf => Some("5.2"),
             Self::BpfTrampoline => Some("5.5"),
             Self::SleepableProgram => Some("5.10"),
@@ -1852,6 +1866,8 @@ impl ProgramCompatibilityRequirement {
             Self::PerfEventProgram => LINUX_BPF_H_V4_9_SOURCE,
             Self::RawTracepointProgram => LINUX_BPF_H_V4_17_SOURCE,
             Self::SkLookupProgram => LINUX_BPF_H_V5_9_SOURCE,
+            Self::TracingProgram => LINUX_BPF_H_V5_5_SOURCE,
+            Self::LsmProgram => LINUX_BPF_H_V5_7_SOURCE,
             Self::UprobeMulti => LINUX_BPF_H_V6_6_SOURCE,
             Self::CgroupSkbProgram | Self::CgroupSockProgram => LINUX_BPF_H_V4_10_SOURCE,
             Self::CgroupDeviceProgram => LINUX_BPF_H_V4_15_SOURCE,

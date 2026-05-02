@@ -131,13 +131,18 @@ const SK_LOOKUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
     &[ProgramCompatibilityRequirement::SkLookupProgram];
 const BTF_TRAMPOLINE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
     ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::TracingProgram,
     ProgramCompatibilityRequirement::BpfTrampoline,
 ];
-const TP_BTF_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
-    &[ProgramCompatibilityRequirement::KernelBtf];
+const TP_BTF_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
+    ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::TracingProgram,
+];
 const LSM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
     ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::TracingProgram,
     ProgramCompatibilityRequirement::BpfTrampoline,
+    ProgramCompatibilityRequirement::LsmProgram,
 ];
 const STRUCT_OPS_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
     ProgramCompatibilityRequirement::KernelBtf,
@@ -150,7 +155,9 @@ const RAW_TRACEPOINT_WRITABLE_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibility
 ];
 const LSM_CGROUP_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] = &[
     ProgramCompatibilityRequirement::KernelBtf,
+    ProgramCompatibilityRequirement::TracingProgram,
     ProgramCompatibilityRequirement::BpfTrampoline,
+    ProgramCompatibilityRequirement::LsmProgram,
     ProgramCompatibilityRequirement::CgroupLsm,
 ];
 const EXTENSION_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequirement] =
@@ -1488,6 +1495,8 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::XdpProgram,
     ProgramCompatibilityRequirement::TcProgram,
     ProgramCompatibilityRequirement::SkLookupProgram,
+    ProgramCompatibilityRequirement::TracingProgram,
+    ProgramCompatibilityRequirement::LsmProgram,
     ProgramCompatibilityRequirement::KernelBtf,
     ProgramCompatibilityRequirement::BpfTrampoline,
     ProgramCompatibilityRequirement::SleepableProgram,
