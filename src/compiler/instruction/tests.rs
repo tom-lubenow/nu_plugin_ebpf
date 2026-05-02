@@ -4143,6 +4143,42 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/bpf/helpers.c",
         ),
         (
+            "bpf_iter_scx_dsq_new",
+            "kfunc:bpf_iter_scx_dsq_new",
+            "6.12",
+            "/kernel/sched/ext.c",
+        ),
+        (
+            "scx_bpf_create_dsq",
+            "kfunc:scx_bpf_create_dsq",
+            "6.12",
+            "/kernel/sched/ext.c",
+        ),
+        (
+            "scx_bpf_dsq_insert",
+            "kfunc:scx_bpf_dsq_insert",
+            "6.13",
+            "/kernel/sched/ext.c",
+        ),
+        (
+            "scx_bpf_now",
+            "kfunc:scx_bpf_now",
+            "6.14",
+            "/kernel/sched/ext.c",
+        ),
+        (
+            "scx_bpf_events",
+            "kfunc:scx_bpf_events",
+            "6.15",
+            "/kernel/sched/ext.c",
+        ),
+        (
+            "scx_bpf_select_cpu_and",
+            "kfunc:scx_bpf_select_cpu_and",
+            "6.16",
+            "/kernel/sched/ext.c",
+        ),
+        (
             "bpf_task_from_vpid",
             "kfunc:bpf_task_from_vpid",
             "6.13",

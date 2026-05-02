@@ -32,16 +32,26 @@ const LINUX_HELPERS_C_V6_11_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c";
 const LINUX_HELPERS_C_V6_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.12/kernel/bpf/helpers.c";
+const LINUX_SCHED_EXT_C_V6_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c";
 const LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c";
 const LINUX_HELPERS_C_V6_13_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c";
+const LINUX_SCHED_EXT_C_V6_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.14/kernel/bpf/helpers.c";
+const LINUX_SCHED_EXT_C_V6_14_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.14/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/helpers.c";
+const LINUX_SCHED_EXT_C_V6_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c";
+const LINUX_SCHED_EXT_C_V6_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.16/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.17/kernel/bpf/helpers.c";
 
@@ -241,6 +251,44 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_rcu_read_lock" => "bpf_rcu_read_lock",
         "bpf_rcu_read_unlock" => "bpf_rcu_read_unlock",
         "bpf_throw" => "bpf_throw",
+        "bpf_iter_scx_dsq_destroy" => "bpf_iter_scx_dsq_destroy",
+        "bpf_iter_scx_dsq_new" => "bpf_iter_scx_dsq_new",
+        "bpf_iter_scx_dsq_next" => "bpf_iter_scx_dsq_next",
+        "scx_bpf_cpu_rq" => "scx_bpf_cpu_rq",
+        "scx_bpf_cpuperf_cap" => "scx_bpf_cpuperf_cap",
+        "scx_bpf_cpuperf_cur" => "scx_bpf_cpuperf_cur",
+        "scx_bpf_cpuperf_set" => "scx_bpf_cpuperf_set",
+        "scx_bpf_create_dsq" => "scx_bpf_create_dsq",
+        "scx_bpf_destroy_dsq" => "scx_bpf_destroy_dsq",
+        "scx_bpf_dispatch_cancel" => "scx_bpf_dispatch_cancel",
+        "scx_bpf_dispatch_nr_slots" => "scx_bpf_dispatch_nr_slots",
+        "scx_bpf_dsq_insert" => "scx_bpf_dsq_insert",
+        "scx_bpf_dsq_insert_vtime" => "scx_bpf_dsq_insert_vtime",
+        "scx_bpf_dsq_move" => "scx_bpf_dsq_move",
+        "scx_bpf_dsq_move_set_slice" => "scx_bpf_dsq_move_set_slice",
+        "scx_bpf_dsq_move_set_vtime" => "scx_bpf_dsq_move_set_vtime",
+        "scx_bpf_dsq_move_to_local" => "scx_bpf_dsq_move_to_local",
+        "scx_bpf_dsq_move_vtime" => "scx_bpf_dsq_move_vtime",
+        "scx_bpf_dsq_nr_queued" => "scx_bpf_dsq_nr_queued",
+        "scx_bpf_dump_bstr" => "scx_bpf_dump_bstr",
+        "scx_bpf_error_bstr" => "scx_bpf_error_bstr",
+        "scx_bpf_events" => "scx_bpf_events",
+        "scx_bpf_exit_bstr" => "scx_bpf_exit_bstr",
+        "scx_bpf_get_online_cpumask" => "scx_bpf_get_online_cpumask",
+        "scx_bpf_get_possible_cpumask" => "scx_bpf_get_possible_cpumask",
+        "scx_bpf_kick_cpu" => "scx_bpf_kick_cpu",
+        "scx_bpf_now" => "scx_bpf_now",
+        "scx_bpf_nr_cpu_ids" => "scx_bpf_nr_cpu_ids",
+        "scx_bpf_nr_node_ids" => "scx_bpf_nr_node_ids",
+        "scx_bpf_pick_idle_cpu" => "scx_bpf_pick_idle_cpu",
+        "scx_bpf_put_cpumask" => "scx_bpf_put_cpumask",
+        "scx_bpf_reenqueue_local" => "scx_bpf_reenqueue_local",
+        "scx_bpf_select_cpu_and" => "scx_bpf_select_cpu_and",
+        "scx_bpf_select_cpu_dfl" => "scx_bpf_select_cpu_dfl",
+        "scx_bpf_task_cgroup" => "scx_bpf_task_cgroup",
+        "scx_bpf_task_cpu" => "scx_bpf_task_cpu",
+        "scx_bpf_task_running" => "scx_bpf_task_running",
+        "scx_bpf_test_and_clear_cpu_idle" => "scx_bpf_test_and_clear_cpu_idle",
         _ => return None,
     })
 }
@@ -327,14 +375,51 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_crypto_decrypt"
         | "bpf_crypto_encrypt" => "6.10",
         "bpf_iter_bits_destroy" | "bpf_iter_bits_new" | "bpf_iter_bits_next" => "6.11",
-        "bpf_copy_from_user_str" => "6.12",
+        "bpf_copy_from_user_str"
+        | "bpf_iter_scx_dsq_destroy"
+        | "bpf_iter_scx_dsq_new"
+        | "bpf_iter_scx_dsq_next"
+        | "scx_bpf_cpu_rq"
+        | "scx_bpf_cpuperf_cap"
+        | "scx_bpf_cpuperf_cur"
+        | "scx_bpf_cpuperf_set"
+        | "scx_bpf_create_dsq"
+        | "scx_bpf_destroy_dsq"
+        | "scx_bpf_dispatch_cancel"
+        | "scx_bpf_dispatch_nr_slots"
+        | "scx_bpf_dsq_nr_queued"
+        | "scx_bpf_dump_bstr"
+        | "scx_bpf_error_bstr"
+        | "scx_bpf_exit_bstr"
+        | "scx_bpf_get_online_cpumask"
+        | "scx_bpf_get_possible_cpumask"
+        | "scx_bpf_kick_cpu"
+        | "scx_bpf_nr_cpu_ids"
+        | "scx_bpf_pick_idle_cpu"
+        | "scx_bpf_put_cpumask"
+        | "scx_bpf_reenqueue_local"
+        | "scx_bpf_select_cpu_dfl"
+        | "scx_bpf_task_cgroup"
+        | "scx_bpf_task_cpu"
+        | "scx_bpf_task_running"
+        | "scx_bpf_test_and_clear_cpu_idle" => "6.12",
         "bpf_get_task_exe_file" | "bpf_put_file" => "6.12",
         "bpf_iter_kmem_cache_destroy"
         | "bpf_iter_kmem_cache_new"
         | "bpf_iter_kmem_cache_next"
-        | "bpf_task_from_vpid" => "6.13",
-        "bpf_local_irq_restore" | "bpf_local_irq_save" => "6.14",
-        "bpf_copy_from_user_task_str" | "bpf_dynptr_copy" => "6.15",
+        | "bpf_task_from_vpid"
+        | "scx_bpf_dsq_insert"
+        | "scx_bpf_dsq_insert_vtime"
+        | "scx_bpf_dsq_move"
+        | "scx_bpf_dsq_move_set_slice"
+        | "scx_bpf_dsq_move_set_vtime"
+        | "scx_bpf_dsq_move_to_local"
+        | "scx_bpf_dsq_move_vtime" => "6.13",
+        "bpf_local_irq_restore" | "bpf_local_irq_save" | "scx_bpf_now" => "6.14",
+        "bpf_copy_from_user_task_str"
+        | "bpf_dynptr_copy"
+        | "scx_bpf_events"
+        | "scx_bpf_nr_node_ids" => "6.15",
         "bpf_copy_from_user_dynptr"
         | "bpf_copy_from_user_task_dynptr"
         | "bpf_copy_from_user_task_str_dynptr"
@@ -345,7 +430,8 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_list_front"
         | "bpf_rbtree_left"
         | "bpf_rbtree_right"
-        | "bpf_rbtree_root" => "6.16",
+        | "bpf_rbtree_root"
+        | "scx_bpf_select_cpu_and" => "6.16",
         "bpf_dynptr_memset" => "6.17",
         _ => return None,
     })
@@ -436,13 +522,49 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
             LINUX_HELPERS_C_V6_11_SOURCE
         }
         "bpf_copy_from_user_str" => LINUX_HELPERS_C_V6_12_SOURCE,
+        "bpf_iter_scx_dsq_destroy"
+        | "bpf_iter_scx_dsq_new"
+        | "bpf_iter_scx_dsq_next"
+        | "scx_bpf_cpu_rq"
+        | "scx_bpf_cpuperf_cap"
+        | "scx_bpf_cpuperf_cur"
+        | "scx_bpf_cpuperf_set"
+        | "scx_bpf_create_dsq"
+        | "scx_bpf_destroy_dsq"
+        | "scx_bpf_dispatch_cancel"
+        | "scx_bpf_dispatch_nr_slots"
+        | "scx_bpf_dsq_nr_queued"
+        | "scx_bpf_dump_bstr"
+        | "scx_bpf_error_bstr"
+        | "scx_bpf_exit_bstr"
+        | "scx_bpf_get_online_cpumask"
+        | "scx_bpf_get_possible_cpumask"
+        | "scx_bpf_kick_cpu"
+        | "scx_bpf_nr_cpu_ids"
+        | "scx_bpf_pick_idle_cpu"
+        | "scx_bpf_put_cpumask"
+        | "scx_bpf_reenqueue_local"
+        | "scx_bpf_select_cpu_dfl"
+        | "scx_bpf_task_cgroup"
+        | "scx_bpf_task_cpu"
+        | "scx_bpf_task_running"
+        | "scx_bpf_test_and_clear_cpu_idle" => LINUX_SCHED_EXT_C_V6_12_SOURCE,
         "bpf_get_task_exe_file" | "bpf_put_file" => LINUX_BPF_FS_KFUNCS_C_V6_12_SOURCE,
         "bpf_iter_kmem_cache_destroy"
         | "bpf_iter_kmem_cache_new"
         | "bpf_iter_kmem_cache_next"
         | "bpf_task_from_vpid" => LINUX_HELPERS_C_V6_13_SOURCE,
+        "scx_bpf_dsq_insert"
+        | "scx_bpf_dsq_insert_vtime"
+        | "scx_bpf_dsq_move"
+        | "scx_bpf_dsq_move_set_slice"
+        | "scx_bpf_dsq_move_set_vtime"
+        | "scx_bpf_dsq_move_to_local"
+        | "scx_bpf_dsq_move_vtime" => LINUX_SCHED_EXT_C_V6_13_SOURCE,
         "bpf_local_irq_restore" | "bpf_local_irq_save" => LINUX_HELPERS_C_V6_14_SOURCE,
+        "scx_bpf_now" => LINUX_SCHED_EXT_C_V6_14_SOURCE,
         "bpf_copy_from_user_task_str" | "bpf_dynptr_copy" => LINUX_HELPERS_C_V6_15_SOURCE,
+        "scx_bpf_events" | "scx_bpf_nr_node_ids" => LINUX_SCHED_EXT_C_V6_15_SOURCE,
         "bpf_copy_from_user_dynptr"
         | "bpf_copy_from_user_task_dynptr"
         | "bpf_copy_from_user_task_str_dynptr"
@@ -454,6 +576,7 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_rbtree_left"
         | "bpf_rbtree_right"
         | "bpf_rbtree_root" => LINUX_HELPERS_C_V6_16_SOURCE,
+        "scx_bpf_select_cpu_and" => LINUX_SCHED_EXT_C_V6_16_SOURCE,
         "bpf_dynptr_memset" => LINUX_HELPERS_C_V6_17_SOURCE,
         _ => return None,
     })
