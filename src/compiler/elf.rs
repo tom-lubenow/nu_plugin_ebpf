@@ -1614,17 +1614,8 @@ pub enum ProgramCompatibilityRequirement {
     CgroupUnixSockAddr,
 }
 
-const EBPF_TIMELINE_SOURCE: &str = "https://docs.ebpf.io/linux/timeline/";
 const BPF_DIRECT_MAP_VALUE_SOURCE: &str =
     "https://github.com/torvalds/linux/commit/d8eca5bbb2be9bc7546f9e733786fa2f1a594c67";
-const LWT_SEG6LOCAL_SOURCE: &str =
-    "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_LWT_SEG6LOCAL/";
-const SK_MSG_SOURCE: &str = "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_MSG/";
-const SK_SKB_SOURCE: &str = "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_SKB/";
-const SK_REUSEPORT_SOURCE: &str =
-    "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/";
-const SCHED_EXT_OPS_SOURCE: &str =
-    "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_STRUCT_OPS/sched_ext_ops/";
 const LINUX_BPF_H_V3_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_1_SOURCE: &str =
@@ -1643,24 +1634,46 @@ const LINUX_BPF_H_V4_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_20_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_3_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_5_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_6_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_14_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_0_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.0/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_6_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h";
-const LINUX_BPF_TYPES_H_V6_4_SOURCE: &str =
-    "https://github.com/torvalds/linux/blob/v6.4/include/linux/bpf_types.h";
+const LINUX_BPF_TRAMPOLINE_V5_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.5/kernel/bpf/trampoline.c";
 const LINUX_LINK_VMLINUX_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/scripts/link-vmlinux.sh";
+const LINUX_SCHED_EXT_V6_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c";
 const LINUX_TASK_ITER_V5_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c";
 const LINUX_CGROUP_ITER_V6_1_SOURCE: &str =
@@ -1968,14 +1981,28 @@ impl ProgramCompatibilityRequirement {
         self.minimum_kernel()?;
         Some(match self {
             Self::KernelBtf => LINUX_LINK_VMLINUX_V5_2_SOURCE,
+            Self::BpfTrampoline => LINUX_BPF_TRAMPOLINE_V5_5_SOURCE,
+            Self::SleepableProgram => LINUX_BPF_H_V5_10_SOURCE,
+            Self::KprobeMulti | Self::XdpMultiBuffer => LINUX_BPF_H_V5_18_SOURCE,
             Self::RawTracepointWritable => LINUX_BPF_H_V5_2_SOURCE,
-            Self::RouteLwtSeg6Local => LWT_SEG6LOCAL_SOURCE,
-            Self::SkMsgSockMapAttach => SK_MSG_SOURCE,
-            Self::SkSkbSockMapAttach => SK_SKB_SOURCE,
-            Self::SkReuseportAttach | Self::SkReuseportMigration => SK_REUSEPORT_SOURCE,
-            Self::SchedExt => SCHED_EXT_OPS_SOURCE,
+            Self::CgroupLsm => LINUX_BPF_H_V6_0_SOURCE,
+            Self::ExtensionProgram | Self::StructOps => LINUX_BPF_H_V5_6_SOURCE,
+            Self::SyscallProgram | Self::SkReuseportMigration => LINUX_BPF_H_V5_14_SOURCE,
+            Self::BpfIterator => LINUX_BPF_H_V5_8_SOURCE,
+            Self::FlowDissector => LINUX_BPF_H_V4_20_SOURCE,
+            Self::Tcx => LINUX_BPF_H_V6_6_SOURCE,
+            Self::Netkit => LINUX_BPF_H_V6_7_SOURCE,
+            Self::NetfilterLink => LINUX_BPF_H_V6_4_SOURCE,
+            Self::RouteLwt => LINUX_BPF_H_V4_10_SOURCE,
+            Self::RouteLwtSeg6Local | Self::LircMode2 => LINUX_BPF_H_V4_18_SOURCE,
+            Self::SkMsgSockMapAttach => LINUX_BPF_H_V4_17_SOURCE,
+            Self::SkSkbSockMapAttach => LINUX_BPF_H_V4_14_SOURCE,
+            Self::SkReuseportAttach => LINUX_BPF_H_V4_19_SOURCE,
+            Self::SchedExt => LINUX_SCHED_EXT_V6_12_SOURCE,
             Self::SocketFilterProgram => LINUX_BPF_H_V3_19_SOURCE,
-            Self::KprobeProgram | Self::TcProgram => LINUX_BPF_H_V4_1_SOURCE,
+            Self::KprobeProgram | Self::TcProgram | Self::TcActionProgram => {
+                LINUX_BPF_H_V4_1_SOURCE
+            }
             Self::TracepointProgram => LINUX_BPF_H_V4_7_SOURCE,
             Self::XdpProgram => LINUX_BPF_H_V4_8_SOURCE,
             Self::PerfEventProgram => LINUX_BPF_H_V4_9_SOURCE,
@@ -1990,7 +2017,6 @@ impl ProgramCompatibilityRequirement {
             Self::CgroupSysctlProgram => LINUX_BPF_H_V5_2_SOURCE,
             Self::CgroupSockoptProgram => LINUX_BPF_H_V5_3_SOURCE,
             Self::SockOpsProgram => LINUX_BPF_H_V4_14_SOURCE,
-            Self::NetfilterLink => LINUX_BPF_TYPES_H_V6_4_SOURCE,
             Self::CgroupUnixSockAddr => LINUX_BPF_H_V6_7_SOURCE,
             Self::BpfIteratorTaskVmaTarget => LINUX_TASK_ITER_V5_12_SOURCE,
             Self::BpfIteratorCgroupTarget => LINUX_CGROUP_ITER_V6_1_SOURCE,
@@ -2005,7 +2031,9 @@ impl ProgramCompatibilityRequirement {
             Self::BpfIteratorKsymTarget => LINUX_KALLSYMS_V6_0_SOURCE,
             Self::BpfIteratorKmemCacheTarget => LINUX_KMEM_CACHE_ITER_V6_13_SOURCE,
             Self::BpfIteratorDmabufTarget => LINUX_DMABUF_ITER_V6_16_SOURCE,
-            _ => EBPF_TIMELINE_SOURCE,
+            Self::SockMapAttach | Self::CgroupV2 => {
+                unreachable!("requirements without a minimum kernel have no source")
+            }
         })
     }
 

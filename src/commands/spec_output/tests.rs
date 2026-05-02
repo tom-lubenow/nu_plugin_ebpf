@@ -546,7 +546,7 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             .expect("minimum kernel source should be present")
             .as_str()
             .expect("minimum kernel source should be a string"),
-        "https://github.com/torvalds/linux/blob/v6.4/include/linux/bpf_types.h"
+        "https://github.com/torvalds/linux/blob/v6.4/include/uapi/linux/bpf.h"
     );
 }
 

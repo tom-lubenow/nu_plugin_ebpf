@@ -15,7 +15,7 @@ const VALID_HOST_FEATURES = [
 const KERNEL_FEATURE_PROG_RAW_TRACEPOINT = {
     key: "program:BPF_PROG_TYPE_RAW_TRACEPOINT"
     min_kernel: "4.17"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_RAW_TRACEPOINT/"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_RAW_TRACEPOINT_WRITABLE = {
     key: "section:raw_tracepoint.w"
@@ -65,87 +65,87 @@ const KERNEL_FEATURE_KERNEL_BTF = {
 const KERNEL_FEATURE_BPF_TRAMPOLINE = {
     key: "program:bpf-trampoline"
     min_kernel: "5.5"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.5/kernel/bpf/trampoline.c"
 }
 const KERNEL_FEATURE_SLEEPABLE_PROGRAM = {
     key: "section:sleepable-program"
     min_kernel: "5.10"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_ATTACH_KPROBE_MULTI = {
     key: "attach:BPF_TRACE_KPROBE_MULTI"
     min_kernel: "5.18"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_XDP = {
     key: "program:BPF_PROG_TYPE_XDP"
     min_kernel: "4.8"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_XDP/"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_XDP_MULTI_BUFFER = {
     key: "section:xdp.frags"
     min_kernel: "5.18"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_SCHED_ACT = {
     key: "program:BPF_PROG_TYPE_SCHED_ACT"
     min_kernel: "4.1"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SCHED_ACT/"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_FLOW_DISSECTOR = {
     key: "program:BPF_PROG_TYPE_FLOW_DISSECTOR"
     min_kernel: "4.20"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_ATTACH_TCX = {
     key: "attach:tcx"
     min_kernel: "6.6"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_ATTACH_NETKIT = {
     key: "attach:netkit"
     min_kernel: "6.7"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_NETFILTER_LINK = {
     key: "attach:netfilter-link"
     min_kernel: "6.4"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v6.4/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_LWT = {
     key: "program:BPF_PROG_TYPE_LWT"
     min_kernel: "4.10"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_LWT_SEG6LOCAL = {
     key: "program:BPF_PROG_TYPE_LWT_SEG6LOCAL"
     min_kernel: "4.18"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_LWT_SEG6LOCAL/"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_SK_LOOKUP = {
     key: "program:BPF_PROG_TYPE_SK_LOOKUP"
     min_kernel: "5.9"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_LOOKUP/"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_SK_MSG = {
     key: "program:BPF_PROG_TYPE_SK_MSG"
     min_kernel: "4.17"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_MSG/"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_SK_SKB = {
     key: "program:BPF_PROG_TYPE_SK_SKB"
     min_kernel: "4.14"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_SKB/"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_SK_REUSEPORT_ATTACH = {
     key: "attach:BPF_SK_REUSEPORT_SELECT"
     min_kernel: "4.19"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_SK_REUSEPORT_MIGRATION = {
     key: "attach:BPF_SK_REUSEPORT_SELECT_OR_MIGRATE"
     min_kernel: "5.14"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/"
+    source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_CGROUP_SKB = {
     key: "program:BPF_PROG_TYPE_CGROUP_SKB"
@@ -195,37 +195,37 @@ const KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR = {
 const KERNEL_FEATURE_PROG_LIRC_MODE2 = {
     key: "program:BPF_PROG_TYPE_LIRC_MODE2"
     min_kernel: "4.18"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_STRUCT_OPS = {
     key: "program:BPF_PROG_TYPE_STRUCT_OPS"
     min_kernel: "5.6"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT = {
     key: "struct_ops:sched_ext_ops"
     min_kernel: "6.12"
-    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_STRUCT_OPS/sched_ext_ops/"
+    source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_PROG_LSM_CGROUP = {
     key: "attach:BPF_LSM_CGROUP"
     min_kernel: "6.0"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v6.0/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_EXTENSION = {
     key: "program:BPF_PROG_TYPE_EXT"
     min_kernel: "5.6"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_SYSCALL = {
     key: "program:BPF_PROG_TYPE_SYSCALL"
     min_kernel: "5.14"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_ITER = {
     key: "program:BPF_PROG_TYPE_TRACING-iter"
     min_kernel: "5.8"
-    source: "https://docs.ebpf.io/linux/timeline/"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_ITER_TARGET_TASK_VMA = {
     key: "iter-target:task_vma"
