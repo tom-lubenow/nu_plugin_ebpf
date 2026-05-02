@@ -712,6 +712,11 @@ const KERNEL_FEATURE_MAP_VALUE_KPTR = {
     min_kernel: "5.19"
     source: "https://kernelnewbies.org/Linux_5.19"
 }
+const KERNEL_FEATURE_MAP_VALUE_BPF_WQ = {
+    key: "map-value:bpf_wq"
+    min_kernel: "6.10"
+    source: "https://github.com/torvalds/linux/blob/v6.10/include/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_KPTR_XCHG = {
     key: "helper:bpf_kptr_xchg"
     min_kernel: "5.19"
@@ -3285,6 +3290,53 @@ const FIXTURES = [
         kernel: "skip"
         kernel_features: [$KERNEL_FEATURE_MAP_VALUE_KPTR]
         error_contains: "kptr fields, which are currently supported for hash, array, and lru-hash maps"
+    }
+    {
+        name: "map-define-bpf-wq-slot"
+        category: "maps"
+        tags: [maps map-define bpf_wq accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_BPF_WQ]
+    }
+    {
+        name: "map-define-bpf-wq-slot-rejects-queue"
+        category: "maps"
+        tags: [maps map-define bpf_wq reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind queue --value-type "record{work:bpf_wq,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_BPF_WQ]
+        error_contains: "contains bpf_wq, which is only supported for hash, array, and lru-hash maps"
+    }
+    {
+        name: "map-define-bpf-wq-rejects-array-field"
+        category: "maps"
+        tags: [maps map-define bpf_wq reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work_items:array{bpf_wq:2},cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_BPF_WQ]
+        error_contains: "arrays of verifier-managed bpf_wq"
     }
     {
         name: "timer-map-define-lowers-init-start-cancel"
