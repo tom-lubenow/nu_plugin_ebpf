@@ -505,6 +505,50 @@ fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
 }
 
 #[test]
+fn test_spec_record_reports_base_program_minimum() {
+    let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let record = spec_record("xdp:lo".to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let requirements = record
+        .get("compatibility_requirements")
+        .expect("compatibility requirements should be present")
+        .as_list()
+        .expect("compatibility requirements should be a list");
+
+    assert_eq!(
+        record
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "4.8"
+    );
+
+    let requirement = requirements
+        .iter()
+        .find_map(|requirement| {
+            let requirement = requirement.as_record().ok()?;
+            (requirement
+                .get("key")?
+                .as_str()
+                .ok()
+                .is_some_and(|key| key == "xdp-program"))
+            .then_some(requirement)
+        })
+        .expect("xdp base program requirement should be present");
+
+    assert_eq!(
+        requirement
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .as_str()
+            .expect("minimum kernel should be a string"),
+        "4.8"
+    );
+}
+
+#[test]
 fn test_spec_record_includes_attach_shape_metadata() {
     let xdp = ProgramSpec::parse("xdp:lo:drv:frags").expect("xdp frags spec should parse");
     let record = spec_record(
