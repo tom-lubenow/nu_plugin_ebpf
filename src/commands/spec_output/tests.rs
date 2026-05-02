@@ -728,6 +728,58 @@ fn test_spec_context_fields_include_sk_lookup_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_sk_msg_minimum_kernel_metadata() {
+    let spec =
+        ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for field_name in ["data", "data_end"] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.17"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.17/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    for field_name in [
+        "family",
+        "remote_ip4",
+        "remote_ip6",
+        "remote_port",
+        "local_ip4",
+        "local_ip6",
+        "local_port",
+    ] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.18"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.18/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    let packet_len = field(&fields, "packet_len");
+    assert!(packet_len.names.contains(&"size"));
+    assert_eq!(packet_len.minimum_kernel, Some("5.0"));
+    assert!(
+        packet_len
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.0/include/uapi/linux/bpf.h"))
+    );
+
+    let socket = field(&fields, "sk");
+    assert_eq!(socket.minimum_kernel, Some("5.8"));
+    assert!(
+        socket
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.8/include/uapi/linux/bpf.h"))
+    );
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");

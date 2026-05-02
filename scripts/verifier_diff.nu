@@ -1226,6 +1226,61 @@ const KERNEL_FEATURE_CTX_SOCK_OPS_DATA_END = {
     min_kernel: "5.10"
     source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SK_MSG_DATA = {
+    key: "ctx:data"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_DATA_END = {
+    key: "ctx:data_end"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_FAMILY = {
+    key: "ctx:family"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_REMOTE_IP4 = {
+    key: "ctx:remote_ip4"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_REMOTE_IP6 = {
+    key: "ctx:remote_ip6"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_REMOTE_PORT = {
+    key: "ctx:remote_port"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_LOCAL_IP4 = {
+    key: "ctx:local_ip4"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_LOCAL_IP6 = {
+    key: "ctx:local_ip6"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_LOCAL_PORT = {
+    key: "ctx:local_port"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_PACKET_LEN = {
+    key: "ctx:packet_len"
+    min_kernel: "5.0"
+    source: "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_MSG_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_SOCK_OPS_SKB_LEN = {
     key: "ctx:skb_len"
     min_kernel: "5.10"
@@ -5321,8 +5376,40 @@ def target-context-field-alias-kernel-feature [field: string target] {
     if ($target_text | str starts-with "xdp:") and $field == "ifindex" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_INGRESS_IFINDEX }
     }
-    if ($target_text | str starts-with "sk_msg:") and $field == "size" {
-        return { matched: true, feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
+    if ($target_text | str starts-with "sk_msg:") {
+        if $field == "data" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_DATA }
+        }
+        if $field == "data_end" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_DATA_END }
+        }
+        if $field == "family" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_FAMILY }
+        }
+        if $field == "remote_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_REMOTE_IP4 }
+        }
+        if $field == "remote_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_REMOTE_IP6 }
+        }
+        if $field == "remote_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_REMOTE_PORT }
+        }
+        if $field == "local_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_LOCAL_IP4 }
+        }
+        if $field == "local_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_LOCAL_IP6 }
+        }
+        if $field == "local_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_LOCAL_PORT }
+        }
+        if $field == "size" or $field == "packet_len" or $field == "len" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_PACKET_LEN }
+        }
+        if $field == "sk" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_SK }
+        }
     }
     if ($target_text | str starts-with "sock_ops:") and $field == "packet_len" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }

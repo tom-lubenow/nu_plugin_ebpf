@@ -444,6 +444,34 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sk_lookup ctx.cookie should use bpf_sk_lookup cookie floor");
     assert_eq!(sk_lookup_cookie.minimum_kernel(), "5.13");
 
+    let sk_msg_data = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Data,
+        Some(crate::compiler::EbpfProgramType::SkMsg),
+    )
+    .expect("sk_msg ctx.data should use sk_msg_md field floor");
+    assert_eq!(sk_msg_data.minimum_kernel(), "4.17");
+
+    let sk_msg_family = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Family,
+        Some(crate::compiler::EbpfProgramType::SkMsg),
+    )
+    .expect("sk_msg ctx.family should use sk_msg_md field floor");
+    assert_eq!(sk_msg_family.minimum_kernel(), "4.18");
+
+    let sk_msg_size = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::PacketLen,
+        Some(crate::compiler::EbpfProgramType::SkMsg),
+    )
+    .expect("sk_msg ctx.size should use sk_msg_md size floor");
+    assert_eq!(sk_msg_size.minimum_kernel(), "5.0");
+
+    let sk_msg_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::SkMsg),
+    )
+    .expect("sk_msg ctx.sk should use sk_msg_md socket floor");
+    assert_eq!(sk_msg_socket.minimum_kernel(), "5.8");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

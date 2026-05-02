@@ -151,6 +151,26 @@ fn direct_context_field_kernel_floor(
         CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
         }
+        CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SkMsg) => {
+            ("4.17", LINUX_BPF_H_V4_17_SOURCE)
+        }
+        CtxField::Family
+        | CtxField::RemoteIp4
+        | CtxField::RemoteIp6
+        | CtxField::RemotePort
+        | CtxField::LocalIp4
+        | CtxField::LocalIp6
+        | CtxField::LocalPort
+            if prog_type == Some(EbpfProgramType::SkMsg) =>
+        {
+            ("4.18", LINUX_BPF_H_V4_18_SOURCE)
+        }
+        CtxField::PacketLen if prog_type == Some(EbpfProgramType::SkMsg) => {
+            ("5.0", LINUX_BPF_H_V5_0_SOURCE)
+        }
+        CtxField::Socket if prog_type == Some(EbpfProgramType::SkMsg) => {
+            ("5.8", LINUX_BPF_H_V5_8_SOURCE)
+        }
         CtxField::BoundDevIf | CtxField::Family | CtxField::SockType | CtxField::Protocol
             if prog_type == Some(EbpfProgramType::CgroupSock) =>
         {
