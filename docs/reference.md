@@ -191,10 +191,11 @@ requirements, for example base program families, kernel BTF, BPF trampolines,
 TCX, netfilter links, route LWT, struct_ops, sched_ext, XDP multi-buffer
 sections, cgroup v2, cgroup program families, and cgroup UNIX socket-address
 hooks. Live-load preflight also reports source-verified map-kind, modeled
-helper, and source-preserved known-kfunc requirements from the compiled object.
-Context fields that lower through modeled helpers inherit those helper
-minimum-kernel/source records in `ebpf spec` context-field output. These labels
-describe feature surfaces.
+helper, source-preserved known-kfunc, and source-preserved context-field
+requirements from the compiled object. Context fields that lower through modeled
+helpers inherit those helper minimum-kernel/source records, and source-verified
+direct UAPI fields carry context-field floors where their introduction point is
+known. These labels describe feature surfaces.
 `ebpf spec` reports each requirement with a feature category, a default test
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel/source fields. Source-verified requirements carry minimum

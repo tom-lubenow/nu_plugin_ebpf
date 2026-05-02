@@ -137,6 +137,27 @@ fn used_context_fields_for_programs(programs: &[EbpfProgramSection]) -> Vec<CtxF
     sorted_context_fields(&used_ctx_fields)
 }
 
+fn context_field_compatibility_requirements_for_fields(
+    used_ctx_fields: &HashSet<CtxField>,
+) -> Vec<ContextFieldCompatibilityRequirement> {
+    let mut requirements = used_ctx_fields
+        .iter()
+        .filter_map(ContextFieldCompatibilityRequirement::for_field)
+        .collect::<Vec<_>>();
+    requirements.sort_by_key(ContextFieldCompatibilityRequirement::key);
+    requirements
+}
+
+fn context_field_compatibility_requirements_for_programs(
+    programs: &[EbpfProgramSection],
+) -> Vec<ContextFieldCompatibilityRequirement> {
+    let mut used_ctx_fields = HashSet::new();
+    for program in programs {
+        used_ctx_fields.extend(program.used_ctx_fields.iter().cloned());
+    }
+    context_field_compatibility_requirements_for_fields(&used_ctx_fields)
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -780,6 +801,18 @@ impl EbpfProgramSection {
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         sorted_context_fields(&self.used_ctx_fields)
     }
+
+    pub fn context_field_compatibility_requirements(
+        &self,
+    ) -> Vec<ContextFieldCompatibilityRequirement> {
+        context_field_compatibility_requirements_for_fields(&self.used_ctx_fields)
+    }
+
+    pub fn context_field_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        ContextFieldCompatibilityRequirement::effective_minimum_kernel(
+            &self.context_field_compatibility_requirements(),
+        )
+    }
 }
 
 impl EbpfObject {
@@ -1337,6 +1370,18 @@ impl EbpfObject {
         used_context_fields_for_programs(&self.programs)
     }
 
+    pub fn context_field_compatibility_requirements(
+        &self,
+    ) -> Vec<ContextFieldCompatibilityRequirement> {
+        context_field_compatibility_requirements_for_programs(&self.programs)
+    }
+
+    pub fn context_field_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        ContextFieldCompatibilityRequirement::effective_minimum_kernel(
+            &self.context_field_compatibility_requirements(),
+        )
+    }
+
     fn local_btf_int_name(size: u32, signed: bool) -> &'static str {
         match (size, signed) {
             (1, false) => "u8",
@@ -1755,5 +1800,17 @@ impl EbpfProgram {
 
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         sorted_context_fields(&self.used_ctx_fields)
+    }
+
+    pub fn context_field_compatibility_requirements(
+        &self,
+    ) -> Vec<ContextFieldCompatibilityRequirement> {
+        context_field_compatibility_requirements_for_fields(&self.used_ctx_fields)
+    }
+
+    pub fn context_field_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        ContextFieldCompatibilityRequirement::effective_minimum_kernel(
+            &self.context_field_compatibility_requirements(),
+        )
     }
 }

@@ -1,13 +1,14 @@
 use super::attach::{
-    kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
-    kernel_map_minimum_requirement_detail, kernel_minimum_requirement_detail,
+    kernel_context_field_minimum_requirement_detail, kernel_helper_minimum_requirement_detail,
+    kernel_kfunc_minimum_requirement_detail, kernel_map_minimum_requirement_detail,
+    kernel_minimum_requirement_detail,
 };
 use super::*;
-use crate::compiler::mir::MapKind;
+use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
-    BpfHelper, CounterKeySchema, CounterKeySchemaField, EbpfObject, EbpfProgram, EbpfProgramType,
-    KfuncCompatibilityRequirement, MapRef, MirType, ProgramCompatibilityRequirement,
-    ir_to_mir::AnnotatedValueSemantics,
+    BpfHelper, ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField,
+    EbpfObject, EbpfProgram, EbpfProgramType, KfuncCompatibilityRequirement, MapRef, MirType,
+    ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1761,6 +1762,36 @@ fn test_kernel_helper_minimum_requirement_detail_accepts_newer_kernel() {
     assert!(kernel_helper_minimum_requirement_detail(&requirements, "5.8.0").is_none());
     assert!(kernel_helper_minimum_requirement_detail(&requirements, "6.1.12").is_none());
     assert!(kernel_helper_minimum_requirement_detail(&[], "3.19").is_none());
+}
+
+#[test]
+fn test_kernel_context_field_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::Pid)
+            .expect("pid context field should be versioned"),
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::EgressIfindex)
+            .expect("egress_ifindex context field should be versioned"),
+    ];
+    let msg = kernel_context_field_minimum_requirement_detail(&requirements, "5.4.0-test")
+        .expect("kernel 5.4 should be too old for egress_ifindex");
+
+    assert!(msg.contains("compiled context fields require kernel>=5.8"));
+    assert!(msg.contains("current kernel is 5.4.0-test"));
+    assert!(msg.contains("ctx.egress_ifindex context field support"));
+    assert!(msg.contains("kernel>=5.8"));
+}
+
+#[test]
+fn test_kernel_context_field_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::Pid)
+            .expect("pid context field should be versioned"),
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::EgressIfindex)
+            .expect("egress_ifindex context field should be versioned"),
+    ];
+    assert!(kernel_context_field_minimum_requirement_detail(&requirements, "5.8.0").is_none());
+    assert!(kernel_context_field_minimum_requirement_detail(&requirements, "6.1.12").is_none());
+    assert!(kernel_context_field_minimum_requirement_detail(&[], "3.19").is_none());
 }
 
 #[test]

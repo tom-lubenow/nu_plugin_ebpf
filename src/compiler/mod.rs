@@ -68,7 +68,10 @@ pub use instruction::{
     BpfHelper, EbpfInsn, EbpfReg, HelperCompatibilityRequirement, KfuncCompatibilityRequirement,
 };
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
-pub use mir::{MapCompatibilityRequirement, MapKind, MapRef, MirType, MirTypeHints};
+pub use mir::{
+    ContextFieldCompatibilityRequirement, MapCompatibilityRequirement, MapKind, MapRef, MirType,
+    MirTypeHints,
+};
 pub use mir_to_ebpf::{
     MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints,
     compile_mir_to_ebpf_with_hints_and_globals,

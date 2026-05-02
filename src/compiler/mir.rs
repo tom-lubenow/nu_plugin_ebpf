@@ -9,10 +9,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+mod ctx_field_compat;
 mod function_impl;
 mod inst_impl;
 mod map_compat;
 
+pub use ctx_field_compat::ContextFieldCompatibilityRequirement;
 pub use map_compat::MapCompatibilityRequirement;
 
 /// Virtual register ID - unlimited, will be allocated to physical registers later

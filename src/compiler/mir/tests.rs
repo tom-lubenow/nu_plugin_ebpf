@@ -227,3 +227,84 @@ fn test_map_kind_kernel_compatibility_metadata() {
         "5.15", "6.1"
     ));
 }
+
+#[test]
+fn test_context_field_compatibility_requirements_are_source_backed() {
+    let expected = [
+        (CtxField::Pid, "pid", "4.2"),
+        (CtxField::PacketLen, "packet_len", "4.1"),
+        (CtxField::PktType, "pkt_type", "4.1"),
+        (CtxField::QueueMapping, "queue_mapping", "4.1"),
+        (CtxField::EthProtocol, "eth_protocol", "4.1"),
+        (CtxField::VlanPresent, "vlan_present", "4.1"),
+        (CtxField::VlanTci, "vlan_tci", "4.1"),
+        (CtxField::VlanProto, "vlan_proto", "4.1"),
+        (CtxField::SockMark, "mark", "4.1"),
+        (CtxField::SockPriority, "priority", "4.1"),
+        (CtxField::IngressIfindex, "ingress_ifindex", "4.7"),
+        (CtxField::Ifindex, "ifindex", "4.7"),
+        (CtxField::TcIndex, "tc_index", "4.7"),
+        (CtxField::SkbHash, "hash", "4.7"),
+        (CtxField::SkbCb, "cb", "4.7"),
+        (CtxField::TcClassid, "tc_classid", "4.7"),
+        (CtxField::Data, "data", "4.7"),
+        (CtxField::DataEnd, "data_end", "4.7"),
+        (CtxField::NapiId, "napi_id", "4.14"),
+        (CtxField::Family, "family", "4.14"),
+        (CtxField::RemoteIp4, "remote_ip4", "4.14"),
+        (CtxField::RemoteIp6, "remote_ip6", "4.14"),
+        (CtxField::RemotePort, "remote_port", "4.14"),
+        (CtxField::LocalIp4, "local_ip4", "4.14"),
+        (CtxField::LocalIp6, "local_ip6", "4.14"),
+        (CtxField::LocalPort, "local_port", "4.14"),
+        (CtxField::DataMeta, "data_meta", "4.15"),
+        (CtxField::RxQueueIndex, "rx_queue_index", "4.17"),
+        (CtxField::FlowKeys, "flow_keys", "4.20"),
+        (CtxField::Tstamp, "tstamp", "5.0"),
+        (CtxField::WireLen, "wire_len", "5.0"),
+        (CtxField::GsoSegs, "gso_segs", "5.1"),
+        (CtxField::GsoSize, "gso_size", "5.7"),
+        (CtxField::EgressIfindex, "egress_ifindex", "5.8"),
+        (CtxField::Hwtstamp, "hwtstamp", "5.16"),
+        (CtxField::TstampType, "tstamp_type", "5.18"),
+        (CtxField::SockOpsSkbHwtstamp, "skb_hwtstamp", "6.2"),
+    ];
+
+    for (field, field_name, minimum_kernel) in expected {
+        let requirement = ContextFieldCompatibilityRequirement::for_field(&field)
+            .unwrap_or_else(|| panic!("expected ctx.{field_name} to be versioned"));
+        assert_eq!(requirement.field(), &field);
+        assert_eq!(requirement.key(), format!("ctx:{field_name}"));
+        assert_eq!(requirement.category(), "context-field");
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/")),
+            "source should point at the Linux tag where ctx.{field_name} first appears"
+        );
+    }
+
+    assert!(
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
+            "pid".to_string()
+        ))
+        .is_none(),
+        "fields without an independent source-checked floor should stay unversioned"
+    );
+
+    let requirements = [
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::Pid)
+            .expect("pid should inherit a helper-backed floor"),
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::EgressIfindex)
+            .expect("egress_ifindex should have a direct field floor"),
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::SockOpsSkbHwtstamp)
+            .expect("skb_hwtstamp should have a direct sock_ops field floor"),
+    ];
+    assert_eq!(
+        ContextFieldCompatibilityRequirement::effective_minimum_kernel(&requirements),
+        Some("6.2")
+    );
+    assert!(ContextFieldCompatibilityRequirement::kernel_version_at_least("6.2.0", "6.2"));
+    assert!(!ContextFieldCompatibilityRequirement::kernel_version_at_least("6.1.99", "6.2"));
+}

@@ -22,6 +22,7 @@ use super::instruction::EbpfBuilder;
 use super::instruction::{
     BpfHelper, HelperCompatibilityRequirement, KfuncCompatibilityRequirement, opcode,
 };
+use super::mir::ContextFieldCompatibilityRequirement;
 use super::mir::CtxStoreTarget;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,

@@ -9812,6 +9812,40 @@ fn test_ebpf_program_preserves_used_context_fields() {
 }
 
 #[test]
+fn test_ebpf_program_reports_context_field_compatibility_requirements() {
+    let program = EbpfProgram::new(EbpfProgramType::Xdp, "lo", "main", EbpfBuilder::new())
+        .with_used_context_fields([
+            CtxField::Pid,
+            CtxField::DataMeta,
+            CtxField::EgressIfindex,
+            CtxField::EgressIfindex,
+        ]);
+
+    let requirements = program.context_field_compatibility_requirements();
+    assert_eq!(requirements.len(), 3);
+    assert_eq!(requirements[0].key(), "ctx:data_meta");
+    assert_eq!(requirements[0].minimum_kernel(), "4.15");
+    assert_eq!(requirements[1].key(), "ctx:egress_ifindex");
+    assert_eq!(requirements[1].minimum_kernel(), "5.8");
+    assert_eq!(requirements[2].key(), "ctx:pid");
+    assert_eq!(requirements[2].minimum_kernel(), "4.2");
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("5.8")
+    );
+
+    let object = program.clone().into_object();
+    assert_eq!(
+        object.programs[0].context_field_compatibility_minimum_kernel(),
+        Some("5.8")
+    );
+    assert_eq!(
+        object.context_field_compatibility_minimum_kernel(),
+        Some("5.8")
+    );
+}
+
+#[test]
 fn test_validate_runtime_artifacts_rejects_unknown_runtime_map_type() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Xdp,
