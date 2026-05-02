@@ -1615,7 +1615,6 @@ pub enum ProgramCompatibilityRequirement {
 }
 
 const EBPF_TIMELINE_SOURCE: &str = "https://docs.ebpf.io/linux/timeline/";
-const LINUX_5_2_SOURCE: &str = "https://kernelnewbies.org/Linux_5.2";
 const BPF_DIRECT_MAP_VALUE_SOURCE: &str =
     "https://github.com/torvalds/linux/commit/d8eca5bbb2be9bc7546f9e733786fa2f1a594c67";
 const LWT_SEG6LOCAL_SOURCE: &str =
@@ -1660,6 +1659,8 @@ const LINUX_BPF_H_V6_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_TYPES_H_V6_4_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.4/include/linux/bpf_types.h";
+const LINUX_LINK_VMLINUX_V5_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.2/scripts/link-vmlinux.sh";
 const LINUX_TASK_ITER_V5_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c";
 const LINUX_CGROUP_ITER_V6_1_SOURCE: &str =
@@ -1966,7 +1967,8 @@ impl ProgramCompatibilityRequirement {
     pub fn minimum_kernel_source(&self) -> Option<&'static str> {
         self.minimum_kernel()?;
         Some(match self {
-            Self::KernelBtf | Self::RawTracepointWritable => LINUX_5_2_SOURCE,
+            Self::KernelBtf => LINUX_LINK_VMLINUX_V5_2_SOURCE,
+            Self::RawTracepointWritable => LINUX_BPF_H_V5_2_SOURCE,
             Self::RouteLwtSeg6Local => LWT_SEG6LOCAL_SOURCE,
             Self::SkMsgSockMapAttach => SK_MSG_SOURCE,
             Self::SkSkbSockMapAttach => SK_SKB_SOURCE,

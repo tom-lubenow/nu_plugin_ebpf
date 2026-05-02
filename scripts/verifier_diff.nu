@@ -20,7 +20,7 @@ const KERNEL_FEATURE_PROG_RAW_TRACEPOINT = {
 const KERNEL_FEATURE_PROG_RAW_TRACEPOINT_WRITABLE = {
     key: "section:raw_tracepoint.w"
     min_kernel: "5.2"
-    source: "https://kernelnewbies.org/Linux_5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_PROG_SOCKET_FILTER = {
     key: "program:BPF_PROG_TYPE_SOCKET_FILTER"
@@ -60,7 +60,7 @@ const KERNEL_FEATURE_PROG_LSM = {
 const KERNEL_FEATURE_KERNEL_BTF = {
     key: "kernel:btf-vmlinux"
     min_kernel: "5.2"
-    source: "https://kernelnewbies.org/Linux_5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/scripts/link-vmlinux.sh"
 }
 const KERNEL_FEATURE_BPF_TRAMPOLINE = {
     key: "program:bpf-trampoline"
@@ -785,7 +785,7 @@ const KERNEL_FEATURE_MAP_VALUE_BPF_TIMER = {
 const KERNEL_FEATURE_MAP_VALUE_KPTR = {
     key: "map-value:kptr"
     min_kernel: "5.19"
-    source: "https://kernelnewbies.org/Linux_5.19"
+    source: "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/verifier.c"
 }
 const KERNEL_FEATURE_MAP_VALUE_BPF_WQ = {
     key: "map-value:bpf_wq"
