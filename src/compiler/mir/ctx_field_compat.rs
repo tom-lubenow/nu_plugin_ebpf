@@ -191,6 +191,14 @@ fn direct_context_field_kernel_floor(
         {
             ("5.1", LINUX_BPF_H_V5_1_SOURCE)
         }
+        CtxField::Socket
+            if matches!(
+                prog_type,
+                Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser)
+            ) =>
+        {
+            ("5.1", LINUX_BPF_H_V5_1_SOURCE)
+        }
         CtxField::SockRxQueueMapping if prog_type == Some(EbpfProgramType::CgroupSock) => {
             ("5.8", LINUX_BPF_H_V5_8_SOURCE)
         }

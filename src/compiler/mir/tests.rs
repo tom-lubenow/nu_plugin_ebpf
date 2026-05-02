@@ -472,6 +472,20 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sk_msg ctx.sk should use sk_msg_md socket floor");
     assert_eq!(sk_msg_socket.minimum_kernel(), "5.8");
 
+    let sk_skb_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::SkSkb),
+    )
+    .expect("sk_skb ctx.sk should use __sk_buff socket floor");
+    assert_eq!(sk_skb_socket.minimum_kernel(), "5.1");
+
+    let sk_skb_parser_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::SkSkbParser),
+    )
+    .expect("sk_skb_parser ctx.sk should use __sk_buff socket floor");
+    assert_eq!(sk_skb_parser_socket.minimum_kernel(), "5.1");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

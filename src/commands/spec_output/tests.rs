@@ -780,6 +780,25 @@ fn test_spec_context_fields_include_sk_msg_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_sk_skb_socket_minimum_kernel_metadata() {
+    for spec_text in [
+        "sk_skb:/sys/fs/bpf/demo_sockmap",
+        "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+    ] {
+        let spec = ProgramSpec::parse(spec_text).expect("sk_skb spec should parse");
+        let fields = spec_context_fields(&spec, false);
+        let socket = field(&fields, "sk");
+
+        assert_eq!(socket.minimum_kernel, Some("5.1"));
+        assert!(
+            socket
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v5.1/include/uapi/linux/bpf.h"))
+        );
+    }
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");

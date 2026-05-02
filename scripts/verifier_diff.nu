@@ -1281,6 +1281,11 @@ const KERNEL_FEATURE_CTX_SK_MSG_SK = {
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SK_SKB_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.1"
+    source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_SOCK_OPS_SKB_LEN = {
     key: "ctx:skb_len"
     min_kernel: "5.10"
@@ -5410,6 +5415,12 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if $field == "sk" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_SK }
         }
+    }
+    if (
+        ($target_text | str starts-with "sk_skb:")
+        or ($target_text | str starts-with "sk_skb_parser:")
+    ) and $field == "sk" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_SKB_SK }
     }
     if ($target_text | str starts-with "sock_ops:") and $field == "packet_len" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }
