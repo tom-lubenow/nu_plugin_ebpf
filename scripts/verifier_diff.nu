@@ -17,15 +17,100 @@ const KERNEL_FEATURE_PROG_RAW_TRACEPOINT = {
     min_kernel: "4.17"
     source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_RAW_TRACEPOINT/"
 }
+const KERNEL_FEATURE_PROG_RAW_TRACEPOINT_WRITABLE = {
+    key: "section:raw_tracepoint.w"
+    min_kernel: "5.2"
+    source: "https://kernelnewbies.org/Linux_5.2"
+}
+const KERNEL_FEATURE_PROG_SOCKET_FILTER = {
+    key: "program:BPF_PROG_TYPE_SOCKET_FILTER"
+    min_kernel: "3.19"
+    source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_KPROBE = {
+    key: "program:BPF_PROG_TYPE_KPROBE"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_SCHED_CLS = {
+    key: "program:BPF_PROG_TYPE_SCHED_CLS"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_TRACEPOINT = {
+    key: "program:BPF_PROG_TYPE_TRACEPOINT"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_PERF_EVENT = {
+    key: "program:BPF_PROG_TYPE_PERF_EVENT"
+    min_kernel: "4.9"
+    source: "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_KERNEL_BTF = {
+    key: "kernel:btf-vmlinux"
+    min_kernel: "5.2"
+    source: "https://kernelnewbies.org/Linux_5.2"
+}
+const KERNEL_FEATURE_BPF_TRAMPOLINE = {
+    key: "program:bpf-trampoline"
+    min_kernel: "5.5"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_SLEEPABLE_PROGRAM = {
+    key: "section:sleepable-program"
+    min_kernel: "5.10"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_ATTACH_KPROBE_MULTI = {
+    key: "attach:BPF_TRACE_KPROBE_MULTI"
+    min_kernel: "5.18"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
 const KERNEL_FEATURE_PROG_XDP = {
     key: "program:BPF_PROG_TYPE_XDP"
     min_kernel: "4.8"
     source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_XDP/"
 }
+const KERNEL_FEATURE_XDP_MULTI_BUFFER = {
+    key: "section:xdp.frags"
+    min_kernel: "5.18"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
 const KERNEL_FEATURE_PROG_SCHED_ACT = {
     key: "program:BPF_PROG_TYPE_SCHED_ACT"
     min_kernel: "4.1"
     source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SCHED_ACT/"
+}
+const KERNEL_FEATURE_PROG_FLOW_DISSECTOR = {
+    key: "program:BPF_PROG_TYPE_FLOW_DISSECTOR"
+    min_kernel: "4.20"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_ATTACH_TCX = {
+    key: "attach:tcx"
+    min_kernel: "6.6"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_ATTACH_NETKIT = {
+    key: "attach:netkit"
+    min_kernel: "6.7"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_NETFILTER_LINK = {
+    key: "attach:netfilter-link"
+    min_kernel: "6.4"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_PROG_LWT = {
+    key: "program:BPF_PROG_TYPE_LWT"
+    min_kernel: "4.10"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_PROG_LWT_SEG6LOCAL = {
+    key: "program:BPF_PROG_TYPE_LWT_SEG6LOCAL"
+    min_kernel: "4.18"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_LWT_SEG6LOCAL/"
 }
 const KERNEL_FEATURE_PROG_SK_LOOKUP = {
     key: "program:BPF_PROG_TYPE_SK_LOOKUP"
@@ -41,6 +126,16 @@ const KERNEL_FEATURE_PROG_SK_SKB = {
     key: "program:BPF_PROG_TYPE_SK_SKB"
     min_kernel: "4.14"
     source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_SKB/"
+}
+const KERNEL_FEATURE_SK_REUSEPORT_ATTACH = {
+    key: "attach:BPF_SK_REUSEPORT_SELECT"
+    min_kernel: "4.19"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/"
+}
+const KERNEL_FEATURE_SK_REUSEPORT_MIGRATION = {
+    key: "attach:BPF_SK_REUSEPORT_SELECT_OR_MIGRATE"
+    min_kernel: "5.14"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_REUSEPORT/"
 }
 const KERNEL_FEATURE_PROG_CGROUP_SKB = {
     key: "program:BPF_PROG_TYPE_CGROUP_SKB"
@@ -86,6 +181,41 @@ const KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR = {
     key: "attach:BPF_CGROUP_UNIX_SOCK_ADDR"
     min_kernel: "6.7"
     source: "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_PROG_LIRC_MODE2 = {
+    key: "program:BPF_PROG_TYPE_LIRC_MODE2"
+    min_kernel: "4.18"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_PROG_STRUCT_OPS = {
+    key: "program:BPF_PROG_TYPE_STRUCT_OPS"
+    min_kernel: "5.6"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT = {
+    key: "struct_ops:sched_ext_ops"
+    min_kernel: "6.12"
+    source: "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_STRUCT_OPS/sched_ext_ops/"
+}
+const KERNEL_FEATURE_PROG_LSM_CGROUP = {
+    key: "attach:BPF_LSM_CGROUP"
+    min_kernel: "6.0"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_PROG_EXTENSION = {
+    key: "program:BPF_PROG_TYPE_EXT"
+    min_kernel: "5.6"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_PROG_SYSCALL = {
+    key: "program:BPF_PROG_TYPE_SYSCALL"
+    min_kernel: "5.14"
+    source: "https://docs.ebpf.io/linux/timeline/"
+}
+const KERNEL_FEATURE_PROG_ITER = {
+    key: "program:BPF_PROG_TYPE_TRACING-iter"
+    min_kernel: "5.8"
+    source: "https://docs.ebpf.io/linux/timeline/"
 }
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
@@ -362,7 +492,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_PROG_RAW_TRACEPOINT]
     }
     {
         name: "kprobe-multi-context"
@@ -391,7 +520,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_ATTACH_UPROBE_MULTI]
     }
     {
         name: "kretprobe-context"
@@ -578,7 +706,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_PROG_XDP]
     }
     {
         name: "xdp-frags-driver-context"
@@ -1410,7 +1537,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-skb context]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SKB]
         target: "cgroup_skb:/sys/fs/cgroup:egress"
         program: [
             '{|ctx|'
@@ -1426,7 +1552,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-skb context writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SKB]
         target: "cgroup_skb:/sys/fs/cgroup:ingress"
         program: [
             '{|ctx|'
@@ -1445,7 +1570,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock context writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:sock_create"
         program: [
             '{|ctx|'
@@ -1465,7 +1589,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock context ipv6]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:post_bind6"
         program: [
             '{|ctx|'
@@ -1481,7 +1604,6 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock reject writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
         program: [
             '{|ctx|'
@@ -1499,7 +1621,6 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock reject]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:sock_create"
         program: [
             '{|ctx|'
@@ -1516,7 +1637,6 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock reject ipv6]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK]
         target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
         program: [
             '{|ctx|'
@@ -1533,7 +1653,6 @@ const FIXTURES = [
         category: "context-policy"
         tags: [cgroup-sock-addr reject]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -1550,7 +1669,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -1566,7 +1684,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -1584,7 +1701,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context ipv6]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect6"
         program: [
             '{|ctx|'
@@ -1600,10 +1716,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sock-addr context unix writable kfunc]
         requires: [cgroup-v2]
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR
-            $KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR
-        ]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
         program: [
             '{|ctx|'
@@ -1683,7 +1795,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sockopt context writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SOCKOPT]
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -1700,7 +1811,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-device context]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_DEVICE]
         target: "cgroup_device:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -1716,7 +1826,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [cgroup-sysctl context writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_CGROUP_SYSCTL]
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -1735,7 +1844,6 @@ const FIXTURES = [
         category: "context-surface"
         tags: [sock-ops context writable]
         requires: [cgroup-v2]
-        kernel_features: [$KERNEL_FEATURE_PROG_SOCK_OPS]
         target: "sock_ops:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -3829,8 +3937,145 @@ def optional [record field fallback] {
     if $value == null { $fallback } else { $value }
 }
 
+def append-missing-kernel-features [features additions] {
+    mut result = $features
+
+    for feature in $additions {
+        let key = ($feature | get key)
+        let exists = ($result | any {|existing| ($existing | get key) == $key })
+        if not $exists {
+            $result = ($result | append $feature)
+        }
+    }
+
+    $result
+}
+
+def target-kernel-features [target] {
+    if $target == null {
+        return []
+    }
+
+    mut features = []
+
+    if ($target | str starts-with "fentry.s:") or ($target | str starts-with "fexit.s:") or ($target | str starts-with "fmod_ret.s:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
+    } else if ($target | str starts-with "fentry:") or ($target | str starts-with "fexit:") or ($target | str starts-with "fmod_ret:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+    } else if ($target | str starts-with "tp_btf:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+    } else if ($target | str starts-with "lsm_cgroup:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_PROG_LSM_CGROUP)
+    } else if ($target | str starts-with "lsm.s:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
+    } else if ($target | str starts-with "lsm:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+    } else if ($target | str starts-with "struct_ops:") {
+        $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
+        $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
+        $features = ($features | append $KERNEL_FEATURE_PROG_STRUCT_OPS)
+        if ($target | str contains "sched_ext_ops") {
+            $features = ($features | append $KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT)
+        }
+    } else if ($target | str starts-with "kprobe.multi:") or ($target | str starts-with "kretprobe.multi:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_KPROBE)
+        $features = ($features | append $KERNEL_FEATURE_ATTACH_KPROBE_MULTI)
+    } else if ($target | str starts-with "kprobe:") or ($target | str starts-with "kretprobe:") or ($target | str starts-with "ksyscall:") or ($target | str starts-with "kretsyscall:") or ($target | str starts-with "uprobe:") or ($target | str starts-with "uprobe.s:") or ($target | str starts-with "uretprobe:") or ($target | str starts-with "uretprobe.s:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_KPROBE)
+        if ($target | str starts-with "uprobe.s:") or ($target | str starts-with "uretprobe.s:") {
+            $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
+        }
+    } else if ($target | str starts-with "uprobe.multi:") or ($target | str starts-with "uprobe.multi.s:") or ($target | str starts-with "uretprobe.multi:") or ($target | str starts-with "uretprobe.multi.s:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_KPROBE)
+        $features = ($features | append $KERNEL_FEATURE_ATTACH_UPROBE_MULTI)
+        if ($target | str starts-with "uprobe.multi.s:") or ($target | str starts-with "uretprobe.multi.s:") {
+            $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
+        }
+    } else if ($target | str starts-with "raw_tracepoint.w:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_RAW_TRACEPOINT)
+        $features = ($features | append $KERNEL_FEATURE_PROG_RAW_TRACEPOINT_WRITABLE)
+    } else if ($target | str starts-with "raw_tracepoint:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_RAW_TRACEPOINT)
+    } else if ($target | str starts-with "tracepoint:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_TRACEPOINT)
+    } else if ($target | str starts-with "perf_event:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_PERF_EVENT)
+    } else if ($target | str starts-with "xdp:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_XDP)
+        if ($target | str contains ":frags") {
+            $features = ($features | append $KERNEL_FEATURE_XDP_MULTI_BUFFER)
+        }
+    } else if ($target | str starts-with "socket_filter:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SOCKET_FILTER)
+    } else if ($target | str starts-with "tc:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SCHED_CLS)
+    } else if ($target | str starts-with "tc_action:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SCHED_ACT)
+    } else if ($target | str starts-with "tcx:") {
+        $features = ($features | append $KERNEL_FEATURE_ATTACH_TCX)
+    } else if ($target | str starts-with "netkit:") {
+        $features = ($features | append $KERNEL_FEATURE_ATTACH_NETKIT)
+    } else if ($target | str starts-with "flow_dissector:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_FLOW_DISSECTOR)
+    } else if ($target | str starts-with "netfilter:") {
+        $features = ($features | append $KERNEL_FEATURE_NETFILTER_LINK)
+    } else if ($target | str starts-with "lwt_seg6local:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_LWT)
+        $features = ($features | append $KERNEL_FEATURE_PROG_LWT_SEG6LOCAL)
+    } else if ($target | str starts-with "lwt_in:") or ($target | str starts-with "lwt_out:") or ($target | str starts-with "lwt_xmit:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_LWT)
+    } else if ($target | str starts-with "sk_lookup:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SK_LOOKUP)
+    } else if ($target | str starts-with "sk_msg:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SK_MSG)
+    } else if ($target | str starts-with "sk_skb:") or ($target | str starts-with "sk_skb_parser:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SK_SKB)
+    } else if ($target | str starts-with "sk_reuseport:") {
+        $features = ($features | append $KERNEL_FEATURE_SK_REUSEPORT_ATTACH)
+        if ($target | str contains ":migrate") {
+            $features = ($features | append $KERNEL_FEATURE_SK_REUSEPORT_MIGRATION)
+        }
+    } else if ($target | str starts-with "cgroup_skb:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SKB)
+    } else if ($target | str starts-with "cgroup_sock_addr:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR)
+        if ($target | str contains "_unix") {
+            $features = ($features | append $KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR)
+        }
+    } else if ($target | str starts-with "cgroup_sockopt:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SOCKOPT)
+    } else if ($target | str starts-with "cgroup_sock:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SOCK)
+    } else if ($target | str starts-with "cgroup_device:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_DEVICE)
+    } else if ($target | str starts-with "cgroup_sysctl:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SYSCTL)
+    } else if ($target | str starts-with "sock_ops:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SOCK_OPS)
+    } else if ($target | str starts-with "lirc_mode2:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_LIRC_MODE2)
+    } else if ($target | str starts-with "iter:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_ITER)
+    } else if ($target | str starts-with "syscall:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_SYSCALL)
+    } else if ($target | str starts-with "freplace:") {
+        $features = ($features | append $KERNEL_FEATURE_PROG_EXTENSION)
+    }
+
+    $features
+}
+
 def fixture-kernel-features [fixture] {
     mut features = (optional $fixture kernel_features [])
+    $features = (append-missing-kernel-features $features (target-kernel-features ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
     let legacy_min_kernel_source = ($fixture | get -o min_kernel_source)
