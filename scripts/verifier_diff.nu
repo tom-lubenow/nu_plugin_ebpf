@@ -272,6 +272,16 @@ const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE = {
     min_kernel: "6.3"
     source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_release/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST = {
+    key: "kfunc:bpf_cpumask_first"
+    min_kernel: "6.3"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_first/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU = {
+    key: "kfunc:bpf_cpumask_set_cpu"
+    min_kernel: "6.3"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_set_cpu/"
+}
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
     min_kernel: "6.1"
@@ -2312,6 +2322,33 @@ const FIXTURES = [
             $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
         ]
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cpumask-set-first-release"
+        category: "helper-state"
+        tags: [kfunc cpumask source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    kfunc-call "bpf_cpumask_set_cpu" 0 $mask'
+            '    let first = (kfunc-call "bpf_cpumask_first" $mask)'
+            '    $first | count'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
+        ]
     }
     {
         name: "source-kptr-xchg-task-ref-transfer"
