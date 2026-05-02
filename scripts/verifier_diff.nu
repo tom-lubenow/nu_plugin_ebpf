@@ -257,6 +257,16 @@ const KERNEL_FEATURE_KFUNC_BPF_PUT_FILE = {
     min_kernel: "6.12"
     source: "https://docs.ebpf.io/linux/kfuncs/bpf_put_file/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE = {
+    key: "kfunc:bpf_cpumask_create"
+    min_kernel: "6.3"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_create/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE = {
+    key: "kfunc:bpf_cpumask_release"
+    min_kernel: "6.3"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cpumask_release/"
+}
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
     min_kernel: "6.1"
@@ -2208,6 +2218,45 @@ const FIXTURES = [
         ]
     }
     {
+        name: "source-kfunc-cpumask-ref-release"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
+        ]
+    }
+    {
+        name: "source-kfunc-cpumask-ref-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-kptr-xchg-task-ref-transfer"
         category: "helper-state"
         tags: [kfunc helper-call kptr ref-lifetime source accept]
@@ -2269,6 +2318,71 @@ const FIXTURES = [
             $KERNEL_FEATURE_BPF_KPTR_XCHG
             $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
             $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
+        ]
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kptr-xchg-cpumask-ref-transfer"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cpumask ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define mask_slots --kind array --key-type u32 --value-type "record{mask:kptr:bpf_cpumask,cookie:u64}" --max-entries 1'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    let entry = (0 | map-get mask_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.mask $mask)'
+            '      if $old {'
+            '        $old | kfunc-call "bpf_cpumask_release"'
+            '      }'
+            '    } else {'
+            '      $mask | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
+        ]
+    }
+    {
+        name: "source-kptr-xchg-cpumask-rejects-old-ref-leak"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cpumask ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define mask_slots --kind array --key-type u32 --value-type "record{mask:kptr:bpf_cpumask,cookie:u64}" --max-entries 1'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    let entry = (0 | map-get mask_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.mask $mask)'
+            '      0'
+            '    } else {'
+            '      $mask | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
+            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
         ]
         error_contains: "unreleased kfunc reference at function exit"
     }
