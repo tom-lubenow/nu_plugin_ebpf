@@ -244,6 +244,10 @@ impl<'a> TypeInference<'a> {
             "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => {
                 Some(MirType::named_kernel_struct_ptr("task_struct"))
             }
+            "bpf_task_get_cgroup1"
+            | "bpf_cgroup_acquire"
+            | "bpf_cgroup_ancestor"
+            | "bpf_cgroup_from_id" => Some(MirType::named_kernel_struct_ptr("cgroup")),
             "bpf_get_task_exe_file" => Some(MirType::named_kernel_struct_ptr("file")),
             _ => None,
         }

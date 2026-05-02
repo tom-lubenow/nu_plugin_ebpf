@@ -258,9 +258,10 @@ fn is_release_like_kfunc_name(kfunc: &str) -> bool {
 pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
     match kfunc {
         "bpf_task_acquire" | "bpf_task_from_pid" | "bpf_task_from_vpid" => Some(KfuncRefKind::Task),
-        "bpf_task_get_cgroup1" | "bpf_cgroup_acquire" | "bpf_cgroup_from_id" => {
-            Some(KfuncRefKind::Cgroup)
-        }
+        "bpf_task_get_cgroup1"
+        | "bpf_cgroup_acquire"
+        | "bpf_cgroup_ancestor"
+        | "bpf_cgroup_from_id" => Some(KfuncRefKind::Cgroup),
         "bpf_get_task_exe_file" => Some(KfuncRefKind::File),
         "bpf_crypto_ctx_acquire" | "bpf_crypto_ctx_create" => Some(KfuncRefKind::CryptoCtx),
         "bpf_obj_new_impl"

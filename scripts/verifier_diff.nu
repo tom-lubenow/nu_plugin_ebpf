@@ -232,6 +232,16 @@ const KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE = {
     min_kernel: "6.2"
     source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_acquire/"
 }
+const KERNEL_FEATURE_KFUNC_BPF_CGROUP_ANCESTOR = {
+    key: "kfunc:bpf_cgroup_ancestor"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_ancestor/"
+}
+const KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID = {
+    key: "kfunc:bpf_cgroup_from_id"
+    min_kernel: "6.2"
+    source: "https://docs.ebpf.io/linux/kfuncs/bpf_cgroup_from_id/"
+}
 const KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE = {
     key: "kfunc:bpf_cgroup_release"
     min_kernel: "6.2"
@@ -2098,6 +2108,55 @@ const FIXTURES = [
         kernel: "skip"
         kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE]
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cgroup-from-id-release"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
+        ]
+    }
+    {
+        name: "source-kfunc-cgroup-ancestor-release"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    let parent = (kfunc-call "bpf_cgroup_ancestor" $cgrp 0)'
+            '    if $parent {'
+            '      $parent | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_ANCESTOR
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
+        ]
     }
     {
         name: "source-kptr-xchg-task-ref-transfer"

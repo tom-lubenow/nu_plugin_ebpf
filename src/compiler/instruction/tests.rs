@@ -4668,6 +4668,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Cgroup)
     );
     assert_eq!(
+        kfunc_acquire_ref_kind("bpf_cgroup_ancestor"),
+        Some(KfuncRefKind::Cgroup)
+    );
+    assert_eq!(
         kfunc_acquire_ref_kind("bpf_get_task_exe_file"),
         Some(KfuncRefKind::File)
     );
