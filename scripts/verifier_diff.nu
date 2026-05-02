@@ -991,6 +991,81 @@ const KERNEL_FEATURE_CTX_RX_QUEUE_INDEX = {
     min_kernel: "4.17"
     source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_FAMILY = {
+    key: "ctx:family"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SOCK_TYPE = {
+    key: "ctx:sock_type"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_PROTOCOL = {
+    key: "ctx:protocol"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_FAMILY = {
+    key: "ctx:user_family"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_IP4 = {
+    key: "ctx:user_ip4"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_IP6 = {
+    key: "ctx:user_ip6"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_PORT = {
+    key: "ctx:user_port"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_IP4 = {
+    key: "ctx:remote_ip4"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_IP6 = {
+    key: "ctx:remote_ip6"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_PORT = {
+    key: "ctx:remote_port"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_IP4 = {
+    key: "ctx:local_ip4"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_IP6 = {
+    key: "ctx:local_ip6"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_PORT = {
+    key: "ctx:local_port"
+    min_kernel: "4.17"
+    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP4 = {
+    key: "ctx:msg_src_ip4"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP6 = {
+    key: "ctx:msg_src_ip6"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_FLOW_KEYS = {
     key: "ctx:flow_keys"
     min_kernel: "4.20"
@@ -5212,6 +5287,53 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "retval" or $field == "sockopt_retval" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_RETVAL }
+        }
+    }
+    if ($target_text | str starts-with "cgroup_sock_addr:") {
+        if $field == "family" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_FAMILY }
+        }
+        if $field == "sock_type" or $field == "type" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SOCK_TYPE }
+        }
+        if $field == "protocol" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_PROTOCOL }
+        }
+        if $field == "user_family" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_FAMILY }
+        }
+        if $field == "user_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_IP4 }
+        }
+        if $field == "user_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_IP6 }
+        }
+        if $field == "user_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_PORT }
+        }
+        if $field == "remote_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_IP4 }
+        }
+        if $field == "remote_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_IP6 }
+        }
+        if $field == "remote_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_PORT }
+        }
+        if $field == "local_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_IP4 }
+        }
+        if $field == "local_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_IP6 }
+        }
+        if $field == "local_port" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_PORT }
+        }
+        if $field == "msg_src_ip4" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP4 }
+        }
+        if $field == "msg_src_ip6" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP6 }
         }
     }
 

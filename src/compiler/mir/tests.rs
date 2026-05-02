@@ -321,7 +321,13 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::DeviceType, "device_type", "4.15"),
         (CtxField::DeviceMajor, "major", "4.15"),
         (CtxField::DeviceMinor, "minor", "4.15"),
+        (CtxField::UserFamily, "user_family", "4.17"),
+        (CtxField::UserIp4, "user_ip4", "4.17"),
+        (CtxField::UserIp6, "user_ip6", "4.17"),
+        (CtxField::UserPort, "user_port", "4.17"),
         (CtxField::RxQueueIndex, "rx_queue_index", "4.17"),
+        (CtxField::MsgSrcIp4, "msg_src_ip4", "4.18"),
+        (CtxField::MsgSrcIp6, "msg_src_ip6", "4.18"),
         (CtxField::FlowKeys, "flow_keys", "4.20"),
         (CtxField::Tstamp, "tstamp", "5.0"),
         (CtxField::WireLen, "wire_len", "5.0"),
@@ -388,6 +394,13 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     )
     .expect("sock_ops ctx.data alias should be versioned");
     assert_eq!(sock_ops_data.minimum_kernel(), "5.10");
+
+    let cgroup_sock_addr_family = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Family,
+        Some(crate::compiler::EbpfProgramType::CgroupSockAddr),
+    )
+    .expect("cgroup_sock_addr ctx.family should be target-versioned");
+    assert_eq!(cgroup_sock_addr_family.minimum_kernel(), "4.17");
 
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(

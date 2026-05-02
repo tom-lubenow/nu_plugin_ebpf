@@ -601,6 +601,40 @@ fn test_spec_context_fields_include_cgroup_sockopt_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_cgroup_sock_addr_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg6")
+        .expect("cgroup_sock_addr spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for field_name in [
+        "user_family",
+        "user_ip6",
+        "user_port",
+        "family",
+        "sock_type",
+        "protocol",
+        "remote_ip6",
+        "remote_port",
+    ] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.17"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.17/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    let msg_src_ip6 = field(&fields, "msg_src_ip6");
+    assert_eq!(msg_src_ip6.minimum_kernel, Some("4.18"));
+    assert!(
+        msg_src_ip6
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.18/include/uapi/linux/bpf.h"))
+    );
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");

@@ -15,6 +15,8 @@ const LINUX_BPF_H_V4_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_18_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_20_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_0_SOURCE: &str =
@@ -143,6 +145,19 @@ fn direct_context_field_kernel_floor(
         CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
         }
+        CtxField::Family
+        | CtxField::RemoteIp4
+        | CtxField::RemoteIp6
+        | CtxField::RemotePort
+        | CtxField::LocalIp4
+        | CtxField::LocalIp6
+        | CtxField::LocalPort
+        | CtxField::SockType
+        | CtxField::Protocol
+            if prog_type == Some(EbpfProgramType::CgroupSockAddr) =>
+        {
+            ("4.17", LINUX_BPF_H_V4_17_SOURCE)
+        }
         CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping
@@ -190,6 +205,10 @@ fn direct_context_field_kernel_floor(
         CtxField::SockOpsSkbLen | CtxField::SockOpsSkbTcpFlags => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
         }
+        CtxField::UserFamily | CtxField::UserIp4 | CtxField::UserIp6 | CtxField::UserPort => {
+            ("4.17", LINUX_BPF_H_V4_17_SOURCE)
+        }
+        CtxField::MsgSrcIp4 | CtxField::MsgSrcIp6 => ("4.18", LINUX_BPF_H_V4_18_SOURCE),
         CtxField::Hwtstamp => ("5.16", LINUX_BPF_H_V5_16_SOURCE),
         CtxField::TstampType => ("5.18", LINUX_BPF_H_V5_18_SOURCE),
         CtxField::SockOpsSkbHwtstamp => ("6.2", LINUX_BPF_H_V6_2_SOURCE),
