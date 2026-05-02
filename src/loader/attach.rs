@@ -75,6 +75,27 @@ fn map_compatibility_requirements_detail(
     }
 }
 
+fn global_compatibility_requirements_detail(
+    requirements: &[crate::compiler::GlobalCompatibilityRequirement],
+) -> String {
+    if requirements.is_empty() {
+        String::new()
+    } else {
+        let descriptions = requirements
+            .iter()
+            .map(|requirement| {
+                format!(
+                    "{} (kernel>={})",
+                    requirement.description(),
+                    requirement.minimum_kernel()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("; global requirements: {descriptions}")
+    }
+}
+
 fn helper_compatibility_requirements_detail(
     requirements: &[crate::compiler::HelperCompatibilityRequirement],
 ) -> String {
@@ -189,6 +210,25 @@ pub(super) fn kernel_map_minimum_requirement_detail(
     ))
 }
 
+pub(super) fn kernel_global_minimum_requirement_detail(
+    requirements: &[crate::compiler::GlobalCompatibilityRequirement],
+    current_kernel: &str,
+) -> Option<String> {
+    let minimum =
+        crate::compiler::GlobalCompatibilityRequirement::effective_minimum_kernel(requirements)?;
+    if crate::compiler::GlobalCompatibilityRequirement::kernel_version_at_least(
+        current_kernel,
+        minimum,
+    ) {
+        return None;
+    }
+
+    Some(format!(
+        "compiled global data sections require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        global_compatibility_requirements_detail(requirements)
+    ))
+}
+
 pub(super) fn kernel_helper_minimum_requirement_detail(
     requirements: &[crate::compiler::HelperCompatibilityRequirement],
     current_kernel: &str,
@@ -268,6 +308,15 @@ fn current_kernel_map_minimum_error(object: &crate::compiler::EbpfObject) -> Opt
     }
     let current_kernel = current_kernel_release()?;
     kernel_map_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
+}
+
+fn current_kernel_global_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
+    let requirements = object.global_compatibility_requirements();
+    if requirements.is_empty() {
+        return None;
+    }
+    let current_kernel = current_kernel_release()?;
+    kernel_global_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
 }
 
 fn current_kernel_helper_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
@@ -638,6 +687,9 @@ impl EbpfState {
             return Err(err);
         }
         if let Some(err) = current_kernel_map_minimum_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_global_minimum_error(object) {
             return Err(err);
         }
         if let Some(err) = current_kernel_helper_minimum_error(object) {

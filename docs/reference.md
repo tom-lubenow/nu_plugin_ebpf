@@ -190,9 +190,10 @@ parsed-target level. Live-attach rejection messages include these feature
 requirements, for example base program families, kernel BTF, BPF trampolines,
 TCX, netfilter links, route LWT, struct_ops, sched_ext, XDP multi-buffer
 sections, cgroup v2, cgroup program families, and cgroup UNIX socket-address
-hooks. Live-load preflight also reports source-verified map-kind, modeled
-helper, source-preserved known-kfunc, and source-preserved context-field
-requirements from the compiled object. Context fields that lower through modeled
+hooks. Live-load preflight also reports source-verified map-kind, global
+data-section, modeled helper, source-preserved known-kfunc, and
+source-preserved context-field requirements from the compiled object. Context
+fields that lower through modeled
 helpers inherit those helper minimum-kernel/source records, and source-verified
 direct UAPI fields carry context-field floors where their introduction point is
 known. These labels describe feature surfaces.

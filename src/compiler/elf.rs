@@ -1602,6 +1602,8 @@ pub enum ProgramCompatibilityRequirement {
 
 const EBPF_TIMELINE_SOURCE: &str = "https://docs.ebpf.io/linux/timeline/";
 const LINUX_5_2_SOURCE: &str = "https://kernelnewbies.org/Linux_5.2";
+const BPF_DIRECT_MAP_VALUE_SOURCE: &str =
+    "https://github.com/torvalds/linux/commit/d8eca5bbb2be9bc7546f9e733786fa2f1a594c67";
 const LWT_SEG6LOCAL_SOURCE: &str =
     "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_LWT_SEG6LOCAL/";
 const SK_MSG_SOURCE: &str = "https://docs.ebpf.io/linux/program-type/BPF_PROG_TYPE_SK_MSG/";
@@ -1929,6 +1931,67 @@ impl ProgramCompatibilityRequirement {
 }
 
 impl fmt::Display for ProgramCompatibilityRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
+/// Source-backed kernel compatibility metadata for emitted global data sections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GlobalCompatibilityRequirement {
+    BpfDataSections,
+}
+
+impl GlobalCompatibilityRequirement {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::BpfDataSections => "global:bpf-data-sections",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::BpfDataSections => "BPF global data-section support",
+        }
+    }
+
+    pub fn category(self) -> &'static str {
+        "globals"
+    }
+
+    pub fn minimum_kernel(self) -> &'static str {
+        match self {
+            Self::BpfDataSections => "5.2",
+        }
+    }
+
+    pub fn minimum_kernel_source(self) -> &'static str {
+        match self {
+            Self::BpfDataSections => BPF_DIRECT_MAP_VALUE_SOURCE,
+        }
+    }
+
+    pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
+        let mut minimum = None;
+        for requirement in requirements {
+            let candidate = requirement.minimum_kernel();
+            let should_replace = match minimum {
+                Some(current) => !Self::kernel_version_at_least(current, candidate),
+                None => true,
+            };
+            if should_replace {
+                minimum = Some(candidate);
+            }
+        }
+        minimum
+    }
+
+    pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
+        ProgramCompatibilityRequirement::kernel_version_at_least(current, minimum)
+    }
+}
+
+impl fmt::Display for GlobalCompatibilityRequirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.key())
     }

@@ -395,7 +395,7 @@ const KERNEL_FEATURE_MAP_ARENA = {
 const KERNEL_FEATURE_GLOBAL_DATA_SECTIONS = {
     key: "global:bpf-data-sections"
     min_kernel: "5.2"
-    source: "https://kernelnewbies.org/Linux_5.2"
+    source: "https://github.com/torvalds/linux/commit/d8eca5bbb2be9bc7546f9e733786fa2f1a594c67"
 }
 const KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM = {
     key: "helper:bpf_map_lookup_elem"

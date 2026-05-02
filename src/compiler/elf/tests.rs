@@ -9693,6 +9693,78 @@ fn test_ebpf_program_reports_map_compatibility_requirements() {
 }
 
 #[test]
+fn test_ebpf_program_reports_global_compatibility_requirements() {
+    let program = EbpfProgram::hello_world("sys_clone")
+        .with_readonly_globals(vec![ReadonlyGlobal {
+            name: "cfg".to_string(),
+            data: 7u64.to_le_bytes().to_vec(),
+        }])
+        .with_data_globals(vec![DataGlobal {
+            name: "state".to_string(),
+            data: 1u64.to_le_bytes().to_vec(),
+        }])
+        .with_bss_globals(vec![BssGlobal {
+            name: "scratch".to_string(),
+            size: 8,
+        }]);
+
+    let requirements = program.global_compatibility_requirements();
+    assert_eq!(
+        requirements,
+        vec![GlobalCompatibilityRequirement::BpfDataSections]
+    );
+    assert_eq!(requirements[0].key(), "global:bpf-data-sections");
+    assert_eq!(requirements[0].minimum_kernel(), "5.2");
+    assert!(requirements[0].minimum_kernel_source().contains("d8eca5"));
+    assert_eq!(program.global_compatibility_minimum_kernel(), Some("5.2"));
+    assert_eq!(
+        program
+            .clone()
+            .into_object()
+            .global_compatibility_minimum_kernel(),
+        Some("5.2")
+    );
+
+    let mut custom_data_object = EbpfProgram::hello_world("sys_clone").into_object();
+    custom_data_object
+        .extra_data_symbols
+        .push(ObjectDataSymbol {
+            section_name: ".rodata.custom".to_string(),
+            name: "blob".to_string(),
+            data: vec![1, 2, 3, 4],
+            align: 4,
+            writable: false,
+            relocations: vec![],
+        });
+    assert_eq!(
+        custom_data_object.global_compatibility_requirements(),
+        vec![GlobalCompatibilityRequirement::BpfDataSections]
+    );
+
+    let mut struct_ops_like_object = EbpfProgram::hello_world("sys_clone").into_object();
+    struct_ops_like_object
+        .extra_data_symbols
+        .push(ObjectDataSymbol {
+            section_name: ".struct_ops".to_string(),
+            name: "ops".to_string(),
+            data: vec![1, 2, 3, 4],
+            align: 4,
+            writable: true,
+            relocations: vec![],
+        });
+    assert!(
+        struct_ops_like_object
+            .global_compatibility_requirements()
+            .is_empty()
+    );
+    assert!(
+        EbpfProgram::hello_world("sys_clone")
+            .global_compatibility_requirements()
+            .is_empty()
+    );
+}
+
+#[test]
 fn test_ebpf_program_reports_helper_compatibility_requirements() {
     let mut builder = EbpfBuilder::new();
     builder

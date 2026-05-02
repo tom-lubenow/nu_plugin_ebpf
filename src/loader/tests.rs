@@ -1,14 +1,15 @@
 use super::attach::{
-    kernel_context_field_minimum_requirement_detail, kernel_helper_minimum_requirement_detail,
-    kernel_kfunc_minimum_requirement_detail, kernel_map_minimum_requirement_detail,
-    kernel_minimum_requirement_detail,
+    kernel_context_field_minimum_requirement_detail, kernel_global_minimum_requirement_detail,
+    kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
+    kernel_map_minimum_requirement_detail, kernel_minimum_requirement_detail,
 };
 use super::*;
 use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField,
-    EbpfObject, EbpfProgram, EbpfProgramType, KfuncCompatibilityRequirement, MapRef, MirType,
-    ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
+    EbpfObject, EbpfProgram, EbpfProgramType, GlobalCompatibilityRequirement,
+    KfuncCompatibilityRequirement, MapRef, MirType, ProgramCompatibilityRequirement,
+    ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1728,6 +1729,26 @@ fn test_kernel_map_minimum_requirement_detail_accepts_newer_kernel() {
     assert!(kernel_map_minimum_requirement_detail(&requirements, "5.8.0").is_none());
     assert!(kernel_map_minimum_requirement_detail(&requirements, "6.1.12").is_none());
     assert!(kernel_map_minimum_requirement_detail(&[], "3.19").is_none());
+}
+
+#[test]
+fn test_kernel_global_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [GlobalCompatibilityRequirement::BpfDataSections];
+    let msg = kernel_global_minimum_requirement_detail(&requirements, "5.1.21-test")
+        .expect("kernel 5.1 should be too old for global data sections");
+
+    assert!(msg.contains("compiled global data sections require kernel>=5.2"));
+    assert!(msg.contains("current kernel is 5.1.21-test"));
+    assert!(msg.contains("BPF global data-section support"));
+    assert!(msg.contains("kernel>=5.2"));
+}
+
+#[test]
+fn test_kernel_global_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [GlobalCompatibilityRequirement::BpfDataSections];
+    assert!(kernel_global_minimum_requirement_detail(&requirements, "5.2.0").is_none());
+    assert!(kernel_global_minimum_requirement_detail(&requirements, "6.1.12").is_none());
+    assert!(kernel_global_minimum_requirement_detail(&[], "3.19").is_none());
 }
 
 #[test]

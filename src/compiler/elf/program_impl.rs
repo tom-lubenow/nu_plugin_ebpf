@@ -45,6 +45,36 @@ fn map_compatibility_requirements_for_maps(maps: &[EbpfMap]) -> Vec<MapCompatibi
     requirements
 }
 
+fn extra_data_symbol_is_global_data_section(data_symbol: &ObjectDataSymbol) -> bool {
+    let section = data_symbol.section_name.as_str();
+    section == ".data"
+        || section.starts_with(".data.")
+        || section == ".rodata"
+        || section.starts_with(".rodata.")
+        || section == ".bss"
+        || section.starts_with(".bss.")
+}
+
+fn global_compatibility_requirements_for_sections(
+    readonly_globals: &[ReadonlyGlobal],
+    data_globals: &[DataGlobal],
+    bss_globals: &[BssGlobal],
+    extra_data_symbols: &[ObjectDataSymbol],
+) -> Vec<GlobalCompatibilityRequirement> {
+    let uses_global_data_sections = !readonly_globals.is_empty()
+        || !data_globals.is_empty()
+        || !bss_globals.is_empty()
+        || extra_data_symbols
+            .iter()
+            .any(extra_data_symbol_is_global_data_section);
+
+    if uses_global_data_sections {
+        vec![GlobalCompatibilityRequirement::BpfDataSections]
+    } else {
+        vec![]
+    }
+}
+
 fn helper_compatibility_requirements_for_bytecode(
     bytecode: &[u8],
 ) -> Vec<HelperCompatibilityRequirement> {
@@ -1346,6 +1376,21 @@ impl EbpfObject {
         )
     }
 
+    pub fn global_compatibility_requirements(&self) -> Vec<GlobalCompatibilityRequirement> {
+        global_compatibility_requirements_for_sections(
+            &self.readonly_globals,
+            &self.data_globals,
+            &self.bss_globals,
+            &self.extra_data_symbols,
+        )
+    }
+
+    pub fn global_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        GlobalCompatibilityRequirement::effective_minimum_kernel(
+            &self.global_compatibility_requirements(),
+        )
+    }
+
     pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
         helper_compatibility_requirements_for_programs(&self.programs)
     }
@@ -1775,6 +1820,21 @@ impl EbpfProgram {
     pub fn map_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         MapCompatibilityRequirement::effective_minimum_kernel(
             &self.map_compatibility_requirements(),
+        )
+    }
+
+    pub fn global_compatibility_requirements(&self) -> Vec<GlobalCompatibilityRequirement> {
+        global_compatibility_requirements_for_sections(
+            &self.readonly_globals,
+            &self.data_globals,
+            &self.bss_globals,
+            &[],
+        )
+    }
+
+    pub fn global_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        GlobalCompatibilityRequirement::effective_minimum_kernel(
+            &self.global_compatibility_requirements(),
         )
     }
 
