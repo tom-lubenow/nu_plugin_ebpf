@@ -1,15 +1,16 @@
 use super::attach::{
     kernel_context_field_minimum_requirement_detail, kernel_global_minimum_requirement_detail,
     kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
-    kernel_map_minimum_requirement_detail, kernel_minimum_requirement_detail,
+    kernel_map_minimum_requirement_detail, kernel_map_value_minimum_requirement_detail,
+    kernel_minimum_requirement_detail,
 };
 use super::*;
 use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField,
     EbpfObject, EbpfProgram, EbpfProgramType, GlobalCompatibilityRequirement,
-    KfuncCompatibilityRequirement, MapRef, MirType, ProgramCompatibilityRequirement,
-    ir_to_mir::AnnotatedValueSemantics,
+    KfuncCompatibilityRequirement, MapRef, MapValueCompatibilityRequirement, MirType,
+    ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1729,6 +1730,26 @@ fn test_kernel_map_minimum_requirement_detail_accepts_newer_kernel() {
     assert!(kernel_map_minimum_requirement_detail(&requirements, "5.8.0").is_none());
     assert!(kernel_map_minimum_requirement_detail(&requirements, "6.1.12").is_none());
     assert!(kernel_map_minimum_requirement_detail(&[], "3.19").is_none());
+}
+
+#[test]
+fn test_kernel_map_value_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [MapValueCompatibilityRequirement::BpfWorkqueue];
+    let msg = kernel_map_value_minimum_requirement_detail(&requirements, "6.9.12-test")
+        .expect("kernel 6.9 should be too old for bpf_wq map-value fields");
+
+    assert!(msg.contains("compiled map-value fields require kernel>=6.10"));
+    assert!(msg.contains("current kernel is 6.9.12-test"));
+    assert!(msg.contains("BPF map-value workqueue field support"));
+    assert!(msg.contains("kernel>=6.10"));
+}
+
+#[test]
+fn test_kernel_map_value_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [MapValueCompatibilityRequirement::BpfWorkqueue];
+    assert!(kernel_map_value_minimum_requirement_detail(&requirements, "6.10.0").is_none());
+    assert!(kernel_map_value_minimum_requirement_detail(&requirements, "6.12.1").is_none());
+    assert!(kernel_map_value_minimum_requirement_detail(&[], "3.19").is_none());
 }
 
 #[test]

@@ -26,8 +26,9 @@ use super::mir::ContextFieldCompatibilityRequirement;
 use super::mir::CtxStoreTarget;
 use super::mir::{
     BYTES_COUNTER_MAP_NAME, BitfieldInfo, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
-    KSTACK_MAP_NAME, MapCompatibilityRequirement, MapKind, MapRef, MirType, RINGBUF_MAP_NAME,
-    STRING_COUNTER_MAP_NAME, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+    KSTACK_MAP_NAME, MapCompatibilityRequirement, MapKind, MapRef,
+    MapValueCompatibilityRequirement, MirType, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME,
+    TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
 };
 use crate::program_spec::{
     ProgramSpec, struct_ops_callback_is_sleepable as program_spec_struct_ops_callback_is_sleepable,

@@ -3067,6 +3067,33 @@ fn test_map_value_type_spec_supports_bpf_spin_lock() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_bpf_wq() {
+    let (ty, semantics) =
+        HirToMirLowering::parse_named_map_value_type_spec("record{work:bpf_wq,counter:u64}")
+            .expect("bpf_wq map value type should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let user_fields = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_fields.len(), 2);
+    assert_eq!(user_fields[0].name, "work");
+    assert_eq!(user_fields[0].ty, MirType::bpf_wq_struct());
+    assert_eq!(user_fields[0].offset, 0);
+    assert_eq!(user_fields[1].name, "counter");
+    assert_eq!(user_fields[1].ty, MirType::U64);
+    assert_eq!(user_fields[1].offset, 16);
+    assert_eq!(
+        fields.iter().map(|field| field.ty.size()).sum::<usize>(),
+        24
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_supports_kptr_slot() {
     let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
         "record{task:kptr:task_struct,cookie:u64}",
@@ -3116,6 +3143,8 @@ fn test_map_value_type_validation_accepts_managed_fields() {
         MapKind::Array,
     )
     .expect("aligned kptr slot in array map should validate");
+    validate_map_value_type_spec_for_kind("record{work:bpf_wq,cookie:u64}", MapKind::LruHash)
+        .expect("aligned bpf_wq in lru hash map should validate");
 }
 
 #[test]
@@ -3194,6 +3223,32 @@ fn test_map_value_type_validation_rejects_timer_on_queue() {
     let err =
         validate_map_value_type_spec_for_kind("record{timer:bpf_timer,cookie:u64}", MapKind::Queue)
             .expect_err("timer on queue should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("only supported for hash, array, and lru-hash")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_wq_array() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{work_items:array{bpf_wq:2},counter:u64}",
+        MapKind::Hash,
+    )
+    .expect_err("arrays of bpf_wq should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("arrays of verifier-managed bpf_wq")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_wq_on_queue() {
+    let err =
+        validate_map_value_type_spec_for_kind("record{work:bpf_wq,cookie:u64}", MapKind::Queue)
+            .expect_err("bpf_wq on queue should be rejected");
 
     assert!(
         err.to_string()

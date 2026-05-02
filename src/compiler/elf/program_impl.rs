@@ -75,6 +75,49 @@ fn global_compatibility_requirements_for_sections(
     }
 }
 
+fn mir_type_contains_bpf_wq(ty: &MirType) -> bool {
+    if ty.is_bpf_wq_struct() {
+        return true;
+    }
+
+    match ty {
+        MirType::Array { elem, .. } => mir_type_contains_bpf_wq(elem),
+        MirType::Struct { fields, .. } => fields
+            .iter()
+            .any(|field| mir_type_contains_bpf_wq(&field.ty)),
+        MirType::Ptr { pointee, .. } => mir_type_contains_bpf_wq(pointee),
+        _ => false,
+    }
+}
+
+fn map_value_compatibility_requirements_for_value_types<'a>(
+    value_types: impl Iterator<Item = &'a MirType>,
+) -> Vec<MapValueCompatibilityRequirement> {
+    let mut seen = HashSet::new();
+    let mut requirements = Vec::new();
+
+    for ty in value_types {
+        if mir_type_contains_bpf_wq(ty) {
+            let requirement = MapValueCompatibilityRequirement::BpfWorkqueue;
+            if seen.insert(requirement) {
+                requirements.push(requirement);
+            }
+        }
+    }
+
+    requirements
+}
+
+fn map_value_compatibility_requirements_for_programs(
+    programs: &[EbpfProgramSection],
+) -> Vec<MapValueCompatibilityRequirement> {
+    map_value_compatibility_requirements_for_value_types(
+        programs
+            .iter()
+            .flat_map(|program| program.generic_map_value_types.values()),
+    )
+}
+
 fn helper_compatibility_requirements_for_bytecode(
     bytecode: &[u8],
 ) -> Vec<HelperCompatibilityRequirement> {
@@ -1391,6 +1434,16 @@ impl EbpfObject {
         )
     }
 
+    pub fn map_value_compatibility_requirements(&self) -> Vec<MapValueCompatibilityRequirement> {
+        map_value_compatibility_requirements_for_programs(&self.programs)
+    }
+
+    pub fn map_value_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        MapValueCompatibilityRequirement::effective_minimum_kernel(
+            &self.map_value_compatibility_requirements(),
+        )
+    }
+
     pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
         helper_compatibility_requirements_for_programs(&self.programs)
     }
@@ -1835,6 +1888,16 @@ impl EbpfProgram {
     pub fn global_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         GlobalCompatibilityRequirement::effective_minimum_kernel(
             &self.global_compatibility_requirements(),
+        )
+    }
+
+    pub fn map_value_compatibility_requirements(&self) -> Vec<MapValueCompatibilityRequirement> {
+        map_value_compatibility_requirements_for_value_types(self.generic_map_value_types.values())
+    }
+
+    pub fn map_value_compatibility_minimum_kernel(&self) -> Option<&'static str> {
+        MapValueCompatibilityRequirement::effective_minimum_kernel(
+            &self.map_value_compatibility_requirements(),
         )
     }
 

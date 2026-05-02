@@ -657,6 +657,7 @@ impl<'a> HirToMirLowering<'a> {
             repeat: usize,
             timers: &mut Vec<ManagedField>,
             spin_locks: &mut Vec<ManagedField>,
+            wqs: &mut Vec<ManagedField>,
             kptrs: &mut Vec<ManagedField>,
         ) {
             if ty.is_bpf_timer_struct() {
@@ -672,6 +673,17 @@ impl<'a> HirToMirLowering<'a> {
             }
             if ty.is_bpf_spin_lock_struct() {
                 spin_locks.push(ManagedField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    pointee_name: None,
+                });
+                return;
+            }
+            if ty.is_bpf_wq_struct() {
+                wqs.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -710,6 +722,7 @@ impl<'a> HirToMirLowering<'a> {
                             repeat,
                             timers,
                             spin_locks,
+                            wqs,
                             kptrs,
                         );
                     }
@@ -724,6 +737,7 @@ impl<'a> HirToMirLowering<'a> {
                         repeat.saturating_mul(*len),
                         timers,
                         spin_locks,
+                        wqs,
                         kptrs,
                     );
                 }
@@ -737,6 +751,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut timers = Vec::new();
         let mut spin_locks = Vec::new();
+        let mut wqs = Vec::new();
         let mut kptrs = Vec::new();
         collect_managed_fields(
             ty,
@@ -747,6 +762,7 @@ impl<'a> HirToMirLowering<'a> {
             1,
             &mut timers,
             &mut spin_locks,
+            &mut wqs,
             &mut kptrs,
         );
 
@@ -824,12 +840,6 @@ impl<'a> HirToMirLowering<'a> {
                     map.name
                 )));
             }
-            if timer_count != 1 {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} for '{}' must contain exactly one bpf_timer field, got {}",
-                    map.name, timer_count
-                )));
-            }
             let timer = &timers[0];
             if timer.depth == 0 {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -837,16 +847,57 @@ impl<'a> HirToMirLowering<'a> {
                     map.name
                 )));
             }
-            if timer.in_array {
+            if let Some(timer) = timers.iter().find(|timer| timer.in_array) {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{context} for '{}' has bpf_timer at '{}', but arrays of verifier-managed bpf_timer fields are not supported",
                     map.name, timer.path
+                )));
+            }
+            if timer_count != 1 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must contain exactly one bpf_timer field, got {}",
+                    map.name, timer_count
                 )));
             }
             if timer.offset % 8 != 0 {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{context} for '{}' has bpf_timer at byte offset {}, but bpf_timer must be 8-byte aligned",
                     map.name, timer.offset
+                )));
+            }
+        }
+
+        let wq_count = total_occurrences(&wqs);
+        if wq_count > 0 {
+            if !matches!(map.kind, MapKind::Hash | MapKind::Array | MapKind::LruHash) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' contains bpf_wq, which is only supported for hash, array, and lru-hash maps",
+                    map.name
+                )));
+            }
+            let wq = &wqs[0];
+            if wq.depth == 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must wrap bpf_wq in a map-value record field",
+                    map.name
+                )));
+            }
+            if let Some(wq) = wqs.iter().find(|wq| wq.in_array) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_wq at '{}', but arrays of verifier-managed bpf_wq fields are not supported",
+                    map.name, wq.path
+                )));
+            }
+            if wq_count != 1 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' must contain exactly one bpf_wq field, got {}",
+                    map.name, wq_count
+                )));
+            }
+            if wq.offset % 8 != 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_wq at byte offset {}, but bpf_wq must be 8-byte aligned",
+                    map.name, wq.offset
                 )));
             }
         }

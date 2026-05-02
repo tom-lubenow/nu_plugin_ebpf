@@ -51,6 +51,7 @@ enum NamedGlobalTypeShape {
     },
     BpfTimer,
     BpfSpinLock,
+    BpfWq,
     BpfKptr {
         pointee_name: String,
     },
@@ -211,6 +212,7 @@ impl ParsedNamedGlobalType {
                     | NamedGlobalTypeShape::Bytes { .. }
                     | NamedGlobalTypeShape::BpfTimer
                     | NamedGlobalTypeShape::BpfSpinLock
+                    | NamedGlobalTypeShape::BpfWq
                     | NamedGlobalTypeShape::FixedArray { .. }
                     | NamedGlobalTypeShape::Record(_)
             )
@@ -266,6 +268,17 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape: NamedGlobalTypeShape::BpfSpinLock,
+            });
+        }
+
+        if context == NamedTypeSpecContext::MapValue && spec == "bpf_wq" {
+            return Ok(Self {
+                ty: MirType::bpf_wq_struct(),
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::BpfWq,
             });
         }
 
@@ -553,7 +566,7 @@ impl ParsedNamedGlobalType {
             NamedTypeSpecContext::MapValue => "map value",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
-            "; map value schemas also support bpf_timer, bpf_spin_lock, and kptr:TYPE"
+            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, and kptr:TYPE"
         } else {
             ""
         };
@@ -787,6 +800,10 @@ impl ParsedNamedGlobalType {
                     spec
                 )))
             }
+            NamedGlobalTypeShape::BpfWq => Err(CompileError::UnsupportedInstruction(format!(
+                "global type spec '{}' cannot initialize verifier-managed bpf_wq objects",
+                spec
+            ))),
             NamedGlobalTypeShape::BpfKptr { pointee_name } => {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "global type spec '{}' cannot initialize verifier-managed kptr slots for {}",

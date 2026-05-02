@@ -15,7 +15,7 @@ mod inst_impl;
 mod map_compat;
 
 pub use ctx_field_compat::ContextFieldCompatibilityRequirement;
-pub use map_compat::MapCompatibilityRequirement;
+pub use map_compat::{MapCompatibilityRequirement, MapValueCompatibilityRequirement};
 
 /// Virtual register ID - unlimited, will be allocated to physical registers later
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -616,6 +616,10 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_spin_lock", 4)
     }
 
+    pub fn bpf_wq_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_wq", 16)
+    }
+
     pub fn bpf_kptr_slot_struct(pointee_name: &str) -> Self {
         Self::opaque_named_struct_with_size(
             &format!("{BPF_KPTR_SLOT_STRUCT_PREFIX}{pointee_name}"),
@@ -629,6 +633,10 @@ impl MirType {
 
     pub fn is_bpf_spin_lock_struct(&self) -> bool {
         self.has_struct_name(&["bpf_spin_lock"])
+    }
+
+    pub fn is_bpf_wq_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_wq"])
     }
 
     pub fn bpf_kptr_pointee_name(&self) -> Option<&str> {
@@ -794,6 +802,17 @@ impl MirType {
         pointee.has_struct_name(&["bpf_spin_lock"]) || pointee.has_zero_offset_bpf_spin_lock_field()
     }
 
+    pub fn is_bpf_wq_map_ptr(&self) -> bool {
+        let MirType::Ptr {
+            address_space: AddressSpace::Map,
+            pointee,
+        } = self
+        else {
+            return false;
+        };
+        pointee.has_struct_name(&["bpf_wq"]) || pointee.has_zero_offset_bpf_wq_field()
+    }
+
     fn is_named_kernel_struct_ptr(&self, candidates: &[&str]) -> bool {
         let MirType::Ptr {
             address_space: AddressSpace::Kernel,
@@ -834,6 +853,15 @@ impl MirType {
         fields
             .iter()
             .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_spin_lock"]))
+    }
+
+    fn has_zero_offset_bpf_wq_field(&self) -> bool {
+        let MirType::Struct { fields, .. } = self else {
+            return false;
+        };
+        fields
+            .iter()
+            .any(|field| field.offset == 0 && field.ty.has_struct_name(&["bpf_wq"]))
     }
 
     fn is_socket_cookie_socket_pointee(&self) -> bool {
@@ -885,6 +913,9 @@ impl MirType {
         }
         if self.is_bpf_spin_lock_struct() {
             return 4;
+        }
+        if self.is_bpf_wq_struct() {
+            return 8;
         }
         if self.is_bpf_kptr_slot_struct() {
             return 8;

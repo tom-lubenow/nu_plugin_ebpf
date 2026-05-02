@@ -70,8 +70,8 @@ pub use instruction::{
 };
 pub use ir_to_mir::{UserFunctionSig, UserParam, UserParamKind};
 pub use mir::{
-    ContextFieldCompatibilityRequirement, MapCompatibilityRequirement, MapKind, MapRef, MirType,
-    MirTypeHints,
+    ContextFieldCompatibilityRequirement, MapCompatibilityRequirement, MapKind, MapRef,
+    MapValueCompatibilityRequirement, MirType, MirTypeHints,
 };
 pub use mir_to_ebpf::{
     MirCompileResult, compile_mir_to_ebpf, compile_mir_to_ebpf_with_hints,

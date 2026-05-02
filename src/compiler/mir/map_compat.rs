@@ -49,6 +49,8 @@ const LINUX_BPF_H_V6_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.9/include/uapi/linux/bpf.h";
+const LINUX_INTERNAL_BPF_H_V6_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.10/include/linux/bpf.h";
 
 /// Source-backed kernel compatibility metadata for a BPF map type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -123,6 +125,88 @@ impl MapCompatibilityRequirement {
 }
 
 impl fmt::Display for MapCompatibilityRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
+/// Source-backed kernel compatibility metadata for typed BTF map-value fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MapValueCompatibilityRequirement {
+    BpfWorkqueue,
+}
+
+impl MapValueCompatibilityRequirement {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::BpfWorkqueue => "map-value:bpf_wq",
+        }
+    }
+
+    pub fn category(self) -> &'static str {
+        "map-value-field"
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::BpfWorkqueue => "BPF map-value workqueue field support",
+        }
+    }
+
+    pub fn minimum_kernel(self) -> &'static str {
+        match self {
+            Self::BpfWorkqueue => "6.10",
+        }
+    }
+
+    pub fn minimum_kernel_source(self) -> &'static str {
+        match self {
+            Self::BpfWorkqueue => LINUX_INTERNAL_BPF_H_V6_10_SOURCE,
+        }
+    }
+
+    pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
+        let mut minimum = None;
+        for requirement in requirements {
+            let candidate = requirement.minimum_kernel();
+            let should_replace = match minimum {
+                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                None => true,
+            };
+            if should_replace {
+                minimum = Some(candidate);
+            }
+        }
+        minimum
+    }
+
+    pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
+        !Self::kernel_version_cmp(current, minimum).is_lt()
+    }
+
+    fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
+        let mut left_parts = left.split(['.', '-']);
+        let mut right_parts = right.split(['.', '-']);
+        let left_version = [
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+            Self::kernel_version_part(left_parts.next()),
+        ];
+        let right_version = [
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+            Self::kernel_version_part(right_parts.next()),
+        ];
+
+        left_version.cmp(&right_version)
+    }
+
+    fn kernel_version_part(part: Option<&str>) -> u32 {
+        part.unwrap_or("0").parse().unwrap_or(0)
+    }
+}
+
+impl fmt::Display for MapValueCompatibilityRequirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.key())
     }

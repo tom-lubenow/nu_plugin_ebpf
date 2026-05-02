@@ -229,6 +229,35 @@ fn test_map_kind_kernel_compatibility_metadata() {
 }
 
 #[test]
+fn test_map_value_compatibility_requirements_are_source_backed() {
+    let requirement = MapValueCompatibilityRequirement::BpfWorkqueue;
+    assert_eq!(requirement.key(), "map-value:bpf_wq");
+    assert_eq!(requirement.category(), "map-value-field");
+    assert_eq!(
+        requirement.description(),
+        "BPF map-value workqueue field support"
+    );
+    assert_eq!(requirement.minimum_kernel(), "6.10");
+    assert!(
+        requirement
+            .minimum_kernel_source()
+            .contains("/v6.10/include/linux/bpf.h")
+    );
+
+    let requirements = [requirement];
+    assert_eq!(
+        MapValueCompatibilityRequirement::effective_minimum_kernel(&requirements),
+        Some("6.10")
+    );
+    assert!(MapValueCompatibilityRequirement::kernel_version_at_least(
+        "6.10.0", "6.10"
+    ));
+    assert!(!MapValueCompatibilityRequirement::kernel_version_at_least(
+        "6.9", "6.10"
+    ));
+}
+
+#[test]
 fn test_context_field_compatibility_requirements_are_source_backed() {
     let expected = [
         (CtxField::Pid, "pid", "4.2"),
