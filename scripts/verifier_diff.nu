@@ -5420,6 +5420,62 @@ def kfunc-kernel-feature [name: string] {
     }
 }
 
+def sock-ops-context-field-kernel-feature [field: string] {
+    if $field in ["op" "reply" "replylong"] {
+        return {
+            key: $"ctx:($field)"
+            min_kernel: "4.14"
+            source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+        }
+    }
+
+    if $field in [
+        "args"
+        "is_fullsock"
+        "snd_cwnd"
+        "srtt_us"
+        "cb_flags"
+        "state"
+        "rtt_min"
+        "snd_ssthresh"
+        "rcv_nxt"
+        "snd_nxt"
+        "snd_una"
+        "mss_cache"
+        "ecn_flags"
+        "rate_delivered"
+        "rate_interval_us"
+        "packets_out"
+        "retrans_out"
+        "total_retrans"
+        "segs_in"
+        "data_segs_in"
+        "segs_out"
+        "data_segs_out"
+        "lost_out"
+        "sacked_out"
+        "sk_txhash"
+        "bytes_received"
+        "bytes_acked"
+    ] {
+        return {
+            key: $"ctx:($field)"
+            min_kernel: "4.16"
+            source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
+        }
+    }
+
+    if $field == "sk" {
+        return {
+            key: "ctx:sk"
+            min_kernel: "5.3"
+            source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+        }
+    }
+
+    null
+}
+
 def target-context-field-alias-kernel-feature [field: string target] {
     let target_text = ($target | default "")
 
@@ -5496,14 +5552,20 @@ def target-context-field-alias-kernel-feature [field: string target] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_MIGRATING_SK }
         }
     }
-    if ($target_text | str starts-with "sock_ops:") and $field == "packet_len" {
-        return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }
-    }
-    if ($target_text | str starts-with "sock_ops:") and $field == "data" {
-        return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA }
-    }
-    if ($target_text | str starts-with "sock_ops:") and $field == "data_end" {
-        return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA_END }
+    if ($target_text | str starts-with "sock_ops:") {
+        let sock_ops_feature = (sock-ops-context-field-kernel-feature $field)
+        if $sock_ops_feature != null {
+            return { matched: true, feature: $sock_ops_feature }
+        }
+        if $field == "packet_len" or $field == "len" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }
+        }
+        if $field == "data" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA }
+        }
+        if $field == "data_end" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA_END }
+        }
     }
     if ($target_text | str starts-with "netfilter:") {
         if $field == "state" or $field == "nf_state" {

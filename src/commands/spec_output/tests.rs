@@ -156,6 +156,37 @@ fn test_spec_context_fields_include_load_guards() {
 }
 
 #[test]
+fn test_spec_context_fields_include_sock_ops_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    let op = field(&fields, "op");
+    assert_eq!(op.minimum_kernel, Some("4.14"));
+    assert!(
+        op.minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.14/include/uapi/linux/bpf.h"))
+    );
+
+    for field_name in ["args", "snd_cwnd", "state", "bytes_acked", "sk_txhash"] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.16"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.16/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    let socket = field(&fields, "sk");
+    assert_eq!(socket.minimum_kernel, Some("5.3"));
+    assert!(
+        socket
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.3/include/uapi/linux/bpf.h"))
+    );
+}
+
+#[test]
 fn test_spec_record_includes_packet_context_metadata() {
     let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
     let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)

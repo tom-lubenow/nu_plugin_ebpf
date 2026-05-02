@@ -507,6 +507,41 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sk_reuseport ctx.migrating_sk should use sk_reuseport_md socket floor");
     assert_eq!(sk_reuseport_migrating_socket.minimum_kernel(), "5.14");
 
+    let sock_ops_op = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SockOp,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.op should use bpf_sock_ops base floor");
+    assert_eq!(sock_ops_op.minimum_kernel(), "4.14");
+
+    let sock_ops_args = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SockOpsArgs,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.args should use bpf_sock_ops v4.16 floor");
+    assert_eq!(sock_ops_args.minimum_kernel(), "4.16");
+
+    let sock_ops_state = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SockState,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.state should use bpf_sock_ops v4.16 floor");
+    assert_eq!(sock_ops_state.minimum_kernel(), "4.16");
+
+    let sock_ops_bytes_acked = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SockOpsBytesAcked,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.bytes_acked should use bpf_sock_ops v4.16 floor");
+    assert_eq!(sock_ops_bytes_acked.minimum_kernel(), "4.16");
+
+    let sock_ops_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.sk should use bpf_sock_ops socket floor");
+    assert_eq!(sock_ops_socket.minimum_kernel(), "5.3");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

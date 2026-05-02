@@ -15,6 +15,8 @@ const LINUX_BPF_H_V4_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_18_SOURCE: &str =
@@ -154,6 +156,43 @@ fn direct_context_field_kernel_floor(
         }
         CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
+        }
+        CtxField::SockOp if prog_type == Some(EbpfProgramType::SockOps) => {
+            ("4.14", LINUX_BPF_H_V4_14_SOURCE)
+        }
+        CtxField::SockOpsArgs
+        | CtxField::IsFullsock
+        | CtxField::SockOpsSndCwnd
+        | CtxField::SockOpsSrttUs
+        | CtxField::SockOpsCbFlags
+        | CtxField::SockState
+        | CtxField::SockOpsRttMin
+        | CtxField::SockOpsSndSsthresh
+        | CtxField::SockOpsRcvNxt
+        | CtxField::SockOpsSndNxt
+        | CtxField::SockOpsSndUna
+        | CtxField::SockOpsMssCache
+        | CtxField::SockOpsEcnFlags
+        | CtxField::SockOpsRateDelivered
+        | CtxField::SockOpsRateIntervalUs
+        | CtxField::SockOpsPacketsOut
+        | CtxField::SockOpsRetransOut
+        | CtxField::SockOpsTotalRetrans
+        | CtxField::SockOpsSegsIn
+        | CtxField::SockOpsDataSegsIn
+        | CtxField::SockOpsSegsOut
+        | CtxField::SockOpsDataSegsOut
+        | CtxField::SockOpsLostOut
+        | CtxField::SockOpsSackedOut
+        | CtxField::SockOpsSkTxhash
+        | CtxField::SockOpsBytesReceived
+        | CtxField::SockOpsBytesAcked
+            if prog_type == Some(EbpfProgramType::SockOps) =>
+        {
+            ("4.16", LINUX_BPF_H_V4_16_SOURCE)
+        }
+        CtxField::Socket if prog_type == Some(EbpfProgramType::SockOps) => {
+            ("5.3", LINUX_BPF_H_V5_3_SOURCE)
         }
         CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SkMsg) => {
             ("4.17", LINUX_BPF_H_V4_17_SOURCE)
