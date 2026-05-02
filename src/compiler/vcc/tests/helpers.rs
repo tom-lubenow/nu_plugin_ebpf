@@ -1187,6 +1187,89 @@ fn test_verify_mir_ringbuf_dynptr_submit_rejects_double_release() {
 }
 
 #[test]
+fn test_verify_mir_ringbuf_dynptr_clone_is_invalidated_by_submit() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let clone_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dynptr_ptr = func.alloc_vreg();
+    let clone_ptr = func.alloc_vreg();
+    let reserve_ret = func.alloc_vreg();
+    let clone_ret = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+    let size_ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserve_ret,
+            helper: BpfHelper::RingbufReserveDynptr as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dynptr_ptr,
+        src: MirValue::StackSlot(dynptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: clone_ptr,
+        src: MirValue::StackSlot(clone_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: clone_ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![dynptr_ptr, clone_ptr],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmitDynptr as u32,
+            args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
+        });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: size_ret,
+        kfunc: "bpf_dynptr_size".to_string(),
+        btf_id: None,
+        args: vec![clone_ptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dynptr_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        clone_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(reserve_ret, MirType::I64);
+    types.insert(clone_ret, MirType::I64);
+    types.insert(submit_ret, MirType::I64);
+    types.insert(size_ret, MirType::I64);
+    let err = verify_mir(&func, &types).expect_err("expected post-submit clone use error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_bpf_spin_lock_unlock_balanced() {
     let mut lock_ret = VReg(0);
     let mut unlock_ret = VReg(0);

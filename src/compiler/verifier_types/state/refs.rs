@@ -13,6 +13,7 @@ impl VerifierState {
         slot: StackSlotId,
     ) {
         self.released_ringbuf_dynptr_slots.remove(&slot);
+        self.ringbuf_dynptr_alias_roots.remove(&slot);
         self.dynptr_initialized_slots.insert(slot);
     }
 
@@ -35,6 +36,7 @@ impl VerifierState {
         slot: StackSlotId,
     ) {
         self.released_ringbuf_dynptr_slots.remove(&slot);
+        self.ringbuf_dynptr_alias_roots.insert(slot, slot);
         increment_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
     }
 
@@ -42,11 +44,54 @@ impl VerifierState {
         &mut self,
         slot: StackSlotId,
     ) -> bool {
-        let released = decrement_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
+        let Some(root) = self.ringbuf_dynptr_root(slot) else {
+            return false;
+        };
+        let released = decrement_slot_depth(&mut self.ringbuf_dynptr_slots, root);
         if released {
-            self.released_ringbuf_dynptr_slots.insert(slot);
+            for member in self.ringbuf_dynptr_alias_members(root) {
+                self.released_ringbuf_dynptr_slots.insert(member);
+                self.dynptr_initialized_slots.remove(&member);
+                self.ringbuf_dynptr_alias_roots.remove(&member);
+            }
         }
         released
+    }
+
+    pub(in crate::compiler::verifier_types) fn copy_ringbuf_dynptr_slot(
+        &mut self,
+        src: StackSlotId,
+        dst: StackSlotId,
+        move_semantics: bool,
+    ) {
+        let Some(root) = self.ringbuf_dynptr_root(src) else {
+            return;
+        };
+        if !self
+            .ringbuf_dynptr_slots
+            .get(&root)
+            .is_some_and(|(_, max_depth)| *max_depth > 0)
+        {
+            return;
+        }
+        self.released_ringbuf_dynptr_slots.remove(&dst);
+        if move_semantics && src == root {
+            if let Some(depth) = self.ringbuf_dynptr_slots.remove(&root) {
+                self.ringbuf_dynptr_slots.insert(dst, depth);
+                for alias_root in self.ringbuf_dynptr_alias_roots.values_mut() {
+                    if *alias_root == root {
+                        *alias_root = dst;
+                    }
+                }
+            }
+            self.ringbuf_dynptr_alias_roots.remove(&src);
+            self.ringbuf_dynptr_alias_roots.insert(dst, dst);
+            return;
+        }
+        self.ringbuf_dynptr_alias_roots.insert(dst, root);
+        if move_semantics {
+            self.ringbuf_dynptr_alias_roots.remove(&src);
+        }
     }
 
     pub(in crate::compiler::verifier_types) fn is_released_ringbuf_dynptr_slot(
@@ -60,8 +105,11 @@ impl VerifierState {
         &self,
         slot: StackSlotId,
     ) -> bool {
+        let Some(root) = self.ringbuf_dynptr_root(slot) else {
+            return false;
+        };
         self.ringbuf_dynptr_slots
-            .get(&slot)
+            .get(&root)
             .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
@@ -69,18 +117,36 @@ impl VerifierState {
         &self,
         slot: StackSlotId,
     ) -> bool {
+        let Some(root) = self.ringbuf_dynptr_root(slot) else {
+            return false;
+        };
         self.ringbuf_dynptr_slots
-            .get(&slot)
+            .get(&root)
             .is_some_and(|(_, max_depth)| *max_depth > 0)
     }
 
     pub(in crate::compiler::verifier_types) fn first_live_ringbuf_dynptr_slot(
         &self,
     ) -> Option<StackSlotId> {
-        self.ringbuf_dynptr_slots
+        self.ringbuf_dynptr_alias_roots
             .iter()
-            .find(|(_, (_, max_depth))| *max_depth > 0)
+            .find(|(_, root)| {
+                self.ringbuf_dynptr_slots
+                    .get(root)
+                    .is_some_and(|(_, max_depth)| *max_depth > 0)
+            })
             .map(|(slot, _)| *slot)
+    }
+
+    fn ringbuf_dynptr_root(&self, slot: StackSlotId) -> Option<StackSlotId> {
+        self.ringbuf_dynptr_alias_roots.get(&slot).copied()
+    }
+
+    fn ringbuf_dynptr_alias_members(&self, root: StackSlotId) -> Vec<StackSlotId> {
+        self.ringbuf_dynptr_alias_roots
+            .iter()
+            .filter_map(|(slot, alias_root)| (*alias_root == root).then_some(*slot))
+            .collect()
     }
 
     pub(in crate::compiler::verifier_types) fn initialize_unknown_stack_object_slot(

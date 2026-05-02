@@ -1717,6 +1717,7 @@ fn test_kfunc_call_with_explicit_btf_id_compiles() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     let call = func.alloc_block();
+    let release_parent = func.alloc_block();
     let release = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
@@ -1726,6 +1727,8 @@ fn test_kfunc_call_with_explicit_btf_id_compiles() {
     let level = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let parent_cond = func.alloc_vreg();
+    let parent_release_ret = func.alloc_vreg();
     let release_ret = func.alloc_vreg();
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: cgid,
@@ -1758,7 +1761,26 @@ fn test_kfunc_call_with_explicit_btf_id_compiles() {
         btf_id: Some(321),
         args: vec![ptr, level],
     });
-    func.block_mut(call).terminator = MirInst::Jump { target: release };
+    func.block_mut(call).instructions.push(MirInst::BinOp {
+        dst: parent_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(call).terminator = MirInst::Branch {
+        cond: parent_cond,
+        if_true: release_parent,
+        if_false: release,
+    };
+    func.block_mut(release_parent)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: parent_release_ret,
+            kfunc: "bpf_cgroup_release".to_string(),
+            btf_id: None,
+            args: vec![dst],
+        });
+    func.block_mut(release_parent).terminator = MirInst::Jump { target: release };
     func.block_mut(release)
         .instructions
         .push(MirInst::CallKfunc {

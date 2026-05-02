@@ -57,6 +57,7 @@ struct VccState {
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
     ringbuf_dynptr_slots: HashMap<StackSlotId, (u32, u32)>,
+    ringbuf_dynptr_alias_roots: HashMap<StackSlotId, StackSlotId>,
     released_ringbuf_dynptr_slots: HashSet<StackSlotId>,
     unknown_stack_object_slots: HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
     cond_refinements: HashMap<VccReg, VccCondRefinement>,
@@ -144,6 +145,7 @@ impl VccState {
             res_spin_lock_irqsave_slots: HashMap::new(),
             dynptr_initialized_slots: HashSet::new(),
             ringbuf_dynptr_slots: HashMap::new(),
+            ringbuf_dynptr_alias_roots: HashMap::new(),
             released_ringbuf_dynptr_slots: HashSet::new(),
             unknown_stack_object_slots: HashMap::new(),
             cond_refinements: HashMap::new(),
@@ -747,6 +749,7 @@ impl VccState {
 
     fn initialize_dynptr_slot(&mut self, slot: StackSlotId) {
         self.released_ringbuf_dynptr_slots.remove(&slot);
+        self.ringbuf_dynptr_alias_roots.remove(&slot);
         self.dynptr_initialized_slots.insert(slot);
     }
 
@@ -760,15 +763,59 @@ impl VccState {
 
     fn acquire_ringbuf_dynptr_slot(&mut self, slot: StackSlotId) {
         self.released_ringbuf_dynptr_slots.remove(&slot);
+        self.ringbuf_dynptr_alias_roots.insert(slot, slot);
         increment_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
     }
 
     fn release_ringbuf_dynptr_slot(&mut self, slot: StackSlotId) -> bool {
-        let released = decrement_slot_depth(&mut self.ringbuf_dynptr_slots, slot);
+        let Some(root) = self.ringbuf_dynptr_root(slot) else {
+            return false;
+        };
+        let released = decrement_slot_depth(&mut self.ringbuf_dynptr_slots, root);
         if released {
-            self.released_ringbuf_dynptr_slots.insert(slot);
+            for member in self.ringbuf_dynptr_alias_members(root) {
+                self.released_ringbuf_dynptr_slots.insert(member);
+                self.dynptr_initialized_slots.remove(&member);
+                self.ringbuf_dynptr_alias_roots.remove(&member);
+            }
         }
         released
+    }
+
+    fn copy_ringbuf_dynptr_slot(
+        &mut self,
+        src: StackSlotId,
+        dst: StackSlotId,
+        move_semantics: bool,
+    ) {
+        let Some(root) = self.ringbuf_dynptr_root(src) else {
+            return;
+        };
+        if !self
+            .ringbuf_dynptr_slots
+            .get(&root)
+            .is_some_and(|(_, max_depth)| *max_depth > 0)
+        {
+            return;
+        }
+        self.released_ringbuf_dynptr_slots.remove(&dst);
+        if move_semantics && src == root {
+            if let Some(depth) = self.ringbuf_dynptr_slots.remove(&root) {
+                self.ringbuf_dynptr_slots.insert(dst, depth);
+                for alias_root in self.ringbuf_dynptr_alias_roots.values_mut() {
+                    if *alias_root == root {
+                        *alias_root = dst;
+                    }
+                }
+            }
+            self.ringbuf_dynptr_alias_roots.remove(&src);
+            self.ringbuf_dynptr_alias_roots.insert(dst, dst);
+            return;
+        }
+        self.ringbuf_dynptr_alias_roots.insert(dst, root);
+        if move_semantics {
+            self.ringbuf_dynptr_alias_roots.remove(&src);
+        }
     }
 
     fn is_released_ringbuf_dynptr_slot(&self, slot: StackSlotId) -> bool {
@@ -776,22 +823,43 @@ impl VccState {
     }
 
     fn has_ringbuf_dynptr_slot(&self, slot: StackSlotId) -> bool {
+        let Some(root) = self.ringbuf_dynptr_root(slot) else {
+            return false;
+        };
         self.ringbuf_dynptr_slots
-            .get(&slot)
+            .get(&root)
             .is_some_and(|(min_depth, _)| *min_depth > 0)
     }
 
     fn has_live_ringbuf_dynptr_slot(&self, slot: StackSlotId) -> bool {
+        let Some(root) = self.ringbuf_dynptr_root(slot) else {
+            return false;
+        };
         self.ringbuf_dynptr_slots
-            .get(&slot)
+            .get(&root)
             .is_some_and(|(_, max_depth)| *max_depth > 0)
     }
 
     fn first_live_ringbuf_dynptr_slot(&self) -> Option<StackSlotId> {
-        self.ringbuf_dynptr_slots
+        self.ringbuf_dynptr_alias_roots
             .iter()
-            .find(|(_, (_, max_depth))| *max_depth > 0)
+            .find(|(_, root)| {
+                self.ringbuf_dynptr_slots
+                    .get(root)
+                    .is_some_and(|(_, max_depth)| *max_depth > 0)
+            })
             .map(|(slot, _)| *slot)
+    }
+
+    fn ringbuf_dynptr_root(&self, slot: StackSlotId) -> Option<StackSlotId> {
+        self.ringbuf_dynptr_alias_roots.get(&slot).copied()
+    }
+
+    fn ringbuf_dynptr_alias_members(&self, root: StackSlotId) -> Vec<StackSlotId> {
+        self.ringbuf_dynptr_alias_roots
+            .iter()
+            .filter_map(|(slot, alias_root)| (*alias_root == root).then_some(*slot))
+            .collect()
     }
 
     fn initialize_unknown_stack_object_slot(
@@ -974,6 +1042,12 @@ impl VccState {
         );
         let ringbuf_dynptr_slots =
             merge_slot_depths(&self.ringbuf_dynptr_slots, &other.ringbuf_dynptr_slots);
+        let ringbuf_dynptr_alias_roots = merge_ringbuf_dynptr_alias_roots(
+            &self.ringbuf_dynptr_alias_roots,
+            &other.ringbuf_dynptr_alias_roots,
+            &ringbuf_dynptr_slots,
+            &dynptr_initialized_slots,
+        );
         let released_ringbuf_dynptr_slots = self
             .released_ringbuf_dynptr_slots
             .union(&other.released_ringbuf_dynptr_slots)
@@ -1071,6 +1145,7 @@ impl VccState {
             ),
             dynptr_initialized_slots,
             ringbuf_dynptr_slots,
+            ringbuf_dynptr_alias_roots,
             released_ringbuf_dynptr_slots,
             unknown_stack_object_slots,
             cond_refinements,
@@ -1151,6 +1226,7 @@ impl VccState {
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
             dynptr_initialized_slots: self.dynptr_initialized_slots.clone(),
             ringbuf_dynptr_slots: self.ringbuf_dynptr_slots.clone(),
+            ringbuf_dynptr_alias_roots: self.ringbuf_dynptr_alias_roots.clone(),
             released_ringbuf_dynptr_slots: self.released_ringbuf_dynptr_slots.clone(),
             unknown_stack_object_slots: self.unknown_stack_object_slots.clone(),
             cond_refinements: HashMap::new(),
@@ -1564,6 +1640,26 @@ fn merge_slot_depths(
         let max_depth = lhs_max.max(rhs_max);
         if max_depth > 0 {
             merged.insert(*slot, (min_depth, max_depth));
+        }
+    }
+    merged
+}
+
+fn merge_ringbuf_dynptr_alias_roots(
+    lhs: &HashMap<StackSlotId, StackSlotId>,
+    rhs: &HashMap<StackSlotId, StackSlotId>,
+    ringbuf_dynptr_slots: &HashMap<StackSlotId, (u32, u32)>,
+    dynptr_initialized_slots: &HashSet<StackSlotId>,
+) -> HashMap<StackSlotId, StackSlotId> {
+    let mut merged = HashMap::new();
+    for (slot, lhs_root) in lhs {
+        if rhs.get(slot) == Some(lhs_root)
+            && dynptr_initialized_slots.contains(slot)
+            && ringbuf_dynptr_slots
+                .get(lhs_root)
+                .is_some_and(|(_, max_depth)| *max_depth > 0)
+        {
+            merged.insert(*slot, *lhs_root);
         }
     }
     merged

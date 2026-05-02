@@ -748,6 +748,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                         state.deinitialize_dynptr_slot(src_slot);
                     }
                     state.initialize_dynptr_slot(dst_slot);
+                    state.copy_ringbuf_dynptr_slot(src_slot, dst_slot, copy.move_semantics);
                 }
             }
         }

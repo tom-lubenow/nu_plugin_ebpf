@@ -1162,6 +1162,33 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_clone' arg0 requires initialized dynptr stack object"
     }
     {
+        name: "dynptr-kfunc-clone-rejects-use-after-ringbuf-submit"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let clone = "fedcba9876543210"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  kfunc-call "bpf_dynptr_clone" $d $clone'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  kfunc-call "bpf_dynptr_size" $clone'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
+            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
+            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE
+            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE
+        ]
+        error_contains: "kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object"
+    }
+    {
         name: "stackid-built-in-kstacks"
         category: "maps"
         tags: [helper-call stack-trace reserved-name]

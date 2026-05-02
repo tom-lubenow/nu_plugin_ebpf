@@ -54,6 +54,7 @@ impl VerifierState {
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
             && self.dynptr_initialized_slots == other.dynptr_initialized_slots
             && self.ringbuf_dynptr_slots == other.ringbuf_dynptr_slots
+            && self.ringbuf_dynptr_alias_roots == other.ringbuf_dynptr_alias_roots
             && self.released_ringbuf_dynptr_slots == other.released_ringbuf_dynptr_slots
             && self.unknown_stack_object_slots == other.unknown_stack_object_slots
             && self.guards == other.guards
@@ -164,6 +165,12 @@ impl VerifierState {
         );
         let ringbuf_dynptr_slots =
             join_slot_depths(&self.ringbuf_dynptr_slots, &other.ringbuf_dynptr_slots);
+        let ringbuf_dynptr_alias_roots = join_ringbuf_dynptr_alias_roots(
+            &self.ringbuf_dynptr_alias_roots,
+            &other.ringbuf_dynptr_alias_roots,
+            &ringbuf_dynptr_slots,
+            &dynptr_initialized_slots,
+        );
         let released_ringbuf_dynptr_slots = self
             .released_ringbuf_dynptr_slots
             .union(&other.released_ringbuf_dynptr_slots)
@@ -280,6 +287,7 @@ impl VerifierState {
             ),
             dynptr_initialized_slots,
             ringbuf_dynptr_slots,
+            ringbuf_dynptr_alias_roots,
             released_ringbuf_dynptr_slots,
             unknown_stack_object_slots,
             reachable: true,
@@ -300,6 +308,26 @@ fn join_slot_depths(
         let max_depth = lhs_max.max(rhs_max);
         if max_depth > 0 {
             merged.insert(*slot, (min_depth, max_depth));
+        }
+    }
+    merged
+}
+
+fn join_ringbuf_dynptr_alias_roots(
+    lhs: &HashMap<StackSlotId, StackSlotId>,
+    rhs: &HashMap<StackSlotId, StackSlotId>,
+    ringbuf_dynptr_slots: &HashMap<StackSlotId, (u32, u32)>,
+    dynptr_initialized_slots: &HashSet<StackSlotId>,
+) -> HashMap<StackSlotId, StackSlotId> {
+    let mut merged = HashMap::new();
+    for (slot, lhs_root) in lhs {
+        if rhs.get(slot) == Some(lhs_root)
+            && dynptr_initialized_slots.contains(slot)
+            && ringbuf_dynptr_slots
+                .get(lhs_root)
+                .is_some_and(|(_, max_depth)| *max_depth > 0)
+        {
+            merged.insert(*slot, *lhs_root);
         }
     }
     merged

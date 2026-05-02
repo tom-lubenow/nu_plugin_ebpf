@@ -1875,6 +1875,7 @@ impl VccVerifier {
                         state.deinitialize_dynptr_slot(src_slot);
                     }
                     state.initialize_dynptr_slot(dst_slot);
+                    state.copy_ringbuf_dynptr_slot(src_slot, dst_slot, *move_semantics);
                 }
             }
             VccInst::UnknownStackObjectInit {
