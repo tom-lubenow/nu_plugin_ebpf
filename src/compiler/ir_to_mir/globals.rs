@@ -51,6 +51,9 @@ enum NamedGlobalTypeShape {
     },
     BpfTimer,
     BpfSpinLock,
+    BpfKptr {
+        pointee_name: String,
+    },
     FixedArray {
         elem: Box<ParsedNamedGlobalType>,
         len: usize,
@@ -263,6 +266,27 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape: NamedGlobalTypeShape::BpfSpinLock,
+            });
+        }
+
+        if context == NamedTypeSpecContext::MapValue
+            && let Some(pointee_name) = spec.strip_prefix("kptr:")
+        {
+            if !Self::is_valid_kernel_type_name(pointee_name) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "map value kptr type spec '{}' requires a kernel struct type name like kptr:task_struct",
+                    spec
+                )));
+            }
+            return Ok(Self {
+                ty: MirType::bpf_kptr_slot_struct(pointee_name),
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::BpfKptr {
+                    pointee_name: pointee_name.to_string(),
+                },
             });
         }
 
@@ -529,7 +553,7 @@ impl ParsedNamedGlobalType {
             NamedTypeSpecContext::MapValue => "map value",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
-            "; map value schemas also support bpf_timer and bpf_spin_lock"
+            "; map value schemas also support bpf_timer, bpf_spin_lock, and kptr:TYPE"
         } else {
             ""
         };
@@ -537,6 +561,17 @@ impl ParsedNamedGlobalType {
             "unsupported {context_name} type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{type:N}}, or nested record{{field:type,...}}{}",
             spec, map_suffix
         )))
+    }
+
+    fn is_valid_kernel_type_name(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+        if !(first == '_' || first.is_ascii_alphabetic()) {
+            return false;
+        }
+        chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
     }
 
     fn layout(&self, symbol: String) -> (MutableCaptureGlobal, Option<AnnotatedValueSemantics>) {
@@ -750,6 +785,12 @@ impl ParsedNamedGlobalType {
                 Err(CompileError::UnsupportedInstruction(format!(
                     "global type spec '{}' cannot initialize verifier-managed bpf_spin_lock objects",
                     spec
+                )))
+            }
+            NamedGlobalTypeShape::BpfKptr { pointee_name } => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "global type spec '{}' cannot initialize verifier-managed kptr slots for {}",
+                    spec, pointee_name
                 )))
             }
             NamedGlobalTypeShape::FixedArray { elem, len } => {

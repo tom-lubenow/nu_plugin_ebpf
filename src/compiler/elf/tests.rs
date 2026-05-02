@@ -4812,6 +4812,80 @@ fn test_elf_map_btf_emits_declared_key_and_value_types() {
 }
 
 #[test]
+fn test_elf_map_btf_emits_kptr_value_type_tag() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let map_ref = MapRef {
+        name: "task_slots".to_string(),
+        kind: MapKind::Array,
+    };
+    let value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "task".to_string(),
+                ty: MirType::bpf_kptr_slot_struct("task_struct"),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "typed_map",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![EbpfMap {
+            name: "task_slots".to_string(),
+            def: BpfMapDef::array(value_ty.size() as u32, 16),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(map_ref, value_ty)]),
+        HashMap::new(),
+    );
+
+    let elf = program.to_elf().expect("typed map ELF should emit");
+    let aya = AyaObject::parse(&elf).expect("Aya should parse kptr typed map BTF");
+    assert!(aya.maps.get("task_slots").is_some());
+
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    let btf = Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+
+    assert!(btf.id_by_type_name_kind("__kptr", BtfKind::TypeTag).is_ok());
+    assert!(
+        btf.id_by_type_name_kind("task_struct", BtfKind::Fwd)
+            .is_ok()
+    );
+    assert!(
+        btf_data
+            .windows(b"__nu_bpf_kptr_task_struct\0".len())
+            .all(|w| w != b"__nu_bpf_kptr_task_struct\0"),
+        "internal kptr slot wrapper should not leak into emitted BTF"
+    );
+}
+
+#[test]
 fn test_struct_ops_object_emits_btf_without_generic_maps() {
     let object = EbpfObject::struct_ops("demo", "fake_ops", vec![0; 32])
         .with_callback_slot("select_cpu", 8)

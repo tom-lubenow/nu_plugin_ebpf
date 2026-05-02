@@ -397,14 +397,15 @@ operations, including verifier-sensitive value fields such as `bpf_timer`.
 
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
-`bpf_timer` and `bpf_spin_lock` inside map-value records. Source-level
-`record{...}` specs use natural field alignment and aligned array stride;
-padding is zero-filled by typed initializers and hidden from emitted BTF
-members.
+`bpf_timer`, `bpf_spin_lock`, and `kptr:TYPE` inside map-value records.
+Source-level `record{...}` specs use natural field alignment and aligned array
+stride; padding is zero-filled by typed initializers and hidden from emitted
+BTF members.
 Verifier-managed fields are checked against kernel layout rules: `bpf_spin_lock`
 must be a single top-level 4-byte-aligned field in a hash or array map, and
 `bpf_timer` must be a single 8-byte-aligned field in a hash, array, or lru-hash
-map.
+map. `kptr:TYPE` declares an 8-byte-aligned top-level map-value kptr slot for
+hash, array, or lru-hash maps and emits the required `__kptr` BTF type tag.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource.
 
@@ -433,7 +434,7 @@ Example:
             .named(
                 "value-type",
                 SyntaxShape::String,
-                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer and bpf_spin_lock",
+                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer, bpf_spin_lock, and kptr:TYPE",
                 None,
             )
             .named(

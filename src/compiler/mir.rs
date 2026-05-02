@@ -472,6 +472,7 @@ pub const HISTOGRAM_MAP_NAME: &str = "histogram";
 pub const TIMESTAMP_MAP_NAME: &str = "timestamps";
 pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
+const BPF_KPTR_SLOT_STRUCT_PREFIX: &str = "__nu_bpf_kptr_";
 
 /// Bitfield extraction metadata for a logical struct field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -610,12 +611,41 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_spin_lock", 4)
     }
 
+    pub fn bpf_kptr_slot_struct(pointee_name: &str) -> Self {
+        Self::opaque_named_struct_with_size(
+            &format!("{BPF_KPTR_SLOT_STRUCT_PREFIX}{pointee_name}"),
+            8,
+        )
+    }
+
     pub fn is_bpf_timer_struct(&self) -> bool {
         self.has_struct_name(&["bpf_timer"])
     }
 
     pub fn is_bpf_spin_lock_struct(&self) -> bool {
         self.has_struct_name(&["bpf_spin_lock"])
+    }
+
+    pub fn bpf_kptr_pointee_name(&self) -> Option<&str> {
+        let MirType::Struct {
+            name: Some(name),
+            fields,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        if self.size() != 8 {
+            return None;
+        }
+        if fields.len() != 1 || fields[0].name != "__opaque" {
+            return None;
+        }
+        name.strip_prefix(BPF_KPTR_SLOT_STRUCT_PREFIX)
+    }
+
+    pub fn is_bpf_kptr_slot_struct(&self) -> bool {
+        self.bpf_kptr_pointee_name().is_some()
     }
 
     pub fn named_kernel_struct_ptr(name: &str) -> Self {
@@ -814,6 +844,9 @@ impl MirType {
         }
         if self.is_bpf_spin_lock_struct() {
             return 4;
+        }
+        if self.is_bpf_kptr_slot_struct() {
+            return 8;
         }
 
         match self {

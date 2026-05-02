@@ -1255,6 +1255,12 @@ impl EbpfObject {
     }
 
     fn emit_local_btf_mir_type(btf: &mut BtfBuilder, ty: &MirType, array_index_type: u32) -> u32 {
+        if let Some(pointee_name) = ty.bpf_kptr_pointee_name() {
+            let pointee_type = btf.add_fwd(pointee_name, false);
+            let tagged_type = btf.add_type_tag("__kptr", pointee_type);
+            return btf.add_ptr(tagged_type);
+        }
+
         match ty {
             MirType::I8 => btf.add_int("s8", 1, true),
             MirType::I16 => btf.add_int("s16", 2, true),

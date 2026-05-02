@@ -645,6 +645,7 @@ impl<'a> HirToMirLowering<'a> {
             depth: usize,
             in_array: bool,
             repeat: usize,
+            pointee_name: Option<String>,
         }
 
         fn collect_managed_fields(
@@ -656,6 +657,7 @@ impl<'a> HirToMirLowering<'a> {
             repeat: usize,
             timers: &mut Vec<ManagedField>,
             spin_locks: &mut Vec<ManagedField>,
+            kptrs: &mut Vec<ManagedField>,
         ) {
             if ty.is_bpf_timer_struct() {
                 timers.push(ManagedField {
@@ -664,6 +666,7 @@ impl<'a> HirToMirLowering<'a> {
                     depth,
                     in_array,
                     repeat,
+                    pointee_name: None,
                 });
                 return;
             }
@@ -674,6 +677,18 @@ impl<'a> HirToMirLowering<'a> {
                     depth,
                     in_array,
                     repeat,
+                    pointee_name: None,
+                });
+                return;
+            }
+            if let Some(pointee_name) = ty.bpf_kptr_pointee_name() {
+                kptrs.push(ManagedField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    pointee_name: Some(pointee_name.to_string()),
                 });
                 return;
             }
@@ -695,6 +710,7 @@ impl<'a> HirToMirLowering<'a> {
                             repeat,
                             timers,
                             spin_locks,
+                            kptrs,
                         );
                     }
                 }
@@ -708,6 +724,7 @@ impl<'a> HirToMirLowering<'a> {
                         repeat.saturating_mul(*len),
                         timers,
                         spin_locks,
+                        kptrs,
                     );
                 }
                 _ => {}
@@ -720,6 +737,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut timers = Vec::new();
         let mut spin_locks = Vec::new();
+        let mut kptrs = Vec::new();
         collect_managed_fields(
             ty,
             "value".to_string(),
@@ -729,6 +747,7 @@ impl<'a> HirToMirLowering<'a> {
             1,
             &mut timers,
             &mut spin_locks,
+            &mut kptrs,
         );
 
         let spin_lock_count = total_occurrences(&spin_locks);
@@ -763,6 +782,37 @@ impl<'a> HirToMirLowering<'a> {
                     "{context} for '{}' has bpf_spin_lock at byte offset {}, but bpf_spin_lock must be 4-byte aligned",
                     map.name, lock.offset
                 )));
+            }
+        }
+
+        let kptr_count = total_occurrences(&kptrs);
+        if kptr_count > 0 {
+            if !matches!(map.kind, MapKind::Hash | MapKind::Array | MapKind::LruHash) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' contains kptr fields, which are currently supported for hash, array, and lru-hash maps",
+                    map.name
+                )));
+            }
+            for kptr in &kptrs {
+                let pointee_name = kptr.pointee_name.as_deref().unwrap_or("kernel object");
+                if kptr.depth == 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' must wrap kptr:{} in a map-value record field",
+                        map.name, pointee_name
+                    )));
+                }
+                if kptr.depth != 1 || kptr.in_array {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' has kptr:{} at '{}', but kptr slots must be top-level map-value record fields",
+                        map.name, pointee_name, kptr.path
+                    )));
+                }
+                if kptr.offset % 8 != 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' has kptr:{} at byte offset {}, but kptr slots must be 8-byte aligned",
+                        map.name, pointee_name, kptr.offset
+                    )));
+                }
             }
         }
 

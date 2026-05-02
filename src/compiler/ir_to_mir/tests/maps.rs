@@ -3067,11 +3067,47 @@ fn test_map_value_type_spec_supports_bpf_spin_lock() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_kptr_slot() {
+    let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{task:kptr:task_struct,cookie:u64}",
+    )
+    .expect("kptr map value type should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let user_fields = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_fields.len(), 2);
+    assert_eq!(user_fields[0].name, "task");
+    assert_eq!(
+        user_fields[0].ty.bpf_kptr_pointee_name(),
+        Some("task_struct")
+    );
+    assert_eq!(user_fields[0].offset, 0);
+    assert_eq!(user_fields[1].name, "cookie");
+    assert_eq!(user_fields[1].ty, MirType::U64);
+    assert_eq!(user_fields[1].offset, 8);
+    assert_eq!(
+        fields.iter().map(|field| field.ty.size()).sum::<usize>(),
+        16
+    );
+}
+
+#[test]
 fn test_map_value_type_validation_accepts_managed_fields() {
     validate_map_value_type_spec_for_kind("record{lock:bpf_spin_lock,counter:u64}", MapKind::Hash)
         .expect("top-level spin lock in hash map should validate");
     validate_map_value_type_spec_for_kind("record{timer:bpf_timer,cookie:u64}", MapKind::LruHash)
         .expect("aligned timer in lru hash map should validate");
+    validate_map_value_type_spec_for_kind(
+        "record{task:kptr:task_struct,cookie:u64}",
+        MapKind::Array,
+    )
+    .expect("aligned kptr slot in array map should validate");
 }
 
 #[test]
@@ -3154,6 +3190,45 @@ fn test_map_value_type_validation_rejects_timer_on_queue() {
     assert!(
         err.to_string()
             .contains("only supported for hash, array, and lru-hash")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_nested_kptr_slot() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{nested:record{task:kptr:task_struct},cookie:u64}",
+        MapKind::Array,
+    )
+    .expect_err("nested kptr slot should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("top-level map-value record fields")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_kptr_slot_on_queue() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{task:kptr:task_struct,cookie:u64}",
+        MapKind::Queue,
+    )
+    .expect_err("kptr slot on queue should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("currently supported for hash, array, and lru-hash")
+    );
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_invalid_kptr_type_name() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec("record{task:kptr:task-struct}")
+        .expect_err("invalid kptr type name should fail");
+
+    assert!(
+        err.to_string()
+            .contains("requires a kernel struct type name")
     );
 }
 

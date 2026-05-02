@@ -35,7 +35,7 @@ history and release notes, not here.
   - Keep type inference, verifier_types, VCC, and backend assumptions in lockstep.
   - Extend pointer-state transitions for helper/kfunc families that mutate provenance, nullability, packet-pointer validity, ref ownership, dynptr state, timer state, and stack-object initialization.
   - Continue modeling branch refinement, range facts, CFG joins, bounded loops, and helper size/bounds constraints.
-  - Add BTF-aware validation for remaining map-value fields that carry verifier-sensitive objects such as kptrs, dynptrs, and nested kernel structs.
+  - Add BTF-aware validation for remaining map-value fields that carry verifier-sensitive objects such as dynptrs, graph nodes, workqueues, and nested kernel structs.
   - Preserve clear diagnostics when VCC rejects a program that the compiler can describe precisely.
 
 - [~] Add a verifier differential suite.
@@ -80,7 +80,7 @@ history and release notes, not here.
 
 - [~] Finish resource-backed map semantics.
   - Keep generic map operations, local storage, socket maps, redirect maps, cgroup arrays, bloom filters, ring buffers, user ring buffers, stack traces, prog arrays, and per-cpu maps aligned across lowering, type checks, VCC, and backend map emission.
-  - Keep extending source-level `map-define` only for real map resource metadata. Key/value layouts, natural fixed-record alignment, `--max-entries`, and basic verifier-managed `bpf_timer` / `bpf_spin_lock` validation are modeled; kptrs and newer graph/workqueue fields are the next natural BTF-backed validation targets.
+  - Keep extending source-level `map-define` only for real map resource metadata. Key/value layouts, natural fixed-record alignment, `--max-entries`, and verifier-managed `bpf_timer`, `bpf_spin_lock`, and top-level `kptr:TYPE` slots are modeled; dynptrs and newer graph/workqueue fields are the next natural BTF-backed validation targets.
   - Add map-in-map support only after inner-map metadata, pinning, loader materialization, and verifier diagnostics are designed.
   - Add arena support only after map-extra, mmap/user-space access, and verifier constraints are modeled.
   - Keep `struct_ops` maps behind the struct_ops object loader rather than generic `map-*` commands.

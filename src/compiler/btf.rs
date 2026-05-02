@@ -126,6 +126,34 @@ impl BtfBuilder {
         type_id
     }
 
+    /// Add a forward declaration type, return its type ID.
+    pub fn add_fwd(&mut self, name: &str, is_union: bool) -> u32 {
+        let name_off = self.add_string(name);
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+
+        self.types.extend_from_slice(&name_off.to_le_bytes());
+        self.types
+            .extend_from_slice(&Self::encode_info(BtfKind::Fwd, 0, is_union).to_le_bytes());
+        self.types.extend_from_slice(&0u32.to_le_bytes());
+
+        type_id
+    }
+
+    /// Add a type tag, return its type ID.
+    pub fn add_type_tag(&mut self, tag: &str, target_type_id: u32) -> u32 {
+        let name_off = self.add_string(tag);
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+
+        self.types.extend_from_slice(&name_off.to_le_bytes());
+        self.types
+            .extend_from_slice(&Self::encode_info(BtfKind::TypeTag, 0, false).to_le_bytes());
+        self.types.extend_from_slice(&target_type_id.to_le_bytes());
+
+        type_id
+    }
+
     /// Add an array type, return its type ID
     ///
     /// Arrays in BTF have an element type, index type (usually u32), and number of elements.
