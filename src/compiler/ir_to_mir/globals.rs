@@ -296,6 +296,15 @@ impl ParsedNamedGlobalType {
         }
 
         if context == NamedTypeSpecContext::MapValue
+            && Self::is_graph_object_type_spec_candidate(spec)
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value graph type spec '{}' is not supported yet; bpf_list_head/bpf_rb_root roots require a named object type schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields",
+                spec
+            )));
+        }
+
+        if context == NamedTypeSpecContext::MapValue
             && let Some(pointee_name) = spec.strip_prefix("kptr:")
         {
             if !Self::is_valid_kernel_type_name(pointee_name) {
@@ -598,6 +607,14 @@ impl ParsedNamedGlobalType {
             return false;
         }
         chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    }
+
+    fn is_graph_object_type_spec_candidate(spec: &str) -> bool {
+        matches!(
+            spec,
+            "bpf_list_head" | "bpf_rb_root" | "bpf_list_node" | "bpf_rb_node"
+        ) || spec.starts_with("bpf_list_head:")
+            || spec.starts_with("bpf_rb_root:")
     }
 
     fn layout(&self, symbol: String) -> (MutableCaptureGlobal, Option<AnnotatedValueSemantics>) {

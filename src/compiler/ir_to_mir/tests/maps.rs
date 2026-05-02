@@ -3128,6 +3128,30 @@ fn test_map_value_type_spec_supports_bpf_refcount() {
 }
 
 #[test]
+fn test_map_value_type_spec_rejects_bare_graph_root() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_list_head:node_data:node,counter:u64}",
+    )
+    .expect_err("bare list root should require named object schema support");
+
+    let msg = err.to_string();
+    assert!(msg.contains("map value graph type spec"));
+    assert!(msg.contains("named object type schema"));
+    assert!(msg.contains("contains:TYPE:FIELD"));
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_bare_graph_node() {
+    let err =
+        HirToMirLowering::parse_named_map_value_type_spec("record{node:bpf_rb_node,counter:u64}")
+            .expect_err("bare rbtree node should require named object schema support");
+
+    let msg = err.to_string();
+    assert!(msg.contains("map value graph type spec"));
+    assert!(msg.contains("matching bpf_list_node/bpf_rb_node object fields"));
+}
+
+#[test]
 fn test_map_value_type_spec_supports_kptr_slot() {
     let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
         "record{task:kptr:task_struct,cookie:u64}",
