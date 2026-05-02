@@ -707,6 +707,16 @@ const KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE = {
     min_kernel: "6.5"
     source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c"
 }
+const KERNEL_FEATURE_MAP_VALUE_BPF_SPIN_LOCK = {
+    key: "map-value:bpf_spin_lock"
+    min_kernel: "5.1"
+    source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_VALUE_BPF_TIMER = {
+    key: "map-value:bpf_timer"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_MAP_VALUE_KPTR = {
     key: "map-value:kptr"
     min_kernel: "5.19"
@@ -1227,6 +1237,13 @@ const MAP_KIND_KERNEL_FEATURES = [
     { kind: "task-storage", feature: $KERNEL_FEATURE_MAP_TASK_STORAGE }
     { kind: "user-ringbuf", feature: $KERNEL_FEATURE_MAP_USER_RINGBUF }
     { kind: "xskmap", feature: $KERNEL_FEATURE_MAP_XSKMAP }
+]
+
+const MAP_VALUE_KERNEL_FEATURES = [
+    { token: "bpf_spin_lock", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_SPIN_LOCK }
+    { token: "bpf_timer", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_TIMER }
+    { token: "kptr:", feature: $KERNEL_FEATURE_MAP_VALUE_KPTR }
+    { token: "bpf_wq", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_WQ }
 ]
 
 const HELPER_KERNEL_FEATURES = [
@@ -3273,7 +3290,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_KPTR]
     }
     {
         name: "map-define-kptr-slot-rejects-queue"
@@ -3288,7 +3304,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_KPTR]
         error_contains: "kptr fields, which are currently supported for hash, array, and lru-hash maps"
     }
     {
@@ -3304,7 +3319,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_BPF_WQ]
     }
     {
         name: "map-define-bpf-wq-slot-rejects-queue"
@@ -3319,7 +3333,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_BPF_WQ]
         error_contains: "contains bpf_wq, which is only supported for hash, array, and lru-hash maps"
     }
     {
@@ -3335,7 +3348,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_MAP_VALUE_BPF_WQ]
         error_contains: "arrays of verifier-managed bpf_wq"
     }
     {
@@ -5110,6 +5122,24 @@ def program-map-kernel-features [source: string] {
     $features
 }
 
+def program-map-value-kernel-features [source: string] {
+    mut features = []
+
+    for line in ($source | lines) {
+        if not (($line | str contains "map-define ") and ($line | str contains "--value-type")) {
+            continue
+        }
+
+        for entry in $MAP_VALUE_KERNEL_FEATURES {
+            if ($line | str contains $entry.token) {
+                $features = (append-missing-kernel-features $features [$entry.feature])
+            }
+        }
+    }
+
+    $features
+}
+
 def program-helper-kernel-features [source: string] {
     mut features = []
 
@@ -5395,6 +5425,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (target-kernel-features ($fixture | get -o target)))
     let program = (fixture-program $fixture)
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-map-value-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
