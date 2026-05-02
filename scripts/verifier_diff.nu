@@ -1980,6 +1980,59 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kptr-xchg-task-ref-transfer"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --key-type u32 --value-type "record{task:kptr:task_struct,cookie:u64}" --max-entries 1'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let entry = (0 | map-get task_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.task $task)'
+            '      if $old {'
+            '        $old | kfunc-call "bpf_task_release"'
+            '      }'
+            '    } else {'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kptr-xchg-rejects-old-ref-leak"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --key-type u32 --value-type "record{task:kptr:task_struct,cookie:u64}" --max-entries 1'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let entry = (0 | map-get task_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.task $task)'
+            '      0'
+            '    } else {'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "timer-init-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
