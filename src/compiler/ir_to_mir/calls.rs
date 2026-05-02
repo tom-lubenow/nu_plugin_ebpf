@@ -970,6 +970,7 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
                 self.validate_timer_helper_call_args(helper, &helper_map_args, &helper_arg_regs)?;
+                self.validate_kptr_xchg_helper_call_args(helper, &args, &helper_arg_regs)?;
 
                 self.record_storage_helper_value_schema(
                     helper,
@@ -3300,5 +3301,69 @@ impl<'a> HirToMirLowering<'a> {
             },
         );
         Ok(())
+    }
+
+    fn helper_arg_runtime_type(
+        &self,
+        args: &[MirValue],
+        helper_arg_regs: &[(usize, RegId)],
+        arg_idx: usize,
+    ) -> Option<MirType> {
+        let MirValue::VReg(vreg) = args.get(arg_idx)? else {
+            return None;
+        };
+        helper_arg_regs
+            .iter()
+            .find(|(idx, _)| *idx == arg_idx)
+            .and_then(|(_, reg)| self.typed_value_runtime_type(*reg, *vreg))
+            .or_else(|| self.vreg_type_hints.get(vreg).cloned())
+    }
+
+    fn validate_kptr_xchg_helper_call_args(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        helper_arg_regs: &[(usize, RegId)],
+    ) -> Result<(), CompileError> {
+        if !matches!(helper, BpfHelper::KptrXchg) {
+            return Ok(());
+        }
+
+        let Some(dst_ty) = self.helper_arg_runtime_type(args, helper_arg_regs, 0) else {
+            return Ok(());
+        };
+        let MirType::Ptr {
+            pointee: dst_pointee,
+            address_space: AddressSpace::Map,
+        } = dst_ty
+        else {
+            return Ok(());
+        };
+        let Some(dst_pointee_name) = dst_pointee.bpf_kptr_pointee_name() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "helper-call 'bpf_kptr_xchg' requires arg0 to be a kptr field projected from a typed map value"
+                    .into(),
+            ));
+        };
+
+        match args.get(1) {
+            Some(MirValue::Const(0)) => Ok(()),
+            Some(MirValue::Const(_)) => Ok(()),
+            Some(MirValue::VReg(_)) => {
+                let Some(src_ty) = self.helper_arg_runtime_type(args, helper_arg_regs, 1) else {
+                    return Ok(());
+                };
+                let Some(src_pointee_name) = src_ty.kernel_struct_ptr_pointee_name() else {
+                    return Ok(());
+                };
+                if src_pointee_name != dst_pointee_name {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call 'bpf_kptr_xchg' cannot store {src_pointee_name} pointer in kptr:{dst_pointee_name} slot"
+                    )));
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }

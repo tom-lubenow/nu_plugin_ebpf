@@ -648,6 +648,23 @@ impl MirType {
         self.bpf_kptr_pointee_name().is_some()
     }
 
+    pub fn kernel_struct_ptr_pointee_name(&self) -> Option<&str> {
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Kernel,
+        } = self
+        else {
+            return None;
+        };
+        let MirType::Struct {
+            name: Some(name), ..
+        } = pointee.as_ref()
+        else {
+            return None;
+        };
+        Some(name)
+    }
+
     pub fn named_kernel_struct_ptr(name: &str) -> Self {
         MirType::Ptr {
             pointee: Box::new(Self::opaque_named_struct(name)),

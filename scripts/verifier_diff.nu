@@ -1373,9 +1373,9 @@ const FIXTURES = [
         target: "flow_dissector:/proc/self/ns/net"
         program: [
             '{|ctx|'
-            '  map-define kptr_slots --kind hash --value-type int'
+            '  map-define kptr_slots --kind hash --value-type "record{task:kptr:task_struct}"'
             '  let entry = (0 | map-get kptr_slots --kind hash)'
-            '  if $entry { helper-call "bpf_kptr_xchg" $entry $ctx.flow_keys | count }'
+            '  if $entry { helper-call "bpf_kptr_xchg" $entry.task $ctx.flow_keys | count }'
             '  "fallback"'
             '}'
         ]
@@ -2222,6 +2222,70 @@ const FIXTURES = [
             $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
         ]
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kptr-xchg-cgroup-ref-transfer"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    let entry = (0 | map-get cgroup_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.cgrp $cgrp)'
+            '      if $old {'
+            '        $old | kfunc-call "bpf_cgroup_release"'
+            '      }'
+            '    } else {'
+            '      $cgrp | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
+        ]
+    }
+    {
+        name: "source-kptr-xchg-rejects-pointee-mismatch"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --key-type u32 --value-type "record{task:kptr:task_struct,cookie:u64}" --max-entries 1'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    let entry = (0 | map-get task_slots --kind array)'
+            '    if $entry {'
+            '      helper-call "bpf_kptr_xchg" $entry.task $cgrp'
+            '    } else {'
+            '      $cgrp | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        kernel_features: [
+            $KERNEL_FEATURE_MAP_VALUE_KPTR
+            $KERNEL_FEATURE_BPF_KPTR_XCHG
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
+            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
+        ]
+        error_contains: "cannot store cgroup pointer in kptr:task_struct slot"
     }
     {
         name: "timer-init-rejects-non-map-timer"
