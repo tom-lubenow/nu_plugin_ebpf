@@ -551,6 +551,58 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
 }
 
 #[test]
+fn test_spec_record_includes_iterator_target_compatibility_metadata() {
+    let spec = ProgramSpec::parse("iter:bpf_link").expect("iter bpf_link spec should parse");
+    let record = spec_record("iter:bpf_link".to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let requirements = record
+        .get("compatibility_requirements")
+        .expect("compatibility requirements should be present")
+        .as_list()
+        .expect("compatibility requirements should be a list");
+
+    assert_eq!(
+        record
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "5.19"
+    );
+
+    let requirement = requirements
+        .iter()
+        .find_map(|requirement| {
+            let requirement = requirement.as_record().ok()?;
+            (requirement
+                .get("key")?
+                .as_str()
+                .ok()
+                .is_some_and(|key| key == "bpf-iterator-target-bpf-link"))
+            .then_some(requirement)
+        })
+        .expect("bpf_link iterator target requirement should be present");
+
+    assert_eq!(
+        requirement
+            .get("category")
+            .expect("requirement category should be present")
+            .as_str()
+            .expect("requirement category should be a string"),
+        "iterator-target"
+    );
+    assert_eq!(
+        requirement
+            .get("minimum_kernel_source")
+            .expect("minimum kernel source should be present")
+            .as_str()
+            .expect("minimum kernel source should be a string"),
+        "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/link_iter.c"
+    );
+}
+
+#[test]
 fn test_spec_context_fields_include_netfilter_minimum_kernel_metadata() {
     let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
         .expect("netfilter spec should parse");
@@ -877,6 +929,68 @@ fn test_spec_context_fields_include_skb_backed_socket_minimum_kernel_metadata() 
             socket
                 .minimum_kernel_source
                 .is_some_and(|source| source.contains("/v5.1/include/uapi/linux/bpf.h"))
+        );
+    }
+}
+
+#[test]
+fn test_spec_context_fields_include_iterator_minimum_kernel_metadata() {
+    for (spec_text, field_name, minimum_kernel, source_fragment) in [
+        ("iter:task", "iter_meta", "5.8", "/v5.8/include/linux/bpf.h"),
+        (
+            "iter:task",
+            "iter_task",
+            "5.8",
+            "/v5.8/kernel/bpf/task_iter.c",
+        ),
+        (
+            "iter:task_vma",
+            "iter_task",
+            "5.12",
+            "/v5.12/kernel/bpf/task_iter.c",
+        ),
+        (
+            "iter:task_vma",
+            "iter_vma",
+            "5.12",
+            "/v5.12/kernel/bpf/task_iter.c",
+        ),
+        (
+            "iter:cgroup",
+            "iter_cgroup",
+            "6.1",
+            "/v6.1/kernel/bpf/cgroup_iter.c",
+        ),
+        (
+            "iter:bpf_link",
+            "iter_link",
+            "5.19",
+            "/v5.19/kernel/bpf/link_iter.c",
+        ),
+        (
+            "iter:sockmap",
+            "iter_key",
+            "5.10",
+            "/v5.10/net/core/sock_map.c",
+        ),
+        (
+            "iter:unix",
+            "iter_unix_sk",
+            "5.15",
+            "/v5.15/net/unix/af_unix.c",
+        ),
+        ("iter:ksym", "iter_ksym", "6.0", "/v6.0/kernel/kallsyms.c"),
+    ] {
+        let spec = ProgramSpec::parse(spec_text).expect("iter spec should parse");
+        let fields = spec_context_fields(&spec, false);
+        let field = field(&fields, field_name);
+
+        assert_eq!(field.minimum_kernel, Some(minimum_kernel));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains(source_fragment)),
+            "ctx.{field_name} on {spec_text} should point at {source_fragment}"
         );
     }
 }

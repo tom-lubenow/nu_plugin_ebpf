@@ -2694,6 +2694,12 @@ impl ProgramSpec {
             }
         }
 
+        if let ProgramSpec::Iter { target } = self {
+            if let Some(requirement) = iterator_target_compatibility_requirement(&target.name) {
+                push_compatibility_requirement(&mut requirements, requirement);
+            }
+        }
+
         requirements
     }
 
@@ -3108,6 +3114,25 @@ impl ProgramSpec {
             _ => ProgramAttachShape::Generic,
         }
     }
+}
+
+fn iterator_target_compatibility_requirement(
+    target: &str,
+) -> Option<ProgramCompatibilityRequirement> {
+    Some(match target {
+        "task_vma" => ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
+        "cgroup" => ProgramCompatibilityRequirement::BpfIteratorCgroupTarget,
+        "bpf_map_elem" => ProgramCompatibilityRequirement::BpfIteratorBpfMapElemTarget,
+        "bpf_sk_storage_map" => ProgramCompatibilityRequirement::BpfIteratorBpfSkStorageMapTarget,
+        "sockmap" => ProgramCompatibilityRequirement::BpfIteratorSockmapTarget,
+        "bpf_prog" => ProgramCompatibilityRequirement::BpfIteratorBpfProgTarget,
+        "bpf_link" => ProgramCompatibilityRequirement::BpfIteratorBpfLinkTarget,
+        "tcp" => ProgramCompatibilityRequirement::BpfIteratorTcpTarget,
+        "udp" => ProgramCompatibilityRequirement::BpfIteratorUdpTarget,
+        "unix" => ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
+        "ksym" => ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
+        _ => return None,
+    })
 }
 
 fn push_compatibility_requirement(
@@ -3650,6 +3675,61 @@ mod tests {
                 ProgramCompatibilityRequirement::SkSkbSockMapAttach
             )
         );
+
+        for (spec_text, requirement, minimum_kernel) in [
+            (
+                "iter:task_vma",
+                ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
+                "5.12",
+            ),
+            (
+                "iter:cgroup",
+                ProgramCompatibilityRequirement::BpfIteratorCgroupTarget,
+                "6.1",
+            ),
+            (
+                "iter:bpf_map_elem",
+                ProgramCompatibilityRequirement::BpfIteratorBpfMapElemTarget,
+                "5.9",
+            ),
+            (
+                "iter:bpf_sk_storage_map",
+                ProgramCompatibilityRequirement::BpfIteratorBpfSkStorageMapTarget,
+                "5.9",
+            ),
+            (
+                "iter:sockmap",
+                ProgramCompatibilityRequirement::BpfIteratorSockmapTarget,
+                "5.10",
+            ),
+            (
+                "iter:bpf_link",
+                ProgramCompatibilityRequirement::BpfIteratorBpfLinkTarget,
+                "5.19",
+            ),
+            (
+                "iter:unix",
+                ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
+                "5.15",
+            ),
+            (
+                "iter:ksym",
+                ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
+                "6.0",
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec_text).expect("iter spec should parse");
+            assert!(
+                spec.requires_compatibility_feature(ProgramCompatibilityRequirement::BpfIterator)
+            );
+            assert!(spec.requires_compatibility_feature(requirement));
+            assert_eq!(
+                ProgramCompatibilityRequirement::effective_minimum_kernel(
+                    &spec.compatibility_requirements()
+                ),
+                Some(minimum_kernel)
+            );
+        }
     }
 
     #[test]

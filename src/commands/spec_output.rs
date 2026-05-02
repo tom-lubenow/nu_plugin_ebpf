@@ -526,6 +526,7 @@ fn spec_context_fields(
     resolve_dynamic_fields: bool,
 ) -> Vec<SpecContextField> {
     let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
+    let target = spec.target_string();
 
     for entry in spec.program_type().ctx_field_name_entries() {
         if spec.ctx_field_access_error(&entry.field).is_some() {
@@ -541,9 +542,10 @@ fn spec_context_fields(
             let load_guard = spec.ctx_field_load_guard(&entry.field);
             let backing_helper = ctx_field_backing_helper(&entry.field);
             let compatibility_requirement =
-                ContextFieldCompatibilityRequirement::for_field_on_program(
+                ContextFieldCompatibilityRequirement::for_field_on_program_target(
                     &entry.field,
                     Some(spec.program_type()),
+                    Some(target.as_str()),
                 );
             fields.push((
                 entry.field.clone(),

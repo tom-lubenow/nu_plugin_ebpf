@@ -4687,6 +4687,26 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         ProgramCompatibilityRequirement::CgroupUnixSockAddr.minimum_kernel(),
         Some("6.7")
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget.minimum_kernel(),
+        Some("5.12")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorCgroupTarget.minimum_kernel(),
+        Some("6.1")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorBpfLinkTarget.minimum_kernel(),
+        Some("5.19")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorUnixTarget.minimum_kernel(),
+        Some("5.15")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::BpfIteratorKsymTarget.minimum_kernel(),
+        Some("6.0")
+    );
     assert!(
         ProgramCompatibilityRequirement::SockMapAttach
             .minimum_kernel()

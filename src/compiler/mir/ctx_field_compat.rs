@@ -53,6 +53,37 @@ const LINUX_BPF_H_V6_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
 const LINUX_NF_BPF_LINK_V6_4_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c";
+const LINUX_INTERNAL_BPF_H_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/include/linux/bpf.h";
+const LINUX_TASK_ITER_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c";
+const LINUX_TASK_ITER_V5_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c";
+const LINUX_CGROUP_ITER_V6_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.1/kernel/bpf/cgroup_iter.c";
+const LINUX_MAP_ITER_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/map_iter.c";
+const LINUX_MAP_ITER_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/map_iter.c";
+const LINUX_BPF_SK_STORAGE_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/net/core/bpf_sk_storage.c";
+const LINUX_SOCK_MAP_V5_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.10/net/core/sock_map.c";
+const LINUX_PROG_ITER_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/prog_iter.c";
+const LINUX_LINK_ITER_V5_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/link_iter.c";
+const LINUX_TCP_IPV4_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/tcp_ipv4.c";
+const LINUX_UDP_V5_9_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c";
+const LINUX_AF_UNIX_V5_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c";
+const LINUX_IPV6_ROUTE_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/net/ipv6/route.c";
+const LINUX_KALLSYMS_V6_0_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c";
+const LINUX_AF_NETLINK_V5_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.8/net/netlink/af_netlink.c";
 
 /// Source-backed kernel compatibility metadata for a source-level context field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -71,7 +102,16 @@ impl ContextFieldCompatibilityRequirement {
         field: &CtxField,
         prog_type: Option<EbpfProgramType>,
     ) -> Option<Self> {
-        let (minimum_kernel, minimum_kernel_source) = context_field_kernel_floor(field, prog_type)?;
+        Self::for_field_on_program_target(field, prog_type, None)
+    }
+
+    pub fn for_field_on_program_target(
+        field: &CtxField,
+        prog_type: Option<EbpfProgramType>,
+        target: Option<&str>,
+    ) -> Option<Self> {
+        let (minimum_kernel, minimum_kernel_source) =
+            context_field_kernel_floor(field, prog_type, target)?;
         Some(Self {
             field: field.clone(),
             minimum_kernel,
@@ -370,6 +410,78 @@ fn direct_context_field_kernel_floor(
         | CtxField::NetfilterSkb
         | CtxField::NetfilterHook
         | CtxField::NetfilterProtocolFamily => ("6.4", LINUX_NF_BPF_LINK_V6_4_SOURCE),
+        CtxField::IterMeta if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.8", LINUX_INTERNAL_BPF_H_V5_8_SOURCE)
+        }
+        CtxField::IterTask | CtxField::IterFd | CtxField::IterFile
+            if prog_type == Some(EbpfProgramType::Iter) =>
+        {
+            ("5.8", LINUX_TASK_ITER_V5_8_SOURCE)
+        }
+        CtxField::IterVma if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.12", LINUX_TASK_ITER_V5_12_SOURCE)
+        }
+        CtxField::IterCgroup if prog_type == Some(EbpfProgramType::Iter) => {
+            ("6.1", LINUX_CGROUP_ITER_V6_1_SOURCE)
+        }
+        CtxField::IterMap if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.8", LINUX_MAP_ITER_V5_8_SOURCE)
+        }
+        CtxField::IterMapKey | CtxField::IterMapValue
+            if prog_type == Some(EbpfProgramType::Iter) =>
+        {
+            ("5.9", LINUX_MAP_ITER_V5_9_SOURCE)
+        }
+        CtxField::IterSock if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE)
+        }
+        CtxField::IterProg if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.9", LINUX_PROG_ITER_V5_9_SOURCE)
+        }
+        CtxField::IterLink if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.19", LINUX_LINK_ITER_V5_19_SOURCE)
+        }
+        CtxField::IterSkCommon | CtxField::IterUid if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.9", LINUX_TCP_IPV4_V5_9_SOURCE)
+        }
+        CtxField::IterUdpSk | CtxField::IterBucket if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.9", LINUX_UDP_V5_9_SOURCE)
+        }
+        CtxField::IterUnixSk if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.15", LINUX_AF_UNIX_V5_15_SOURCE)
+        }
+        CtxField::IterIpv6Route if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.8", LINUX_IPV6_ROUTE_V5_8_SOURCE)
+        }
+        CtxField::IterKsym if prog_type == Some(EbpfProgramType::Iter) => {
+            ("6.0", LINUX_KALLSYMS_V6_0_SOURCE)
+        }
+        CtxField::IterNetlinkSk if prog_type == Some(EbpfProgramType::Iter) => {
+            ("5.8", LINUX_AF_NETLINK_V5_8_SOURCE)
+        }
+        _ => return None,
+    })
+}
+
+fn target_context_field_kernel_floor(
+    field: &CtxField,
+    prog_type: Option<EbpfProgramType>,
+    target: Option<&str>,
+) -> Option<(&'static str, &'static str)> {
+    if prog_type != Some(EbpfProgramType::Iter) {
+        return None;
+    }
+
+    Some(match (field, target?) {
+        (CtxField::IterTask, "task_vma") => ("5.12", LINUX_TASK_ITER_V5_12_SOURCE),
+        (CtxField::IterMap, "bpf_map_elem") => ("5.9", LINUX_MAP_ITER_V5_9_SOURCE),
+        (CtxField::IterMap, "bpf_sk_storage_map") => ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE),
+        (CtxField::IterMap, "sockmap") => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
+        (CtxField::IterMapKey, "sockmap") => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
+        (CtxField::IterMapValue, "bpf_sk_storage_map") => ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE),
+        (CtxField::IterSock, "sockmap") => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
+        (CtxField::IterUid, "udp") => ("5.9", LINUX_UDP_V5_9_SOURCE),
+        (CtxField::IterUid, "unix") => ("5.15", LINUX_AF_UNIX_V5_15_SOURCE),
         _ => return None,
     })
 }
@@ -377,9 +489,12 @@ fn direct_context_field_kernel_floor(
 fn context_field_kernel_floor(
     field: &CtxField,
     prog_type: Option<EbpfProgramType>,
+    target: Option<&str>,
 ) -> Option<(&'static str, &'static str)> {
-    direct_context_field_kernel_floor(field, prog_type).or_else(|| {
-        let helper = ctx_field_backing_helper(field)?;
-        Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?))
-    })
+    target_context_field_kernel_floor(field, prog_type, target)
+        .or_else(|| direct_context_field_kernel_floor(field, prog_type))
+        .or_else(|| {
+            let helper = ctx_field_backing_helper(field)?;
+            Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?))
+        })
 }

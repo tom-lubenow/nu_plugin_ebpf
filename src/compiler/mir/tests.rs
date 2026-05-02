@@ -570,6 +570,93 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("tc_action ctx.sk should use __sk_buff socket floor");
     assert_eq!(tc_socket.minimum_kernel(), "5.1");
 
+    for (field, minimum_kernel, source_fragment) in [
+        (CtxField::IterMeta, "5.8", "/v5.8/include/linux/bpf.h"),
+        (CtxField::IterTask, "5.8", "/v5.8/kernel/bpf/task_iter.c"),
+        (CtxField::IterVma, "5.12", "/v5.12/kernel/bpf/task_iter.c"),
+        (
+            CtxField::IterCgroup,
+            "6.1",
+            "/v6.1/kernel/bpf/cgroup_iter.c",
+        ),
+        (CtxField::IterLink, "5.19", "/v5.19/kernel/bpf/link_iter.c"),
+        (CtxField::IterUnixSk, "5.15", "/v5.15/net/unix/af_unix.c"),
+        (CtxField::IterKsym, "6.0", "/v6.0/kernel/kallsyms.c"),
+    ] {
+        let requirement = ContextFieldCompatibilityRequirement::for_field_on_program(
+            &field,
+            Some(crate::compiler::EbpfProgramType::Iter),
+        )
+        .unwrap_or_else(|| {
+            panic!(
+                "{} should have an iterator field floor",
+                field.display_name()
+            )
+        });
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(source_fragment),
+            "{} should point at {}",
+            field.display_name(),
+            source_fragment
+        );
+    }
+
+    assert!(
+        ContextFieldCompatibilityRequirement::for_field_on_program(
+            &CtxField::IterDmabuf,
+            Some(crate::compiler::EbpfProgramType::Iter),
+        )
+        .is_none(),
+        "iterator fields without a source-checked mainline registration should stay unversioned"
+    );
+
+    for (field, target, minimum_kernel, source_fragment) in [
+        (
+            CtxField::IterTask,
+            "task_vma",
+            "5.12",
+            "/v5.12/kernel/bpf/task_iter.c",
+        ),
+        (
+            CtxField::IterMapKey,
+            "sockmap",
+            "5.10",
+            "/v5.10/net/core/sock_map.c",
+        ),
+        (
+            CtxField::IterUid,
+            "unix",
+            "5.15",
+            "/v5.15/net/unix/af_unix.c",
+        ),
+    ] {
+        let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_target(
+            &field,
+            Some(crate::compiler::EbpfProgramType::Iter),
+            Some(target),
+        )
+        .unwrap_or_else(|| {
+            panic!(
+                "{} on iter:{} should have a target-aware field floor",
+                field.display_name(),
+                target
+            )
+        });
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(source_fragment),
+            "{} on iter:{} should point at {}",
+            field.display_name(),
+            target,
+            source_fragment
+        );
+    }
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

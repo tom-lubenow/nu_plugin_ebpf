@@ -1574,6 +1574,17 @@ pub enum ProgramCompatibilityRequirement {
     ExtensionProgram,
     SyscallProgram,
     BpfIterator,
+    BpfIteratorTaskVmaTarget,
+    BpfIteratorCgroupTarget,
+    BpfIteratorBpfMapElemTarget,
+    BpfIteratorBpfSkStorageMapTarget,
+    BpfIteratorSockmapTarget,
+    BpfIteratorBpfProgTarget,
+    BpfIteratorBpfLinkTarget,
+    BpfIteratorTcpTarget,
+    BpfIteratorUdpTarget,
+    BpfIteratorUnixTarget,
+    BpfIteratorKsymTarget,
     XdpMultiBuffer,
     FlowDissector,
     Tcx,
@@ -1647,6 +1658,27 @@ const LINUX_BPF_H_V6_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_TYPES_H_V6_4_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.4/include/linux/bpf_types.h";
+const LINUX_TASK_ITER_V5_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c";
+const LINUX_CGROUP_ITER_V6_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.1/kernel/bpf/cgroup_iter.c";
+const LINUX_MAP_ITER_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/map_iter.c";
+const LINUX_BPF_SK_STORAGE_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/net/core/bpf_sk_storage.c";
+const LINUX_SOCK_MAP_V5_10_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.10/net/core/sock_map.c";
+const LINUX_PROG_ITER_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/prog_iter.c";
+const LINUX_LINK_ITER_V5_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/link_iter.c";
+const LINUX_TCP_IPV4_V5_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/tcp_ipv4.c";
+const LINUX_UDP_V5_9_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c";
+const LINUX_AF_UNIX_V5_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c";
+const LINUX_KALLSYMS_V6_0_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c";
 
 impl ProgramCompatibilityRequirement {
     pub fn all() -> &'static [ProgramCompatibilityRequirement] {
@@ -1675,6 +1707,17 @@ impl ProgramCompatibilityRequirement {
             Self::ExtensionProgram => "extension-program",
             Self::SyscallProgram => "syscall-program",
             Self::BpfIterator => "bpf-iterator",
+            Self::BpfIteratorTaskVmaTarget => "bpf-iterator-target-task-vma",
+            Self::BpfIteratorCgroupTarget => "bpf-iterator-target-cgroup",
+            Self::BpfIteratorBpfMapElemTarget => "bpf-iterator-target-bpf-map-elem",
+            Self::BpfIteratorBpfSkStorageMapTarget => "bpf-iterator-target-bpf-sk-storage-map",
+            Self::BpfIteratorSockmapTarget => "bpf-iterator-target-sockmap",
+            Self::BpfIteratorBpfProgTarget => "bpf-iterator-target-bpf-prog",
+            Self::BpfIteratorBpfLinkTarget => "bpf-iterator-target-bpf-link",
+            Self::BpfIteratorTcpTarget => "bpf-iterator-target-tcp",
+            Self::BpfIteratorUdpTarget => "bpf-iterator-target-udp",
+            Self::BpfIteratorUnixTarget => "bpf-iterator-target-unix",
+            Self::BpfIteratorKsymTarget => "bpf-iterator-target-ksym",
             Self::XdpMultiBuffer => "xdp-multi-buffer",
             Self::FlowDissector => "flow-dissector",
             Self::Tcx => "tcx",
@@ -1725,6 +1768,19 @@ impl ProgramCompatibilityRequirement {
             Self::ExtensionProgram => "BPF extension/freplace target compatibility",
             Self::SyscallProgram => "BPF syscall program support",
             Self::BpfIterator => "BPF iterator target support",
+            Self::BpfIteratorTaskVmaTarget => "BPF task_vma iterator target support",
+            Self::BpfIteratorCgroupTarget => "BPF cgroup iterator target support",
+            Self::BpfIteratorBpfMapElemTarget => "BPF bpf_map_elem iterator target support",
+            Self::BpfIteratorBpfSkStorageMapTarget => {
+                "BPF bpf_sk_storage_map iterator target support"
+            }
+            Self::BpfIteratorSockmapTarget => "BPF sockmap iterator target support",
+            Self::BpfIteratorBpfProgTarget => "BPF bpf_prog iterator target support",
+            Self::BpfIteratorBpfLinkTarget => "BPF bpf_link iterator target support",
+            Self::BpfIteratorTcpTarget => "BPF TCP iterator target support",
+            Self::BpfIteratorUdpTarget => "BPF UDP iterator target support",
+            Self::BpfIteratorUnixTarget => "BPF UNIX iterator target support",
+            Self::BpfIteratorKsymTarget => "BPF ksymbol iterator target support",
             Self::XdpMultiBuffer => "XDP multi-buffer section support",
             Self::FlowDissector => "BPF flow-dissector attach support",
             Self::Tcx => "TCX attach support",
@@ -1760,6 +1816,17 @@ impl ProgramCompatibilityRequirement {
             Self::SchedExt => "struct-ops-family",
             Self::SkReuseportMigration | Self::CgroupUnixSockAddr => "attach-mode",
             Self::SleepableProgram | Self::XdpMultiBuffer => "section-feature",
+            Self::BpfIteratorTaskVmaTarget
+            | Self::BpfIteratorCgroupTarget
+            | Self::BpfIteratorBpfMapElemTarget
+            | Self::BpfIteratorBpfSkStorageMapTarget
+            | Self::BpfIteratorSockmapTarget
+            | Self::BpfIteratorBpfProgTarget
+            | Self::BpfIteratorBpfLinkTarget
+            | Self::BpfIteratorTcpTarget
+            | Self::BpfIteratorUdpTarget
+            | Self::BpfIteratorUnixTarget
+            | Self::BpfIteratorKsymTarget => "iterator-target",
             Self::StructOps => "object-loader",
             _ => "program-feature",
         }
@@ -1807,7 +1874,18 @@ impl ProgramCompatibilityRequirement {
             | Self::SleepableProgram
             | Self::KprobeMulti
             | Self::UprobeMulti
-            | Self::BpfIterator => "host-safe",
+            | Self::BpfIterator
+            | Self::BpfIteratorTaskVmaTarget
+            | Self::BpfIteratorCgroupTarget
+            | Self::BpfIteratorBpfMapElemTarget
+            | Self::BpfIteratorBpfSkStorageMapTarget
+            | Self::BpfIteratorSockmapTarget
+            | Self::BpfIteratorBpfProgTarget
+            | Self::BpfIteratorBpfLinkTarget
+            | Self::BpfIteratorTcpTarget
+            | Self::BpfIteratorUdpTarget
+            | Self::BpfIteratorUnixTarget
+            | Self::BpfIteratorKsymTarget => "host-safe",
         }
     }
 
@@ -1832,6 +1910,17 @@ impl ProgramCompatibilityRequirement {
             Self::ExtensionProgram => Some("5.6"),
             Self::SyscallProgram => Some("5.14"),
             Self::BpfIterator => Some("5.8"),
+            Self::BpfIteratorTaskVmaTarget => Some("5.12"),
+            Self::BpfIteratorCgroupTarget => Some("6.1"),
+            Self::BpfIteratorBpfMapElemTarget => Some("5.9"),
+            Self::BpfIteratorBpfSkStorageMapTarget => Some("5.9"),
+            Self::BpfIteratorSockmapTarget => Some("5.10"),
+            Self::BpfIteratorBpfProgTarget => Some("5.9"),
+            Self::BpfIteratorBpfLinkTarget => Some("5.19"),
+            Self::BpfIteratorTcpTarget => Some("5.9"),
+            Self::BpfIteratorUdpTarget => Some("5.9"),
+            Self::BpfIteratorUnixTarget => Some("5.15"),
+            Self::BpfIteratorKsymTarget => Some("6.0"),
             Self::XdpMultiBuffer => Some("5.18"),
             Self::FlowDissector => Some("4.20"),
             Self::Tcx => Some("6.6"),
@@ -1885,6 +1974,17 @@ impl ProgramCompatibilityRequirement {
             Self::SockOpsProgram => LINUX_BPF_H_V4_14_SOURCE,
             Self::NetfilterLink => LINUX_BPF_TYPES_H_V6_4_SOURCE,
             Self::CgroupUnixSockAddr => LINUX_BPF_H_V6_7_SOURCE,
+            Self::BpfIteratorTaskVmaTarget => LINUX_TASK_ITER_V5_12_SOURCE,
+            Self::BpfIteratorCgroupTarget => LINUX_CGROUP_ITER_V6_1_SOURCE,
+            Self::BpfIteratorBpfMapElemTarget => LINUX_MAP_ITER_V5_9_SOURCE,
+            Self::BpfIteratorBpfSkStorageMapTarget => LINUX_BPF_SK_STORAGE_V5_9_SOURCE,
+            Self::BpfIteratorSockmapTarget => LINUX_SOCK_MAP_V5_10_SOURCE,
+            Self::BpfIteratorBpfProgTarget => LINUX_PROG_ITER_V5_9_SOURCE,
+            Self::BpfIteratorBpfLinkTarget => LINUX_LINK_ITER_V5_19_SOURCE,
+            Self::BpfIteratorTcpTarget => LINUX_TCP_IPV4_V5_9_SOURCE,
+            Self::BpfIteratorUdpTarget => LINUX_UDP_V5_9_SOURCE,
+            Self::BpfIteratorUnixTarget => LINUX_AF_UNIX_V5_15_SOURCE,
+            Self::BpfIteratorKsymTarget => LINUX_KALLSYMS_V6_0_SOURCE,
             _ => EBPF_TIMELINE_SOURCE,
         })
     }

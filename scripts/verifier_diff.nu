@@ -227,6 +227,61 @@ const KERNEL_FEATURE_PROG_ITER = {
     min_kernel: "5.8"
     source: "https://docs.ebpf.io/linux/timeline/"
 }
+const KERNEL_FEATURE_ITER_TARGET_TASK_VMA = {
+    key: "iter-target:task_vma"
+    min_kernel: "5.12"
+    source: "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_CGROUP = {
+    key: "iter-target:cgroup"
+    min_kernel: "6.1"
+    source: "https://github.com/torvalds/linux/blob/v6.1/kernel/bpf/cgroup_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_BPF_MAP_ELEM = {
+    key: "iter-target:bpf_map_elem"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/map_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_BPF_SK_STORAGE_MAP = {
+    key: "iter-target:bpf_sk_storage_map"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/core/bpf_sk_storage.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_SOCKMAP = {
+    key: "iter-target:sockmap"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/net/core/sock_map.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_BPF_PROG = {
+    key: "iter-target:bpf_prog"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/prog_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_BPF_LINK = {
+    key: "iter-target:bpf_link"
+    min_kernel: "5.19"
+    source: "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/link_iter.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_TCP = {
+    key: "iter-target:tcp"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/tcp_ipv4.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_UDP = {
+    key: "iter-target:udp"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_UNIX = {
+    key: "iter-target:unix"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c"
+}
+const KERNEL_FEATURE_ITER_TARGET_KSYM = {
+    key: "iter-target:ksym"
+    min_kernel: "6.0"
+    source: "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c"
+}
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
@@ -1310,6 +1365,151 @@ const KERNEL_FEATURE_CTX_CGROUP_SOCKOPT_SK = {
     key: "ctx:sk"
     min_kernel: "5.3"
     source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_ITER_META = {
+    key: "ctx:iter_meta"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_ITER_TASK = {
+    key: "ctx:iter_task"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_TASK_VMA_TASK = {
+    key: "ctx:iter_task"
+    min_kernel: "5.12"
+    source: "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_FD = {
+    key: "ctx:iter_fd"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_FILE = {
+    key: "ctx:iter_file"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_VMA = {
+    key: "ctx:iter_vma"
+    min_kernel: "5.12"
+    source: "https://github.com/torvalds/linux/blob/v5.12/kernel/bpf/task_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_CGROUP = {
+    key: "ctx:iter_cgroup"
+    min_kernel: "6.1"
+    source: "https://github.com/torvalds/linux/blob/v6.1/kernel/bpf/cgroup_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_MAP = {
+    key: "ctx:iter_map"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/map_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_MAP_ELEM_MAP = {
+    key: "ctx:iter_map"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/map_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_MAP_KEY = {
+    key: "ctx:iter_key"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/map_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_MAP_VALUE = {
+    key: "ctx:iter_value"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/map_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_SK_STORAGE_MAP = {
+    key: "ctx:iter_map"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/core/bpf_sk_storage.c"
+}
+const KERNEL_FEATURE_CTX_ITER_SK_STORAGE_VALUE = {
+    key: "ctx:iter_value"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/core/bpf_sk_storage.c"
+}
+const KERNEL_FEATURE_CTX_ITER_SK_STORAGE_SOCK = {
+    key: "ctx:iter_sock"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/core/bpf_sk_storage.c"
+}
+const KERNEL_FEATURE_CTX_ITER_SOCKMAP_MAP = {
+    key: "ctx:iter_map"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/net/core/sock_map.c"
+}
+const KERNEL_FEATURE_CTX_ITER_SOCKMAP_KEY = {
+    key: "ctx:iter_key"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/net/core/sock_map.c"
+}
+const KERNEL_FEATURE_CTX_ITER_SOCKMAP_SOCK = {
+    key: "ctx:iter_sock"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/net/core/sock_map.c"
+}
+const KERNEL_FEATURE_CTX_ITER_PROG = {
+    key: "ctx:iter_prog"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/kernel/bpf/prog_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_LINK = {
+    key: "ctx:iter_link"
+    min_kernel: "5.19"
+    source: "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/link_iter.c"
+}
+const KERNEL_FEATURE_CTX_ITER_TCP_SK_COMMON = {
+    key: "ctx:iter_sk_common"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/tcp_ipv4.c"
+}
+const KERNEL_FEATURE_CTX_ITER_TCP_UID = {
+    key: "ctx:iter_uid"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/tcp_ipv4.c"
+}
+const KERNEL_FEATURE_CTX_ITER_UDP_SK = {
+    key: "ctx:iter_udp_sk"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c"
+}
+const KERNEL_FEATURE_CTX_ITER_UDP_UID = {
+    key: "ctx:iter_uid"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c"
+}
+const KERNEL_FEATURE_CTX_ITER_UDP_BUCKET = {
+    key: "ctx:iter_bucket"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/net/ipv4/udp.c"
+}
+const KERNEL_FEATURE_CTX_ITER_UNIX_SK = {
+    key: "ctx:iter_unix_sk"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c"
+}
+const KERNEL_FEATURE_CTX_ITER_UNIX_UID = {
+    key: "ctx:iter_uid"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/net/unix/af_unix.c"
+}
+const KERNEL_FEATURE_CTX_ITER_IPV6_ROUTE = {
+    key: "ctx:iter_ipv6_route"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/net/ipv6/route.c"
+}
+const KERNEL_FEATURE_CTX_ITER_KSYM = {
+    key: "ctx:iter_ksym"
+    min_kernel: "6.0"
+    source: "https://github.com/torvalds/linux/blob/v6.0/kernel/kallsyms.c"
+}
+const KERNEL_FEATURE_CTX_ITER_NETLINK_SK = {
+    key: "ctx:iter_netlink_sk"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/net/netlink/af_netlink.c"
 }
 const KERNEL_FEATURE_CTX_SK_REUSEPORT_PACKET_LEN = {
     key: "ctx:packet_len"
@@ -5806,58 +6006,111 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
 
-    if ($target_text | str starts-with "iter:") and ($field in [
-        "task"
-        "iter_task"
-        "meta"
-        "iter_meta"
-        "fd"
-        "iter_fd"
-        "file"
-        "iter_file"
-        "vma"
-        "iter_vma"
-        "cgroup"
-        "iter_cgroup"
-        "map"
-        "iter_map"
-        "key"
-        "iter_key"
-        "value"
-        "iter_value"
-        "prog"
-        "iter_prog"
-        "link"
-        "iter_link"
-        "sk_common"
-        "sock_common"
-        "iter_sk_common"
-        "udp_sk"
-        "iter_udp_sk"
-        "unix_sk"
-        "iter_unix_sk"
-        "uid"
-        "iter_uid"
-        "bucket"
-        "iter_bucket"
-        "dmabuf"
-        "iter_dmabuf"
-        "rt"
-        "route"
-        "ipv6_route"
-        "iter_ipv6_route"
-        "cache"
-        "kmem_cache"
-        "iter_kmem_cache"
-        "ksym"
-        "iter_ksym"
-        "netlink_sk"
-        "iter_netlink_sk"
-        "sk"
-        "sock"
-        "iter_sock"
-    ]) {
-        return { matched: true, feature: null }
+    if ($target_text | str starts-with "iter:") {
+        let iter_target = ($target_text | split row ":" | get 1)
+
+        if $field == "meta" or $field == "iter_meta" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_META }
+        }
+        if $field == "task" or $field == "iter_task" {
+            if $iter_target == "task_vma" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_TASK_VMA_TASK }
+            }
+            if $iter_target in ["task" "task_file"] {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_TASK }
+            }
+        }
+        if ($field == "fd" or $field == "iter_fd") and $iter_target == "task_file" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_FD }
+        }
+        if ($field == "file" or $field == "iter_file") and $iter_target == "task_file" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_FILE }
+        }
+        if ($field == "vma" or $field == "iter_vma") and $iter_target == "task_vma" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_VMA }
+        }
+        if ($field == "cgroup" or $field == "iter_cgroup") and $iter_target == "cgroup" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_CGROUP }
+        }
+        if $field == "map" or $field == "iter_map" {
+            if $iter_target == "bpf_map" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_MAP }
+            }
+            if $iter_target == "bpf_map_elem" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_MAP_ELEM_MAP }
+            }
+            if $iter_target == "bpf_sk_storage_map" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_SK_STORAGE_MAP }
+            }
+            if $iter_target == "sockmap" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_SOCKMAP_MAP }
+            }
+        }
+        if $field == "key" or $field == "iter_key" {
+            if $iter_target == "bpf_map_elem" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_MAP_KEY }
+            }
+            if $iter_target == "sockmap" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_SOCKMAP_KEY }
+            }
+        }
+        if $field == "value" or $field == "iter_value" {
+            if $iter_target == "bpf_map_elem" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_MAP_VALUE }
+            }
+            if $iter_target == "bpf_sk_storage_map" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_SK_STORAGE_VALUE }
+            }
+        }
+        if $field == "sk" or $field == "sock" or $field == "iter_sock" {
+            if $iter_target == "bpf_sk_storage_map" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_SK_STORAGE_SOCK }
+            }
+            if $iter_target == "sockmap" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_SOCKMAP_SOCK }
+            }
+        }
+        if ($field == "prog" or $field == "iter_prog") and $iter_target == "bpf_prog" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_PROG }
+        }
+        if ($field == "link" or $field == "iter_link") and $iter_target == "bpf_link" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_LINK }
+        }
+        if ($field == "sk_common" or $field == "sock_common" or $field == "iter_sk_common") and $iter_target == "tcp" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_TCP_SK_COMMON }
+        }
+        if ($field == "udp_sk" or $field == "iter_udp_sk") and $iter_target == "udp" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_UDP_SK }
+        }
+        if ($field == "unix_sk" or $field == "iter_unix_sk") and $iter_target == "unix" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_UNIX_SK }
+        }
+        if $field == "uid" or $field == "iter_uid" {
+            if $iter_target == "tcp" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_TCP_UID }
+            }
+            if $iter_target == "udp" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_UDP_UID }
+            }
+            if $iter_target == "unix" {
+                return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_UNIX_UID }
+            }
+        }
+        if ($field == "bucket" or $field == "iter_bucket") and $iter_target == "udp" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_UDP_BUCKET }
+        }
+        if ($field == "rt" or $field == "route" or $field == "ipv6_route" or $field == "iter_ipv6_route") and $iter_target == "ipv6_route" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_IPV6_ROUTE }
+        }
+        if ($field == "ksym" or $field == "iter_ksym") and $iter_target == "ksym" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_KSYM }
+        }
+        if ($field == "netlink_sk" or $field == "iter_netlink_sk") and $iter_target == "netlink" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_ITER_NETLINK_SK }
+        }
+        if $field in ["dmabuf" "iter_dmabuf" "cache" "kmem_cache" "iter_kmem_cache"] {
+            return { matched: true, feature: null }
+        }
     }
 
     { matched: false, feature: null }
@@ -6248,6 +6501,30 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_PROG_LIRC_MODE2)
     } else if ($target | str starts-with "iter:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_ITER)
+        let iter_target = ($target | split row ":" | get 1)
+        if $iter_target == "task_vma" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TASK_VMA)
+        } else if $iter_target == "cgroup" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_CGROUP)
+        } else if $iter_target == "bpf_map_elem" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_MAP_ELEM)
+        } else if $iter_target == "bpf_sk_storage_map" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_SK_STORAGE_MAP)
+        } else if $iter_target == "sockmap" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_SOCKMAP)
+        } else if $iter_target == "bpf_prog" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_PROG)
+        } else if $iter_target == "bpf_link" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_BPF_LINK)
+        } else if $iter_target == "tcp" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_TCP)
+        } else if $iter_target == "udp" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UDP)
+        } else if $iter_target == "unix" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_UNIX)
+        } else if $iter_target == "ksym" {
+            $features = ($features | append $KERNEL_FEATURE_ITER_TARGET_KSYM)
+        }
     } else if ($target | str starts-with "syscall:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_SYSCALL)
     } else if ($target | str starts-with "freplace:") {
