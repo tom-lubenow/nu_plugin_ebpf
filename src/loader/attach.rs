@@ -341,6 +341,15 @@ fn current_kernel_minimum_error(
     kernel_minimum_requirement_detail(requirements, &current_kernel).map(LoadError::Attach)
 }
 
+fn current_kernel_struct_ops_minimum_error(value_type_name: &str) -> Option<LoadError> {
+    let current_kernel = current_kernel_release()?;
+    let requirements = ProgramSpec::StructOps {
+        value_type_name: value_type_name.to_string(),
+    }
+    .compatibility_requirements();
+    kernel_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
+}
+
 fn current_kernel_map_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let requirements = object.map_compatibility_requirements();
     if requirements.is_empty() {
@@ -1712,6 +1721,28 @@ impl EbpfState {
             return Err(LoadError::Load(
                 "struct_ops objects do not yet support pinned map sharing".to_string(),
             ));
+        }
+
+        if let Some(err) = current_kernel_struct_ops_minimum_error(value_type_name) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_map_minimum_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_map_value_minimum_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_global_minimum_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_helper_minimum_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_kfunc_minimum_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = current_kernel_context_field_minimum_error(object) {
+            return Err(err);
         }
 
         let elf_bytes = object.to_elf()?;

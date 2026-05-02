@@ -1707,6 +1707,22 @@ fn test_kernel_minimum_requirement_detail_accepts_newer_kernel() {
 }
 
 #[test]
+fn test_kernel_minimum_requirement_detail_reports_sched_ext_struct_ops_floor() {
+    let requirements = ProgramSpec::parse("struct_ops:sched_ext_ops")
+        .expect("sched_ext struct_ops spec should parse")
+        .compatibility_requirements();
+    let msg = kernel_minimum_requirement_detail(&requirements, "6.11.0-test")
+        .expect("kernel 6.11 should be too old for sched_ext struct_ops");
+
+    assert!(msg.contains("parsed target requires kernel>=6.12"));
+    assert!(msg.contains("current kernel is 6.11.0-test"));
+    assert!(msg.contains(ProgramCompatibilityRequirement::StructOps.description()));
+    assert!(msg.contains(ProgramCompatibilityRequirement::SchedExt.description()));
+    assert!(msg.contains("kernel>=5.6"));
+    assert!(msg.contains("kernel>=6.12"));
+}
+
+#[test]
 fn test_kernel_map_minimum_requirement_detail_reports_too_old_kernel() {
     let requirements = [
         MapKind::Hash.compatibility_requirement(),
