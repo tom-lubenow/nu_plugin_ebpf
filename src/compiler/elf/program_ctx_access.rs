@@ -1983,6 +1983,22 @@ mod tests {
         }
     }
 
+    fn assert_access_surface_names_resolve(
+        program_type: EbpfProgramType,
+        table_name: &str,
+        surfaces: &[ContextFieldAccessSurfaceSpec],
+    ) {
+        for surface in surfaces {
+            assert_eq!(
+                program_type.resolve_ctx_field_name(surface.field_name),
+                Ok(surface.field.clone()),
+                "context access surface name '{}' in {table_name} should resolve to {:?} for {program_type:?}",
+                surface.field_name,
+                surface.field
+            );
+        }
+    }
+
     #[test]
     fn test_context_access_surface_tables_are_unique() {
         for (table_name, surfaces) in [
@@ -2032,6 +2048,37 @@ mod tests {
                 "duplicate program access surface for {:?}",
                 surface.program_type
             );
+        }
+    }
+
+    #[test]
+    fn test_context_access_surface_names_resolve_to_fields() {
+        for surface in PROGRAM_CTX_FIELD_ACCESS_SURFACES {
+            assert_access_surface_names_resolve(
+                surface.program_type,
+                "program context access surfaces",
+                surface.surfaces,
+            );
+        }
+
+        for (program_type, table_name, surfaces) in [
+            (
+                EbpfProgramType::CgroupSock,
+                "cgroup_sock context access surfaces",
+                CGROUP_SOCK_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            (
+                EbpfProgramType::CgroupSockopt,
+                "cgroup_sockopt context access surfaces",
+                CGROUP_SOCKOPT_CTX_FIELD_ACCESS_SURFACES,
+            ),
+            (
+                EbpfProgramType::CgroupSockAddr,
+                "cgroup_sock_addr context access surfaces",
+                CGROUP_SOCK_ADDR_CTX_FIELD_ACCESS_SURFACES,
+            ),
+        ] {
+            assert_access_surface_names_resolve(program_type, table_name, surfaces);
         }
     }
 

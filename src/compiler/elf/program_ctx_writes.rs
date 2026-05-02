@@ -874,6 +874,25 @@ mod tests {
         }
     }
 
+    fn assert_write_surface_field_names_resolve(
+        program_type: EbpfProgramType,
+        table_name: &str,
+        surfaces: &[ContextWriteSurfaceSpec],
+    ) {
+        for surface in surfaces {
+            let Some(field) = surface.field.as_ref() else {
+                continue;
+            };
+            assert_eq!(
+                program_type.resolve_ctx_field_name(surface.field_name),
+                Ok(field.clone()),
+                "writable context field '{}' in {table_name} should resolve to {:?} for {program_type:?}",
+                surface.field_name,
+                field
+            );
+        }
+    }
+
     #[test]
     fn test_context_write_surface_tables_are_unique() {
         for (table_name, surfaces) in [
@@ -923,6 +942,37 @@ mod tests {
                 "duplicate program write surface for {:?}",
                 surface.program_type
             );
+        }
+    }
+
+    #[test]
+    fn test_context_write_surface_field_names_resolve() {
+        for surface in PROGRAM_CTX_WRITE_SURFACES {
+            assert_write_surface_field_names_resolve(
+                surface.program_type,
+                "program context write surfaces",
+                surface.surfaces,
+            );
+        }
+
+        for (program_type, table_name, surfaces) in [
+            (
+                EbpfProgramType::CgroupSock,
+                "cgroup_sock context write surfaces",
+                CGROUP_SOCK_CTX_WRITE_SURFACES,
+            ),
+            (
+                EbpfProgramType::CgroupSockopt,
+                "cgroup_sockopt context write surfaces",
+                CGROUP_SOCKOPT_CTX_WRITE_SURFACES,
+            ),
+            (
+                EbpfProgramType::CgroupSockAddr,
+                "cgroup_sock_addr context write surfaces",
+                CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES,
+            ),
+        ] {
+            assert_write_surface_field_names_resolve(program_type, table_name, surfaces);
         }
     }
 
