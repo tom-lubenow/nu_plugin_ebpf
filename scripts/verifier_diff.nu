@@ -1256,6 +1256,16 @@ const KERNEL_FEATURE_CTX_SYSCTL_NEW_VALUE = {
     min_kernel: "5.2"
     source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SYSCTL_WRITE = {
+    key: "ctx:write"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SYSCTL_FILE_POS = {
+    key: "ctx:file_pos"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_ARG_COUNT = {
     key: "ctx:arg_count"
     min_kernel: "5.17"
@@ -5146,6 +5156,12 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "new_value" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_NEW_VALUE }
+        }
+        if $field == "write" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_WRITE }
+        }
+        if $field == "file_pos" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SYSCTL_FILE_POS }
         }
     }
 

@@ -326,6 +326,8 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::Tstamp, "tstamp", "5.0"),
         (CtxField::WireLen, "wire_len", "5.0"),
         (CtxField::GsoSegs, "gso_segs", "5.1"),
+        (CtxField::SysctlWrite, "write", "5.2"),
+        (CtxField::SysctlFilePos, "file_pos", "5.2"),
         (CtxField::GsoSize, "gso_size", "5.7"),
         (CtxField::EgressIfindex, "egress_ifindex", "5.8"),
         (CtxField::SockOpsSkbLen, "skb_len", "5.10"),

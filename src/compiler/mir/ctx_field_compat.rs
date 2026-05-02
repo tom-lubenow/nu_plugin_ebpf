@@ -21,6 +21,8 @@ const LINUX_BPF_H_V5_0_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_8_SOURCE: &str =
@@ -174,6 +176,7 @@ fn direct_context_field_kernel_floor(
         CtxField::FlowKeys => ("4.20", LINUX_BPF_H_V4_20_SOURCE),
         CtxField::Tstamp | CtxField::WireLen => ("5.0", LINUX_BPF_H_V5_0_SOURCE),
         CtxField::GsoSegs => ("5.1", LINUX_BPF_H_V5_1_SOURCE),
+        CtxField::SysctlWrite | CtxField::SysctlFilePos => ("5.2", LINUX_BPF_H_V5_2_SOURCE),
         CtxField::GsoSize => ("5.7", LINUX_BPF_H_V5_7_SOURCE),
         CtxField::EgressIfindex => ("5.8", LINUX_BPF_H_V5_8_SOURCE),
         CtxField::SockOpsSkbLen | CtxField::SockOpsSkbTcpFlags => {
