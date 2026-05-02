@@ -230,27 +230,167 @@ const KERNEL_FEATURE_PROG_ITER = {
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
-    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_HASH/"
+    source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_ARRAY = {
+    key: "map:BPF_MAP_TYPE_ARRAY"
+    min_kernel: "3.19"
+    source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_MAP_CGROUP_ARRAY = {
     key: "map:BPF_MAP_TYPE_CGROUP_ARRAY"
     min_kernel: "4.8"
-    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_CGROUP_ARRAY/"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_LRU_HASH = {
+    key: "map:BPF_MAP_TYPE_LRU_HASH"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_LPM_TRIE = {
+    key: "map:BPF_MAP_TYPE_LPM_TRIE"
+    min_kernel: "4.11"
+    source: "https://github.com/torvalds/linux/blob/v4.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_PERCPU_HASH = {
+    key: "map:BPF_MAP_TYPE_PERCPU_HASH"
+    min_kernel: "4.6"
+    source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_PERCPU_ARRAY = {
+    key: "map:BPF_MAP_TYPE_PERCPU_ARRAY"
+    min_kernel: "4.6"
+    source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_LRU_PERCPU_HASH = {
+    key: "map:BPF_MAP_TYPE_LRU_PERCPU_HASH"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY = {
+    key: "map:BPF_MAP_TYPE_PERF_EVENT_ARRAY"
+    min_kernel: "4.3"
+    source: "https://github.com/torvalds/linux/blob/v4.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_STACK_TRACE = {
+    key: "map:BPF_MAP_TYPE_STACK_TRACE"
+    min_kernel: "4.6"
+    source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_ARRAY_OF_MAPS = {
+    key: "map:BPF_MAP_TYPE_ARRAY_OF_MAPS"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_HASH_OF_MAPS = {
+    key: "map:BPF_MAP_TYPE_HASH_OF_MAPS"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_QUEUE = {
+    key: "map:BPF_MAP_TYPE_QUEUE"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_STACK = {
+    key: "map:BPF_MAP_TYPE_STACK"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_BLOOM_FILTER = {
+    key: "map:BPF_MAP_TYPE_BLOOM_FILTER"
+    min_kernel: "5.16"
+    source: "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_RINGBUF = {
+    key: "map:BPF_MAP_TYPE_RINGBUF"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_USER_RINGBUF = {
+    key: "map:BPF_MAP_TYPE_USER_RINGBUF"
+    min_kernel: "6.1"
+    source: "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_MAP_DEVMAP = {
     key: "map:BPF_MAP_TYPE_DEVMAP"
     min_kernel: "4.14"
-    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_DEVMAP/"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_DEVMAP_HASH = {
+    key: "map:BPF_MAP_TYPE_DEVMAP_HASH"
+    min_kernel: "5.4"
+    source: "https://github.com/torvalds/linux/blob/v5.4/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_CPUMAP = {
+    key: "map:BPF_MAP_TYPE_CPUMAP"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_XSKMAP = {
+    key: "map:BPF_MAP_TYPE_XSKMAP"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_MAP_PROG_ARRAY = {
     key: "map:BPF_MAP_TYPE_PROG_ARRAY"
     min_kernel: "4.2"
-    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_PROG_ARRAY/"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_MAP_SOCKMAP = {
     key: "map:BPF_MAP_TYPE_SOCKMAP"
     min_kernel: "4.14"
-    source: "https://docs.ebpf.io/linux/map-type/BPF_MAP_TYPE_SOCKMAP/"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_SOCKHASH = {
+    key: "map:BPF_MAP_TYPE_SOCKHASH"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_CGROUP_STORAGE = {
+    key: "map:BPF_MAP_TYPE_CGROUP_STORAGE"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_REUSEPORT_SOCKARRAY = {
+    key: "map:BPF_MAP_TYPE_REUSEPORT_SOCKARRAY"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_PERCPU_CGROUP_STORAGE = {
+    key: "map:BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_SK_STORAGE = {
+    key: "map:BPF_MAP_TYPE_SK_STORAGE"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_STRUCT_OPS = {
+    key: "map:BPF_MAP_TYPE_STRUCT_OPS"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_INODE_STORAGE = {
+    key: "map:BPF_MAP_TYPE_INODE_STORAGE"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_TASK_STORAGE = {
+    key: "map:BPF_MAP_TYPE_TASK_STORAGE"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_CGRP_STORAGE = {
+    key: "map:BPF_MAP_TYPE_CGRP_STORAGE"
+    min_kernel: "6.2"
+    source: "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_MAP_ARENA = {
+    key: "map:BPF_MAP_TYPE_ARENA"
+    min_kernel: "6.9"
+    source: "https://github.com/torvalds/linux/blob/v6.9/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_GLOBAL_DATA_SECTIONS = {
     key: "global:bpf-data-sections"
@@ -487,6 +627,43 @@ const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     min_kernel: "6.1"
     source: "https://docs.ebpf.io/linux/helper-function/bpf_user_ringbuf_drain/"
 }
+
+const MAP_KIND_KERNEL_FEATURES = [
+    { kind: "array", feature: $KERNEL_FEATURE_MAP_ARRAY }
+    { kind: "array-of-maps", feature: $KERNEL_FEATURE_MAP_ARRAY_OF_MAPS }
+    { kind: "arena", feature: $KERNEL_FEATURE_MAP_ARENA }
+    { kind: "bloom-filter", feature: $KERNEL_FEATURE_MAP_BLOOM_FILTER }
+    { kind: "cgroup-storage", feature: $KERNEL_FEATURE_MAP_CGRP_STORAGE }
+    { kind: "cgroup-array", feature: $KERNEL_FEATURE_MAP_CGROUP_ARRAY }
+    { kind: "cgrp-storage", feature: $KERNEL_FEATURE_MAP_CGRP_STORAGE }
+    { kind: "cpumap", feature: $KERNEL_FEATURE_MAP_CPUMAP }
+    { kind: "deprecated-cgroup-storage", feature: $KERNEL_FEATURE_MAP_CGROUP_STORAGE }
+    { kind: "devmap", feature: $KERNEL_FEATURE_MAP_DEVMAP }
+    { kind: "devmap-hash", feature: $KERNEL_FEATURE_MAP_DEVMAP_HASH }
+    { kind: "hash", feature: $KERNEL_FEATURE_MAP_HASH }
+    { kind: "hash-of-maps", feature: $KERNEL_FEATURE_MAP_HASH_OF_MAPS }
+    { kind: "inode-storage", feature: $KERNEL_FEATURE_MAP_INODE_STORAGE }
+    { kind: "lpm-trie", feature: $KERNEL_FEATURE_MAP_LPM_TRIE }
+    { kind: "lru-hash", feature: $KERNEL_FEATURE_MAP_LRU_HASH }
+    { kind: "lru-per-cpu-hash", feature: $KERNEL_FEATURE_MAP_LRU_PERCPU_HASH }
+    { kind: "per-cpu-array", feature: $KERNEL_FEATURE_MAP_PERCPU_ARRAY }
+    { kind: "per-cpu-cgroup-storage", feature: $KERNEL_FEATURE_MAP_PERCPU_CGROUP_STORAGE }
+    { kind: "per-cpu-hash", feature: $KERNEL_FEATURE_MAP_PERCPU_HASH }
+    { kind: "perf-event-array", feature: $KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY }
+    { kind: "prog-array", feature: $KERNEL_FEATURE_MAP_PROG_ARRAY }
+    { kind: "queue", feature: $KERNEL_FEATURE_MAP_QUEUE }
+    { kind: "reuseport-sockarray", feature: $KERNEL_FEATURE_MAP_REUSEPORT_SOCKARRAY }
+    { kind: "ringbuf", feature: $KERNEL_FEATURE_MAP_RINGBUF }
+    { kind: "sk-storage", feature: $KERNEL_FEATURE_MAP_SK_STORAGE }
+    { kind: "sockhash", feature: $KERNEL_FEATURE_MAP_SOCKHASH }
+    { kind: "sockmap", feature: $KERNEL_FEATURE_MAP_SOCKMAP }
+    { kind: "stack", feature: $KERNEL_FEATURE_MAP_STACK }
+    { kind: "stack-trace", feature: $KERNEL_FEATURE_MAP_STACK_TRACE }
+    { kind: "struct-ops", feature: $KERNEL_FEATURE_MAP_STRUCT_OPS }
+    { kind: "task-storage", feature: $KERNEL_FEATURE_MAP_TASK_STORAGE }
+    { kind: "user-ringbuf", feature: $KERNEL_FEATURE_MAP_USER_RINGBUF }
+    { kind: "xskmap", feature: $KERNEL_FEATURE_MAP_XSKMAP }
+]
 
 const FIXTURES = [
     {
@@ -3961,6 +4138,46 @@ def append-missing-kernel-features [features additions] {
     $result
 }
 
+def map-kind-kernel-feature [kind: string] {
+    let matches = ($MAP_KIND_KERNEL_FEATURES | where {|entry| $entry.kind == $kind })
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first | get feature
+    }
+}
+
+def normalize-map-kind-token [token: string] {
+    $token
+    | str trim
+    | str replace ")" ""
+    | str replace "," ""
+    | str replace "\"" ""
+    | str replace "'" ""
+}
+
+def program-map-kernel-features [source: string] {
+    mut features = []
+
+    for line in ($source | lines) {
+        let parts = ($line | split row "--kind ")
+        if ($parts | length) > 1 {
+            let raw_kind = (($parts | get 1) | str trim | split row " " | first)
+            let kind = (normalize-map-kind-token $raw_kind)
+            let feature = (map-kind-kernel-feature $kind)
+            if $feature != null {
+                $features = (append-missing-kernel-features $features [$feature])
+            }
+        }
+    }
+
+    if ($source | str contains "tail-call") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PROG_ARRAY])
+    }
+
+    $features
+}
+
 def target-kernel-features [target] {
     if $target == null {
         return []
@@ -4095,6 +4312,7 @@ def target-kernel-features [target] {
 def fixture-kernel-features [fixture] {
     mut features = (optional $fixture kernel_features [])
     $features = (append-missing-kernel-features $features (target-kernel-features ($fixture | get -o target)))
+    $features = (append-missing-kernel-features $features (program-map-kernel-features (fixture-program $fixture)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
     let legacy_min_kernel_source = ($fixture | get -o min_kernel_source)
