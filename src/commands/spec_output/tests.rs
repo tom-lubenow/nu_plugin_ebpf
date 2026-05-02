@@ -613,6 +613,14 @@ fn test_spec_context_fields_include_cgroup_sockopt_minimum_kernel_metadata() {
         .expect("cgroup_sockopt spec should parse");
     let fields = spec_context_fields(&spec, false);
 
+    let socket = field(&fields, "sk");
+    assert_eq!(socket.minimum_kernel, Some("5.3"));
+    assert!(
+        socket
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.3/include/uapi/linux/bpf.h"))
+    );
+
     for field_name in [
         "level",
         "optname",
@@ -663,6 +671,14 @@ fn test_spec_context_fields_include_cgroup_sock_addr_minimum_kernel_metadata() {
             .minimum_kernel_source
             .is_some_and(|source| source.contains("/v4.18/include/uapi/linux/bpf.h"))
     );
+
+    let socket = field(&fields, "sk");
+    assert_eq!(socket.minimum_kernel, Some("5.3"));
+    assert!(
+        socket
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.3/include/uapi/linux/bpf.h"))
+    );
 }
 
 #[test]
@@ -680,6 +696,14 @@ fn test_spec_context_fields_include_cgroup_sock_minimum_kernel_metadata() {
                 .is_some_and(|source| source.contains("/v4.10/include/uapi/linux/bpf.h"))
         );
     }
+
+    let socket = field(&create_fields, "sk");
+    assert_eq!(socket.minimum_kernel, Some("4.10"));
+    assert!(
+        socket
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.10/include/uapi/linux/bpf.h"))
+    );
 
     for field_name in ["mark", "priority"] {
         let field = field(&create_fields, field_name);
@@ -756,6 +780,14 @@ fn test_spec_context_fields_include_sk_lookup_minimum_kernel_metadata() {
             .minimum_kernel_source
             .is_some_and(|source| source.contains("/v5.13/include/uapi/linux/bpf.h"))
     );
+
+    let socket = field(&fields, "sk");
+    assert_eq!(socket.minimum_kernel, Some("5.9"));
+    assert!(
+        socket
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.9/include/uapi/linux/bpf.h"))
+    );
 }
 
 #[test]
@@ -817,6 +849,26 @@ fn test_spec_context_fields_include_sk_skb_socket_minimum_kernel_metadata() {
         "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
     ] {
         let spec = ProgramSpec::parse(spec_text).expect("sk_skb spec should parse");
+        let fields = spec_context_fields(&spec, false);
+        let socket = field(&fields, "sk");
+
+        assert_eq!(socket.minimum_kernel, Some("5.1"));
+        assert!(
+            socket
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v5.1/include/uapi/linux/bpf.h"))
+        );
+    }
+}
+
+#[test]
+fn test_spec_context_fields_include_skb_backed_socket_minimum_kernel_metadata() {
+    for spec_text in [
+        "socket_filter:udp4:127.0.0.1:31337",
+        "tc_action:demo-action",
+        "cgroup_skb:/sys/fs/cgroup:egress",
+    ] {
+        let spec = ProgramSpec::parse(spec_text).expect("skb-backed spec should parse");
         let fields = spec_context_fields(&spec, false);
         let socket = field(&fields, "sk");
 

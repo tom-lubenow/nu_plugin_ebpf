@@ -542,6 +542,34 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sock_ops ctx.sk should use bpf_sock_ops socket floor");
     assert_eq!(sock_ops_socket.minimum_kernel(), "5.3");
 
+    let sk_lookup_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::SkLookup),
+    )
+    .expect("sk_lookup ctx.sk should use bpf_sk_lookup socket floor");
+    assert_eq!(sk_lookup_socket.minimum_kernel(), "5.9");
+
+    let cgroup_sock_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::CgroupSock),
+    )
+    .expect("cgroup_sock ctx.sk should use raw bpf_sock context floor");
+    assert_eq!(cgroup_sock_socket.minimum_kernel(), "4.10");
+
+    let cgroup_sock_addr_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::CgroupSockAddr),
+    )
+    .expect("cgroup_sock_addr ctx.sk should use bpf_sock_addr socket floor");
+    assert_eq!(cgroup_sock_addr_socket.minimum_kernel(), "5.3");
+
+    let tc_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::TcAction),
+    )
+    .expect("tc_action ctx.sk should use __sk_buff socket floor");
+    assert_eq!(tc_socket.minimum_kernel(), "5.1");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

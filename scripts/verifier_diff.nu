@@ -1281,10 +1281,35 @@ const KERNEL_FEATURE_CTX_SK_MSG_SK = {
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SK_LOOKUP_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SKB_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.1"
+    source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_SK_SKB_SK = {
     key: "ctx:sk"
     min_kernel: "5.1"
     source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_SK = {
+    key: "ctx:sk"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_CGROUP_SOCKOPT_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_CTX_SK_REUSEPORT_PACKET_LEN = {
     key: "ctx:packet_len"
@@ -5523,6 +5548,16 @@ def target-context-field-alias-kernel-feature [field: string target] {
     ) and $field == "sk" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_SKB_SK }
     }
+    if (
+        ($target_text | str starts-with "socket_filter:")
+        or ($target_text | str starts-with "tc_action:")
+        or ($target_text | str starts-with "tc:")
+        or ($target_text | str starts-with "tcx:")
+        or ($target_text | str starts-with "netkit:")
+        or ($target_text | str starts-with "cgroup_skb:")
+    ) and $field == "sk" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_SKB_SK }
+    }
     if ($target_text | str starts-with "sk_reuseport:") {
         if $field == "packet_len" or $field == "len" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_PACKET_LEN }
@@ -5619,6 +5654,9 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "cgroup_sockopt:") {
+        if $field == "sk" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCKOPT_SK }
+        }
         if $field == "level" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCKOPT_LEVEL }
         }
@@ -5639,6 +5677,9 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "cgroup_sock:") {
+        if $field == "sk" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_SK }
+        }
         if $field == "bound_dev_if" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_BOUND_DEV_IF }
         }
@@ -5683,6 +5724,9 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "sk_lookup:") {
+        if $field == "sk" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_SK }
+        }
         if $field == "family" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_FAMILY }
         }
@@ -5712,6 +5756,9 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "cgroup_sock_addr:") {
+        if $field == "sk" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SK }
+        }
         if $field == "family" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_FAMILY }
         }

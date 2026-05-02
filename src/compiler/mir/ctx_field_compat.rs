@@ -194,6 +194,17 @@ fn direct_context_field_kernel_floor(
         CtxField::Socket if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.3", LINUX_BPF_H_V5_3_SOURCE)
         }
+        CtxField::Socket if prog_type == Some(EbpfProgramType::CgroupSock) => {
+            ("4.10", LINUX_BPF_H_V4_10_SOURCE)
+        }
+        CtxField::Socket
+            if matches!(
+                prog_type,
+                Some(EbpfProgramType::CgroupSockAddr | EbpfProgramType::CgroupSockopt)
+            ) =>
+        {
+            ("5.3", LINUX_BPF_H_V5_3_SOURCE)
+        }
         CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SkMsg) => {
             ("4.17", LINUX_BPF_H_V4_17_SOURCE)
         }
@@ -237,7 +248,16 @@ fn direct_context_field_kernel_floor(
         CtxField::Socket
             if matches!(
                 prog_type,
-                Some(EbpfProgramType::SkSkb | EbpfProgramType::SkSkbParser)
+                Some(
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::Tcx
+                        | EbpfProgramType::Netkit
+                        | EbpfProgramType::TcAction
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                )
             ) =>
         {
             ("5.1", LINUX_BPF_H_V5_1_SOURCE)
@@ -259,6 +279,9 @@ fn direct_context_field_kernel_floor(
         }
         CtxField::LookupCookie if prog_type == Some(EbpfProgramType::SkLookup) => {
             ("5.13", LINUX_BPF_H_V5_13_SOURCE)
+        }
+        CtxField::Socket if prog_type == Some(EbpfProgramType::SkLookup) => {
+            ("5.9", LINUX_BPF_H_V5_9_SOURCE)
         }
         CtxField::PacketLen
         | CtxField::Data
