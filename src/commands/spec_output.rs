@@ -6,7 +6,7 @@ use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
     BpfHelper, ContextFieldLoadGuard, PacketContextKind, ProbeContext,
     ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
-    synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
+    ctx_field_backing_helper, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -22,6 +22,9 @@ struct SpecContextField {
     raw_context_pointer: bool,
     pointer_non_null: bool,
     trusted_btf_kernel_pointer: bool,
+    backing_helper: Option<&'static str>,
+    backing_helper_minimum_kernel: Option<&'static str>,
+    backing_helper_minimum_kernel_source: Option<&'static str>,
     load_guard: Option<&'static str>,
     load_guard_witness: Option<String>,
     load_guard_description: Option<String>,
@@ -533,6 +536,7 @@ fn spec_context_fields(
             let dynamic_type_labels =
                 dynamic_context_field_type_labels(spec, &entry.field, resolve_dynamic_fields);
             let load_guard = spec.ctx_field_load_guard(&entry.field);
+            let backing_helper = ctx_field_backing_helper(&entry.field);
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
@@ -553,6 +557,11 @@ fn spec_context_fields(
                     pointer_non_null: spec.ctx_field_pointer_is_non_null(&entry.field),
                     trusted_btf_kernel_pointer: spec
                         .ctx_field_is_trusted_btf_kernel_pointer(&entry.field),
+                    backing_helper: backing_helper.map(BpfHelper::name),
+                    backing_helper_minimum_kernel: backing_helper
+                        .and_then(BpfHelper::minimum_kernel),
+                    backing_helper_minimum_kernel_source: backing_helper
+                        .and_then(BpfHelper::minimum_kernel_source),
                     load_guard: load_guard.map(context_field_load_guard_label),
                     load_guard_witness: load_guard
                         .map(ContextFieldLoadGuard::witness_field)
@@ -590,6 +599,9 @@ fn context_field_records(
                     "raw_context_pointer" => Value::bool(field.raw_context_pointer, span),
                     "pointer_non_null" => Value::bool(field.pointer_non_null, span),
                     "trusted_btf_kernel_pointer" => Value::bool(field.trusted_btf_kernel_pointer, span),
+                    "backing_helper" => optional_static_str(field.backing_helper, span),
+                    "backing_helper_minimum_kernel" => optional_static_str(field.backing_helper_minimum_kernel, span),
+                    "backing_helper_minimum_kernel_source" => optional_static_str(field.backing_helper_minimum_kernel_source, span),
                     "load_guard" => optional_static_str(field.load_guard, span),
                     "load_guard_witness" => optional_string(field.load_guard_witness, span),
                     "load_guard_description" => optional_string(field.load_guard_description, span),

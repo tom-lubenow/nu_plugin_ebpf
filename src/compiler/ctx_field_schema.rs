@@ -1,5 +1,6 @@
 use crate::compiler::{
     EbpfProgramType,
+    instruction::BpfHelper,
     mir::{AddressSpace, CtxField, MirType, StructField},
 };
 
@@ -870,6 +871,44 @@ pub(crate) fn program_type_ctx_field_is_trusted_btf_kernel_pointer(
 
 pub(crate) fn ctx_field_sock_ops_load_guard(field: &CtxField) -> Option<SockOpsCallbackGuard> {
     base_ctx_field_schema_spec(field).and_then(|spec| spec.sock_ops_load_guard())
+}
+
+pub(crate) fn ctx_field_backing_helper(field: &CtxField) -> Option<BpfHelper> {
+    Some(match field {
+        CtxField::Pid | CtxField::Tgid | CtxField::PidTgid => BpfHelper::GetCurrentPidTgid,
+        CtxField::Uid | CtxField::Gid | CtxField::UidGid => BpfHelper::GetCurrentUidGid,
+        CtxField::Task => BpfHelper::GetCurrentTaskBtf,
+        CtxField::Timestamp => BpfHelper::KtimeGetNs,
+        CtxField::BootTimestamp => BpfHelper::KtimeGetBootNs,
+        CtxField::CoarseTimestamp => BpfHelper::KtimeGetCoarseNs,
+        CtxField::TaiTimestamp => BpfHelper::KtimeGetTaiNs,
+        CtxField::Jiffies => BpfHelper::Jiffies64,
+        CtxField::FuncIp => BpfHelper::GetFuncIp,
+        CtxField::AttachCookie => BpfHelper::GetAttachCookie,
+        CtxField::Cpu => BpfHelper::GetSmpProcessorId,
+        CtxField::NumaNode => BpfHelper::GetNumaNodeId,
+        CtxField::Random => BpfHelper::GetPrandomU32,
+        CtxField::CgroupId => BpfHelper::GetCurrentCgroupId,
+        CtxField::PerfCounter | CtxField::PerfEnabled | CtxField::PerfRunning => {
+            BpfHelper::PerfProgReadValue
+        }
+        CtxField::SocketCookie => BpfHelper::GetSocketCookie,
+        CtxField::SocketUid => BpfHelper::GetSocketUid,
+        CtxField::NetnsCookie => BpfHelper::GetNetnsCookie,
+        CtxField::CgroupClassid => BpfHelper::GetCgroupClassid,
+        CtxField::RouteRealm => BpfHelper::GetRouteRealm,
+        CtxField::CsumLevel => BpfHelper::CsumLevel,
+        CtxField::HashRecalc => BpfHelper::GetHashRecalc,
+        CtxField::SkbCgroupId => BpfHelper::SkbCgroupId,
+        CtxField::XdpBuffLen => BpfHelper::XdpGetBuffLen,
+        CtxField::SysctlName | CtxField::SysctlBaseName => BpfHelper::SysctlGetName,
+        CtxField::SysctlCurrentValue => BpfHelper::SysctlGetCurrentValue,
+        CtxField::SysctlNewValue => BpfHelper::SysctlGetNewValue,
+        CtxField::Comm => BpfHelper::GetCurrentComm,
+        CtxField::ArgCount => BpfHelper::GetFuncArgCnt,
+        CtxField::KStack | CtxField::UStack => BpfHelper::GetStackId,
+        _ => return None,
+    })
 }
 
 fn raw_ctx_field_projection_spec(field: &CtxField) -> Option<ContextFieldProjectionSpec> {

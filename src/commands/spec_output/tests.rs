@@ -40,6 +40,12 @@ fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
     assert!(task.pointer_non_null);
     assert!(task.trusted_btf_kernel_pointer);
     assert!(!task.raw_context_pointer);
+    assert_eq!(task.backing_helper, Some("bpf_get_current_task_btf"));
+    assert_eq!(task.backing_helper_minimum_kernel, Some("5.11"));
+    assert!(
+        task.backing_helper_minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.11/"))
+    );
 }
 
 #[test]
@@ -85,13 +91,20 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     let spec = ProgramSpec::parse("kretprobe:sys_read").expect("kretprobe spec should parse");
     let fields = spec_context_fields(&spec, false);
 
+    let pid = field(&fields, "pid");
+    assert_eq!(pid.backing_helper, Some("bpf_get_current_pid_tgid"));
+    assert_eq!(pid.backing_helper_minimum_kernel, Some("4.2"));
+
     let retval = field(&fields, "retval");
     assert_eq!(retval.semantic_type.as_deref(), Some("u64"));
     assert_eq!(retval.runtime_type.as_deref(), Some("u64"));
+    assert_eq!(retval.backing_helper, None);
 
     let kstack = field(&fields, "kstack");
     assert_eq!(kstack.semantic_type.as_deref(), Some("i64"));
     assert_eq!(kstack.runtime_type.as_deref(), Some("i64"));
+    assert_eq!(kstack.backing_helper, Some("bpf_get_stackid"));
+    assert_eq!(kstack.backing_helper_minimum_kernel, Some("4.6"));
 
     let ustack = field(&fields, "ustack");
     assert_eq!(ustack.semantic_type.as_deref(), Some("i64"));
