@@ -230,21 +230,50 @@ fn test_map_kind_kernel_compatibility_metadata() {
 
 #[test]
 fn test_map_value_compatibility_requirements_are_source_backed() {
-    let requirement = MapValueCompatibilityRequirement::BpfWorkqueue;
-    assert_eq!(requirement.key(), "map-value:bpf_wq");
-    assert_eq!(requirement.category(), "map-value-field");
-    assert_eq!(
-        requirement.description(),
-        "BPF map-value workqueue field support"
-    );
-    assert_eq!(requirement.minimum_kernel(), "6.10");
-    assert!(
-        requirement
-            .minimum_kernel_source()
-            .contains("/v6.10/include/linux/bpf.h")
-    );
+    let expected = [
+        (
+            MapValueCompatibilityRequirement::BpfSpinLock,
+            "map-value:bpf_spin_lock",
+            "BPF map-value spin lock field support",
+            "5.1",
+            "/v5.1/include/uapi/linux/bpf.h",
+        ),
+        (
+            MapValueCompatibilityRequirement::BpfTimer,
+            "map-value:bpf_timer",
+            "BPF map-value timer field support",
+            "5.15",
+            "/v5.15/include/uapi/linux/bpf.h",
+        ),
+        (
+            MapValueCompatibilityRequirement::BpfKptr,
+            "map-value:kptr",
+            "BPF map-value kptr field support",
+            "5.19",
+            "/v5.19/kernel/bpf/verifier.c",
+        ),
+        (
+            MapValueCompatibilityRequirement::BpfWorkqueue,
+            "map-value:bpf_wq",
+            "BPF map-value workqueue field support",
+            "6.10",
+            "/v6.10/include/linux/bpf.h",
+        ),
+    ];
+    for (requirement, key, description, minimum, source_suffix) in expected {
+        assert_eq!(requirement.key(), key);
+        assert_eq!(requirement.category(), "map-value-field");
+        assert_eq!(requirement.description(), description);
+        assert_eq!(requirement.minimum_kernel(), minimum);
+        assert!(requirement.minimum_kernel_source().contains(source_suffix));
+    }
 
-    let requirements = [requirement];
+    let requirements = [
+        MapValueCompatibilityRequirement::BpfSpinLock,
+        MapValueCompatibilityRequirement::BpfTimer,
+        MapValueCompatibilityRequirement::BpfKptr,
+        MapValueCompatibilityRequirement::BpfWorkqueue,
+    ];
     assert_eq!(
         MapValueCompatibilityRequirement::effective_minimum_kernel(&requirements),
         Some("6.10")

@@ -75,18 +75,45 @@ fn global_compatibility_requirements_for_sections(
     }
 }
 
-fn mir_type_contains_bpf_wq(ty: &MirType) -> bool {
-    if ty.is_bpf_wq_struct() {
-        return true;
+fn collect_map_value_compatibility_requirements_for_type(
+    ty: &MirType,
+    seen: &mut HashSet<MapValueCompatibilityRequirement>,
+    requirements: &mut Vec<MapValueCompatibilityRequirement>,
+) {
+    let requirement = if ty.is_bpf_spin_lock_struct() {
+        Some(MapValueCompatibilityRequirement::BpfSpinLock)
+    } else if ty.is_bpf_timer_struct() {
+        Some(MapValueCompatibilityRequirement::BpfTimer)
+    } else if ty.is_bpf_kptr_slot_struct() {
+        Some(MapValueCompatibilityRequirement::BpfKptr)
+    } else if ty.is_bpf_wq_struct() {
+        Some(MapValueCompatibilityRequirement::BpfWorkqueue)
+    } else {
+        None
+    };
+    if let Some(requirement) = requirement
+        && seen.insert(requirement)
+    {
+        requirements.push(requirement);
     }
 
     match ty {
-        MirType::Array { elem, .. } => mir_type_contains_bpf_wq(elem),
-        MirType::Struct { fields, .. } => fields
-            .iter()
-            .any(|field| mir_type_contains_bpf_wq(&field.ty)),
-        MirType::Ptr { pointee, .. } => mir_type_contains_bpf_wq(pointee),
-        _ => false,
+        MirType::Array { elem, .. } => {
+            collect_map_value_compatibility_requirements_for_type(elem, seen, requirements);
+        }
+        MirType::Struct { fields, .. } => {
+            for field in fields {
+                collect_map_value_compatibility_requirements_for_type(
+                    &field.ty,
+                    seen,
+                    requirements,
+                );
+            }
+        }
+        MirType::Ptr { pointee, .. } => {
+            collect_map_value_compatibility_requirements_for_type(pointee, seen, requirements);
+        }
+        _ => {}
     }
 }
 
@@ -97,12 +124,7 @@ fn map_value_compatibility_requirements_for_value_types<'a>(
     let mut requirements = Vec::new();
 
     for ty in value_types {
-        if mir_type_contains_bpf_wq(ty) {
-            let requirement = MapValueCompatibilityRequirement::BpfWorkqueue;
-            if seen.insert(requirement) {
-                requirements.push(requirement);
-            }
-        }
+        collect_map_value_compatibility_requirements_for_type(ty, &mut seen, &mut requirements);
     }
 
     requirements

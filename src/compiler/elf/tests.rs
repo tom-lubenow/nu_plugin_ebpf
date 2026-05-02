@@ -9837,13 +9837,36 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
     let value_ty = MirType::Struct {
         name: None,
         kernel_btf_type_id: None,
-        fields: vec![StructField {
-            name: "work".to_string(),
-            ty: MirType::bpf_wq_struct(),
-            offset: 0,
-            synthetic: false,
-            bitfield: None,
-        }],
+        fields: vec![
+            StructField {
+                name: "lock".to_string(),
+                ty: MirType::bpf_spin_lock_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "timer".to_string(),
+                ty: MirType::bpf_timer_struct(),
+                offset: 8,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "task".to_string(),
+                ty: MirType::bpf_kptr_slot_struct("task_struct"),
+                offset: 24,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "work".to_string(),
+                ty: MirType::bpf_wq_struct(),
+                offset: 32,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
     };
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Xdp,
@@ -9866,11 +9889,17 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
     let requirements = program.map_value_compatibility_requirements();
     assert_eq!(
         requirements,
-        vec![MapValueCompatibilityRequirement::BpfWorkqueue]
+        vec![
+            MapValueCompatibilityRequirement::BpfSpinLock,
+            MapValueCompatibilityRequirement::BpfTimer,
+            MapValueCompatibilityRequirement::BpfKptr,
+            MapValueCompatibilityRequirement::BpfWorkqueue,
+        ]
     );
-    assert_eq!(requirements[0].key(), "map-value:bpf_wq");
-    assert_eq!(requirements[0].minimum_kernel(), "6.10");
-    assert!(requirements[0].minimum_kernel_source().contains("v6.10"));
+    assert_eq!(requirements[0].key(), "map-value:bpf_spin_lock");
+    assert_eq!(requirements[1].key(), "map-value:bpf_timer");
+    assert_eq!(requirements[2].key(), "map-value:kptr");
+    assert_eq!(requirements[3].key(), "map-value:bpf_wq");
     assert_eq!(
         program.map_value_compatibility_minimum_kernel(),
         Some("6.10")

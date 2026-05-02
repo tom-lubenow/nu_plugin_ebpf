@@ -29,6 +29,8 @@ const LINUX_BPF_H_V4_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_20_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_1_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_4_SOURCE: &str =
@@ -41,6 +43,8 @@ const LINUX_BPF_H_V5_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_11_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_1_SOURCE: &str =
@@ -49,6 +53,8 @@ const LINUX_BPF_H_V6_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.9/include/uapi/linux/bpf.h";
+const LINUX_BPF_VERIFIER_C_V5_19_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.19/kernel/bpf/verifier.c";
 const LINUX_INTERNAL_BPF_H_V6_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.10/include/linux/bpf.h";
 
@@ -133,12 +139,18 @@ impl fmt::Display for MapCompatibilityRequirement {
 /// Source-backed kernel compatibility metadata for typed BTF map-value fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MapValueCompatibilityRequirement {
+    BpfSpinLock,
+    BpfTimer,
+    BpfKptr,
     BpfWorkqueue,
 }
 
 impl MapValueCompatibilityRequirement {
     pub fn key(self) -> &'static str {
         match self {
+            Self::BpfSpinLock => "map-value:bpf_spin_lock",
+            Self::BpfTimer => "map-value:bpf_timer",
+            Self::BpfKptr => "map-value:kptr",
             Self::BpfWorkqueue => "map-value:bpf_wq",
         }
     }
@@ -149,18 +161,27 @@ impl MapValueCompatibilityRequirement {
 
     pub fn description(self) -> &'static str {
         match self {
+            Self::BpfSpinLock => "BPF map-value spin lock field support",
+            Self::BpfTimer => "BPF map-value timer field support",
+            Self::BpfKptr => "BPF map-value kptr field support",
             Self::BpfWorkqueue => "BPF map-value workqueue field support",
         }
     }
 
     pub fn minimum_kernel(self) -> &'static str {
         match self {
+            Self::BpfSpinLock => "5.1",
+            Self::BpfTimer => "5.15",
+            Self::BpfKptr => "5.19",
             Self::BpfWorkqueue => "6.10",
         }
     }
 
     pub fn minimum_kernel_source(self) -> &'static str {
         match self {
+            Self::BpfSpinLock => LINUX_BPF_H_V5_1_SOURCE,
+            Self::BpfTimer => LINUX_BPF_H_V5_15_SOURCE,
+            Self::BpfKptr => LINUX_BPF_VERIFIER_C_V5_19_SOURCE,
             Self::BpfWorkqueue => LINUX_INTERNAL_BPF_H_V6_10_SOURCE,
         }
     }
