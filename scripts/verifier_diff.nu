@@ -1286,6 +1286,51 @@ const KERNEL_FEATURE_CTX_SK_SKB_SK = {
     min_kernel: "5.1"
     source: "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_PACKET_LEN = {
+    key: "ctx:packet_len"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_DATA = {
+    key: "ctx:data"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_DATA_END = {
+    key: "ctx:data_end"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_ETH_PROTOCOL = {
+    key: "ctx:eth_protocol"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_PROTOCOL = {
+    key: "ctx:protocol"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_BIND_INANY = {
+    key: "ctx:bind_inany"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_HASH = {
+    key: "ctx:hash"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_SK = {
+    key: "ctx:sk"
+    min_kernel: "5.14"
+    source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SK_REUSEPORT_MIGRATING_SK = {
+    key: "ctx:migrating_sk"
+    min_kernel: "5.14"
+    source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_SOCK_OPS_SKB_LEN = {
     key: "ctx:skb_len"
     min_kernel: "5.10"
@@ -5421,6 +5466,35 @@ def target-context-field-alias-kernel-feature [field: string target] {
         or ($target_text | str starts-with "sk_skb_parser:")
     ) and $field == "sk" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_SKB_SK }
+    }
+    if ($target_text | str starts-with "sk_reuseport:") {
+        if $field == "packet_len" or $field == "len" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_PACKET_LEN }
+        }
+        if $field == "data" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_DATA }
+        }
+        if $field == "data_end" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_DATA_END }
+        }
+        if $field == "eth_protocol" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_ETH_PROTOCOL }
+        }
+        if $field == "protocol" or $field == "ip_protocol" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_PROTOCOL }
+        }
+        if $field == "bind_inany" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_BIND_INANY }
+        }
+        if $field == "hash" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_HASH }
+        }
+        if $field == "sk" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_SK }
+        }
+        if $field == "migrating_sk" or $field == "migrating_socket" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_MIGRATING_SK }
+        }
     }
     if ($target_text | str starts-with "sock_ops:") and $field == "packet_len" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }

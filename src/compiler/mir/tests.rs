@@ -486,6 +486,27 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sk_skb_parser ctx.sk should use __sk_buff socket floor");
     assert_eq!(sk_skb_parser_socket.minimum_kernel(), "5.1");
 
+    let sk_reuseport_hash = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::SkbHash,
+        Some(crate::compiler::EbpfProgramType::SkReuseport),
+    )
+    .expect("sk_reuseport ctx.hash should use sk_reuseport_md base floor");
+    assert_eq!(sk_reuseport_hash.minimum_kernel(), "4.19");
+
+    let sk_reuseport_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Socket,
+        Some(crate::compiler::EbpfProgramType::SkReuseport),
+    )
+    .expect("sk_reuseport ctx.sk should use sk_reuseport_md socket floor");
+    assert_eq!(sk_reuseport_socket.minimum_kernel(), "5.14");
+
+    let sk_reuseport_migrating_socket = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::MigratingSocket,
+        Some(crate::compiler::EbpfProgramType::SkReuseport),
+    )
+    .expect("sk_reuseport ctx.migrating_sk should use sk_reuseport_md socket floor");
+    assert_eq!(sk_reuseport_migrating_socket.minimum_kernel(), "5.14");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

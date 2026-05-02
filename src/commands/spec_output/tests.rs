@@ -799,6 +799,45 @@ fn test_spec_context_fields_include_sk_skb_socket_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_sk_reuseport_minimum_kernel_metadata() {
+    let select =
+        ProgramSpec::parse("sk_reuseport:select").expect("sk_reuseport select spec should parse");
+    let select_fields = spec_context_fields(&select, false);
+
+    for field_name in [
+        "data",
+        "data_end",
+        "packet_len",
+        "eth_protocol",
+        "protocol",
+        "bind_inany",
+        "hash",
+    ] {
+        let field = field(&select_fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.19"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.19/include/uapi/linux/bpf.h"))
+        );
+    }
+
+    let migrate =
+        ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport migrate spec should parse");
+    let migrate_fields = spec_context_fields(&migrate, false);
+
+    for field_name in ["sk", "migrating_sk"] {
+        let field = field(&migrate_fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("5.14"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v5.14/include/uapi/linux/bpf.h"))
+        );
+    }
+}
+
+#[test]
 fn test_spec_record_reports_target_specific_cgroup_unix_minimum() {
     let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup unix socket-address spec should parse");
