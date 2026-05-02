@@ -503,6 +503,73 @@ fn test_critical_edge_is_split_for_phi_copies() {
 }
 
 #[test]
+fn test_critical_edge_split_handles_non_contiguous_block_ids() {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    let bb1 = func.alloc_block();
+    let unused = func.alloc_block();
+    let bb2 = func.alloc_block();
+    let bb3 = func.alloc_block();
+    let bb4 = func.alloc_block();
+    func.blocks.retain(|block| block.id != unused);
+    func.entry = bb0;
+
+    let cond = func.alloc_vreg();
+    let v1 = func.alloc_vreg();
+    let v2 = func.alloc_vreg();
+    let p = func.alloc_vreg();
+
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: cond,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(bb0).terminator = MirInst::Branch {
+        cond,
+        if_true: bb1,
+        if_false: bb2,
+    };
+
+    func.block_mut(bb1).instructions.push(MirInst::Copy {
+        dst: v1,
+        src: MirValue::Const(11),
+    });
+    func.block_mut(bb1).terminator = MirInst::Branch {
+        cond,
+        if_true: bb3,
+        if_false: bb4,
+    };
+
+    func.block_mut(bb2).instructions.push(MirInst::Copy {
+        dst: v2,
+        src: MirValue::Const(22),
+    });
+    func.block_mut(bb2).terminator = MirInst::Jump { target: bb3 };
+
+    func.block_mut(bb3).instructions.push(MirInst::Phi {
+        dst: p,
+        args: vec![(bb1, v1), (bb2, v2)],
+    });
+    func.block_mut(bb3).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(p)),
+    };
+    func.block_mut(bb4).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(cond)),
+    };
+
+    let old_max_block = func.blocks.iter().map(|block| block.id.0).max().unwrap();
+    let old_block_count = func.blocks.len();
+    let cfg = CFG::build(&func);
+    let pass = SsaDestruction;
+    pass.run(&mut func, &cfg);
+
+    assert_eq!(func.blocks.len(), old_block_count + 1);
+    assert!(
+        func.has_block(BlockId(old_max_block + 1)),
+        "split block should use the next alloc_block id, not blocks.len()"
+    );
+}
+
+#[test]
 fn test_no_phis_no_change() {
     // Function without phis
     let mut func = MirFunction::new();

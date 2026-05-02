@@ -134,6 +134,7 @@ fn test_spec_context_fields_include_load_guards() {
 
     let data = field(&fields, "data");
     assert_eq!(data.load_guard, Some("sock-ops-packet-data"));
+    assert_eq!(data.minimum_kernel, Some("5.10"));
     assert_eq!(data.load_guard_witness.as_deref(), Some("op"));
     assert!(
         data.load_guard_description

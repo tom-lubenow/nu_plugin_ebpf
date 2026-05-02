@@ -290,7 +290,14 @@ impl SsaDestruction {
 
         // Predict next block id so we can retarget the terminator first without
         // creating an orphan block if the edge lookup fails.
-        let split_id = BlockId(func.blocks.len() as u32);
+        let split_id = BlockId(
+            func.blocks
+                .iter()
+                .map(|block| block.id.0)
+                .max()
+                .map(|id| id.saturating_add(1))
+                .unwrap_or(0),
+        );
         let redirected = {
             let pred_block = func.block_mut(pred);
             Self::redirect_edge(&mut pred_block.terminator, succ, split_id)

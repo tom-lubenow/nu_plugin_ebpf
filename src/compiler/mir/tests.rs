@@ -361,6 +361,17 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
             .contains("/v5.10/")
     );
 
+    let generic_data = ContextFieldCompatibilityRequirement::for_field(&CtxField::Data)
+        .expect("generic ctx.data should remain versioned");
+    assert_eq!(generic_data.minimum_kernel(), "4.7");
+
+    let sock_ops_data = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Data,
+        Some(crate::compiler::EbpfProgramType::SockOps),
+    )
+    .expect("sock_ops ctx.data alias should be versioned");
+    assert_eq!(sock_ops_data.minimum_kernel(), "5.10");
+
     assert!(
         ContextFieldCompatibilityRequirement::for_field(&CtxField::TracepointField(
             "pid".to_string()

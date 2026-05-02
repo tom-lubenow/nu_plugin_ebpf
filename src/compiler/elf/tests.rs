@@ -10077,16 +10077,18 @@ fn test_ebpf_program_reports_context_field_compatibility_requirements() {
         EbpfBuilder::new(),
     )
     .with_used_context_fields([
+        CtxField::Data,
+        CtxField::DataEnd,
         CtxField::PacketLen,
         CtxField::SockOpsSkbLen,
         CtxField::SockOpsSkbTcpFlags,
     ]);
     let requirements = sock_ops_program.context_field_compatibility_requirements();
-    assert_eq!(requirements.len(), 3);
+    assert_eq!(requirements.len(), 5);
     assert!(requirements.iter().all(|requirement| {
         matches!(
             requirement.key().as_str(),
-            "ctx:packet_len" | "ctx:skb_len" | "ctx:skb_tcp_flags"
+            "ctx:data" | "ctx:data_end" | "ctx:packet_len" | "ctx:skb_len" | "ctx:skb_tcp_flags"
         ) && requirement.minimum_kernel() == "5.10"
     }));
     assert_eq!(

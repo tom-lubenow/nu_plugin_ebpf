@@ -134,6 +134,9 @@ fn direct_context_field_kernel_floor(
         CtxField::PacketLen if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
         }
+        CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SockOps) => {
+            ("5.10", LINUX_BPF_H_V5_10_SOURCE)
+        }
         CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping

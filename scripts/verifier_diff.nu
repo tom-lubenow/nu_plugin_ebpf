@@ -1001,6 +1001,16 @@ const KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN = {
     min_kernel: "5.10"
     source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SOCK_OPS_DATA = {
+    key: "ctx:data"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_SOCK_OPS_DATA_END = {
+    key: "ctx:data_end"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_SOCK_OPS_SKB_LEN = {
     key: "ctx:skb_len"
     min_kernel: "5.10"
@@ -2852,6 +2862,41 @@ const FIXTURES = [
             '{|ctx|'
             '  if ($ctx.op == 13) {'
             '    ($ctx.packet_len + $ctx.skb_len + $ctx.skb_tcp_flags) | count'
+            '  }'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-packet-data-requires-op-guard"
+        category: "context-policy"
+        tags: [sock-ops context packet reject]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.data | get 0) | count'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.data on sock_ops requires proving a packet-aware ctx.op callback before use"
+    }
+    {
+        name: "sock-ops-packet-data-op-guard"
+        category: "context-surface"
+        tags: [sock-ops context packet accept]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  if ($ctx.op == 13) {'
+            '    if ($ctx.data_end != 0) {'
+            '      ($ctx.data | get 0) | count'
+            '    }'
             '  }'
             '  1'
             '}'
@@ -5006,6 +5051,12 @@ def target-context-field-alias-kernel-feature [field: string target] {
     }
     if ($target_text | str starts-with "sock_ops:") and $field == "packet_len" {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }
+    }
+    if ($target_text | str starts-with "sock_ops:") and $field == "data" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA }
+    }
+    if ($target_text | str starts-with "sock_ops:") and $field == "data_end" {
+        return { matched: true, feature: $KERNEL_FEATURE_CTX_SOCK_OPS_DATA_END }
     }
     if ($target_text | str starts-with "cgroup_sysctl:") {
         if $field == "name" {
