@@ -10123,6 +10123,37 @@ fn test_ebpf_program_reports_context_field_compatibility_requirements() {
         sock_ops_program.context_field_compatibility_minimum_kernel(),
         Some("5.10")
     );
+
+    let iter_task_vma_program = EbpfProgram::new(
+        EbpfProgramType::Iter,
+        "task_vma",
+        "iter_main",
+        EbpfBuilder::new(),
+    )
+    .with_used_context_fields([CtxField::IterTask]);
+    let requirements = iter_task_vma_program.context_field_compatibility_requirements();
+    assert_eq!(requirements.len(), 1);
+    assert_eq!(requirements[0].key(), "ctx:iter_task");
+    assert_eq!(requirements[0].minimum_kernel(), "5.12");
+    assert!(
+        requirements[0]
+            .minimum_kernel_source()
+            .contains("/v5.12/kernel/bpf/task_iter.c")
+    );
+    assert_eq!(
+        iter_task_vma_program.context_field_compatibility_minimum_kernel(),
+        Some("5.12")
+    );
+
+    let object = iter_task_vma_program.into_object();
+    assert_eq!(
+        object.programs[0].context_field_compatibility_minimum_kernel(),
+        Some("5.12")
+    );
+    assert_eq!(
+        object.context_field_compatibility_minimum_kernel(),
+        Some("5.12")
+    );
 }
 
 #[test]
