@@ -522,6 +522,36 @@ const KERNEL_FEATURE_BPF_MAP_DELETE_ELEM = {
     min_kernel: "3.19"
     source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_PROBE_READ = {
+    key: "helper:bpf_probe_read"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_PROBE_READ_STR = {
+    key: "helper:bpf_probe_read_str"
+    min_kernel: "4.11"
+    source: "https://github.com/torvalds/linux/blob/v4.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_PROBE_READ_USER = {
+    key: "helper:bpf_probe_read_user"
+    min_kernel: "5.5"
+    source: "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_PROBE_READ_KERNEL = {
+    key: "helper:bpf_probe_read_kernel"
+    min_kernel: "5.5"
+    source: "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_PROBE_READ_USER_STR = {
+    key: "helper:bpf_probe_read_user_str"
+    min_kernel: "5.5"
+    source: "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_PROBE_READ_KERNEL_STR = {
+    key: "helper:bpf_probe_read_kernel_str"
+    min_kernel: "5.5"
+    source: "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_GET_PRANDOM_U32 = {
     key: "helper:bpf_get_prandom_u32"
     min_kernel: "4.1"
@@ -2067,6 +2097,12 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_lookup_elem", feature: $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM }
     { name: "bpf_map_update_elem", feature: $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM }
     { name: "bpf_map_delete_elem", feature: $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM }
+    { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
+    { name: "bpf_probe_read_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_STR }
+    { name: "bpf_probe_read_user", feature: $KERNEL_FEATURE_BPF_PROBE_READ_USER }
+    { name: "bpf_probe_read_kernel", feature: $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL }
+    { name: "bpf_probe_read_user_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_USER_STR }
+    { name: "bpf_probe_read_kernel_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL_STR }
     { name: "bpf_get_prandom_u32", feature: $KERNEL_FEATURE_BPF_GET_PRANDOM_U32 }
     { name: "bpf_tail_call", feature: $KERNEL_FEATURE_BPF_TAIL_CALL }
     { name: "bpf_perf_event_read", feature: $KERNEL_FEATURE_BPF_PERF_EVENT_READ }
@@ -5540,6 +5576,37 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "read-str-user-pointer"
+        category: "language-surface"
+        tags: [read-str helper metadata]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    $ptr | read-str --max-len 64 | emit'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "read-kernel-str-kernel-pointer"
+        category: "language-surface"
+        tags: [read-kernel-str helper metadata]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_task | read-kernel-str --max-len 64 | emit'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "assign-socket-sk-lookup-clear"
         category: "language-surface"
         tags: [assign-socket sk-lookup]
@@ -6589,6 +6656,12 @@ def program-surface-helper-kernel-features [source: string target] {
     }
     if ($source | str contains "random int") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_PRANDOM_U32])
+    }
+    if ($source | str contains "read-str") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_USER_STR])
+    }
+    if ($source | str contains "read-kernel-str") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_KERNEL_STR])
     }
 
     for line in ($source | lines) {

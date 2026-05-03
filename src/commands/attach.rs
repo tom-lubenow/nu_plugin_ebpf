@@ -1133,8 +1133,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx| ($ctx.args | get 1) | read-str | emit }",
-                description: "Stream filenames from openat syscalls using the generic syscall tracepoint args layout",
+                example: "ebpf attach -s 'uprobe:/path/to/lib.so:function_taking_char_ptr' {|ctx| let ptr = $ctx.arg0; if $ptr { $ptr | read-str | emit } }",
+                description: "Stream strings from a nullable userspace pointer argument",
                 result: None,
             },
             Example {

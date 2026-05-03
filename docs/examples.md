@@ -305,11 +305,13 @@ sleep 5sec
 ebpf histogram $exit
 ```
 
-### Trace File Opens With Filenames
+### Read User Strings From Uprobes
 
 ```nushell
-ebpf attach -s 'tracepoint:syscalls/sys_enter_openat' {|ctx|
-    let filename = ($ctx.args | get 1)
-    { pid: $ctx.pid, file: ($filename | read-str) } | emit
+ebpf attach -s 'uprobe:/path/to/lib.so:function_taking_char_ptr' {|ctx|
+    let ptr = $ctx.arg0
+    if $ptr {
+        { pid: $ctx.pid, value: ($ptr | read-str) } | emit
+    }
 }
 ```

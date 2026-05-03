@@ -98,8 +98,11 @@ impl PluginCommand for ReadStr {
     fn extra_description(&self) -> &str {
         r#"Reads a null-terminated string from the given pointer.
 By default, reads from userspace memory which covers most use cases:
-- Syscall arguments (filenames, paths, buffers)
-- Uprobe function arguments"#
+- Typed userspace pointers
+- Uprobe function arguments
+
+Raw kprobe and tracepoint syscall registers are currently exposed as integers
+unless the compiler has source metadata proving pointer provenance."#
     }
 
     fn signature(&self) -> Signature {
@@ -116,8 +119,8 @@ By default, reads from userspace memory which covers most use cases:
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
-            example: "ebpf attach -s 'kprobe:do_sys_openat2' {|ctx| $ctx.arg1 | read-str }",
-            description: "Read filename from syscall argument",
+            example: "ebpf attach -s 'uprobe:/path/to/lib.so:function_taking_char_ptr' {|ctx| let ptr = $ctx.arg0; if $ptr { $ptr | read-str } }",
+            description: "Read a nullable char* userspace argument",
             result: None,
         }]
     }
@@ -170,8 +173,8 @@ data structures. For most cases, use read-str instead."#
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
-            example: "ebpf attach -s 'kprobe:vfs_read' {|ctx| $ctx.arg0 | read-kernel-str }",
-            description: "Read from kernel buffer pointer",
+            example: "ebpf attach -s 'kprobe:do_exit' {|ctx| $ctx.current_task | read-kernel-str --max-len 16 }",
+            description: "Debug-read from a typed kernel pointer",
             result: None,
         }]
     }
