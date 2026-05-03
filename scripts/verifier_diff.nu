@@ -2736,7 +2736,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_QUERY]
     }
     {
         name: "ringbuf-reserve-submit-balanced"
@@ -2754,7 +2753,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_RESERVE]
     }
     {
         name: "ringbuf-reserve-discard-balanced"
@@ -2772,7 +2770,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_DISCARD]
     }
     {
         name: "ringbuf-reserve-rejects-leak"
@@ -2842,10 +2839,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-        ]
     }
     {
         name: "ringbuf-dynptr-reserve-discard-balanced"
@@ -2862,10 +2855,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
-        ]
     }
     {
         name: "ringbuf-dynptr-rejects-leak"
@@ -2881,7 +2870,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR]
         error_contains: "unreleased ringbuf dynptr reservation"
     }
     {
@@ -2901,10 +2889,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-        ]
     }
     {
         name: "ringbuf-dynptr-allows-slot-reuse-after-discard"
@@ -2923,11 +2907,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-        ]
     }
     {
         name: "ringbuf-dynptr-rejects-double-submit"
@@ -2945,10 +2924,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-        ]
         error_contains: "ringbuf dynptr reservation already released"
     }
     {
@@ -2967,11 +2942,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-        ]
         error_contains: "ringbuf dynptr reservation already released"
     }
     {
@@ -2988,7 +2958,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_DYNPTR_DATA]
         error_contains: "requires initialized dynptr stack object"
     }
     {
@@ -3009,11 +2978,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE
-        ]
     }
     {
         name: "dynptr-kfunc-size-rejects-uninitialized"
@@ -3049,11 +3013,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_DISCARD_DYNPTR
-            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE
-        ]
     }
     {
         name: "dynptr-kfunc-slice-rejects-uninitialized"
@@ -3070,7 +3029,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SLICE]
         error_contains: "kfunc 'bpf_dynptr_slice' arg0 requires initialized dynptr stack object"
     }
     {
@@ -3093,12 +3051,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE
-            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE
-        ]
     }
     {
         name: "dynptr-kfunc-clone-rejects-uninitialized-source"
@@ -3116,7 +3068,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE]
         error_contains: "kfunc 'bpf_dynptr_clone' arg0 requires initialized dynptr stack object"
     }
     {
@@ -3138,12 +3089,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_RINGBUF_RESERVE_DYNPTR
-            $KERNEL_FEATURE_BPF_RINGBUF_SUBMIT_DYNPTR
-            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_CLONE
-            $KERNEL_FEATURE_KFUNC_BPF_DYNPTR_SIZE
-        ]
         error_contains: "kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object"
     }
     {
@@ -3159,7 +3104,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_GET_STACKID]
     }
     {
         name: "global-scalar-mut"
@@ -5018,7 +4962,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_INIT]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -5129,7 +5072,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -5144,7 +5086,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_START]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -5160,7 +5101,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_TIMER_CANCEL]
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
@@ -5206,7 +5146,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN]
         error_contains: "helper 'bpf_user_ringbuf_drain' requires arg3 flags"
     }
     {
@@ -5443,7 +5382,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_LOOP]
     }
     {
         name: "callback-for-each-map-elem"
@@ -5458,7 +5396,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_FOR_EACH_MAP_ELEM]
     }
     {
         name: "callback-user-ringbuf-drain"
@@ -5473,7 +5410,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN]
     }
     {
         name: "reserved-events-rejects-user-ringbuf"
@@ -5488,7 +5424,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN]
         error_contains: "map name 'events' is reserved"
     }
     {
@@ -5519,7 +5454,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_CSUM_DIFF]
     }
     {
         name: "csum-diff-rejects-null-nonzero-side"
@@ -5563,7 +5497,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_BPF_REDIRECT_NEIGH]
     }
     {
         name: "redirect-neigh-rejects-null-nonzero-plen"
