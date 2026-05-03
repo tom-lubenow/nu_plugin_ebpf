@@ -125,7 +125,7 @@ impl<'a> HirToMirLowering<'a> {
                 Self::mutable_capture_global_repr(value)?
             else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/binary/record constants, and representable constant records",
+                    "mutating captured variable {} of type {} is not yet supported; mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records",
                     var_id.get(),
                     value.get_type()
                 )));
