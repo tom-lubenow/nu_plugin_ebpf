@@ -2476,6 +2476,30 @@ fn test_spec_record_includes_resource_attach_shapes() {
             .expect("struct_ops family should be a string"),
         "tcp-congestion"
     );
+    assert_eq!(
+        record
+            .get("compatibility_minimum_kernel")
+            .expect("tcp_congestion_ops compatibility minimum should be present")
+            .as_str()
+            .expect("compatibility minimum should be a string"),
+        "5.6"
+    );
+    let requirements = record
+        .get("compatibility_requirements")
+        .expect("compatibility requirements should be present")
+        .as_list()
+        .expect("compatibility requirements should be a list");
+    assert!(
+        requirements.iter().any(|requirement| {
+            requirement
+                .as_record()
+                .ok()
+                .and_then(|requirement| requirement.get("key"))
+                .and_then(|key| key.as_str().ok())
+                .is_some_and(|key| key == "tcp-congestion-ops")
+        }),
+        "tcp_congestion_ops should carry family compatibility metadata"
+    );
 }
 
 #[test]

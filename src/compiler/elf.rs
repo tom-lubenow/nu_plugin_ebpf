@@ -1659,6 +1659,7 @@ pub enum ProgramCompatibilityRequirement {
     CgroupV2,
     LircMode2,
     StructOps,
+    TcpCongestionOps,
     SchedExt,
     CgroupUnixSockAddr,
 }
@@ -1725,6 +1726,8 @@ const LINUX_BPF_TRAMPOLINE_V5_5_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.5/kernel/bpf/trampoline.c";
 const LINUX_LINK_VMLINUX_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/scripts/link-vmlinux.sh";
+const LINUX_BPF_TCP_CA_V5_6_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.6/net/ipv4/bpf_tcp_ca.c";
 const LINUX_SCHED_EXT_V6_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c";
 const LINUX_TASK_ITER_V5_8_SOURCE: &str =
@@ -1833,6 +1836,7 @@ impl ProgramCompatibilityRequirement {
             Self::CgroupV2 => "cgroup-v2",
             Self::LircMode2 => "lirc-mode2",
             Self::StructOps => "struct-ops",
+            Self::TcpCongestionOps => "tcp-congestion-ops",
             Self::SchedExt => "sched-ext",
             Self::CgroupUnixSockAddr => "cgroup-unix-sock-addr",
         }
@@ -1907,6 +1911,7 @@ impl ProgramCompatibilityRequirement {
             Self::CgroupV2 => "cgroup v2 attach hierarchy",
             Self::LircMode2 => "LIRC mode2 device attach support",
             Self::StructOps => "BPF struct_ops object support",
+            Self::TcpCongestionOps => "TCP congestion-control struct_ops support",
             Self::SchedExt => "sched_ext struct_ops support",
             Self::CgroupUnixSockAddr => "cgroup UNIX socket-address hook support",
         }
@@ -1916,7 +1921,7 @@ impl ProgramCompatibilityRequirement {
         match self {
             Self::KernelBtf => "kernel-metadata",
             Self::CgroupV2 | Self::LircMode2 => "attach-resource",
-            Self::SchedExt => "struct-ops-family",
+            Self::TcpCongestionOps | Self::SchedExt => "struct-ops-family",
             Self::NetfilterDefrag
             | Self::XdpSkbAttachMode
             | Self::XdpDrvAttachMode
@@ -1950,7 +1955,11 @@ impl ProgramCompatibilityRequirement {
     pub fn default_test_lane(&self) -> &'static str {
         match self {
             Self::ExtensionProgram | Self::SyscallProgram => "dry-run",
-            Self::NetfilterLink | Self::RouteLwt | Self::StructOps | Self::SchedExt => "vm-only",
+            Self::NetfilterLink
+            | Self::RouteLwt
+            | Self::StructOps
+            | Self::TcpCongestionOps
+            | Self::SchedExt => "vm-only",
             Self::RawTracepointWritable
             | Self::SocketFilterProgram
             | Self::XdpProgram
@@ -2077,6 +2086,7 @@ impl ProgramCompatibilityRequirement {
             Self::SockOpsProgram => Some("4.14"),
             Self::LircMode2 => Some("4.18"),
             Self::StructOps => Some("5.6"),
+            Self::TcpCongestionOps => Some("5.6"),
             Self::SchedExt => Some("6.12"),
             Self::CgroupUnixSockAddr => Some("6.7"),
             Self::SockMapAttach | Self::CgroupV2 => None,
@@ -2093,6 +2103,7 @@ impl ProgramCompatibilityRequirement {
             Self::RawTracepointWritable => LINUX_BPF_H_V5_2_SOURCE,
             Self::CgroupLsm => LINUX_BPF_H_V6_0_SOURCE,
             Self::ExtensionProgram | Self::StructOps => LINUX_BPF_H_V5_6_SOURCE,
+            Self::TcpCongestionOps => LINUX_BPF_TCP_CA_V5_6_SOURCE,
             Self::SyscallProgram | Self::SkReuseportMigration => LINUX_BPF_H_V5_14_SOURCE,
             Self::BpfIterator => LINUX_BPF_H_V5_8_SOURCE,
             Self::BpfIteratorTaskTarget | Self::BpfIteratorTaskFileTarget => {

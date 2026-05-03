@@ -10068,6 +10068,25 @@ fn test_ebpf_object_reports_program_compatibility_requirements() {
         Some("6.12")
     );
 
+    let tcp_congestion = EbpfObject::struct_ops("demo", "tcp_congestion_ops", vec![0; 8]).build();
+    let requirements = tcp_congestion.program_compatibility_requirements();
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::StructOps),
+        "tcp_congestion_ops object kind should include base struct_ops compatibility"
+    );
+    assert!(
+        requirements.contains(&ProgramCompatibilityRequirement::TcpCongestionOps),
+        "tcp_congestion_ops object kind should include family compatibility"
+    );
+    assert!(
+        !requirements.contains(&ProgramCompatibilityRequirement::SchedExt),
+        "tcp_congestion_ops object kind should not be tagged as sched_ext"
+    );
+    assert_eq!(
+        tcp_congestion.program_compatibility_minimum_kernel(),
+        Some("5.6")
+    );
+
     let sleepable_callback = EbpfProgram::new(
         EbpfProgramType::StructOps,
         "init",

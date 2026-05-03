@@ -222,6 +222,11 @@ const KERNEL_FEATURE_PROG_STRUCT_OPS = {
     min_kernel: "5.6"
     source: "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_STRUCT_OPS_TCP_CONGESTION = {
+    key: "struct_ops:tcp_congestion_ops"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/net/ipv4/bpf_tcp_ca.c"
+}
 const KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT = {
     key: "struct_ops:sched_ext_ops"
     min_kernel: "6.12"
@@ -6796,6 +6801,22 @@ const FIXTURES = [
         error_contains: "struct_ops attach expects an object value type"
     }
     {
+        name: "struct-ops-tcp-congestion-target-metadata"
+        category: "program-model"
+        tags: [struct-ops tcp-congestion metadata]
+        target: "struct_ops:tcp_congestion_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    ssthresh: {|ctx| 2 }'
+            '    cong_avoid: {|ctx| 0 }'
+            '    undo_cwnd: {|ctx| 2 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "struct-ops-sleepable-callback-target-metadata"
         category: "program-model"
         tags: [struct-ops callback sleepable metadata attach reject]
@@ -9632,6 +9653,9 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_KERNEL_BTF)
         $features = ($features | append $KERNEL_FEATURE_BPF_TRAMPOLINE)
         $features = ($features | append $KERNEL_FEATURE_PROG_STRUCT_OPS)
+        if ($target | str contains "tcp_congestion_ops") {
+            $features = ($features | append $KERNEL_FEATURE_STRUCT_OPS_TCP_CONGESTION)
+        }
         if ($target | str contains "sched_ext_ops") {
             $features = ($features | append $KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT)
         }

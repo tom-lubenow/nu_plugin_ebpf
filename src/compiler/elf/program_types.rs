@@ -1552,6 +1552,7 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::CgroupV2,
     ProgramCompatibilityRequirement::LircMode2,
     ProgramCompatibilityRequirement::StructOps,
+    ProgramCompatibilityRequirement::TcpCongestionOps,
     ProgramCompatibilityRequirement::SchedExt,
     ProgramCompatibilityRequirement::CgroupUnixSockAddr,
 ];

@@ -2716,11 +2716,16 @@ impl ProgramSpec {
         }
 
         if let Some(value_type_name) = self.struct_ops_value_type_name() {
-            if StructOpsFamily::from_value_type_name(value_type_name) == StructOpsFamily::SchedExt {
-                push_compatibility_requirement(
+            match StructOpsFamily::from_value_type_name(value_type_name) {
+                StructOpsFamily::TcpCongestion => push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::TcpCongestionOps,
+                ),
+                StructOpsFamily::SchedExt => push_compatibility_requirement(
                     &mut requirements,
                     ProgramCompatibilityRequirement::SchedExt,
-                );
+                ),
+                StructOpsFamily::Generic => {}
             }
         }
 
@@ -3716,12 +3721,45 @@ mod tests {
         );
 
         let struct_ops =
-            ProgramSpec::parse("struct_ops:tcp_congestion_ops").expect("struct_ops should parse");
+            ProgramSpec::parse("struct_ops:demo_ops").expect("generic struct_ops should parse");
         assert!(
             struct_ops.requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
         );
         assert!(
+            !struct_ops
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::TcpCongestionOps)
+        );
+        assert!(
             !struct_ops.requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+
+        let tcp_congestion = ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+            .expect("tcp_congestion_ops spec should parse");
+        assert!(
+            tcp_congestion
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+        );
+        assert!(
+            tcp_congestion
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::TcpCongestionOps)
+        );
+        assert!(
+            !tcp_congestion
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &tcp_congestion.compatibility_requirements()
+            ),
+            Some("5.6")
+        );
+        let tcp_congestion_init = ProgramSpec::StructOpsCallback {
+            value_type_name: "tcp_congestion_ops".to_string(),
+            callback_name: "init".to_string(),
+        };
+        assert!(
+            tcp_congestion_init
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::TcpCongestionOps)
         );
 
         let sched_ext =
