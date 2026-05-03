@@ -1543,6 +1543,33 @@ fn test_attach_rejects_struct_ops_callback_program_before_loading() {
 }
 
 #[test]
+fn test_attach_rejects_struct_ops_value_type_program_before_loading() {
+    let state = EbpfState::new();
+    let object = EbpfProgram::from_bytecode(
+        EbpfProgramType::StructOps,
+        "tcp_congestion_ops",
+        "main",
+        vec![],
+    )
+    .into_object();
+
+    let err = state
+        .attach(&object)
+        .expect_err("struct_ops value-type program objects should reject before ELF emission");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Attach(ref msg)
+                if msg.contains("struct_ops value-type target 'struct_ops:tcp_congestion_ops'")
+                    && msg.contains("not a standalone program section")
+                    && msg.contains("attach the enclosing struct_ops object")
+        ),
+        "unexpected struct_ops value-type program-object error: {err:?}"
+    );
+}
+
+#[test]
 fn test_attach_rejects_compile_only_programs_before_loading() {
     let state = EbpfState::new();
 

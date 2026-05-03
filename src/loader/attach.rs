@@ -45,6 +45,12 @@ fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> L
     ))
 }
 
+fn unsupported_struct_ops_program_object_error(value_type_name: &str) -> LoadError {
+    LoadError::Attach(format!(
+        "struct_ops value-type target 'struct_ops:{value_type_name}' describes a struct_ops object, not a standalone program section; attach the enclosing struct_ops object instead"
+    ))
+}
+
 fn compatibility_requirements_detail(
     requirements: &[crate::compiler::ProgramCompatibilityRequirement],
 ) -> String {
@@ -740,6 +746,9 @@ impl EbpfState {
                 ))
             })?;
         let compatibility_requirements = object.program_compatibility_requirements();
+        if let ProgramSpec::StructOps { value_type_name } = &spec {
+            return Err(unsupported_struct_ops_program_object_error(value_type_name));
+        }
         if !spec.live_attach_policy().loader_supported {
             if let ProgramSpec::CgroupSockAddr { target } = &spec {
                 if target.is_unix() {
