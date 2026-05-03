@@ -3120,7 +3120,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
     }
     {
         name: "tc-action-cgroup-array-contains"
@@ -6396,6 +6395,25 @@ def program-map-value-kernel-features [source: string] {
     $features
 }
 
+def program-global-kernel-features [source: string] {
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+        if ($trimmed | str starts-with "#") {
+            continue
+        }
+
+        if (($trimmed | str contains "global-define") or ($trimmed | str contains "global-get") or ($trimmed | str contains "global-set")) {
+            return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
+        }
+
+        if (($trimmed | str starts-with "mut ") and ($trimmed | str contains ":")) {
+            return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
+        }
+    }
+
+    []
+}
+
 def program-helper-kernel-features [source: string] {
     mut features = []
 
@@ -6713,6 +6731,7 @@ def fixture-kernel-features [fixture] {
     let program = (fixture-program $fixture)
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-map-value-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-global-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
