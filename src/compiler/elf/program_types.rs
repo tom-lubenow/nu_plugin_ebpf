@@ -1585,6 +1585,17 @@ mod tests {
                 );
             }
         }
+
+        for program_type in ALL_PROGRAM_TYPES {
+            assert!(
+                program_types.contains(program_type),
+                "{program_type:?} is missing from compatibility requirement surfaces"
+            );
+            assert!(
+                !program_type.compatibility_requirements().is_empty(),
+                "{program_type:?} should expose at least one compatibility requirement"
+            );
+        }
     }
 
     #[test]
