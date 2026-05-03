@@ -2712,6 +2712,15 @@ impl ProgramSpec {
             }
         }
 
+        if let ProgramSpec::Netfilter { target } = self {
+            if target.defrag {
+                push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::NetfilterDefrag,
+                );
+            }
+        }
+
         if let ProgramSpec::Iter { target } = self {
             if let Some(requirement) = iterator_target_compatibility_requirement(&target.name) {
                 push_compatibility_requirement(&mut requirements, requirement);
@@ -3763,6 +3772,30 @@ mod tests {
         assert!(
             lwt_seg6local
                 .requires_compatibility_feature(ProgramCompatibilityRequirement::RouteLwtSeg6Local)
+        );
+
+        let netfilter =
+            ProgramSpec::parse("netfilter:ipv4:pre_routing").expect("netfilter spec should parse");
+        assert!(
+            netfilter
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::NetfilterLink)
+        );
+        assert!(
+            !netfilter
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::NetfilterDefrag)
+        );
+
+        let netfilter_defrag = ProgramSpec::parse("netfilter:ipv4:pre_routing:defrag")
+            .expect("netfilter defrag spec should parse");
+        assert!(
+            netfilter_defrag
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::NetfilterDefrag)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &netfilter_defrag.compatibility_requirements()
+            ),
+            Some("6.6")
         );
 
         let sk_msg =

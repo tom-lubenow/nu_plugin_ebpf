@@ -803,7 +803,7 @@ Context parameter syntax (recommended):
     `netfilter` section. Netfilter BPF-link specs accept `ipv4` / `ipv6`
     families and the hook names `pre_routing`, `local_in`, `forward`,
     `local_out`, and `post_routing`. `defrag` requires priority greater
-    than `-400`. Current loader support is compile/dry-run only, so live
+    than `-400` and Linux 6.6+. Current loader support is compile/dry-run only, so live
     attach returns a clear unsupported error until BPF-link netfilter
     attach is implemented.
     Return aliases are `drop` / `deny` for `0`, `accept` / `allow` /

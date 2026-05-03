@@ -1533,6 +1533,7 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::Tcx,
     ProgramCompatibilityRequirement::Netkit,
     ProgramCompatibilityRequirement::NetfilterLink,
+    ProgramCompatibilityRequirement::NetfilterDefrag,
     ProgramCompatibilityRequirement::RouteLwt,
     ProgramCompatibilityRequirement::RouteLwtSeg6Local,
     ProgramCompatibilityRequirement::SockMapAttach,

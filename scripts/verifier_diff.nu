@@ -127,6 +127,11 @@ const KERNEL_FEATURE_NETFILTER_LINK = {
     min_kernel: "6.4"
     source: "https://github.com/torvalds/linux/blob/v6.4/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_NETFILTER_DEFRAG = {
+    key: "attach:netfilter-defrag"
+    min_kernel: "6.6"
+    source: "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_PROG_LWT = {
     key: "program:BPF_PROG_TYPE_LWT"
     min_kernel: "4.10"
@@ -6756,6 +6761,9 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_PROG_FLOW_DISSECTOR)
     } else if ($target | str starts-with "netfilter:") {
         $features = ($features | append $KERNEL_FEATURE_NETFILTER_LINK)
+        if ($target | str contains ":defrag") {
+            $features = ($features | append $KERNEL_FEATURE_NETFILTER_DEFRAG)
+        }
     } else if ($target | str starts-with "lwt_seg6local:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_LWT)
         $features = ($features | append $KERNEL_FEATURE_PROG_LWT_SEG6LOCAL)

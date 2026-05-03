@@ -545,9 +545,9 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             .expect("compatibility minimum kernel should be present")
             .as_str()
             .expect("compatibility minimum kernel should be a string"),
-        "6.4"
+        "6.6"
     );
-    let requirement = requirements
+    let link_requirement = requirements
         .iter()
         .find_map(|requirement| {
             let requirement = requirement.as_record().ok()?;
@@ -561,7 +561,7 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
         .expect("netfilter-link requirement should be present");
 
     assert_eq!(
-        requirement
+        link_requirement
             .get("category")
             .expect("requirement category should be present")
             .as_str()
@@ -569,7 +569,7 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
         "program-feature"
     );
     assert_eq!(
-        requirement
+        link_requirement
             .get("default_test_lane")
             .expect("requirement test lane should be present")
             .as_str()
@@ -577,7 +577,7 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
         "vm-only"
     );
     assert!(
-        requirement
+        link_requirement
             .get("minimum_kernel")
             .expect("minimum kernel should be present")
             .as_str()
@@ -585,12 +585,58 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             == "6.4"
     );
     assert_eq!(
-        requirement
+        link_requirement
             .get("minimum_kernel_source")
             .expect("minimum kernel source should be present")
             .as_str()
             .expect("minimum kernel source should be a string"),
         "https://github.com/torvalds/linux/blob/v6.4/include/uapi/linux/bpf.h"
+    );
+
+    let defrag_requirement = requirements
+        .iter()
+        .find_map(|requirement| {
+            let requirement = requirement.as_record().ok()?;
+            (requirement
+                .get("key")?
+                .as_str()
+                .ok()
+                .is_some_and(|key| key == "netfilter-defrag"))
+            .then_some(requirement)
+        })
+        .expect("netfilter-defrag requirement should be present");
+
+    assert_eq!(
+        defrag_requirement
+            .get("category")
+            .expect("defrag requirement category should be present")
+            .as_str()
+            .expect("defrag requirement category should be a string"),
+        "attach-mode"
+    );
+    assert_eq!(
+        defrag_requirement
+            .get("default_test_lane")
+            .expect("defrag requirement test lane should be present")
+            .as_str()
+            .expect("defrag requirement test lane should be a string"),
+        "host-gated"
+    );
+    assert_eq!(
+        defrag_requirement
+            .get("minimum_kernel")
+            .expect("defrag minimum kernel should be present")
+            .as_str()
+            .expect("defrag minimum kernel should be a string"),
+        "6.6"
+    );
+    assert_eq!(
+        defrag_requirement
+            .get("minimum_kernel_source")
+            .expect("defrag minimum kernel source should be present")
+            .as_str()
+            .expect("defrag minimum kernel source should be a string"),
+        "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h"
     );
 }
 

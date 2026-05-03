@@ -4636,6 +4636,10 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         Some("6.4")
     );
     assert_eq!(
+        ProgramCompatibilityRequirement::NetfilterDefrag.minimum_kernel(),
+        Some("6.6")
+    );
+    assert_eq!(
         ProgramCompatibilityRequirement::SchedExt.minimum_kernel(),
         Some("6.12")
     );

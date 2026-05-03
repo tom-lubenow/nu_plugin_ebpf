@@ -1600,6 +1600,7 @@ pub enum ProgramCompatibilityRequirement {
     Tcx,
     Netkit,
     NetfilterLink,
+    NetfilterDefrag,
     RouteLwt,
     RouteLwtSeg6Local,
     SockMapAttach,
@@ -1773,6 +1774,7 @@ impl ProgramCompatibilityRequirement {
             Self::Tcx => "tcx",
             Self::Netkit => "netkit",
             Self::NetfilterLink => "netfilter-link",
+            Self::NetfilterDefrag => "netfilter-defrag",
             Self::RouteLwt => "route-lwt",
             Self::RouteLwtSeg6Local => "route-lwt-seg6local",
             Self::SockMapAttach => "sockmap-attach",
@@ -1846,6 +1848,7 @@ impl ProgramCompatibilityRequirement {
             Self::Tcx => "TCX attach support",
             Self::Netkit => "netkit attach support",
             Self::NetfilterLink => "BPF-link netfilter attach support",
+            Self::NetfilterDefrag => "BPF-link netfilter IP defragmentation flag support",
             Self::RouteLwt => "route lightweight-tunnel BPF attach support",
             Self::RouteLwtSeg6Local => "SEG6 local lightweight-tunnel BPF program support",
             Self::SockMapAttach => "sockmap or sockhash attach support",
@@ -1874,7 +1877,8 @@ impl ProgramCompatibilityRequirement {
             Self::KernelBtf => "kernel-metadata",
             Self::CgroupV2 | Self::LircMode2 => "attach-resource",
             Self::SchedExt => "struct-ops-family",
-            Self::XdpSkbAttachMode
+            Self::NetfilterDefrag
+            | Self::XdpSkbAttachMode
             | Self::XdpDrvAttachMode
             | Self::XdpHwAttachMode
             | Self::SkReuseportMigration
@@ -1917,6 +1921,7 @@ impl ProgramCompatibilityRequirement {
             | Self::FlowDissector
             | Self::Tcx
             | Self::Netkit
+            | Self::NetfilterDefrag
             | Self::XdpSkbAttachMode
             | Self::XdpDrvAttachMode
             | Self::XdpHwAttachMode
@@ -2016,6 +2021,7 @@ impl ProgramCompatibilityRequirement {
             Self::Tcx => Some("6.6"),
             Self::Netkit => Some("6.7"),
             Self::NetfilterLink => Some("6.4"),
+            Self::NetfilterDefrag => Some("6.6"),
             Self::RouteLwt => Some("4.10"),
             Self::RouteLwtSeg6Local => Some("4.18"),
             Self::SkMsgSockMapAttach => Some("4.17"),
@@ -2056,6 +2062,7 @@ impl ProgramCompatibilityRequirement {
             Self::Tcx => LINUX_BPF_H_V6_6_SOURCE,
             Self::Netkit => LINUX_BPF_H_V6_7_SOURCE,
             Self::NetfilterLink => LINUX_BPF_H_V6_4_SOURCE,
+            Self::NetfilterDefrag => LINUX_BPF_H_V6_6_SOURCE,
             Self::RouteLwt => LINUX_BPF_H_V4_10_SOURCE,
             Self::RouteLwtSeg6Local | Self::LircMode2 => LINUX_BPF_H_V4_18_SOURCE,
             Self::SkMsgSockMapAttach => LINUX_BPF_H_V4_17_SOURCE,

@@ -32,6 +32,7 @@ program specs. `ebpf spec` reports each requirement with a category, a default
 test lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel fields. Source-verified feature requirements carry minimum
 kernel versions for base program families, cgroup program families,
+TCX/netkit, netfilter links and defrag targets, XDP attach modes,
 `uprobe.multi`, and cgroup UNIX socket-address hooks, and
 `compatibility_minimum_kernel` reports the maximum known requirement for that
 parsed target. Live-load preflight also checks source-verified map-kind, global
