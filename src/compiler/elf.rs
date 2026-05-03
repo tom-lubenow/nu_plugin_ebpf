@@ -1666,6 +1666,25 @@ pub enum ProgramCompatibilityRequirement {
     CgroupUnixSockAddr,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProgramCompatibilityTestLane {
+    HostSafe,
+    HostGated,
+    DryRun,
+    VmOnly,
+}
+
+impl ProgramCompatibilityTestLane {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::HostSafe => "host-safe",
+            Self::HostGated => "host-gated",
+            Self::DryRun => "dry-run",
+            Self::VmOnly => "vm-only",
+        }
+    }
+}
+
 const BPF_DIRECT_MAP_VALUE_SOURCE: &str =
     "https://github.com/torvalds/linux/commit/d8eca5bbb2be9bc7546f9e733786fa2f1a594c67";
 const LINUX_BPF_H_V3_19_SOURCE: &str =
@@ -1964,16 +1983,16 @@ impl ProgramCompatibilityRequirement {
         }
     }
 
-    pub fn default_test_lane(&self) -> &'static str {
+    pub fn test_lane(&self) -> ProgramCompatibilityTestLane {
         match self {
-            Self::ExtensionProgram | Self::SyscallProgram => "dry-run",
+            Self::ExtensionProgram | Self::SyscallProgram => ProgramCompatibilityTestLane::DryRun,
             Self::NetfilterLink
             | Self::RouteLwt
             | Self::StructOps
             | Self::TcpCongestionOps
             | Self::HidBpfOps
             | Self::SchedExt
-            | Self::QdiscOps => "vm-only",
+            | Self::QdiscOps => ProgramCompatibilityTestLane::VmOnly,
             Self::RawTracepointWritable
             | Self::SocketFilterProgram
             | Self::XdpProgram
@@ -2004,7 +2023,7 @@ impl ProgramCompatibilityRequirement {
             | Self::SockOpsProgram
             | Self::CgroupV2
             | Self::LircMode2
-            | Self::CgroupUnixSockAddr => "host-gated",
+            | Self::CgroupUnixSockAddr => ProgramCompatibilityTestLane::HostGated,
             Self::KernelBtf
             | Self::KprobeProgram
             | Self::TracepointProgram
@@ -2034,26 +2053,28 @@ impl ProgramCompatibilityRequirement {
             | Self::BpfIteratorKsymTarget
             | Self::BpfIteratorNetlinkTarget
             | Self::BpfIteratorKmemCacheTarget
-            | Self::BpfIteratorDmabufTarget => "host-safe",
+            | Self::BpfIteratorDmabufTarget => ProgramCompatibilityTestLane::HostSafe,
         }
+    }
+
+    pub fn default_test_lane(&self) -> &'static str {
+        self.test_lane().key()
+    }
+
+    pub fn effective_test_lane(
+        requirements: &[ProgramCompatibilityRequirement],
+    ) -> ProgramCompatibilityTestLane {
+        requirements
+            .iter()
+            .map(ProgramCompatibilityRequirement::test_lane)
+            .max()
+            .unwrap_or(ProgramCompatibilityTestLane::HostSafe)
     }
 
     pub fn effective_default_test_lane(
         requirements: &[ProgramCompatibilityRequirement],
     ) -> &'static str {
-        let mut lane = "host-safe";
-
-        for requirement in requirements {
-            match requirement.default_test_lane() {
-                "vm-only" => return "vm-only",
-                "dry-run" => lane = "dry-run",
-                "host-gated" if lane == "host-safe" => lane = "host-gated",
-                "host-safe" | "host-gated" => {}
-                _ => {}
-            }
-        }
-
-        lane
+        Self::effective_test_lane(requirements).key()
     }
 
     pub fn minimum_kernel(&self) -> Option<&'static str> {
@@ -2241,6 +2262,12 @@ impl ProgramCompatibilityRequirement {
 
     fn kernel_version_part(part: Option<&str>) -> u32 {
         part.unwrap_or("0").parse().unwrap_or(0)
+    }
+}
+
+impl fmt::Display for ProgramCompatibilityTestLane {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
     }
 }
 

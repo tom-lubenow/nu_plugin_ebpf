@@ -4584,6 +4584,16 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             !requirement.default_test_lane().is_empty(),
             "{requirement:?} should have a default test lane"
         );
+        assert_eq!(
+            requirement.default_test_lane(),
+            requirement.test_lane().key(),
+            "{requirement:?} default_test_lane should expose the typed lane key"
+        );
+        assert_eq!(
+            requirement.test_lane().to_string(),
+            requirement.default_test_lane(),
+            "{requirement:?} Display should expose the typed lane key"
+        );
         assert!(
             requirement.minimum_kernel().is_some() == requirement.minimum_kernel_source().is_some(),
             "{requirement:?} should only report a minimum kernel with a source"
@@ -4610,6 +4620,11 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             assert!(
                 !requirement.default_test_lane().is_empty(),
                 "{requirement:?} should have a default test lane"
+            );
+            assert_eq!(
+                requirement.default_test_lane(),
+                requirement.test_lane().key(),
+                "{requirement:?} default_test_lane should expose the typed lane key"
             );
         }
     }
@@ -4675,10 +4690,20 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
             .requires_compatibility_feature(ProgramCompatibilityRequirement::SocketFilterProgram)
     );
     assert_eq!(
+        ProgramCompatibilityRequirement::effective_test_lane(&[]),
+        ProgramCompatibilityTestLane::HostSafe
+    );
+    assert_eq!(
         ProgramCompatibilityRequirement::effective_default_test_lane(
             EbpfProgramType::Kprobe.compatibility_requirements()
         ),
         "host-safe"
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_test_lane(
+            EbpfProgramType::Kprobe.compatibility_requirements()
+        ),
+        ProgramCompatibilityTestLane::HostSafe
     );
     assert_eq!(
         ProgramCompatibilityRequirement::effective_default_test_lane(
@@ -4687,10 +4712,22 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         "host-gated"
     );
     assert_eq!(
+        ProgramCompatibilityRequirement::effective_test_lane(
+            EbpfProgramType::CgroupSock.compatibility_requirements()
+        ),
+        ProgramCompatibilityTestLane::HostGated
+    );
+    assert_eq!(
         ProgramCompatibilityRequirement::effective_default_test_lane(
             EbpfProgramType::Extension.compatibility_requirements()
         ),
         "dry-run"
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_test_lane(
+            EbpfProgramType::Extension.compatibility_requirements()
+        ),
+        ProgramCompatibilityTestLane::DryRun
     );
     assert_eq!(
         ProgramCompatibilityRequirement::effective_default_test_lane(
@@ -4699,6 +4736,14 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
                 .compatibility_requirements()
         ),
         "vm-only"
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_test_lane(
+            &ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+                .expect("struct_ops should parse")
+                .compatibility_requirements()
+        ),
+        ProgramCompatibilityTestLane::VmOnly
     );
 
     assert_eq!(
