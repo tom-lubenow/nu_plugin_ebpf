@@ -6810,6 +6810,22 @@ const FIXTURES = [
         error_contains: "struct_ops attach expects an object value type"
     }
     {
+        name: "struct-ops-object-sleepable-callback-source-metadata"
+        category: "program-model"
+        tags: [struct-ops callback sleepable source metadata]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    init: {|ctx|'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "timer-init-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
@@ -9553,6 +9569,29 @@ def struct-ops-target-sleepable? [target: string] {
     $callback in $SCHED_EXT_SLEEPABLE_CALLBACKS
 }
 
+def program-struct-ops-kernel-features [source: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "struct_ops:sched_ext_ops") {
+        return []
+    }
+
+    mut features = []
+    if (struct-ops-target-sleepable? $target_text) {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_SLEEPABLE_PROGRAM])
+    }
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+        for callback in $SCHED_EXT_SLEEPABLE_CALLBACKS {
+            if ($trimmed | str starts-with $"($callback):") {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_SLEEPABLE_PROGRAM])
+            }
+        }
+    }
+
+    $features
+}
+
 def target-kernel-features [target] {
     if $target == null {
         return []
@@ -9715,6 +9754,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
+    $features = (append-missing-kernel-features $features (program-struct-ops-kernel-features $program ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
     let legacy_min_kernel_source = ($fixture | get -o min_kernel_source)
