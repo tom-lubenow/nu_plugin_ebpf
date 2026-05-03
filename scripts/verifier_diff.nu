@@ -752,6 +752,16 @@ const KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND = {
     min_kernel: "5.14"
     source: "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_GET_FUNC_IP = {
+    key: "helper:bpf_get_func_ip"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE = {
+    key: "helper:bpf_get_attach_cookie"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_KALLSYMS_LOOKUP_NAME = {
     key: "helper:bpf_kallsyms_lookup_name"
     min_kernel: "5.16"
@@ -2244,6 +2254,8 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_sys_bpf", feature: $KERNEL_FEATURE_BPF_SYS_BPF }
     { name: "bpf_sys_close", feature: $KERNEL_FEATURE_BPF_SYS_CLOSE }
     { name: "bpf_btf_find_by_name_kind", feature: $KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND }
+    { name: "bpf_get_func_ip", feature: $KERNEL_FEATURE_BPF_GET_FUNC_IP }
+    { name: "bpf_get_attach_cookie", feature: $KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE }
     { name: "bpf_timer_init", feature: $KERNEL_FEATURE_BPF_TIMER_INIT }
     { name: "bpf_timer_set_callback", feature: $KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK }
     { name: "bpf_timer_start", feature: $KERNEL_FEATURE_BPF_TIMER_START }
@@ -7053,6 +7065,12 @@ def program-surface-helper-kernel-features [source: string target] {
     }
     if (($source | str contains ".kstack") or ($source | str contains ".ustack")) {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_STACKID])
+    }
+    if ($source | str contains "func_ip") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_FUNC_IP])
+    }
+    if ($source | str contains "attach_cookie") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE])
     }
 
     for line in ($source | lines) {
