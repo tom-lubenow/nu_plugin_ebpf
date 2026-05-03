@@ -5511,6 +5511,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "random-int-helper-surface"
+        category: "language-surface"
+        tags: [random helper metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let value = (random int)'
+            '  $value | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "assign-socket-sk-lookup-clear"
         category: "language-surface"
         tags: [assign-socket sk-lookup]
@@ -6557,6 +6572,9 @@ def program-surface-helper-kernel-features [source: string target] {
 
     if ($source | str contains "tail-call") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_TAIL_CALL])
+    }
+    if ($source | str contains "random int") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_PRANDOM_U32])
     }
 
     for line in ($source | lines) {
