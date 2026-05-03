@@ -537,6 +537,46 @@ const KERNEL_FEATURE_BPF_MAP_PEEK_ELEM = {
     min_kernel: "4.20"
     source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SK_STORAGE_GET = {
+    key: "helper:bpf_sk_storage_get"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SK_STORAGE_DELETE = {
+    key: "helper:bpf_sk_storage_delete"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_INODE_STORAGE_GET = {
+    key: "helper:bpf_inode_storage_get"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_INODE_STORAGE_DELETE = {
+    key: "helper:bpf_inode_storage_delete"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_TASK_STORAGE_GET = {
+    key: "helper:bpf_task_storage_get"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_TASK_STORAGE_DELETE = {
+    key: "helper:bpf_task_storage_delete"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_CGRP_STORAGE_GET = {
+    key: "helper:bpf_cgrp_storage_get"
+    min_kernel: "6.2"
+    source: "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_CGRP_STORAGE_DELETE = {
+    key: "helper:bpf_cgrp_storage_delete"
+    min_kernel: "6.2"
+    source: "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_KTIME_GET_NS = {
     key: "helper:bpf_ktime_get_ns"
     min_kernel: "4.1"
@@ -2130,6 +2170,14 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_push_elem", feature: $KERNEL_FEATURE_BPF_MAP_PUSH_ELEM }
     { name: "bpf_map_pop_elem", feature: $KERNEL_FEATURE_BPF_MAP_POP_ELEM }
     { name: "bpf_map_peek_elem", feature: $KERNEL_FEATURE_BPF_MAP_PEEK_ELEM }
+    { name: "bpf_sk_storage_get", feature: $KERNEL_FEATURE_BPF_SK_STORAGE_GET }
+    { name: "bpf_sk_storage_delete", feature: $KERNEL_FEATURE_BPF_SK_STORAGE_DELETE }
+    { name: "bpf_inode_storage_get", feature: $KERNEL_FEATURE_BPF_INODE_STORAGE_GET }
+    { name: "bpf_inode_storage_delete", feature: $KERNEL_FEATURE_BPF_INODE_STORAGE_DELETE }
+    { name: "bpf_task_storage_get", feature: $KERNEL_FEATURE_BPF_TASK_STORAGE_GET }
+    { name: "bpf_task_storage_delete", feature: $KERNEL_FEATURE_BPF_TASK_STORAGE_DELETE }
+    { name: "bpf_cgrp_storage_get", feature: $KERNEL_FEATURE_BPF_CGRP_STORAGE_GET }
+    { name: "bpf_cgrp_storage_delete", feature: $KERNEL_FEATURE_BPF_CGRP_STORAGE_DELETE }
     { name: "bpf_ktime_get_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_NS }
     { name: "bpf_get_current_pid_tgid", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
     { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
@@ -2792,6 +2840,84 @@ const FIXTURES = [
             '{|ctx|'
             '  $ctx.arg0 | map-put lru_cpu_seen 0 --kind lru-per-cpu-hash'
             '  0 | map-delete lru_cpu_seen --kind lru-per-cpu-hash'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "task-storage-map-get-init"
+        category: "maps"
+        tags: [maps local-storage task-storage map-get accept]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  let state = ($ctx.task | map-get task_state --kind task-storage --init { hits: 0 })'
+            '  if $state {'
+            '    $state.hits | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "task-storage-map-delete"
+        category: "maps"
+        tags: [maps local-storage task-storage map-delete accept]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-delete task_state --kind task-storage'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-storage-map-contains"
+        category: "maps"
+        tags: [maps local-storage sk-storage map-contains accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk | map-contains sock_state --kind sk-storage'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "inode-storage-map-delete"
+        category: "maps"
+        tags: [maps local-storage inode-storage map-delete accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.file.f_inode | map-delete inode_state --kind inode-storage'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgrp-storage-map-contains"
+        category: "maps"
+        tags: [maps local-storage cgrp-storage map-contains accept]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_cgroup | map-contains cgrp_state --kind cgrp-storage'
             '  0'
             '}'
         ]
@@ -6044,6 +6170,40 @@ def generic-map-delete-kind? [kind: string] {
     ]
 }
 
+def local-storage-get-helper-kernel-feature [kind: string] {
+    if $kind == "sk-storage" {
+        return $KERNEL_FEATURE_BPF_SK_STORAGE_GET
+    }
+    if $kind == "inode-storage" {
+        return $KERNEL_FEATURE_BPF_INODE_STORAGE_GET
+    }
+    if $kind == "task-storage" {
+        return $KERNEL_FEATURE_BPF_TASK_STORAGE_GET
+    }
+    if $kind == "cgrp-storage" {
+        return $KERNEL_FEATURE_BPF_CGRP_STORAGE_GET
+    }
+
+    null
+}
+
+def local-storage-delete-helper-kernel-feature [kind: string] {
+    if $kind == "sk-storage" {
+        return $KERNEL_FEATURE_BPF_SK_STORAGE_DELETE
+    }
+    if $kind == "inode-storage" {
+        return $KERNEL_FEATURE_BPF_INODE_STORAGE_DELETE
+    }
+    if $kind == "task-storage" {
+        return $KERNEL_FEATURE_BPF_TASK_STORAGE_DELETE
+    }
+    if $kind == "cgrp-storage" {
+        return $KERNEL_FEATURE_BPF_CGRP_STORAGE_DELETE
+    }
+
+    null
+}
+
 def helper-kernel-feature [name: string] {
     let matches = ($HELPER_KERNEL_FEATURES | where {|entry| $entry.name == $name })
     if ($matches | is-empty) {
@@ -6867,6 +7027,18 @@ def program-surface-helper-kernel-features [source: string target] {
         }
         if ($line | str contains "map-delete ") and (generic-map-delete-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_DELETE_ELEM])
+        }
+        if (($line | str contains "map-get ") or ($line | str contains "map-contains ")) {
+            let local_storage_feature = (local-storage-get-helper-kernel-feature $map_kind)
+            if $local_storage_feature != null {
+                $features = (append-missing-kernel-features $features [$local_storage_feature])
+            }
+        }
+        if ($line | str contains "map-delete ") {
+            let local_storage_feature = (local-storage-delete-helper-kernel-feature $map_kind)
+            if $local_storage_feature != null {
+                $features = (append-missing-kernel-features $features [$local_storage_feature])
+            }
         }
         if ($line | str contains "map-push ") and ($map_kind in ["queue" "stack" "bloom-filter"]) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PUSH_ELEM])
