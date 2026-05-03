@@ -1757,6 +1757,10 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
         "unexpected cgroup_sock_addr unix live-attach error: {err:?}"
     );
     if let LoadError::Attach(msg) = &err {
+        assert!(
+            msg.contains("default test lane: host-gated"),
+            "cgroup_sock_addr unix live-attach error should mention the host-gated lane: {msg}"
+        );
         for requirement in expected_requirements {
             assert!(
                 msg.contains(requirement.description()),
@@ -1809,6 +1813,7 @@ fn test_kernel_minimum_requirement_detail_reports_sched_ext_struct_ops_floor() {
 
     assert!(msg.contains("parsed target requires kernel>=6.12"));
     assert!(msg.contains("current kernel is 6.11.0-test"));
+    assert!(msg.contains("default test lane: vm-only"));
     assert!(msg.contains(ProgramCompatibilityRequirement::StructOps.description()));
     assert!(msg.contains(ProgramCompatibilityRequirement::SchedExt.description()));
     assert!(msg.contains("kernel>=5.6"));

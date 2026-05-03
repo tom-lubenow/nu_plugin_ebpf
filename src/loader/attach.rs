@@ -57,6 +57,15 @@ fn compatibility_requirements_detail(
     if requirements.is_empty() {
         String::new()
     } else {
+        let test_lane =
+            crate::compiler::ProgramCompatibilityRequirement::effective_default_test_lane(
+                requirements,
+            );
+        let test_lane_detail = if test_lane == "host-safe" {
+            String::new()
+        } else {
+            format!("; default test lane: {test_lane}")
+        };
         let descriptions = requirements
             .iter()
             .map(|requirement| {
@@ -68,7 +77,7 @@ fn compatibility_requirements_detail(
             })
             .collect::<Vec<_>>()
             .join(", ");
-        format!("; feature requirements: {descriptions}")
+        format!("{test_lane_detail}; feature requirements: {descriptions}")
     }
 }
 
