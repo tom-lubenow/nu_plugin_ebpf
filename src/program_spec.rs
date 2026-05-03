@@ -4302,6 +4302,39 @@ mod tests {
     }
 
     #[test]
+    fn test_program_spec_display_round_trips_modeled_specs() {
+        let mut specs = EbpfProgramType::supported_program_types()
+            .iter()
+            .map(|program_type| {
+                let target = ProgramSpec::representative_target_for_program_type(*program_type);
+                format!("{}:{target}", program_type.canonical_prefix())
+            })
+            .collect::<Vec<_>>();
+        specs.extend([
+            "fentry.s:security_file_open".to_string(),
+            "fexit.s:security_file_open".to_string(),
+            "fmod_ret.s:bpf_modify_return_test".to_string(),
+            "lsm.s:file_open".to_string(),
+            "uprobe.s:/bin/bash:main".to_string(),
+            "uretprobe.s:/lib/libc.so.6:malloc".to_string(),
+            "uprobe.multi.s:/bin/bash:read*".to_string(),
+            "uretprobe.multi.s:/bin/bash:read*".to_string(),
+            "struct_ops:sched_ext_ops.init".to_string(),
+            "struct_ops:sched_ext_ops.select_cpu".to_string(),
+        ]);
+
+        for spec_text in specs {
+            let spec = ProgramSpec::parse(&spec_text)
+                .unwrap_or_else(|err| panic!("{spec_text} should parse before round trip: {err}"));
+            let rendered = spec.to_string();
+            let reparsed = ProgramSpec::parse(&rendered).unwrap_or_else(|err| {
+                panic!("{spec_text} rendered as {rendered} should parse: {err}")
+            });
+            assert_eq!(reparsed, spec, "{spec_text} should round-trip via Display");
+        }
+    }
+
+    #[test]
     fn test_struct_ops_target_parses_objects_and_callbacks() {
         let object = ProgramSpec::parse("struct_ops:sched_ext_ops")
             .expect("struct_ops object spec should parse");
