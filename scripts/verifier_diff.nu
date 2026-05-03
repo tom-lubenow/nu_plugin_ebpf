@@ -3776,6 +3776,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "netkit-rejects-egress-context"
+        category: "context-policy"
+        tags: [netkit context reject egress-only]
+        requires: [loopback-interface]
+        target: "netkit:lo:primary"
+        program: [
+            '{|ctx|'
+            '  $ctx.skb_cgroup_id | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.skb_cgroup_id is only available on tc_action, tc:egress, and tcx:egress programs"
+    }
+    {
         name: "xdp-rejects-pid-context"
         category: "context-policy"
         tags: [xdp reject]
@@ -3834,6 +3850,40 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "cgroup-skb-egress-timestamp-context-write"
+        category: "context-surface"
+        tags: [cgroup-skb context writable timestamp egress]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.tstamp + $ctx.hwtstamp + $ctx.priority) | count'
+            '  $ctx.tstamp = 123'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-skb-ingress-rejects-tstamp-write"
+        category: "context-policy"
+        tags: [cgroup-skb context reject writable ingress]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:ingress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.tstamp = 123'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.tstamp is only writable on tc_action, tc, tcx, netkit, and cgroup_skb:egress programs"
     }
     {
         name: "cgroup-skb-ingress-writable-context"
