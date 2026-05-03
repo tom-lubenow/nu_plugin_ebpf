@@ -6671,6 +6671,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-message-rejects-non-sk-msg"
+        category: "language-surface"
+        tags: [adjust-message reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  adjust-message --apply 8'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "adjust-message --apply is only valid in sk_msg programs"
+    }
+    {
         name: "adjust-message-sk-msg-cork"
         category: "language-surface"
         tags: [adjust-message sk-msg]
