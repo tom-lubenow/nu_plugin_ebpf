@@ -3645,6 +3645,55 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-ingress-skb-context-write"
+        category: "context-surface"
+        tags: [tc context packet writable]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  $ctx.mark = 7'
+            '  $ctx.priority = 3'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-egress-helper-backed-context"
+        category: "context-surface"
+        tags: [tc context helper-backed egress]
+        requires: [loopback-interface]
+        target: "tc:lo:egress"
+        program: [
+            '{|ctx|'
+            '  ($ctx.skb_cgroup_id + $ctx.route_realm + $ctx.cgroup_classid + $ctx.netns_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-ingress-rejects-egress-context"
+        category: "context-policy"
+        tags: [tc context reject egress-only]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx.skb_cgroup_id | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.skb_cgroup_id is only available on tc/tcx egress programs"
+    }
+    {
         name: "tcx-ingress-skb-context-write"
         category: "context-surface"
         tags: [tcx context packet writable]
