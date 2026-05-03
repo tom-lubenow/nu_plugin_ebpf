@@ -7350,6 +7350,78 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-packet-xdp-meta"
+        category: "language-surface"
+        tags: [adjust-packet xdp]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --meta 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-packet-xdp-tail"
+        category: "language-surface"
+        tags: [adjust-packet xdp]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --tail 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-packet-tc-action-room"
+        category: "language-surface"
+        tags: [adjust-packet tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --room 0 --mode 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "adjust-packet-lwt-in-pull"
+        category: "language-surface"
+        tags: [adjust-packet lwt]
+        target: "lwt_in:demo-route"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --pull 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "adjust-packet-lwt-xmit-head"
+        category: "language-surface"
+        tags: [adjust-packet lwt]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --head 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "redirect-xdp-ifindex"
         category: "language-surface"
         tags: [redirect xdp]
