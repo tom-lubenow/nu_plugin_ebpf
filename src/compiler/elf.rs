@@ -1317,7 +1317,47 @@ impl EbpfProgramType {
     }
 
     pub fn supports_intrinsic(&self, intrinsic: ProgramIntrinsic) -> bool {
-        self.supports_capability(intrinsic.required_capability())
+        if !self.supports_capability(intrinsic.required_capability()) {
+            return false;
+        }
+
+        match intrinsic {
+            ProgramIntrinsic::AdjustPacket => [
+                PacketAdjustMode::Head,
+                PacketAdjustMode::Meta,
+                PacketAdjustMode::Tail,
+                PacketAdjustMode::Pull,
+                PacketAdjustMode::Room,
+            ]
+            .into_iter()
+            .any(|mode| self.packet_adjust_helper(mode).is_some()),
+            ProgramIntrinsic::AdjustMessage => [
+                MessageAdjustMode::Apply,
+                MessageAdjustMode::Cork,
+                MessageAdjustMode::Pull,
+                MessageAdjustMode::Push,
+                MessageAdjustMode::Pop,
+            ]
+            .into_iter()
+            .any(|mode| self.message_adjust_helper(mode).is_some()),
+            ProgramIntrinsic::Redirect => {
+                self.packet_redirect_helper().is_some()
+                    || self.packet_redirect_peer_helper().is_some()
+                    || self.packet_redirect_neigh_helper().is_some()
+            }
+            ProgramIntrinsic::RedirectMap => {
+                self.helper_call_error(BpfHelper::RedirectMap).is_none()
+            }
+            ProgramIntrinsic::RedirectSocket => {
+                self.socket_redirect_helper(MapKind::SockMap).is_some()
+                    || self.socket_redirect_helper(MapKind::SockHash).is_some()
+                    || self
+                        .socket_redirect_helper(MapKind::ReuseportSockArray)
+                        .is_some()
+            }
+            ProgramIntrinsic::AssignSocket => self.helper_call_error(BpfHelper::SkAssign).is_none(),
+            _ => true,
+        }
     }
 
     pub fn supported_capabilities(&self) -> &'static [ProgramCapability] {

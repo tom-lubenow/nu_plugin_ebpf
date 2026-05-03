@@ -1288,7 +1288,7 @@ pub(super) fn spec_record(
         .collect();
     let intrinsics = ProgramIntrinsic::all()
         .iter()
-        .filter(|intrinsic| program_type.supports_intrinsic(**intrinsic))
+        .filter(|intrinsic| spec.supports_intrinsic(**intrinsic))
         .map(|intrinsic| {
             let capability = intrinsic.required_capability();
             Value::record(

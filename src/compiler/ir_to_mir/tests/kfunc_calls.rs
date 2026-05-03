@@ -3711,9 +3711,7 @@ fn test_redirect_socket_intrinsic_rejects_non_socket_redirect_programs() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
-                msg.contains(
-                    "redirect-socket is only valid in sk_msg, sk_skb, sk_skb_parser, and sk_reuseport programs"
-                ),
+                msg.contains("redirect-socket is not supported on fentry programs"),
                 "{msg}"
             );
         }
@@ -4620,7 +4618,7 @@ fn test_adjust_message_intrinsic_rejects_non_sk_msg_programs() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
-                msg.contains("adjust-message --apply is only valid in sk_msg programs"),
+                msg.contains("adjust-message is not supported on tc programs"),
                 "{msg}"
             );
         }
@@ -5054,9 +5052,7 @@ fn test_redirect_intrinsic_rejects_non_packet_programs() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
-                msg.contains(
-                    "helper 'bpf_redirect' is only valid in xdp, tc_action, tc, tcx, netkit, and lwt_xmit programs",
-                ),
+                msg.contains("redirect is not supported on fentry programs"),
                 "{msg}"
             );
         }
@@ -5372,7 +5368,7 @@ fn test_redirect_map_intrinsic_rejects_non_xdp_programs() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(
-                msg.contains("helper 'bpf_redirect_map' is only valid in xdp programs"),
+                msg.contains("redirect-map is not supported on fentry programs"),
                 "{msg}"
             );
         }

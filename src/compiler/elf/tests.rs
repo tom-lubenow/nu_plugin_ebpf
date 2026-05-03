@@ -4387,6 +4387,20 @@ fn test_program_type_supports_probe_intrinsics() {
     assert!(EbpfProgramType::Tc.supports_intrinsic(ProgramIntrinsic::KfuncCall));
     assert!(!EbpfProgramType::Syscall.supports_intrinsic(ProgramIntrinsic::KfuncCall));
     assert!(!EbpfProgramType::Extension.supports_intrinsic(ProgramIntrinsic::KfuncCall));
+    assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::AdjustPacket));
+    assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::Redirect));
+    assert!(EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::RedirectMap));
+    assert!(!EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::AdjustMessage));
+    assert!(!EbpfProgramType::Xdp.supports_intrinsic(ProgramIntrinsic::RedirectSocket));
+    assert!(EbpfProgramType::SkMsg.supports_intrinsic(ProgramIntrinsic::AdjustMessage));
+    assert!(EbpfProgramType::SkMsg.supports_intrinsic(ProgramIntrinsic::RedirectSocket));
+    assert!(!EbpfProgramType::SkMsg.supports_intrinsic(ProgramIntrinsic::AdjustPacket));
+    assert!(EbpfProgramType::SkSkb.supports_intrinsic(ProgramIntrinsic::AdjustPacket));
+    assert!(EbpfProgramType::SkSkb.supports_intrinsic(ProgramIntrinsic::RedirectSocket));
+    assert!(EbpfProgramType::SkReuseport.supports_intrinsic(ProgramIntrinsic::RedirectSocket));
+    assert!(!EbpfProgramType::RawTracepoint.supports_intrinsic(ProgramIntrinsic::AdjustMessage));
+    assert!(!EbpfProgramType::RawTracepoint.supports_intrinsic(ProgramIntrinsic::Redirect));
+    assert!(!EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::RedirectMap));
 }
 
 #[test]

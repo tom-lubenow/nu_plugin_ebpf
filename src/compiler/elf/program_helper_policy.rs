@@ -1,4 +1,7 @@
-use super::{EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode};
+use super::{
+    EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode,
+    ProgramIntrinsic,
+};
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
 use crate::program_spec::{
@@ -1366,6 +1369,22 @@ impl ProgramSpec {
         self.program_type()
             .helper_call_error(helper)
             .or_else(|| self.attach_helper_call_error(helper))
+    }
+
+    pub(crate) fn supports_intrinsic(&self, intrinsic: ProgramIntrinsic) -> bool {
+        if !self.program_type().supports_intrinsic(intrinsic) {
+            return false;
+        }
+
+        match intrinsic {
+            ProgramIntrinsic::Redirect => {
+                self.helper_call_error(BpfHelper::Redirect).is_none()
+                    || self.helper_call_error(BpfHelper::RedirectPeer).is_none()
+                    || self.helper_call_error(BpfHelper::RedirectNeigh).is_none()
+            }
+            ProgramIntrinsic::AssignSocket => self.helper_call_error(BpfHelper::SkAssign).is_none(),
+            _ => true,
+        }
     }
 
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {

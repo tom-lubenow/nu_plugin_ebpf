@@ -16,6 +16,30 @@ fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a Sp
         .unwrap_or_else(|| panic!("expected writable ctx.{field_name} in spec context writes"))
 }
 
+fn intrinsic_commands(spec_text: &str) -> Vec<String> {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    record
+        .get("intrinsics")
+        .expect("intrinsics should be present")
+        .as_list()
+        .expect("intrinsics should be a list")
+        .iter()
+        .map(|intrinsic| {
+            intrinsic
+                .as_record()
+                .expect("intrinsic should be a record")
+                .get("command")
+                .expect("intrinsic command should be present")
+                .as_str()
+                .expect("intrinsic command should be a string")
+                .to_string()
+        })
+        .collect()
+}
+
 fn assert_field_backing_helper(
     spec_text: &str,
     field_name: &str,
@@ -665,6 +689,12 @@ fn test_spec_record_includes_intrinsic_command_metadata() {
     assert!(commands.contains(&"map-get".to_string()));
     assert!(commands.contains(&"global-get".to_string()));
     assert!(!commands.contains(&"read-str".to_string()));
+    assert!(commands.contains(&"adjust-packet".to_string()));
+    assert!(commands.contains(&"redirect".to_string()));
+    assert!(commands.contains(&"redirect-map".to_string()));
+    assert!(!commands.contains(&"adjust-message".to_string()));
+    assert!(!commands.contains(&"redirect-socket".to_string()));
+    assert!(!commands.contains(&"assign-socket".to_string()));
 
     let kfunc = intrinsics
         .iter()
@@ -694,6 +724,31 @@ fn test_spec_record_includes_intrinsic_command_metadata() {
             .expect("intrinsic capability description should be a string"),
         "kfunc calls"
     );
+}
+
+#[test]
+fn test_spec_record_intrinsics_follow_program_specific_helper_surfaces() {
+    let sk_msg = intrinsic_commands("sk_msg:/sys/fs/bpf/demo_sockmap");
+    assert!(sk_msg.contains(&"adjust-message".to_string()));
+    assert!(sk_msg.contains(&"redirect-socket".to_string()));
+    assert!(!sk_msg.contains(&"adjust-packet".to_string()));
+    assert!(!sk_msg.contains(&"redirect-map".to_string()));
+
+    let tc_ingress = intrinsic_commands("tc:lo:ingress");
+    assert!(tc_ingress.contains(&"adjust-packet".to_string()));
+    assert!(tc_ingress.contains(&"redirect".to_string()));
+    assert!(tc_ingress.contains(&"assign-socket".to_string()));
+
+    let tc_egress = intrinsic_commands("tc:lo:egress");
+    assert!(tc_egress.contains(&"adjust-packet".to_string()));
+    assert!(tc_egress.contains(&"redirect".to_string()));
+    assert!(!tc_egress.contains(&"assign-socket".to_string()));
+
+    let raw_tracepoint = intrinsic_commands("raw_tracepoint:sys_enter");
+    assert!(raw_tracepoint.contains(&"helper-call".to_string()));
+    assert!(!raw_tracepoint.contains(&"adjust-message".to_string()));
+    assert!(!raw_tracepoint.contains(&"redirect".to_string()));
+    assert!(!raw_tracepoint.contains(&"redirect-map".to_string()));
 }
 
 #[test]
