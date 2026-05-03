@@ -1496,11 +1496,11 @@ fn test_attach_rejects_risky_struct_ops_without_explicit_opt_in() {
         "unexpected risky struct_ops attach error: {err:?}"
     );
 
-    for value_type_name in ["hid_bpf_ops", "Qdisc_ops"] {
+    for value_type_name in ["demo_ops", "hid_bpf_ops", "Qdisc_ops"] {
         let object = EbpfObject::struct_ops(value_type_name, value_type_name, vec![0; 8]).build();
-        let err = state
-            .attach(&object)
-            .expect_err("behavior-changing struct_ops objects should require explicit opt-in");
+        let err = state.attach(&object).expect_err(
+            "unclassified or behavior-changing struct_ops objects should require explicit opt-in",
+        );
         assert!(
             matches!(
                 err,

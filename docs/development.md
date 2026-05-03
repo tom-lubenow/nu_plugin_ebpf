@@ -6,7 +6,7 @@ Contributor-facing workflow notes. See the [README](../README.md) for installati
 
 Run the repeatable manual integration checks with the Nu harness in `scripts/manual_integration.nu`. The script auto-selects the newest built plugin from `target/debug/nu_plugin_ebpf` and `target/release/nu_plugin_ebpf` unless `PLUGIN_BIN` is set. Subprocess checks use `nu --no-config-file` so the selected binary is not shadowed by a stale user plugin registry.
 
-The normal host-side harness intentionally avoids live registration for high-risk `struct_ops` families. Use `--dry-run` for `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` on development hosts, and only opt into `--unsafe-struct-ops` inside an isolated environment you are willing to reset.
+The normal host-side harness intentionally avoids live registration for unclassified or high-risk `struct_ops` families. Use `--dry-run` for unknown families, `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` on development hosts, and only opt into `--unsafe-struct-ops` inside an isolated environment you are willing to reset.
 
 ```bash
 cargo build

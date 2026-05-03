@@ -2,7 +2,7 @@
 
 Runnable snippets for the current attach surface. See the [README](../README.md) for installation and the short quick start, and see the [reference](reference.md) for detailed field and helper semantics.
 
-> Safety: prefer `--dry-run` on the host when exploring new `struct_ops` objects. Live loads for high-risk families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops` and should be done in an isolated environment.
+> Safety: prefer `--dry-run` on the host when exploring new `struct_ops` objects. Live loads for unclassified or high-risk families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops` and should be done in an isolated environment.
 
 ## Core Tracing
 
@@ -235,9 +235,10 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
     }
 }
 
-# Live high-risk struct_ops registration is gated behind an explicit opt-in.
-# A buggy scheduler, HID hook, or qdisc can make the host unstable. Prefer
-# dry-run on the host and use a VM or disposable environment for real loads.
+# Live unclassified or high-risk struct_ops registration is gated behind an
+# explicit opt-in. A buggy scheduler, HID hook, qdisc, or unknown family can make
+# the host unstable. Prefer dry-run on the host and use a VM or disposable
+# environment for real loads.
 # ebpf attach --unsafe-struct-ops 'struct_ops:sched_ext_ops' {
 #     name: 'nu_demo'
 #     select_cpu: {|ctx| 0 }

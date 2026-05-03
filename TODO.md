@@ -68,7 +68,7 @@ history and release notes, not here.
 
 - [~] Broaden program-family support without overfitting on `sched_ext`.
   - Use `sched_ext` as a deep vertical for `struct_ops` and kfunc complexity, but keep packet, socket, cgroup, tracing, iterator, LWT, netfilter, flow dissector, and syscall surfaces moving as separate coverage axes.
-  - Keep live high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` out of normal host tests; use dry-run or VM-only fixtures.
+  - Keep live unclassified or high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` out of normal host tests; use dry-run or VM-only fixtures.
   - Prefer compile/dry-run coverage first for behavior-changing families, then add live attach only when the loader path and test environment are safe.
 
 - [~] Add kernel-version and feature metadata.

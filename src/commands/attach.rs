@@ -983,10 +983,10 @@ Flags:
                     - Validating closures before deployment
 
   --unsafe-struct-ops
-                    Allow live loading of high-risk struct_ops families such as
-                    `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops`. Prefer
-                    `--dry-run` on the host and use a VM or disposable
-                    environment before enabling this.
+                    Allow live loading of unclassified or high-risk struct_ops
+                    families such as `sched_ext_ops`, `hid_bpf_ops`, and
+                    `Qdisc_ops`. Prefer `--dry-run` on the host and use a VM or
+                    disposable environment before enabling this.
 
   --pin (-p) GROUP  Pin maps to /sys/fs/bpf/nushell/GROUP/ for sharing between
                     probes. Essential for timing measurements where kprobe and
@@ -1049,7 +1049,7 @@ Requirements:
             )
             .switch(
                 "unsafe-struct-ops",
-                "Allow live loading of high-risk struct_ops families such as sched_ext_ops, hid_bpf_ops, and Qdisc_ops",
+                "Allow live loading of unclassified or high-risk struct_ops families such as sched_ext_ops, hid_bpf_ops, and Qdisc_ops",
                 None,
             )
             .named(

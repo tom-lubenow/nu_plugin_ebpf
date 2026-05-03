@@ -539,6 +539,46 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_note should be a string")
             .contains("BPF_CGROUP_UNIX")
     );
+
+    let generic_struct_ops =
+        ProgramSpec::parse("struct_ops:demo_ops").expect("generic struct_ops spec should parse");
+    let record = spec_record(
+        "struct_ops:demo_ops".to_string(),
+        generic_struct_ops,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    assert!(
+        record
+            .get("live_attach_supported")
+            .expect("live_attach_supported should be present")
+            .as_bool()
+            .expect("live_attach_supported should be a bool")
+    );
+    assert!(
+        !record
+            .get("live_attach_default_allowed")
+            .expect("live_attach_default_allowed should be present")
+            .as_bool()
+            .expect("live_attach_default_allowed should be a bool")
+    );
+    assert!(
+        record
+            .get("live_attach_requires_opt_in")
+            .expect("live_attach_requires_opt_in should be present")
+            .as_bool()
+            .expect("live_attach_requires_opt_in should be a bool")
+    );
+    assert!(
+        record
+            .get("live_attach_note")
+            .expect("live_attach_note should be present")
+            .as_str()
+            .expect("live_attach_note should be a string")
+            .contains("unclassified struct_ops")
+    );
 }
 
 #[test]

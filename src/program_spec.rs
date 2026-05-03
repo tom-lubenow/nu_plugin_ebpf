@@ -195,6 +195,9 @@ impl StructOpsFamily {
 
     pub(crate) fn live_attach_risk(self) -> Option<&'static str> {
         match self {
+            Self::Generic => Some(
+                "live registration for an unclassified struct_ops family can change kernel behavior; prefer --dry-run on the host and require an intentional --unsafe-struct-ops opt-in for real loads",
+            ),
             Self::SchedExt => Some(
                 "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
             ),
@@ -204,7 +207,7 @@ impl StructOpsFamily {
             Self::Qdisc => Some(
                 "live Qdisc_ops registration can affect packet scheduling; prefer --dry-run on the host and use an isolated network namespace or VM for real loads",
             ),
-            Self::Generic | Self::TcpCongestion => None,
+            Self::TcpCongestion => None,
         }
     }
 
@@ -4058,6 +4061,30 @@ mod tests {
             sched_ext_policy
                 .note
                 .is_some_and(|note| note.contains("sched_ext"))
+        );
+
+        let generic_struct_ops = ProgramSpec::parse("struct_ops:demo_ops")
+            .expect("generic struct_ops spec should parse");
+        let generic_policy = generic_struct_ops.live_attach_policy();
+        assert!(generic_policy.loader_supported);
+        assert!(!generic_policy.default_allowed);
+        assert!(generic_policy.requires_opt_in);
+        assert!(
+            generic_policy
+                .note
+                .is_some_and(|note| note.contains("unclassified struct_ops"))
+        );
+
+        let tcp_congestion = ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+            .expect("tcp_congestion_ops spec should parse");
+        assert_eq!(
+            tcp_congestion.live_attach_policy(),
+            ProgramLiveAttachPolicy {
+                loader_supported: true,
+                default_allowed: true,
+                requires_opt_in: false,
+                note: None,
+            }
         );
     }
 

@@ -1367,10 +1367,14 @@ fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default
 
 #[test]
 fn test_validate_struct_ops_attach_safety_rejects_known_behavior_changing_live_loads() {
-    for spec_text in ["struct_ops:hid_bpf_ops", "struct_ops:Qdisc_ops"] {
+    for spec_text in [
+        "struct_ops:demo_ops",
+        "struct_ops:hid_bpf_ops",
+        "struct_ops:Qdisc_ops",
+    ] {
         let spec = ProgramSpec::parse(spec_text).expect("struct_ops spec should parse");
         let err = super::validate_struct_ops_attach_safety(&spec, false, false, Span::test_data())
-            .expect_err("behavior-changing struct_ops attach should require explicit opt-in");
+            .expect_err("unclassified or behavior-changing struct_ops attach should require explicit opt-in");
         assert!(
             err.labels
                 .iter()

@@ -12,9 +12,9 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 ## Safety
 
 - Most tracing paths are observational, but `struct_ops` can change kernel behavior.
-- Live loads for high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops`.
+- Live loads for unclassified or high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops`.
 - `raw_tracepoint.w`, `fmod_ret`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, and `syscall` currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation.
-- Prefer `--dry-run` on the host and use an isolated VM or disposable environment for risky `struct_ops` families.
+- Prefer `--dry-run` on the host and use an isolated VM or disposable environment for unclassified or risky `struct_ops` families.
 
 ## Project Status
 
