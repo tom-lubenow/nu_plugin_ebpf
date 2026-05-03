@@ -4599,6 +4599,27 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-action-skb-context-write"
+        category: "context-surface"
+        tags: [tc-action context packet writable]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.mark = 7'
+            '  $ctx.queue_mapping = 1'
+            '  $ctx.priority = 3'
+            '  $ctx.tc_index = 2'
+            '  $ctx.cb.2 = 9'
+            '  $ctx.tc_classid = 42'
+            '  $ctx.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-action-context-socket-write"
         category: "context-surface"
         tags: [tc-action context writable socket source metadata]
