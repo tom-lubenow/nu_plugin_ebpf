@@ -188,8 +188,8 @@ Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/fo
 The compiler tracks compatibility requirements at both the program-family and
 parsed-target level. Live-attach rejection messages include these feature
 requirements, for example base program families, kernel BTF, BPF trampolines,
-TCX, netfilter links, route LWT, struct_ops, sched_ext, XDP multi-buffer
-sections, cgroup v2, cgroup program families, and cgroup UNIX socket-address
+TCX, netfilter links, route LWT, struct_ops, sched_ext, XDP attach modes and
+multi-buffer sections, cgroup v2, cgroup program families, and cgroup UNIX socket-address
 hooks. Live-load preflight also reports source-verified map-kind, global
 data-section, modeled helper, source-preserved known-kfunc, and
 source-preserved context-field requirements from the compiled object. Context
@@ -368,8 +368,10 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 and `sk_reuseport`, with `start_header` limited to `BPF_HDR_START_MAC` or
 `BPF_HDR_START_NET`; and `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
 `bpf_xdp_store_bytes` are XDP-only. XDP targets default to SKB/generic
-attach mode for safer development attaches; use `xdp:IFACE:drv` or
-`xdp:IFACE:hw` when driver or hardware mode is intentional. Append
+attach mode for safer development attaches; that explicit attach-mode flag
+requires Linux 4.12. Driver mode also requires Linux 4.12, and hardware
+offload mode requires Linux 4.13. Use `xdp:IFACE:drv` or `xdp:IFACE:hw`
+when driver or hardware mode is intentional. Append
 `:frags`, for example `xdp:IFACE:drv:frags`, when the program needs the
 kernel `xdp.frags` section for multi-buffer packets. XDP, TC, TCX, Netkit, and LWT also
 model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be

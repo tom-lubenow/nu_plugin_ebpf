@@ -1212,7 +1212,7 @@ fn test_spec_record_reports_base_program_minimum() {
             .expect("compatibility minimum kernel should be present")
             .as_str()
             .expect("compatibility minimum kernel should be a string"),
-        "4.8"
+        "4.12"
     );
 
     let requirement = requirements
@@ -1235,6 +1235,28 @@ fn test_spec_record_reports_base_program_minimum() {
             .as_str()
             .expect("minimum kernel should be a string"),
         "4.8"
+    );
+
+    let attach_requirement = requirements
+        .iter()
+        .find_map(|requirement| {
+            let requirement = requirement.as_record().ok()?;
+            (requirement
+                .get("key")?
+                .as_str()
+                .ok()
+                .is_some_and(|key| key == "xdp-attach-skb"))
+            .then_some(requirement)
+        })
+        .expect("xdp skb attach-mode requirement should be present");
+
+    assert_eq!(
+        attach_requirement
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .as_str()
+            .expect("minimum kernel should be a string"),
+        "4.12"
     );
 }
 

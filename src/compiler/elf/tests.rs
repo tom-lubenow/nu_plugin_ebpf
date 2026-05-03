@@ -4596,6 +4596,18 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         Some("4.8")
     );
     assert_eq!(
+        ProgramCompatibilityRequirement::XdpSkbAttachMode.minimum_kernel(),
+        Some("4.12")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::XdpDrvAttachMode.minimum_kernel(),
+        Some("4.12")
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::XdpHwAttachMode.minimum_kernel(),
+        Some("4.13")
+    );
+    assert_eq!(
         ProgramCompatibilityRequirement::PerfEventProgram.minimum_kernel(),
         Some("4.9")
     );

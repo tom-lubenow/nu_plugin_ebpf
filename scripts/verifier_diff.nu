@@ -82,6 +82,21 @@ const KERNEL_FEATURE_PROG_XDP = {
     min_kernel: "4.8"
     source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_XDP_ATTACH_SKB = {
+    key: "attach:xdp-skb"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/if_link.h"
+}
+const KERNEL_FEATURE_XDP_ATTACH_DRV = {
+    key: "attach:xdp-drv"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/if_link.h"
+}
+const KERNEL_FEATURE_XDP_ATTACH_HW = {
+    key: "attach:xdp-hw"
+    min_kernel: "4.13"
+    source: "https://github.com/torvalds/linux/blob/v4.13/include/uapi/linux/if_link.h"
+}
 const KERNEL_FEATURE_XDP_MULTI_BUFFER = {
     key: "section:xdp.frags"
     min_kernel: "5.18"
@@ -6716,6 +6731,14 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_PROG_PERF_EVENT)
     } else if ($target | str starts-with "xdp:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_XDP)
+        let xdp_parts = ($target | split row ":")
+        if ("hw" in $xdp_parts) or ("hardware" in $xdp_parts) or ("offload" in $xdp_parts) {
+            $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_HW)
+        } else if ("drv" in $xdp_parts) or ("driver" in $xdp_parts) or ("native" in $xdp_parts) {
+            $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_DRV)
+        } else {
+            $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_SKB)
+        }
         if ($target | str contains ":frags") {
             $features = ($features | append $KERNEL_FEATURE_XDP_MULTI_BUFFER)
         }

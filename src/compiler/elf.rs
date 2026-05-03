@@ -1560,6 +1560,9 @@ pub enum ProgramCompatibilityRequirement {
     RawTracepointProgram,
     PerfEventProgram,
     XdpProgram,
+    XdpSkbAttachMode,
+    XdpDrvAttachMode,
+    XdpHwAttachMode,
     TcProgram,
     SkLookupProgram,
     TracingProgram,
@@ -1633,6 +1636,10 @@ const LINUX_BPF_H_V4_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h";
+const LINUX_IF_LINK_H_V4_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/if_link.h";
+const LINUX_IF_LINK_H_V4_13_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.13/include/uapi/linux/if_link.h";
 const LINUX_BPF_H_V4_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_15_SOURCE: &str =
@@ -1726,6 +1733,9 @@ impl ProgramCompatibilityRequirement {
             Self::RawTracepointProgram => "raw-tracepoint-program",
             Self::PerfEventProgram => "perf-event-program",
             Self::XdpProgram => "xdp-program",
+            Self::XdpSkbAttachMode => "xdp-attach-skb",
+            Self::XdpDrvAttachMode => "xdp-attach-drv",
+            Self::XdpHwAttachMode => "xdp-attach-hw",
             Self::TcProgram => "tc-program",
             Self::SkLookupProgram => "sk-lookup-program",
             Self::TracingProgram => "tracing-program",
@@ -1794,6 +1804,9 @@ impl ProgramCompatibilityRequirement {
             Self::RawTracepointProgram => "raw-tracepoint BPF program support",
             Self::PerfEventProgram => "perf-event BPF program support",
             Self::XdpProgram => "XDP BPF program support",
+            Self::XdpSkbAttachMode => "XDP generic/SKB attach mode flag support",
+            Self::XdpDrvAttachMode => "XDP native/driver attach mode flag support",
+            Self::XdpHwAttachMode => "XDP hardware-offload attach mode flag support",
             Self::TcProgram => "traffic-control classifier BPF program support",
             Self::SkLookupProgram => "socket lookup BPF program support",
             Self::TracingProgram => "BPF tracing program support",
@@ -1861,7 +1874,11 @@ impl ProgramCompatibilityRequirement {
             Self::KernelBtf => "kernel-metadata",
             Self::CgroupV2 | Self::LircMode2 => "attach-resource",
             Self::SchedExt => "struct-ops-family",
-            Self::SkReuseportMigration | Self::CgroupUnixSockAddr => "attach-mode",
+            Self::XdpSkbAttachMode
+            | Self::XdpDrvAttachMode
+            | Self::XdpHwAttachMode
+            | Self::SkReuseportMigration
+            | Self::CgroupUnixSockAddr => "attach-mode",
             Self::SleepableProgram | Self::XdpMultiBuffer => "section-feature",
             Self::BpfIteratorTaskTarget
             | Self::BpfIteratorTaskFileTarget
@@ -1900,6 +1917,9 @@ impl ProgramCompatibilityRequirement {
             | Self::FlowDissector
             | Self::Tcx
             | Self::Netkit
+            | Self::XdpSkbAttachMode
+            | Self::XdpDrvAttachMode
+            | Self::XdpHwAttachMode
             | Self::RouteLwtSeg6Local
             | Self::SockMapAttach
             | Self::SkMsgSockMapAttach
@@ -1956,6 +1976,8 @@ impl ProgramCompatibilityRequirement {
             Self::KprobeProgram | Self::TcProgram => Some("4.1"),
             Self::TracepointProgram => Some("4.7"),
             Self::XdpProgram => Some("4.8"),
+            Self::XdpSkbAttachMode | Self::XdpDrvAttachMode => Some("4.12"),
+            Self::XdpHwAttachMode => Some("4.13"),
             Self::PerfEventProgram => Some("4.9"),
             Self::RawTracepointProgram => Some("4.17"),
             Self::SkLookupProgram => Some("5.9"),
@@ -2046,6 +2068,8 @@ impl ProgramCompatibilityRequirement {
             }
             Self::TracepointProgram => LINUX_BPF_H_V4_7_SOURCE,
             Self::XdpProgram => LINUX_BPF_H_V4_8_SOURCE,
+            Self::XdpSkbAttachMode | Self::XdpDrvAttachMode => LINUX_IF_LINK_H_V4_12_SOURCE,
+            Self::XdpHwAttachMode => LINUX_IF_LINK_H_V4_13_SOURCE,
             Self::PerfEventProgram => LINUX_BPF_H_V4_9_SOURCE,
             Self::RawTracepointProgram => LINUX_BPF_H_V4_17_SOURCE,
             Self::SkLookupProgram => LINUX_BPF_H_V5_9_SOURCE,

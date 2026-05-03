@@ -2671,6 +2671,12 @@ impl ProgramSpec {
         }
 
         if let ProgramSpec::Xdp { target } = self {
+            let attach_requirement = match target.attach_mode {
+                XdpAttachMode::Skb => ProgramCompatibilityRequirement::XdpSkbAttachMode,
+                XdpAttachMode::Driver => ProgramCompatibilityRequirement::XdpDrvAttachMode,
+                XdpAttachMode::Hardware => ProgramCompatibilityRequirement::XdpHwAttachMode,
+            };
+            push_compatibility_requirement(&mut requirements, attach_requirement);
             if target.frags {
                 push_compatibility_requirement(
                     &mut requirements,
@@ -3573,6 +3579,10 @@ mod tests {
             plain_xdp.requires_compatibility_feature(ProgramCompatibilityRequirement::XdpProgram)
         );
         assert!(
+            plain_xdp
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpSkbAttachMode)
+        );
+        assert!(
             !plain_xdp
                 .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpMultiBuffer)
         );
@@ -3580,7 +3590,7 @@ mod tests {
             ProgramCompatibilityRequirement::effective_minimum_kernel(
                 &plain_xdp.compatibility_requirements()
             ),
-            Some("4.8")
+            Some("4.12")
         );
 
         let xdp_frags = ProgramSpec::parse("xdp:lo:frags").expect("xdp frags spec should parse");
@@ -3593,6 +3603,29 @@ mod tests {
                 &xdp_frags.compatibility_requirements()
             ),
             Some("5.18")
+        );
+
+        let xdp_drv = ProgramSpec::parse("xdp:lo:drv").expect("xdp drv spec should parse");
+        assert!(
+            xdp_drv
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpDrvAttachMode)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &xdp_drv.compatibility_requirements()
+            ),
+            Some("4.12")
+        );
+
+        let xdp_hw = ProgramSpec::parse("xdp:lo:hw").expect("xdp hw spec should parse");
+        assert!(
+            xdp_hw.requires_compatibility_feature(ProgramCompatibilityRequirement::XdpHwAttachMode)
+        );
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &xdp_hw.compatibility_requirements()
+            ),
+            Some("4.13")
         );
 
         let fentry_sleepable =
