@@ -2294,6 +2294,7 @@ pub enum ProgramTargetKind {
     CgroupPathSockoptAttachType,
     CgroupPathSockAddrAttachType,
     LircDevicePath,
+    StructOpsValueType,
     StructOpsCallback,
 }
 
@@ -2328,6 +2329,7 @@ impl ProgramTargetKind {
             Self::CgroupPathSockoptAttachType => "cgroup-path-sockopt-attach-type",
             Self::CgroupPathSockAddrAttachType => "cgroup-path-sock-addr-attach-type",
             Self::LircDevicePath => "lirc-device-path",
+            Self::StructOpsValueType => "struct-ops-value-type",
             Self::StructOpsCallback => "struct-ops-callback",
         }
     }

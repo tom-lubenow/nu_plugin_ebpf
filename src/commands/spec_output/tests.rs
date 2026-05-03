@@ -2312,6 +2312,14 @@ fn test_spec_record_includes_attach_shape_metadata() {
         .as_record()
         .expect("attach shape should be a record");
     assert_eq!(
+        record
+            .get("target_kind")
+            .expect("target kind should be present")
+            .as_str()
+            .expect("target kind should be a string"),
+        "struct-ops-callback"
+    );
+    assert_eq!(
         attach_shape
             .get("kind")
             .expect("attach shape kind should be present")
@@ -2422,6 +2430,14 @@ fn test_spec_record_includes_resource_attach_shapes() {
         .expect("attach shape should be present")
         .as_record()
         .expect("attach shape should be a record");
+    assert_eq!(
+        record
+            .get("target_kind")
+            .expect("target kind should be present")
+            .as_str()
+            .expect("target kind should be a string"),
+        "struct-ops-value-type"
+    );
     assert_eq!(
         attach_shape
             .get("family")

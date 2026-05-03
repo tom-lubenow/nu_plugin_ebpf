@@ -1315,7 +1315,7 @@ pub(super) const STRUCT_OPS_INFO: ProgramTypeInfo = ProgramTypeInfo {
     section_uses_target: true,
     context_family: ProgramContextFamily::StructOps,
     attach_kind: ProgramAttachKind::StructOps,
-    target_kind: ProgramTargetKind::StructOpsCallback,
+    target_kind: ProgramTargetKind::StructOpsValueType,
     kernel_target_validation: None,
     supported_capabilities: STRUCT_OPS_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,

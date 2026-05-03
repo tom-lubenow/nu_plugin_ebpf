@@ -1417,7 +1417,7 @@ pub(super) fn spec_record(
             "section_uses_target" => Value::bool(program_type.section_uses_target(), span),
             "attach_kind" => Value::string(attach_kind.key(), span),
             "attach_shape" => attach_shape_record(&spec, span),
-            "target_kind" => Value::string(program_type.target_kind().key(), span),
+            "target_kind" => Value::string(spec.target_kind().key(), span),
             "kernel_target_validation" => optional_static_str(kernel_target_validation, span),
             "btf_callable_surface" => optional_static_str(btf_callable_surface, span),
             "sleepable" => Value::bool(spec.sleepable(), span),

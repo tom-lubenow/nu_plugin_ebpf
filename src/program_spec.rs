@@ -1,4 +1,6 @@
-use crate::compiler::{EbpfProgramType, ProgramAttachKind, ProgramCompatibilityRequirement};
+use crate::compiler::{
+    EbpfProgramType, ProgramAttachKind, ProgramCompatibilityRequirement, ProgramTargetKind,
+};
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
     TcAttachType,
@@ -3025,6 +3027,14 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn target_kind(&self) -> ProgramTargetKind {
+        match self {
+            ProgramSpec::StructOps { .. } => ProgramTargetKind::StructOpsValueType,
+            ProgramSpec::StructOpsCallback { .. } => ProgramTargetKind::StructOpsCallback,
+            _ => self.program_type().target_kind(),
+        }
+    }
+
     pub fn section_name(&self) -> String {
         match self {
             ProgramSpec::Fentry {
@@ -4282,6 +4292,7 @@ mod tests {
         assert_eq!(object.target_string(), "sched_ext_ops");
         assert_eq!(object.struct_ops_value_type_name(), Some("sched_ext_ops"));
         assert_eq!(object.struct_ops_callback_name(), None);
+        assert_eq!(object.target_kind(), ProgramTargetKind::StructOpsValueType);
         assert_eq!(object.section_name(), "struct_ops/sched_ext_ops");
         assert_eq!(object.to_string(), "struct_ops:sched_ext_ops");
 
@@ -4298,6 +4309,7 @@ mod tests {
         assert_eq!(callback.target_string(), "init");
         assert_eq!(callback.struct_ops_value_type_name(), Some("sched_ext_ops"));
         assert_eq!(callback.struct_ops_callback_name(), Some("init"));
+        assert_eq!(callback.target_kind(), ProgramTargetKind::StructOpsCallback);
         assert_eq!(callback.section_name(), "struct_ops.s/init");
         assert_eq!(callback.to_string(), "struct_ops:sched_ext_ops.init");
         assert_eq!(

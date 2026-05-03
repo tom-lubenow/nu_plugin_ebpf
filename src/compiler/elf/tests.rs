@@ -1234,7 +1234,7 @@ fn test_program_type_metadata_for_struct_ops() {
     let info = EbpfProgramType::StructOps.info();
     assert_eq!(info.canonical_prefix, "struct_ops");
     assert_eq!(info.attach_kind, ProgramAttachKind::StructOps);
-    assert_eq!(info.target_kind, ProgramTargetKind::StructOpsCallback);
+    assert_eq!(info.target_kind, ProgramTargetKind::StructOpsValueType);
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
     assert!(EbpfProgramType::StructOps.supports_capability(ProgramCapability::Globals));
@@ -4120,6 +4120,7 @@ fn test_program_attach_kind_loader_live_support_metadata() {
         ProgramTargetKind::CgroupPathSockoptAttachType,
         ProgramTargetKind::CgroupPathSockAddrAttachType,
         ProgramTargetKind::LircDevicePath,
+        ProgramTargetKind::StructOpsValueType,
         ProgramTargetKind::StructOpsCallback,
     ] {
         assert!(
