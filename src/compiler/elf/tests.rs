@@ -7038,7 +7038,7 @@ fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
         .expect_err("sock_ops cb_flags store target should be rejected outside sock_ops");
     assert!(
         err.to_string()
-            .contains("ctx.cb_flags is only available on sock_ops programs")
+            .contains("writable sock_ops cb_flags is only supported on sock_ops programs")
     );
 
     let err = ctx
@@ -7046,7 +7046,7 @@ fn test_probe_context_rejects_sock_ops_store_target_on_non_sock_ops_program() {
         .expect_err("sock_ops sk_txhash store target should be rejected outside sock_ops");
     assert!(
         err.to_string()
-            .contains("ctx.sk_txhash is only available on sock_ops programs")
+            .contains("writable sock_ops sk_txhash is only supported on sock_ops programs")
     );
 }
 
@@ -10344,6 +10344,81 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
             .kfunc_compatibility_minimum_kernel(),
         Some("6.12")
     );
+}
+
+#[test]
+fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
+    let map_ref = MapRef {
+        name: "work_items".to_string(),
+        kind: MapKind::Array,
+    };
+    let value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let mut builder = EbpfBuilder::new();
+    builder
+        .push(EbpfInsn::call(BpfHelper::UserRingbufDrain))
+        .push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo:frags",
+        "mixed_requirements",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![
+            EbpfMap {
+                name: "events".to_string(),
+                def: BpfMapDef::ring_buffer(256 * 1024),
+            },
+            EbpfMap {
+                name: "work_items".to_string(),
+                def: BpfMapDef::array(value_ty.size() as u32, 16),
+            },
+        ],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(map_ref, value_ty)]),
+        HashMap::new(),
+    )
+    .with_readonly_globals(vec![ReadonlyGlobal {
+        name: "cfg".to_string(),
+        data: 7u64.to_le_bytes().to_vec(),
+    }])
+    .with_used_kfuncs(["bpf_get_task_exe_file"])
+    .with_used_context_fields([CtxField::EgressIfindex]);
+
+    assert_eq!(program.program_compatibility_minimum_kernel(), Some("5.18"));
+    assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
+    assert_eq!(program.global_compatibility_minimum_kernel(), Some("5.2"));
+    assert_eq!(
+        program.map_value_compatibility_minimum_kernel(),
+        Some("6.10")
+    );
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
+    assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("5.8")
+    );
+    assert_eq!(program.compatibility_minimum_kernel(), Some("6.12"));
+
+    let object = program.into_object();
+    assert_eq!(
+        object.programs[0].compatibility_minimum_kernel(),
+        Some("6.12")
+    );
+    assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
 }
 
 #[test]

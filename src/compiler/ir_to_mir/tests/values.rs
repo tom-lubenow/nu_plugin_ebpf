@@ -463,7 +463,7 @@ fn test_lower_load_value_unsupported_non_numeric_list_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("LoadValue of type string is not supported in fixed-array constant lowering")
+            .contains("constant fixed arrays require homogeneous element layouts")
     );
 }
 

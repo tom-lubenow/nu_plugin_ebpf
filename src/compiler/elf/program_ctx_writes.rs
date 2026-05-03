@@ -408,13 +408,6 @@ impl ContextWriteSurfaceSpec {
         spec: &ProgramSpec,
         index: Option<usize>,
     ) -> Result<CtxWriteTarget, String> {
-        if let Some(field) = self.field.as_ref() {
-            if let Some(err) = spec.ctx_field_access_error(field) {
-                return Err(err);
-            }
-        }
-
-        let write_target = self.target.resolve(spec, self.field_name, index)?;
         if let Some(err) = self
             .availability
             .and_then(|availability| availability.error(spec, self.field_name))
@@ -422,6 +415,13 @@ impl ContextWriteSurfaceSpec {
             return Err(err);
         }
 
+        if let Some(field) = self.field.as_ref() {
+            if let Some(err) = spec.ctx_field_access_error(field) {
+                return Err(err);
+            }
+        }
+
+        let write_target = self.target.resolve(spec, self.field_name, index)?;
         Ok(write_target)
     }
 
@@ -448,12 +448,12 @@ impl ContextWriteSurfaceSpec {
     }
 
     fn store_target_error(&self, spec: &ProgramSpec) -> Option<String> {
-        self.field
-            .as_ref()
-            .and_then(|field| spec.ctx_field_access_error(field))
+        self.availability
+            .and_then(|availability| availability.error(spec, self.field_name))
             .or_else(|| {
-                self.availability
-                    .and_then(|availability| availability.error(spec, self.field_name))
+                self.field
+                    .as_ref()
+                    .and_then(|field| spec.ctx_field_access_error(field))
             })
     }
 
@@ -976,14 +976,20 @@ impl ProgramSpec {
             return surface.store_target_error(self);
         }
 
+        if let Some(err) = self
+            .program_type()
+            .base_ctx_store_target_error(store_target)
+        {
+            return Some(err);
+        }
+
         if let Some(field) = store_target.ctx_field() {
             return self
                 .ctx_field_access_error(&field)
                 .or_else(|| Some(store_target.missing_context_error().to_string()));
         }
 
-        self.program_type()
-            .base_ctx_store_target_error(store_target)
+        None
     }
 
     pub(crate) fn ctx_write_surfaces_for_spec(&self) -> Vec<ContextWriteSurface> {

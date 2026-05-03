@@ -477,7 +477,7 @@ fn test_lower_mutated_empty_captured_numeric_list_variable_uses_bss_global() {
 }
 
 #[test]
-fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
+fn test_lower_mutated_captured_heterogeneous_list_variable_is_rejected() {
     let capture_var = VarId::new(25);
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -507,7 +507,10 @@ fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
         vec![(
             capture_var,
             Value::list(
-                vec![Value::string("bad", Span::test_data())],
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::string("bad", Span::test_data()),
+                ],
                 Span::test_data(),
             ),
         )],
@@ -522,12 +525,12 @@ fn test_lower_mutated_captured_non_numeric_list_variable_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("mutated captured non-numeric lists should remain unsupported");
+    .expect_err("mutated captured heterogeneous lists should remain unsupported");
 
     assert!(
         err.to_string()
             .contains(
-                "mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/binary/record constants, and representable constant records"
+                "mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records"
             )
     );
 }

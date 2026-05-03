@@ -3495,7 +3495,7 @@ fn test_type_error_store_ctx_cb_flags_rejects_non_sock_ops_program() {
         .expect_err("sock_ops cb_flags store should be rejected outside sock_ops");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.cb_flags is only available on sock_ops programs")
+            .contains("writable sock_ops cb_flags is only supported on sock_ops programs")
     }));
 }
 
@@ -3517,7 +3517,7 @@ fn test_type_error_store_ctx_sk_txhash_rejects_non_sock_ops_program() {
         .expect_err("sock_ops sk_txhash store should be rejected outside sock_ops");
     assert!(errs.iter().any(|e| {
         e.message
-            .contains("ctx.sk_txhash is only available on sock_ops programs")
+            .contains("writable sock_ops sk_txhash is only supported on sock_ops programs")
     }));
 }
 

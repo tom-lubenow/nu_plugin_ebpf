@@ -38,7 +38,9 @@ TCX/netkit, netfilter links and defrag targets, XDP attach modes,
 parsed target. Live-load preflight also checks source-verified map-kind, global
 data-section, typed map-value field, all modeled helper, source-preserved
 known-kfunc, and source-preserved context-field floors from the compiled
-object. `ebpf spec`
+object, and the compiled program/object model exposes an aggregate
+`compatibility_minimum_kernel` summary across those source-verified categories.
+`ebpf spec`
 also reports source-backed
 minimum-kernel/source fields on individual context-field records when direct
 UAPI fields or backing helpers have known introduction points.
