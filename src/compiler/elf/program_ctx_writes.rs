@@ -871,7 +871,8 @@ fn program_ctx_write_surfaces(
 impl CtxStoreTarget {
     pub(crate) fn ctx_field(&self) -> Option<CtxField> {
         match self {
-            CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
+            CtxStoreTarget::SockOpsReply => Some(CtxField::SockOpsReply),
+            CtxStoreTarget::SockOpsReplyLong(_) => Some(CtxField::SockOpsReplyLong),
             CtxStoreTarget::SockOpsCbFlags => Some(CtxField::SockOpsCbFlags),
             CtxStoreTarget::SockOpsSkTxhash => Some(CtxField::SockOpsSkTxhash),
             CtxStoreTarget::CgroupSockBoundDevIf => Some(CtxField::BoundDevIf),

@@ -11692,6 +11692,28 @@ fn test_context_write_program_reports_direct_field_compatibility() {
             EbpfProgramType::SockOps,
             "/sys/fs/cgroup",
             CellPath {
+                members: vec![string_member("reply")],
+            },
+            HirLiteral::Int(1),
+            HirLiteral::Int(1),
+            CtxField::SockOpsReply,
+            "4.14",
+        ),
+        (
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            CellPath {
+                members: vec![string_member("replylong"), int_member(2)],
+            },
+            HirLiteral::Int(7),
+            HirLiteral::Int(1),
+            CtxField::SockOpsReplyLong,
+            "4.14",
+        ),
+        (
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            CellPath {
                 members: vec![string_member("sk_txhash")],
             },
             HirLiteral::Int(42),
