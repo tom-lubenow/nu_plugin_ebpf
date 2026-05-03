@@ -3377,6 +3377,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "stackid-context-fields"
+        category: "context-surface"
+        tags: [context stack-trace kstack ustack accept]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  ($ctx.kstack + $ctx.ustack) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-scalar-mut"
         category: "globals"
         tags: [data-global scalar]
@@ -6864,7 +6878,12 @@ def program-reserved-map-kernel-features [source: string] {
         if ($line | str contains " perf_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY])
         }
-        if (($line | str contains " kstacks") or ($line | str contains " ustacks")) {
+        if (
+            ($line | str contains " kstacks")
+            or ($line | str contains " ustacks")
+            or ($line | str contains ".kstack")
+            or ($line | str contains ".ustack")
+        ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_STACK_TRACE])
         }
     }
@@ -7031,6 +7050,9 @@ def program-surface-helper-kernel-features [source: string target] {
         or ($source | str contains "perf_running")
     ) {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE])
+    }
+    if (($source | str contains ".kstack") or ($source | str contains ".ustack")) {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_STACKID])
     }
 
     for line in ($source | lines) {
