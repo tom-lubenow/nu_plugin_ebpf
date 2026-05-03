@@ -622,6 +622,11 @@ const KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP = {
     min_kernel: "4.8"
     source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP = {
+    key: "helper:bpf_current_task_under_cgroup"
+    min_kernel: "4.9"
+    source: "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SKB_LOAD_BYTES = {
     key: "helper:bpf_skb_load_bytes"
     min_kernel: "4.5"
@@ -2144,6 +2149,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_csum_diff", feature: $KERNEL_FEATURE_BPF_CSUM_DIFF }
     { name: "bpf_skb_load_bytes", feature: $KERNEL_FEATURE_BPF_SKB_LOAD_BYTES }
     { name: "bpf_skb_under_cgroup", feature: $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP }
+    { name: "bpf_current_task_under_cgroup", feature: $KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP }
     { name: "bpf_skb_pull_data", feature: $KERNEL_FEATURE_BPF_SKB_PULL_DATA }
     { name: "bpf_skb_adjust_room", feature: $KERNEL_FEATURE_BPF_SKB_ADJUST_ROOM }
     { name: "bpf_skb_change_head", feature: $KERNEL_FEATURE_BPF_SKB_CHANGE_HEAD }
@@ -3256,6 +3262,21 @@ const FIXTURES = [
             '{|ctx|'
             '  map-contains tracked_cgroups 0 --kind cgroup-array'
             '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "xdp-cgroup-array-contains"
+        category: "packet"
+        tags: [xdp cgroup-array helper-policy]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-contains tracked_cgroups 0 --kind cgroup-array'
+            '  "pass"'
             '}'
         ]
         local: "accept"
@@ -6869,6 +6890,8 @@ def program-surface-helper-kernel-features [source: string target] {
         if ($line | str contains "map-contains ") and ($line | str contains "--kind cgroup-array") {
             if $target_uses_skb_cgroup_helper {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP])
+            } else {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP])
             }
         }
         if ($line | str contains "assign-socket ") {
