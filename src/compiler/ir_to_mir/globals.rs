@@ -295,6 +295,13 @@ impl ParsedNamedGlobalType {
             });
         }
 
+        if context == NamedTypeSpecContext::MapValue && Self::is_dynptr_type_spec_candidate(spec) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value dynptr type spec '{}' is not supported; bpf_dynptr objects are stack-only verifier state for dynptr helpers and cannot be embedded in map-value schemas",
+                spec
+            )));
+        }
+
         if context == NamedTypeSpecContext::MapValue
             && Self::is_graph_object_type_spec_candidate(spec)
         {
@@ -615,6 +622,10 @@ impl ParsedNamedGlobalType {
             "bpf_list_head" | "bpf_rb_root" | "bpf_list_node" | "bpf_rb_node"
         ) || spec.starts_with("bpf_list_head:")
             || spec.starts_with("bpf_rb_root:")
+    }
+
+    fn is_dynptr_type_spec_candidate(spec: &str) -> bool {
+        matches!(spec, "bpf_dynptr" | "bpf_dynptr_kern")
     }
 
     fn layout(&self, symbol: String) -> (MutableCaptureGlobal, Option<AnnotatedValueSemantics>) {

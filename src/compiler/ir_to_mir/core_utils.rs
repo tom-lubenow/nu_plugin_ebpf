@@ -670,6 +670,7 @@ impl<'a> HirToMirLowering<'a> {
             spin_locks: &mut Vec<ManagedField>,
             wqs: &mut Vec<ManagedField>,
             refcounts: &mut Vec<ManagedField>,
+            dynptrs: &mut Vec<ManagedField>,
             kptrs: &mut Vec<ManagedField>,
             graph_roots: &mut Vec<GraphField>,
             graph_nodes: &mut Vec<GraphField>,
@@ -709,6 +710,17 @@ impl<'a> HirToMirLowering<'a> {
             }
             if ty.is_bpf_refcount_struct() {
                 refcounts.push(ManagedField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    pointee_name: None,
+                });
+                return;
+            }
+            if ty.is_bpf_dynptr_struct() {
+                dynptrs.push(ManagedField {
                     path,
                     offset,
                     depth,
@@ -809,6 +821,7 @@ impl<'a> HirToMirLowering<'a> {
                             spin_locks,
                             wqs,
                             refcounts,
+                            dynptrs,
                             kptrs,
                             graph_roots,
                             graph_nodes,
@@ -827,6 +840,7 @@ impl<'a> HirToMirLowering<'a> {
                         spin_locks,
                         wqs,
                         refcounts,
+                        dynptrs,
                         kptrs,
                         graph_roots,
                         graph_nodes,
@@ -848,6 +862,7 @@ impl<'a> HirToMirLowering<'a> {
         let mut spin_locks = Vec::new();
         let mut wqs = Vec::new();
         let mut refcounts = Vec::new();
+        let mut dynptrs = Vec::new();
         let mut kptrs = Vec::new();
         let mut graph_roots = Vec::new();
         let mut graph_nodes = Vec::new();
@@ -862,6 +877,7 @@ impl<'a> HirToMirLowering<'a> {
             &mut spin_locks,
             &mut wqs,
             &mut refcounts,
+            &mut dynptrs,
             &mut kptrs,
             &mut graph_roots,
             &mut graph_nodes,
@@ -1042,6 +1058,15 @@ impl<'a> HirToMirLowering<'a> {
                     map.name, refcount.offset
                 )));
             }
+        }
+
+        let dynptr_count = total_occurrences(&dynptrs);
+        if dynptr_count > 0 {
+            let dynptr = &dynptrs[0];
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} for '{}' contains bpf_dynptr at '{}', but dynptrs are stack-only verifier objects and cannot be embedded in map-value schemas",
+                map.name, dynptr.path
+            )));
         }
 
         let graph_node_count = total_graph_occurrences(&graph_nodes);

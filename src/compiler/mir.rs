@@ -682,6 +682,10 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_refcount", 4)
     }
 
+    pub fn bpf_dynptr_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_dynptr", 16)
+    }
+
     pub fn bpf_list_head_struct() -> Self {
         Self::opaque_named_struct_with_size("bpf_list_head", 16)
     }
@@ -737,6 +741,10 @@ impl MirType {
 
     pub fn is_bpf_refcount_struct(&self) -> bool {
         self.has_struct_name(&["bpf_refcount"])
+    }
+
+    pub fn is_bpf_dynptr_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_dynptr", "bpf_dynptr_kern"])
     }
 
     pub fn is_bpf_list_head_struct(&self) -> bool {
@@ -921,7 +929,7 @@ impl MirType {
         else {
             return false;
         };
-        pointee.has_struct_name(&["bpf_dynptr", "bpf_dynptr_kern"])
+        pointee.is_bpf_dynptr_struct()
     }
 
     pub fn is_bpf_timer_map_ptr(&self) -> bool {
@@ -1083,6 +1091,9 @@ impl MirType {
         }
         if self.is_bpf_refcount_struct() {
             return 4;
+        }
+        if self.is_bpf_dynptr_struct() {
+            return 8;
         }
         if self.is_bpf_list_head_struct()
             || self.is_bpf_list_node_struct()

@@ -3216,6 +3216,31 @@ fn test_map_value_type_spec_rejects_bare_graph_node() {
 }
 
 #[test]
+fn test_map_value_type_spec_rejects_dynptr() {
+    let err =
+        HirToMirLowering::parse_named_map_value_type_spec("record{dptr:bpf_dynptr,counter:u64}")
+            .expect_err("dynptr map value type should be rejected");
+
+    let msg = err.to_string();
+    assert!(msg.contains("map value dynptr type spec"));
+    assert!(msg.contains("stack-only verifier state"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_external_dynptr() {
+    let ty = manual_map_value_struct(vec![
+        manual_map_value_field("dptr", MirType::bpf_dynptr_struct(), 0),
+        manual_map_value_field("counter", MirType::U64, 16),
+    ]);
+    let err = validate_manual_map_value_type_for_kind(ty, MapKind::Hash)
+        .expect_err("external dynptr map value schema should be rejected");
+
+    let msg = err.to_string();
+    assert!(msg.contains("bpf_dynptr"));
+    assert!(msg.contains("stack-only verifier objects"));
+}
+
+#[test]
 fn test_map_value_type_validation_rejects_direct_graph_root_without_contains_metadata() {
     let ty = manual_map_value_struct(vec![
         manual_map_value_field("root", MirType::bpf_list_head_struct(), 0),
