@@ -211,7 +211,9 @@ fn direct_context_field_kernel_floor(
         CtxField::Data | CtxField::DataEnd if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
         }
-        CtxField::SockOp if prog_type == Some(EbpfProgramType::SockOps) => {
+        CtxField::SockOp | CtxField::SockOpsReply | CtxField::SockOpsReplyLong
+            if prog_type == Some(EbpfProgramType::SockOps) =>
+        {
             ("4.14", LINUX_BPF_H_V4_14_SOURCE)
         }
         CtxField::SockOpsArgs

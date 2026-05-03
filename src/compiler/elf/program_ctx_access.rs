@@ -826,6 +826,8 @@ const DEVICE_CTX_FIELDS: &[CtxField] = &[
 const SOCK_OPS_CTX_FIELDS: &[CtxField] = &[
     CtxField::SockOp,
     CtxField::SockOpsArgs,
+    CtxField::SockOpsReply,
+    CtxField::SockOpsReplyLong,
     CtxField::IsFullsock,
     CtxField::SockOpsSndCwnd,
     CtxField::SockOpsSrttUs,

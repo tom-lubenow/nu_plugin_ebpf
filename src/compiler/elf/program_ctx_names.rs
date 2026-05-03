@@ -250,6 +250,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("socket_uid", CtxField::SocketUid),
     ("netns_cookie", CtxField::NetnsCookie),
     ("args", CtxField::SockOpsArgs),
+    ("reply", CtxField::SockOpsReply),
+    ("replylong", CtxField::SockOpsReplyLong),
     ("snd_cwnd", CtxField::SockOpsSndCwnd),
     ("srtt_us", CtxField::SockOpsSrttUs),
     ("write", CtxField::SysctlWrite),

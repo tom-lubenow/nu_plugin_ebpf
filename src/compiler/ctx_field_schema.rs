@@ -540,6 +540,7 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
         | CtxField::DeviceMajor
         | CtxField::DeviceMinor
         | CtxField::SockOp
+        | CtxField::SockOpsReply
         | CtxField::IsFullsock
         | CtxField::SockOpsSndCwnd
         | CtxField::SockOpsSrttUs
@@ -779,15 +780,16 @@ fn base_ctx_field_schema_spec(field: &CtxField) -> Option<BaseContextFieldSchema
             }),
             true,
         ),
-        CtxField::RemoteIp6 | CtxField::LocalIp6 | CtxField::SockOpsArgs => {
-            BaseContextFieldSchemaSpec::stack_backed(
-                ContextFieldTypeSpec::stack_backed(MirType::Array {
-                    elem: Box::new(MirType::U32),
-                    len: 4,
-                }),
-                false,
-            )
-        }
+        CtxField::RemoteIp6
+        | CtxField::LocalIp6
+        | CtxField::SockOpsArgs
+        | CtxField::SockOpsReplyLong => BaseContextFieldSchemaSpec::stack_backed(
+            ContextFieldTypeSpec::stack_backed(MirType::Array {
+                elem: Box::new(MirType::U32),
+                len: 4,
+            }),
+            false,
+        ),
         CtxField::SkbCb => BaseContextFieldSchemaSpec::stack_backed(
             ContextFieldTypeSpec::stack_backed(MirType::Array {
                 elem: Box::new(MirType::U32),

@@ -1535,6 +1535,10 @@ pub enum CtxField {
     SockOp,
     /// bpf_sock_ops::args[4]
     SockOpsArgs,
+    /// bpf_sock_ops::reply
+    SockOpsReply,
+    /// bpf_sock_ops::replylong[4]
+    SockOpsReplyLong,
     /// bpf_sock_ops::is_fullsock
     IsFullsock,
     /// bpf_sock_ops::snd_cwnd
@@ -1755,6 +1759,8 @@ impl CtxField {
             CtxField::DeviceMinor => "minor".to_string(),
             CtxField::SockOp => "op".to_string(),
             CtxField::SockOpsArgs => "args".to_string(),
+            CtxField::SockOpsReply => "reply".to_string(),
+            CtxField::SockOpsReplyLong => "replylong".to_string(),
             CtxField::IsFullsock => "is_fullsock".to_string(),
             CtxField::SockOpsSndCwnd => "snd_cwnd".to_string(),
             CtxField::SockOpsSrttUs => "srtt_us".to_string(),

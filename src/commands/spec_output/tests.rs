@@ -268,6 +268,15 @@ fn test_spec_context_fields_include_sock_ops_minimum_kernel_metadata() {
         op.minimum_kernel_source
             .is_some_and(|source| source.contains("/v4.14/include/uapi/linux/bpf.h"))
     );
+    for field_name in ["reply", "replylong"] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.14"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.14/include/uapi/linux/bpf.h"))
+        );
+    }
 
     for field_name in ["args", "snd_cwnd", "state", "bytes_acked", "sk_txhash"] {
         let field = field(&fields, field_name);

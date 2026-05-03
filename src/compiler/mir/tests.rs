@@ -653,6 +653,20 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sock_ops ctx.op should use bpf_sock_ops base floor");
     assert_eq!(sock_ops_op.minimum_kernel(), "4.14");
 
+    for field in [CtxField::SockOpsReply, CtxField::SockOpsReplyLong] {
+        let requirement = ContextFieldCompatibilityRequirement::for_field_on_program(
+            &field,
+            Some(crate::compiler::EbpfProgramType::SockOps),
+        )
+        .unwrap_or_else(|| {
+            panic!(
+                "sock_ops ctx.{} should use bpf_sock_ops base floor",
+                field.display_name()
+            )
+        });
+        assert_eq!(requirement.minimum_kernel(), "4.14");
+    }
+
     let sock_ops_args = ContextFieldCompatibilityRequirement::for_field_on_program(
         &CtxField::SockOpsArgs,
         Some(crate::compiler::EbpfProgramType::SockOps),

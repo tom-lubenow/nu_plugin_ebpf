@@ -3111,6 +3111,35 @@ fn test_lower_sock_ops_ctx_args_field() {
 }
 
 #[test]
+fn test_lower_sock_ops_ctx_reply_fields() {
+    for (field_name, expected_field) in [
+        ("reply", CtxField::SockOpsReply),
+        ("replylong", CtxField::SockOpsReplyLong),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("sock_ops ctx.{field_name} should lower: {err}"));
+
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField { field, .. } if field == &expected_field
+        )));
+    }
+}
+
+#[test]
 fn test_lower_sock_ops_ctx_reply_assignment() {
     let ctx_var = VarId::new(0);
     let func = HirFunction {

@@ -1583,6 +1583,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let offset = Self::bpf_sock_ops_args_offset();
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.args", false)?;
             }
+            CtxField::SockOpsReply => {
+                let offset = Self::bpf_sock_ops_args_offset();
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+            }
+            CtxField::SockOpsReplyLong => {
+                let offset = Self::bpf_sock_ops_args_offset();
+                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.replylong", false)?;
+            }
             CtxField::IsFullsock => {
                 let offset = Self::bpf_sock_ops_offsets().8;
                 self.instructions
