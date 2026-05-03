@@ -1067,6 +1067,12 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn program_compatibility_default_test_lane(&self) -> &'static str {
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
     pub fn context_field_compatibility_requirements(
         &self,
     ) -> Vec<ContextFieldCompatibilityRequirement> {
@@ -1095,6 +1101,11 @@ impl EbpfProgramSection {
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
         ])
+    }
+
+    /// Most restrictive default test lane for program/attach compatibility.
+    pub fn compatibility_default_test_lane(&self) -> &'static str {
+        self.program_compatibility_default_test_lane()
     }
 
     /// Earliest source-verified exclusive upper kernel bound for this section.
@@ -1660,6 +1671,12 @@ impl EbpfObject {
         )
     }
 
+    pub fn program_compatibility_default_test_lane(&self) -> &'static str {
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
     pub fn map_compatibility_requirements(&self) -> Vec<MapCompatibilityRequirement> {
         map_compatibility_requirements_for_maps(&self.maps)
     }
@@ -1751,6 +1768,11 @@ impl EbpfObject {
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
         ])
+    }
+
+    /// Most restrictive default test lane for program/attach compatibility.
+    pub fn compatibility_default_test_lane(&self) -> &'static str {
+        self.program_compatibility_default_test_lane()
     }
 
     /// Earliest source-verified exclusive upper kernel bound for this object.
@@ -2302,6 +2324,12 @@ impl EbpfProgram {
         )
     }
 
+    pub fn program_compatibility_default_test_lane(&self) -> &'static str {
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
     pub fn context_field_compatibility_requirements(
         &self,
     ) -> Vec<ContextFieldCompatibilityRequirement> {
@@ -2332,6 +2360,11 @@ impl EbpfProgram {
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
         ])
+    }
+
+    /// Most restrictive default test lane for program/attach compatibility.
+    pub fn compatibility_default_test_lane(&self) -> &'static str {
+        self.program_compatibility_default_test_lane()
     }
 
     /// Earliest source-verified exclusive upper kernel bound for this program.

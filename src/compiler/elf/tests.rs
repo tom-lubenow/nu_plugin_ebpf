@@ -10584,6 +10584,10 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
     .with_used_context_fields([CtxField::EgressIfindex]);
 
     assert_eq!(program.program_compatibility_minimum_kernel(), Some("5.18"));
+    assert_eq!(
+        program.program_compatibility_default_test_lane(),
+        "host-gated"
+    );
     assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
     assert_eq!(program.global_compatibility_minimum_kernel(), Some("5.2"));
     assert_eq!(
@@ -10598,6 +10602,7 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
         Some("5.8")
     );
     assert_eq!(program.compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(program.compatibility_default_test_lane(), "host-gated");
     assert_eq!(program.compatibility_maximum_kernel_exclusive(), None);
 
     let object = program
@@ -10608,6 +10613,7 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
         Some("6.12")
     );
     assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(object.compatibility_default_test_lane(), "host-gated");
     assert_eq!(
         object.programs[0].compatibility_maximum_kernel_exclusive(),
         Some("6.23")
