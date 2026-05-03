@@ -7377,6 +7377,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "redirect-tc-action-peer"
+        category: "language-surface"
+        tags: [redirect peer tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  redirect --peer 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "redirect-tc-action-neigh"
+        category: "language-surface"
+        tags: [redirect neigh tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  redirect --neigh 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "redirect-lwt-xmit-ifindex"
         category: "language-surface"
         tags: [redirect lwt]
