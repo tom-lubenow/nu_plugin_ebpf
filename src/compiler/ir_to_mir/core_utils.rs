@@ -648,6 +648,17 @@ impl<'a> HirToMirLowering<'a> {
             pointee_name: Option<String>,
         }
 
+        #[derive(Clone)]
+        struct GraphField {
+            path: String,
+            offset: usize,
+            depth: usize,
+            in_array: bool,
+            repeat: usize,
+            type_name: &'static str,
+            has_contains_metadata: bool,
+        }
+
         fn collect_managed_fields(
             ty: &MirType,
             path: String,
@@ -660,6 +671,8 @@ impl<'a> HirToMirLowering<'a> {
             wqs: &mut Vec<ManagedField>,
             refcounts: &mut Vec<ManagedField>,
             kptrs: &mut Vec<ManagedField>,
+            graph_roots: &mut Vec<GraphField>,
+            graph_nodes: &mut Vec<GraphField>,
         ) {
             if ty.is_bpf_timer_struct() {
                 timers.push(ManagedField {
@@ -716,6 +729,66 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 return;
             }
+            if let Some(root) = ty.bpf_graph_root_info() {
+                graph_roots.push(GraphField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    type_name: root.kind.root_struct_name(),
+                    has_contains_metadata: true,
+                });
+                return;
+            }
+            if ty.is_bpf_list_head_struct() {
+                graph_roots.push(GraphField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    type_name: "bpf_list_head",
+                    has_contains_metadata: false,
+                });
+                return;
+            }
+            if ty.is_bpf_rb_root_struct() {
+                graph_roots.push(GraphField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    type_name: "bpf_rb_root",
+                    has_contains_metadata: false,
+                });
+                return;
+            }
+            if ty.is_bpf_list_node_struct() {
+                graph_nodes.push(GraphField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    type_name: "bpf_list_node",
+                    has_contains_metadata: false,
+                });
+                return;
+            }
+            if ty.is_bpf_rb_node_struct() {
+                graph_nodes.push(GraphField {
+                    path,
+                    offset,
+                    depth,
+                    in_array,
+                    repeat,
+                    type_name: "bpf_rb_node",
+                    has_contains_metadata: false,
+                });
+                return;
+            }
 
             match ty {
                 MirType::Struct { fields, .. } => {
@@ -737,6 +810,8 @@ impl<'a> HirToMirLowering<'a> {
                             wqs,
                             refcounts,
                             kptrs,
+                            graph_roots,
+                            graph_nodes,
                         );
                     }
                 }
@@ -753,6 +828,8 @@ impl<'a> HirToMirLowering<'a> {
                         wqs,
                         refcounts,
                         kptrs,
+                        graph_roots,
+                        graph_nodes,
                     );
                 }
                 _ => {}
@@ -763,11 +840,17 @@ impl<'a> HirToMirLowering<'a> {
             fields.iter().map(|field| field.repeat.max(1)).sum()
         }
 
+        fn total_graph_occurrences(fields: &[GraphField]) -> usize {
+            fields.iter().map(|field| field.repeat.max(1)).sum()
+        }
+
         let mut timers = Vec::new();
         let mut spin_locks = Vec::new();
         let mut wqs = Vec::new();
         let mut refcounts = Vec::new();
         let mut kptrs = Vec::new();
+        let mut graph_roots = Vec::new();
+        let mut graph_nodes = Vec::new();
         collect_managed_fields(
             ty,
             "value".to_string(),
@@ -780,6 +863,8 @@ impl<'a> HirToMirLowering<'a> {
             &mut wqs,
             &mut refcounts,
             &mut kptrs,
+            &mut graph_roots,
+            &mut graph_nodes,
         );
 
         let spin_lock_count = total_occurrences(&spin_locks);
@@ -956,6 +1041,45 @@ impl<'a> HirToMirLowering<'a> {
                     "{context} for '{}' has bpf_refcount at byte offset {}, but bpf_refcount must be 4-byte aligned",
                     map.name, refcount.offset
                 )));
+            }
+        }
+
+        let graph_node_count = total_graph_occurrences(&graph_nodes);
+        if graph_node_count > 0 {
+            let node = &graph_nodes[0];
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} for '{}' contains {} at '{}', but bpf_list_node/bpf_rb_node fields must live in named graph object schemas referenced by bpf_list_head/bpf_rb_root roots",
+                map.name, node.type_name, node.path
+            )));
+        }
+
+        let graph_root_count = total_graph_occurrences(&graph_roots);
+        if graph_root_count > 0 {
+            if let Some(root) = graph_roots.iter().find(|root| !root.has_contains_metadata) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' contains {} at '{}', but graph roots require named object schema metadata so the compiler can emit a BTF contains:TYPE:FIELD declaration tag",
+                    map.name, root.type_name, root.path
+                )));
+            }
+            for root in &graph_roots {
+                if root.depth == 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' must wrap {} in a map-value record field",
+                        map.name, root.type_name
+                    )));
+                }
+                if root.depth != 1 || root.in_array {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' has {} at '{}', but graph roots must be top-level map-value record fields",
+                        map.name, root.type_name, root.path
+                    )));
+                }
+                if root.offset % 8 != 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' has {} at byte offset {}, but graph roots must be 8-byte aligned",
+                        map.name, root.type_name, root.offset
+                    )));
+                }
             }
         }
 

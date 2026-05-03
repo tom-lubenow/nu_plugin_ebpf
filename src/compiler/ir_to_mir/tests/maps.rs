@@ -119,6 +119,35 @@ fn validate_map_value_type_spec_for_kind(spec: &str, kind: MapKind) -> Result<()
     )
 }
 
+fn validate_manual_map_value_type_for_kind(ty: MirType, kind: MapKind) -> Result<(), CompileError> {
+    HirToMirLowering::validate_named_map_value_type_for_map(
+        &MapRef {
+            name: "typed_value".to_string(),
+            kind,
+        },
+        &ty,
+        "test --value-type",
+    )
+}
+
+fn manual_map_value_struct(fields: Vec<StructField>) -> MirType {
+    MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields,
+    }
+}
+
+fn manual_map_value_field(name: &str, ty: MirType, offset: usize) -> StructField {
+    StructField {
+        name: name.to_string(),
+        ty,
+        offset,
+        synthetic: false,
+        bitfield: None,
+    }
+}
+
 fn make_task_storage_map_get_program(map_get_decl: DeclId) -> HirProgram {
     let ctx_var = VarId::new(0);
     let stmts = vec![
@@ -3149,6 +3178,85 @@ fn test_map_value_type_spec_rejects_bare_graph_node() {
     let msg = err.to_string();
     assert!(msg.contains("map value graph type spec"));
     assert!(msg.contains("matching bpf_list_node/bpf_rb_node object fields"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_direct_graph_root_without_contains_metadata() {
+    let ty = manual_map_value_struct(vec![
+        manual_map_value_field("root", MirType::bpf_list_head_struct(), 0),
+        manual_map_value_field("counter", MirType::U64, 16),
+    ]);
+    let err = validate_manual_map_value_type_for_kind(ty, MapKind::Hash)
+        .expect_err("direct graph root should require contains metadata");
+
+    let msg = err.to_string();
+    assert!(msg.contains("bpf_list_head"));
+    assert!(msg.contains("contains:TYPE:FIELD"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_direct_graph_node() {
+    let ty = manual_map_value_struct(vec![
+        manual_map_value_field("node", MirType::bpf_rb_node_struct(), 0),
+        manual_map_value_field("counter", MirType::U64, 24),
+    ]);
+    let err = validate_manual_map_value_type_for_kind(ty, MapKind::Hash)
+        .expect_err("direct graph node should require named object schema support");
+
+    let msg = err.to_string();
+    assert!(msg.contains("bpf_rb_node"));
+    assert!(msg.contains("bpf_list_node/bpf_rb_node"));
+}
+
+#[test]
+fn test_map_value_type_validation_accepts_internal_graph_root_with_contains_metadata() {
+    let ty = manual_map_value_struct(vec![
+        manual_map_value_field(
+            "root",
+            MirType::bpf_list_head_root_struct("node_data", "node"),
+            0,
+        ),
+        manual_map_value_field("counter", MirType::U64, 16),
+    ]);
+
+    validate_manual_map_value_type_for_kind(ty, MapKind::Hash)
+        .expect("internal graph root wrapper should carry contains metadata");
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_nested_graph_root() {
+    let ty = manual_map_value_struct(vec![manual_map_value_field(
+        "nested",
+        manual_map_value_struct(vec![manual_map_value_field(
+            "root",
+            MirType::bpf_rb_root_struct_with_contains("node_data", "node"),
+            0,
+        )]),
+        0,
+    )]);
+    let err = validate_manual_map_value_type_for_kind(ty, MapKind::Hash)
+        .expect_err("nested graph root should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("top-level map-value record fields")
+    );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_misaligned_graph_root() {
+    let ty = manual_map_value_struct(vec![
+        manual_map_value_field("prefix", MirType::U32, 0),
+        manual_map_value_field(
+            "root",
+            MirType::bpf_list_head_root_struct("node_data", "node"),
+            4,
+        ),
+    ]);
+    let err = validate_manual_map_value_type_for_kind(ty, MapKind::Hash)
+        .expect_err("misaligned graph root should be rejected");
+
+    assert!(err.to_string().contains("8-byte aligned"));
 }
 
 #[test]
