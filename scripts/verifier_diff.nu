@@ -4081,6 +4081,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-packet-context"
+        category: "context-surface"
+        tags: [flow-dissector context packet]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  ($ctx.data | get 0) | count'
+            '  "fallback"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "flow-dissector-rejects-flow-keys-helper-buffer"
         category: "context-policy"
         tags: [flow-dissector reject helper-call]
@@ -4295,6 +4310,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-reuseport-select-packet-context"
+        category: "context-surface"
+        tags: [sk-reuseport context packet]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  (($ctx.data | get 0) + $ctx.packet_len + $ctx.sk.bound_dev_if) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-reuseport-migrate-context"
         category: "context-surface"
         tags: [sk-reuseport context]
@@ -4440,6 +4469,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.hash + $ctx.hash_recalc + $ctx.csum_level + $ctx.cgroup_classid + $ctx.route_realm) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-xmit-packet-context-write"
+        category: "context-surface"
+        tags: [lwt context packet writable]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  (($ctx.data | get 0) + $ctx.mark) | count'
+            '  $ctx.data.0 = 42'
+            '  $ctx.cb.1 = 7'
             '  "reroute"'
             '}'
         ]
