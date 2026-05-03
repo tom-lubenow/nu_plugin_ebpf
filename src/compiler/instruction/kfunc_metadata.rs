@@ -46,6 +46,8 @@ const LINUX_SCHED_EXT_C_V6_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.14/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/helpers.c";
+const LINUX_VERIFIER_C_V6_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c";
 const LINUX_SCHED_EXT_C_V6_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_16_SOURCE: &str =
@@ -274,6 +276,10 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_preempt_enable" => "bpf_preempt_enable",
         "bpf_local_irq_restore" => "bpf_local_irq_restore",
         "bpf_local_irq_save" => "bpf_local_irq_save",
+        "bpf_res_spin_lock" => "bpf_res_spin_lock",
+        "bpf_res_spin_unlock" => "bpf_res_spin_unlock",
+        "bpf_res_spin_lock_irqsave" => "bpf_res_spin_lock_irqsave",
+        "bpf_res_spin_unlock_irqrestore" => "bpf_res_spin_unlock_irqrestore",
         "bpf_rcu_read_lock" => "bpf_rcu_read_lock",
         "bpf_rcu_read_unlock" => "bpf_rcu_read_unlock",
         "bpf_throw" => "bpf_throw",
@@ -454,6 +460,10 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         "bpf_local_irq_restore" | "bpf_local_irq_save" | "scx_bpf_now" => "6.14",
         "bpf_copy_from_user_task_str"
         | "bpf_dynptr_copy"
+        | "bpf_res_spin_lock"
+        | "bpf_res_spin_unlock"
+        | "bpf_res_spin_lock_irqsave"
+        | "bpf_res_spin_unlock_irqrestore"
         | "scx_bpf_events"
         | "scx_bpf_nr_node_ids" => "6.15",
         "bpf_copy_from_user_dynptr"
@@ -616,6 +626,10 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         "bpf_local_irq_restore" | "bpf_local_irq_save" => LINUX_HELPERS_C_V6_14_SOURCE,
         "scx_bpf_now" => LINUX_SCHED_EXT_C_V6_14_SOURCE,
         "bpf_copy_from_user_task_str" | "bpf_dynptr_copy" => LINUX_HELPERS_C_V6_15_SOURCE,
+        "bpf_res_spin_lock"
+        | "bpf_res_spin_unlock"
+        | "bpf_res_spin_lock_irqsave"
+        | "bpf_res_spin_unlock_irqrestore" => LINUX_VERIFIER_C_V6_15_SOURCE,
         "scx_bpf_events" | "scx_bpf_nr_node_ids" => LINUX_SCHED_EXT_C_V6_15_SOURCE,
         "bpf_copy_from_user_dynptr"
         | "bpf_copy_from_user_task_dynptr"

@@ -897,6 +897,26 @@ const KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU = {
     min_kernel: "6.3"
     source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c"
 }
+const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_LOCK = {
+    key: "kfunc:bpf_res_spin_lock"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c"
+}
+const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK = {
+    key: "kfunc:bpf_res_spin_unlock"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c"
+}
+const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_LOCK_IRQSAVE = {
+    key: "kfunc:bpf_res_spin_lock_irqsave"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c"
+}
+const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE = {
+    key: "kfunc:bpf_res_spin_unlock_irqrestore"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c"
+}
 const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK = {
     key: "kfunc:scx_bpf_get_idle_cpumask"
     min_kernel: "6.12"
@@ -2055,6 +2075,10 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "bpf_cpumask_release", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE }
     { name: "bpf_cpumask_first", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST }
     { name: "bpf_cpumask_set_cpu", feature: $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU }
+    { name: "bpf_res_spin_lock", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_LOCK }
+    { name: "bpf_res_spin_unlock", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK }
+    { name: "bpf_res_spin_lock_irqsave", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_LOCK_IRQSAVE }
+    { name: "bpf_res_spin_unlock_irqrestore", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE }
     { name: "scx_bpf_get_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK }
     { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
     { name: "scx_bpf_pick_any_cpu", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU }
@@ -4865,6 +4889,21 @@ const FIXTURES = [
             $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
         ]
         error_contains: "cannot store cgroup pointer in kptr:task_struct slot"
+    }
+    {
+        name: "source-kfunc-res-spin-rejects-non-kernel-pointer"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_lock" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_res_spin_lock' arg0 expects pointer"
     }
     {
         name: "timer-init-rejects-non-map-timer"

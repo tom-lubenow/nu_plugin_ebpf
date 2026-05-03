@@ -4203,6 +4203,30 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/bpf/helpers.c",
         ),
         (
+            "bpf_res_spin_lock",
+            "kfunc:bpf_res_spin_lock",
+            "6.15",
+            "/kernel/bpf/verifier.c",
+        ),
+        (
+            "bpf_res_spin_unlock",
+            "kfunc:bpf_res_spin_unlock",
+            "6.15",
+            "/kernel/bpf/verifier.c",
+        ),
+        (
+            "bpf_res_spin_lock_irqsave",
+            "kfunc:bpf_res_spin_lock_irqsave",
+            "6.15",
+            "/kernel/bpf/verifier.c",
+        ),
+        (
+            "bpf_res_spin_unlock_irqrestore",
+            "kfunc:bpf_res_spin_unlock_irqrestore",
+            "6.15",
+            "/kernel/bpf/verifier.c",
+        ),
+        (
             "bpf_iter_dmabuf_new",
             "kfunc:bpf_iter_dmabuf_new",
             "6.16",
