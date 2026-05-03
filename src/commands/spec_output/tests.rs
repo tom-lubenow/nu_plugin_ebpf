@@ -2580,6 +2580,35 @@ fn test_context_write_records_filter_target_specific_writes() {
         !tc_egress_writes.iter().any(|surface| surface.field == "sk"),
         "ctx.sk assignment should not be advertised on tc egress"
     );
+
+    let tcx_ingress = ProgramSpec::parse("tcx:lo:ingress").expect("tcx ingress spec should parse");
+    let tcx_ingress_writes = spec_context_writes(&tcx_ingress);
+    assert!(tcx_ingress_writes.iter().any(|surface| {
+        surface.field == "sk" && surface.kind == "assign-socket" && !surface.indexed
+    }));
+
+    let tcx_egress = ProgramSpec::parse("tcx:lo:egress").expect("tcx egress spec should parse");
+    let tcx_egress_writes = spec_context_writes(&tcx_egress);
+    assert!(
+        !tcx_egress_writes
+            .iter()
+            .any(|surface| surface.field == "sk"),
+        "ctx.sk assignment should not be advertised on tcx egress"
+    );
+
+    let tc_action =
+        ProgramSpec::parse("tc_action:diff-action").expect("tc_action spec should parse");
+    let tc_action_writes = spec_context_writes(&tc_action);
+    assert!(tc_action_writes.iter().any(|surface| {
+        surface.field == "sk" && surface.kind == "assign-socket" && !surface.indexed
+    }));
+
+    let netkit = ProgramSpec::parse("netkit:lo:primary").expect("netkit spec should parse");
+    let netkit_writes = spec_context_writes(&netkit);
+    assert!(
+        !netkit_writes.iter().any(|surface| surface.field == "sk"),
+        "ctx.sk assignment should not be advertised on netkit"
+    );
 }
 
 #[test]

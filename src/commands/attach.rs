@@ -238,12 +238,14 @@ Context parameter syntax (recommended):
     paths for the default neighbor-resolution form, lowering to
     `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
     `0`. The raw `helper-call "bpf_redirect*"` forms remain available as
-    escape hatches. `mut ctx = $ctx; $ctx.sk = $sk` is the preferred
+    escape hatches. On `tc_action`, `tc:...:ingress`, `tcx:...:ingress`, and
+    `sk_lookup`, `mut ctx = $ctx; $ctx.sk = $sk` is the preferred
     zero-flag surface for `bpf_sk_assign`, supplying the ambient context
     pointer automatically. `assign-socket SK [--flags FLAGS]` remains
     available when the program needs the helper status or explicit
-    `sk_lookup` flags. It is valid on `tc:...:ingress` / `tcx:...:ingress` with zero flags and
-    on `sk_lookup`, where `--replace` and `--no-reuseport` map to the
+    `sk_lookup` flags. It is valid on `tc_action` and
+    `tc:...:ingress` / `tcx:...:ingress` with zero flags, and on
+    `sk_lookup`, where `--replace` and `--no-reuseport` map to the
     corresponding `BPF_SK_LOOKUP_F_*` flags. Assigning `0` to `ctx.sk`
     resets a previous `sk_lookup` selection.
     On `sk_reuseport`, `redirect-socket MAP KEY --kind reuseport-sockarray`
