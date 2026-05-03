@@ -2446,6 +2446,268 @@ const MAP_VALUE_KERNEL_FEATURES = [
     { token: "bpf_rb_node", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_RB_NODE }
 ]
 
+const BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID = [
+    { max_id: 3, min_kernel: "3.19" }
+    { max_id: 11, min_kernel: "4.1" }
+    { max_id: 16, min_kernel: "4.2" }
+    { max_id: 22, min_kernel: "4.3" }
+    { max_id: 25, min_kernel: "4.4" }
+    { max_id: 26, min_kernel: "4.5" }
+    { max_id: 30, min_kernel: "4.6" }
+    { max_id: 36, min_kernel: "4.8" }
+    { max_id: 41, min_kernel: "4.9" }
+    { max_id: 44, min_kernel: "4.10" }
+    { max_id: 45, min_kernel: "4.11" }
+    { max_id: 47, min_kernel: "4.12" }
+    { max_id: 50, min_kernel: "4.13" }
+    { max_id: 53, min_kernel: "4.14" }
+    { max_id: 57, min_kernel: "4.15" }
+    { max_id: 59, min_kernel: "4.16" }
+    { max_id: 64, min_kernel: "4.17" }
+    { max_id: 80, min_kernel: "4.18" }
+    { max_id: 83, min_kernel: "4.19" }
+    { max_id: 90, min_kernel: "4.20" }
+    { max_id: 92, min_kernel: "5.0" }
+    { max_id: 98, min_kernel: "5.1" }
+    { max_id: 108, min_kernel: "5.2" }
+    { max_id: 109, min_kernel: "5.3" }
+    { max_id: 110, min_kernel: "5.4" }
+    { max_id: 115, min_kernel: "5.5" }
+    { max_id: 118, min_kernel: "5.6" }
+    { max_id: 124, min_kernel: "5.7" }
+    { max_id: 135, min_kernel: "5.8" }
+    { max_id: 141, min_kernel: "5.9" }
+    { max_id: 155, min_kernel: "5.10" }
+    { max_id: 162, min_kernel: "5.11" }
+    { max_id: 163, min_kernel: "5.12" }
+    { max_id: 165, min_kernel: "5.13" }
+    { max_id: 168, min_kernel: "5.14" }
+    { max_id: 175, min_kernel: "5.15" }
+    { max_id: 179, min_kernel: "5.16" }
+    { max_id: 185, min_kernel: "5.17" }
+    { max_id: 193, min_kernel: "5.18" }
+    { max_id: 203, min_kernel: "5.19" }
+    { max_id: 207, min_kernel: "6.0" }
+    { max_id: 209, min_kernel: "6.1" }
+    { max_id: 211, min_kernel: "6.2" }
+]
+
+# Keep this table aligned with `BpfHelper::name` / helper IDs in Rust.
+# The floor table above mirrors the append-only Linux UAPI helper batches.
+const BPF_HELPER_IDS = [
+    { name: "bpf_bind", id: 64 }
+    { name: "bpf_bprm_opts_set", id: 159 }
+    { name: "bpf_btf_find_by_name_kind", id: 167 }
+    { name: "bpf_cgrp_storage_delete", id: 211 }
+    { name: "bpf_cgrp_storage_get", id: 210 }
+    { name: "bpf_check_mtu", id: 163 }
+    { name: "bpf_clone_redirect", id: 13 }
+    { name: "bpf_copy_from_user", id: 148 }
+    { name: "bpf_copy_from_user_task", id: 191 }
+    { name: "bpf_csum_diff", id: 28 }
+    { name: "bpf_csum_level", id: 135 }
+    { name: "bpf_csum_update", id: 40 }
+    { name: "bpf_current_task_under_cgroup", id: 37 }
+    { name: "bpf_d_path", id: 147 }
+    { name: "bpf_dynptr_data", id: 203 }
+    { name: "bpf_dynptr_from_mem", id: 197 }
+    { name: "bpf_dynptr_read", id: 201 }
+    { name: "bpf_dynptr_write", id: 202 }
+    { name: "bpf_fib_lookup", id: 69 }
+    { name: "bpf_find_vma", id: 180 }
+    { name: "bpf_for_each_map_elem", id: 164 }
+    { name: "bpf_get_attach_cookie", id: 174 }
+    { name: "bpf_get_branch_snapshot", id: 176 }
+    { name: "bpf_get_cgroup_classid", id: 17 }
+    { name: "bpf_get_current_ancestor_cgroup_id", id: 123 }
+    { name: "bpf_get_current_cgroup_id", id: 80 }
+    { name: "bpf_get_current_comm", id: 16 }
+    { name: "bpf_get_current_pid_tgid", id: 14 }
+    { name: "bpf_get_current_task", id: 35 }
+    { name: "bpf_get_current_task_btf", id: 158 }
+    { name: "bpf_get_current_uid_gid", id: 15 }
+    { name: "bpf_get_func_arg", id: 183 }
+    { name: "bpf_get_func_arg_cnt", id: 185 }
+    { name: "bpf_get_func_ip", id: 173 }
+    { name: "bpf_get_func_ret", id: 184 }
+    { name: "bpf_get_hash_recalc", id: 34 }
+    { name: "bpf_get_listener_sock", id: 98 }
+    { name: "bpf_get_local_storage", id: 81 }
+    { name: "bpf_get_netns_cookie", id: 122 }
+    { name: "bpf_get_ns_current_pid_tgid", id: 120 }
+    { name: "bpf_get_numa_node_id", id: 42 }
+    { name: "bpf_get_prandom_u32", id: 7 }
+    { name: "bpf_get_retval", id: 186 }
+    { name: "bpf_get_route_realm", id: 24 }
+    { name: "bpf_get_smp_processor_id", id: 8 }
+    { name: "bpf_get_socket_cookie", id: 46 }
+    { name: "bpf_get_socket_uid", id: 47 }
+    { name: "bpf_get_stack", id: 67 }
+    { name: "bpf_get_stackid", id: 27 }
+    { name: "bpf_get_task_stack", id: 141 }
+    { name: "bpf_getsockopt", id: 57 }
+    { name: "bpf_ima_file_hash", id: 193 }
+    { name: "bpf_ima_inode_hash", id: 161 }
+    { name: "bpf_inode_storage_delete", id: 146 }
+    { name: "bpf_inode_storage_get", id: 145 }
+    { name: "bpf_jiffies64", id: 118 }
+    { name: "bpf_kallsyms_lookup_name", id: 179 }
+    { name: "bpf_kptr_xchg", id: 194 }
+    { name: "bpf_ktime_get_boot_ns", id: 125 }
+    { name: "bpf_ktime_get_coarse_ns", id: 160 }
+    { name: "bpf_ktime_get_ns", id: 5 }
+    { name: "bpf_ktime_get_tai_ns", id: 208 }
+    { name: "bpf_l3_csum_replace", id: 10 }
+    { name: "bpf_l4_csum_replace", id: 11 }
+    { name: "bpf_load_hdr_opt", id: 142 }
+    { name: "bpf_loop", id: 181 }
+    { name: "bpf_lwt_push_encap", id: 73 }
+    { name: "bpf_lwt_seg6_action", id: 76 }
+    { name: "bpf_lwt_seg6_adjust_srh", id: 75 }
+    { name: "bpf_lwt_seg6_store_bytes", id: 74 }
+    { name: "bpf_map_delete_elem", id: 3 }
+    { name: "bpf_map_lookup_elem", id: 1 }
+    { name: "bpf_map_lookup_percpu_elem", id: 195 }
+    { name: "bpf_map_peek_elem", id: 89 }
+    { name: "bpf_map_pop_elem", id: 88 }
+    { name: "bpf_map_push_elem", id: 87 }
+    { name: "bpf_map_update_elem", id: 2 }
+    { name: "bpf_msg_apply_bytes", id: 61 }
+    { name: "bpf_msg_cork_bytes", id: 62 }
+    { name: "bpf_msg_pop_data", id: 91 }
+    { name: "bpf_msg_pull_data", id: 63 }
+    { name: "bpf_msg_push_data", id: 90 }
+    { name: "bpf_msg_redirect_hash", id: 71 }
+    { name: "bpf_msg_redirect_map", id: 60 }
+    { name: "bpf_override_return", id: 58 }
+    { name: "bpf_per_cpu_ptr", id: 153 }
+    { name: "bpf_perf_event_output", id: 25 }
+    { name: "bpf_perf_event_read", id: 22 }
+    { name: "bpf_perf_event_read_value", id: 55 }
+    { name: "bpf_perf_prog_read_value", id: 56 }
+    { name: "bpf_probe_read", id: 4 }
+    { name: "bpf_probe_read_kernel", id: 113 }
+    { name: "bpf_probe_read_kernel_str", id: 115 }
+    { name: "bpf_probe_read_str", id: 45 }
+    { name: "bpf_probe_read_user", id: 112 }
+    { name: "bpf_probe_read_user_str", id: 114 }
+    { name: "bpf_probe_write_user", id: 36 }
+    { name: "bpf_rc_keydown", id: 78 }
+    { name: "bpf_rc_pointer_rel", id: 92 }
+    { name: "bpf_rc_repeat", id: 77 }
+    { name: "bpf_read_branch_records", id: 119 }
+    { name: "bpf_redirect", id: 23 }
+    { name: "bpf_redirect_map", id: 51 }
+    { name: "bpf_redirect_neigh", id: 152 }
+    { name: "bpf_redirect_peer", id: 155 }
+    { name: "bpf_reserve_hdr_opt", id: 144 }
+    { name: "bpf_ringbuf_discard", id: 133 }
+    { name: "bpf_ringbuf_discard_dynptr", id: 200 }
+    { name: "bpf_ringbuf_output", id: 130 }
+    { name: "bpf_ringbuf_query", id: 134 }
+    { name: "bpf_ringbuf_reserve", id: 131 }
+    { name: "bpf_ringbuf_reserve_dynptr", id: 198 }
+    { name: "bpf_ringbuf_submit", id: 132 }
+    { name: "bpf_ringbuf_submit_dynptr", id: 199 }
+    { name: "bpf_send_signal", id: 109 }
+    { name: "bpf_send_signal_thread", id: 117 }
+    { name: "bpf_seq_printf", id: 126 }
+    { name: "bpf_seq_printf_btf", id: 150 }
+    { name: "bpf_seq_write", id: 127 }
+    { name: "bpf_set_hash", id: 48 }
+    { name: "bpf_set_hash_invalid", id: 41 }
+    { name: "bpf_set_retval", id: 187 }
+    { name: "bpf_setsockopt", id: 49 }
+    { name: "bpf_sk_ancestor_cgroup_id", id: 129 }
+    { name: "bpf_sk_assign", id: 124 }
+    { name: "bpf_sk_cgroup_id", id: 128 }
+    { name: "bpf_sk_fullsock", id: 95 }
+    { name: "bpf_sk_lookup_tcp", id: 84 }
+    { name: "bpf_sk_lookup_udp", id: 85 }
+    { name: "bpf_sk_redirect_hash", id: 72 }
+    { name: "bpf_sk_redirect_map", id: 52 }
+    { name: "bpf_sk_release", id: 86 }
+    { name: "bpf_sk_select_reuseport", id: 82 }
+    { name: "bpf_sk_storage_delete", id: 108 }
+    { name: "bpf_sk_storage_get", id: 107 }
+    { name: "bpf_skb_adjust_room", id: 50 }
+    { name: "bpf_skb_ancestor_cgroup_id", id: 83 }
+    { name: "bpf_skb_cgroup_classid", id: 151 }
+    { name: "bpf_skb_cgroup_id", id: 79 }
+    { name: "bpf_skb_change_head", id: 43 }
+    { name: "bpf_skb_change_proto", id: 31 }
+    { name: "bpf_skb_change_tail", id: 38 }
+    { name: "bpf_skb_change_type", id: 32 }
+    { name: "bpf_skb_ecn_set_ce", id: 97 }
+    { name: "bpf_skb_get_tunnel_key", id: 20 }
+    { name: "bpf_skb_get_tunnel_opt", id: 29 }
+    { name: "bpf_skb_get_xfrm_state", id: 66 }
+    { name: "bpf_skb_load_bytes", id: 26 }
+    { name: "bpf_skb_load_bytes_relative", id: 68 }
+    { name: "bpf_skb_output", id: 111 }
+    { name: "bpf_skb_pull_data", id: 39 }
+    { name: "bpf_skb_set_tstamp", id: 192 }
+    { name: "bpf_skb_set_tunnel_key", id: 21 }
+    { name: "bpf_skb_set_tunnel_opt", id: 30 }
+    { name: "bpf_skb_store_bytes", id: 9 }
+    { name: "bpf_skb_under_cgroup", id: 33 }
+    { name: "bpf_skb_vlan_pop", id: 19 }
+    { name: "bpf_skb_vlan_push", id: 18 }
+    { name: "bpf_skc_lookup_tcp", id: 99 }
+    { name: "bpf_skc_to_mptcp_sock", id: 196 }
+    { name: "bpf_skc_to_tcp6_sock", id: 136 }
+    { name: "bpf_skc_to_tcp_request_sock", id: 139 }
+    { name: "bpf_skc_to_tcp_sock", id: 137 }
+    { name: "bpf_skc_to_tcp_timewait_sock", id: 138 }
+    { name: "bpf_skc_to_udp6_sock", id: 140 }
+    { name: "bpf_skc_to_unix_sock", id: 178 }
+    { name: "bpf_snprintf", id: 165 }
+    { name: "bpf_snprintf_btf", id: 149 }
+    { name: "bpf_sock_from_file", id: 162 }
+    { name: "bpf_sock_hash_update", id: 70 }
+    { name: "bpf_sock_map_update", id: 53 }
+    { name: "bpf_sock_ops_cb_flags_set", id: 59 }
+    { name: "bpf_spin_lock", id: 93 }
+    { name: "bpf_spin_unlock", id: 94 }
+    { name: "bpf_store_hdr_opt", id: 143 }
+    { name: "bpf_strncmp", id: 182 }
+    { name: "bpf_strtol", id: 105 }
+    { name: "bpf_strtoul", id: 106 }
+    { name: "bpf_sys_bpf", id: 166 }
+    { name: "bpf_sys_close", id: 168 }
+    { name: "bpf_sysctl_get_current_value", id: 102 }
+    { name: "bpf_sysctl_get_name", id: 101 }
+    { name: "bpf_sysctl_get_new_value", id: 103 }
+    { name: "bpf_sysctl_set_new_value", id: 104 }
+    { name: "bpf_tail_call", id: 12 }
+    { name: "bpf_task_pt_regs", id: 175 }
+    { name: "bpf_task_storage_delete", id: 157 }
+    { name: "bpf_task_storage_get", id: 156 }
+    { name: "bpf_tcp_check_syncookie", id: 100 }
+    { name: "bpf_tcp_gen_syncookie", id: 110 }
+    { name: "bpf_tcp_raw_check_syncookie_ipv4", id: 206 }
+    { name: "bpf_tcp_raw_check_syncookie_ipv6", id: 207 }
+    { name: "bpf_tcp_raw_gen_syncookie_ipv4", id: 204 }
+    { name: "bpf_tcp_raw_gen_syncookie_ipv6", id: 205 }
+    { name: "bpf_tcp_send_ack", id: 116 }
+    { name: "bpf_tcp_sock", id: 96 }
+    { name: "bpf_this_cpu_ptr", id: 154 }
+    { name: "bpf_timer_cancel", id: 172 }
+    { name: "bpf_timer_init", id: 169 }
+    { name: "bpf_timer_set_callback", id: 170 }
+    { name: "bpf_timer_start", id: 171 }
+    { name: "bpf_trace_printk", id: 6 }
+    { name: "bpf_trace_vprintk", id: 177 }
+    { name: "bpf_user_ringbuf_drain", id: 209 }
+    { name: "bpf_xdp_adjust_head", id: 44 }
+    { name: "bpf_xdp_adjust_meta", id: 54 }
+    { name: "bpf_xdp_adjust_tail", id: 65 }
+    { name: "bpf_xdp_get_buff_len", id: 188 }
+    { name: "bpf_xdp_load_bytes", id: 189 }
+    { name: "bpf_xdp_output", id: 121 }
+    { name: "bpf_xdp_store_bytes", id: 190 }
+]
+
 const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_lookup_elem", feature: $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM }
     { name: "bpf_map_update_elem", feature: $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM }
@@ -6724,7 +6986,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "adjust-message --apply is only valid in sk_msg programs"
+        error_contains: "adjust-message is not supported on raw_tracepoint programs"
     }
     {
         name: "adjust-message-sk-msg-cork"
@@ -7187,10 +7449,27 @@ def local-storage-delete-helper-kernel-feature [kind: string] {
 
 def helper-kernel-feature [name: string] {
     let matches = ($HELPER_KERNEL_FEATURES | where {|entry| $entry.name == $name })
-    if ($matches | is-empty) {
-        null
-    } else {
-        $matches | first | get feature
+    if not ($matches | is-empty) {
+        return ($matches | first | get feature)
+    }
+
+    let helper_ids = ($BPF_HELPER_IDS | where {|entry| $entry.name == $name })
+    if ($helper_ids | is-empty) {
+        return null
+    }
+
+    let helper_id = ($helper_ids | first | get id)
+    let floors = ($BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID | where {|floor| $helper_id <= $floor.max_id })
+    if ($floors | is-empty) {
+        return null
+    }
+
+    let floor = ($floors | first)
+    let min_kernel = ($floor | get min_kernel)
+    {
+        key: $"helper:($name)"
+        min_kernel: $min_kernel
+        source: $"https://github.com/torvalds/linux/blob/v($min_kernel)/include/uapi/linux/bpf.h"
     }
 }
 
