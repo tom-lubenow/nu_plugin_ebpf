@@ -3330,24 +3330,22 @@ fn test_compile_sock_ops_remote_ip6_load_normalizes_four_words_into_stack_slot()
     assert_eq!(end32_count, 4);
 }
 
-#[test]
-fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
+fn compile_sock_ops_ctx_load_instructions(
+    field: CtxField,
+    slot_size: Option<usize>,
+) -> Vec<EbpfInsn> {
     let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
 
     let mut func = LirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
 
-    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
+    let slot = slot_size.map(|size| func.alloc_stack_slot(size, 8, StackSlotKind::Local));
     let dst = func.alloc_vreg();
 
     func.block_mut(entry)
         .instructions
-        .push(LirInst::LoadCtxField {
-            dst,
-            field: CtxField::SockOpsArgs,
-            slot: Some(slot),
-        });
+        .push(LirInst::LoadCtxField { dst, field, slot });
     func.block_mut(entry).terminator = LirInst::Return {
         val: Some(MirValue::VReg(dst)),
     };
@@ -3363,9 +3361,14 @@ fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
         .unwrap();
     compiler.compile_function(&program.main).unwrap();
     compiler.fixup_jumps().unwrap();
+    compiler.instructions
+}
 
-    let word_load_offsets: Vec<i16> = compiler
-        .instructions
+#[test]
+fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
+    let instructions = compile_sock_ops_ctx_load_instructions(CtxField::SockOpsArgs, Some(16));
+
+    let word_load_offsets: Vec<i16> = instructions
         .iter()
         .filter(|insn| {
             insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
@@ -3375,8 +3378,7 @@ fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
         .collect();
     assert_eq!(word_load_offsets, vec![4, 8, 12, 16]);
 
-    let end32_count = compiler
-        .instructions
+    let end32_count = instructions
         .iter()
         .filter(|insn| {
             insn.opcode == opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X && insn.imm == 32
@@ -3387,38 +3389,9 @@ fn test_compile_sock_ops_args_load_copies_four_words_into_stack_slot() {
 
 #[test]
 fn test_compile_sock_ops_reply_load_uses_union_word_offset() {
-    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let instructions = compile_sock_ops_ctx_load_instructions(CtxField::SockOpsReply, None);
 
-    let mut func = LirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-
-    let dst = func.alloc_vreg();
-
-    func.block_mut(entry)
-        .instructions
-        .push(LirInst::LoadCtxField {
-            dst,
-            field: CtxField::SockOpsReply,
-            slot: None,
-        });
-    func.block_mut(entry).terminator = LirInst::Return {
-        val: Some(MirValue::VReg(dst)),
-    };
-
-    let program = LirProgram::new(func);
-    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
-    compiler
-        .prepare_function_state(
-            &program.main,
-            compiler.available_regs.clone(),
-            program.main.precolored.clone(),
-        )
-        .unwrap();
-    compiler.compile_function(&program.main).unwrap();
-    compiler.fixup_jumps().unwrap();
-
-    assert!(compiler.instructions.iter().any(|insn| {
+    assert!(instructions.iter().any(|insn| {
         insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
             && insn.src_reg == EbpfReg::R9.as_u8()
             && insn.offset == 4
@@ -3427,40 +3400,9 @@ fn test_compile_sock_ops_reply_load_uses_union_word_offset() {
 
 #[test]
 fn test_compile_sock_ops_replylong_load_copies_four_words_into_stack_slot() {
-    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let instructions = compile_sock_ops_ctx_load_instructions(CtxField::SockOpsReplyLong, Some(16));
 
-    let mut func = LirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-
-    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::Local);
-    let dst = func.alloc_vreg();
-
-    func.block_mut(entry)
-        .instructions
-        .push(LirInst::LoadCtxField {
-            dst,
-            field: CtxField::SockOpsReplyLong,
-            slot: Some(slot),
-        });
-    func.block_mut(entry).terminator = LirInst::Return {
-        val: Some(MirValue::VReg(dst)),
-    };
-
-    let program = LirProgram::new(func);
-    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
-    compiler
-        .prepare_function_state(
-            &program.main,
-            compiler.available_regs.clone(),
-            program.main.precolored.clone(),
-        )
-        .unwrap();
-    compiler.compile_function(&program.main).unwrap();
-    compiler.fixup_jumps().unwrap();
-
-    let word_load_offsets: Vec<i16> = compiler
-        .instructions
+    let word_load_offsets: Vec<i16> = instructions
         .iter()
         .filter(|insn| {
             insn.opcode == opcode::BPF_LDX | opcode::BPF_W | opcode::BPF_MEM
@@ -3470,8 +3412,7 @@ fn test_compile_sock_ops_replylong_load_copies_four_words_into_stack_slot() {
         .collect();
     assert_eq!(word_load_offsets, vec![4, 8, 12, 16]);
 
-    let end32_count = compiler
-        .instructions
+    let end32_count = instructions
         .iter()
         .filter(|insn| {
             insn.opcode == opcode::BPF_ALU | opcode::BPF_END | opcode::BPF_X && insn.imm == 32
