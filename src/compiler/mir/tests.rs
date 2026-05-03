@@ -552,6 +552,10 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     )
     .expect("cgroup_sock ctx.rx_queue_mapping should use bpf_sock field floor");
     assert_eq!(cgroup_sock_rx_queue.minimum_kernel(), "5.8");
+    let generic_sock_rx_queue =
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::SockRxQueueMapping)
+            .expect("bpf_sock rx_queue_mapping projection should have a source-backed floor");
+    assert_eq!(generic_sock_rx_queue.minimum_kernel(), "5.8");
 
     let sk_lookup_family = ContextFieldCompatibilityRequirement::for_field_on_program(
         &CtxField::Family,

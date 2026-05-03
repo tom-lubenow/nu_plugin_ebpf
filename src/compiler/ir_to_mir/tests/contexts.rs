@@ -6,6 +6,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, CtxStoreTarget};
+use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf_with_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
@@ -1362,6 +1363,91 @@ fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
             ..
         }
     )));
+}
+
+#[test]
+fn test_lower_ctx_socket_projection_records_implied_context_compatibility_fields() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("mark")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock ctx.sk.mark should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SockMark)
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("ctx.sk.mark should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSock,
+        "/sys/fs/cgroup:sock_create",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let requirements = program.context_field_compatibility_requirements();
+
+    let mark = requirements
+        .iter()
+        .find(|requirement| requirement.key() == "ctx:mark")
+        .expect("ctx.sk.mark should imply ctx.mark compatibility metadata");
+    assert_eq!(mark.minimum_kernel(), "4.14");
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("4.14")
+    );
+
+    let rx_hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("rx_queue_mapping")],
+    });
+    let sock_ops_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let rx_result = lower_hir_to_mir_with_hints(
+        &rx_hir,
+        Some(&sock_ops_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sock_ops ctx.sk.rx_queue_mapping should lower");
+
+    assert!(
+        rx_result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SockRxQueueMapping)
+    );
+    let rx_compiled = compile_mir_to_ebpf_with_hints(
+        &rx_result.program,
+        Some(&sock_ops_ctx),
+        Some(&rx_result.type_hints),
+    )
+    .expect("ctx.sk.rx_queue_mapping should compile");
+    let rx_program = rx_compiled.into_program(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert_eq!(
+        rx_program.context_field_compatibility_minimum_kernel(),
+        Some("5.8")
+    );
 }
 
 #[test]

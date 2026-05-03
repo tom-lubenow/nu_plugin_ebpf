@@ -2352,6 +2352,9 @@ pub struct MirTypeHints {
     pub subfunctions: Vec<HashMap<VReg, MirType>>,
     pub main_stack_slots: HashMap<StackSlotId, MirType>,
     pub subfunction_stack_slots: Vec<HashMap<StackSlotId, MirType>>,
+    /// Context fields implied by higher-level typed projections that do not
+    /// appear as direct LoadCtxField instructions after lowering.
+    pub used_ctx_fields: HashSet<CtxField>,
     pub generic_map_key_types: HashMap<MapRef, MirType>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     pub generic_map_max_entries: HashMap<MapRef, u32>,

@@ -1452,6 +1452,11 @@ const KERNEL_FEATURE_CTX_CGROUP_SOCK_RX_QUEUE_MAPPING = {
     min_kernel: "5.8"
     source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_BPF_SOCK_RX_QUEUE_MAPPING = {
+    key: "ctx:rx_queue_mapping"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_SK_LOOKUP_FAMILY = {
     key: "ctx:family"
     min_kernel: "5.9"
@@ -7017,6 +7022,103 @@ def normalize-context-field-token [token: string] {
     | str replace --all ";" ""
 }
 
+def normalize-context-projection-token [token: string] {
+    let cleaned = (
+        $token
+        | str trim
+        | split row " "
+        | first
+        | str replace --all ")" ""
+        | str replace --all "(" ""
+        | str replace --all "," ""
+        | str replace --all "\"" ""
+        | str replace --all "'" ""
+        | str replace --all "}" ""
+        | str replace --all "]" ""
+        | str replace --all ";" ""
+    )
+    let parts = ($cleaned | split row ".")
+    if ($parts | length) < 2 {
+        return null
+    }
+
+    let root = ($parts | first)
+    if $root not-in ["sk" "migrating_sk" "migrating_socket"] {
+        return null
+    }
+
+    $parts | get 1
+}
+
+def bpf-sock-projection-context-field [member: string] {
+    if $member == "bound_dev_if" {
+        return "bound_dev_if"
+    }
+    if $member == "family" {
+        return "family"
+    }
+    if $member == "type" or $member == "sock_type" {
+        return "sock_type"
+    }
+    if $member == "protocol" or $member == "ip_protocol" {
+        return "protocol"
+    }
+    if $member == "mark" {
+        return "mark"
+    }
+    if $member == "priority" {
+        return "priority"
+    }
+    if $member == "src_ip4" {
+        return "local_ip4"
+    }
+    if $member == "src_ip6" {
+        return "local_ip6"
+    }
+    if $member == "src_port" {
+        return "local_port"
+    }
+    if $member == "dst_ip4" {
+        return "remote_ip4"
+    }
+    if $member == "dst_ip6" {
+        return "remote_ip6"
+    }
+    if $member == "dst_port" {
+        return "remote_port"
+    }
+    if $member == "state" {
+        return "state"
+    }
+    if $member == "rx_queue_mapping" {
+        return "rx_queue_mapping"
+    }
+
+    null
+}
+
+def context-projection-kernel-feature [raw_access: string target] {
+    let member = (normalize-context-projection-token $raw_access)
+    if $member == null {
+        return null
+    }
+
+    let field = (bpf-sock-projection-context-field $member)
+    if $field == null {
+        return null
+    }
+
+    let feature = (context-field-kernel-feature $field $target)
+    if $feature != null {
+        return $feature
+    }
+    if $field == "rx_queue_mapping" {
+        return $KERNEL_FEATURE_CTX_BPF_SOCK_RX_QUEUE_MAPPING
+    }
+
+    null
+}
+
 def program-kfunc-names [source: string] {
     mut names = []
 
@@ -7204,6 +7306,10 @@ def program-context-field-kernel-features [source: string target] {
             let helper_feature = (context-field-helper-kernel-feature $field)
             if $helper_feature != null {
                 $features = (append-missing-kernel-features $features [$helper_feature])
+            }
+            let projection_feature = (context-projection-kernel-feature $raw_access $target)
+            if $projection_feature != null {
+                $features = (append-missing-kernel-features $features [$projection_feature])
             }
         }
     }

@@ -343,6 +343,8 @@ pub struct HirToMirLowering<'a> {
     vreg_type_hints: HashMap<VReg, MirType>,
     /// Collected stack-slot pointee type hints for stack-address values
     stack_slot_type_hints: HashMap<StackSlotId, MirType>,
+    /// Context fields implied by typed projections over context-backed values.
+    implied_ctx_fields: HashSet<CtxField>,
     /// Source-order generic map key schemas discovered during lowering
     map_key_types: HashMap<MapRef, MirType>,
     /// Source-order generic map value schemas discovered during lowering
@@ -486,6 +488,7 @@ impl<'a> HirToMirLowering<'a> {
             decl_type_hints,
             vreg_type_hints: HashMap::new(),
             stack_slot_type_hints: HashMap::new(),
+            implied_ctx_fields: HashSet::new(),
             map_key_types,
             map_max_entries,
             map_value_types,
@@ -552,6 +555,7 @@ impl<'a> HirToMirLowering<'a> {
             subfunctions: self.subfunction_hints,
             main_stack_slots: self.stack_slot_type_hints,
             subfunction_stack_slots: self.subfunction_stack_slot_hints,
+            used_ctx_fields: self.implied_ctx_fields,
             generic_map_key_types: self
                 .map_key_types
                 .iter()

@@ -432,6 +432,7 @@ fn direct_context_field_kernel_floor(
         | CtxField::DeviceMajor
         | CtxField::DeviceMinor => ("4.15", LINUX_BPF_H_V4_15_SOURCE),
         CtxField::RxQueueIndex => ("4.16", LINUX_BPF_H_V4_16_SOURCE),
+        CtxField::SockRxQueueMapping => ("5.8", LINUX_BPF_H_V5_8_SOURCE),
         CtxField::FlowKeys => ("4.20", LINUX_BPF_H_V4_20_SOURCE),
         CtxField::Tstamp | CtxField::WireLen => ("5.0", LINUX_BPF_H_V5_0_SOURCE),
         CtxField::GsoSegs => ("5.1", LINUX_BPF_H_V5_1_SOURCE),

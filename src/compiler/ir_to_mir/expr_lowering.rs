@@ -769,6 +769,8 @@ impl<'a> HirToMirLowering<'a> {
         trusted_btf: bool,
         projected_semantics: Option<&AnnotatedValueSemantics>,
     ) -> Result<MirType, CompileError> {
+        self.record_context_projection_compat_fields(root_ctx_field, path_members);
+
         let projected_by_ref =
             |ty: &MirType| matches!(ty, MirType::Array { .. } | MirType::Struct { .. });
 
@@ -1571,5 +1573,45 @@ impl<'a> HirToMirLowering<'a> {
             "empty typed field path '{}'",
             path_desc
         )))
+    }
+
+    fn record_context_projection_compat_fields(
+        &mut self,
+        root_ctx_field: Option<&CtxField>,
+        path_members: &[PathMember],
+    ) {
+        if !matches!(
+            root_ctx_field,
+            Some(CtxField::Socket | CtxField::MigratingSocket)
+        ) {
+            return;
+        }
+
+        let Some(PathMember::String { val, .. }) = path_members.first() else {
+            return;
+        };
+        if let Some(field) = Self::implied_ctx_field_for_bpf_sock_projection(val) {
+            self.implied_ctx_fields.insert(field);
+        }
+    }
+
+    fn implied_ctx_field_for_bpf_sock_projection(member: &str) -> Option<CtxField> {
+        Some(match member {
+            "bound_dev_if" => CtxField::BoundDevIf,
+            "family" => CtxField::Family,
+            "type" | "sock_type" => CtxField::SockType,
+            "protocol" | "ip_protocol" => CtxField::Protocol,
+            "mark" => CtxField::SockMark,
+            "priority" => CtxField::SockPriority,
+            "src_ip4" => CtxField::LocalIp4,
+            "src_ip6" => CtxField::LocalIp6,
+            "src_port" => CtxField::LocalPort,
+            "dst_port" => CtxField::RemotePort,
+            "dst_ip4" => CtxField::RemoteIp4,
+            "dst_ip6" => CtxField::RemoteIp6,
+            "state" => CtxField::SockState,
+            "rx_queue_mapping" => CtxField::SockRxQueueMapping,
+            _ => return None,
+        })
     }
 }

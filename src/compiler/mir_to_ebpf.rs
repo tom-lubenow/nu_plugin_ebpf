@@ -619,6 +619,10 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         .as_ref()
         .map(|hints| hints.generic_map_max_entries.clone())
         .unwrap_or_default();
+    let implied_ctx_fields = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.used_ctx_fields.clone())
+        .unwrap_or_default();
     let program_types = verify_mir_program(&program, probe_ctx, normalized_type_hints.as_ref())?;
     let lir_program = lower_mir_to_lir_checked(&program)?;
 
@@ -631,6 +635,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         generic_map_value_types,
     );
     let mut result = compiler.compile()?;
+    result.used_ctx_fields.extend(implied_ctx_fields);
     result.readonly_globals = readonly_globals;
     result.data_globals = data_globals;
     result.bss_globals = bss_globals;
