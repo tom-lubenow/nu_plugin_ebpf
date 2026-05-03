@@ -1355,10 +1355,10 @@ impl<'a> HirToMirLowering<'a> {
             .cloned()
             .flatten();
         let returned_arg_seed = if aggregate_return_setup.is_none() {
-            if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) =
-                infer_subfunction_return_summaries(&self.subfunctions)
-                    .get(&subfn)
-                    .copied()
+            if let Some(idx) = infer_subfunction_return_summaries(&self.subfunctions)
+                .get(&subfn)
+                .copied()
+                .and_then(SubfunctionReturnSummary::return_arg)
             {
                 arg_seeds.get(idx).cloned().inspect(|seed| {
                     if let Some(arg_ty) = seed.type_hint.clone() {

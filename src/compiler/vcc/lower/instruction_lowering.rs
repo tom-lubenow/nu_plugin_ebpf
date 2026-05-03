@@ -1129,17 +1129,26 @@ impl<'a> VccLowerer<'a> {
                         ),
                     });
                 }
-                if let MirInst::CallSubfn { dst, subfn, args } = inst
-                    && let Some(
-                        crate::compiler::subfn_summaries::SubfunctionReturnSummary::ReturnsArg(idx),
-                    ) = self.subfn_summaries.get(subfn)
-                    && let Some(arg) = args.get(*idx)
-                {
-                    out.push(VccInst::Copy {
-                        dst: VccReg(dst.0),
-                        src: VccValue::Reg(VccReg(arg.0)),
-                    });
-                    return Ok(());
+                if let MirInst::CallSubfn { dst, subfn, args } = inst {
+                    let summary = self
+                        .subfn_summaries
+                        .get(subfn)
+                        .copied()
+                        .unwrap_or(
+                            crate::compiler::subfn_summaries::SubfunctionReturnSummary::Unknown,
+                        );
+                    if summary.changes_packet_data() {
+                        out.push(VccInst::InvalidatePacketPointers);
+                    }
+                    if let Some(idx) = summary.return_arg()
+                        && let Some(arg) = args.get(idx)
+                    {
+                        out.push(VccInst::Copy {
+                            dst: VccReg(dst.0),
+                            src: VccValue::Reg(VccReg(arg.0)),
+                        });
+                        return Ok(());
+                    }
                 }
                 let ty = self
                     .types

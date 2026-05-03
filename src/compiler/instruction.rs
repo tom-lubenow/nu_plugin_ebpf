@@ -1572,12 +1572,19 @@ impl BpfHelper {
                 | Self::LwtSeg6StoreBytes
                 | Self::SkbVlanPush
                 | Self::SkbVlanPop
+                | Self::MsgPopData
+                | Self::MsgPushData
+                | Self::StoreHdrOpt
                 | Self::XdpAdjustHead
                 | Self::XdpAdjustMeta
                 | Self::SkbAdjustRoom
                 | Self::XdpAdjustTail
                 | Self::MsgPullData
         )
+    }
+
+    pub const fn changes_packet_data_in_subprogram(self) -> bool {
+        self.invalidates_packet_pointers() || matches!(self, Self::TailCall)
     }
 
     pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {

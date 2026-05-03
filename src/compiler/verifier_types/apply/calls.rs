@@ -307,8 +307,17 @@ pub(super) fn apply_call_subfn_inst(
             args.len()
         )));
     }
-    if let Some(SubfunctionReturnSummary::ReturnsArg(idx)) = subfn_summaries.get(&subfn)
-        && let Some(arg) = args.get(*idx)
+    let summary = subfn_summaries
+        .get(&subfn)
+        .copied()
+        .unwrap_or(SubfunctionReturnSummary::Unknown);
+
+    if summary.changes_packet_data() {
+        state.invalidate_packet_pointers();
+    }
+
+    if let Some(idx) = summary.return_arg()
+        && let Some(arg) = args.get(idx)
     {
         apply_copy_inst(dst, &MirValue::VReg(*arg), types, slot_sizes, state);
         return;

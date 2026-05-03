@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::mir::StructField;
-use crate::compiler::subfn_summaries::SubfunctionReturnSummary;
+use crate::compiler::subfn_summaries::{
+    SubfunctionReturnSummary, infer_subfunction_return_summaries,
+};
 use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
 fn bpf_timer_map_ptr_ty() -> MirType {
@@ -10768,6 +10770,133 @@ fn test_verify_mir_for_probe_context_msg_pull_data_allows_reloaded_packet_pointe
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected reloaded packet pointers to verify after msg_pull_data");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_mutating_subfn_invalidates_prior_packet_pointers() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let load = func.alloc_block();
+    let done = func.alloc_block();
+
+    let data = func.alloc_vreg();
+    let access_end = func.alloc_vreg();
+    let data_end = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let call_ret = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: access_end,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(access_end),
+        rhs: MirValue::VReg(data_end),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: load,
+        if_false: done,
+    };
+
+    func.block_mut(load)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(load).instructions.push(MirInst::CallSubfn {
+        dst: call_ret,
+        subfn: SubfunctionId(0),
+        args: vec![ctx],
+    });
+    func.block_mut(load).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U8,
+    });
+    func.block_mut(load).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let packet_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    };
+    let mut types = HashMap::new();
+    types.insert(data, packet_ptr.clone());
+    types.insert(access_end, packet_ptr.clone());
+    types.insert(data_end, packet_ptr);
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(call_ret, MirType::I64);
+    types.insert(dst, MirType::U8);
+
+    let mut subfn = MirFunction::new();
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    subfn.param_count = 1;
+    subfn.vreg_count = 1;
+    let helper_ret = subfn.alloc_vreg();
+    subfn
+        .block_mut(sub_entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::MsgPushData as u32,
+            args: vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::Const(0),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    subfn.block_mut(sub_entry).terminator = MirInst::Return { val: None };
+    let summaries = infer_subfunction_return_summaries(&[subfn]);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let err = verify_mir_with_subfunction_summaries_for_probe_context(
+        &func,
+        &types,
+        &summaries,
+        Some(&probe_ctx),
+        None,
+    )
+    .expect_err("expected stale packet pointer load to fail after packet-mutating subfn");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("load requires pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

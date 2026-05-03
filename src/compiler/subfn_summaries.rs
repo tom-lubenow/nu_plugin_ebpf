@@ -1,11 +1,39 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use super::instruction::BpfHelper;
 use super::mir::{BlockId, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubfunctionReturnSummary {
     Unknown,
     ReturnsArg(usize),
+    UnknownChangesPacketData,
+    ReturnsArgChangesPacketData(usize),
+}
+
+impl SubfunctionReturnSummary {
+    pub(crate) const fn return_arg(self) -> Option<usize> {
+        match self {
+            Self::ReturnsArg(idx) | Self::ReturnsArgChangesPacketData(idx) => Some(idx),
+            Self::Unknown | Self::UnknownChangesPacketData => None,
+        }
+    }
+
+    pub(crate) const fn changes_packet_data(self) -> bool {
+        matches!(
+            self,
+            Self::UnknownChangesPacketData | Self::ReturnsArgChangesPacketData(_)
+        )
+    }
+
+    const fn from_parts(return_arg: Option<usize>, changes_packet_data: bool) -> Self {
+        match (return_arg, changes_packet_data) {
+            (Some(idx), false) => Self::ReturnsArg(idx),
+            (Some(idx), true) => Self::ReturnsArgChangesPacketData(idx),
+            (None, false) => Self::Unknown,
+            (None, true) => Self::UnknownChangesPacketData,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +97,7 @@ fn summarize_function(
     worklist.push_back(func.entry);
 
     let mut return_alias: Option<Option<usize>> = None;
+    let mut changes_packet_data = false;
 
     while let Some(block_id) = worklist.pop_front() {
         let Some(state_in) = in_states.get(&block_id).cloned() else {
@@ -78,7 +107,7 @@ fn summarize_function(
         let mut state = state_in;
 
         for inst in &block.instructions {
-            apply_alias_inst(
+            changes_packet_data |= apply_alias_inst(
                 inst,
                 &func.global_param_aliases,
                 &mut state,
@@ -117,18 +146,19 @@ fn summarize_function(
                 return_alias = match return_alias {
                     None => Some(alias),
                     Some(existing) if existing == alias => Some(existing),
-                    Some(_) => return SubfunctionReturnSummary::Unknown,
+                    Some(_) => Some(None),
                 };
             }
             MirInst::TailCall { .. } | MirInst::Placeholder => {}
             _ => {}
         }
+
+        if matches!(block.terminator, MirInst::TailCall { .. }) {
+            changes_packet_data = true;
+        }
     }
 
-    match return_alias.flatten() {
-        Some(idx) => SubfunctionReturnSummary::ReturnsArg(idx),
-        None => SubfunctionReturnSummary::Unknown,
-    }
+    SubfunctionReturnSummary::from_parts(return_alias.flatten(), changes_packet_data)
 }
 
 fn propagate_alias_state(
@@ -172,10 +202,11 @@ fn apply_alias_inst(
     subfunctions: &[MirFunction],
     summaries: &mut HashMap<SubfunctionId, SubfunctionReturnSummary>,
     visiting: &mut HashSet<SubfunctionId>,
-) {
+) -> bool {
     match inst {
         MirInst::Copy { dst, src } => {
             set_alias(state, *dst, alias_for_mir_value(src, state));
+            false
         }
         MirInst::Phi { dst, args } => {
             let mut alias = AliasSource::Unknown;
@@ -191,18 +222,20 @@ fn apply_alias_inst(
                 }
             }
             set_alias(state, *dst, alias);
+            false
         }
         MirInst::CallSubfn { dst, subfn, args } => {
             let summary = infer_summary_for_subfunction(*subfn, subfunctions, summaries, visiting);
-            let alias = match summary {
-                SubfunctionReturnSummary::ReturnsArg(idx) => args
+            let alias = match summary.return_arg() {
+                Some(idx) => args
                     .get(idx)
                     .copied()
                     .map(|arg| get_alias(state, arg))
                     .unwrap_or(AliasSource::Unknown),
-                SubfunctionReturnSummary::Unknown => AliasSource::Unknown,
+                None => AliasSource::Unknown,
             };
             set_alias(state, *dst, alias);
+            summary.changes_packet_data()
         }
         MirInst::LoadGlobal { dst, symbol, .. } => {
             let alias = global_param_aliases
@@ -211,10 +244,16 @@ fn apply_alias_inst(
                 .map(AliasSource::Param)
                 .unwrap_or(AliasSource::Unknown);
             set_alias(state, *dst, alias);
+            false
+        }
+        MirInst::CallHelper { dst, helper, .. } => {
+            set_alias(state, *dst, AliasSource::Unknown);
+            BpfHelper::from_u32(*helper)
+                .map(BpfHelper::changes_packet_data_in_subprogram)
+                .unwrap_or(false)
         }
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
-        | MirInst::CallHelper { dst, .. }
         | MirInst::LoadMapFd { dst, .. }
         | MirInst::LoadSubprogram { dst, .. }
         | MirInst::CallKfunc { dst, .. }
@@ -229,6 +268,7 @@ fn apply_alias_inst(
         | MirInst::StrCmp { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. } => {
             set_alias(state, *dst, AliasSource::Unknown);
+            false
         }
         MirInst::Store { .. }
         | MirInst::StoreSlot { .. }
@@ -250,7 +290,7 @@ fn apply_alias_inst(
         | MirInst::ListPush { .. }
         | MirInst::StringAppend { .. }
         | MirInst::IntToString { .. }
-        | MirInst::RecordStore { .. } => {}
+        | MirInst::RecordStore { .. } => false,
     }
 }
 
@@ -376,6 +416,78 @@ mod tests {
         assert_eq!(
             summaries.get(&SubfunctionId(0)),
             Some(&SubfunctionReturnSummary::ReturnsArg(0))
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_packet_mutating_helper() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+
+        let ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ret,
+                helper: BpfHelper::MsgPushData as u32,
+                args: vec![
+                    MirValue::VReg(VReg(0)),
+                    MirValue::Const(0),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_return_summaries(&[subfn]);
+        assert_eq!(
+            summaries.get(&SubfunctionId(0)),
+            Some(&SubfunctionReturnSummary::UnknownChangesPacketData)
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_propagates_nested_packet_mutation() {
+        let mut callee = MirFunction::new();
+        let callee_entry = callee.alloc_block();
+        callee.entry = callee_entry;
+        callee.param_count = 1;
+        let callee_ret = callee.alloc_vreg();
+        callee
+            .block_mut(callee_entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: callee_ret,
+                helper: BpfHelper::SkbPullData as u32,
+                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+            });
+        callee.block_mut(callee_entry).terminator = MirInst::Return { val: None };
+
+        let mut caller = MirFunction::new();
+        let caller_entry = caller.alloc_block();
+        caller.entry = caller_entry;
+        caller.param_count = 1;
+        caller.vreg_count = 1;
+        let call_ret = caller.alloc_vreg();
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::CallSubfn {
+                dst: call_ret,
+                subfn: SubfunctionId(0),
+                args: vec![VReg(0)],
+            });
+        caller.block_mut(caller_entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(VReg(0))),
+        };
+
+        let summaries = infer_subfunction_return_summaries(&[callee, caller]);
+        assert_eq!(
+            summaries.get(&SubfunctionId(1)),
+            Some(&SubfunctionReturnSummary::ReturnsArgChangesPacketData(0))
         );
     }
 }

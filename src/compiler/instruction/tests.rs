@@ -2095,6 +2095,9 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::LwtSeg6StoreBytes,
         BpfHelper::SkbVlanPush,
         BpfHelper::SkbVlanPop,
+        BpfHelper::MsgPopData,
+        BpfHelper::MsgPushData,
+        BpfHelper::StoreHdrOpt,
         BpfHelper::XdpAdjustHead,
         BpfHelper::XdpAdjustMeta,
         BpfHelper::SkbAdjustRoom,
@@ -2111,8 +2114,6 @@ fn test_helpers_with_packet_pointer_invalidation() {
     for helper in [
         BpfHelper::Redirect,
         BpfHelper::MsgApplyBytes,
-        BpfHelper::MsgPushData,
-        BpfHelper::MsgPopData,
         BpfHelper::SetHash,
         BpfHelper::CsumLevel,
         BpfHelper::SkbEcnSetCe,
@@ -2129,6 +2130,15 @@ fn test_helpers_with_packet_pointer_invalidation() {
             helper.name()
         );
     }
+
+    assert!(
+        BpfHelper::TailCall.changes_packet_data_in_subprogram(),
+        "tail_call should be tracked as packet-changing for subprogram summaries"
+    );
+    assert!(
+        !BpfHelper::TailCall.invalidates_packet_pointers(),
+        "top-level tail_call continuations should not be modeled as packet-mutating"
+    );
 }
 
 #[test]
