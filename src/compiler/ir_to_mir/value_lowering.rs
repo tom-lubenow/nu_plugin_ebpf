@@ -423,13 +423,21 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(repr) = Self::scalar_constant_rodata_repr(value) {
             return Ok(repr);
         }
+        if crate::compiler::hir::supports_numeric_constant_list(value)
+            && let Value::List { vals, .. } = value
+            && let Some((ty, data, _max_len)) = Self::mutable_numeric_list_global_repr(vals)?
+        {
+            return Ok((ty, data));
+        }
         if let Value::Binary { val, .. } = value {
             return Self::binary_constant_rodata_repr(val);
         }
         if let Value::Record { val, .. } = value {
-            if Self::mutable_global_value_semantics(value)?.is_some() {
+            if let Some(semantics) = Self::mutable_global_value_semantics(value)?
+                && semantics.contains_string()
+            {
                 return Err(CompileError::UnsupportedInstruction(
-                    "constant fixed arrays do not yet support record elements containing string or numeric-list buffers".into(),
+                    "constant fixed arrays do not yet support record elements containing string buffers".into(),
                 ));
             }
             return Self::constant_record_rodata_repr(val);

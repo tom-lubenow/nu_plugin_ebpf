@@ -529,6 +529,78 @@ fn test_lower_load_value_record_list_uses_fixed_array_readonly_global() {
 }
 
 #[test]
+fn test_lower_load_value_record_list_with_nested_numeric_lists_uses_fixed_array_readonly_global() {
+    let mut first = Record::new();
+    first.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let mut second = Record::new();
+    second.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::list(
+                    vec![
+                        Value::record(first, Span::test_data()),
+                        Value::record(second, Span::test_data()),
+                    ],
+                    Span::test_data(),
+                )),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record fixed arrays with nested numeric-list fields should lower");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&2u64.to_le_bytes());
+    expected.extend_from_slice(&1i64.to_le_bytes());
+    expected.extend_from_slice(&2i64.to_le_bytes());
+    expected.extend_from_slice(&2u64.to_le_bytes());
+    expected.extend_from_slice(&3i64.to_le_bytes());
+    expected.extend_from_slice(&4i64.to_le_bytes());
+
+    assert_eq!(result.readonly_globals.len(), 1);
+    assert_eq!(result.readonly_globals[0].data, expected);
+}
+
+#[test]
 fn test_lower_load_value_record_array_get_then_field_projection() {
     let get_decl = DeclId::new(900);
     let decl_names = HashMap::from([(get_decl, "get".to_string())]);

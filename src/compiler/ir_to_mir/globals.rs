@@ -202,7 +202,10 @@ fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
 
 impl ParsedNamedGlobalType {
     fn is_fixed_array_element_type(&self) -> bool {
-        self.semantics.is_none()
+        !self
+            .semantics
+            .as_ref()
+            .is_some_and(AnnotatedValueSemantics::contains_string)
             && matches!(
                 &self.shape,
                 NamedGlobalTypeShape::I8
@@ -217,6 +220,7 @@ impl ParsedNamedGlobalType {
                     | NamedGlobalTypeShape::U64
                     | NamedGlobalTypeShape::Bool
                     | NamedGlobalTypeShape::Bytes { .. }
+                    | NamedGlobalTypeShape::NumericList { .. }
                     | NamedGlobalTypeShape::BpfTimer
                     | NamedGlobalTypeShape::BpfSpinLock
                     | NamedGlobalTypeShape::BpfWq
@@ -492,7 +496,7 @@ impl ParsedNamedGlobalType {
             let parsed_elem = Self::parse_with_context(elem_spec, context)?;
             if !parsed_elem.is_fixed_array_element_type() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "global fixed-array declarations require fixed-layout elements without string/list semantics, got '{}'",
+                    "global fixed-array declarations require fixed-layout elements without string semantics, got '{}'",
                     elem_spec
                 )));
             }

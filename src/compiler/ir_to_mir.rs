@@ -225,6 +225,18 @@ pub enum AnnotatedValueSemantics {
     Record(Vec<(String, AnnotatedValueSemantics)>),
 }
 
+impl AnnotatedValueSemantics {
+    fn contains_string(&self) -> bool {
+        match self {
+            AnnotatedValueSemantics::String { .. } => true,
+            AnnotatedValueSemantics::NumericList { .. } => false,
+            AnnotatedValueSemantics::Record(fields) => fields
+                .iter()
+                .any(|(_, semantics)| semantics.contains_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SyntheticStackSlotSeed {
     ty: MirType,

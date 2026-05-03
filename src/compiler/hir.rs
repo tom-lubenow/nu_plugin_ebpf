@@ -369,6 +369,7 @@ pub fn supports_numeric_constant_list(value: &Value) -> bool {
 enum FixedArrayConstantElementShape {
     ScalarI64,
     Binary(usize),
+    NumericList(usize),
     Record(Vec<(String, FixedArrayConstantElementShape)>),
 }
 
@@ -379,6 +380,9 @@ fn fixed_array_constant_element_shape(value: &Value) -> Option<FixedArrayConstan
 
     match value {
         Value::Binary { val, .. } => Some(FixedArrayConstantElementShape::Binary(val.len())),
+        Value::List { vals, .. } if vals.iter().all(is_numeric_constant_value) => {
+            Some(FixedArrayConstantElementShape::NumericList(vals.len()))
+        }
         Value::Record { val, .. } => val
             .iter()
             .map(|(name, field)| {
