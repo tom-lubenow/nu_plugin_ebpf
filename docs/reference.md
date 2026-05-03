@@ -312,7 +312,9 @@ and `$ctx.data.eth.payload.ipv6.payload.icmpv6.payload` skip the fixed
 8-byte ICMP header, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload`
 skips a runtime-sized TCP header using the data offset. `xdp`
 additionally exposes `ctx.data_meta`, `ctx.ifindex`,
-`ctx.rx_queue_index`, and `ctx.egress_ifindex`. `ctx.data_meta` is a
+`ctx.rx_queue_index`, and `ctx.egress_ifindex`; `ctx.ifindex` and
+`ctx.rx_queue_index` require the Linux 4.16 `xdp_md` metadata fields.
+`ctx.data_meta` is a
 packet-metadata pointer: scalar reads such as `($ctx.data_meta | get 0)`
 use the same packet address space as `ctx.data`, but they are guarded
 against `ctx.data` rather than `ctx.data_end`. `tc_action`, `tc`, `tcx`, and `netkit` also expose

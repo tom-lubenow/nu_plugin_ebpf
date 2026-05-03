@@ -9,6 +9,8 @@ const LINUX_BPF_H_V4_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_14_SOURCE: &str =
@@ -338,6 +340,16 @@ fn direct_context_field_kernel_floor(
         CtxField::Socket if prog_type == Some(EbpfProgramType::SkLookup) => {
             ("5.9", LINUX_BPF_H_V5_9_SOURCE)
         }
+        CtxField::PacketLen | CtxField::Data | CtxField::DataEnd
+            if prog_type == Some(EbpfProgramType::Xdp) =>
+        {
+            ("4.8", LINUX_BPF_H_V4_8_SOURCE)
+        }
+        CtxField::IngressIfindex | CtxField::RxQueueIndex
+            if prog_type == Some(EbpfProgramType::Xdp) =>
+        {
+            ("4.16", LINUX_BPF_H_V4_16_SOURCE)
+        }
         CtxField::PacketLen
         | CtxField::Data
         | CtxField::DataEnd
@@ -419,7 +431,7 @@ fn direct_context_field_kernel_floor(
         | CtxField::DeviceType
         | CtxField::DeviceMajor
         | CtxField::DeviceMinor => ("4.15", LINUX_BPF_H_V4_15_SOURCE),
-        CtxField::RxQueueIndex => ("4.17", LINUX_BPF_H_V4_17_SOURCE),
+        CtxField::RxQueueIndex => ("4.16", LINUX_BPF_H_V4_16_SOURCE),
         CtxField::FlowKeys => ("4.20", LINUX_BPF_H_V4_20_SOURCE),
         CtxField::Tstamp | CtxField::WireLen => ("5.0", LINUX_BPF_H_V5_0_SOURCE),
         CtxField::GsoSegs => ("5.1", LINUX_BPF_H_V5_1_SOURCE),

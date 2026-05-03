@@ -400,7 +400,7 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::UserIp4, "user_ip4", "4.17"),
         (CtxField::UserIp6, "user_ip6", "4.17"),
         (CtxField::UserPort, "user_port", "4.17"),
-        (CtxField::RxQueueIndex, "rx_queue_index", "4.17"),
+        (CtxField::RxQueueIndex, "rx_queue_index", "4.16"),
         (CtxField::MsgSrcIp4, "msg_src_ip4", "4.18"),
         (CtxField::MsgSrcIp6, "msg_src_ip6", "4.18"),
         (CtxField::LircSample, "sample", "4.18"),
@@ -452,6 +452,13 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         .expect("generic ctx.packet_len should remain versioned");
     assert_eq!(generic_packet_len.minimum_kernel(), "4.1");
 
+    let xdp_packet_len = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::PacketLen,
+        Some(crate::compiler::EbpfProgramType::Xdp),
+    )
+    .expect("xdp ctx.packet_len should inherit the xdp_md data floor");
+    assert_eq!(xdp_packet_len.minimum_kernel(), "4.8");
+
     let sock_ops_packet_len = ContextFieldCompatibilityRequirement::for_field_on_program(
         &CtxField::PacketLen,
         Some(crate::compiler::EbpfProgramType::SockOps),
@@ -467,6 +474,27 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     let generic_data = ContextFieldCompatibilityRequirement::for_field(&CtxField::Data)
         .expect("generic ctx.data should remain versioned");
     assert_eq!(generic_data.minimum_kernel(), "4.7");
+
+    let xdp_data = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Data,
+        Some(crate::compiler::EbpfProgramType::Xdp),
+    )
+    .expect("xdp ctx.data should use the xdp_md field floor");
+    assert_eq!(xdp_data.minimum_kernel(), "4.8");
+
+    let xdp_ingress_ifindex = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::IngressIfindex,
+        Some(crate::compiler::EbpfProgramType::Xdp),
+    )
+    .expect("xdp ctx.ingress_ifindex should use the xdp_md field floor");
+    assert_eq!(xdp_ingress_ifindex.minimum_kernel(), "4.16");
+
+    let xdp_rx_queue_index = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::RxQueueIndex,
+        Some(crate::compiler::EbpfProgramType::Xdp),
+    )
+    .expect("xdp ctx.rx_queue_index should use the xdp_md field floor");
+    assert_eq!(xdp_rx_queue_index.minimum_kernel(), "4.16");
 
     let sock_ops_data = ContextFieldCompatibilityRequirement::for_field_on_program(
         &CtxField::Data,

@@ -16,17 +16,28 @@ fn test_spec_context_fields_include_program_specific_aliases() {
 
     let ifindex = field(&fields, "ingress_ifindex");
     assert!(ifindex.names.contains(&"ifindex"));
-    assert_eq!(ifindex.minimum_kernel, Some("4.7"));
+    assert_eq!(ifindex.minimum_kernel, Some("4.16"));
+    assert!(
+        ifindex
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.16/include/uapi/linux/bpf.h"))
+    );
+    let rx_queue_index = field(&fields, "rx_queue_index");
+    assert_eq!(rx_queue_index.minimum_kernel, Some("4.16"));
     let packet_len = field(&fields, "packet_len");
     assert!(packet_len.names.contains(&"packet_len"));
     assert_eq!(packet_len.semantic_type.as_deref(), Some("u32"));
     assert_eq!(packet_len.runtime_type.as_deref(), Some("u32"));
-    assert_eq!(packet_len.minimum_kernel, Some("4.1"));
+    assert_eq!(packet_len.minimum_kernel, Some("4.8"));
     assert!(
         packet_len
             .minimum_kernel_source
-            .is_some_and(|source| source.contains("/v4.1/"))
+            .is_some_and(|source| source.contains("/v4.8/include/uapi/linux/bpf.h"))
     );
+    let data = field(&fields, "data");
+    assert_eq!(data.minimum_kernel, Some("4.8"));
+    let data_end = field(&fields, "data_end");
+    assert_eq!(data_end.minimum_kernel, Some("4.8"));
 }
 
 #[test]

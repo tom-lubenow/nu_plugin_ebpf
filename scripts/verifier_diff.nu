@@ -1282,6 +1282,31 @@ const KERNEL_FEATURE_CTX_DATA_END = {
     min_kernel: "4.7"
     source: "https://github.com/torvalds/linux/blob/v4.7/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_XDP_PACKET_LEN = {
+    key: "ctx:packet_len"
+    min_kernel: "4.8"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_XDP_DATA = {
+    key: "ctx:data"
+    min_kernel: "4.8"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_XDP_DATA_END = {
+    key: "ctx:data_end"
+    min_kernel: "4.8"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_XDP_INGRESS_IFINDEX = {
+    key: "ctx:ingress_ifindex"
+    min_kernel: "4.16"
+    source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_XDP_RX_QUEUE_INDEX = {
+    key: "ctx:rx_queue_index"
+    min_kernel: "4.16"
+    source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_CGROUP_SOCK_BOUND_DEV_IF = {
     key: "ctx:bound_dev_if"
     min_kernel: "4.10"
@@ -1384,8 +1409,8 @@ const KERNEL_FEATURE_CTX_DEVICE_MINOR = {
 }
 const KERNEL_FEATURE_CTX_RX_QUEUE_INDEX = {
     key: "ctx:rx_queue_index"
-    min_kernel: "4.17"
-    source: "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h"
+    min_kernel: "4.16"
+    source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_CTX_CGROUP_SOCK_LOCAL_IP4 = {
     key: "ctx:local_ip4"
@@ -6423,8 +6448,22 @@ def sock-ops-context-field-kernel-feature [field: string] {
 def target-context-field-alias-kernel-feature [field: string target] {
     let target_text = ($target | default "")
 
-    if ($target_text | str starts-with "xdp:") and $field == "ifindex" {
-        return { matched: true, feature: $KERNEL_FEATURE_CTX_INGRESS_IFINDEX }
+    if ($target_text | str starts-with "xdp:") {
+        if $field == "packet_len" or $field == "len" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_XDP_PACKET_LEN }
+        }
+        if $field == "data" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_XDP_DATA }
+        }
+        if $field == "data_end" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_XDP_DATA_END }
+        }
+        if $field == "ingress_ifindex" or $field == "ifindex" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_XDP_INGRESS_IFINDEX }
+        }
+        if $field == "rx_queue_index" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_XDP_RX_QUEUE_INDEX }
+        }
     }
     if ($target_text | str starts-with "sk_msg:") {
         if $field == "data" {
