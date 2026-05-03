@@ -522,6 +522,16 @@ const KERNEL_FEATURE_BPF_MAP_DELETE_ELEM = {
     min_kernel: "3.19"
     source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_KTIME_GET_NS = {
+    key: "helper:bpf_ktime_get_ns"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID = {
+    key: "helper:bpf_get_current_pid_tgid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_PROBE_READ = {
     key: "helper:bpf_probe_read"
     min_kernel: "4.1"
@@ -2097,6 +2107,8 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_lookup_elem", feature: $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM }
     { name: "bpf_map_update_elem", feature: $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM }
     { name: "bpf_map_delete_elem", feature: $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM }
+    { name: "bpf_ktime_get_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_NS }
+    { name: "bpf_get_current_pid_tgid", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
     { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
     { name: "bpf_probe_read_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_STR }
     { name: "bpf_probe_read_user", feature: $KERNEL_FEATURE_BPF_PROBE_READ_USER }
@@ -5589,6 +5601,34 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "start-timer-helper-surface"
+        category: "language-surface"
+        tags: [start-timer map helper metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  start-timer'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "stop-timer-helper-surface"
+        category: "language-surface"
+        tags: [stop-timer map helper metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let delta = (stop-timer)'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "random-int-helper-surface"
         category: "language-surface"
         tags: [random helper metadata]
@@ -6548,7 +6588,12 @@ def program-reserved-map-kernel-features [source: string] {
         if (($line | str contains "| emit") or ($line | str contains " events")) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_RINGBUF])
         }
-        if (($line | str contains "| count") or ($line | str contains "| histogram")) {
+        if (
+            ($line | str contains "| count")
+            or ($line | str contains "| histogram")
+            or ($line | str contains "start-timer")
+            or ($line | str contains "stop-timer")
+        ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
         if ($line | str contains " user_events") {
@@ -6701,6 +6746,21 @@ def program-surface-helper-kernel-features [source: string target] {
         $features = (append-missing-kernel-features $features [
             $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM
             $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM
+        ])
+    }
+    if ($source | str contains "start-timer") {
+        $features = (append-missing-kernel-features $features [
+            $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
+            $KERNEL_FEATURE_BPF_KTIME_GET_NS
+            $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM
+        ])
+    }
+    if ($source | str contains "stop-timer") {
+        $features = (append-missing-kernel-features $features [
+            $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
+            $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM
+            $KERNEL_FEATURE_BPF_KTIME_GET_NS
+            $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM
         ])
     }
 
