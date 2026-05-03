@@ -6772,6 +6772,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "struct-ops-callback-target-rejects-attach"
+        category: "program-model"
+        tags: [struct-ops callback attach reject]
+        target: "struct_ops:sched_ext_ops.select_cpu"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "struct_ops attach expects an object value type"
+    }
+    {
         name: "timer-init-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
