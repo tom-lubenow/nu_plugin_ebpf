@@ -116,15 +116,19 @@ impl ProbeContext {
     }
 
     pub(crate) fn arg_access(&self) -> ProgramValueAccess {
-        self.program_type().arg_access()
+        self.parsed_program_spec()
+            .map(ProgramSpec::arg_access)
+            .unwrap_or_else(|| self.program_type().arg_access())
     }
 
     pub(crate) fn retval_access(&self) -> ProgramValueAccess {
-        self.program_type().retval_access()
+        self.parsed_program_spec()
+            .map(ProgramSpec::retval_access)
+            .unwrap_or_else(|| self.program_type().retval_access())
     }
 
     pub(crate) fn uses_btf_trampoline(&self) -> bool {
-        self.program_type().uses_btf_trampoline()
+        self.arg_access().is_trampoline() || self.retval_access().is_trampoline()
     }
 
     pub(crate) fn uses_raw_tracepoint_args(&self) -> bool {

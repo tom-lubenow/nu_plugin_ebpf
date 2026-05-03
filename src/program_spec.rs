@@ -1,5 +1,6 @@
 use crate::compiler::{
-    EbpfProgramType, ProgramAttachKind, ProgramCompatibilityRequirement, ProgramTargetKind,
+    EbpfProgramType, ProgramAttachKind, ProgramBtfCallableSurface, ProgramCompatibilityRequirement,
+    ProgramTargetKind, ProgramValueAccess,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -3035,6 +3036,27 @@ impl ProgramSpec {
         }
     }
 
+    pub(crate) fn btf_callable_surface(&self) -> Option<ProgramBtfCallableSurface> {
+        match self {
+            ProgramSpec::StructOps { .. } => None,
+            _ => self.program_type().btf_callable_surface(),
+        }
+    }
+
+    pub(crate) fn arg_access(&self) -> ProgramValueAccess {
+        match self {
+            ProgramSpec::StructOps { .. } => ProgramValueAccess::None,
+            _ => self.program_type().arg_access(),
+        }
+    }
+
+    pub(crate) fn retval_access(&self) -> ProgramValueAccess {
+        match self {
+            ProgramSpec::StructOps { .. } => ProgramValueAccess::None,
+            _ => self.program_type().retval_access(),
+        }
+    }
+
     pub fn section_name(&self) -> String {
         match self {
             ProgramSpec::Fentry {
@@ -4293,6 +4315,9 @@ mod tests {
         assert_eq!(object.struct_ops_value_type_name(), Some("sched_ext_ops"));
         assert_eq!(object.struct_ops_callback_name(), None);
         assert_eq!(object.target_kind(), ProgramTargetKind::StructOpsValueType);
+        assert_eq!(object.btf_callable_surface(), None);
+        assert_eq!(object.arg_access(), ProgramValueAccess::None);
+        assert_eq!(object.retval_access(), ProgramValueAccess::None);
         assert_eq!(object.section_name(), "struct_ops/sched_ext_ops");
         assert_eq!(object.to_string(), "struct_ops:sched_ext_ops");
 
@@ -4310,6 +4335,12 @@ mod tests {
         assert_eq!(callback.struct_ops_value_type_name(), Some("sched_ext_ops"));
         assert_eq!(callback.struct_ops_callback_name(), Some("init"));
         assert_eq!(callback.target_kind(), ProgramTargetKind::StructOpsCallback);
+        assert_eq!(
+            callback.btf_callable_surface(),
+            Some(ProgramBtfCallableSurface::StructOpsCallback)
+        );
+        assert_eq!(callback.arg_access(), ProgramValueAccess::Trampoline);
+        assert_eq!(callback.retval_access(), ProgramValueAccess::None);
         assert_eq!(callback.section_name(), "struct_ops.s/init");
         assert_eq!(callback.to_string(), "struct_ops:sched_ext_ops.init");
         assert_eq!(

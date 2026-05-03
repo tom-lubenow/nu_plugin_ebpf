@@ -1278,6 +1278,22 @@ fn test_probe_context_for_struct_ops_callback_preserves_value_type_name() {
     assert_eq!(ctx.program_type(), EbpfProgramType::StructOps);
     assert_eq!(ctx.target(), "select_cpu");
     assert_eq!(ctx.struct_ops_value_type_name(), Some("sched_ext_ops"));
+    assert_eq!(ctx.arg_access(), ProgramValueAccess::Trampoline);
+    assert!(ctx.uses_btf_trampoline());
+}
+
+#[test]
+fn test_probe_context_for_struct_ops_object_has_no_callback_args() {
+    let ctx = ProbeContext::from_program_spec(
+        ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops object spec"),
+    );
+
+    assert_eq!(ctx.program_type(), EbpfProgramType::StructOps);
+    assert_eq!(ctx.target(), "sched_ext_ops");
+    assert_eq!(ctx.struct_ops_value_type_name(), Some("sched_ext_ops"));
+    assert_eq!(ctx.arg_access(), ProgramValueAccess::None);
+    assert_eq!(ctx.retval_access(), ProgramValueAccess::None);
+    assert!(!ctx.uses_btf_trampoline());
 }
 
 #[test]

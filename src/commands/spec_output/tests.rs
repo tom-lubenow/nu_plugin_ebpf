@@ -2320,6 +2320,22 @@ fn test_spec_record_includes_attach_shape_metadata() {
         "struct-ops-callback"
     );
     assert_eq!(
+        record
+            .get("btf_callable_surface")
+            .expect("BTF callable surface should be present")
+            .as_str()
+            .expect("BTF callable surface should be a string"),
+        "struct-ops-callback"
+    );
+    assert_eq!(
+        record
+            .get("arg_access")
+            .expect("arg access should be present")
+            .as_str()
+            .expect("arg access should be a string"),
+        "trampoline"
+    );
+    assert_eq!(
         attach_shape
             .get("kind")
             .expect("attach shape kind should be present")
@@ -2437,6 +2453,20 @@ fn test_spec_record_includes_resource_attach_shapes() {
             .as_str()
             .expect("target kind should be a string"),
         "struct-ops-value-type"
+    );
+    assert!(
+        record
+            .get("btf_callable_surface")
+            .expect("BTF callable surface should be present")
+            .is_nothing()
+    );
+    assert_eq!(
+        record
+            .get("arg_access")
+            .expect("arg access should be present")
+            .as_str()
+            .expect("arg access should be a string"),
+        "none"
     );
     assert_eq!(
         attach_shape

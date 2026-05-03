@@ -514,7 +514,7 @@ fn dynamic_context_field_type_labels(
     resolve_dynamic_fields: bool,
 ) -> Option<(String, String)> {
     match field {
-        CtxField::RetVal => match spec.program_type().retval_access() {
+        CtxField::RetVal => match spec.retval_access() {
             ProgramValueAccess::PtRegs => Some(("u64".to_string(), "u64".to_string())),
             ProgramValueAccess::Trampoline if resolve_dynamic_fields => {
                 let ctx = ProbeContext::from_program_spec(spec.clone());
@@ -1023,7 +1023,7 @@ fn spec_context_args(
         return (Vec::new(), None);
     }
 
-    match spec.program_type().arg_access() {
+    match spec.arg_access() {
         ProgramValueAccess::None => (Vec::new(), None),
         ProgramValueAccess::PtRegs => (
             (0..6)
@@ -1171,7 +1171,7 @@ fn spec_context_retval(
     spec: &crate::program_spec::ProgramSpec,
     resolve_dynamic_args: bool,
 ) -> (Option<SpecContextRetval>, Option<String>) {
-    match spec.program_type().retval_access() {
+    match spec.retval_access() {
         ProgramValueAccess::None => (None, None),
         ProgramValueAccess::PtRegs => (
             Some(SpecContextRetval {
@@ -1318,9 +1318,7 @@ pub(super) fn spec_record(
     let kernel_target_validation = program_type
         .kernel_target_validation()
         .map(|validation| validation.key());
-    let btf_callable_surface = program_type
-        .btf_callable_surface()
-        .map(|surface| surface.key());
+    let btf_callable_surface = spec.btf_callable_surface().map(|surface| surface.key());
     let context_fields = context_field_records(&spec, span, resolve_dynamic_args);
     let (tracepoint_fields, tracepoint_field_error) =
         spec_tracepoint_fields(&spec, resolve_dynamic_args);
@@ -1421,8 +1419,8 @@ pub(super) fn spec_record(
             "kernel_target_validation" => optional_static_str(kernel_target_validation, span),
             "btf_callable_surface" => optional_static_str(btf_callable_surface, span),
             "sleepable" => Value::bool(spec.sleepable(), span),
-            "arg_access" => Value::string(program_type.arg_access().key(), span),
-            "retval_access" => Value::string(program_type.retval_access().key(), span),
+            "arg_access" => Value::string(spec.arg_access().key(), span),
+            "retval_access" => Value::string(spec.retval_access().key(), span),
             "live_attach_supported" => Value::bool(live_attach_policy.loader_supported, span),
             "live_attach_default_allowed" => Value::bool(live_attach_policy.default_allowed, span),
             "live_attach_requires_opt_in" => Value::bool(live_attach_policy.requires_opt_in, span),
