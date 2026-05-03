@@ -5555,6 +5555,121 @@ fn test_lower_leading_annotated_mut_record_list_field_supports_get() {
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_array_with_nested_numeric_list_field() {
+    let global_var = VarId::new(251);
+    let count_decl = DeclId::new(902);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1), string_member("samples"), int_member(1)],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut first = Record::new();
+    first.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    let mut second = Record::new();
+    second.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Record(Box::new([(
+            "samples".to_string(),
+            Type::List(Box::new(Type::Int)),
+        )])))),
+        initial_value: Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::from([(count_decl, "count".to_string())]),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated fixed record arrays should allow nested numeric-list fields");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&2u64.to_le_bytes());
+    expected.extend_from_slice(&1i64.to_le_bytes());
+    expected.extend_from_slice(&2i64.to_le_bytes());
+    expected.extend_from_slice(&2u64.to_le_bytes());
+    expected.extend_from_slice(&3i64.to_le_bytes());
+    expected.extend_from_slice(&4i64.to_le_bytes());
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.data_globals[0].data, expected);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected nested numeric-list field to project as a scalar key"
+    );
+}
+
+#[test]
 fn test_lower_get_with_single_int_cell_path_uses_constant_list_index() {
     let global_var = VarId::new(254);
     let get_decl = DeclId::new(600);
