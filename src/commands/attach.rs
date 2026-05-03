@@ -929,8 +929,8 @@ Context parameter syntax (recommended):
     the generic syscall layout instead: `ctx.id` and fixed-array `ctx.args`.
     Example for syscalls/sys_enter_openat:
       {|ctx| $ctx.id }             - Syscall number from the generic layout
-      {|ctx| $ctx.args | get 1 }   - Filename pointer from the generic args array
-      {|ctx| $ctx.filename }       - Named filename field when tracefs exposes it
+      {|ctx| $ctx.args | get 1 }   - Raw filename ABI value from generic args
+      {|ctx| $ctx.filename | read-str --max-len 64 } - Typed filename field when tracefs exposes it
 
 Output commands:
   emit              - Send value to userspace via ring buffer

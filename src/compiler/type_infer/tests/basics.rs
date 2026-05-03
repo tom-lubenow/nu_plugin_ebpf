@@ -668,7 +668,7 @@ fn test_infer_tracepoint_id_field_is_concrete_integer() {
 }
 
 #[test]
-fn test_infer_tracepoint_filename_field_is_kernel_pointer() {
+fn test_infer_tracepoint_filename_field_preserves_pointer_space() {
     let Some((target, field_name)) = find_tracepoint_pointer_field_candidate() else {
         return;
     };
@@ -698,12 +698,16 @@ fn test_infer_tracepoint_filename_field_is_kernel_pointer() {
         .expect("expected concrete pointer field type");
 
     assert_eq!(types.get(&v0), Some(&expected));
+    let expected_address_space = match expected {
+        MirType::Ptr { address_space, .. } => address_space,
+        _ => panic!("expected tracepoint pointer field"),
+    };
     assert!(matches!(
         types.get(&v0),
         Some(MirType::Ptr {
-            address_space: AddressSpace::Kernel,
+            address_space,
             ..
-        })
+        }) if *address_space == expected_address_space
     ));
 }
 

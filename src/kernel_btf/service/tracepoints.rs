@@ -132,7 +132,7 @@ impl KernelBtf {
             }
 
             // Parse field line: "field:TYPE NAME; offset:N; size:N; signed:N;"
-            if let Some(field) = self.parse_field_line(line) {
+            if let Some(field) = self.parse_tracepoint_field_line(line, category, name) {
                 // Skip common fields (internal tracing header)
                 if field.name.starts_with("common_") {
                     continue;
@@ -164,6 +164,23 @@ impl KernelBtf {
 
     /// Parse a single field line from a format file
     pub(super) fn parse_field_line(&self, line: &str) -> Option<FieldInfo> {
+        self.parse_field_line_with_context(line, None)
+    }
+
+    fn parse_tracepoint_field_line(
+        &self,
+        line: &str,
+        category: &str,
+        name: &str,
+    ) -> Option<FieldInfo> {
+        self.parse_field_line_with_context(line, Some((category, name)))
+    }
+
+    fn parse_field_line_with_context(
+        &self,
+        line: &str,
+        tracepoint: Option<(&str, &str)>,
+    ) -> Option<FieldInfo> {
         // field:TYPE NAME; offset:N; size:N; signed:N;
         if !line.starts_with("field:") {
             return None;
@@ -206,7 +223,7 @@ impl KernelBtf {
             return None;
         }
 
-        let type_info = self.infer_type_from_format(&field_type, size, signed);
+        let type_info = self.infer_type_from_format(&field_type, size, signed, tracepoint);
 
         Some(FieldInfo {
             name: field_name,
@@ -218,12 +235,19 @@ impl KernelBtf {
     }
 
     /// Infer TypeInfo from format file type string
-    fn infer_type_from_format(&self, type_str: &str, size: usize, signed: bool) -> TypeInfo {
+    fn infer_type_from_format(
+        &self,
+        type_str: &str,
+        size: usize,
+        signed: bool,
+        tracepoint: Option<(&str, &str)>,
+    ) -> TypeInfo {
         // Handle pointer types
         if type_str.contains('*') {
             return TypeInfo::Ptr {
                 target: Box::new(TypeInfo::Unknown),
-                is_user: type_str.contains("__user"),
+                is_user: type_str.contains("__user")
+                    || Self::tracepoint_pointer_is_userspace(tracepoint),
             };
         }
 
@@ -243,6 +267,18 @@ impl KernelBtf {
 
         // Handle integer types
         TypeInfo::Int { size, signed }
+    }
+
+    fn tracepoint_pointer_is_userspace(tracepoint: Option<(&str, &str)>) -> bool {
+        let Some((category, name)) = tracepoint else {
+            return false;
+        };
+
+        // The syscall tracefs format often prints ABI pointer arguments as
+        // `const char * filename` without preserving the original `__user`
+        // spelling. On syscall-entry tracepoints, pointer-valued arguments are
+        // userspace addresses even when that annotation is missing.
+        category == "syscalls" && name.starts_with("sys_enter")
     }
 
     /// Get well-known tracepoint context when tracefs lookup fails

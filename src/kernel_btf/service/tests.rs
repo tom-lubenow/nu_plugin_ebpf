@@ -57,6 +57,10 @@ fn test_parse_field_line() {
     assert_eq!(field.name, "filename");
     assert_eq!(field.offset, 24);
     assert!(field.type_info.is_ptr());
+    assert!(matches!(
+        field.type_info,
+        TypeInfo::Ptr { is_user: false, .. }
+    ));
 
     // Test array field
     let field = service
@@ -103,6 +107,27 @@ format:
     let filename = ctx.get_field("filename").unwrap();
     assert_eq!(filename.offset, 24);
     assert!(filename.type_info.is_ptr());
+    assert!(matches!(
+        filename.type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let other = service
+        .parse_format_file(
+            r#"name: demo
+ID: 1
+format:
+        field:unsigned short common_type;       offset:0;       size:2; signed:0;
+        field:const char * name;       offset:8;       size:8; signed:0;
+"#,
+            "sched",
+            "sched_process_exec",
+        )
+        .unwrap();
+    assert!(matches!(
+        other.get_field("name").unwrap().type_info,
+        TypeInfo::Ptr { is_user: false, .. }
+    ));
 }
 
 #[test]
