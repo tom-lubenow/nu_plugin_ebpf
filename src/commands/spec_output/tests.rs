@@ -326,7 +326,7 @@ fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
             .expect("minimum kernel should be present")
             .as_str()
             .expect("minimum kernel should be a string"),
-        "4.1"
+        "4.8"
     );
     assert!(
         packet_len
@@ -334,7 +334,49 @@ fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
             .expect("minimum kernel source should be present")
             .as_str()
             .expect("minimum kernel source should be a string")
-            .contains("/v4.1/")
+            .contains("/v4.8/")
+    );
+}
+
+#[test]
+fn test_spec_record_context_projections_include_helper_kernel_metadata() {
+    let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
+    let record = spec_record("tc:lo:ingress".to_string(), tc, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let context_projections = record
+        .get("context_projections")
+        .expect("context projections should be present")
+        .as_list()
+        .expect("context projections should be a list");
+    let tcp_snd_cwnd = context_projections
+        .iter()
+        .find_map(|value| {
+            let projection = value.as_record().ok()?;
+            (projection
+                .get("path")?
+                .as_str()
+                .ok()
+                .is_some_and(|path| path == "sk.tcp.snd_cwnd"))
+            .then_some(projection)
+        })
+        .expect("sk.tcp.snd_cwnd projection should be present");
+
+    assert_eq!(
+        tcp_snd_cwnd
+            .get("helper_minimum_kernel")
+            .expect("helper minimum kernel should be present")
+            .as_str()
+            .expect("helper minimum kernel should be a string"),
+        "5.1"
+    );
+    assert!(
+        tcp_snd_cwnd
+            .get("helper_minimum_kernel_source")
+            .expect("helper minimum kernel source should be present")
+            .as_str()
+            .expect("helper minimum kernel source should be a string")
+            .contains("/v5.1/")
     );
 }
 
@@ -1888,12 +1930,19 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(tcp_snd_cwnd.name, "snd_cwnd");
     assert_eq!(tcp_snd_cwnd.source, "helper_return");
     assert_eq!(tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
+    assert_eq!(tcp_snd_cwnd.helper_minimum_kernel, Some("5.1"));
+    assert!(
+        tcp_snd_cwnd
+            .helper_minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.1/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(tcp_snd_cwnd.ty, "u32");
     assert!(tcp_snd_cwnd.supported);
     assert!(tcp_snd_cwnd.unsupported_reason.is_none());
 
     let full_family = projection(&projections, "sk.full.family");
     assert_eq!(full_family.helper, Some("bpf_sk_fullsock"));
+    assert_eq!(full_family.helper_minimum_kernel, Some("5.1"));
     assert_eq!(full_family.ty, "u32");
     assert!(full_family.supported);
     assert!(full_family.unsupported_reason.is_none());

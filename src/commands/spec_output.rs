@@ -49,6 +49,8 @@ struct SpecContextProjection {
     path: String,
     source: &'static str,
     helper: Option<&'static str>,
+    helper_minimum_kernel: Option<&'static str>,
+    helper_minimum_kernel_source: Option<&'static str>,
     ty: String,
     offset: usize,
     bit_offset: Option<u32>,
@@ -667,6 +669,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 name: field.name,
                 source: "context_field",
                 helper: None,
+                helper_minimum_kernel: None,
+                helper_minimum_kernel_source: None,
                 ty: mir_type_label(&field.ty),
                 offset: field.offset,
                 bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
@@ -700,6 +704,8 @@ fn push_struct_field_projections(
         return;
     }
     let helper_name = helper.map(BpfHelper::name);
+    let helper_minimum_kernel = helper.and_then(BpfHelper::minimum_kernel);
+    let helper_minimum_kernel_source = helper.and_then(BpfHelper::minimum_kernel_source);
 
     for field in fields.into_iter().filter(|field| !field.synthetic) {
         projections.push(SpecContextProjection {
@@ -708,6 +714,8 @@ fn push_struct_field_projections(
             name: field.name,
             source,
             helper: helper_name,
+            helper_minimum_kernel,
+            helper_minimum_kernel_source,
             ty: mir_type_label(&field.ty),
             offset: field.offset,
             bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
@@ -755,6 +763,8 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "path" => Value::string(projection.path, span),
                     "source" => Value::string(projection.source, span),
                     "helper" => optional_static_str(projection.helper, span),
+                    "helper_minimum_kernel" => optional_static_str(projection.helper_minimum_kernel, span),
+                    "helper_minimum_kernel_source" => optional_static_str(projection.helper_minimum_kernel_source, span),
                     "type" => Value::string(projection.ty, span),
                     "offset" => optional_usize(Some(projection.offset), span),
                     "bit_offset" => optional_u32(projection.bit_offset, span),
