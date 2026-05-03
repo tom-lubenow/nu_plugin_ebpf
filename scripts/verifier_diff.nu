@@ -5561,6 +5561,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "emit-ringbuf-output-surface"
+        category: "language-surface"
+        tags: [emit ringbuf helper metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0 | emit'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "random-int-helper-surface"
         category: "language-surface"
         tags: [random helper metadata]
@@ -6662,6 +6676,9 @@ def program-surface-helper-kernel-features [source: string target] {
     }
     if ($source | str contains "read-kernel-str") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_KERNEL_STR])
+    }
+    if ($source | str contains "| emit") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_RINGBUF_OUTPUT])
     }
 
     for line in ($source | lines) {
