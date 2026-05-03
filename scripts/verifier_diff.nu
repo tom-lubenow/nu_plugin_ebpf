@@ -3957,6 +3957,104 @@ const FIXTURES = [
         error_contains: "requires initialized dynptr stack object"
     }
     {
+        name: "dynptr-from-mem-initializes-map-value"
+        category: "helper-state"
+        tags: [dynptr accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    let ptr = (helper-call "bpf_dynptr_data" $d 0 4)'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-from-mem-rejects-reinitialize"
+        category: "helper-state"
+        tags: [dynptr reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_reinit_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_reinit_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_from_mem' arg3 requires uninitialized dynptr stack object slot"
+    }
+    {
+        name: "dynptr-read-write-initialized-from-mem"
+        category: "helper-state"
+        tags: [dynptr accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_rw_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_rw_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let out = "0000"'
+            '    let src = "wxyz"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    helper-call "bpf_dynptr_write" $d 0 $src 4 0'
+            '    helper-call "bpf_dynptr_read" $out 4 $d 0 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-read-rejects-uninitialized"
+        category: "helper-state"
+        tags: [dynptr reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let out = "0000"'
+            '  helper-call "bpf_dynptr_read" $out 4 $d 0 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_read' arg2 requires initialized dynptr stack object"
+    }
+    {
+        name: "dynptr-write-rejects-uninitialized"
+        category: "helper-state"
+        tags: [dynptr reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let src = "wxyz"'
+            '  helper-call "bpf_dynptr_write" $d 0 $src 4 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_write' arg0 requires initialized dynptr stack object"
+    }
+    {
         name: "dynptr-kfunc-size-initialized-ringbuf"
         category: "helper-state"
         tags: [kfunc dynptr accept]
