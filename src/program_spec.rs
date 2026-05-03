@@ -2370,7 +2370,7 @@ impl ProgramSpec {
             EbpfProgramType::CgroupSockopt => "/sys/fs/cgroup:get",
             EbpfProgramType::CgroupSockAddr => "/sys/fs/cgroup:connect4",
             EbpfProgramType::LircMode2 => "/dev/lirc0",
-            EbpfProgramType::StructOps => "sched_ext_ops",
+            EbpfProgramType::StructOps => "tcp_congestion_ops",
         }
     }
 
@@ -4443,6 +4443,30 @@ mod tests {
             assert_eq!(parsed, direct);
             assert_eq!(parsed.program_type(), program_type);
         }
+    }
+
+    #[test]
+    fn test_struct_ops_representative_uses_low_risk_family() {
+        let target =
+            ProgramSpec::representative_target_for_program_type(EbpfProgramType::StructOps);
+        assert_eq!(target, "tcp_congestion_ops");
+
+        let spec = ProgramSpec::from_program_type_target(EbpfProgramType::StructOps, target)
+            .expect("struct_ops representative target should parse");
+        assert_eq!(
+            spec.live_attach_policy(),
+            ProgramLiveAttachPolicy {
+                loader_supported: true,
+                default_allowed: true,
+                requires_opt_in: false,
+                note: None,
+            }
+        );
+        assert!(spec.requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps));
+        assert!(
+            spec.requires_compatibility_feature(ProgramCompatibilityRequirement::TcpCongestionOps)
+        );
+        assert!(!spec.requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt));
     }
 
     #[test]
