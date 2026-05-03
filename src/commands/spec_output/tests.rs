@@ -850,6 +850,26 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
         intrinsic_backing_helper_names("xdp:lo", "redirect-map"),
         vec!["bpf_redirect_map".to_string()]
     );
+
+    assert_eq!(
+        intrinsic_backing_helper_names("xdp:lo", "redirect"),
+        vec!["bpf_redirect".to_string()]
+    );
+    let tc_ingress_redirect = intrinsic_backing_helper_names("tc:lo:ingress", "redirect");
+    assert!(tc_ingress_redirect.contains(&"bpf_redirect".to_string()));
+    assert!(tc_ingress_redirect.contains(&"bpf_redirect_peer".to_string()));
+    assert!(tc_ingress_redirect.contains(&"bpf_redirect_neigh".to_string()));
+
+    let tc_egress_redirect = intrinsic_backing_helper_names("tc:lo:egress", "redirect");
+    assert!(tc_egress_redirect.contains(&"bpf_redirect".to_string()));
+    assert!(!tc_egress_redirect.contains(&"bpf_redirect_peer".to_string()));
+    assert!(tc_egress_redirect.contains(&"bpf_redirect_neigh".to_string()));
+
+    let tc_action_redirect = intrinsic_backing_helper_names("tc_action:diff-action", "redirect");
+    assert!(tc_action_redirect.contains(&"bpf_redirect".to_string()));
+    assert!(tc_action_redirect.contains(&"bpf_redirect_peer".to_string()));
+    assert!(tc_action_redirect.contains(&"bpf_redirect_neigh".to_string()));
+
     assert_eq!(
         intrinsic_backing_helper_names("tc:lo:ingress", "assign-socket"),
         vec!["bpf_sk_assign".to_string()]
