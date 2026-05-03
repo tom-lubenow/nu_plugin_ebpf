@@ -1683,6 +1683,17 @@ impl ProgramCompatibilityTestLane {
             Self::VmOnly => "vm-only",
         }
     }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::HostSafe => "safe for default host integration-test lanes",
+            Self::HostGated => {
+                "requires explicit host resources, elevated privileges, or host-specific setup"
+            }
+            Self::DryRun => "compile/dry-run coverage only; live attach is not modeled as safe",
+            Self::VmOnly => "behavior-changing or high-risk coverage should run in an isolated VM",
+        }
+    }
 }
 
 const BPF_DIRECT_MAP_VALUE_SOURCE: &str =

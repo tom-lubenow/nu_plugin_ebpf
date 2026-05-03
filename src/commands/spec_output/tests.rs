@@ -1178,6 +1178,14 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             .expect("compatibility default test lane should be a string"),
         "vm-only"
     );
+    assert!(
+        record
+            .get("compatibility_default_test_lane_description")
+            .expect("compatibility default test lane description should be present")
+            .as_str()
+            .expect("compatibility default test lane description should be a string")
+            .contains("isolated VM")
+    );
     let link_requirement = requirements
         .iter()
         .find_map(|requirement| {
@@ -1206,6 +1214,14 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             .as_str()
             .expect("requirement test lane should be a string"),
         "vm-only"
+    );
+    assert!(
+        link_requirement
+            .get("default_test_lane_description")
+            .expect("requirement test lane description should be present")
+            .as_str()
+            .expect("requirement test lane description should be a string")
+            .contains("isolated VM")
     );
     assert!(
         link_requirement

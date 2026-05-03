@@ -29,8 +29,11 @@ This is an internal alpha, not a polished external release. The compiler has bro
 
 The compiler also tracks feature-style compatibility requirements for parsed
 program specs. `ebpf spec` reports each requirement with a category, a default
-test lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
-minimum-kernel fields. Source-verified feature requirements carry minimum
+test lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), a lane
+description, and nullable minimum-kernel fields. These lanes are test-planning
+metadata, not live-attach authorization flags; use the separate
+`live_attach_*` fields to inspect loader policy. Source-verified feature
+requirements carry minimum
 kernel versions for base program families, cgroup program families,
 TCX/netkit, netfilter links and defrag targets, XDP attach modes,
 `uprobe.multi`, struct_ops family targets such as `tcp_congestion_ops`,

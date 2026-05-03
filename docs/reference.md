@@ -208,8 +208,11 @@ helpers inherit those helper minimum-kernel/source records, and source-verified
 direct UAPI fields carry context-field floors where their introduction point is
 known. These labels describe feature surfaces.
 `ebpf spec` reports each requirement with a feature category, a default test
-lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
-minimum-kernel/source fields. Source-verified requirements carry minimum
+lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), a lane description,
+and nullable minimum-kernel/source fields. These lanes are test-planning
+metadata, not live-attach authorization flags; use the separate
+`live_attach_*` fields to inspect loader policy. Source-verified requirements
+carry minimum
 versions, `compatibility_minimum_kernel` reports the maximum known requirement
 for the parsed target, and `compatibility_default_test_lane` reports the most
 restrictive default lane across those requirements. The `intrinsics` list is program- and
