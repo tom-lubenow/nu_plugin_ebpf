@@ -874,9 +874,9 @@ impl CtxStoreTarget {
             CtxStoreTarget::SockOpsReply | CtxStoreTarget::SockOpsReplyLong(_) => None,
             CtxStoreTarget::SockOpsCbFlags => Some(CtxField::SockOpsCbFlags),
             CtxStoreTarget::SockOpsSkTxhash => Some(CtxField::SockOpsSkTxhash),
-            CtxStoreTarget::CgroupSockBoundDevIf
-            | CtxStoreTarget::CgroupSockMark
-            | CtxStoreTarget::CgroupSockPriority => None,
+            CtxStoreTarget::CgroupSockBoundDevIf => Some(CtxField::BoundDevIf),
+            CtxStoreTarget::CgroupSockMark => Some(CtxField::SockMark),
+            CtxStoreTarget::CgroupSockPriority => Some(CtxField::SockPriority),
             CtxStoreTarget::SkbMark => Some(CtxField::SockMark),
             CtxStoreTarget::SkbQueueMapping => Some(CtxField::QueueMapping),
             CtxStoreTarget::SkbPriority => Some(CtxField::SockPriority),

@@ -8,7 +8,8 @@ use crate::compiler::hir_to_mir::{
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
-    AddressSpace, KSTACK_MAP_NAME, MapKind, MapRef, MirInst, MirValue, StructField, USTACK_MAP_NAME,
+    AddressSpace, CtxField, KSTACK_MAP_NAME, MapKind, MapRef, MirInst, MirValue, StructField,
+    USTACK_MAP_NAME,
 };
 use crate::compiler::passes::{ListLowering, MirPass, optimize_with_ssa_hints};
 use crate::compiler::{
@@ -11660,6 +11661,70 @@ fn test_compile_cgroup_sock_addr_unix_ctx_sun_path_store_program() {
         HirLiteral::String(b"allow".to_vec()),
         "cgroup_sock_addr:connect_unix ctx.sun_path store",
     );
+}
+
+#[test]
+fn test_context_write_program_reports_direct_field_compatibility() {
+    for (program_type, target, cell_path, new_value, return_value, field, minimum_kernel) in [
+        (
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:sock_create",
+            CellPath {
+                members: vec![string_member("bound_dev_if")],
+            },
+            HirLiteral::Int(2),
+            HirLiteral::String(b"allow".to_vec()),
+            CtxField::BoundDevIf,
+            "4.10",
+        ),
+        (
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:sock_create",
+            CellPath {
+                members: vec![string_member("mark")],
+            },
+            HirLiteral::Int(42),
+            HirLiteral::String(b"allow".to_vec()),
+            CtxField::SockMark,
+            "4.14",
+        ),
+        (
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            CellPath {
+                members: vec![string_member("sk_txhash")],
+            },
+            HirLiteral::Int(42),
+            HirLiteral::Int(1),
+            CtxField::SockOpsSkTxhash,
+            "4.16",
+        ),
+    ] {
+        let program = compile_ctx_path_store_program(
+            program_type,
+            target,
+            cell_path,
+            new_value,
+            return_value,
+            "context write direct field compatibility",
+        );
+        let requirements = program.context_field_compatibility_requirements();
+        let requirement = requirements
+            .iter()
+            .find(|requirement| requirement.field() == &field)
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected context field compatibility for {}",
+                    field.display_name()
+                )
+            });
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/"))
+        );
+    }
 }
 
 #[test]
