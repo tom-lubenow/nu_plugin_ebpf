@@ -16,6 +16,25 @@ fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a Sp
         .unwrap_or_else(|| panic!("expected writable ctx.{field_name} in spec context writes"))
 }
 
+fn assert_field_backing_helper(
+    spec_text: &str,
+    field_name: &str,
+    helper: &str,
+    minimum_kernel: &str,
+) {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let field = field(&fields, field_name);
+    assert_eq!(field.backing_helper, Some(helper));
+    assert_eq!(field.backing_helper_minimum_kernel, Some(minimum_kernel));
+    assert!(
+        field
+            .backing_helper_minimum_kernel_source
+            .is_some_and(|source| source.contains(&format!("/v{minimum_kernel}/"))),
+        "ctx.{field_name} helper metadata should include a source link for {minimum_kernel}"
+    );
+}
+
 #[test]
 fn test_spec_context_fields_include_program_specific_aliases() {
     let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
@@ -143,6 +162,59 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     let ustack = field(&fields, "ustack");
     assert_eq!(ustack.semantic_type.as_deref(), Some("i64"));
     assert_eq!(ustack.runtime_type.as_deref(), Some("i64"));
+}
+
+#[test]
+fn test_spec_context_fields_label_specialized_helper_backed_fields() {
+    for (spec, field, helper, minimum_kernel) in [
+        ("kprobe.multi:vfs_*", "func_ip", "bpf_get_func_ip", "5.15"),
+        (
+            "kprobe.multi:vfs_*",
+            "attach_cookie",
+            "bpf_get_attach_cookie",
+            "5.15",
+        ),
+        (
+            "perf_event:software:cpu-clock",
+            "perf_counter",
+            "bpf_perf_prog_read_value",
+            "4.15",
+        ),
+        ("xdp:lo", "xdp_buff_len", "bpf_xdp_get_buff_len", "5.18"),
+        ("lwt_xmit:demo-route", "csum_level", "bpf_csum_level", "5.8"),
+        (
+            "lwt_xmit:demo-route",
+            "hash_recalc",
+            "bpf_get_hash_recalc",
+            "4.8",
+        ),
+        (
+            "cgroup_sysctl:/sys/fs/cgroup",
+            "sysctl_name",
+            "bpf_sysctl_get_name",
+            "5.2",
+        ),
+        (
+            "cgroup_sysctl:/sys/fs/cgroup",
+            "sysctl_current_value",
+            "bpf_sysctl_get_current_value",
+            "5.2",
+        ),
+        (
+            "cgroup_sysctl:/sys/fs/cgroup",
+            "sysctl_new_value",
+            "bpf_sysctl_get_new_value",
+            "5.2",
+        ),
+        (
+            "fentry:security_file_open",
+            "arg_count",
+            "bpf_get_func_arg_cnt",
+            "5.17",
+        ),
+    ] {
+        assert_field_backing_helper(spec, field, helper, minimum_kernel);
+    }
 }
 
 #[test]
