@@ -37,11 +37,13 @@ TCX/netkit, netfilter links and defrag targets, XDP attach modes,
 `hid_bpf_ops`, `sched_ext_ops`, and `Qdisc_ops`, and cgroup UNIX
 socket-address hooks, and
 `compatibility_minimum_kernel` reports the maximum known requirement for that
-parsed target. Live-load preflight also checks source-verified map-kind, global
-data-section, typed map-value field, all modeled helper, source-preserved
-known-kfunc, and source-preserved context-field floors from the compiled
-object, and the compiled program/object model exposes an aggregate
-`compatibility_minimum_kernel` summary across those source-verified categories.
+parsed target while `compatibility_default_test_lane` reports the most
+restrictive default lane across those requirements. Live-load preflight also
+checks source-verified map-kind, global data-section, typed map-value field,
+all modeled helper, source-preserved known-kfunc, and source-preserved
+context-field floors from the compiled object, and the compiled program/object
+model exposes an aggregate `compatibility_minimum_kernel` summary across those
+source-verified categories.
 Known kfunc compatibility windows can also carry a maximum-exclusive kernel
 bound when the upstream kfunc spelling is source-verified as transitional.
 `ebpf spec`

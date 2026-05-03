@@ -4674,6 +4674,32 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         EbpfProgramType::SocketFilter
             .requires_compatibility_feature(ProgramCompatibilityRequirement::SocketFilterProgram)
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            EbpfProgramType::Kprobe.compatibility_requirements()
+        ),
+        "host-safe"
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            EbpfProgramType::CgroupSock.compatibility_requirements()
+        ),
+        "host-gated"
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            EbpfProgramType::Extension.compatibility_requirements()
+        ),
+        "dry-run"
+    );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_default_test_lane(
+            &ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+                .expect("struct_ops should parse")
+                .compatibility_requirements()
+        ),
+        "vm-only"
+    );
 
     assert_eq!(
         ProgramCompatibilityRequirement::SocketFilterProgram.minimum_kernel(),

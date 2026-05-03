@@ -1170,6 +1170,14 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
             .expect("compatibility minimum kernel should be a string"),
         "6.6"
     );
+    assert_eq!(
+        record
+            .get("compatibility_default_test_lane")
+            .expect("compatibility default test lane should be present")
+            .as_str()
+            .expect("compatibility default test lane should be a string"),
+        "vm-only"
+    );
     let link_requirement = requirements
         .iter()
         .find_map(|requirement| {

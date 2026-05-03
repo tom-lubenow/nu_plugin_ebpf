@@ -2038,6 +2038,24 @@ impl ProgramCompatibilityRequirement {
         }
     }
 
+    pub fn effective_default_test_lane(
+        requirements: &[ProgramCompatibilityRequirement],
+    ) -> &'static str {
+        let mut lane = "host-safe";
+
+        for requirement in requirements {
+            match requirement.default_test_lane() {
+                "vm-only" => return "vm-only",
+                "dry-run" => lane = "dry-run",
+                "host-gated" if lane == "host-safe" => lane = "host-gated",
+                "host-safe" | "host-gated" => {}
+                _ => {}
+            }
+        }
+
+        lane
+    }
+
     pub fn minimum_kernel(&self) -> Option<&'static str> {
         match self {
             Self::SocketFilterProgram => Some("3.19"),
