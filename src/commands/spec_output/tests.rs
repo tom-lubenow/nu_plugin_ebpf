@@ -829,6 +829,21 @@ fn test_spec_record_intrinsics_follow_program_specific_helper_surfaces() {
     assert!(tc_egress.contains(&"redirect".to_string()));
     assert!(!tc_egress.contains(&"assign-socket".to_string()));
 
+    let tcx_ingress = intrinsic_commands("tcx:lo:ingress");
+    assert!(tcx_ingress.contains(&"assign-socket".to_string()));
+
+    let tcx_egress = intrinsic_commands("tcx:lo:egress");
+    assert!(!tcx_egress.contains(&"assign-socket".to_string()));
+
+    let tc_action = intrinsic_commands("tc_action:diff-action");
+    assert!(tc_action.contains(&"assign-socket".to_string()));
+
+    let netkit = intrinsic_commands("netkit:lo:primary");
+    assert!(!netkit.contains(&"assign-socket".to_string()));
+
+    let sk_lookup = intrinsic_commands("sk_lookup:/proc/self/ns/net");
+    assert!(sk_lookup.contains(&"assign-socket".to_string()));
+
     let raw_tracepoint = intrinsic_commands("raw_tracepoint:sys_enter");
     assert!(raw_tracepoint.contains(&"helper-call".to_string()));
     assert!(!raw_tracepoint.contains(&"adjust-message".to_string()));
@@ -872,6 +887,14 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
 
     assert_eq!(
         intrinsic_backing_helper_names("tc:lo:ingress", "assign-socket"),
+        vec!["bpf_sk_assign".to_string()]
+    );
+    assert_eq!(
+        intrinsic_backing_helper_names("tc_action:diff-action", "assign-socket"),
+        vec!["bpf_sk_assign".to_string()]
+    );
+    assert_eq!(
+        intrinsic_backing_helper_names("sk_lookup:/proc/self/ns/net", "assign-socket"),
         vec!["bpf_sk_assign".to_string()]
     );
     let tc_map_contains = intrinsic_backing_helper_names("tc:lo:ingress", "map-contains");
