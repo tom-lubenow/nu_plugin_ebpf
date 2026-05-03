@@ -1473,6 +1473,9 @@ fn test_spec_context_fields_include_skb_backed_socket_minimum_kernel_metadata() 
     for spec_text in [
         "socket_filter:udp4:127.0.0.1:31337",
         "tc_action:demo-action",
+        "tc:lo:ingress",
+        "tcx:lo:ingress",
+        "netkit:lo:primary",
         "cgroup_skb:/sys/fs/cgroup:egress",
     ] {
         let spec = ProgramSpec::parse(spec_text).expect("skb-backed spec should parse");
