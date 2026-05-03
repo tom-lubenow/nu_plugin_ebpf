@@ -61,7 +61,7 @@ struct SpecContextProjection {
     helper_minimum_kernel: Option<&'static str>,
     helper_minimum_kernel_source: Option<&'static str>,
     ty: String,
-    offset: usize,
+    offset: Option<usize>,
     bit_offset: Option<u32>,
     bit_size: Option<u32>,
     supported: bool,
@@ -698,7 +698,7 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 helper_minimum_kernel: None,
                 helper_minimum_kernel_source: None,
                 ty: mir_type_label(&field.ty),
-                offset: field.offset,
+                offset: Some(field.offset),
                 bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
                 bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
                 supported: true,
@@ -710,6 +710,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
             push_helper_backed_socket_projections(spec, &mut projections);
         }
     }
+
+    push_parameterized_context_projections(spec, &mut projections);
 
     projections
 }
@@ -784,13 +786,84 @@ fn push_struct_field_projections(
             helper_minimum_kernel,
             helper_minimum_kernel_source,
             ty: mir_type_label(&field.ty),
-            offset: field.offset,
+            offset: Some(field.offset),
             bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
             bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
             supported: true,
             unsupported_reason: None,
         });
     }
+}
+
+#[cfg(target_os = "linux")]
+fn push_parameterized_helper_projection(
+    projections: &mut Vec<SpecContextProjection>,
+    root: &str,
+    name: &str,
+    path: &str,
+    helper: BpfHelper,
+    ty: MirType,
+    unsupported_reason: Option<String>,
+) {
+    if unsupported_reason.is_some() {
+        return;
+    }
+
+    projections.push(SpecContextProjection {
+        root: root.to_string(),
+        name: name.to_string(),
+        path: path.to_string(),
+        source: "helper_call",
+        minimum_kernel: None,
+        minimum_kernel_source: None,
+        helper: Some(helper.name()),
+        helper_minimum_kernel: helper.minimum_kernel(),
+        helper_minimum_kernel_source: helper.minimum_kernel_source(),
+        ty: mir_type_label(&ty),
+        offset: None,
+        bit_offset: None,
+        bit_size: None,
+        supported: true,
+        unsupported_reason: None,
+    });
+}
+
+#[cfg(target_os = "linux")]
+fn push_parameterized_context_projections(
+    spec: &crate::program_spec::ProgramSpec,
+    projections: &mut Vec<SpecContextProjection>,
+) {
+    if spec.ctx_field_access_error(&CtxField::CgroupId).is_none() {
+        push_parameterized_helper_projection(
+            projections,
+            "ancestor_cgroup_id",
+            "N",
+            "ancestor_cgroup_id.N",
+            BpfHelper::GetCurrentAncestorCgroupId,
+            MirType::U64,
+            None,
+        );
+    }
+
+    push_parameterized_helper_projection(
+        projections,
+        "skb_ancestor_cgroup_id",
+        "N",
+        "skb_ancestor_cgroup_id.N",
+        BpfHelper::SkbAncestorCgroupId,
+        MirType::U64,
+        spec.helper_call_error(BpfHelper::SkbAncestorCgroupId),
+    );
+
+    push_parameterized_helper_projection(
+        projections,
+        "sk",
+        "ancestor_cgroup_id.N",
+        "sk.ancestor_cgroup_id.N",
+        BpfHelper::SkAncestorCgroupId,
+        MirType::U64,
+        spec.helper_call_error(BpfHelper::SkAncestorCgroupId),
+    );
 }
 
 #[cfg(target_os = "linux")]
@@ -835,7 +908,7 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "helper_minimum_kernel" => optional_static_str(projection.helper_minimum_kernel, span),
                     "helper_minimum_kernel_source" => optional_static_str(projection.helper_minimum_kernel_source, span),
                     "type" => Value::string(projection.ty, span),
-                    "offset" => optional_usize(Some(projection.offset), span),
+                    "offset" => optional_usize(projection.offset, span),
                     "bit_offset" => optional_u32(projection.bit_offset, span),
                     "bit_size" => optional_u32(projection.bit_size, span),
                     "supported" => Value::bool(projection.supported, span),

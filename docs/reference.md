@@ -629,7 +629,11 @@ helper-backed socket projections that are invalid on a particular hook are
 omitted from the projection table; attempting to use them in a program still
 produces the normal compiler diagnostic. Projection rows include source-backed
 minimum kernels when known; helper-backed rows also include the selected helper
-and its own floor.
+and its own floor. Parameterized helper projections such as
+`ancestor_cgroup_id.N`, `skb_ancestor_cgroup_id.N`, or
+`sk.ancestor_cgroup_id.N` use `source = helper_call` and a null `offset`,
+because `N` is a required constant path segment rather than a struct-field byte
+offset.
 `context_writes` rows report the assignment kind, whether the write requires a
 fixed index, and any helper or kfunc used by the write surface. Known
 ABI-backed writes include the helper/kfunc minimum-kernel and source fields, so

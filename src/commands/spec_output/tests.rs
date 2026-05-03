@@ -2031,7 +2031,7 @@ fn test_spec_context_projections_include_socket_members() {
     );
     assert_eq!(family.helper, None);
     assert_eq!(family.ty, "u32");
-    assert_eq!(family.offset, 4);
+    assert_eq!(family.offset, Some(4));
     assert!(family.supported);
     assert!(family.unsupported_reason.is_none());
 
@@ -2081,6 +2081,53 @@ fn test_spec_context_projections_respect_attach_sensitive_socket_members() {
     assert!(src_ip4.unsupported_reason.is_none());
 
     projection_absent(&projections, "sk.src_ip6");
+}
+
+#[test]
+fn test_spec_context_projections_include_parameterized_helper_members() {
+    let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let xdp_projections = spec_context_projections(&xdp);
+    let current_ancestor = projection(&xdp_projections, "ancestor_cgroup_id.N");
+    assert_eq!(current_ancestor.root, "ancestor_cgroup_id");
+    assert_eq!(current_ancestor.name, "N");
+    assert_eq!(current_ancestor.source, "helper_call");
+    assert_eq!(
+        current_ancestor.helper,
+        Some("bpf_get_current_ancestor_cgroup_id")
+    );
+    assert_eq!(current_ancestor.helper_minimum_kernel, Some("5.7"));
+    assert_eq!(current_ancestor.ty, "u64");
+    assert_eq!(current_ancestor.offset, None);
+    assert!(current_ancestor.supported);
+
+    let tc_egress = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
+    let tc_egress_projections = spec_context_projections(&tc_egress);
+    let skb_ancestor = projection(&tc_egress_projections, "skb_ancestor_cgroup_id.N");
+    assert_eq!(skb_ancestor.root, "skb_ancestor_cgroup_id");
+    assert_eq!(skb_ancestor.helper, Some("bpf_skb_ancestor_cgroup_id"));
+    assert_eq!(skb_ancestor.helper_minimum_kernel, Some("4.19"));
+    assert_eq!(skb_ancestor.ty, "u64");
+    assert_eq!(skb_ancestor.offset, None);
+
+    let cgroup_skb = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:egress")
+        .expect("cgroup_skb spec should parse");
+    let cgroup_skb_projections = spec_context_projections(&cgroup_skb);
+    let sk_ancestor = projection(&cgroup_skb_projections, "sk.ancestor_cgroup_id.N");
+    assert_eq!(sk_ancestor.root, "sk");
+    assert_eq!(sk_ancestor.name, "ancestor_cgroup_id.N");
+    assert_eq!(sk_ancestor.helper, Some("bpf_sk_ancestor_cgroup_id"));
+    assert_eq!(sk_ancestor.helper_minimum_kernel, Some("5.8"));
+    assert_eq!(sk_ancestor.ty, "u64");
+    assert_eq!(sk_ancestor.offset, None);
+
+    let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
+    let tc_ingress_projections = spec_context_projections(&tc_ingress);
+    projection_absent(&tc_ingress_projections, "skb_ancestor_cgroup_id.N");
+
+    let sk_msg =
+        ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg spec should parse");
+    let sk_msg_projections = spec_context_projections(&sk_msg);
+    projection_absent(&sk_msg_projections, "sk.ancestor_cgroup_id.N");
 }
 
 #[test]
