@@ -92,8 +92,9 @@ history and release notes, not here.
   - Keep `struct_ops` maps behind the struct_ops object loader rather than generic `map-*` commands.
 
 - [~] Strengthen global/static data support.
-  - Broaden fixed-layout globals beyond current scalar/string/binary/list/record cases when the type annotation gives an honest byte layout.
+  - Broaden fixed-layout globals beyond current scalar/string/binary/list/array/record cases when the type annotation gives an honest byte layout.
   - Keep source-level fixed-record globals and metadata-built record constants naturally aligned with zero-filled padding and aligned array stride.
+  - Record constants and typed globals can already carry nested string, binary, numeric-list, fixed-array, and record fields when their layout is explicit or inferable; the remaining gap is richer fixed-array element payloads that contain verifier-visible buffer semantics.
   - Keep implicit mutable globals, leading typed `mut`, and explicit `global-*` declarations consistent.
   - Add clearer diagnostics when a Nushell value cannot be represented as fixed-layout eBPF data.
 
