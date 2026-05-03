@@ -1187,6 +1187,11 @@ const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE = {
     min_kernel: "6.15"
     source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c"
 }
+const KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH = {
+    key: "kfunc:bpf_sock_addr_set_sun_path"
+    min_kernel: "6.7"
+    source: "https://github.com/torvalds/linux/blob/v6.7/net/core/filter.c"
+}
 const KERNEL_FEATURE_KFUNC_BPF_SOCK_OPS_ENABLE_TX_TSTAMP = {
     key: "kfunc:bpf_sock_ops_enable_tx_tstamp"
     min_kernel: "6.18"
@@ -2470,6 +2475,7 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "bpf_res_spin_unlock", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK }
     { name: "bpf_res_spin_lock_irqsave", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_LOCK_IRQSAVE }
     { name: "bpf_res_spin_unlock_irqrestore", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE }
+    { name: "bpf_sock_addr_set_sun_path", feature: $KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH }
     { name: "bpf_sock_ops_enable_tx_tstamp", feature: $KERNEL_FEATURE_KFUNC_BPF_SOCK_OPS_ENABLE_TX_TSTAMP }
     { name: "scx_bpf_get_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK }
     { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
@@ -4076,7 +4082,7 @@ const FIXTURES = [
     {
         name: "cgroup-sock-addr-unix-sun-path-write"
         category: "context-surface"
-        tags: [cgroup-sock-addr context unix writable kfunc]
+        tags: [cgroup-sock-addr context unix writable kfunc source metadata]
         requires: [cgroup-v2]
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
         program: [
@@ -7741,13 +7747,25 @@ def program-helper-kernel-features [source: string] {
     $features
 }
 
-def program-kfunc-kernel-features [source: string] {
+def program-kfunc-kernel-features [source: string target] {
     mut features = []
+    let target_text = ($target | default "")
 
     for kfunc_name in (program-kfunc-names $source) {
         let feature = (kfunc-kernel-feature $kfunc_name)
         if $feature != null {
             $features = (append-missing-kernel-features $features [$feature])
+        }
+    }
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+        if (
+            ($target_text | str starts-with "cgroup_sock_addr:")
+            and ($target_text | str contains "_unix")
+            and (($trimmed | str contains "$ctx.sun_path =") or ($trimmed | str contains "$ctx.sun_path="))
+        ) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH])
         }
     }
 
@@ -8140,7 +8158,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (program-map-value-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-global-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
-    $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
 
