@@ -4599,6 +4599,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-action-context-socket-write"
+        category: "context-surface"
+        tags: [tc-action context writable socket source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-helper-backed-socket-projections"
         category: "context-surface"
         tags: [tc context socket helper-backed]
@@ -9170,6 +9185,7 @@ def program-surface-helper-kernel-features [source: string target] {
         )
         let target_supports_ctx_sk_assign = (
             ($target_text | str starts-with "sk_lookup:")
+            or ($target_text | str starts-with "tc_action:")
             or (($target_text | str starts-with "tc:") and ($target_text | str contains ":ingress"))
             or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
         )
