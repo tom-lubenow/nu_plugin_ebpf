@@ -4507,6 +4507,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-in-context-write"
+        category: "context-surface"
+        tags: [lwt context writable]
+        target: "lwt_in:demo-route"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.mark = 7'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lwt-out-helper-context"
         category: "context-surface"
         tags: [lwt context helper-backed]
@@ -4521,6 +4536,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-out-context-write"
+        category: "context-surface"
+        tags: [lwt context writable]
+        target: "lwt_out:demo-route"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.priority = 3'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lwt-seg6local-helper-context"
         category: "context-surface"
         tags: [lwt context helper-backed seg6local]
@@ -4528,6 +4558,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.packet_len + $ctx.hash + $ctx.route_realm + $ctx.gso_size) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-context-write"
+        category: "context-surface"
+        tags: [lwt context writable seg6local]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.cb.4 = 7'
             '  "pass"'
             '}'
         ]
