@@ -205,6 +205,10 @@ impl KernelBtf {
                 if let Some(last_space) = rest.rfind(|c: char| c.is_whitespace()) {
                     field_type = rest[..last_space].trim().to_string();
                     field_name = rest[last_space..].trim().to_string();
+                    while let Some(stripped) = field_name.strip_prefix('*') {
+                        field_type.push_str(" *");
+                        field_name = stripped.trim_start().to_string();
+                    }
                     // Remove array suffix from name if present
                     if let Some(bracket) = field_name.find('[') {
                         field_name.truncate(bracket);

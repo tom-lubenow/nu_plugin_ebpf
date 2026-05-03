@@ -62,6 +62,24 @@ fn test_parse_field_line() {
         TypeInfo::Ptr { is_user: false, .. }
     ));
 
+    let field = service
+        .parse_field_line("field:const char *filename;\toffset:24;\tsize:8;\tsigned:0;")
+        .unwrap();
+    assert_eq!(field.name, "filename");
+    assert!(matches!(
+        field.type_info,
+        TypeInfo::Ptr { is_user: false, .. }
+    ));
+
+    let field = service
+        .parse_field_line("field:const char __user *path;\toffset:24;\tsize:8;\tsigned:0;")
+        .unwrap();
+    assert_eq!(field.name, "path");
+    assert!(matches!(
+        field.type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     // Test array field
     let field = service
         .parse_field_line("field:unsigned long args[6];\toffset:16;\tsize:48;\tsigned:0;")
