@@ -1368,14 +1368,18 @@ impl<'a> HirToMirLowering<'a> {
         let Some(ctx) = self.probe_ctx else {
             return Ok(());
         };
-        if ctx.program_type().supports_intrinsic(intrinsic) {
+        if ctx.supports_intrinsic(intrinsic) {
             return Ok(());
         }
-        Err(CompileError::UnsupportedInstruction(format!(
-            "{} is not supported on {} programs",
-            intrinsic.command_name(),
-            ctx.canonical_prefix()
-        )))
+        Err(CompileError::UnsupportedInstruction(
+            ctx.intrinsic_support_error(intrinsic).unwrap_or_else(|| {
+                format!(
+                    "{} is not supported on {} programs",
+                    intrinsic.command_name(),
+                    ctx.canonical_prefix()
+                )
+            }),
+        ))
     }
 
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {

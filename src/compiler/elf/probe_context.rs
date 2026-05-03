@@ -1,7 +1,7 @@
 use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, GetSocketCookieArgPolicy,
     IngressIfindexContextLayout, PacketContextKind, ProbeContext, ProgramBtfCallableSurface,
-    ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
+    ProgramIntrinsic, ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -1011,6 +1011,37 @@ impl ProbeContext {
         self.parsed_program_spec()
             .and_then(|spec| spec.helper_call_error(helper))
             .or_else(|| self.program_type().helper_call_error(helper))
+    }
+
+    pub(crate) fn supports_intrinsic(&self, intrinsic: ProgramIntrinsic) -> bool {
+        self.parsed_program_spec().map_or_else(
+            || self.program_type().supports_intrinsic(intrinsic),
+            |spec| spec.supports_intrinsic(intrinsic),
+        )
+    }
+
+    pub(crate) fn intrinsic_support_error(&self, intrinsic: ProgramIntrinsic) -> Option<String> {
+        if self.supports_intrinsic(intrinsic) {
+            return None;
+        }
+
+        let detail = match intrinsic {
+            ProgramIntrinsic::AssignSocket => self.helper_call_error(BpfHelper::SkAssign),
+            ProgramIntrinsic::RedirectMap => self.helper_call_error(BpfHelper::RedirectMap),
+            _ => None,
+        };
+        Some(match detail {
+            Some(message) => format!(
+                "{} is not supported on {} programs: {message}",
+                intrinsic.command_name(),
+                self.canonical_prefix()
+            ),
+            None => format!(
+                "{} is not supported on {} programs",
+                intrinsic.command_name(),
+                self.canonical_prefix()
+            ),
+        })
     }
 
     pub(crate) fn helper_zero_arg_requirement(

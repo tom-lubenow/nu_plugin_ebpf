@@ -1376,14 +1376,10 @@ impl ProgramSpec {
             return false;
         }
 
-        match intrinsic {
-            ProgramIntrinsic::Redirect => {
-                self.helper_call_error(BpfHelper::Redirect).is_none()
-                    || self.helper_call_error(BpfHelper::RedirectPeer).is_none()
-                    || self.helper_call_error(BpfHelper::RedirectNeigh).is_none()
-            }
-            ProgramIntrinsic::AssignSocket => self.helper_call_error(BpfHelper::SkAssign).is_none(),
-            _ => true,
+        if intrinsic_has_backing_helpers(intrinsic) {
+            !self.intrinsic_backing_helpers(intrinsic).is_empty()
+        } else {
+            true
         }
     }
 
@@ -1404,34 +1400,41 @@ impl ProgramSpec {
             }
             ProgramIntrinsic::AdjustPacket => {
                 for helper in [
-                    BpfHelper::XdpAdjustHead,
-                    BpfHelper::XdpAdjustMeta,
-                    BpfHelper::XdpAdjustTail,
-                    BpfHelper::SkbChangeHead,
-                    BpfHelper::SkbChangeTail,
-                    BpfHelper::SkbPullData,
-                    BpfHelper::SkbAdjustRoom,
-                ] {
+                    PacketAdjustMode::Head,
+                    PacketAdjustMode::Meta,
+                    PacketAdjustMode::Tail,
+                    PacketAdjustMode::Pull,
+                    PacketAdjustMode::Room,
+                ]
+                .into_iter()
+                .filter_map(|mode| self.program_type().packet_adjust_helper(mode))
+                {
                     self.push_intrinsic_backing_helper(&mut helpers, helper);
                 }
             }
             ProgramIntrinsic::AdjustMessage => {
                 for helper in [
-                    BpfHelper::MsgApplyBytes,
-                    BpfHelper::MsgCorkBytes,
-                    BpfHelper::MsgPullData,
-                    BpfHelper::MsgPushData,
-                    BpfHelper::MsgPopData,
-                ] {
+                    MessageAdjustMode::Apply,
+                    MessageAdjustMode::Cork,
+                    MessageAdjustMode::Pull,
+                    MessageAdjustMode::Push,
+                    MessageAdjustMode::Pop,
+                ]
+                .into_iter()
+                .filter_map(|mode| self.program_type().message_adjust_helper(mode))
+                {
                     self.push_intrinsic_backing_helper(&mut helpers, helper);
                 }
             }
             ProgramIntrinsic::Redirect => {
                 for helper in [
-                    BpfHelper::Redirect,
-                    BpfHelper::RedirectPeer,
-                    BpfHelper::RedirectNeigh,
-                ] {
+                    self.program_type().packet_redirect_helper(),
+                    self.program_type().packet_redirect_peer_helper(),
+                    self.program_type().packet_redirect_neigh_helper(),
+                ]
+                .into_iter()
+                .flatten()
+                {
                     self.push_intrinsic_backing_helper(&mut helpers, helper);
                 }
             }
@@ -1440,12 +1443,13 @@ impl ProgramSpec {
             }
             ProgramIntrinsic::RedirectSocket => {
                 for helper in [
-                    BpfHelper::MsgRedirectMap,
-                    BpfHelper::MsgRedirectHash,
-                    BpfHelper::SkRedirectMap,
-                    BpfHelper::SkRedirectHash,
-                    BpfHelper::SkSelectReuseport,
-                ] {
+                    MapKind::SockMap,
+                    MapKind::SockHash,
+                    MapKind::ReuseportSockArray,
+                ]
+                .into_iter()
+                .filter_map(|map_kind| self.program_type().socket_redirect_helper(map_kind))
+                {
                     self.push_intrinsic_backing_helper(&mut helpers, helper);
                 }
             }
@@ -1517,6 +1521,28 @@ impl ProgramSpec {
     }
 }
 
+fn intrinsic_has_backing_helpers(intrinsic: ProgramIntrinsic) -> bool {
+    matches!(
+        intrinsic,
+        ProgramIntrinsic::ReadStr
+            | ProgramIntrinsic::ReadKernelStr
+            | ProgramIntrinsic::AdjustPacket
+            | ProgramIntrinsic::AdjustMessage
+            | ProgramIntrinsic::Redirect
+            | ProgramIntrinsic::RedirectMap
+            | ProgramIntrinsic::RedirectSocket
+            | ProgramIntrinsic::AssignSocket
+            | ProgramIntrinsic::TailCall
+            | ProgramIntrinsic::MapGet
+            | ProgramIntrinsic::MapPut
+            | ProgramIntrinsic::MapDelete
+            | ProgramIntrinsic::MapContains
+            | ProgramIntrinsic::MapPush
+            | ProgramIntrinsic::MapPeek
+            | ProgramIntrinsic::MapPop
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1547,12 +1573,44 @@ mod tests {
 
     #[test]
     fn test_program_spec_intrinsic_backing_helpers_are_attach_aware() {
+        let xdp = crate::program_spec::ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+        assert_eq!(
+            xdp.intrinsic_backing_helpers(ProgramIntrinsic::AdjustPacket),
+            vec![
+                BpfHelper::XdpAdjustHead,
+                BpfHelper::XdpAdjustMeta,
+                BpfHelper::XdpAdjustTail,
+            ]
+        );
+        assert_eq!(
+            xdp.intrinsic_backing_helpers(ProgramIntrinsic::Redirect),
+            vec![BpfHelper::Redirect]
+        );
+
         let tc_ingress = crate::program_spec::ProgramSpec::parse("tc:lo:ingress")
             .expect("tc ingress spec should parse");
+        assert_eq!(
+            tc_ingress.intrinsic_backing_helpers(ProgramIntrinsic::AdjustPacket),
+            vec![
+                BpfHelper::SkbChangeHead,
+                BpfHelper::SkbChangeTail,
+                BpfHelper::SkbPullData,
+                BpfHelper::SkbAdjustRoom,
+            ]
+        );
+        assert_eq!(
+            tc_ingress.intrinsic_backing_helpers(ProgramIntrinsic::Redirect),
+            vec![
+                BpfHelper::Redirect,
+                BpfHelper::RedirectPeer,
+                BpfHelper::RedirectNeigh,
+            ]
+        );
         assert_eq!(
             tc_ingress.intrinsic_backing_helpers(ProgramIntrinsic::AssignSocket),
             vec![BpfHelper::SkAssign]
         );
+        assert!(tc_ingress.supports_intrinsic(ProgramIntrinsic::AssignSocket));
 
         let tc_egress = crate::program_spec::ProgramSpec::parse("tc:lo:egress")
             .expect("tc egress spec should parse");
@@ -1561,10 +1619,18 @@ mod tests {
                 .intrinsic_backing_helpers(ProgramIntrinsic::AssignSocket)
                 .is_empty()
         );
+        assert!(!tc_egress.supports_intrinsic(ProgramIntrinsic::AssignSocket));
         assert!(
             !tc_egress
                 .intrinsic_backing_helpers(ProgramIntrinsic::Redirect)
                 .contains(&BpfHelper::RedirectPeer)
+        );
+
+        let lwt_xmit = crate::program_spec::ProgramSpec::parse("lwt_xmit:demo-route")
+            .expect("lwt_xmit spec should parse");
+        assert_eq!(
+            lwt_xmit.intrinsic_backing_helpers(ProgramIntrinsic::Redirect),
+            vec![BpfHelper::Redirect]
         );
 
         let sk_msg = crate::program_spec::ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap")
