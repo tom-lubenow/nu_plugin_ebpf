@@ -2336,6 +2336,44 @@ fn test_spec_record_includes_attach_shape_metadata() {
         "sendmsg"
     );
 
+    let struct_ops = ProgramSpec::parse("struct_ops:tcp_congestion_ops")
+        .expect("struct_ops object spec should parse");
+    let record = spec_record(
+        "struct_ops:tcp_congestion_ops".to_string(),
+        struct_ops,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        record
+            .get("struct_ops_value_type")
+            .expect("struct_ops value type should be present")
+            .as_str()
+            .expect("struct_ops value type should be a string"),
+        "tcp_congestion_ops"
+    );
+    assert!(
+        record
+            .get("struct_ops_callback")
+            .expect("struct_ops callback should be present")
+            .is_nothing()
+    );
+    assert_eq!(
+        attach_shape
+            .get("value_type")
+            .expect("struct_ops value type should be present")
+            .as_str()
+            .expect("struct_ops value type should be a string"),
+        "tcp_congestion_ops"
+    );
+
     let callback = ProgramSpec::parse("struct_ops:sched_ext_ops.init")
         .expect("struct_ops callback spec should parse");
     let record = spec_record(
@@ -2351,6 +2389,22 @@ fn test_spec_record_includes_attach_shape_metadata() {
         .expect("attach shape should be present")
         .as_record()
         .expect("attach shape should be a record");
+    assert_eq!(
+        record
+            .get("struct_ops_value_type")
+            .expect("struct_ops value type should be present")
+            .as_str()
+            .expect("struct_ops value type should be a string"),
+        "sched_ext_ops"
+    );
+    assert_eq!(
+        record
+            .get("struct_ops_callback")
+            .expect("struct_ops callback should be present")
+            .as_str()
+            .expect("struct_ops callback should be a string"),
+        "init"
+    );
     assert_eq!(
         record
             .get("target_kind")
@@ -2390,6 +2444,22 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .as_str()
             .expect("struct_ops family should be a string"),
         "sched-ext"
+    );
+    assert_eq!(
+        attach_shape
+            .get("value_type")
+            .expect("struct_ops value type should be present")
+            .as_str()
+            .expect("struct_ops value type should be a string"),
+        "sched_ext_ops"
+    );
+    assert_eq!(
+        attach_shape
+            .get("callback")
+            .expect("struct_ops callback should be present")
+            .as_str()
+            .expect("struct_ops callback should be a string"),
+        "init"
     );
     assert!(
         attach_shape

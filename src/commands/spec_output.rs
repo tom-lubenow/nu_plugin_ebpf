@@ -493,6 +493,7 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             record! {
                 "kind" => Value::string("struct-ops", span),
                 "family" => Value::string(family.key(), span),
+                "value_type" => Value::string(spec.struct_ops_value_type_name().unwrap_or(""), span),
             },
             span,
         ),
@@ -500,6 +501,8 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             record! {
                 "kind" => Value::string("struct-ops-callback", span),
                 "family" => Value::string(family.key(), span),
+                "value_type" => Value::string(spec.struct_ops_value_type_name().unwrap_or(""), span),
+                "callback" => Value::string(spec.struct_ops_callback_name().unwrap_or(""), span),
                 "sleepable" => Value::bool(sleepable, span),
             },
             span,
@@ -1410,6 +1413,8 @@ pub(super) fn spec_record(
             "data_meta_context_kind" => optional_packet_context_kind(spec.data_meta_context_kind(), span),
             "direct_packet_writes" => Value::bool(spec.supports_direct_packet_writes(), span),
             "target" => Value::string(spec.target_string(), span),
+            "struct_ops_value_type" => optional_string(spec.struct_ops_value_type_name().map(str::to_string), span),
+            "struct_ops_callback" => optional_string(spec.struct_ops_callback_name().map(str::to_string), span),
             "section" => Value::string(spec.section_name(), span),
             "section_prefix" => Value::string(program_type.section_prefix(), span),
             "section_uses_target" => Value::bool(program_type.section_uses_target(), span),
