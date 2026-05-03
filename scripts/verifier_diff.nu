@@ -797,6 +797,11 @@ const KERNEL_FEATURE_BPF_RESERVE_HDR_OPT = {
     min_kernel: "5.10"
     source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET = {
+    key: "helper:bpf_sock_ops_cb_flags_set"
+    min_kernel: "4.16"
+    source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD = {
     key: "helper:bpf_xdp_adjust_head"
     min_kernel: "4.10"
@@ -2417,6 +2422,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_load_hdr_opt", feature: $KERNEL_FEATURE_BPF_LOAD_HDR_OPT }
     { name: "bpf_store_hdr_opt", feature: $KERNEL_FEATURE_BPF_STORE_HDR_OPT }
     { name: "bpf_reserve_hdr_opt", feature: $KERNEL_FEATURE_BPF_RESERVE_HDR_OPT }
+    { name: "bpf_sock_ops_cb_flags_set", feature: $KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET }
     { name: "bpf_bprm_opts_set", feature: $KERNEL_FEATURE_BPF_BPRM_OPTS_SET }
     { name: "bpf_spin_lock", feature: $KERNEL_FEATURE_BPF_SPIN_LOCK }
     { name: "bpf_spin_unlock", feature: $KERNEL_FEATURE_BPF_SPIN_UNLOCK }
@@ -4224,6 +4230,22 @@ const FIXTURES = [
             '  $ctx.replylong.0 = 7'
             '  $ctx.cb_flags = 1'
             '  $ctx.sk_txhash = 7'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-cb-flags-helper-backed-write"
+        category: "context-surface"
+        tags: [sock-ops context writable source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.cb_flags = 1'
             '  1'
             '}'
         ]
@@ -7837,6 +7859,7 @@ def program-surface-helper-kernel-features [source: string target] {
             continue
         }
 
+        let trimmed = ($line | str trim)
         let map_kind = (source-line-map-kind $line "hash")
         if ($line | str contains "map-get ") and (generic-map-lookup-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
@@ -7922,6 +7945,9 @@ def program-surface-helper-kernel-features [source: string target] {
             } else if ($target_text | str starts-with "sk_reuseport:") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
             }
+        }
+        if ($target_text | str starts-with "sock_ops:") and (($trimmed | str contains "$ctx.cb_flags =") or ($trimmed | str contains "$ctx.cb_flags=")) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET])
         }
         if ($target_text | str starts-with "xdp:") {
             if ($line | str contains "adjust-packet --head") {
