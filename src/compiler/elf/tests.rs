@@ -3612,6 +3612,13 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
         None
     );
     assert_eq!(
+        EbpfProgramType::TcAction.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        Some((
+            2,
+            "helper 'bpf_sk_assign' requires arg2 = 0 in tc_action programs"
+        ))
+    );
+    assert_eq!(
         EbpfProgramType::Tc.helper_zero_arg_requirement(BpfHelper::SkAssign),
         Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))
     );
@@ -3810,6 +3817,7 @@ fn test_tracing_helper_ctx_field_surface_follows_program_model() {
 #[test]
 fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let tc_action = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
     let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 
@@ -3818,6 +3826,13 @@ fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
         Some((1, "helper 'bpf_redirect' requires arg1 = 0 in xdp programs"))
     );
     assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::Redirect), None);
+    assert_eq!(
+        tc_action.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        Some((
+            2,
+            "helper 'bpf_sk_assign' requires arg2 = 0 in tc_action programs"
+        ))
+    );
     assert_eq!(
         tc.helper_zero_arg_requirement(BpfHelper::SkAssign),
         Some((2, "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs"))

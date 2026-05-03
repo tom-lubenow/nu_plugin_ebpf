@@ -895,6 +895,12 @@ const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
     },
     HelperZeroArgRequirementSpec {
         helper: BpfHelper::SkAssign,
+        program_type: EbpfProgramType::TcAction,
+        arg_idx: 2,
+        error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tc_action programs",
+    },
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::SkAssign,
         program_type: EbpfProgramType::Tc,
         arg_idx: 2,
         error_message: "helper 'bpf_sk_assign' requires arg2 = 0 in tc programs",

@@ -7534,6 +7534,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "assign-socket-tc-action-rejects-flags"
+        category: "language-surface"
+        tags: [assign-socket tc-action reject flags]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  assign-socket 0 --replace'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_assign' requires arg2 = 0 in tc_action programs"
+    }
+    {
         name: "adjust-message-sk-msg-apply"
         category: "language-surface"
         tags: [adjust-message sk-msg]
