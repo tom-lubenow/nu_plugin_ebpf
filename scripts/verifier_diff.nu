@@ -13,6 +13,20 @@ const VALID_HOST_FEATURES = [
     "tracefs"
 ]
 
+def test-lane-description [lane: string] {
+    if $lane == "host-safe" {
+        "safe for default host integration-test lanes"
+    } else if $lane == "host-gated" {
+        "requires explicit host resources, elevated privileges, or host-specific setup"
+    } else if $lane == "dry-run" {
+        "compile/dry-run coverage only; live attach is not modeled as safe"
+    } else if $lane == "vm-only" {
+        "behavior-changing or high-risk coverage should run in an isolated VM"
+    } else {
+        ""
+    }
+}
+
 const KERNEL_FEATURE_PROG_RAW_TRACEPOINT = {
     key: "program:BPF_PROG_TYPE_RAW_TRACEPOINT"
     min_kernel: "4.17"
@@ -10012,6 +10026,7 @@ def fixture-tier [fixture] {
 
 def fixture-summary [fixture compat_kernel] {
     let compatibility = (fixture-kernel-compatibility $fixture $compat_kernel)
+    let default_test_lane = (fixture-default-test-lane $fixture)
 
     {
         name: $fixture.name
@@ -10022,7 +10037,8 @@ def fixture-summary [fixture compat_kernel] {
         requires: (optional $fixture requires [])
         kernel_requires: (optional $fixture kernel_requires [])
         kernel_features: (fixture-kernel-features $fixture)
-        default_test_lane: (fixture-default-test-lane $fixture)
+        default_test_lane: $default_test_lane
+        default_test_lane_description: (test-lane-description $default_test_lane)
         effective_min_kernel: (fixture-effective-min-kernel $fixture | default "")
         effective_max_kernel_exclusive: (fixture-effective-max-kernel-exclusive $fixture | default "")
         effective_min_kernel_sources: (fixture-effective-min-kernel-sources $fixture)
