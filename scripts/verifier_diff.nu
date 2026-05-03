@@ -920,26 +920,47 @@ const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE = {
 const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK = {
     key: "kfunc:scx_bpf_get_idle_cpumask"
     min_kernel: "6.12"
-    max_kernel_exclusive: "6.15"
     source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK = {
     key: "kfunc:scx_bpf_get_idle_smtmask"
     min_kernel: "6.12"
-    max_kernel_exclusive: "6.15"
     source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU = {
     key: "kfunc:scx_bpf_pick_any_cpu"
     min_kernel: "6.12"
-    max_kernel_exclusive: "6.15"
     source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_KFUNC_SCX_BPF_PUT_IDLE_CPUMASK = {
     key: "kfunc:scx_bpf_put_idle_cpumask"
     min_kernel: "6.12"
-    max_kernel_exclusive: "6.15"
     source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_CPU_NODE = {
+    key: "kfunc:scx_bpf_cpu_node"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK_NODE = {
+    key: "kfunc:scx_bpf_get_idle_cpumask_node"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK_NODE = {
+    key: "kfunc:scx_bpf_get_idle_smtmask_node"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU_NODE = {
+    key: "kfunc:scx_bpf_pick_any_cpu_node"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_IDLE_CPU_NODE = {
+    key: "kfunc:scx_bpf_pick_idle_cpu_node"
+    min_kernel: "6.15"
+    source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c"
 }
 const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     key: "helper:bpf_user_ringbuf_drain"
@@ -2083,6 +2104,11 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
     { name: "scx_bpf_pick_any_cpu", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU }
     { name: "scx_bpf_put_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PUT_IDLE_CPUMASK }
+    { name: "scx_bpf_cpu_node", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_CPU_NODE }
+    { name: "scx_bpf_get_idle_cpumask_node", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK_NODE }
+    { name: "scx_bpf_get_idle_smtmask_node", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK_NODE }
+    { name: "scx_bpf_pick_any_cpu_node", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU_NODE }
+    { name: "scx_bpf_pick_idle_cpu_node", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_IDLE_CPU_NODE }
 ]
 
 const CONTEXT_FIELD_KERNEL_FEATURES = [
@@ -4904,6 +4930,23 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_res_spin_lock' arg0 expects pointer"
+    }
+    {
+        name: "source-kfunc-sched-ext-node-min-kernel"
+        category: "kfunc"
+        tags: [kfunc sched-ext source metadata]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    select_cpu: {|ctx|'
+            '        let prev = $ctx.arg.prev_cpu'
+            '        kfunc-call "scx_bpf_cpu_node" $prev'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
     {
         name: "timer-init-rejects-non-map-timer"

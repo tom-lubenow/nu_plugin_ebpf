@@ -48,6 +48,8 @@ const LINUX_HELPERS_C_V6_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/helpers.c";
 const LINUX_VERIFIER_C_V6_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c";
+const LINUX_SCHED_EXT_IDLE_C_V6_15_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c";
 const LINUX_SCHED_EXT_C_V6_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext.c";
 const LINUX_HELPERS_C_V6_16_SOURCE: &str =
@@ -287,6 +289,7 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_iter_scx_dsq_destroy" => "bpf_iter_scx_dsq_destroy",
         "bpf_iter_scx_dsq_new" => "bpf_iter_scx_dsq_new",
         "bpf_iter_scx_dsq_next" => "bpf_iter_scx_dsq_next",
+        "scx_bpf_cpu_node" => "scx_bpf_cpu_node",
         "scx_bpf_cpu_rq" => "scx_bpf_cpu_rq",
         "scx_bpf_cpuperf_cap" => "scx_bpf_cpuperf_cap",
         "scx_bpf_cpuperf_cur" => "scx_bpf_cpuperf_cur",
@@ -307,7 +310,9 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "scx_bpf_error_bstr" => "scx_bpf_error_bstr",
         "scx_bpf_events" => "scx_bpf_events",
         "scx_bpf_exit_bstr" => "scx_bpf_exit_bstr",
+        "scx_bpf_get_idle_cpumask_node" => "scx_bpf_get_idle_cpumask_node",
         "scx_bpf_get_idle_cpumask" => "scx_bpf_get_idle_cpumask",
+        "scx_bpf_get_idle_smtmask_node" => "scx_bpf_get_idle_smtmask_node",
         "scx_bpf_get_idle_smtmask" => "scx_bpf_get_idle_smtmask",
         "scx_bpf_get_online_cpumask" => "scx_bpf_get_online_cpumask",
         "scx_bpf_get_possible_cpumask" => "scx_bpf_get_possible_cpumask",
@@ -315,7 +320,9 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "scx_bpf_now" => "scx_bpf_now",
         "scx_bpf_nr_cpu_ids" => "scx_bpf_nr_cpu_ids",
         "scx_bpf_nr_node_ids" => "scx_bpf_nr_node_ids",
+        "scx_bpf_pick_any_cpu_node" => "scx_bpf_pick_any_cpu_node",
         "scx_bpf_pick_any_cpu" => "scx_bpf_pick_any_cpu",
+        "scx_bpf_pick_idle_cpu_node" => "scx_bpf_pick_idle_cpu_node",
         "scx_bpf_pick_idle_cpu" => "scx_bpf_pick_idle_cpu",
         "scx_bpf_put_cpumask" => "scx_bpf_put_cpumask",
         "scx_bpf_put_idle_cpumask" => "scx_bpf_put_idle_cpumask",
@@ -464,8 +471,12 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_res_spin_unlock"
         | "bpf_res_spin_lock_irqsave"
         | "bpf_res_spin_unlock_irqrestore"
+        | "scx_bpf_cpu_node"
         | "scx_bpf_events"
+        | "scx_bpf_get_idle_cpumask_node"
+        | "scx_bpf_get_idle_smtmask_node"
         | "scx_bpf_nr_node_ids" => "6.15",
+        "scx_bpf_pick_any_cpu_node" | "scx_bpf_pick_idle_cpu_node" => "6.15",
         "bpf_copy_from_user_dynptr"
         | "bpf_copy_from_user_task_dynptr"
         | "bpf_copy_from_user_task_str_dynptr"
@@ -485,14 +496,8 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
     })
 }
 
-fn kfunc_maximum_kernel_exclusive(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "scx_bpf_get_idle_cpumask"
-        | "scx_bpf_get_idle_smtmask"
-        | "scx_bpf_pick_any_cpu"
-        | "scx_bpf_put_idle_cpumask" => "6.15",
-        _ => return None,
-    })
+fn kfunc_maximum_kernel_exclusive(_name: &str) -> Option<&'static str> {
+    None
 }
 
 fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
@@ -630,6 +635,11 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_res_spin_unlock"
         | "bpf_res_spin_lock_irqsave"
         | "bpf_res_spin_unlock_irqrestore" => LINUX_VERIFIER_C_V6_15_SOURCE,
+        "scx_bpf_cpu_node"
+        | "scx_bpf_get_idle_cpumask_node"
+        | "scx_bpf_get_idle_smtmask_node"
+        | "scx_bpf_pick_any_cpu_node"
+        | "scx_bpf_pick_idle_cpu_node" => LINUX_SCHED_EXT_IDLE_C_V6_15_SOURCE,
         "scx_bpf_events" | "scx_bpf_nr_node_ids" => LINUX_SCHED_EXT_C_V6_15_SOURCE,
         "bpf_copy_from_user_dynptr"
         | "bpf_copy_from_user_task_dynptr"

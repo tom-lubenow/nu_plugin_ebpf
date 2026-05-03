@@ -4179,6 +4179,36 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/sched/ext.c",
         ),
         (
+            "scx_bpf_cpu_node",
+            "kfunc:scx_bpf_cpu_node",
+            "6.15",
+            "/kernel/sched/ext_idle.c",
+        ),
+        (
+            "scx_bpf_get_idle_cpumask_node",
+            "kfunc:scx_bpf_get_idle_cpumask_node",
+            "6.15",
+            "/kernel/sched/ext_idle.c",
+        ),
+        (
+            "scx_bpf_get_idle_smtmask_node",
+            "kfunc:scx_bpf_get_idle_smtmask_node",
+            "6.15",
+            "/kernel/sched/ext_idle.c",
+        ),
+        (
+            "scx_bpf_pick_any_cpu_node",
+            "kfunc:scx_bpf_pick_any_cpu_node",
+            "6.15",
+            "/kernel/sched/ext_idle.c",
+        ),
+        (
+            "scx_bpf_pick_idle_cpu_node",
+            "kfunc:scx_bpf_pick_idle_cpu_node",
+            "6.15",
+            "/kernel/sched/ext_idle.c",
+        ),
+        (
             "scx_bpf_select_cpu_and",
             "kfunc:scx_bpf_select_cpu_and",
             "6.16",
@@ -4286,15 +4316,11 @@ fn test_kfunc_kernel_compatibility_metadata() {
             .map(KfuncCompatibilityRequirement::minimum_kernel),
         Some("6.5")
     );
-    let removed_scx_requirement =
-        KfuncCompatibilityRequirement::for_name("scx_bpf_get_idle_cpumask")
-            .expect("source-checked removed scx kfunc should be versioned");
-    assert_eq!(
-        removed_scx_requirement.maximum_kernel_exclusive(),
-        Some("6.15")
-    );
-    assert!(removed_scx_requirement.supports_kernel("6.14.9"));
-    assert!(!removed_scx_requirement.supports_kernel("6.15.0"));
+    let moved_scx_requirement = KfuncCompatibilityRequirement::for_name("scx_bpf_get_idle_cpumask")
+        .expect("source-checked moved scx kfunc should be versioned");
+    assert_eq!(moved_scx_requirement.maximum_kernel_exclusive(), None);
+    assert!(moved_scx_requirement.supports_kernel("6.14.9"));
+    assert!(moved_scx_requirement.supports_kernel("6.15.0"));
 
     let requirements = [
         KfuncCompatibilityRequirement::for_name("bpf_task_acquire")
