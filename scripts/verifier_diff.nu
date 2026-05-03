@@ -3645,6 +3645,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tcx-ingress-skb-context-write"
+        category: "context-surface"
+        tags: [tcx context packet writable]
+        requires: [loopback-interface]
+        target: "tcx:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  $ctx.mark = 7'
+            '  $ctx.priority = 3'
+            '  "next"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "netkit-primary-skb-context-write"
         category: "context-surface"
         tags: [netkit context packet writable]
