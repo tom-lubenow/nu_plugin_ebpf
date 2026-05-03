@@ -122,7 +122,27 @@ fn collect_map_value_compatibility_requirements_for_type(
     seen: &mut HashSet<MapValueCompatibilityRequirement>,
     requirements: &mut Vec<MapValueCompatibilityRequirement>,
 ) {
-    let requirement = if ty.is_bpf_spin_lock_struct() {
+    let root_requirements = ty.bpf_graph_root_info().map(|root| match root.kind {
+        crate::compiler::mir::BpfGraphRootKind::ListHead => (
+            MapValueCompatibilityRequirement::BpfListHead,
+            MapValueCompatibilityRequirement::BpfListNode,
+        ),
+        crate::compiler::mir::BpfGraphRootKind::RbRoot => (
+            MapValueCompatibilityRequirement::BpfRbRoot,
+            MapValueCompatibilityRequirement::BpfRbNode,
+        ),
+    });
+    if let Some((root_requirement, node_requirement)) = root_requirements {
+        for requirement in [root_requirement, node_requirement] {
+            if seen.insert(requirement) {
+                requirements.push(requirement);
+            }
+        }
+    }
+
+    let requirement = if root_requirements.is_some() {
+        None
+    } else if ty.is_bpf_spin_lock_struct() {
         Some(MapValueCompatibilityRequirement::BpfSpinLock)
     } else if ty.is_bpf_timer_struct() {
         Some(MapValueCompatibilityRequirement::BpfTimer)

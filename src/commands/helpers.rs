@@ -397,8 +397,9 @@ operations, including verifier-sensitive value fields such as `bpf_timer`.
 
 Supported key type specs match `global-define --type` fixed-layout specs.
 Supported value type specs use the same fixed-layout specs and also allow
-`bpf_timer`, `bpf_spin_lock`, `bpf_wq`, `bpf_refcount`, and `kptr:TYPE`
-inside map-value records.
+`bpf_timer`, `bpf_spin_lock`, `bpf_wq`, `bpf_refcount`, `kptr:TYPE`,
+`bpf_list_head:TYPE:FIELD`, and `bpf_rb_root:TYPE:FIELD` inside map-value
+records.
 Source-level `record{...}` specs use natural field alignment and aligned array
 stride; padding is zero-filled by typed initializers and hidden from emitted
 BTF members.
@@ -409,14 +410,17 @@ map. `bpf_wq` and `bpf_refcount` are also top-level verifier-managed fields
 for hash, array, or lru-hash maps. `kptr:TYPE` declares an 8-byte-aligned
 top-level map-value kptr slot for hash, array, or lru-hash maps and emits the
 required `__kptr` BTF type tag.
-Graph fields such as `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, and
-`bpf_rb_node` are intentionally not accepted as bare field tokens yet because
-they require a named object schema and `contains:TYPE:FIELD` BTF tags.
+Graph roots use `bpf_list_head:TYPE:FIELD` or `bpf_rb_root:TYPE:FIELD`, where
+`TYPE` is the contained object type name and `FIELD` is its list/rbtree node
+field; the compiler emits the matching `contains:TYPE:FIELD` BTF declaration
+tag. Bare `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, and `bpf_rb_node`
+tokens are intentionally still rejected.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024
+  map-define graph_items --kind hash --value-type 'record{root:bpf_list_head:node_data:node,cookie:u64}'
   let entry = (0 | map-get timers --kind array)
   if $entry != 0 { helper-call "bpf_timer_start" $entry.timer 1000 0 }"#
     }

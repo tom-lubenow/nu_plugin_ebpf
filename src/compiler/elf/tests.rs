@@ -10241,6 +10241,46 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
             .map_value_compatibility_requirements()
             .is_empty()
     );
+
+    let graph_root_map = MapRef {
+        name: "graph_items".to_string(),
+        kind: MapKind::Hash,
+    };
+    let graph_root_value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "root".to_string(),
+            ty: MirType::bpf_list_head_root_struct("node_data", "node"),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let graph_root_program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "graph_root_map",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "graph_items".to_string(),
+            def: BpfMapDef::hash(4, graph_root_value_ty.size() as u32, 16),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(graph_root_map, graph_root_value_ty)]),
+        HashMap::new(),
+    );
+    assert_eq!(
+        graph_root_program.map_value_compatibility_requirements(),
+        vec![
+            MapValueCompatibilityRequirement::BpfListHead,
+            MapValueCompatibilityRequirement::BpfListNode,
+        ]
+    );
 }
 
 #[test]

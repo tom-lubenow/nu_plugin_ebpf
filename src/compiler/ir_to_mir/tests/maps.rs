@@ -5,7 +5,7 @@ use crate::compiler::EbpfProgramType;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
-use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, StructField};
+use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, BpfGraphRootKind, StructField};
 use nu_protocol::ast::{CellPath, Comparison, Operator};
 use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
@@ -3192,16 +3192,81 @@ fn test_map_value_type_spec_supports_bpf_refcount() {
 }
 
 #[test]
-fn test_map_value_type_spec_rejects_bare_graph_root() {
-    let err = HirToMirLowering::parse_named_map_value_type_spec(
+fn test_map_value_type_spec_supports_graph_root_schema() {
+    let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
         "record{root:bpf_list_head:node_data:node,counter:u64}",
     )
-    .expect_err("bare list root should require named object schema support");
+    .expect("graph root map value type should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let user_fields = fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_fields.len(), 2);
+    assert_eq!(user_fields[0].name, "root");
+    assert_eq!(
+        user_fields[0].ty,
+        MirType::bpf_list_head_root_struct("node_data", "node")
+    );
+    let root = user_fields[0]
+        .ty
+        .bpf_graph_root_info()
+        .expect("root should carry contains metadata");
+    assert_eq!(root.kind, BpfGraphRootKind::ListHead);
+    assert_eq!(root.value_type, "node_data");
+    assert_eq!(root.node_field, "node");
+    assert_eq!(user_fields[0].offset, 0);
+    assert_eq!(user_fields[1].name, "counter");
+    assert_eq!(user_fields[1].ty, MirType::U64);
+    assert_eq!(user_fields[1].offset, 16);
+}
+
+#[test]
+fn test_map_value_type_spec_supports_rbtree_root_schema() {
+    let (ty, semantics) =
+        HirToMirLowering::parse_named_map_value_type_spec("record{root:bpf_rb_root:rb_item:rb}")
+            .expect("rbtree root map value type should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let root = fields
+        .iter()
+        .find(|field| field.name == "root")
+        .and_then(|field| field.ty.bpf_graph_root_info())
+        .expect("rbtree root should carry contains metadata");
+    assert_eq!(root.kind, BpfGraphRootKind::RbRoot);
+    assert_eq!(root.value_type, "rb_item");
+    assert_eq!(root.node_field, "rb");
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_bare_graph_root() {
+    let err =
+        HirToMirLowering::parse_named_map_value_type_spec("record{root:bpf_list_head,counter:u64}")
+            .expect_err("bare list root should require named object schema support");
 
     let msg = err.to_string();
     assert!(msg.contains("map value graph type spec"));
     assert!(msg.contains("named object type schema"));
     assert!(msg.contains("contains:TYPE:FIELD"));
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_invalid_graph_root_schema() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_rb_root:rb-item:rb,counter:u64}",
+    )
+    .expect_err("invalid graph object type name should be rejected");
+
+    let msg = err.to_string();
+    assert!(msg.contains("map value graph root type spec"));
+    assert!(msg.contains("requires a named object type"));
 }
 
 #[test]
@@ -3373,6 +3438,11 @@ fn test_map_value_type_validation_accepts_managed_fields() {
         .expect("aligned bpf_wq in lru hash map should validate");
     validate_map_value_type_spec_for_kind("record{refs:bpf_refcount,cookie:u64}", MapKind::LruHash)
         .expect("aligned bpf_refcount in lru hash map should validate");
+    validate_map_value_type_spec_for_kind(
+        "record{root:bpf_list_head:node_data:node,cookie:u64}",
+        MapKind::Hash,
+    )
+    .expect("graph roots with source contains metadata should be valid for hash maps");
 }
 
 #[test]

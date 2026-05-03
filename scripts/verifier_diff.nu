@@ -4223,13 +4223,27 @@ const FIXTURES = [
         error_contains: "arrays of verifier-managed bpf_refcount"
     }
     {
-        name: "map-define-rejects-bare-graph-field"
+        name: "map-define-graph-root-schema"
+        category: "maps"
+        tags: [maps map-define graph accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "map-define-rejects-bare-graph-root"
         category: "maps"
         tags: [maps map-define graph reject]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head,cookie:u64}"'
             '  0'
             '}'
         ]
@@ -6370,6 +6384,12 @@ def program-map-value-kernel-features [source: string] {
             if ($line | str contains $entry.token) {
                 $features = (append-missing-kernel-features $features [$entry.feature])
             }
+        }
+        if ($line | str contains "bpf_list_head:") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_VALUE_BPF_LIST_NODE])
+        }
+        if ($line | str contains "bpf_rb_root:") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_VALUE_BPF_RB_NODE])
         }
     }
 

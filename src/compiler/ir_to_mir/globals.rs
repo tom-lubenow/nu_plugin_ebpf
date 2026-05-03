@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::BpfGraphRootKind;
 
 const MAX_NAMED_GLOBAL_NUMERIC_LIST_CAPACITY: usize = 60;
 
@@ -55,6 +56,11 @@ enum NamedGlobalTypeShape {
     BpfRefcount,
     BpfKptr {
         pointee_name: String,
+    },
+    BpfGraphRoot {
+        kind: BpfGraphRootKind,
+        value_type: String,
+        node_field: String,
     },
     FixedArray {
         elem: Box<ParsedNamedGlobalType>,
@@ -292,6 +298,31 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape: NamedGlobalTypeShape::BpfRefcount,
+            });
+        }
+
+        if context == NamedTypeSpecContext::MapValue
+            && let Some((kind, value_type, node_field)) = Self::parse_graph_root_type_spec(spec)?
+        {
+            let ty = match kind {
+                BpfGraphRootKind::ListHead => {
+                    MirType::bpf_list_head_root_struct(&value_type, &node_field)
+                }
+                BpfGraphRootKind::RbRoot => {
+                    MirType::bpf_rb_root_struct_with_contains(&value_type, &node_field)
+                }
+            };
+            return Ok(Self {
+                ty,
+                list_max_len: None,
+                string_slot_len: None,
+                string_content_cap: None,
+                semantics: None,
+                shape: NamedGlobalTypeShape::BpfGraphRoot {
+                    kind,
+                    value_type,
+                    node_field,
+                },
             });
         }
 
@@ -595,7 +626,7 @@ impl ParsedNamedGlobalType {
             NamedTypeSpecContext::MapValue => "map value",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
-            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, and kptr:TYPE"
+            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, kptr:TYPE, bpf_list_head:TYPE:FIELD, and bpf_rb_root:TYPE:FIELD"
         } else {
             ""
         };
@@ -614,6 +645,45 @@ impl ParsedNamedGlobalType {
             return false;
         }
         chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    }
+
+    fn parse_graph_root_type_spec(
+        spec: &str,
+    ) -> Result<Option<(BpfGraphRootKind, String, String)>, CompileError> {
+        let Some((kind, rest)) = spec
+            .strip_prefix("bpf_list_head:")
+            .map(|rest| (BpfGraphRootKind::ListHead, rest))
+            .or_else(|| {
+                spec.strip_prefix("bpf_rb_root:")
+                    .map(|rest| (BpfGraphRootKind::RbRoot, rest))
+            })
+        else {
+            return Ok(None);
+        };
+
+        let Some((value_type, node_field)) = rest.split_once(':') else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value graph root type spec '{}' must use {}:TYPE:FIELD syntax",
+                spec,
+                kind.root_struct_name()
+            )));
+        };
+        if !Self::is_valid_kernel_type_name(value_type) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value graph root type spec '{}' requires a named object type like {}:node_data:node",
+                spec,
+                kind.root_struct_name()
+            )));
+        }
+        if !Self::is_valid_kernel_type_name(node_field) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value graph root type spec '{}' requires a valid node field name like {}:node_data:node",
+                spec,
+                kind.root_struct_name()
+            )));
+        }
+
+        Ok(Some((kind, value_type.to_string(), node_field.to_string())))
     }
 
     fn is_graph_object_type_spec_candidate(spec: &str) -> bool {
@@ -857,6 +927,17 @@ impl ParsedNamedGlobalType {
                     spec, pointee_name
                 )))
             }
+            NamedGlobalTypeShape::BpfGraphRoot {
+                kind,
+                value_type,
+                node_field,
+            } => Err(CompileError::UnsupportedInstruction(format!(
+                "global type spec '{}' cannot initialize verifier-managed {} roots for object type {}.{}",
+                spec,
+                kind.root_struct_name(),
+                value_type,
+                node_field
+            ))),
             NamedGlobalTypeShape::FixedArray { elem, len } => {
                 let Value::List { vals, .. } = value else {
                     return Err(CompileError::UnsupportedInstruction(format!(
