@@ -1310,6 +1310,8 @@ fn test_probe_context_for_struct_ops_object_has_no_callback_args() {
     assert_eq!(ctx.program_type(), EbpfProgramType::StructOps);
     assert_eq!(ctx.target(), "sched_ext_ops");
     assert_eq!(ctx.struct_ops_value_type_name(), Some("sched_ext_ops"));
+    assert_eq!(ctx.btf_callable_surface(), None);
+    assert_eq!(ctx.btf_context_label(), "struct_ops:sched_ext_ops");
     assert_eq!(ctx.arg_access(), ProgramValueAccess::None);
     assert_eq!(ctx.retval_access(), ProgramValueAccess::None);
     assert!(!ctx.uses_btf_trampoline());
@@ -3911,6 +3913,16 @@ fn test_probe_context_main_return_type_defaults_to_i64_outside_struct_ops() {
     assert_eq!(
         ctx.main_function_expected_return_type()
             .expect("non-struct_ops return contract should resolve"),
+        Some(HMType::I64)
+    );
+
+    let struct_ops_object = ProbeContext::from_program_spec(
+        ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops object spec"),
+    );
+    assert_eq!(
+        struct_ops_object
+            .main_function_expected_return_type()
+            .expect("struct_ops object return contract should not use callback BTF"),
         Some(HMType::I64)
     );
 }

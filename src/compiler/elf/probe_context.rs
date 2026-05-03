@@ -111,6 +111,13 @@ impl ProbeContext {
         self.program_type().info()
     }
 
+    pub(crate) fn btf_callable_surface(&self) -> Option<ProgramBtfCallableSurface> {
+        self.parsed_program_spec().map_or_else(
+            || self.program_type().btf_callable_surface(),
+            ProgramSpec::btf_callable_surface,
+        )
+    }
+
     pub(crate) fn canonical_prefix(&self) -> &'static str {
         self.program_type().canonical_prefix()
     }
@@ -371,7 +378,7 @@ impl ProbeContext {
             }
         }
 
-        match self.program_type().btf_callable_surface() {
+        match self.btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => format!(
                 "struct_ops {}.{}",
                 self.struct_ops_value_type_name().unwrap_or("<unknown>"),
@@ -414,7 +421,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type().btf_callable_surface() {
+        match self.btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_index_by_name(value_type_name, &self.target, arg_name)
@@ -467,7 +474,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type().btf_callable_surface() {
+        match self.btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg(value_type_name, &self.target, arg_idx)
@@ -517,7 +524,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type().btf_callable_surface() {
+        match self.btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_infos(value_type_name, &self.target)
@@ -565,7 +572,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type().btf_callable_surface() {
+        match self.btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_type_info(value_type_name, &self.target, arg_idx)
@@ -620,7 +627,7 @@ impl ProbeContext {
         }
 
         let btf = KernelBtf::get();
-        match self.program_type().btf_callable_surface() {
+        match self.btf_callable_surface() {
             Some(ProgramBtfCallableSurface::StructOpsCallback) => {
                 let value_type_name = self.require_struct_ops_value_type_name()?;
                 btf.struct_ops_callback_arg_field(
@@ -802,7 +809,7 @@ impl ProbeContext {
 
     pub(crate) fn main_function_expected_return_type(&self) -> Result<Option<HMType>, String> {
         if !matches!(
-            self.program_type().btf_callable_surface(),
+            self.btf_callable_surface(),
             Some(ProgramBtfCallableSurface::StructOpsCallback)
         ) {
             return Ok(Some(HMType::I64));
