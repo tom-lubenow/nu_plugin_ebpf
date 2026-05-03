@@ -2275,6 +2275,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "raw-tracepoint-random-context"
+        category: "context-surface"
+        tags: [raw-tracepoint context random]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.random + $ctx.prandom_u32) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "kprobe-multi-context"
         category: "tracing"
         tags: [kprobe-multi context]
