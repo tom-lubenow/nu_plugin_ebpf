@@ -369,8 +369,37 @@ pub fn supports_numeric_constant_list(value: &Value) -> bool {
 enum FixedArrayConstantElementShape {
     ScalarI64,
     Binary(usize),
+    String(usize),
     NumericList(usize),
+    FixedArray {
+        elem: Box<FixedArrayConstantElementShape>,
+        len: usize,
+    },
     Record(Vec<(String, FixedArrayConstantElementShape)>),
+}
+
+const FIXED_ARRAY_STRING_MAX_SIZE: usize = 128;
+
+fn fixed_array_string_shape_len(byte_len: usize) -> usize {
+    let content_len = byte_len.min(FIXED_ARRAY_STRING_MAX_SIZE.saturating_sub(1));
+    let aligned_len = (content_len + 1).saturating_add(7) & !7;
+    8 + aligned_len.min(FIXED_ARRAY_STRING_MAX_SIZE).max(16)
+}
+
+fn fixed_array_constant_list_shape(values: &[Value]) -> Option<FixedArrayConstantElementShape> {
+    let (first, rest) = values.split_first()?;
+    let first_shape = fixed_array_constant_element_shape(first)?;
+    if rest
+        .iter()
+        .all(|value| fixed_array_constant_element_shape(value).as_ref() == Some(&first_shape))
+    {
+        Some(FixedArrayConstantElementShape::FixedArray {
+            elem: Box::new(first_shape),
+            len: values.len(),
+        })
+    } else {
+        None
+    }
 }
 
 fn fixed_array_constant_element_shape(value: &Value) -> Option<FixedArrayConstantElementShape> {
@@ -380,9 +409,13 @@ fn fixed_array_constant_element_shape(value: &Value) -> Option<FixedArrayConstan
 
     match value {
         Value::Binary { val, .. } => Some(FixedArrayConstantElementShape::Binary(val.len())),
+        Value::String { val, .. } | Value::Glob { val, .. } => Some(
+            FixedArrayConstantElementShape::String(fixed_array_string_shape_len(val.len())),
+        ),
         Value::List { vals, .. } if vals.iter().all(is_numeric_constant_value) => {
             Some(FixedArrayConstantElementShape::NumericList(vals.len()))
         }
+        Value::List { vals, .. } => fixed_array_constant_list_shape(vals),
         Value::Record { val, .. } => val
             .iter()
             .map(|(name, field)| {
@@ -399,15 +432,7 @@ pub fn supports_fixed_array_constant_list(value: &Value) -> bool {
     let Value::List { vals, .. } = value else {
         return false;
     };
-    let Some((first, rest)) = vals.split_first() else {
-        return false;
-    };
-    let Some(first_shape) = fixed_array_constant_element_shape(first) else {
-        return false;
-    };
-
-    rest.iter()
-        .all(|value| fixed_array_constant_element_shape(value).as_ref() == Some(&first_shape))
+    fixed_array_constant_list_shape(vals).is_some()
 }
 
 pub fn supports_constant_value(value: &Value) -> bool {

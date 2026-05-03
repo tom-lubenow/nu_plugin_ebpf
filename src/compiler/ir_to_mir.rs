@@ -220,21 +220,18 @@ struct RegMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnnotatedValueSemantics {
-    String { slot_len: usize, content_cap: usize },
-    NumericList { max_len: usize },
+    String {
+        slot_len: usize,
+        content_cap: usize,
+    },
+    NumericList {
+        max_len: usize,
+    },
+    FixedArray {
+        elem: Box<AnnotatedValueSemantics>,
+        len: usize,
+    },
     Record(Vec<(String, AnnotatedValueSemantics)>),
-}
-
-impl AnnotatedValueSemantics {
-    fn contains_string(&self) -> bool {
-        match self {
-            AnnotatedValueSemantics::String { .. } => true,
-            AnnotatedValueSemantics::NumericList { .. } => false,
-            AnnotatedValueSemantics::Record(fields) => fields
-                .iter()
-                .any(|(_, semantics)| semantics.contains_string()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

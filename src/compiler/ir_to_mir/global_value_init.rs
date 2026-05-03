@@ -397,6 +397,14 @@ impl<'a> HirToMirLowering<'a> {
                     max_len: vals.len(),
                 }));
             }
+            nu_protocol::Type::List(_)
+                if crate::compiler::hir::supports_fixed_array_constant_list(value) =>
+            {
+                let Value::List { vals, .. } = value else {
+                    return Ok(None);
+                };
+                return Self::fixed_array_value_semantics(vals);
+            }
             nu_protocol::Type::Record(fields) => {
                 let Value::Record { val, .. } = value else {
                     return Ok(None);

@@ -32,6 +32,11 @@ impl<'a> HirToMirLowering<'a> {
                     max_len: vals.len(),
                 }))
             }
+            Value::List { vals, .. }
+                if crate::compiler::hir::supports_fixed_array_constant_list(value) =>
+            {
+                Self::fixed_array_value_semantics(vals)
+            }
             Value::Record { val, .. } => {
                 let mut field_semantics = Vec::new();
                 for (field_name, field_value) in val.iter() {
@@ -52,6 +57,28 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn fixed_array_value_semantics(
+        values: &[Value],
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        let Some((first, rest)) = values.split_first() else {
+            return Ok(None);
+        };
+        let Some(first_semantics) = Self::mutable_global_value_semantics(first)? else {
+            return Ok(None);
+        };
+
+        for value in rest {
+            if Self::mutable_global_value_semantics(value)? != Some(first_semantics.clone()) {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(first_semantics),
+            len: values.len(),
+        }))
+    }
+
     pub(super) fn project_annotated_value_semantics(
         semantics: &AnnotatedValueSemantics,
         path_members: &[PathMember],
@@ -62,6 +89,10 @@ impl<'a> HirToMirLowering<'a> {
                 (AnnotatedValueSemantics::Record(fields), PathMember::String { val, .. }) => fields
                     .into_iter()
                     .find_map(|(name, semantics)| (name == *val).then_some(semantics))?,
+                (
+                    AnnotatedValueSemantics::FixedArray { elem, len },
+                    PathMember::Int { val, .. },
+                ) if *val < len => *elem,
                 _ => return None,
             };
         }
@@ -429,17 +460,18 @@ impl<'a> HirToMirLowering<'a> {
         {
             return Ok((ty, data));
         }
+        if crate::compiler::hir::supports_fixed_array_constant_list(value)
+            && let Value::List { vals, .. } = value
+        {
+            return Self::constant_fixed_array_rodata_repr(vals);
+        }
+        if let Some((ty, data, _slot_len)) = Self::mutable_string_global_repr(value) {
+            return Ok((ty, data));
+        }
         if let Value::Binary { val, .. } = value {
             return Self::binary_constant_rodata_repr(val);
         }
         if let Value::Record { val, .. } = value {
-            if let Some(semantics) = Self::mutable_global_value_semantics(value)?
-                && semantics.contains_string()
-            {
-                return Err(CompileError::UnsupportedInstruction(
-                    "constant fixed arrays do not yet support record elements containing string buffers".into(),
-                ));
-            }
             return Self::constant_record_rodata_repr(val);
         }
 

@@ -202,32 +202,29 @@ fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
 
 impl ParsedNamedGlobalType {
     fn is_fixed_array_element_type(&self) -> bool {
-        !self
-            .semantics
-            .as_ref()
-            .is_some_and(AnnotatedValueSemantics::contains_string)
-            && matches!(
-                &self.shape,
-                NamedGlobalTypeShape::I8
-                    | NamedGlobalTypeShape::I16
-                    | NamedGlobalTypeShape::I32
-                    | NamedGlobalTypeShape::I64
-                    | NamedGlobalTypeShape::Duration
-                    | NamedGlobalTypeShape::Filesize
-                    | NamedGlobalTypeShape::U8
-                    | NamedGlobalTypeShape::U16
-                    | NamedGlobalTypeShape::U32
-                    | NamedGlobalTypeShape::U64
-                    | NamedGlobalTypeShape::Bool
-                    | NamedGlobalTypeShape::Bytes { .. }
-                    | NamedGlobalTypeShape::NumericList { .. }
-                    | NamedGlobalTypeShape::BpfTimer
-                    | NamedGlobalTypeShape::BpfSpinLock
-                    | NamedGlobalTypeShape::BpfWq
-                    | NamedGlobalTypeShape::BpfRefcount
-                    | NamedGlobalTypeShape::FixedArray { .. }
-                    | NamedGlobalTypeShape::Record(_)
-            )
+        matches!(
+            &self.shape,
+            NamedGlobalTypeShape::I8
+                | NamedGlobalTypeShape::I16
+                | NamedGlobalTypeShape::I32
+                | NamedGlobalTypeShape::I64
+                | NamedGlobalTypeShape::Duration
+                | NamedGlobalTypeShape::Filesize
+                | NamedGlobalTypeShape::U8
+                | NamedGlobalTypeShape::U16
+                | NamedGlobalTypeShape::U32
+                | NamedGlobalTypeShape::U64
+                | NamedGlobalTypeShape::Bool
+                | NamedGlobalTypeShape::Bytes { .. }
+                | NamedGlobalTypeShape::String { .. }
+                | NamedGlobalTypeShape::NumericList { .. }
+                | NamedGlobalTypeShape::BpfTimer
+                | NamedGlobalTypeShape::BpfSpinLock
+                | NamedGlobalTypeShape::BpfWq
+                | NamedGlobalTypeShape::BpfRefcount
+                | NamedGlobalTypeShape::FixedArray { .. }
+                | NamedGlobalTypeShape::Record(_)
+        )
     }
 
     fn parse(spec: &str) -> Result<Self, CompileError> {
@@ -501,6 +498,7 @@ impl ParsedNamedGlobalType {
                 )));
             }
             let elem_ty = parsed_elem.ty.clone();
+            let elem_semantics = parsed_elem.semantics.clone();
             return Ok(Self {
                 ty: MirType::Array {
                     elem: Box::new(elem_ty),
@@ -509,7 +507,10 @@ impl ParsedNamedGlobalType {
                 list_max_len: None,
                 string_slot_len: None,
                 string_content_cap: None,
-                semantics: None,
+                semantics: elem_semantics.map(|elem| AnnotatedValueSemantics::FixedArray {
+                    elem: Box::new(elem),
+                    len,
+                }),
                 shape: NamedGlobalTypeShape::FixedArray {
                     elem: Box::new(parsed_elem),
                     len,

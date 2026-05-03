@@ -5670,6 +5670,90 @@ fn test_lower_leading_annotated_mut_record_array_with_nested_numeric_list_field(
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_array_with_nested_string_field() {
+    let global_var = VarId::new(250);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1), string_member("name")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(0),
+                    val: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut first = Record::new();
+    first.push("name", Value::string("aa", Span::test_data()));
+    let mut second = Record::new();
+    second.push("name", Value::string("bb", Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Record(Box::new([(
+            "name".to_string(),
+            Type::String,
+        )])))),
+        initial_value: Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated fixed record arrays should materialize nested string fields");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected projected nested string field to lower through StringAppend"
+    );
+}
+
+#[test]
 fn test_lower_get_with_single_int_cell_path_uses_constant_list_index() {
     let global_var = VarId::new(254);
     let get_decl = DeclId::new(600);
