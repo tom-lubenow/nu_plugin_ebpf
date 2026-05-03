@@ -1167,6 +1167,11 @@ const KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE = {
     min_kernel: "6.15"
     source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c"
 }
+const KERNEL_FEATURE_KFUNC_BPF_SOCK_OPS_ENABLE_TX_TSTAMP = {
+    key: "kfunc:bpf_sock_ops_enable_tx_tstamp"
+    min_kernel: "6.18"
+    source: "https://github.com/torvalds/linux/blob/v6.18/net/core/filter.c"
+}
 const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK = {
     key: "kfunc:scx_bpf_get_idle_cpumask"
     min_kernel: "6.12"
@@ -2441,6 +2446,7 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "bpf_res_spin_unlock", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK }
     { name: "bpf_res_spin_lock_irqsave", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_LOCK_IRQSAVE }
     { name: "bpf_res_spin_unlock_irqrestore", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE }
+    { name: "bpf_sock_ops_enable_tx_tstamp", feature: $KERNEL_FEATURE_KFUNC_BPF_SOCK_OPS_ENABLE_TX_TSTAMP }
     { name: "scx_bpf_get_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK }
     { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
     { name: "scx_bpf_pick_any_cpu", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU }
@@ -4037,6 +4043,21 @@ const FIXTURES = [
             '  $ctx.replylong.0 = 7'
             '  $ctx.cb_flags = 1'
             '  $ctx.sk_txhash = 7'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-enable-tx-tstamp-kfunc"
+        category: "kfunc"
+        tags: [sock-ops kfunc timestamp source metadata]
+        requires: [cgroup-v2 kernel-btf]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_sock_ops_enable_tx_tstamp" $ctx 0'
             '  1'
             '}'
         ]
