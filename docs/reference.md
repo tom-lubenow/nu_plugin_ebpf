@@ -202,12 +202,13 @@ known. These labels describe feature surfaces.
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel/source fields. Source-verified requirements carry minimum
 versions, and `compatibility_minimum_kernel` reports the maximum known
-requirement for the parsed target. Individual context-field records also carry
-nullable `minimum_kernel` and `minimum_kernel_source` fields when direct UAPI
-fields or backing helpers have source-checked introduction points. Mixed
-requirements stay empty until they are split precisely enough to avoid over- or
-under-stating compatibility. When a feature is unmodeled or
-kernel-version-specific, the kernel verifier and loader remain authoritative.
+requirement for the parsed target. Individual context-field and context-write
+records also carry nullable `minimum_kernel` and `minimum_kernel_source` fields
+when direct UAPI fields, write-only surfaces, or backing helpers have
+source-checked introduction points. Mixed requirements stay empty until they
+are split precisely enough to avoid over- or under-stating compatibility. When
+a feature is unmodeled or kernel-version-specific, the kernel verifier and
+loader remain authoritative.
 
 Kernel-BTF-backed attach specs accept both the normal and sleepable
 section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,
@@ -635,10 +636,11 @@ parameterized helper projections such as `ancestor_cgroup_id.N`,
 `source = helper_call` and a null `offset`, because they are not direct
 struct-field byte offsets.
 `context_writes` rows report the assignment kind, whether the write requires a
-fixed index, and any helper or kfunc used by the write surface. Known
-ABI-backed writes include the helper/kfunc minimum-kernel and source fields, so
-surfaces such as `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and `ctx.sun_path`
-can be inspected before writing code that depends on them.
+fixed index, the direct write-surface minimum kernel when known, and any helper
+or kfunc used by the write surface. Known ABI-backed writes include separate
+helper/kfunc minimum-kernel and source fields, so surfaces such as `ctx.reply`,
+`ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and `ctx.sun_path` can be
+inspected before writing code that depends on them.
 
 ## Helper Commands (inside closures)
 

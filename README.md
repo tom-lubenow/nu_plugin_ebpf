@@ -42,9 +42,10 @@ object. `ebpf spec`
 also reports source-backed
 minimum-kernel/source fields on individual context-field records when direct
 UAPI fields or backing helpers have known introduction points.
-Writable context surface records report whether an assignment lowers through a
-helper or kfunc, including source-backed minimum-kernel/source fields for known
-ABI-backed writes such as `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and
+Writable context surface records report direct write-surface floors when known
+and whether an assignment lowers through a helper or kfunc, including separate
+source-backed minimum-kernel/source fields for ABI-backed writes such as
+`ctx.reply`, `ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and
 `ctx.sun_path`.
 Mixed requirements stay nullable until they are split precisely enough to avoid
 misleading compatibility claims. The kernel verifier remains the final
@@ -108,7 +109,8 @@ include the selected helper and its own floor. Helper-call projections such as
 `ancestor_cgroup_id.N` are advertised with `source = helper_call` and a null
 `offset`, because they are not direct struct-field byte offsets.
 The `context_writes` table similarly reports assignment kind, indexed-write
-shape, and any helper/kfunc ABI dependency plus its known kernel floor.
+shape, the direct write-surface kernel floor when known, and any helper/kfunc
+ABI dependency plus its own known kernel floor.
 
 Structured `attach_shape` records are emitted for attach families where the
 parsed target or attach resource changes compiler, loader, or verifier policy:

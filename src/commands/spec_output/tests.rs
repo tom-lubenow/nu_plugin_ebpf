@@ -2376,11 +2376,30 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let sock_ops =
         ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
     let sock_ops_writes = spec_context_writes(&sock_ops);
+    let reply = context_write(&sock_ops_writes, "reply");
+    assert_eq!(reply.kind, "store");
+    assert_eq!(reply.minimum_kernel, Some("4.14"));
+    assert!(reply.helper.is_none());
+
+    let replylong = context_write(&sock_ops_writes, "replylong");
+    assert_eq!(replylong.kind, "store");
+    assert!(replylong.indexed);
+    assert_eq!(replylong.minimum_kernel, Some("4.14"));
+
     let cb_flags = context_write(&sock_ops_writes, "cb_flags");
     assert_eq!(cb_flags.kind, "store");
+    assert_eq!(cb_flags.minimum_kernel, Some("4.16"));
     assert_eq!(cb_flags.helper, Some("bpf_sock_ops_cb_flags_set"));
     assert_eq!(cb_flags.helper_minimum_kernel, Some("4.16"));
     assert!(cb_flags.kfunc.is_none());
+
+    let cgroup_sock = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:sock_create")
+        .expect("cgroup_sock spec should parse");
+    let cgroup_sock_writes = spec_context_writes(&cgroup_sock);
+    let bound_dev_if = context_write(&cgroup_sock_writes, "bound_dev_if");
+    assert_eq!(bound_dev_if.minimum_kernel, Some("4.10"));
+    let mark = context_write(&cgroup_sock_writes, "mark");
+    assert_eq!(mark.minimum_kernel, Some("4.14"));
 
     let cgroup_sysctl = ProgramSpec::parse("cgroup_sysctl:/sys/fs/cgroup")
         .expect("cgroup_sysctl spec should parse");
@@ -2396,6 +2415,13 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(sk.kind, "assign-socket");
     assert_eq!(sk.helper, Some("bpf_sk_assign"));
     assert_eq!(sk.helper_minimum_kernel, Some("5.7"));
+
+    let cgroup_sockopt_set = ProgramSpec::parse("cgroup_sockopt:/sys/fs/cgroup:set")
+        .expect("cgroup_sockopt set spec should parse");
+    let cgroup_sockopt_writes = spec_context_writes(&cgroup_sockopt_set);
+    let optval = context_write(&cgroup_sockopt_writes, "optval");
+    assert_eq!(optval.kind, "sockopt-optval-byte");
+    assert_eq!(optval.minimum_kernel, Some("5.3"));
 
     let unix_sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup_sock_addr unix spec should parse");
@@ -2431,6 +2457,14 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
         })
         .expect("ctx.cb_flags write should be present");
 
+    assert_eq!(
+        cb_flags
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .as_str()
+            .expect("minimum kernel should be a string"),
+        "4.16"
+    );
     assert_eq!(
         cb_flags
             .get("helper")
