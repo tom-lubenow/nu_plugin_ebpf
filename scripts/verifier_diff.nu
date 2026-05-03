@@ -6371,6 +6371,27 @@ def program-map-kernel-features [source: string] {
     $features
 }
 
+def program-reserved-map-kernel-features [source: string] {
+    mut features = []
+
+    for line in ($source | lines) {
+        if (($line | str contains "| emit") or ($line | str contains " events")) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_RINGBUF])
+        }
+        if ($line | str contains " user_events") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_USER_RINGBUF])
+        }
+        if ($line | str contains " perf_events") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY])
+        }
+        if (($line | str contains " kstacks") or ($line | str contains " ustacks")) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_STACK_TRACE])
+        }
+    }
+
+    $features
+}
+
 def program-map-value-kernel-features [source: string] {
     mut features = []
 
@@ -6730,6 +6751,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (target-kernel-features ($fixture | get -o target)))
     let program = (fixture-program $fixture)
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
+    $features = (append-missing-kernel-features $features (program-reserved-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-map-value-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-global-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
