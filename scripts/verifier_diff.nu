@@ -3663,6 +3663,37 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tcx-egress-helper-backed-context"
+        category: "context-surface"
+        tags: [tcx context helper-backed egress]
+        requires: [loopback-interface]
+        target: "tcx:lo:egress"
+        program: [
+            '{|ctx|'
+            '  ($ctx.skb_cgroup_id + $ctx.route_realm + $ctx.cgroup_classid + $ctx.netns_cookie) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tcx-ingress-rejects-egress-context"
+        category: "context-policy"
+        tags: [tcx context reject egress-only]
+        requires: [loopback-interface]
+        target: "tcx:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx.skb_cgroup_id | count'
+            '  "next"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.skb_cgroup_id is only available on tc/tcx egress programs"
+    }
+    {
         name: "netkit-primary-skb-context-write"
         category: "context-surface"
         tags: [netkit context packet writable]
