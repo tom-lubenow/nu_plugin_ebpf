@@ -1262,6 +1262,34 @@ const KERNEL_FEATURE_KFUNC_BPF_SOCK_OPS_ENABLE_TX_TSTAMP = {
     min_kernel: "6.18"
     source: "https://github.com/torvalds/linux/blob/v6.18/net/core/filter.c"
 }
+const KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT = {
+    key: "kfunc:scx_bpf_dsq_insert"
+    min_kernel: "6.13"
+    max_kernel_exclusive: "6.23"
+    source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT_V2 = {
+    key: "kfunc:scx_bpf_dsq_insert___v2"
+    min_kernel: "6.19"
+    source: "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT_VTIME = {
+    key: "kfunc:scx_bpf_dsq_insert_vtime"
+    min_kernel: "6.13"
+    max_kernel_exclusive: "6.23"
+    source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_REENQUEUE_LOCAL = {
+    key: "kfunc:scx_bpf_reenqueue_local"
+    min_kernel: "6.12"
+    max_kernel_exclusive: "6.23"
+    source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
+}
+const KERNEL_FEATURE_KFUNC_SCX_BPF_REENQUEUE_LOCAL_V2 = {
+    key: "kfunc:scx_bpf_reenqueue_local___v2"
+    min_kernel: "6.19"
+    source: "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c"
+}
 const KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK = {
     key: "kfunc:scx_bpf_get_idle_cpumask"
     min_kernel: "6.12"
@@ -2555,6 +2583,11 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "bpf_res_spin_unlock_irqrestore", feature: $KERNEL_FEATURE_KFUNC_BPF_RES_SPIN_UNLOCK_IRQRESTORE }
     { name: "bpf_sock_addr_set_sun_path", feature: $KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH }
     { name: "bpf_sock_ops_enable_tx_tstamp", feature: $KERNEL_FEATURE_KFUNC_BPF_SOCK_OPS_ENABLE_TX_TSTAMP }
+    { name: "scx_bpf_dsq_insert", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT }
+    { name: "scx_bpf_dsq_insert___v2", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT_V2 }
+    { name: "scx_bpf_dsq_insert_vtime", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT_VTIME }
+    { name: "scx_bpf_reenqueue_local", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_REENQUEUE_LOCAL }
+    { name: "scx_bpf_reenqueue_local___v2", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_REENQUEUE_LOCAL_V2 }
     { name: "scx_bpf_get_idle_cpumask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_CPUMASK }
     { name: "scx_bpf_get_idle_smtmask", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_GET_IDLE_SMTMASK }
     { name: "scx_bpf_pick_any_cpu", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_ANY_CPU }
@@ -5811,6 +5844,23 @@ const FIXTURES = [
             '    select_cpu: {|ctx|'
             '        let prev = $ctx.arg.prev_cpu'
             '        kfunc-call "scx_bpf_cpu_node" $prev'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sched-ext-compat-window"
+        category: "kfunc"
+        tags: [kfunc sched-ext source metadata compat-window]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    cpu_release: {|ctx|'
+            '        let ignored = (kfunc-call "scx_bpf_reenqueue_local")'
+            '        0'
             '    }'
             '}'
         ]
