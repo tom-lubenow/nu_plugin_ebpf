@@ -4354,7 +4354,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut ctx = $ctx'
-            '  ($ctx.op + ($ctx.args | get 0) + $ctx.family + $ctx.remote_port + $ctx.socket_cookie + $ctx.netns_cookie + $ctx.sk.family) | count'
+            '  ($ctx.op + ($ctx.args | get 0) + $ctx.reply + ($ctx.replylong | get 0) + $ctx.family + $ctx.remote_port + $ctx.socket_cookie + $ctx.netns_cookie + $ctx.sk.family) | count'
             '  $ctx.reply = 1'
             '  $ctx.replylong.0 = 7'
             '  $ctx.cb_flags = 1'
