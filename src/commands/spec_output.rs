@@ -48,6 +48,7 @@ struct SpecContextWrite {
     kfunc: Option<&'static str>,
     kfunc_minimum_kernel: Option<&'static str>,
     kfunc_minimum_kernel_source: Option<&'static str>,
+    kfunc_maximum_kernel_exclusive: Option<&'static str>,
 }
 
 #[cfg(target_os = "linux")]
@@ -1211,6 +1212,9 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                 kfunc_minimum_kernel_source: kfunc_requirement
                     .as_ref()
                     .map(|requirement| requirement.minimum_kernel_source()),
+                kfunc_maximum_kernel_exclusive: kfunc_requirement
+                    .as_ref()
+                    .and_then(|requirement| requirement.maximum_kernel_exclusive()),
             }
         })
         .collect()
@@ -1234,6 +1238,7 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "kfunc" => optional_static_str(surface.kfunc, span),
                     "kfunc_minimum_kernel" => optional_static_str(surface.kfunc_minimum_kernel, span),
                     "kfunc_minimum_kernel_source" => optional_static_str(surface.kfunc_minimum_kernel_source, span),
+                    "kfunc_maximum_kernel_exclusive" => optional_static_str(surface.kfunc_maximum_kernel_exclusive, span),
                 },
                 span,
             )

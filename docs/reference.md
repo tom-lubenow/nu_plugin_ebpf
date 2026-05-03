@@ -645,9 +645,10 @@ struct-field byte offsets.
 `context_writes` rows report the assignment kind, whether the write requires a
 fixed index, the direct write-surface minimum kernel when known, and any helper
 or kfunc used by the write surface. Known ABI-backed writes include separate
-helper/kfunc minimum-kernel and source fields, so surfaces such as `ctx.reply`,
-`ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and `ctx.sun_path` can be
-inspected before writing code that depends on them.
+helper/kfunc minimum-kernel and source fields, plus nullable kfunc
+maximum-exclusive windows, so surfaces such as `ctx.reply`, `ctx.mark`,
+`ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and `ctx.sun_path` can be inspected
+before writing code that depends on them.
 
 ## Helper Commands (inside closures)
 

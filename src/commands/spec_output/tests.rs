@@ -2439,6 +2439,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(sun_path.kind, "sun-path");
     assert_eq!(sun_path.kfunc, Some("bpf_sock_addr_set_sun_path"));
     assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
+    assert_eq!(sun_path.kfunc_maximum_kernel_exclusive, None);
     assert!(sun_path.helper.is_none());
 }
 
@@ -2494,6 +2495,12 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
         cb_flags
             .get("kfunc")
             .expect("kfunc should be present")
+            .is_nothing()
+    );
+    assert!(
+        cb_flags
+            .get("kfunc_maximum_kernel_exclusive")
+            .expect("kfunc maximum kernel should be present")
             .is_nothing()
     );
 }
