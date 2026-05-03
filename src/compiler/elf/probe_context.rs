@@ -280,6 +280,9 @@ impl ProbeContext {
             return Self::from_program_spec(program_spec);
         }
         if let Ok(program_spec) = ProgramSpec::from_program_type_target(probe_type, &target) {
+            if program_spec.struct_ops_callback_name().is_some() {
+                return Self::from_program_spec(program_spec);
+            }
             return Self::from_program_spec_parts(program_spec, target);
         }
         Self {

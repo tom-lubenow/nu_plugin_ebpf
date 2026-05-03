@@ -1297,6 +1297,25 @@ fn test_probe_context_for_struct_ops_object_has_no_callback_args() {
 }
 
 #[test]
+fn test_probe_context_new_canonicalizes_struct_ops_callback_target() {
+    let ctx = ProbeContext::new(EbpfProgramType::StructOps, "sched_ext_ops.select_cpu");
+
+    assert_eq!(ctx.program_type(), EbpfProgramType::StructOps);
+    assert_eq!(ctx.target(), "select_cpu");
+    assert!(matches!(
+        ctx.parsed_program_spec(),
+        Some(ProgramSpec::StructOpsCallback {
+            value_type_name,
+            callback_name,
+        }) if value_type_name == "sched_ext_ops" && callback_name == "select_cpu"
+    ));
+    assert_eq!(
+        ctx.btf_context_label(),
+        "struct_ops sched_ext_ops.select_cpu"
+    );
+}
+
+#[test]
 fn test_probe_context_tracepoint_parts_use_typed_program_spec() {
     let ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "sched/sched_switch");
     assert_eq!(
