@@ -4055,6 +4055,90 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_write' arg0 requires initialized dynptr stack object"
     }
     {
+        name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let d = "0123456789abcdef"'
+            '    kfunc-call "bpf_copy_from_user_dynptr" $d 0 4 $ptr'
+            '    let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '    $size | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-copy-from-user-rejects-reinitialize"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let d = "0123456789abcdef"'
+            '    kfunc-call "bpf_copy_from_user_dynptr" $d 0 4 $ptr'
+            '    kfunc-call "bpf_copy_from_user_dynptr" $d 0 4 $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_copy_from_user_dynptr' arg0 requires uninitialized dynptr stack object slot"
+    }
+    {
+        name: "dynptr-kfunc-copy-from-user-task-initializes-dynptr"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let d = "0123456789abcdef"'
+            '    kfunc-call "bpf_copy_from_user_task_dynptr" $d 0 4 $ptr $ctx.current_task'
+            '    let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '    $size | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-copy-from-user-task-str-initializes-dynptr"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let d = "0123456789abcdef"'
+            '    kfunc-call "bpf_copy_from_user_task_str_dynptr" $d 0 4 $ptr $ctx.current_task'
+            '    let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '    $size | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "dynptr-kfunc-size-initialized-ringbuf"
         category: "helper-state"
         tags: [kfunc dynptr accept]
