@@ -107,6 +107,57 @@ fn map_define_with_max_entries_hir(
     )
 }
 
+fn map_define_with_value_type_hir(
+    map_name: &str,
+    kind: &str,
+    value_type: &str,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let map_define_decl = DeclId::new(41);
+    let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String(map_name.into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(kind.into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(value_type.into()),
+                },
+                HirStmt::Call {
+                    decl_id: map_define_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(1)),
+                            (b"value-type".to_vec(), RegId::new(2)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(func, HashMap::new(), vec![], None),
+        decl_names,
+    )
+}
+
 fn validate_map_value_type_spec_for_kind(spec: &str, kind: MapKind) -> Result<(), CompileError> {
     let (ty, _) = HirToMirLowering::parse_named_map_value_type_spec(spec)?;
     HirToMirLowering::validate_named_map_value_type_for_map(
@@ -2793,6 +2844,53 @@ fn test_map_define_max_entries_registers_capacity() {
     assert_eq!(
         result.type_hints.generic_map_max_entries.get(&map_ref),
         Some(&128)
+    );
+}
+
+#[test]
+fn test_map_define_graph_root_schema_registers_value_type() {
+    let (hir, decl_names) = map_define_with_value_type_hir(
+        "graph_items",
+        "hash",
+        "record{root:bpf_list_head:node_data:node,cookie:u64}",
+    );
+    let map_ref = MapRef {
+        name: "graph_items".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    let result = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-define graph root schema should lower");
+
+    let value_ty = result
+        .generic_map_value_types
+        .get(&map_ref)
+        .expect("map-define should register a graph root value schema");
+    let MirType::Struct { fields, .. } = value_ty else {
+        panic!("expected record value schema, got {value_ty:?}");
+    };
+    let root = fields
+        .iter()
+        .find(|field| field.name == "root")
+        .and_then(|field| field.ty.bpf_graph_root_info())
+        .expect("root field should carry graph contains metadata");
+    assert_eq!(root.kind, BpfGraphRootKind::ListHead);
+    assert_eq!(root.value_type, "node_data");
+    assert_eq!(root.node_field, "node");
+    assert_eq!(
+        result.type_hints.generic_map_value_types.get(&map_ref),
+        Some(value_ty)
     );
 }
 
