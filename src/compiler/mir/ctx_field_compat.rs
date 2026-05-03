@@ -362,6 +362,27 @@ fn direct_context_field_kernel_floor(
         {
             ("4.17", LINUX_BPF_H_V4_17_SOURCE)
         }
+        CtxField::Protocol
+            if matches!(
+                prog_type,
+                None | Some(
+                    EbpfProgramType::SocketFilter
+                        | EbpfProgramType::Tc
+                        | EbpfProgramType::Tcx
+                        | EbpfProgramType::Netkit
+                        | EbpfProgramType::TcAction
+                        | EbpfProgramType::CgroupSkb
+                        | EbpfProgramType::SkSkb
+                        | EbpfProgramType::SkSkbParser
+                        | EbpfProgramType::LwtIn
+                        | EbpfProgramType::LwtOut
+                        | EbpfProgramType::LwtXmit
+                        | EbpfProgramType::LwtSeg6Local
+                )
+            ) =>
+        {
+            ("4.1", LINUX_BPF_H_V4_1_SOURCE)
+        }
         CtxField::PacketLen
         | CtxField::PktType
         | CtxField::QueueMapping

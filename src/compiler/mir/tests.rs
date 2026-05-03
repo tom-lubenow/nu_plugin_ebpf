@@ -368,6 +368,7 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::PktType, "pkt_type", "4.1"),
         (CtxField::QueueMapping, "queue_mapping", "4.1"),
         (CtxField::EthProtocol, "eth_protocol", "4.1"),
+        (CtxField::Protocol, "protocol", "4.1"),
         (CtxField::VlanPresent, "vlan_present", "4.1"),
         (CtxField::VlanTci, "vlan_tci", "4.1"),
         (CtxField::VlanProto, "vlan_proto", "4.1"),
@@ -487,6 +488,21 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     )
     .expect("cgroup_sock ctx.family should be target-versioned");
     assert_eq!(cgroup_sock_family.minimum_kernel(), "4.10");
+
+    let cgroup_sock_protocol = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Protocol,
+        Some(crate::compiler::EbpfProgramType::CgroupSock),
+    )
+    .expect("cgroup_sock ctx.protocol should use bpf_sock field floor");
+    assert_eq!(cgroup_sock_protocol.minimum_kernel(), "4.10");
+
+    let lwt_protocol = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::Protocol,
+        Some(crate::compiler::EbpfProgramType::LwtXmit),
+    )
+    .expect("lwt_xmit ctx.protocol should use skb protocol field floor");
+    assert_eq!(lwt_protocol.key(), "ctx:protocol");
+    assert_eq!(lwt_protocol.minimum_kernel(), "4.1");
 
     let cgroup_sock_mark = ContextFieldCompatibilityRequirement::for_field_on_program(
         &CtxField::SockMark,

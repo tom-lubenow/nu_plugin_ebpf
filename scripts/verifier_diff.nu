@@ -1027,6 +1027,11 @@ const KERNEL_FEATURE_CTX_ETH_PROTOCOL = {
     min_kernel: "4.1"
     source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_PROTOCOL = {
+    key: "ctx:protocol"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_VLAN_PRESENT = {
     key: "ctx:vlan_present"
     min_kernel: "4.1"
@@ -2161,6 +2166,8 @@ const CONTEXT_FIELD_KERNEL_FEATURES = [
     { field: "pkt_type", feature: $KERNEL_FEATURE_CTX_PKT_TYPE }
     { field: "queue_mapping", feature: $KERNEL_FEATURE_CTX_QUEUE_MAPPING }
     { field: "eth_protocol", feature: $KERNEL_FEATURE_CTX_ETH_PROTOCOL }
+    { field: "protocol", feature: $KERNEL_FEATURE_CTX_PROTOCOL }
+    { field: "ip_protocol", feature: $KERNEL_FEATURE_CTX_PROTOCOL }
     { field: "vlan_present", feature: $KERNEL_FEATURE_CTX_VLAN_PRESENT }
     { field: "vlan_tci", feature: $KERNEL_FEATURE_CTX_VLAN_TCI }
     { field: "vlan_proto", feature: $KERNEL_FEATURE_CTX_VLAN_PROTO }
@@ -3745,7 +3752,7 @@ const FIXTURES = [
         target: "lwt_xmit:demo-route"
         program: [
             '{|ctx|'
-            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.hash + $ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm) | count'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.hash + $ctx.hash_recalc + $ctx.csum_level + $ctx.cgroup_classid + $ctx.route_realm) | count'
             '  "reroute"'
             '}'
         ]
@@ -6032,7 +6039,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if $field == "sock_type" or $field == "type" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_SOCK_TYPE }
         }
-        if $field == "protocol" {
+        if $field == "protocol" or $field == "ip_protocol" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_PROTOCOL }
         }
         if $field == "mark" {
@@ -6073,7 +6080,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if $field == "family" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_FAMILY }
         }
-        if $field == "protocol" {
+        if $field == "protocol" or $field == "ip_protocol" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_PROTOCOL }
         }
         if $field == "remote_ip4" {
@@ -6108,7 +6115,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if $field == "sock_type" or $field == "type" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SOCK_TYPE }
         }
-        if $field == "protocol" {
+        if $field == "protocol" or $field == "ip_protocol" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_PROTOCOL }
         }
         if $field == "user_family" {
