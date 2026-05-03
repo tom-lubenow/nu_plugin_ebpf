@@ -13,7 +13,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 
 - Most tracing paths are observational, but `struct_ops` can change kernel behavior.
 - Live loads for unclassified or high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops`.
-- `raw_tracepoint.w`, `fmod_ret`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, and `syscall` currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation.
+- `raw_tracepoint.w`, `fmod_ret`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, `syscall`, and direct `struct_ops:<value_type>.<callback>` callback targets currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation or, for callbacks, until they are emitted through a `struct_ops` object.
 - Prefer `--dry-run` on the host and use an isolated VM or disposable environment for unclassified or risky `struct_ops` families.
 
 ## Project Status
@@ -135,7 +135,9 @@ programs, and struct_ops roots/callbacks. Probe-like targets stay `generic`
 when the target string already carries all currently modeled policy.
 Use bare `struct_ops:<value_type>` for object-level metadata and
 `struct_ops:<value_type>.<callback>` for callback-level metadata such as
-sleepable section selection and sched_ext callback context shape.
+sleepable section selection and sched_ext callback context shape. Callback
+targets are not directly attachable; compile or attach the enclosing
+`struct_ops:<value_type>` object instead.
 
 ## Quick Start
 
