@@ -537,6 +537,16 @@ const KERNEL_FEATURE_BPF_MAP_PEEK_ELEM = {
     min_kernel: "4.20"
     source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SOCK_MAP_UPDATE = {
+    key: "helper:bpf_sock_map_update"
+    min_kernel: "4.14"
+    source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SOCK_HASH_UPDATE = {
+    key: "helper:bpf_sock_hash_update"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SK_STORAGE_GET = {
     key: "helper:bpf_sk_storage_get"
     min_kernel: "5.2"
@@ -2443,6 +2453,8 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_push_elem", feature: $KERNEL_FEATURE_BPF_MAP_PUSH_ELEM }
     { name: "bpf_map_pop_elem", feature: $KERNEL_FEATURE_BPF_MAP_POP_ELEM }
     { name: "bpf_map_peek_elem", feature: $KERNEL_FEATURE_BPF_MAP_PEEK_ELEM }
+    { name: "bpf_sock_map_update", feature: $KERNEL_FEATURE_BPF_SOCK_MAP_UPDATE }
+    { name: "bpf_sock_hash_update", feature: $KERNEL_FEATURE_BPF_SOCK_HASH_UPDATE }
     { name: "bpf_sk_storage_get", feature: $KERNEL_FEATURE_BPF_SK_STORAGE_GET }
     { name: "bpf_sk_storage_delete", feature: $KERNEL_FEATURE_BPF_SK_STORAGE_DELETE }
     { name: "bpf_inode_storage_get", feature: $KERNEL_FEATURE_BPF_INODE_STORAGE_GET }
@@ -6781,6 +6793,34 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-put-sock-ops-sockmap"
+        category: "language-surface"
+        tags: [maps map-put sock-ops sockmap]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  $ctx | map-put active_sockmap $ctx.remote_port --kind sockmap --flags 2'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "map-put-sock-ops-sockhash"
+        category: "language-surface"
+        tags: [maps map-put sock-ops sockhash]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  $ctx | map-put active_sockhash $ctx.remote_port --kind sockhash'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "adjust-packet-sk-skb-pull"
         category: "language-surface"
         tags: [adjust-packet sk-skb]
@@ -8255,6 +8295,13 @@ def program-surface-helper-kernel-features [source: string target] {
         }
         if ($line | str contains "map-put ") and (generic-map-update-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM])
+        }
+        if ($target_text | str starts-with "sock_ops:") and ($line | str contains "map-put ") {
+            if $map_kind == "sockmap" {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_MAP_UPDATE])
+            } else if $map_kind == "sockhash" {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_HASH_UPDATE])
+            }
         }
         if ($line | str contains "map-delete ") and (generic-map-delete-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_DELETE_ELEM])
