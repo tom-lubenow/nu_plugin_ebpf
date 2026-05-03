@@ -680,6 +680,28 @@ fn test_spec_context_fields_include_lirc_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_perf_event_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("perf_event:software:cpu-clock:period=100000")
+        .expect("perf_event spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    let sample_period = field(&fields, "sample_period");
+    assert_eq!(sample_period.minimum_kernel, Some("4.9"));
+    assert!(
+        sample_period
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.9/include/uapi/linux/bpf_perf_event.h"))
+    );
+
+    let addr = field(&fields, "addr");
+    assert_eq!(addr.minimum_kernel, Some("5.0"));
+    assert!(
+        addr.minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.0/include/uapi/linux/bpf_perf_event.h"))
+    );
+}
+
+#[test]
 fn test_spec_context_fields_include_cgroup_device_minimum_kernel_metadata() {
     let spec = ProgramSpec::parse("cgroup_device:/sys/fs/cgroup")
         .expect("cgroup_device spec should parse");

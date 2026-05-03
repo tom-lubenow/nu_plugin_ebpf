@@ -1666,6 +1666,16 @@ const KERNEL_FEATURE_CTX_LIRC_MODE = {
     min_kernel: "4.18"
     source: "https://github.com/torvalds/linux/blob/v4.18/drivers/media/rc/bpf-lirc.c"
 }
+const KERNEL_FEATURE_CTX_PERF_SAMPLE_PERIOD = {
+    key: "ctx:sample_period"
+    min_kernel: "4.9"
+    source: "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf_perf_event.h"
+}
+const KERNEL_FEATURE_CTX_PERF_ADDR = {
+    key: "ctx:addr"
+    min_kernel: "5.0"
+    source: "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf_perf_event.h"
+}
 const KERNEL_FEATURE_CTX_PID = {
     key: "ctx:pid"
     min_kernel: "4.2"
@@ -5971,6 +5981,14 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "mode" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_LIRC_MODE }
+        }
+    }
+    if ($target_text | str starts-with "perf_event:") {
+        if $field == "sample_period" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_PERF_SAMPLE_PERIOD }
+        }
+        if $field == "addr" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_PERF_ADDR }
         }
     }
     if ($target_text | str starts-with "cgroup_device:") {

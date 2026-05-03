@@ -27,8 +27,12 @@ const LINUX_BPF_H_V4_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_20_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h";
+const LINUX_BPF_PERF_EVENT_H_V4_9_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.9/include/uapi/linux/bpf_perf_event.h";
 const LINUX_BPF_H_V5_0_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf.h";
+const LINUX_BPF_PERF_EVENT_H_V5_0_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.0/include/uapi/linux/bpf_perf_event.h";
 const LINUX_BPF_H_V5_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_2_SOURCE: &str =
@@ -412,6 +416,8 @@ fn direct_context_field_kernel_floor(
         CtxField::LircSample | CtxField::LircValue | CtxField::LircMode => {
             ("4.18", LINUX_BPF_LIRC_C_V4_18_SOURCE)
         }
+        CtxField::PerfSamplePeriod => ("4.9", LINUX_BPF_PERF_EVENT_H_V4_9_SOURCE),
+        CtxField::PerfAddr => ("5.0", LINUX_BPF_PERF_EVENT_H_V5_0_SOURCE),
         CtxField::Hwtstamp => ("5.16", LINUX_BPF_H_V5_16_SOURCE),
         CtxField::TstampType => ("5.18", LINUX_BPF_H_V5_18_SOURCE),
         CtxField::SockOpsSkbHwtstamp => ("6.2", LINUX_BPF_H_V6_2_SOURCE),

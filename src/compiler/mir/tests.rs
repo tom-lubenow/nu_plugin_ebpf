@@ -339,6 +339,8 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         (CtxField::LircSample, "sample", "4.18"),
         (CtxField::LircValue, "value", "4.18"),
         (CtxField::LircMode, "mode", "4.18"),
+        (CtxField::PerfSamplePeriod, "sample_period", "4.9"),
+        (CtxField::PerfAddr, "addr", "5.0"),
         (CtxField::FlowKeys, "flow_keys", "4.20"),
         (CtxField::Tstamp, "tstamp", "5.0"),
         (CtxField::WireLen, "wire_len", "5.0"),
