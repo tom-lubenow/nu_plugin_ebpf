@@ -4800,6 +4800,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-push-encap-rejects-non-lwt-program"
+        category: "helper-policy"
+        tags: [lwt helper-call reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_lwt_push_encap" $ctx 0 0 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_lwt_push_encap' is only valid in lwt_in and lwt_xmit programs"
+    }
+    {
         name: "lirc-mode2-context"
         category: "context-surface"
         tags: [lirc context]
