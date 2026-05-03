@@ -96,7 +96,9 @@ compatibility requirement labels before you attempt to compile or attach a
 closure.
 The `context_projections` table lists projections that are valid for that
 specific parsed target; attach-sensitive projections that would be rejected by
-the compiler are omitted rather than advertised as unusable rows.
+the compiler are omitted rather than advertised as unusable rows. Helper-backed
+projection rows include the selected helper plus its source-backed minimum
+kernel when known.
 
 Structured `attach_shape` records are emitted for attach families where the
 parsed target or attach resource changes compiler, loader, or verifier policy:
