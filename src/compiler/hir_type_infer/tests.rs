@@ -134,6 +134,56 @@ fn test_list_push_requires_list_ptr() {
 }
 
 #[test]
+fn test_list_push_record_item_reports_fixed_layout_hint() {
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(0) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Record { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::new();
+    let errors = infer_hir(&program, &decl_names)
+        .expect_err("record runtime list items should be rejected with a targeted hint");
+    let rendered = errors[0].to_string();
+
+    assert!(
+        rendered.contains("runtime list literals currently support numeric scalar items only"),
+        "unexpected error: {rendered}"
+    );
+    assert!(
+        rendered.contains("leading typed `mut` global")
+            && rendered.contains("global-define --type array{...}"),
+        "expected fixed-layout recovery hint, got: {rendered}"
+    );
+}
+
+#[test]
 fn test_record_insert_requires_string_key() {
     let mut func = HirFunction {
         blocks: Vec::new(),

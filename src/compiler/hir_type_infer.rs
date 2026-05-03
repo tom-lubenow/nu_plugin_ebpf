@@ -310,7 +310,8 @@ impl<'a> HirTypeInference<'a> {
                 let list_ty = self.reg_type(*src_dst);
                 let item_ty = self.reg_type(*item);
                 self.constrain(list_ty, stack_list_ptr_type(), "list_push_list")?;
-                self.constrain(item_ty, HMType::I64, "list_push_item")?;
+                self.constrain(item_ty.clone(), HMType::I64, "list_push_item")
+                    .map_err(|err| self.list_push_item_error(item_ty, err))?;
             }
             HirStmt::ListSpread { src_dst, items } => {
                 let list_ty = self.reg_type(*src_dst);
@@ -457,6 +458,20 @@ impl<'a> HirTypeInference<'a> {
                 message: format!("{context}: {}", err.message),
             })),
         }
+    }
+
+    fn list_push_item_error(&self, item_ty: HMType, fallback: TypeError) -> TypeError {
+        let actual = self.substitution.apply(&item_ty);
+        if matches!(actual, HMType::Var(_) | HMType::Unknown | HMType::I64) {
+            return fallback;
+        }
+
+        TypeError::new(
+            "eBPF runtime list literals currently support numeric scalar items only",
+        )
+        .with_hint(
+            "for fixed arrays of records or nested lists, use a leading typed `mut` global or a `global-define --type array{...}` initializer",
+        )
     }
 
     fn type_map(&self) -> HashMap<RegId, HMType> {
