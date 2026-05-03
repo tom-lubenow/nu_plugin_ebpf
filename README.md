@@ -131,6 +131,9 @@ LWT hook, netfilter hook metadata, cgroup device/sysctl/sock_ops plus
 socket/SKB/sockopt/socket-address variants, lirc devices, syscall/iterator
 programs, and struct_ops roots/callbacks. Probe-like targets stay `generic`
 when the target string already carries all currently modeled policy.
+Use bare `struct_ops:<value_type>` for object-level metadata and
+`struct_ops:<value_type>.<callback>` for callback-level metadata such as
+sleepable section selection and sched_ext callback context shape.
 
 ## Quick Start
 

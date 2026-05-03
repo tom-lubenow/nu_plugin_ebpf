@@ -2565,10 +2565,37 @@ impl ProgramSpec {
             EbpfProgramType::LircMode2 => Ok(ProgramSpec::LircMode2 {
                 target: LircMode2Target::parse(target)?,
             }),
-            EbpfProgramType::StructOps => Ok(ProgramSpec::StructOps {
-                value_type_name: target.to_string(),
-            }),
+            EbpfProgramType::StructOps => Self::from_struct_ops_target(target),
         }
+    }
+
+    fn from_struct_ops_target(target: &str) -> Result<Self, ProgramSpecParseError> {
+        if target.is_empty() {
+            return Err(ProgramSpecParseError::new(
+                "struct_ops target requires a value type name",
+            ));
+        }
+
+        if let Some((value_type_name, callback_name)) = target.rsplit_once('.') {
+            if value_type_name.is_empty() {
+                return Err(ProgramSpecParseError::new(
+                    "struct_ops callback target requires a value type name before '.'",
+                ));
+            }
+            if callback_name.is_empty() {
+                return Err(ProgramSpecParseError::new(
+                    "struct_ops callback target requires a callback name after '.'",
+                ));
+            }
+            return Ok(ProgramSpec::StructOpsCallback {
+                value_type_name: value_type_name.to_string(),
+                callback_name: callback_name.to_string(),
+            });
+        }
+
+        Ok(ProgramSpec::StructOps {
+            value_type_name: target.to_string(),
+        })
     }
 
     pub fn program_type(&self) -> EbpfProgramType {
@@ -3239,6 +3266,14 @@ fn push_compatibility_requirement(
 
 impl fmt::Display for ProgramSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let ProgramSpec::StructOpsCallback {
+            value_type_name,
+            callback_name,
+        } = self
+        {
+            return write!(f, "struct_ops:{value_type_name}.{callback_name}");
+        }
+
         let prefix = match self {
             ProgramSpec::Fentry {
                 sleepable: true, ..
@@ -4232,6 +4267,84 @@ mod tests {
             assert_eq!(parsed, direct);
             assert_eq!(parsed.program_type(), program_type);
         }
+    }
+
+    #[test]
+    fn test_struct_ops_target_parses_objects_and_callbacks() {
+        let object = ProgramSpec::parse("struct_ops:sched_ext_ops")
+            .expect("struct_ops object spec should parse");
+        assert_eq!(
+            object,
+            ProgramSpec::StructOps {
+                value_type_name: "sched_ext_ops".to_string(),
+            }
+        );
+        assert_eq!(object.target_string(), "sched_ext_ops");
+        assert_eq!(object.struct_ops_value_type_name(), Some("sched_ext_ops"));
+        assert_eq!(object.struct_ops_callback_name(), None);
+        assert_eq!(object.section_name(), "struct_ops/sched_ext_ops");
+        assert_eq!(object.to_string(), "struct_ops:sched_ext_ops");
+
+        let callback = ProgramSpec::parse("struct_ops:sched_ext_ops.init")
+            .expect("struct_ops callback spec should parse");
+        assert_eq!(
+            callback,
+            ProgramSpec::StructOpsCallback {
+                value_type_name: "sched_ext_ops".to_string(),
+                callback_name: "init".to_string(),
+            }
+        );
+        assert_eq!(callback.program_type(), EbpfProgramType::StructOps);
+        assert_eq!(callback.target_string(), "init");
+        assert_eq!(callback.struct_ops_value_type_name(), Some("sched_ext_ops"));
+        assert_eq!(callback.struct_ops_callback_name(), Some("init"));
+        assert_eq!(callback.section_name(), "struct_ops.s/init");
+        assert_eq!(callback.to_string(), "struct_ops:sched_ext_ops.init");
+        assert_eq!(
+            callback.attach_shape(),
+            ProgramAttachShape::StructOpsCallback {
+                family: StructOpsFamily::SchedExt,
+                sleepable: true,
+            }
+        );
+
+        let select_cpu = ProgramSpec::from_program_type_target(
+            EbpfProgramType::StructOps,
+            "sched_ext_ops.select_cpu",
+        )
+        .expect("struct_ops callback target should parse directly");
+        assert_eq!(select_cpu.section_name(), "struct_ops/select_cpu");
+        assert_eq!(
+            select_cpu.attach_shape(),
+            ProgramAttachShape::StructOpsCallback {
+                family: StructOpsFamily::SchedExt,
+                sleepable: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_struct_ops_target_rejects_empty_callback_parts() {
+        let empty_target =
+            ProgramSpec::parse("struct_ops:").expect_err("empty target should be rejected");
+        assert_eq!(
+            empty_target.to_string(),
+            "struct_ops target requires a value type name"
+        );
+
+        let empty_value = ProgramSpec::parse("struct_ops:.init")
+            .expect_err("empty callback value type should be rejected");
+        assert_eq!(
+            empty_value.to_string(),
+            "struct_ops callback target requires a value type name before '.'"
+        );
+
+        let empty_callback = ProgramSpec::parse("struct_ops:sched_ext_ops.")
+            .expect_err("empty callback name should be rejected");
+        assert_eq!(
+            empty_callback.to_string(),
+            "struct_ops callback target requires a callback name after '.'"
+        );
     }
 
     #[test]

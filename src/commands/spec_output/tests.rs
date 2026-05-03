@@ -2296,10 +2296,8 @@ fn test_spec_record_includes_attach_shape_metadata() {
         "sendmsg"
     );
 
-    let callback = ProgramSpec::StructOpsCallback {
-        value_type_name: "sched_ext_ops".to_string(),
-        callback_name: "init".to_string(),
-    };
+    let callback = ProgramSpec::parse("struct_ops:sched_ext_ops.init")
+        .expect("struct_ops callback spec should parse");
     let record = spec_record(
         "struct_ops:sched_ext_ops.init".to_string(),
         callback,

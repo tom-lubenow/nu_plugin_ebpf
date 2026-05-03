@@ -635,6 +635,9 @@ socket/SKB/sockopt/socket-address variants, lirc devices, syscall/iterator
 programs, and struct_ops roots/callback family metadata. Probe-like targets
 remain `generic` when the target string already carries all currently modeled
 policy.
+For `struct_ops`, use `struct_ops:<value_type>` for object-level metadata and
+`struct_ops:<value_type>.<callback>` for callback-level metadata such as
+sleepable section selection and kernel-BTF callback context shape.
 
 `context_projections` is target-specific and only advertises projections that
 are valid for the parsed attach shape. For example, socket fields or
