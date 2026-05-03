@@ -197,7 +197,9 @@ reports source-verified map-kind, global data-section, typed map-value field,
 modeled helper, source-preserved known-kfunc, and source-preserved
 context-field requirements from the compiled object. Compiled program/object
 metadata also exposes an aggregate `compatibility_minimum_kernel` summary
-across those source-verified categories. Context
+across those source-verified categories. Known kfunc compatibility windows can
+also carry maximum-exclusive kernel bounds for source-verified transitional
+kfunc spellings. Context
 fields that lower through modeled
 helpers inherit those helper minimum-kernel/source records, and source-verified
 direct UAPI fields carry context-field floors where their introduction point is

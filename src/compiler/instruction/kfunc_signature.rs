@@ -739,6 +739,12 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
+            "scx_bpf_dsq_insert___v2" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "scx_bpf_dsq_insert_vtime" => Some(Self {
                 min_args: 5,
                 max_args: 5,

@@ -40,6 +40,8 @@ data-section, typed map-value field, all modeled helper, source-preserved
 known-kfunc, and source-preserved context-field floors from the compiled
 object, and the compiled program/object model exposes an aggregate
 `compatibility_minimum_kernel` summary across those source-verified categories.
+Known kfunc compatibility windows can also carry a maximum-exclusive kernel
+bound when the upstream kfunc spelling is source-verified as transitional.
 `ebpf spec`
 also reports source-backed
 minimum-kernel/source fields on individual context-field records when direct

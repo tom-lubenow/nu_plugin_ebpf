@@ -13,8 +13,11 @@ const SCHED_EXT_DISPATCH_ONLY_KFUNCS: &[&str] = &[
 const SCHED_EXT_CPU_RELEASE_ONLY_KFUNCS: &[&str] = &["scx_bpf_reenqueue_local"];
 const SCHED_EXT_SELECT_CPU_OR_ENQUEUE_KFUNCS: &[&str] =
     &["scx_bpf_select_cpu_dfl", "scx_bpf_select_cpu_and"];
-const SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS: &[&str] =
-    &["scx_bpf_dsq_insert", "scx_bpf_dsq_insert_vtime"];
+const SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS: &[&str] = &[
+    "scx_bpf_dsq_insert",
+    "scx_bpf_dsq_insert___v2",
+    "scx_bpf_dsq_insert_vtime",
+];
 
 #[derive(Debug, Clone, Copy)]
 struct ProgramSpecificKfuncPolicy {

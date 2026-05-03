@@ -4297,6 +4297,12 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/net/core/filter.c",
         ),
         (
+            "scx_bpf_dsq_insert___v2",
+            "kfunc:scx_bpf_dsq_insert___v2",
+            "6.19",
+            "/kernel/sched/ext.c",
+        ),
+        (
             "scx_bpf_reenqueue_local___v2",
             "kfunc:scx_bpf_reenqueue_local___v2",
             "6.19",
@@ -4331,6 +4337,18 @@ fn test_kfunc_kernel_compatibility_metadata() {
     assert_eq!(moved_scx_requirement.maximum_kernel_exclusive(), None);
     assert!(moved_scx_requirement.supports_kernel("6.14.9"));
     assert!(moved_scx_requirement.supports_kernel("6.15.0"));
+
+    for name in [
+        "scx_bpf_dsq_insert",
+        "scx_bpf_dsq_insert_vtime",
+        "scx_bpf_reenqueue_local",
+    ] {
+        let requirement = KfuncCompatibilityRequirement::for_name(name)
+            .expect("source-checked compat sched_ext kfunc should be versioned");
+        assert_eq!(requirement.maximum_kernel_exclusive(), Some("6.23"));
+        assert!(requirement.supports_kernel("6.22.99"));
+        assert!(!requirement.supports_kernel("6.23.0"));
+    }
 
     let requirements = [
         KfuncCompatibilityRequirement::for_name("bpf_task_acquire")
@@ -5038,6 +5056,13 @@ fn test_kfunc_signature_scx_dsq_insert() {
     assert_eq!(sig.max_args, 4);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Void);
+
+    let sig = KfuncSignature::for_name("scx_bpf_dsq_insert___v2")
+        .expect("expected scx_bpf_dsq_insert___v2 kfunc signature");
+    assert_eq!(sig.min_args, 4);
+    assert_eq!(sig.max_args, 4);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 }
 
 #[test]

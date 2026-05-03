@@ -299,6 +299,7 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "scx_bpf_dispatch_cancel" => "scx_bpf_dispatch_cancel",
         "scx_bpf_dispatch_nr_slots" => "scx_bpf_dispatch_nr_slots",
         "scx_bpf_dsq_insert" => "scx_bpf_dsq_insert",
+        "scx_bpf_dsq_insert___v2" => "scx_bpf_dsq_insert___v2",
         "scx_bpf_dsq_insert_vtime" => "scx_bpf_dsq_insert_vtime",
         "scx_bpf_dsq_move" => "scx_bpf_dsq_move",
         "scx_bpf_dsq_move_set_slice" => "scx_bpf_dsq_move_set_slice",
@@ -491,13 +492,16 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "scx_bpf_select_cpu_and" => "6.16",
         "bpf_dynptr_memset" => "6.17",
         "bpf_cpumask_populate" | "bpf_path_d_path" | "bpf_sock_ops_enable_tx_tstamp" => "6.18",
-        "scx_bpf_reenqueue_local___v2" => "6.19",
+        "scx_bpf_dsq_insert___v2" | "scx_bpf_reenqueue_local___v2" => "6.19",
         _ => return None,
     })
 }
 
-fn kfunc_maximum_kernel_exclusive(_name: &str) -> Option<&'static str> {
-    None
+fn kfunc_maximum_kernel_exclusive(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "scx_bpf_dsq_insert" | "scx_bpf_dsq_insert_vtime" | "scx_bpf_reenqueue_local" => "6.23",
+        _ => return None,
+    })
 }
 
 fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
@@ -657,7 +661,9 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         "bpf_cpumask_populate" => LINUX_CPUMASK_C_V6_18_SOURCE,
         "bpf_path_d_path" => LINUX_BPF_FS_KFUNCS_C_V6_18_SOURCE,
         "bpf_sock_ops_enable_tx_tstamp" => LINUX_NET_CORE_FILTER_C_V6_18_SOURCE,
-        "scx_bpf_reenqueue_local___v2" => LINUX_SCHED_EXT_C_V6_19_SOURCE,
+        "scx_bpf_dsq_insert___v2" | "scx_bpf_reenqueue_local___v2" => {
+            LINUX_SCHED_EXT_C_V6_19_SOURCE
+        }
         _ => return None,
     })
 }

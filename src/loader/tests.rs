@@ -1918,6 +1918,21 @@ fn test_kernel_kfunc_minimum_requirement_detail_accepts_newer_kernel() {
 }
 
 #[test]
+fn test_kernel_kfunc_requirement_detail_reports_too_new_kernel_window() {
+    let requirements = [
+        KfuncCompatibilityRequirement::for_name("scx_bpf_reenqueue_local")
+            .expect("legacy sched_ext reenqueue kfunc should be versioned"),
+    ];
+    let msg = kernel_kfunc_minimum_requirement_detail(&requirements, "6.23.0")
+        .expect("kernel 6.23 should be too new for legacy reenqueue_local");
+
+    assert!(msg.contains("compiled kfuncs include kfuncs unavailable on kernel>=6.23"));
+    assert!(msg.contains("current kernel is 6.23.0"));
+    assert!(msg.contains("scx_bpf_reenqueue_local kfunc support"));
+    assert!(msg.contains("kernel>=6.12, kernel<6.23"));
+}
+
+#[test]
 fn test_structured_event_string_respects_field_size() {
     let schema = EventSchema {
         fields: vec![
