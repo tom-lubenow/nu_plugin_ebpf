@@ -3135,11 +3135,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [
-            $KERNEL_FEATURE_PROG_SCHED_ACT
-            $KERNEL_FEATURE_MAP_CGROUP_ARRAY
-            $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP
-        ]
     }
     {
         name: "tc-action-skb-context"
@@ -6444,6 +6439,16 @@ def program-context-field-kernel-features [source: string target] {
 def program-surface-helper-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
+    let target_uses_skb_cgroup_helper = (
+        ($target_text | str starts-with "tc_action:")
+        or ($target_text | str starts-with "tc:")
+        or ($target_text | str starts-with "tcx:")
+        or ($target_text | str starts-with "netkit:")
+        or ($target_text | str starts-with "lwt_in:")
+        or ($target_text | str starts-with "lwt_out:")
+        or ($target_text | str starts-with "lwt_xmit:")
+        or ($target_text | str starts-with "lwt_seg6local:")
+    )
 
     if ($source | str contains "tail-call") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_TAIL_CALL])
@@ -6456,6 +6461,11 @@ def program-surface-helper-kernel-features [source: string target] {
 
         if ($line | str contains "redirect-map ") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
+        }
+        if ($line | str contains "map-contains ") and ($line | str contains "--kind cgroup-array") {
+            if $target_uses_skb_cgroup_helper {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP])
+            }
         }
         if ($line | str contains "assign-socket ") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
