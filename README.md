@@ -42,6 +42,10 @@ object. `ebpf spec`
 also reports source-backed
 minimum-kernel/source fields on individual context-field records when direct
 UAPI fields or backing helpers have known introduction points.
+Writable context surface records report whether an assignment lowers through a
+helper or kfunc, including source-backed minimum-kernel/source fields for known
+ABI-backed writes such as `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and
+`ctx.sun_path`.
 Mixed requirements stay nullable until they are split precisely enough to avoid
 misleading compatibility claims. The kernel verifier remains the final
 authority for unmodeled or version-specific behavior.
@@ -89,7 +93,7 @@ argument and return-value surfaces when knowable, argument/return access mode,
 packet context kind, direct packet-write support, modeled context fields with
 type labels, pointer verifier facts, and any load guards, tracepoint payload
 fields with tracefs/fallback provenance, nested context projections, writable
-context surfaces, return aliases,
+context surfaces with backing helper/kfunc metadata where applicable, return aliases,
 target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
 supported first-class intrinsic commands, live-attach/default safety, and
@@ -100,6 +104,8 @@ specific parsed target; attach-sensitive projections that would be rejected by
 the compiler are omitted rather than advertised as unusable rows. Projection
 rows include source-backed minimum kernels when known; helper-backed rows also
 include the selected helper and its own floor.
+The `context_writes` table similarly reports assignment kind, indexed-write
+shape, and any helper/kfunc ABI dependency plus its known kernel floor.
 
 Structured `attach_shape` records are emitted for attach families where the
 parsed target or attach resource changes compiler, loader, or verifier policy:

@@ -603,7 +603,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, backing helpers with inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands, section naming/target usage, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, backing helpers with inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with backing helper/kfunc metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands, section naming/target usage, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |
@@ -630,6 +630,11 @@ omitted from the projection table; attempting to use them in a program still
 produces the normal compiler diagnostic. Projection rows include source-backed
 minimum kernels when known; helper-backed rows also include the selected helper
 and its own floor.
+`context_writes` rows report the assignment kind, whether the write requires a
+fixed index, and any helper or kfunc used by the write surface. Known
+ABI-backed writes include the helper/kfunc minimum-kernel and source fields, so
+surfaces such as `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and `ctx.sun_path`
+can be inspected before writing code that depends on them.
 
 ## Helper Commands (inside closures)
 
