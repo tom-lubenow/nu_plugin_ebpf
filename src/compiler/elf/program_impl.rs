@@ -1743,11 +1743,76 @@ impl EbpfObject {
         btf.add_struct_with_offsets(&sanitized_name, size as u32, &member_refs)
     }
 
+    fn emit_opaque_local_btf_struct(
+        btf: &mut BtfBuilder,
+        name: &str,
+        size: usize,
+        array_index_type: u32,
+    ) -> u32 {
+        let byte_type = btf.add_int("u8", 1, false);
+        let opaque_type = btf.add_array(byte_type, array_index_type, size as u32);
+        btf.add_struct_with_offsets(name, size as u32, &[("__opaque", opaque_type, 0)])
+    }
+
+    fn emit_bpf_graph_node_btf_type(
+        btf: &mut BtfBuilder,
+        kind: crate::compiler::mir::BpfGraphRootKind,
+        array_index_type: u32,
+    ) -> u32 {
+        Self::emit_opaque_local_btf_struct(
+            btf,
+            kind.node_struct_name(),
+            kind.node_size(),
+            array_index_type,
+        )
+    }
+
+    fn emit_bpf_graph_object_btf_type(
+        btf: &mut BtfBuilder,
+        root: crate::compiler::mir::BpfGraphRootInfo<'_>,
+        array_index_type: u32,
+    ) -> u32 {
+        let node_type = Self::emit_bpf_graph_node_btf_type(btf, root.kind, array_index_type);
+        btf.add_struct_with_offsets(
+            root.value_type,
+            root.kind.node_size() as u32,
+            &[(root.node_field, node_type, 0)],
+        )
+    }
+
+    fn emit_bpf_graph_root_btf_type(
+        btf: &mut BtfBuilder,
+        root: crate::compiler::mir::BpfGraphRootInfo<'_>,
+        array_index_type: u32,
+    ) -> u32 {
+        Self::emit_opaque_local_btf_struct(
+            btf,
+            root.kind.root_struct_name(),
+            root.kind.root_size(),
+            array_index_type,
+        )
+    }
+
     fn emit_local_btf_mir_type(btf: &mut BtfBuilder, ty: &MirType, array_index_type: u32) -> u32 {
+        if let Some(root) = ty.bpf_graph_root_info() {
+            return Self::emit_bpf_graph_root_btf_type(btf, root, array_index_type);
+        }
         if let Some(pointee_name) = ty.bpf_kptr_pointee_name() {
             let pointee_type = btf.add_fwd(pointee_name, false);
             let tagged_type = btf.add_type_tag("__kptr", pointee_type);
             return btf.add_ptr(tagged_type);
+        }
+        if ty.is_bpf_list_head_struct() {
+            return Self::emit_opaque_local_btf_struct(btf, "bpf_list_head", 16, array_index_type);
+        }
+        if ty.is_bpf_list_node_struct() {
+            return Self::emit_opaque_local_btf_struct(btf, "bpf_list_node", 16, array_index_type);
+        }
+        if ty.is_bpf_rb_root_struct() {
+            return Self::emit_opaque_local_btf_struct(btf, "bpf_rb_root", 16, array_index_type);
+        }
+        if ty.is_bpf_rb_node_struct() {
+            return Self::emit_opaque_local_btf_struct(btf, "bpf_rb_node", 24, array_index_type);
         }
 
         match ty {
@@ -1769,7 +1834,17 @@ impl EbpfObject {
             }
             MirType::Struct { name, fields, .. } => {
                 let mut members = Vec::with_capacity(fields.len());
-                for field in fields.iter().filter(|field| !field.synthetic) {
+                let mut graph_root_tags = Vec::new();
+                for (component_idx, field) in
+                    fields.iter().filter(|field| !field.synthetic).enumerate()
+                {
+                    if let Some(root) = field.ty.bpf_graph_root_info() {
+                        Self::emit_bpf_graph_object_btf_type(btf, root, array_index_type);
+                        graph_root_tags.push((
+                            component_idx,
+                            format!("contains:{}:{}", root.value_type, root.node_field),
+                        ));
+                    }
                     let field_type =
                         Self::emit_local_btf_mir_type(btf, &field.ty, array_index_type);
                     members.push((field.name.clone(), field_type, field.offset as u32));
@@ -1781,7 +1856,12 @@ impl EbpfObject {
                 let name = name.as_deref().unwrap_or("_anonymous_");
                 let sanitized_name =
                     Self::sanitize_local_btf_struct_name(name, ty.size(), fields.len());
-                btf.add_struct_with_offsets(&sanitized_name, ty.size() as u32, &member_refs)
+                let type_id =
+                    btf.add_struct_with_offsets(&sanitized_name, ty.size() as u32, &member_refs);
+                for (component_idx, tag) in graph_root_tags {
+                    btf.add_decl_tag(&tag, type_id, component_idx as i32);
+                }
+                type_id
             }
             MirType::Subprogram { .. } | MirType::MapRef { .. } | MirType::Unknown => {
                 let fallback_size = ty.size().max(1);

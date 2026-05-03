@@ -327,6 +327,40 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
 }
 
 #[test]
+fn test_bpf_graph_root_wrappers_parse_contains_metadata() {
+    let list_root = MirType::bpf_list_head_root_struct("node_data", "node");
+    let list_info = list_root
+        .bpf_graph_root_info()
+        .expect("list root should carry graph metadata");
+    assert_eq!(list_info.kind, BpfGraphRootKind::ListHead);
+    assert_eq!(list_info.value_type, "node_data");
+    assert_eq!(list_info.node_field, "node");
+    assert_eq!(list_root.size(), 16);
+    assert_eq!(list_root.align(), 8);
+    assert!(list_root.is_bpf_list_head_struct());
+    assert!(!list_root.is_bpf_rb_root_struct());
+
+    let rb_root = MirType::bpf_rb_root_struct_with_contains("rb_node_data", "rb");
+    let rb_info = rb_root
+        .bpf_graph_root_info()
+        .expect("rbtree root should carry graph metadata");
+    assert_eq!(rb_info.kind, BpfGraphRootKind::RbRoot);
+    assert_eq!(rb_info.value_type, "rb_node_data");
+    assert_eq!(rb_info.node_field, "rb");
+    assert_eq!(rb_root.size(), 16);
+    assert_eq!(rb_root.align(), 8);
+    assert!(rb_root.is_bpf_rb_root_struct());
+    assert!(!rb_root.is_bpf_list_head_struct());
+
+    assert!(
+        MirType::bpf_list_head_struct()
+            .bpf_graph_root_info()
+            .is_none(),
+        "plain graph helper structs should not imply contains metadata"
+    );
+}
+
+#[test]
 fn test_context_field_compatibility_requirements_are_source_backed() {
     let expected = [
         (CtxField::Pid, "pid", "4.2"),

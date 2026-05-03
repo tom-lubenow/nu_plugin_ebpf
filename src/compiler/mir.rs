@@ -478,6 +478,64 @@ pub const TIMESTAMP_MAP_NAME: &str = "timestamps";
 pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
 const BPF_KPTR_SLOT_STRUCT_PREFIX: &str = "__nu_bpf_kptr_";
+const BPF_GRAPH_ROOT_STRUCT_PREFIX: &str = "__nu_bpf_graph_root:";
+
+/// Verifier-managed graph root kind embedded in a BPF map value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BpfGraphRootKind {
+    ListHead,
+    RbRoot,
+}
+
+impl BpfGraphRootKind {
+    pub fn root_struct_name(self) -> &'static str {
+        match self {
+            Self::ListHead => "bpf_list_head",
+            Self::RbRoot => "bpf_rb_root",
+        }
+    }
+
+    pub fn node_struct_name(self) -> &'static str {
+        match self {
+            Self::ListHead => "bpf_list_node",
+            Self::RbRoot => "bpf_rb_node",
+        }
+    }
+
+    pub fn root_size(self) -> usize {
+        16
+    }
+
+    pub fn node_size(self) -> usize {
+        match self {
+            Self::ListHead => 16,
+            Self::RbRoot => 24,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::ListHead => "list_head",
+            Self::RbRoot => "rb_root",
+        }
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "list_head" => Some(Self::ListHead),
+            "rb_root" => Some(Self::RbRoot),
+            _ => None,
+        }
+    }
+}
+
+/// `contains:TYPE:FIELD` metadata for a graph root map-value field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BpfGraphRootInfo<'a> {
+    pub kind: BpfGraphRootKind,
+    pub value_type: &'a str,
+    pub node_field: &'a str,
+}
 
 /// Bitfield extraction metadata for a logical struct field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -640,6 +698,24 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_rb_node", 24)
     }
 
+    pub fn bpf_list_head_root_struct(value_type: &str, node_field: &str) -> Self {
+        Self::bpf_graph_root_struct(BpfGraphRootKind::ListHead, value_type, node_field)
+    }
+
+    pub fn bpf_rb_root_struct_with_contains(value_type: &str, node_field: &str) -> Self {
+        Self::bpf_graph_root_struct(BpfGraphRootKind::RbRoot, value_type, node_field)
+    }
+
+    fn bpf_graph_root_struct(kind: BpfGraphRootKind, value_type: &str, node_field: &str) -> Self {
+        Self::opaque_named_struct_with_size(
+            &format!(
+                "{BPF_GRAPH_ROOT_STRUCT_PREFIX}{}:{value_type}:{node_field}",
+                kind.key()
+            ),
+            kind.root_size(),
+        )
+    }
+
     pub fn bpf_kptr_slot_struct(pointee_name: &str) -> Self {
         Self::opaque_named_struct_with_size(
             &format!("{BPF_KPTR_SLOT_STRUCT_PREFIX}{pointee_name}"),
@@ -665,6 +741,9 @@ impl MirType {
 
     pub fn is_bpf_list_head_struct(&self) -> bool {
         self.has_struct_name(&["bpf_list_head"])
+            || self
+                .bpf_graph_root_info()
+                .is_some_and(|root| root.kind == BpfGraphRootKind::ListHead)
     }
 
     pub fn is_bpf_list_node_struct(&self) -> bool {
@@ -673,10 +752,35 @@ impl MirType {
 
     pub fn is_bpf_rb_root_struct(&self) -> bool {
         self.has_struct_name(&["bpf_rb_root"])
+            || self
+                .bpf_graph_root_info()
+                .is_some_and(|root| root.kind == BpfGraphRootKind::RbRoot)
     }
 
     pub fn is_bpf_rb_node_struct(&self) -> bool {
         self.has_struct_name(&["bpf_rb_node"])
+    }
+
+    pub fn bpf_graph_root_info(&self) -> Option<BpfGraphRootInfo<'_>> {
+        let MirType::Struct {
+            name: Some(name), ..
+        } = self
+        else {
+            return None;
+        };
+        let rest = name.strip_prefix(BPF_GRAPH_ROOT_STRUCT_PREFIX)?;
+        let mut parts = rest.splitn(3, ':');
+        let kind = BpfGraphRootKind::from_key(parts.next()?)?;
+        let value_type = parts.next()?;
+        let node_field = parts.next()?;
+        if value_type.is_empty() || node_field.is_empty() {
+            return None;
+        }
+        Some(BpfGraphRootInfo {
+            kind,
+            value_type,
+            node_field,
+        })
     }
 
     pub fn bpf_kptr_pointee_name(&self) -> Option<&str> {
