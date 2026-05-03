@@ -8344,6 +8344,27 @@ def program-kfunc-names [source: string] {
     $names
 }
 
+def program-helper-names [source: string] {
+    mut names = []
+
+    for line in ($source | lines) {
+        let parts = ($line | split row "helper-call ")
+        if ($parts | length) <= 1 {
+            continue
+        }
+
+        for raw_call in ($parts | skip 1) {
+            let raw_name = ($raw_call | str trim | split row " " | first)
+            let helper_name = (normalize-helper-name-token $raw_name)
+            if $helper_name not-in $names {
+                $names = ($names | append $helper_name)
+            }
+        }
+    }
+
+    $names
+}
+
 def program-map-kernel-features [source: string] {
     mut features = []
 
@@ -8456,19 +8477,10 @@ def program-global-kernel-features [source: string] {
 def program-helper-kernel-features [source: string] {
     mut features = []
 
-    for line in ($source | lines) {
-        let parts = ($line | split row "helper-call ")
-        if ($parts | length) <= 1 {
-            continue
-        }
-
-        for raw_call in ($parts | skip 1) {
-            let raw_name = ($raw_call | str trim | split row " " | first)
-            let helper_name = (normalize-helper-name-token $raw_name)
-            let feature = (helper-kernel-feature $helper_name)
-            if $feature != null {
-                $features = (append-missing-kernel-features $features [$feature])
-            }
+    for helper_name in (program-helper-names $source) {
+        let feature = (helper-kernel-feature $helper_name)
+        if $feature != null {
+            $features = (append-missing-kernel-features $features [$feature])
         }
     }
 
@@ -9211,6 +9223,15 @@ def validate-kernel-feature-metadata [fixture] {
             if (kernel-version-compare $max_kernel $min_kernel) <= 0 {
                 fail $"fixture ($fixture.name) kernel feature ($key) max_kernel_exclusive=($max_kernel) must be greater than min_kernel=($min_kernel)"
             }
+        }
+    }
+
+    for helper_name in (program-helper-names (fixture-program $fixture)) {
+        let key = $"helper:($helper_name)"
+        let known_feature = (helper-kernel-feature $helper_name)
+        let explicit_feature = ($keys | any {|candidate| $candidate == $key })
+        if $known_feature == null and not $explicit_feature {
+            fail $"fixture ($fixture.name) calls helper ($helper_name) without source-backed kernel metadata; add it to BPF_HELPER_IDS/HELPER_KERNEL_FEATURES or declare explicit kernel_features metadata"
         }
     }
 
