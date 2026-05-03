@@ -85,6 +85,42 @@ fn intrinsic_backing_helper_names(spec_text: &str, command: &str) -> Vec<String>
         .collect()
 }
 
+fn intrinsic_variant_entries(spec_text: &str, command: &str) -> Vec<(String, String, String)> {
+    intrinsic_record(spec_text, command)
+        .as_record()
+        .expect("intrinsic should be a record")
+        .get("variants")
+        .expect("intrinsic variants should be present")
+        .as_list()
+        .expect("intrinsic variants should be a list")
+        .iter()
+        .map(|variant| {
+            let variant = variant
+                .as_record()
+                .expect("intrinsic variant should be a record");
+            let selector = variant
+                .get("selector")
+                .expect("variant selector should be present")
+                .as_str()
+                .expect("variant selector should be a string")
+                .to_string();
+            let value = variant
+                .get("value")
+                .expect("variant value should be present")
+                .as_str()
+                .expect("variant value should be a string")
+                .to_string();
+            let helper = variant
+                .get("backing_helper")
+                .expect("variant backing helper should be present")
+                .as_str()
+                .expect("variant backing helper should be a string")
+                .to_string();
+            (selector, value, helper)
+        })
+        .collect()
+}
+
 fn intrinsic_backing_helper_kernel_floor(
     spec_text: &str,
     command: &str,
@@ -938,6 +974,134 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
     assert!(
         assign_socket_source.contains("include/uapi/linux/bpf.h"),
         "{assign_socket_source}"
+    );
+}
+
+#[test]
+fn test_spec_record_intrinsics_include_mode_and_kind_variants() {
+    assert_eq!(
+        intrinsic_variant_entries("xdp:lo", "adjust-packet"),
+        vec![
+            (
+                "flag".to_string(),
+                "head".to_string(),
+                "bpf_xdp_adjust_head".to_string(),
+            ),
+            (
+                "flag".to_string(),
+                "meta".to_string(),
+                "bpf_xdp_adjust_meta".to_string(),
+            ),
+            (
+                "flag".to_string(),
+                "tail".to_string(),
+                "bpf_xdp_adjust_tail".to_string(),
+            ),
+        ]
+    );
+
+    let tc_adjust = intrinsic_variant_entries("tc:lo:ingress", "adjust-packet");
+    assert!(tc_adjust.contains(&(
+        "flag".to_string(),
+        "head".to_string(),
+        "bpf_skb_change_head".to_string()
+    )));
+    assert!(tc_adjust.contains(&(
+        "flag".to_string(),
+        "tail".to_string(),
+        "bpf_skb_change_tail".to_string()
+    )));
+    assert!(tc_adjust.contains(&(
+        "flag".to_string(),
+        "pull".to_string(),
+        "bpf_skb_pull_data".to_string()
+    )));
+    assert!(tc_adjust.contains(&(
+        "flag".to_string(),
+        "room".to_string(),
+        "bpf_skb_adjust_room".to_string()
+    )));
+    assert!(!tc_adjust.iter().any(|(_, value, _)| value == "meta"));
+
+    assert_eq!(
+        intrinsic_variant_entries("lwt_in:demo-route", "adjust-packet"),
+        vec![(
+            "flag".to_string(),
+            "pull".to_string(),
+            "bpf_skb_pull_data".to_string(),
+        )]
+    );
+
+    assert_eq!(
+        intrinsic_variant_entries("sk_msg:/sys/fs/bpf/demo_sockmap", "adjust-message"),
+        vec![
+            (
+                "flag".to_string(),
+                "apply".to_string(),
+                "bpf_msg_apply_bytes".to_string(),
+            ),
+            (
+                "flag".to_string(),
+                "cork".to_string(),
+                "bpf_msg_cork_bytes".to_string(),
+            ),
+            (
+                "flag".to_string(),
+                "pull".to_string(),
+                "bpf_msg_pull_data".to_string(),
+            ),
+            (
+                "flag".to_string(),
+                "push".to_string(),
+                "bpf_msg_push_data".to_string(),
+            ),
+            (
+                "flag".to_string(),
+                "pop".to_string(),
+                "bpf_msg_pop_data".to_string(),
+            ),
+        ]
+    );
+
+    let tc_egress_redirect = intrinsic_variant_entries("tc:lo:egress", "redirect");
+    assert!(tc_egress_redirect.contains(&(
+        "default".to_string(),
+        "default".to_string(),
+        "bpf_redirect".to_string()
+    )));
+    assert!(tc_egress_redirect.contains(&(
+        "flag".to_string(),
+        "neigh".to_string(),
+        "bpf_redirect_neigh".to_string()
+    )));
+    assert!(
+        !tc_egress_redirect
+            .iter()
+            .any(|(_, value, _)| value == "peer")
+    );
+
+    assert_eq!(
+        intrinsic_variant_entries("sk_skb:/sys/fs/bpf/demo_sockmap", "redirect-socket"),
+        vec![
+            (
+                "kind".to_string(),
+                "sockmap".to_string(),
+                "bpf_sk_redirect_map".to_string(),
+            ),
+            (
+                "kind".to_string(),
+                "sockhash".to_string(),
+                "bpf_sk_redirect_hash".to_string(),
+            ),
+        ]
+    );
+    assert_eq!(
+        intrinsic_variant_entries("sk_reuseport:select", "redirect-socket"),
+        vec![(
+            "kind".to_string(),
+            "reuseport-sockarray".to_string(),
+            "bpf_sk_select_reuseport".to_string(),
+        )]
     );
 }
 

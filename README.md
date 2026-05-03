@@ -101,7 +101,8 @@ fields with tracefs/fallback provenance, nested context projections, writable
 context surfaces with backing helper/kfunc metadata where applicable, return aliases,
 target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
-supported first-class intrinsic commands, live-attach/default safety, and
+supported first-class intrinsic commands with helper-backed mode/kind variants,
+live-attach/default safety, and
 compatibility requirement labels before you attempt to compile or attach a
 closure.
 The `context_projections` table lists projections that are valid for that
@@ -115,6 +116,11 @@ include the selected helper and its own floor. Helper-call projections such as
 The `context_writes` table similarly reports assignment kind, indexed-write
 shape, the direct write-surface kernel floor when known, and any helper/kfunc
 ABI dependency plus its own known kernel floor.
+Each `intrinsics` row includes aggregate `backing_helpers`; mode- or
+kind-sensitive commands such as `adjust-packet`, `adjust-message`, `redirect`,
+`redirect-map`, and `redirect-socket` also include `variants` records that map
+the supported flag/kind to the exact helper and helper kernel floor for the
+parsed target.
 
 Structured `attach_shape` records are emitted for attach families where the
 parsed target or attach resource changes compiler, loader, or verifier policy:

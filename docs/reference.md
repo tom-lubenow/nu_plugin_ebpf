@@ -211,7 +211,10 @@ minimum-kernel/source fields. Source-verified requirements carry minimum
 versions, and `compatibility_minimum_kernel` reports the maximum known
 requirement for the parsed target. The `intrinsics` list is program- and
 attach-aware, and first-class helper-backed commands expose `backing_helpers`
-records with source-checked helper minimum-kernel metadata. Individual
+records with source-checked helper minimum-kernel metadata. Mode- or
+kind-sensitive intrinsic rows also expose `variants` records that map the
+accepted flag/kind to the exact helper and helper floor for the parsed target.
+Individual
 context-field and context-write records also carry nullable `minimum_kernel`
 and `minimum_kernel_source` fields when direct UAPI fields, write-only
 surfaces, or backing helpers have source-checked introduction points. Mixed
