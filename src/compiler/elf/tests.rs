@@ -257,6 +257,25 @@ fn test_ebpf_program_preserves_noncanonical_uprobe_target_string_with_cached_pro
 }
 
 #[test]
+fn test_ebpf_program_canonicalizes_struct_ops_callback_target_with_cached_program_spec() {
+    let prog = EbpfProgram::from_bytecode(
+        EbpfProgramType::StructOps,
+        "sched_ext_ops.select_cpu",
+        "test",
+        vec![],
+    );
+
+    assert_eq!(prog.target, "select_cpu");
+    assert!(matches!(
+        prog.parsed_program_spec(),
+        Some(ProgramSpec::StructOpsCallback {
+            value_type_name,
+            callback_name,
+        }) if value_type_name == "sched_ext_ops" && callback_name == "select_cpu"
+    ));
+}
+
+#[test]
 fn test_sleepable_uprobe_section_name_uses_program_spec() {
     let spec = ProgramSpec::parse("uprobe.s:/usr/bin/app:main").expect("sleepable uprobe spec");
     let prog =

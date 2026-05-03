@@ -18,6 +18,19 @@ fn parsed_program_spec_for_program(
     ProgramSpec::from_program_type_target(prog_type, target).ok()
 }
 
+fn canonical_target_for_parsed_program_spec(
+    target: String,
+    program_spec: Option<&ProgramSpec>,
+) -> String {
+    if let Some(program_spec) = program_spec {
+        if program_spec.struct_ops_callback_name().is_some() {
+            return program_spec.target_string();
+        }
+    }
+
+    target
+}
+
 fn require_program_spec_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -395,9 +408,11 @@ impl EbpfProgram {
     ) -> Self {
         let target = target.into();
         let bytecode = builder.build();
+        let program_spec = parsed_program_spec_for_program(prog_type, &target);
+        let target = canonical_target_for_parsed_program_spec(target, program_spec.as_ref());
         Self {
             prog_type,
-            program_spec: parsed_program_spec_for_program(prog_type, &target),
+            program_spec,
             target,
             name: name.into(),
             main_size: bytecode.len(),
@@ -429,9 +444,11 @@ impl EbpfProgram {
     ) -> Self {
         let target = target.into();
         let main_size = bytecode.len();
+        let program_spec = parsed_program_spec_for_program(prog_type, &target);
+        let target = canonical_target_for_parsed_program_spec(target, program_spec.as_ref());
         Self {
             prog_type,
-            program_spec: parsed_program_spec_for_program(prog_type, &target),
+            program_spec,
             target,
             name: name.into(),
             bytecode,
@@ -470,9 +487,11 @@ impl EbpfProgram {
         generic_map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     ) -> Self {
         let target = target.into();
+        let program_spec = parsed_program_spec_for_program(prog_type, &target);
+        let target = canonical_target_for_parsed_program_spec(target, program_spec.as_ref());
         Self {
             prog_type,
-            program_spec: parsed_program_spec_for_program(prog_type, &target),
+            program_spec,
             target,
             name: name.into(),
             bytecode,
