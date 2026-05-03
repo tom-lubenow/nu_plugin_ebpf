@@ -1038,6 +1038,34 @@ mod tests {
         }
     }
 
+    fn assert_reported_write_surfaces_match_table(spec_source: &str) {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+        let reported = spec.ctx_write_surfaces_for_spec();
+        let table = spec.ctx_write_surfaces().unwrap_or(&[]);
+
+        for surface in table {
+            let actual = reported
+                .iter()
+                .find(|reported| reported.field_name == surface.field_name);
+
+            if surface.is_available(&spec) {
+                assert_eq!(
+                    actual,
+                    Some(&surface.surface(&spec)),
+                    "{spec_source} should report ctx.{} write metadata from its table",
+                    surface.field_name
+                );
+            } else {
+                assert!(
+                    actual.is_none(),
+                    "{spec_source} should filter unavailable ctx.{} write metadata",
+                    surface.field_name
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_context_write_surface_tables_are_unique() {
         for (table_name, surfaces) in [
@@ -1083,6 +1111,11 @@ mod tests {
         let mut program_types = HashSet::new();
         for surface in PROGRAM_CTX_WRITE_SURFACES {
             assert!(
+                EbpfProgramType::supported_program_types().contains(&surface.program_type),
+                "{:?} in context write surfaces must be a supported program type",
+                surface.program_type
+            );
+            assert!(
                 program_types.insert(surface.program_type),
                 "duplicate program write surface for {:?}",
                 surface.program_type
@@ -1118,6 +1151,31 @@ mod tests {
             ),
         ] {
             assert_write_surface_field_names_resolve(program_type, table_name, surfaces);
+        }
+    }
+
+    #[test]
+    fn test_context_write_surfaces_for_spec_match_registry_metadata() {
+        for spec_source in [
+            "socket_filter:udp4:127.0.0.1:31337",
+            "tc:lo:ingress",
+            "tc:lo:egress",
+            "sk_skb:/sys/fs/bpf/demo_sockmap",
+            "lwt_xmit:demo-route",
+            "cgroup_skb:/sys/fs/cgroup:ingress",
+            "cgroup_skb:/sys/fs/cgroup:egress",
+            "cgroup_sock:/sys/fs/cgroup:sock_create",
+            "cgroup_sock:/sys/fs/cgroup:post_bind4",
+            "cgroup_sysctl:/sys/fs/cgroup",
+            "sock_ops:/sys/fs/cgroup",
+            "cgroup_sockopt:/sys/fs/cgroup:get",
+            "cgroup_sockopt:/sys/fs/cgroup:set",
+            "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+            "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+            "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+            "sk_lookup:/proc/self/ns/net",
+        ] {
+            assert_reported_write_surfaces_match_table(spec_source);
         }
     }
 
