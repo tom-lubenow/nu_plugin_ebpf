@@ -10461,6 +10461,27 @@ fn test_ebpf_program_reports_context_field_compatibility_requirements() {
         Some("5.10")
     );
 
+    let cgroup_program = EbpfProgram::new(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_context_fields([CtxField::Cgroup]);
+    let requirements = cgroup_program.context_field_compatibility_requirements();
+    assert_eq!(requirements.len(), 1);
+    assert_eq!(requirements[0].key(), "ctx:cgroup");
+    assert_eq!(requirements[0].minimum_kernel(), "5.11");
+    assert!(
+        requirements[0]
+            .minimum_kernel_source()
+            .contains("/v5.11/include/uapi/linux/bpf.h")
+    );
+    assert_eq!(
+        cgroup_program.context_field_compatibility_minimum_kernel(),
+        Some("5.11")
+    );
+
     let iter_task_vma_program = EbpfProgram::new(
         EbpfProgramType::Iter,
         "task_vma",

@@ -92,6 +92,18 @@ fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
         task.backing_helper_minimum_kernel_source
             .is_some_and(|source| source.contains("/v5.11/"))
     );
+
+    let cgroup = field(&fields, "cgroup");
+    assert!(cgroup.names.contains(&"current_cgroup"));
+    assert_eq!(
+        cgroup.semantic_type.as_deref(),
+        Some("ptr<kernel, struct<cgroup>>")
+    );
+    assert_eq!(cgroup.kernel_btf_runtime_type, Some("cgroup"));
+    assert!(cgroup.trusted_btf_kernel_pointer);
+    assert_eq!(cgroup.backing_helper, Some("bpf_get_current_task_btf"));
+    assert_eq!(cgroup.backing_helper_minimum_kernel, Some("5.11"));
+    assert_eq!(cgroup.minimum_kernel, Some("5.11"));
 }
 
 #[test]

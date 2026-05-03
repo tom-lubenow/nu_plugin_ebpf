@@ -897,7 +897,7 @@ pub(crate) fn ctx_field_backing_helper(field: &CtxField) -> Option<BpfHelper> {
     Some(match field {
         CtxField::Pid | CtxField::Tgid | CtxField::PidTgid => BpfHelper::GetCurrentPidTgid,
         CtxField::Uid | CtxField::Gid | CtxField::UidGid => BpfHelper::GetCurrentUidGid,
-        CtxField::Task => BpfHelper::GetCurrentTaskBtf,
+        CtxField::Task | CtxField::Cgroup => BpfHelper::GetCurrentTaskBtf,
         CtxField::Timestamp => BpfHelper::KtimeGetNs,
         CtxField::BootTimestamp => BpfHelper::KtimeGetBootNs,
         CtxField::CoarseTimestamp => BpfHelper::KtimeGetCoarseNs,

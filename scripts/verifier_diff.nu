@@ -7474,6 +7474,12 @@ def context-field-helper-kernel-feature [field: string target] {
     if $field == "task" and not ($target_text | str starts-with "iter:") {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF
     }
+    if $field == "current_cgroup" {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF
+    }
+    if $field == "cgroup" and not ($target_text | str starts-with "iter:") {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF
+    }
     if $field in ["uid" "gid" "uid_gid" "current_uid_gid"] {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID
     }
