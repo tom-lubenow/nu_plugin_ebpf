@@ -3680,7 +3680,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut ctx = $ctx'
-            '  ($ctx.family + $ctx.protocol + $ctx.local_port + $ctx.remote_port + $ctx.cookie + $ctx.sk.family) | count'
+            '  ($ctx.family + $ctx.ip_protocol + $ctx.local_port + $ctx.remote_port + $ctx.cookie + $ctx.sk.family) | count'
             '  $ctx.sk = 0'
             '  "pass"'
             '}'
