@@ -44,8 +44,10 @@ pub use crate::program_spec::{
     PerfEventSamplePolicy, PerfEventSoftwareEvent, PerfEventTarget, ProgramSpec, TcTarget,
     UprobeTarget,
 };
-pub(crate) use ctx_field_schema::ctx_field_backing_helper;
 pub use ctx_field_schema::{ContextFieldLoadGuard, SockOpsCallbackGuard};
+pub(crate) use ctx_field_schema::{
+    ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
+};
 pub(crate) use ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema,

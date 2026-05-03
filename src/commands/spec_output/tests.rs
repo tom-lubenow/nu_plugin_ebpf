@@ -378,6 +378,27 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .expect("helper minimum kernel source should be a string")
             .contains("/v5.1/")
     );
+
+    let sk_family = context_projections
+        .iter()
+        .find_map(|value| {
+            let projection = value.as_record().ok()?;
+            (projection
+                .get("path")?
+                .as_str()
+                .ok()
+                .is_some_and(|path| path == "sk.family"))
+            .then_some(projection)
+        })
+        .expect("sk.family projection should be present");
+    assert_eq!(
+        sk_family
+            .get("minimum_kernel")
+            .expect("minimum kernel should be present")
+            .as_str()
+            .expect("minimum kernel should be a string"),
+        "5.1"
+    );
 }
 
 fn projection<'a>(
@@ -1911,6 +1932,12 @@ fn test_spec_context_projections_include_socket_members() {
     assert_eq!(family.root, "sk");
     assert_eq!(family.name, "family");
     assert_eq!(family.source, "context_field");
+    assert_eq!(family.minimum_kernel, Some("4.10"));
+    assert!(
+        family
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.10/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(family.helper, None);
     assert_eq!(family.ty, "u32");
     assert_eq!(family.offset, 4);
@@ -1946,6 +1973,9 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(full_family.ty, "u32");
     assert!(full_family.supported);
     assert!(full_family.unsupported_reason.is_none());
+
+    let sk_family = projection(&projections, "sk.family");
+    assert_eq!(sk_family.minimum_kernel, Some("5.1"));
 }
 
 #[test]
@@ -1956,6 +1986,7 @@ fn test_spec_context_projections_respect_attach_sensitive_socket_members() {
 
     let src_ip4 = projection(&projections, "sk.src_ip4");
     assert!(src_ip4.supported);
+    assert_eq!(src_ip4.minimum_kernel, Some("4.17"));
     assert!(src_ip4.unsupported_reason.is_none());
 
     projection_absent(&projections, "sk.src_ip6");

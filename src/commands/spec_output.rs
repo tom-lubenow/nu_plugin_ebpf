@@ -6,8 +6,8 @@ use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard, PacketContextKind,
     ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
-    SockOpsCallbackGuard, ctx_field_backing_helper, synthetic_bpf_sock_type,
-    synthetic_bpf_tcp_sock_type,
+    SockOpsCallbackGuard, ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
+    synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -48,6 +48,8 @@ struct SpecContextProjection {
     name: String,
     path: String,
     source: &'static str,
+    minimum_kernel: Option<&'static str>,
+    minimum_kernel_source: Option<&'static str>,
     helper: Option<&'static str>,
     helper_minimum_kernel: Option<&'static str>,
     helper_minimum_kernel_source: Option<&'static str>,
@@ -636,6 +638,7 @@ fn context_field_records(
 fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextProjection> {
     let mut projections = Vec::new();
     let mut seen_roots = Vec::new();
+    let target = spec.target_string();
 
     for entry in spec.program_type().ctx_field_name_entries() {
         if spec.ctx_field_access_error(&entry.field).is_some() || seen_roots.contains(&entry.field)
@@ -663,11 +666,23 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
             if unsupported_reason.is_some() {
                 continue;
             }
+            let compatibility_requirement = context_projection_compatibility_requirement(
+                spec,
+                &target,
+                &entry.field,
+                &field.name,
+            );
             projections.push(SpecContextProjection {
                 root: root.clone(),
                 path: format!("{root}.{}", field.name),
                 name: field.name,
                 source: "context_field",
+                minimum_kernel: compatibility_requirement
+                    .as_ref()
+                    .map(ContextFieldCompatibilityRequirement::minimum_kernel),
+                minimum_kernel_source: compatibility_requirement
+                    .as_ref()
+                    .map(ContextFieldCompatibilityRequirement::minimum_kernel_source),
                 helper: None,
                 helper_minimum_kernel: None,
                 helper_minimum_kernel_source: None,
@@ -686,6 +701,45 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
     }
 
     projections
+}
+
+#[cfg(target_os = "linux")]
+fn context_projection_compatibility_requirement(
+    spec: &crate::program_spec::ProgramSpec,
+    target: &str,
+    root_field: &CtxField,
+    member: &str,
+) -> Option<ContextFieldCompatibilityRequirement> {
+    let mut effective = ContextFieldCompatibilityRequirement::for_field_on_program_target(
+        root_field,
+        Some(spec.program_type()),
+        Some(target),
+    );
+
+    if matches!(root_field, CtxField::Socket | CtxField::MigratingSocket) {
+        if let Some(member_field) = ctx_field_for_bpf_sock_projection_member(member) {
+            let member_requirement =
+                ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                    &member_field,
+                    Some(spec.program_type()),
+                    Some(target),
+                );
+            if let Some(member_requirement) = member_requirement {
+                let should_replace = match effective.as_ref() {
+                    Some(current) => ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                        member_requirement.minimum_kernel(),
+                        current.minimum_kernel(),
+                    ),
+                    None => true,
+                };
+                if should_replace {
+                    effective = Some(member_requirement);
+                }
+            }
+        }
+    }
+
+    effective
 }
 
 #[cfg(target_os = "linux")]
@@ -713,6 +767,8 @@ fn push_struct_field_projections(
             path: format!("{root}.{}", field.name),
             name: field.name,
             source,
+            minimum_kernel: None,
+            minimum_kernel_source: None,
             helper: helper_name,
             helper_minimum_kernel,
             helper_minimum_kernel_source,
@@ -762,6 +818,8 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "name" => Value::string(projection.name, span),
                     "path" => Value::string(projection.path, span),
                     "source" => Value::string(projection.source, span),
+                    "minimum_kernel" => optional_static_str(projection.minimum_kernel, span),
+                    "minimum_kernel_source" => optional_static_str(projection.minimum_kernel_source, span),
                     "helper" => optional_static_str(projection.helper, span),
                     "helper_minimum_kernel" => optional_static_str(projection.helper_minimum_kernel, span),
                     "helper_minimum_kernel_source" => optional_static_str(projection.helper_minimum_kernel_source, span),

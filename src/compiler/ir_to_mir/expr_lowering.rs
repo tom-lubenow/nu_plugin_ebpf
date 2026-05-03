@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::ctx_field_for_bpf_sock_projection_member;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::UnaryOpKind;
 use crate::kernel_btf::{
@@ -1590,28 +1591,8 @@ impl<'a> HirToMirLowering<'a> {
         let Some(PathMember::String { val, .. }) = path_members.first() else {
             return;
         };
-        if let Some(field) = Self::implied_ctx_field_for_bpf_sock_projection(val) {
+        if let Some(field) = ctx_field_for_bpf_sock_projection_member(val) {
             self.implied_ctx_fields.insert(field);
         }
-    }
-
-    fn implied_ctx_field_for_bpf_sock_projection(member: &str) -> Option<CtxField> {
-        Some(match member {
-            "bound_dev_if" => CtxField::BoundDevIf,
-            "family" => CtxField::Family,
-            "type" | "sock_type" => CtxField::SockType,
-            "protocol" | "ip_protocol" => CtxField::Protocol,
-            "mark" => CtxField::SockMark,
-            "priority" => CtxField::SockPriority,
-            "src_ip4" => CtxField::LocalIp4,
-            "src_ip6" => CtxField::LocalIp6,
-            "src_port" => CtxField::LocalPort,
-            "dst_port" => CtxField::RemotePort,
-            "dst_ip4" => CtxField::RemoteIp4,
-            "dst_ip6" => CtxField::RemoteIp6,
-            "state" => CtxField::SockState,
-            "rx_queue_mapping" => CtxField::SockRxQueueMapping,
-            _ => return None,
-        })
     }
 }

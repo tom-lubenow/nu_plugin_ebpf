@@ -627,8 +627,9 @@ policy.
 are valid for the parsed attach shape. For example, socket fields or
 helper-backed socket projections that are invalid on a particular hook are
 omitted from the projection table; attempting to use them in a program still
-produces the normal compiler diagnostic. Helper-backed projection rows include
-the selected helper plus its source-backed minimum kernel when known.
+produces the normal compiler diagnostic. Projection rows include source-backed
+minimum kernels when known; helper-backed rows also include the selected helper
+and its own floor.
 
 ## Helper Commands (inside closures)
 
