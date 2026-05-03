@@ -539,6 +539,18 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("sk_lookup ctx.cookie should use bpf_sk_lookup cookie floor");
     assert_eq!(sk_lookup_cookie.minimum_kernel(), "5.13");
 
+    let sk_lookup_ingress_ifindex = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::IngressIfindex,
+        Some(crate::compiler::EbpfProgramType::SkLookup),
+    )
+    .expect("sk_lookup ctx.ingress_ifindex should use bpf_sk_lookup field floor");
+    assert_eq!(sk_lookup_ingress_ifindex.minimum_kernel(), "5.17");
+    assert!(
+        sk_lookup_ingress_ifindex
+            .minimum_kernel_source()
+            .contains("/v5.17/include/uapi/linux/bpf.h")
+    );
+
     let sk_msg_data = ContextFieldCompatibilityRequirement::for_field_on_program(
         &CtxField::Data,
         Some(crate::compiler::EbpfProgramType::SkMsg),

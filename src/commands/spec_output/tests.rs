@@ -961,6 +961,14 @@ fn test_spec_context_fields_include_sk_lookup_minimum_kernel_metadata() {
             .is_some_and(|source| source.contains("/v5.13/include/uapi/linux/bpf.h"))
     );
 
+    let ingress_ifindex = field(&fields, "ingress_ifindex");
+    assert_eq!(ingress_ifindex.minimum_kernel, Some("5.17"));
+    assert!(
+        ingress_ifindex
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v5.17/include/uapi/linux/bpf.h"))
+    );
+
     let socket = field(&fields, "sk");
     assert_eq!(socket.minimum_kernel, Some("5.9"));
     assert!(

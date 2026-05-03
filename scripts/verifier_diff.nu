@@ -1472,6 +1472,11 @@ const KERNEL_FEATURE_CTX_SK_LOOKUP_COOKIE = {
     min_kernel: "5.13"
     source: "https://github.com/torvalds/linux/blob/v5.13/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_SK_LOOKUP_INGRESS_IFINDEX = {
+    key: "ctx:ingress_ifindex"
+    min_kernel: "5.17"
+    source: "https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_FAMILY = {
     key: "ctx:family"
     min_kernel: "4.17"
@@ -4083,7 +4088,7 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut ctx = $ctx'
-            '  ($ctx.family + $ctx.ip_protocol + $ctx.local_port + $ctx.remote_port + $ctx.cookie + $ctx.sk.family) | count'
+            '  ($ctx.family + $ctx.ip_protocol + $ctx.local_port + $ctx.remote_port + $ctx.cookie + $ctx.ingress_ifindex + $ctx.sk.family) | count'
             '  $ctx.sk = 0'
             '  "pass"'
             '}'
@@ -6686,6 +6691,9 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "cookie" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_COOKIE }
+        }
+        if $field == "ingress_ifindex" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_INGRESS_IFINDEX }
         }
     }
     if ($target_text | str starts-with "cgroup_sock_addr:") {

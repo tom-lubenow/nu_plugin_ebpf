@@ -53,6 +53,8 @@ const LINUX_BPF_H_V5_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.14/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.16/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_17_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_18_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_2_SOURCE: &str =
@@ -329,6 +331,9 @@ fn direct_context_field_kernel_floor(
         }
         CtxField::LookupCookie if prog_type == Some(EbpfProgramType::SkLookup) => {
             ("5.13", LINUX_BPF_H_V5_13_SOURCE)
+        }
+        CtxField::IngressIfindex if prog_type == Some(EbpfProgramType::SkLookup) => {
+            ("5.17", LINUX_BPF_H_V5_17_SOURCE)
         }
         CtxField::Socket if prog_type == Some(EbpfProgramType::SkLookup) => {
             ("5.9", LINUX_BPF_H_V5_9_SOURCE)
