@@ -582,6 +582,26 @@ const KERNEL_FEATURE_BPF_KTIME_GET_NS = {
     min_kernel: "4.1"
     source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_KTIME_GET_BOOT_NS = {
+    key: "helper:bpf_ktime_get_boot_ns"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_KTIME_GET_COARSE_NS = {
+    key: "helper:bpf_ktime_get_coarse_ns"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_KTIME_GET_TAI_NS = {
+    key: "helper:bpf_ktime_get_tai_ns"
+    min_kernel: "6.1"
+    source: "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_JIFFIES64 = {
+    key: "helper:bpf_jiffies64"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID = {
     key: "helper:bpf_get_current_pid_tgid"
     min_kernel: "4.2"
@@ -2199,6 +2219,10 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_cgrp_storage_get", feature: $KERNEL_FEATURE_BPF_CGRP_STORAGE_GET }
     { name: "bpf_cgrp_storage_delete", feature: $KERNEL_FEATURE_BPF_CGRP_STORAGE_DELETE }
     { name: "bpf_ktime_get_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_NS }
+    { name: "bpf_ktime_get_boot_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_BOOT_NS }
+    { name: "bpf_ktime_get_coarse_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_COARSE_NS }
+    { name: "bpf_ktime_get_tai_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_TAI_NS }
+    { name: "bpf_jiffies64", feature: $KERNEL_FEATURE_BPF_JIFFIES64 }
     { name: "bpf_get_current_pid_tgid", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
     { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
     { name: "bpf_probe_read_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_STR }
@@ -2427,6 +2451,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.random + $ctx.prandom_u32) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "raw-tracepoint-time-context"
+        category: "context-surface"
+        tags: [raw-tracepoint context time]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.ktime + $ctx.ktime_boot + $ctx.ktime_coarse + $ctx.ktime_tai + $ctx.jiffies) | count'
             '  0'
             '}'
         ]
@@ -6768,6 +6806,26 @@ def context-field-kernel-feature [field: string target] {
     }
 }
 
+def context-field-helper-kernel-feature [field: string] {
+    if $field == "ktime" or $field == "timestamp" {
+        return $KERNEL_FEATURE_BPF_KTIME_GET_NS
+    }
+    if $field in ["ktime_boot" "boot_ktime" "boot_time"] {
+        return $KERNEL_FEATURE_BPF_KTIME_GET_BOOT_NS
+    }
+    if $field in ["ktime_coarse" "coarse_ktime" "coarse_time"] {
+        return $KERNEL_FEATURE_BPF_KTIME_GET_COARSE_NS
+    }
+    if $field in ["ktime_tai" "tai_ktime" "tai_time"] {
+        return $KERNEL_FEATURE_BPF_KTIME_GET_TAI_NS
+    }
+    if $field == "jiffies" {
+        return $KERNEL_FEATURE_BPF_JIFFIES64
+    }
+
+    null
+}
+
 def iter-target-kernel-feature [target: string] {
     let matches = ($ITER_TARGET_KERNEL_FEATURES | where {|entry| $entry.target == $target })
     if ($matches | is-empty) {
@@ -6999,6 +7057,10 @@ def program-context-field-kernel-features [source: string target] {
             let feature = (context-field-kernel-feature $field $target)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
+            }
+            let helper_feature = (context-field-helper-kernel-feature $field)
+            if $helper_feature != null {
+                $features = (append-missing-kernel-features $features [$helper_feature])
             }
         }
     }
