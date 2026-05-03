@@ -854,6 +854,21 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
         intrinsic_backing_helper_names("tc:lo:ingress", "assign-socket"),
         vec!["bpf_sk_assign".to_string()]
     );
+    let tc_map_contains = intrinsic_backing_helper_names("tc:lo:ingress", "map-contains");
+    assert!(tc_map_contains.contains(&"bpf_map_lookup_elem".to_string()));
+    assert!(tc_map_contains.contains(&"bpf_map_peek_elem".to_string()));
+    assert!(tc_map_contains.contains(&"bpf_skb_under_cgroup".to_string()));
+    assert!(!tc_map_contains.contains(&"bpf_current_task_under_cgroup".to_string()));
+
+    let xdp_map_contains = intrinsic_backing_helper_names("xdp:lo", "map-contains");
+    assert!(xdp_map_contains.contains(&"bpf_current_task_under_cgroup".to_string()));
+    assert!(!xdp_map_contains.contains(&"bpf_skb_under_cgroup".to_string()));
+
+    let sock_ops_map_put = intrinsic_backing_helper_names("sock_ops:/sys/fs/cgroup", "map-put");
+    assert!(sock_ops_map_put.contains(&"bpf_map_update_elem".to_string()));
+    assert!(sock_ops_map_put.contains(&"bpf_sock_map_update".to_string()));
+    assert!(sock_ops_map_put.contains(&"bpf_sock_hash_update".to_string()));
+
     assert_eq!(
         intrinsic_backing_helper_names("sk_msg:/sys/fs/bpf/demo_sockmap", "redirect-socket"),
         vec![

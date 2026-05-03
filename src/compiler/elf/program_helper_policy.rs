@@ -1389,6 +1389,28 @@ impl ProgramSpec {
         }
     }
 
+    fn push_local_storage_get_backing_helpers(&self, helpers: &mut Vec<BpfHelper>) {
+        for helper in [
+            BpfHelper::SkStorageGet,
+            BpfHelper::InodeStorageGet,
+            BpfHelper::TaskStorageGet,
+            BpfHelper::CgrpStorageGet,
+        ] {
+            self.push_intrinsic_backing_helper(helpers, helper);
+        }
+    }
+
+    fn push_local_storage_delete_backing_helpers(&self, helpers: &mut Vec<BpfHelper>) {
+        for helper in [
+            BpfHelper::SkStorageDelete,
+            BpfHelper::InodeStorageDelete,
+            BpfHelper::TaskStorageDelete,
+            BpfHelper::CgrpStorageDelete,
+        ] {
+            self.push_intrinsic_backing_helper(helpers, helper);
+        }
+    }
+
     pub(crate) fn intrinsic_backing_helpers(&self, intrinsic: ProgramIntrinsic) -> Vec<BpfHelper> {
         let mut helpers = Vec::new();
         match intrinsic {
@@ -1459,14 +1481,28 @@ impl ProgramSpec {
             ProgramIntrinsic::TailCall => {
                 self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::TailCall);
             }
-            ProgramIntrinsic::MapGet | ProgramIntrinsic::MapContains => {
+            ProgramIntrinsic::MapGet => {
                 self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapLookupElem);
+                self.push_local_storage_get_backing_helpers(&mut helpers);
+            }
+            ProgramIntrinsic::MapContains => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapLookupElem);
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapPeekElem);
+                self.push_intrinsic_backing_helper(
+                    &mut helpers,
+                    self.program_type().cgroup_array_membership_helper(),
+                );
+                self.push_local_storage_get_backing_helpers(&mut helpers);
             }
             ProgramIntrinsic::MapPut => {
                 self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapUpdateElem);
+                for helper in [BpfHelper::SockMapUpdate, BpfHelper::SockHashUpdate] {
+                    self.push_intrinsic_backing_helper(&mut helpers, helper);
+                }
             }
             ProgramIntrinsic::MapDelete => {
                 self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapDeleteElem);
+                self.push_local_storage_delete_backing_helpers(&mut helpers);
             }
             ProgramIntrinsic::MapPush => {
                 self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapPushElem);
@@ -1611,6 +1647,12 @@ mod tests {
             vec![BpfHelper::SkAssign]
         );
         assert!(tc_ingress.supports_intrinsic(ProgramIntrinsic::AssignSocket));
+        let tc_map_contains = tc_ingress.intrinsic_backing_helpers(ProgramIntrinsic::MapContains);
+        assert!(tc_map_contains.contains(&BpfHelper::MapLookupElem));
+        assert!(tc_map_contains.contains(&BpfHelper::MapPeekElem));
+        assert!(tc_map_contains.contains(&BpfHelper::SkbUnderCgroup));
+        assert!(tc_map_contains.contains(&BpfHelper::SkStorageGet));
+        assert!(!tc_map_contains.contains(&BpfHelper::CurrentTaskUnderCgroup));
 
         let tc_egress = crate::program_spec::ProgramSpec::parse("tc:lo:egress")
             .expect("tc egress spec should parse");
@@ -1632,6 +1674,19 @@ mod tests {
             lwt_xmit.intrinsic_backing_helpers(ProgramIntrinsic::Redirect),
             vec![BpfHelper::Redirect]
         );
+
+        let xdp_map_contains = xdp.intrinsic_backing_helpers(ProgramIntrinsic::MapContains);
+        assert!(xdp_map_contains.contains(&BpfHelper::MapLookupElem));
+        assert!(xdp_map_contains.contains(&BpfHelper::MapPeekElem));
+        assert!(xdp_map_contains.contains(&BpfHelper::CurrentTaskUnderCgroup));
+        assert!(!xdp_map_contains.contains(&BpfHelper::SkbUnderCgroup));
+
+        let sock_ops = crate::program_spec::ProgramSpec::parse("sock_ops:/sys/fs/cgroup")
+            .expect("sock_ops spec should parse");
+        let sock_ops_map_put = sock_ops.intrinsic_backing_helpers(ProgramIntrinsic::MapPut);
+        assert!(sock_ops_map_put.contains(&BpfHelper::MapUpdateElem));
+        assert!(sock_ops_map_put.contains(&BpfHelper::SockMapUpdate));
+        assert!(sock_ops_map_put.contains(&BpfHelper::SockHashUpdate));
 
         let sk_msg = crate::program_spec::ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap")
             .expect("sk_msg spec should parse");
