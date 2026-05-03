@@ -412,6 +412,28 @@ mod tests {
                     "program type {program_type:?} appears in multiple return alias surfaces"
                 );
             }
+
+            for program_type in surface.program_types {
+                let pairs = program_type.return_action_alias_pairs();
+                assert_eq!(
+                    pairs.len(),
+                    surface.entries.len(),
+                    "return alias pairs for {program_type:?} should match surface #{index}"
+                );
+                for entry in surface.entries {
+                    assert_eq!(
+                        program_type.return_action_alias(entry.alias),
+                        Some(entry.value),
+                        "return alias '{}' in surface #{index} should resolve for {program_type:?}",
+                        entry.alias
+                    );
+                    assert!(
+                        pairs.contains(&(entry.alias, entry.value)),
+                        "return alias pairs for {program_type:?} should include '{}'",
+                        entry.alias
+                    );
+                }
+            }
         }
     }
 }

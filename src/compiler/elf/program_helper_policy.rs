@@ -1607,6 +1607,10 @@ mod tests {
         }
     }
 
+    fn modeled_helpers() -> impl Iterator<Item = BpfHelper> {
+        (1..=211).filter_map(BpfHelper::from_u32)
+    }
+
     #[test]
     fn test_program_spec_intrinsic_backing_helpers_are_attach_aware() {
         let xdp = crate::program_spec::ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
@@ -1717,6 +1721,27 @@ mod tests {
     }
 
     #[test]
+    fn test_helper_program_surface_specs_resolve_for_modeled_helpers() {
+        for helper in modeled_helpers() {
+            let Some(surface) = helper_program_surface_spec(helper) else {
+                continue;
+            };
+            let family_spec = surface.family.spec();
+
+            for program_type in family_spec.program_types {
+                assert_eq!(
+                    program_type.helper_call_error(helper),
+                    None,
+                    "helper '{}' is assigned to {:?}, but {:?} rejects it",
+                    helper.name(),
+                    surface.family,
+                    program_type
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_helper_policy_tables_are_unique() {
         let mut socket_cookie_policy_programs = HashSet::new();
         let mut socket_cookie_policies = Vec::new();
@@ -1738,6 +1763,21 @@ mod tests {
 
         let mut redirect_specs = Vec::new();
         for spec in SOCKET_REDIRECT_HELPER_SPECS {
+            assert_eq!(
+                helper_program_surface_spec(spec.helper).map(|surface| surface.family),
+                Some(spec.family),
+                "socket redirect helper '{}' must use its declared surface family",
+                spec.helper.name()
+            );
+            for program_type in spec.family.spec().program_types {
+                assert_eq!(
+                    program_type.socket_redirect_helper(spec.map_kind),
+                    Some(spec.helper),
+                    "{program_type:?} should resolve {:?} socket redirects through '{}'",
+                    spec.map_kind,
+                    spec.helper.name()
+                );
+            }
             let key = (spec.map_kind, spec.family);
             assert!(
                 !redirect_specs.contains(&key),
@@ -1780,6 +1820,22 @@ mod tests {
             assert!(
                 !requirement.error_message.is_empty(),
                 "zero-arg helper requirement must have an error message"
+            );
+            assert!(
+                requirement.arg_idx < requirement.helper.signature().max_args,
+                "zero-arg helper requirement for '{}' references arg{} but helper has {} args",
+                requirement.helper.name(),
+                requirement.arg_idx,
+                requirement.helper.signature().max_args
+            );
+            assert_eq!(
+                requirement
+                    .program_type
+                    .helper_zero_arg_requirement(requirement.helper),
+                Some((requirement.arg_idx, requirement.error_message)),
+                "zero-arg helper requirement for '{}' / {:?} must be reachable through the public lookup",
+                requirement.helper.name(),
+                requirement.program_type
             );
         }
 
