@@ -1,6 +1,6 @@
 use super::{
     EbpfProgramType, GetSocketCookieArgPolicy, MessageAdjustMode, PacketAdjustMode,
-    ProgramIntrinsic,
+    ProgramIntrinsic, ProgramIntrinsicVariant,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::MapKind;
@@ -1524,6 +1524,107 @@ impl ProgramSpec {
         helpers
     }
 
+    fn push_intrinsic_variant(
+        &self,
+        variants: &mut Vec<ProgramIntrinsicVariant>,
+        selector: &'static str,
+        value: &'static str,
+        helper: BpfHelper,
+    ) {
+        if self.helper_call_error(helper).is_none() {
+            variants.push(ProgramIntrinsicVariant::new(selector, value, helper));
+        }
+    }
+
+    pub(crate) fn intrinsic_variants(
+        &self,
+        intrinsic: ProgramIntrinsic,
+    ) -> Vec<ProgramIntrinsicVariant> {
+        let mut variants = Vec::new();
+        match intrinsic {
+            ProgramIntrinsic::AdjustPacket => {
+                for mode in [
+                    PacketAdjustMode::Head,
+                    PacketAdjustMode::Meta,
+                    PacketAdjustMode::Tail,
+                    PacketAdjustMode::Pull,
+                    PacketAdjustMode::Room,
+                ] {
+                    if let Some(helper) = self.program_type().packet_adjust_helper(mode) {
+                        self.push_intrinsic_variant(
+                            &mut variants,
+                            "flag",
+                            mode.flag_name(),
+                            helper,
+                        );
+                    }
+                }
+            }
+            ProgramIntrinsic::AdjustMessage => {
+                for mode in [
+                    MessageAdjustMode::Apply,
+                    MessageAdjustMode::Cork,
+                    MessageAdjustMode::Pull,
+                    MessageAdjustMode::Push,
+                    MessageAdjustMode::Pop,
+                ] {
+                    if let Some(helper) = self.program_type().message_adjust_helper(mode) {
+                        self.push_intrinsic_variant(
+                            &mut variants,
+                            "flag",
+                            mode.flag_name(),
+                            helper,
+                        );
+                    }
+                }
+            }
+            ProgramIntrinsic::Redirect => {
+                for (value, helper) in [
+                    ("default", self.program_type().packet_redirect_helper()),
+                    ("peer", self.program_type().packet_redirect_peer_helper()),
+                    ("neigh", self.program_type().packet_redirect_neigh_helper()),
+                ] {
+                    if let Some(helper) = helper {
+                        let selector = if value == "default" {
+                            "default"
+                        } else {
+                            "flag"
+                        };
+                        self.push_intrinsic_variant(&mut variants, selector, value, helper);
+                    }
+                }
+            }
+            ProgramIntrinsic::RedirectSocket => {
+                for map_kind in [
+                    MapKind::SockMap,
+                    MapKind::SockHash,
+                    MapKind::ReuseportSockArray,
+                ] {
+                    if let Some(helper) = self.program_type().socket_redirect_helper(map_kind) {
+                        self.push_intrinsic_variant(&mut variants, "kind", map_kind.key(), helper);
+                    }
+                }
+            }
+            ProgramIntrinsic::RedirectMap => {
+                for map_kind in [
+                    MapKind::DevMap,
+                    MapKind::DevMapHash,
+                    MapKind::CpuMap,
+                    MapKind::XskMap,
+                ] {
+                    self.push_intrinsic_variant(
+                        &mut variants,
+                        "kind",
+                        map_kind.key(),
+                        BpfHelper::RedirectMap,
+                    );
+                }
+            }
+            _ => {}
+        }
+        variants
+    }
+
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
         let attach_shape = self.attach_shape();
         match member_name {
@@ -1703,6 +1804,31 @@ mod tests {
         assert_eq!(
             sk_msg.intrinsic_backing_helpers(ProgramIntrinsic::RedirectSocket),
             vec![BpfHelper::MsgRedirectMap, BpfHelper::MsgRedirectHash]
+        );
+
+        let tc_egress_redirect_variants = tc_egress.intrinsic_variants(ProgramIntrinsic::Redirect);
+        assert!(tc_egress_redirect_variants.iter().any(|variant| {
+            variant.selector() == "default"
+                && variant.value() == "default"
+                && variant.helper() == BpfHelper::Redirect
+        }));
+        assert!(tc_egress_redirect_variants.iter().any(|variant| {
+            variant.selector() == "flag"
+                && variant.value() == "neigh"
+                && variant.helper() == BpfHelper::RedirectNeigh
+        }));
+        assert!(
+            !tc_egress_redirect_variants
+                .iter()
+                .any(|variant| variant.value() == "peer")
+        );
+
+        assert_eq!(
+            sk_msg.intrinsic_variants(ProgramIntrinsic::RedirectSocket),
+            vec![
+                ProgramIntrinsicVariant::new("kind", "sockmap", BpfHelper::MsgRedirectMap),
+                ProgramIntrinsicVariant::new("kind", "sockhash", BpfHelper::MsgRedirectHash),
+            ]
         );
     }
 

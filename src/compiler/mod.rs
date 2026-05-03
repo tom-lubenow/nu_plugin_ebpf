@@ -59,7 +59,6 @@ pub use elf::{
     SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec, StructOpsObjectSpec,
     StructOpsValueField, SymbolRelocation,
 };
-pub(crate) use elf::{MessageAdjustMode, PacketAdjustMode};
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
 };

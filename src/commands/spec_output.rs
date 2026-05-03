@@ -5,10 +5,10 @@ use nu_protocol::{Span, Value, record};
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
-    KfuncCompatibilityRequirement, MapKind, MessageAdjustMode, PacketAdjustMode, PacketContextKind,
-    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
-    SockOpsCallbackGuard, ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
-    synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
+    KfuncCompatibilityRequirement, PacketContextKind, ProbeContext,
+    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
+    ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type,
+    synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -1127,123 +1127,17 @@ fn intrinsic_variant_record(
 }
 
 #[cfg(target_os = "linux")]
-fn push_intrinsic_variant(
-    spec: &crate::program_spec::ProgramSpec,
-    variants: &mut Vec<Value>,
-    selector: &'static str,
-    value: &'static str,
-    helper: BpfHelper,
-    span: Span,
-) {
-    if spec.helper_call_error(helper).is_none() {
-        variants.push(intrinsic_variant_record(selector, value, helper, span));
-    }
-}
-
-#[cfg(target_os = "linux")]
 fn intrinsic_variant_records(
     spec: &crate::program_spec::ProgramSpec,
     intrinsic: ProgramIntrinsic,
     span: Span,
 ) -> Vec<Value> {
-    let mut variants = Vec::new();
-    match intrinsic {
-        ProgramIntrinsic::AdjustPacket => {
-            for mode in [
-                PacketAdjustMode::Head,
-                PacketAdjustMode::Meta,
-                PacketAdjustMode::Tail,
-                PacketAdjustMode::Pull,
-                PacketAdjustMode::Room,
-            ] {
-                if let Some(helper) = spec.program_type().packet_adjust_helper(mode) {
-                    push_intrinsic_variant(
-                        spec,
-                        &mut variants,
-                        "flag",
-                        mode.flag_name(),
-                        helper,
-                        span,
-                    );
-                }
-            }
-        }
-        ProgramIntrinsic::AdjustMessage => {
-            for mode in [
-                MessageAdjustMode::Apply,
-                MessageAdjustMode::Cork,
-                MessageAdjustMode::Pull,
-                MessageAdjustMode::Push,
-                MessageAdjustMode::Pop,
-            ] {
-                if let Some(helper) = spec.program_type().message_adjust_helper(mode) {
-                    push_intrinsic_variant(
-                        spec,
-                        &mut variants,
-                        "flag",
-                        mode.flag_name(),
-                        helper,
-                        span,
-                    );
-                }
-            }
-        }
-        ProgramIntrinsic::Redirect => {
-            for (value, helper) in [
-                ("default", spec.program_type().packet_redirect_helper()),
-                ("peer", spec.program_type().packet_redirect_peer_helper()),
-                ("neigh", spec.program_type().packet_redirect_neigh_helper()),
-            ]
-            .into_iter()
-            {
-                if let Some(helper) = helper {
-                    let selector = if value == "default" {
-                        "default"
-                    } else {
-                        "flag"
-                    };
-                    push_intrinsic_variant(spec, &mut variants, selector, value, helper, span);
-                }
-            }
-        }
-        ProgramIntrinsic::RedirectSocket => {
-            for map_kind in [
-                MapKind::SockMap,
-                MapKind::SockHash,
-                MapKind::ReuseportSockArray,
-            ] {
-                if let Some(helper) = spec.program_type().socket_redirect_helper(map_kind) {
-                    push_intrinsic_variant(
-                        spec,
-                        &mut variants,
-                        "kind",
-                        map_kind.key(),
-                        helper,
-                        span,
-                    );
-                }
-            }
-        }
-        ProgramIntrinsic::RedirectMap => {
-            for map_kind in [
-                MapKind::DevMap,
-                MapKind::DevMapHash,
-                MapKind::CpuMap,
-                MapKind::XskMap,
-            ] {
-                push_intrinsic_variant(
-                    spec,
-                    &mut variants,
-                    "kind",
-                    map_kind.key(),
-                    BpfHelper::RedirectMap,
-                    span,
-                );
-            }
-        }
-        _ => {}
-    }
-    variants
+    spec.intrinsic_variants(intrinsic)
+        .into_iter()
+        .map(|variant| {
+            intrinsic_variant_record(variant.selector(), variant.value(), variant.helper(), span)
+        })
+        .collect()
 }
 
 #[cfg(target_os = "linux")]

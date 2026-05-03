@@ -2524,6 +2524,39 @@ pub enum ProgramIntrinsic {
     MapPop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ProgramIntrinsicVariant {
+    selector: &'static str,
+    value: &'static str,
+    helper: BpfHelper,
+}
+
+impl ProgramIntrinsicVariant {
+    pub(crate) const fn new(
+        selector: &'static str,
+        value: &'static str,
+        helper: BpfHelper,
+    ) -> Self {
+        Self {
+            selector,
+            value,
+            helper,
+        }
+    }
+
+    pub(crate) fn selector(self) -> &'static str {
+        self.selector
+    }
+
+    pub(crate) fn value(self) -> &'static str {
+        self.value
+    }
+
+    pub(crate) fn helper(self) -> BpfHelper {
+        self.helper
+    }
+}
+
 impl ProgramIntrinsic {
     pub fn all() -> &'static [ProgramIntrinsic] {
         PROGRAM_INTRINSICS
