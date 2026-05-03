@@ -213,6 +213,23 @@ fn test_lower_cgroup_skb_ctx_sk_cgroup_id_projection_calls_helper() {
                 } if *helper == BpfHelper::SkCgroupId as u32 && args.len() == 1
             )))
     );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("ctx.sk.cgroup_id should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:ingress",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::SkCgroupId)
+        .expect("ctx.sk.cgroup_id should report bpf_sk_cgroup_id compatibility");
+    assert_eq!(requirement.minimum_kernel(), "5.8");
 }
 
 #[test]

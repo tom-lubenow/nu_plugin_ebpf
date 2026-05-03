@@ -652,6 +652,16 @@ const KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID = {
     min_kernel: "4.18"
     source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SK_CGROUP_ID = {
+    key: "helper:bpf_sk_cgroup_id"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SK_ANCESTOR_CGROUP_ID = {
+    key: "helper:bpf_sk_ancestor_cgroup_id"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_GET_NETNS_COOKIE = {
     key: "helper:bpf_get_netns_cookie"
     min_kernel: "5.7"
@@ -2318,6 +2328,8 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_get_socket_cookie", feature: $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE }
     { name: "bpf_get_socket_uid", feature: $KERNEL_FEATURE_BPF_GET_SOCKET_UID }
     { name: "bpf_get_current_cgroup_id", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID }
+    { name: "bpf_sk_cgroup_id", feature: $KERNEL_FEATURE_BPF_SK_CGROUP_ID }
+    { name: "bpf_sk_ancestor_cgroup_id", feature: $KERNEL_FEATURE_BPF_SK_ANCESTOR_CGROUP_ID }
     { name: "bpf_get_netns_cookie", feature: $KERNEL_FEATURE_BPF_GET_NETNS_COOKIE }
     { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
     { name: "bpf_probe_read_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_STR }
@@ -7101,6 +7113,13 @@ def context-projection-kernel-feature [raw_access: string target] {
     let member = (normalize-context-projection-token $raw_access)
     if $member == null {
         return null
+    }
+
+    if $member == "cgroup_id" {
+        return $KERNEL_FEATURE_BPF_SK_CGROUP_ID
+    }
+    if $member == "ancestor_cgroup_id" {
+        return $KERNEL_FEATURE_BPF_SK_ANCESTOR_CGROUP_ID
     }
 
     let field = (bpf-sock-projection-context-field $member)
