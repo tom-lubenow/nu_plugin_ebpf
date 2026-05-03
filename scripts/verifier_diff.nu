@@ -4195,6 +4195,66 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "dynptr-kfunc-copy-initialized-ringbuf"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "0123456789abcdef"'
+            '  let src = "fedcba9876543210"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $dst'
+            '  kfunc-call "bpf_dynptr_clone" $dst $src'
+            '  kfunc-call "bpf_dynptr_copy" $dst 0 $src 0 4'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $dst 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-copy-rejects-uninitialized-destination"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "0123456789abcdef"'
+            '  let src = "fedcba9876543210"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $src'
+            '  kfunc-call "bpf_dynptr_copy" $dst 0 $src 0 4'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $src 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_copy' arg0 requires initialized dynptr stack object"
+    }
+    {
+        name: "dynptr-kfunc-copy-rejects-uninitialized-source"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "0123456789abcdef"'
+            '  let src = "fedcba9876543210"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $dst'
+            '  kfunc-call "bpf_dynptr_copy" $dst 0 $src 0 4'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $dst 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_copy' arg2 requires initialized dynptr stack object"
+    }
+    {
         name: "dynptr-kfunc-clone-initializes-destination"
         category: "helper-state"
         tags: [kfunc dynptr accept]
