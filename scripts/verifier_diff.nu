@@ -2873,6 +2873,174 @@ const KFUNC_KERNEL_FEATURES = [
     { name: "scx_bpf_pick_idle_cpu_node", feature: $KERNEL_FEATURE_KFUNC_SCX_BPF_PICK_IDLE_CPU_NODE }
 ]
 
+# Keep this table aligned with `KfuncCompatibilityRequirement` in Rust.
+# Explicit records above still win when the harness needs a named feature constant.
+const KFUNC_KERNEL_FEATURE_FALLBACKS = [
+    { name: "bpf_cgroup_acquire", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_cgroup_ancestor", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_cgroup_from_id", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_cgroup_release", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_copy_from_user_dynptr", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_copy_from_user_str", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/bpf/helpers.c" }
+    { name: "bpf_copy_from_user_task_dynptr", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_copy_from_user_task_str", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/helpers.c" }
+    { name: "bpf_copy_from_user_task_str_dynptr", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_cpumask_acquire", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_and", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_any_and_distribute", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_any_distribute", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_clear", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_clear_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_copy", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_create", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_empty", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_equal", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_first", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_first_and", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_first_zero", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_full", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_intersects", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_or", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_populate", min_kernel: "6.18", source: "https://github.com/torvalds/linux/blob/v6.18/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_release", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_release_dtor", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_set_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_setall", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_subset", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_test_and_clear_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_test_and_set_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_test_cpu", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_weight", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c" }
+    { name: "bpf_cpumask_xor", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c" }
+    { name: "bpf_crypto_ctx_acquire", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/crypto.c" }
+    { name: "bpf_crypto_ctx_create", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/crypto.c" }
+    { name: "bpf_crypto_ctx_release", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/crypto.c" }
+    { name: "bpf_crypto_decrypt", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/crypto.c" }
+    { name: "bpf_crypto_encrypt", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/crypto.c" }
+    { name: "bpf_dynptr_adjust", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_clone", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_copy", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_is_null", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_is_rdonly", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_memset", min_kernel: "6.17", source: "https://github.com/torvalds/linux/blob/v6.17/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_size", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_slice", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_slice_rdwr", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_get_task_exe_file", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c" }
+    { name: "bpf_iter_bits_destroy", min_kernel: "6.11", source: "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_bits_new", min_kernel: "6.11", source: "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_bits_next", min_kernel: "6.11", source: "https://github.com/torvalds/linux/blob/v6.11/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_task_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_task_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_css_task_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_dmabuf_destroy", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_dmabuf_new", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_dmabuf_next", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_kmem_cache_destroy", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_kmem_cache_new", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_kmem_cache_next", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_num_destroy", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_num_new", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_num_next", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_scx_dsq_destroy", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "bpf_iter_scx_dsq_new", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "bpf_iter_scx_dsq_next", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "bpf_iter_task_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_vma_destroy", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_vma_new", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_iter_task_vma_next", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_list_back", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_list_front", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_list_pop_back", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_list_pop_front", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_list_push_back_impl", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_list_push_front_impl", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_local_irq_restore", min_kernel: "6.14", source: "https://github.com/torvalds/linux/blob/v6.14/kernel/bpf/helpers.c" }
+    { name: "bpf_local_irq_save", min_kernel: "6.14", source: "https://github.com/torvalds/linux/blob/v6.14/kernel/bpf/helpers.c" }
+    { name: "bpf_map_sum_elem_count", min_kernel: "6.6", source: "https://github.com/torvalds/linux/blob/v6.6/kernel/bpf/map_iter.c" }
+    { name: "bpf_obj_drop_impl", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_obj_new_impl", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_path_d_path", min_kernel: "6.18", source: "https://github.com/torvalds/linux/blob/v6.18/fs/bpf_fs_kfuncs.c" }
+    { name: "bpf_percpu_obj_drop_impl", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_percpu_obj_new_impl", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_preempt_disable", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/helpers.c" }
+    { name: "bpf_preempt_enable", min_kernel: "6.10", source: "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/helpers.c" }
+    { name: "bpf_put_file", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/fs/bpf_fs_kfuncs.c" }
+    { name: "bpf_rbtree_add_impl", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_rbtree_first", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/helpers.c" }
+    { name: "bpf_rbtree_left", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_rbtree_remove", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/helpers.c" }
+    { name: "bpf_rbtree_right", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_rbtree_root", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/helpers.c" }
+    { name: "bpf_rcu_read_lock", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_rcu_read_unlock", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_refcount_acquire_impl", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c" }
+    { name: "bpf_res_spin_lock", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c" }
+    { name: "bpf_res_spin_lock_irqsave", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c" }
+    { name: "bpf_res_spin_unlock", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c" }
+    { name: "bpf_res_spin_unlock_irqrestore", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/verifier.c" }
+    { name: "bpf_sock_addr_set_sun_path", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/net/core/filter.c" }
+    { name: "bpf_sock_ops_enable_tx_tstamp", min_kernel: "6.18", source: "https://github.com/torvalds/linux/blob/v6.18/net/core/filter.c" }
+    { name: "bpf_task_acquire", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_task_from_pid", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_task_from_vpid", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/helpers.c" }
+    { name: "bpf_task_get_cgroup1", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/helpers.c" }
+    { name: "bpf_task_release", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
+    { name: "bpf_task_under_cgroup", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
+    { name: "bpf_throw", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "scx_bpf_cpu_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
+    { name: "scx_bpf_cpu_rq", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_cpuperf_cap", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_cpuperf_cur", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_cpuperf_set", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_create_dsq", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_destroy_dsq", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_dispatch_cancel", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_dispatch_nr_slots", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_insert", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c", max_kernel_exclusive: "6.23" }
+    { name: "scx_bpf_dsq_insert___v2", min_kernel: "6.19", source: "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_insert_vtime", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c", max_kernel_exclusive: "6.23" }
+    { name: "scx_bpf_dsq_move", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_move_set_slice", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_move_set_vtime", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_move_to_local", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_move_vtime", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
+    { name: "scx_bpf_dsq_nr_queued", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_dump_bstr", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_error_bstr", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_events", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext.c" }
+    { name: "scx_bpf_exit_bstr", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_get_idle_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_get_idle_cpumask_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
+    { name: "scx_bpf_get_idle_smtmask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_get_idle_smtmask_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
+    { name: "scx_bpf_get_online_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_get_possible_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_kick_cpu", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_now", min_kernel: "6.14", source: "https://github.com/torvalds/linux/blob/v6.14/kernel/sched/ext.c" }
+    { name: "scx_bpf_nr_cpu_ids", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_nr_node_ids", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext.c" }
+    { name: "scx_bpf_pick_any_cpu", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_pick_any_cpu_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
+    { name: "scx_bpf_pick_idle_cpu", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_pick_idle_cpu_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
+    { name: "scx_bpf_put_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_put_idle_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_reenqueue_local", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c", max_kernel_exclusive: "6.23" }
+    { name: "scx_bpf_reenqueue_local___v2", min_kernel: "6.19", source: "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c" }
+    { name: "scx_bpf_select_cpu_and", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/sched/ext.c" }
+    { name: "scx_bpf_select_cpu_dfl", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_task_cgroup", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_task_cpu", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_task_running", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+    { name: "scx_bpf_test_and_clear_cpu_idle", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
+]
+
 const CONTEXT_FIELD_KERNEL_FEATURES = [
     { field: "packet_len", feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
     { field: "len", feature: $KERNEL_FEATURE_CTX_PACKET_LEN }
@@ -7475,11 +7643,28 @@ def helper-kernel-feature [name: string] {
 
 def kfunc-kernel-feature [name: string] {
     let matches = ($KFUNC_KERNEL_FEATURES | where {|entry| $entry.name == $name })
-    if ($matches | is-empty) {
-        null
-    } else {
-        $matches | first | get feature
+    if not ($matches | is-empty) {
+        return ($matches | first | get feature)
     }
+
+    let fallback = ($KFUNC_KERNEL_FEATURE_FALLBACKS | where {|entry| $entry.name == $name })
+    if ($fallback | is-empty) {
+        return null
+    }
+
+    let entry = ($fallback | first)
+    mut feature = {
+        key: $"kfunc:($name)"
+        min_kernel: ($entry | get min_kernel)
+        source: ($entry | get source)
+    }
+
+    let max_kernel = ($entry | get -o max_kernel_exclusive)
+    if $max_kernel != null and $max_kernel != "" {
+        $feature = ($feature | insert max_kernel_exclusive $max_kernel)
+    }
+
+    $feature
 }
 
 def sock-ops-context-field-kernel-feature [field: string] {
@@ -9240,7 +9425,7 @@ def validate-kernel-feature-metadata [fixture] {
         let known_feature = (kfunc-kernel-feature $kfunc_name)
         let explicit_feature = ($keys | any {|candidate| $candidate == $key })
         if $known_feature == null and not $explicit_feature {
-            fail $"fixture ($fixture.name) calls kfunc ($kfunc_name) without source-backed kernel metadata; add it to KFUNC_KERNEL_FEATURES or declare explicit kernel_features metadata"
+            fail $"fixture ($fixture.name) calls kfunc ($kfunc_name) without source-backed kernel metadata; add it to KFUNC_KERNEL_FEATURES/KFUNC_KERNEL_FEATURE_FALLBACKS or declare explicit kernel_features metadata"
         }
     }
 }
