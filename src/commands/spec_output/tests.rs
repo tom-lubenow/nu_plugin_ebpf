@@ -2238,3 +2238,51 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
     assert!(sun_path.helper.is_none());
 }
+
+#[test]
+fn test_spec_record_context_writes_include_backing_abi_metadata() {
+    let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
+    let record = spec_record(
+        "sock_ops:/sys/fs/cgroup".to_string(),
+        spec,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    let context_writes = record
+        .get("context_writes")
+        .expect("context writes should be present")
+        .as_list()
+        .expect("context writes should be a list");
+    let cb_flags = context_writes
+        .iter()
+        .find_map(|write| {
+            let write = write.as_record().ok()?;
+            (write.get("field")?.as_str().ok()? == "cb_flags").then_some(write)
+        })
+        .expect("ctx.cb_flags write should be present");
+
+    assert_eq!(
+        cb_flags
+            .get("helper")
+            .expect("helper should be present")
+            .as_str()
+            .expect("helper should be a string"),
+        "bpf_sock_ops_cb_flags_set"
+    );
+    assert_eq!(
+        cb_flags
+            .get("helper_minimum_kernel")
+            .expect("helper minimum kernel should be present")
+            .as_str()
+            .expect("helper minimum kernel should be a string"),
+        "4.16"
+    );
+    assert!(
+        cb_flags
+            .get("kfunc")
+            .expect("kfunc should be present")
+            .is_nothing()
+    );
+}
