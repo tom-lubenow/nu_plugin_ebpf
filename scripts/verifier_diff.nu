@@ -522,6 +522,21 @@ const KERNEL_FEATURE_BPF_MAP_DELETE_ELEM = {
     min_kernel: "3.19"
     source: "https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_MAP_PUSH_ELEM = {
+    key: "helper:bpf_map_push_elem"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_MAP_POP_ELEM = {
+    key: "helper:bpf_map_pop_elem"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_MAP_PEEK_ELEM = {
+    key: "helper:bpf_map_peek_elem"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_KTIME_GET_NS = {
     key: "helper:bpf_ktime_get_ns"
     min_kernel: "4.1"
@@ -2107,6 +2122,9 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_map_lookup_elem", feature: $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM }
     { name: "bpf_map_update_elem", feature: $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM }
     { name: "bpf_map_delete_elem", feature: $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM }
+    { name: "bpf_map_push_elem", feature: $KERNEL_FEATURE_BPF_MAP_PUSH_ELEM }
+    { name: "bpf_map_pop_elem", feature: $KERNEL_FEATURE_BPF_MAP_POP_ELEM }
+    { name: "bpf_map_peek_elem", feature: $KERNEL_FEATURE_BPF_MAP_PEEK_ELEM }
     { name: "bpf_ktime_get_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_NS }
     { name: "bpf_get_current_pid_tgid", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
     { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
@@ -5961,6 +5979,50 @@ def map-kind-kernel-feature [kind: string] {
     }
 }
 
+def source-line-map-kind [line: string default_kind: string] {
+    let parts = ($line | split row "--kind ")
+    if ($parts | length) <= 1 {
+        return $default_kind
+    }
+
+    let raw_kind = (($parts | get 1) | str trim | split row " " | first)
+    normalize-map-kind-token $raw_kind
+}
+
+def generic-map-lookup-kind? [kind: string] {
+    $kind in [
+        "hash"
+        "array"
+        "lpm-trie"
+        "lru-hash"
+        "per-cpu-hash"
+        "per-cpu-array"
+        "lru-per-cpu-hash"
+    ]
+}
+
+def generic-map-update-kind? [kind: string] {
+    $kind in [
+        "hash"
+        "array"
+        "lpm-trie"
+        "lru-hash"
+        "per-cpu-hash"
+        "per-cpu-array"
+        "lru-per-cpu-hash"
+    ]
+}
+
+def generic-map-delete-kind? [kind: string] {
+    $kind in [
+        "hash"
+        "lpm-trie"
+        "lru-hash"
+        "per-cpu-hash"
+        "lru-per-cpu-hash"
+    ]
+}
+
 def helper-kernel-feature [name: string] {
     let matches = ($HELPER_KERNEL_FEATURES | where {|entry| $entry.name == $name })
     if ($matches | is-empty) {
@@ -6596,6 +6658,12 @@ def program-reserved-map-kernel-features [source: string] {
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
+        if (
+            (($line | str contains "map-get ") or ($line | str contains "map-put ") or ($line | str contains "map-delete ") or ($line | str contains "map-contains "))
+            and not ($line | str contains "--kind ")
+        ) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
+        }
         if ($line | str contains " user_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_USER_RINGBUF])
         }
@@ -6769,6 +6837,32 @@ def program-surface-helper-kernel-features [source: string target] {
             continue
         }
 
+        let map_kind = (source-line-map-kind $line "hash")
+        if ($line | str contains "map-get ") and (generic-map-lookup-kind? $map_kind) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
+        }
+        if ($line | str contains "map-put ") and (generic-map-update-kind? $map_kind) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM])
+        }
+        if ($line | str contains "map-delete ") and (generic-map-delete-kind? $map_kind) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_DELETE_ELEM])
+        }
+        if ($line | str contains "map-push ") and ($map_kind in ["queue" "stack" "bloom-filter"]) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PUSH_ELEM])
+        }
+        if ($line | str contains "map-peek ") and ($map_kind in ["queue" "stack"]) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
+        }
+        if ($line | str contains "map-pop ") and ($map_kind in ["queue" "stack"]) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_POP_ELEM])
+        }
+        if ($line | str contains "map-contains ") {
+            if $map_kind == "bloom-filter" {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
+            } else if (generic-map-lookup-kind? $map_kind) {
+                $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
+            }
+        }
         if ($line | str contains "redirect-map ") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
         }
