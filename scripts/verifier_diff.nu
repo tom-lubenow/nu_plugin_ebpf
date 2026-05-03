@@ -607,6 +607,56 @@ const KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID = {
     min_kernel: "4.2"
     source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID = {
+    key: "helper:bpf_get_current_uid_gid"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_CURRENT_COMM = {
+    key: "helper:bpf_get_current_comm"
+    min_kernel: "4.2"
+    source: "https://github.com/torvalds/linux/blob/v4.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_SMP_PROCESSOR_ID = {
+    key: "helper:bpf_get_smp_processor_id"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_CGROUP_CLASSID = {
+    key: "helper:bpf_get_cgroup_classid"
+    min_kernel: "4.3"
+    source: "https://github.com/torvalds/linux/blob/v4.3/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_ROUTE_REALM = {
+    key: "helper:bpf_get_route_realm"
+    min_kernel: "4.4"
+    source: "https://github.com/torvalds/linux/blob/v4.4/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_NUMA_NODE_ID = {
+    key: "helper:bpf_get_numa_node_id"
+    min_kernel: "4.10"
+    source: "https://github.com/torvalds/linux/blob/v4.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE = {
+    key: "helper:bpf_get_socket_cookie"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_SOCKET_UID = {
+    key: "helper:bpf_get_socket_uid"
+    min_kernel: "4.12"
+    source: "https://github.com/torvalds/linux/blob/v4.12/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID = {
+    key: "helper:bpf_get_current_cgroup_id"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_NETNS_COOKIE = {
+    key: "helper:bpf_get_netns_cookie"
+    min_kernel: "5.7"
+    source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_PROBE_READ = {
     key: "helper:bpf_probe_read"
     min_kernel: "4.1"
@@ -2224,6 +2274,16 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_ktime_get_tai_ns", feature: $KERNEL_FEATURE_BPF_KTIME_GET_TAI_NS }
     { name: "bpf_jiffies64", feature: $KERNEL_FEATURE_BPF_JIFFIES64 }
     { name: "bpf_get_current_pid_tgid", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
+    { name: "bpf_get_current_uid_gid", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID }
+    { name: "bpf_get_current_comm", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_COMM }
+    { name: "bpf_get_smp_processor_id", feature: $KERNEL_FEATURE_BPF_GET_SMP_PROCESSOR_ID }
+    { name: "bpf_get_cgroup_classid", feature: $KERNEL_FEATURE_BPF_GET_CGROUP_CLASSID }
+    { name: "bpf_get_route_realm", feature: $KERNEL_FEATURE_BPF_GET_ROUTE_REALM }
+    { name: "bpf_get_numa_node_id", feature: $KERNEL_FEATURE_BPF_GET_NUMA_NODE_ID }
+    { name: "bpf_get_socket_cookie", feature: $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE }
+    { name: "bpf_get_socket_uid", feature: $KERNEL_FEATURE_BPF_GET_SOCKET_UID }
+    { name: "bpf_get_current_cgroup_id", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID }
+    { name: "bpf_get_netns_cookie", feature: $KERNEL_FEATURE_BPF_GET_NETNS_COOKIE }
     { name: "bpf_probe_read", feature: $KERNEL_FEATURE_BPF_PROBE_READ }
     { name: "bpf_probe_read_str", feature: $KERNEL_FEATURE_BPF_PROBE_READ_STR }
     { name: "bpf_probe_read_user", feature: $KERNEL_FEATURE_BPF_PROBE_READ_USER }
@@ -6807,6 +6867,42 @@ def context-field-kernel-feature [field: string target] {
 }
 
 def context-field-helper-kernel-feature [field: string] {
+    if $field in ["pid" "tid" "tgid" "pid_tgid" "current_pid_tgid"] {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
+    }
+    if $field in ["uid" "gid" "uid_gid" "current_uid_gid"] {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID
+    }
+    if $field == "comm" {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_COMM
+    }
+    if $field in ["cpu" "processor_id" "smp_processor_id"] {
+        return $KERNEL_FEATURE_BPF_GET_SMP_PROCESSOR_ID
+    }
+    if $field in ["numa_node" "numa_node_id"] {
+        return $KERNEL_FEATURE_BPF_GET_NUMA_NODE_ID
+    }
+    if $field in ["random" "prandom_u32"] {
+        return $KERNEL_FEATURE_BPF_GET_PRANDOM_U32
+    }
+    if $field == "cgroup_classid" {
+        return $KERNEL_FEATURE_BPF_GET_CGROUP_CLASSID
+    }
+    if $field == "route_realm" {
+        return $KERNEL_FEATURE_BPF_GET_ROUTE_REALM
+    }
+    if $field == "cgroup_id" {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID
+    }
+    if $field == "socket_cookie" {
+        return $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE
+    }
+    if $field == "socket_uid" {
+        return $KERNEL_FEATURE_BPF_GET_SOCKET_UID
+    }
+    if $field == "netns_cookie" {
+        return $KERNEL_FEATURE_BPF_GET_NETNS_COOKIE
+    }
     if $field == "ktime" or $field == "timestamp" {
         return $KERNEL_FEATURE_BPF_KTIME_GET_NS
     }
