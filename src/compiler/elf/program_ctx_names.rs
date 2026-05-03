@@ -670,7 +670,13 @@ mod tests {
     #[test]
     fn test_context_field_name_entries_resolve_consistently() {
         for program_type in EbpfProgramType::supported_program_types() {
+            let mut names = HashSet::new();
             for entry in program_type.ctx_field_name_entries() {
+                assert!(
+                    names.insert(entry.name),
+                    "{program_type:?} surfaced ctx.{} more than once",
+                    entry.name
+                );
                 assert_eq!(
                     program_type.resolve_ctx_field_name(entry.name),
                     Ok(entry.field.clone()),
