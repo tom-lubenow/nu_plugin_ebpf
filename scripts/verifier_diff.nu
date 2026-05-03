@@ -6793,6 +6793,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "redirect-socket-sk-msg-sockhash"
+        category: "language-surface"
+        tags: [redirect-socket sk-msg sockhash]
+        target: "sk_msg:/sys/fs/bpf/demo_sockhash"
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockhash'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-put-sock-ops-sockmap"
         category: "language-surface"
         tags: [maps map-put sock-ops sockmap]
@@ -6848,6 +6861,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "redirect-socket-sk-skb-sockhash"
+        category: "language-surface"
+        tags: [redirect-socket sk-skb sockhash]
+        target: "sk_skb:/sys/fs/bpf/demo_sockhash"
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockhash'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "redirect-socket-sk-reuseport-sockarray"
         category: "language-surface"
         tags: [redirect-socket sk-reuseport reuseport-sockarray]
@@ -6873,6 +6899,19 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "redirect-socket-sk-skb-parser-sockhash"
+        category: "language-surface"
+        tags: [redirect-socket sk-skb-parser sockhash]
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockhash"
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockhash'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
 ]
 
