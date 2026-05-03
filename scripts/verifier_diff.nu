@@ -4340,6 +4340,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-msg-data-context-write"
+        category: "context-surface"
+        tags: [sk-msg context packet writable]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  ($ctx.data | get 0) | count'
+            '  $ctx.data.0 = 42'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-msg-rejects-fullsock-projection"
         category: "context-policy"
         tags: [sk-msg reject socket helper-backed]
@@ -4369,6 +4385,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-skb-data-context-write"
+        category: "context-surface"
+        tags: [sk-skb context packet writable]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  (($ctx.data | get 0) + $ctx.protocol + $ctx.priority) | count'
+            '  $ctx.data.0 = 42'
+            '  $ctx.priority = 3'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-skb-parser-basic-context"
         category: "context-surface"
         tags: [sk-skb-parser context]
@@ -4376,6 +4409,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.eth_protocol + $ctx.local_port + $ctx.sk.family) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-skb-parser-data-context-write"
+        category: "context-surface"
+        tags: [sk-skb-parser context packet writable]
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  (($ctx.data | get 0) + $ctx.protocol + $ctx.priority) | count'
+            '  $ctx.data.0 = 42'
+            '  $ctx.priority = 3'
             '  0'
             '}'
         ]
