@@ -4277,12 +4277,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_BPF_TIMER_INIT
-            $KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK
-            $KERNEL_FEATURE_BPF_TIMER_START
-            $KERNEL_FEATURE_BPF_TIMER_CANCEL
-        ]
     }
     {
         name: "source-kfunc-task-ref-release"
@@ -4301,10 +4295,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
-        ]
     }
     {
         name: "source-kfunc-task-ref-rejects-leak"
@@ -4320,7 +4310,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4340,10 +4329,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_ACQUIRE
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
-        ]
     }
     {
         name: "source-kfunc-task-acquire-rejects-leak"
@@ -4378,10 +4363,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE
-            $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE
-        ]
     }
     {
         name: "source-kfunc-file-ref-rejects-leak"
@@ -4397,7 +4378,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4417,10 +4397,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
-        ]
     }
     {
         name: "source-kfunc-cgroup-acquire-rejects-leak"
@@ -4436,7 +4412,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_CGROUP_ACQUIRE]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4456,10 +4431,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
-        ]
     }
     {
         name: "source-kfunc-cgroup-ancestor-release"
@@ -4482,11 +4453,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_ANCESTOR
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
-        ]
     }
     {
         name: "source-kfunc-cpumask-ref-release"
@@ -4505,10 +4471,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
-        ]
     }
     {
         name: "source-kfunc-cpumask-ref-rejects-leak"
@@ -4524,7 +4486,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [$KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4548,11 +4509,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
-        ]
     }
     {
         name: "source-kfunc-cpumask-acquire-rejects-owned-leak"
@@ -4572,11 +4528,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_ACQUIRE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
-        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4599,12 +4550,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_SET_CPU
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_FIRST
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
-        ]
     }
     {
         name: "source-kptr-xchg-task-ref-transfer"
@@ -4632,12 +4577,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
-        ]
     }
     {
         name: "source-kptr-xchg-rejects-old-ref-leak"
@@ -4663,12 +4602,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_FROM_PID
-            $KERNEL_FEATURE_KFUNC_BPF_TASK_RELEASE
-        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4697,12 +4630,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
-        ]
     }
     {
         name: "source-kptr-xchg-cpumask-rejects-old-ref-leak"
@@ -4728,12 +4655,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_CREATE
-            $KERNEL_FEATURE_KFUNC_BPF_CPUMASK_RELEASE
-        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4762,12 +4683,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE
-            $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE
-        ]
     }
     {
         name: "source-kptr-xchg-file-rejects-old-ref-leak"
@@ -4793,12 +4708,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_GET_TASK_EXE_FILE
-            $KERNEL_FEATURE_KFUNC_BPF_PUT_FILE
-        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4827,12 +4736,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
-        ]
     }
     {
         name: "source-kptr-xchg-cgroup-clear-release"
@@ -4855,11 +4758,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
-        ]
     }
     {
         name: "source-kptr-xchg-cgroup-clear-rejects-old-ref-leak"
@@ -4880,10 +4778,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-        ]
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
@@ -4909,12 +4803,6 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        kernel_features: [
-            $KERNEL_FEATURE_MAP_VALUE_KPTR
-            $KERNEL_FEATURE_BPF_KPTR_XCHG
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_FROM_ID
-            $KERNEL_FEATURE_KFUNC_BPF_CGROUP_RELEASE
-        ]
         error_contains: "cannot store cgroup pointer in kptr:task_struct slot"
     }
     {
