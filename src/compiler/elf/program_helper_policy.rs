@@ -1387,6 +1387,97 @@ impl ProgramSpec {
         }
     }
 
+    fn push_intrinsic_backing_helper(&self, helpers: &mut Vec<BpfHelper>, helper: BpfHelper) {
+        if self.helper_call_error(helper).is_none() && !helpers.contains(&helper) {
+            helpers.push(helper);
+        }
+    }
+
+    pub(crate) fn intrinsic_backing_helpers(&self, intrinsic: ProgramIntrinsic) -> Vec<BpfHelper> {
+        let mut helpers = Vec::new();
+        match intrinsic {
+            ProgramIntrinsic::ReadStr => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::ProbeReadUserStr);
+            }
+            ProgramIntrinsic::ReadKernelStr => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::ProbeReadKernelStr);
+            }
+            ProgramIntrinsic::AdjustPacket => {
+                for helper in [
+                    BpfHelper::XdpAdjustHead,
+                    BpfHelper::XdpAdjustMeta,
+                    BpfHelper::XdpAdjustTail,
+                    BpfHelper::SkbChangeHead,
+                    BpfHelper::SkbChangeTail,
+                    BpfHelper::SkbPullData,
+                    BpfHelper::SkbAdjustRoom,
+                ] {
+                    self.push_intrinsic_backing_helper(&mut helpers, helper);
+                }
+            }
+            ProgramIntrinsic::AdjustMessage => {
+                for helper in [
+                    BpfHelper::MsgApplyBytes,
+                    BpfHelper::MsgCorkBytes,
+                    BpfHelper::MsgPullData,
+                    BpfHelper::MsgPushData,
+                    BpfHelper::MsgPopData,
+                ] {
+                    self.push_intrinsic_backing_helper(&mut helpers, helper);
+                }
+            }
+            ProgramIntrinsic::Redirect => {
+                for helper in [
+                    BpfHelper::Redirect,
+                    BpfHelper::RedirectPeer,
+                    BpfHelper::RedirectNeigh,
+                ] {
+                    self.push_intrinsic_backing_helper(&mut helpers, helper);
+                }
+            }
+            ProgramIntrinsic::RedirectMap => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::RedirectMap);
+            }
+            ProgramIntrinsic::RedirectSocket => {
+                for helper in [
+                    BpfHelper::MsgRedirectMap,
+                    BpfHelper::MsgRedirectHash,
+                    BpfHelper::SkRedirectMap,
+                    BpfHelper::SkRedirectHash,
+                    BpfHelper::SkSelectReuseport,
+                ] {
+                    self.push_intrinsic_backing_helper(&mut helpers, helper);
+                }
+            }
+            ProgramIntrinsic::AssignSocket => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::SkAssign);
+            }
+            ProgramIntrinsic::TailCall => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::TailCall);
+            }
+            ProgramIntrinsic::MapGet | ProgramIntrinsic::MapContains => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapLookupElem);
+            }
+            ProgramIntrinsic::MapPut => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapUpdateElem);
+            }
+            ProgramIntrinsic::MapDelete => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapDeleteElem);
+            }
+            ProgramIntrinsic::MapPush => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapPushElem);
+            }
+            ProgramIntrinsic::MapPeek => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapPeekElem);
+            }
+            ProgramIntrinsic::MapPop => {
+                self.push_intrinsic_backing_helper(&mut helpers, BpfHelper::MapPopElem);
+            }
+            _ => {}
+        }
+        helpers
+    }
+
     pub(crate) fn socket_projection_access_error(&self, member_name: &str) -> Option<String> {
         let attach_shape = self.attach_shape();
         match member_name {
@@ -1452,6 +1543,36 @@ mod tests {
                 helper.name()
             );
         }
+    }
+
+    #[test]
+    fn test_program_spec_intrinsic_backing_helpers_are_attach_aware() {
+        let tc_ingress = crate::program_spec::ProgramSpec::parse("tc:lo:ingress")
+            .expect("tc ingress spec should parse");
+        assert_eq!(
+            tc_ingress.intrinsic_backing_helpers(ProgramIntrinsic::AssignSocket),
+            vec![BpfHelper::SkAssign]
+        );
+
+        let tc_egress = crate::program_spec::ProgramSpec::parse("tc:lo:egress")
+            .expect("tc egress spec should parse");
+        assert!(
+            tc_egress
+                .intrinsic_backing_helpers(ProgramIntrinsic::AssignSocket)
+                .is_empty()
+        );
+        assert!(
+            !tc_egress
+                .intrinsic_backing_helpers(ProgramIntrinsic::Redirect)
+                .contains(&BpfHelper::RedirectPeer)
+        );
+
+        let sk_msg = crate::program_spec::ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap")
+            .expect("sk_msg spec should parse");
+        assert_eq!(
+            sk_msg.intrinsic_backing_helpers(ProgramIntrinsic::RedirectSocket),
+            vec![BpfHelper::MsgRedirectMap, BpfHelper::MsgRedirectHash]
+        );
     }
 
     #[test]

@@ -1087,112 +1087,12 @@ fn spec_context_args(
 }
 
 #[cfg(target_os = "linux")]
-fn push_supported_intrinsic_helper(
-    spec: &crate::program_spec::ProgramSpec,
-    helpers: &mut Vec<BpfHelper>,
-    helper: BpfHelper,
-) {
-    if spec.helper_call_error(helper).is_none() && !helpers.contains(&helper) {
-        helpers.push(helper);
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn intrinsic_backing_helpers(
-    spec: &crate::program_spec::ProgramSpec,
-    intrinsic: ProgramIntrinsic,
-) -> Vec<BpfHelper> {
-    let mut helpers = Vec::new();
-    match intrinsic {
-        ProgramIntrinsic::ReadStr => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::ProbeReadUserStr);
-        }
-        ProgramIntrinsic::ReadKernelStr => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::ProbeReadKernelStr);
-        }
-        ProgramIntrinsic::AdjustPacket => {
-            for helper in [
-                BpfHelper::XdpAdjustHead,
-                BpfHelper::XdpAdjustMeta,
-                BpfHelper::XdpAdjustTail,
-                BpfHelper::SkbChangeHead,
-                BpfHelper::SkbChangeTail,
-                BpfHelper::SkbPullData,
-                BpfHelper::SkbAdjustRoom,
-            ] {
-                push_supported_intrinsic_helper(spec, &mut helpers, helper);
-            }
-        }
-        ProgramIntrinsic::AdjustMessage => {
-            for helper in [
-                BpfHelper::MsgApplyBytes,
-                BpfHelper::MsgCorkBytes,
-                BpfHelper::MsgPullData,
-                BpfHelper::MsgPushData,
-                BpfHelper::MsgPopData,
-            ] {
-                push_supported_intrinsic_helper(spec, &mut helpers, helper);
-            }
-        }
-        ProgramIntrinsic::Redirect => {
-            for helper in [
-                BpfHelper::Redirect,
-                BpfHelper::RedirectPeer,
-                BpfHelper::RedirectNeigh,
-            ] {
-                push_supported_intrinsic_helper(spec, &mut helpers, helper);
-            }
-        }
-        ProgramIntrinsic::RedirectMap => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::RedirectMap);
-        }
-        ProgramIntrinsic::RedirectSocket => {
-            for helper in [
-                BpfHelper::MsgRedirectMap,
-                BpfHelper::MsgRedirectHash,
-                BpfHelper::SkRedirectMap,
-                BpfHelper::SkRedirectHash,
-                BpfHelper::SkSelectReuseport,
-            ] {
-                push_supported_intrinsic_helper(spec, &mut helpers, helper);
-            }
-        }
-        ProgramIntrinsic::AssignSocket => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::SkAssign);
-        }
-        ProgramIntrinsic::TailCall => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::TailCall);
-        }
-        ProgramIntrinsic::MapGet | ProgramIntrinsic::MapContains => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::MapLookupElem);
-        }
-        ProgramIntrinsic::MapPut => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::MapUpdateElem);
-        }
-        ProgramIntrinsic::MapDelete => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::MapDeleteElem);
-        }
-        ProgramIntrinsic::MapPush => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::MapPushElem);
-        }
-        ProgramIntrinsic::MapPeek => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::MapPeekElem);
-        }
-        ProgramIntrinsic::MapPop => {
-            push_supported_intrinsic_helper(spec, &mut helpers, BpfHelper::MapPopElem);
-        }
-        _ => {}
-    }
-    helpers
-}
-
-#[cfg(target_os = "linux")]
 fn intrinsic_backing_helper_records(
     spec: &crate::program_spec::ProgramSpec,
     intrinsic: ProgramIntrinsic,
     span: Span,
 ) -> Vec<Value> {
-    intrinsic_backing_helpers(spec, intrinsic)
+    spec.intrinsic_backing_helpers(intrinsic)
         .into_iter()
         .map(|helper| {
             Value::record(
