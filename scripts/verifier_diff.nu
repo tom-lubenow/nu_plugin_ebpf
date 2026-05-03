@@ -782,6 +782,21 @@ const KERNEL_FEATURE_BPF_REDIRECT_PEER = {
     min_kernel: "5.10"
     source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_LOAD_HDR_OPT = {
+    key: "helper:bpf_load_hdr_opt"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_STORE_HDR_OPT = {
+    key: "helper:bpf_store_hdr_opt"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_RESERVE_HDR_OPT = {
+    key: "helper:bpf_reserve_hdr_opt"
+    min_kernel: "5.10"
+    source: "https://github.com/torvalds/linux/blob/v5.10/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD = {
     key: "helper:bpf_xdp_adjust_head"
     min_kernel: "4.10"
@@ -2399,6 +2414,9 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_ringbuf_query", feature: $KERNEL_FEATURE_BPF_RINGBUF_QUERY }
     { name: "bpf_redirect_neigh", feature: $KERNEL_FEATURE_BPF_REDIRECT_NEIGH }
     { name: "bpf_redirect_peer", feature: $KERNEL_FEATURE_BPF_REDIRECT_PEER }
+    { name: "bpf_load_hdr_opt", feature: $KERNEL_FEATURE_BPF_LOAD_HDR_OPT }
+    { name: "bpf_store_hdr_opt", feature: $KERNEL_FEATURE_BPF_STORE_HDR_OPT }
+    { name: "bpf_reserve_hdr_opt", feature: $KERNEL_FEATURE_BPF_RESERVE_HDR_OPT }
     { name: "bpf_bprm_opts_set", feature: $KERNEL_FEATURE_BPF_BPRM_OPTS_SET }
     { name: "bpf_spin_lock", feature: $KERNEL_FEATURE_BPF_SPIN_LOCK }
     { name: "bpf_spin_unlock", feature: $KERNEL_FEATURE_BPF_SPIN_UNLOCK }
@@ -4221,6 +4239,24 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  kfunc-call "bpf_sock_ops_enable_tx_tstamp" $ctx 0'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-hdr-opt-helpers"
+        category: "helper-state"
+        tags: [sock-ops helper-call hdr-opt source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let opt = "0123456789abcdef"'
+            '  helper-call "bpf_load_hdr_opt" $ctx $opt 16 0'
+            '  helper-call "bpf_store_hdr_opt" $ctx $opt 16 0'
+            '  helper-call "bpf_reserve_hdr_opt" $ctx 16 0'
             '  1'
             '}'
         ]
@@ -6374,6 +6410,62 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  adjust-message --apply 8'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-message-sk-msg-cork"
+        category: "language-surface"
+        tags: [adjust-message sk-msg]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --cork 8'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-message-sk-msg-pull"
+        category: "language-surface"
+        tags: [adjust-message sk-msg]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --pull 0 1'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-message-sk-msg-push"
+        category: "language-surface"
+        tags: [adjust-message sk-msg]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --push 0 1'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-message-sk-msg-pop"
+        category: "language-surface"
+        tags: [adjust-message sk-msg]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --pop 0 1'
             '  "pass"'
             '}'
         ]
