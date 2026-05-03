@@ -2398,6 +2398,35 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .as_bool()
             .expect("struct_ops sleepable should be a bool")
     );
+    assert!(
+        !record
+            .get("live_attach_supported")
+            .expect("live_attach_supported should be present")
+            .as_bool()
+            .expect("live_attach_supported should be a bool")
+    );
+    assert!(
+        !record
+            .get("live_attach_default_allowed")
+            .expect("live_attach_default_allowed should be present")
+            .as_bool()
+            .expect("live_attach_default_allowed should be a bool")
+    );
+    assert!(
+        !record
+            .get("live_attach_requires_opt_in")
+            .expect("live_attach_requires_opt_in should be present")
+            .as_bool()
+            .expect("live_attach_requires_opt_in should be a bool")
+    );
+    assert!(
+        record
+            .get("live_attach_note")
+            .expect("live_attach_note should be present")
+            .as_str()
+            .expect("live_attach_note should be a string")
+            .contains("not directly attachable")
+    );
 }
 
 #[test]

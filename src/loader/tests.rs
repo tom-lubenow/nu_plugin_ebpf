@@ -1515,6 +1515,34 @@ fn test_attach_rejects_risky_struct_ops_without_explicit_opt_in() {
 }
 
 #[test]
+fn test_attach_rejects_struct_ops_callback_program_before_loading() {
+    let state = EbpfState::new();
+    let object = EbpfProgram::from_bytecode(
+        EbpfProgramType::StructOps,
+        "sched_ext_ops.init",
+        "init",
+        vec![],
+    )
+    .into_object();
+
+    let err = state
+        .attach(&object)
+        .expect_err("struct_ops callbacks should reject before ELF emission");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Attach(ref msg)
+                if msg.contains("live attach for struct_ops programs is not supported by this loader yet")
+                    && msg.contains("struct_ops callbacks")
+                    && msg.contains("not directly attachable")
+                    && msg.contains("use --dry-run to compile")
+        ),
+        "unexpected struct_ops callback live-attach error: {err:?}"
+    );
+}
+
+#[test]
 fn test_attach_rejects_compile_only_programs_before_loading() {
     let state = EbpfState::new();
 

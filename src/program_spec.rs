@@ -245,6 +245,8 @@ pub struct ProgramLiveAttachPolicy {
 
 pub(crate) const CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED: &str =
     "the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks";
+pub(crate) const STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED: &str =
+    "struct_ops callbacks are emitted through a struct_ops object and are not directly attachable";
 
 impl ProgramLiveAttachPolicy {
     fn unsupported(note: &'static str) -> Self {
@@ -2837,6 +2839,11 @@ impl ProgramSpec {
                 );
             }
         }
+        if matches!(self, ProgramSpec::StructOpsCallback { .. }) {
+            return ProgramLiveAttachPolicy::unsupported(
+                STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED,
+            );
+        }
 
         let risk = self
             .struct_ops_value_type_name()
@@ -4085,6 +4092,18 @@ mod tests {
                 requires_opt_in: false,
                 note: None,
             }
+        );
+
+        let callback = ProgramSpec::parse("struct_ops:sched_ext_ops.init")
+            .expect("struct_ops callback spec should parse");
+        let callback_policy = callback.live_attach_policy();
+        assert!(!callback_policy.loader_supported);
+        assert!(!callback_policy.default_allowed);
+        assert!(!callback_policy.requires_opt_in);
+        assert!(
+            callback_policy
+                .note
+                .is_some_and(|note| note.contains("not directly attachable"))
         );
     }
 

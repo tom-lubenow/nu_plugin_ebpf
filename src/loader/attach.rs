@@ -5,13 +5,20 @@ use std::io::BufRead as _;
 use std::process::Command;
 
 fn unsupported_live_attach_error(
+    spec: &ProgramSpec,
     prog_type: crate::compiler::EbpfProgramType,
     requirements: &[crate::compiler::ProgramCompatibilityRequirement],
 ) -> LoadError {
     let attach_kind = prog_type.attach_kind();
-    let detail = attach_kind
-        .unsupported_live_attach_detail()
-        .unwrap_or("this attach kind has no live attach implementation");
+    let policy = spec.live_attach_policy();
+    let detail = if policy.loader_supported {
+        attach_kind.unsupported_live_attach_detail()
+    } else {
+        policy
+            .note
+            .or_else(|| attach_kind.unsupported_live_attach_detail())
+    }
+    .unwrap_or("this attach kind has no live attach implementation");
     let requirements = compatibility_requirements_detail(requirements);
     LoadError::Attach(format!(
         "live attach for {} programs is not supported by this loader yet; {}{}; use --dry-run to compile",
@@ -740,6 +747,7 @@ impl EbpfState {
                 }
             }
             return Err(unsupported_live_attach_error(
+                &spec,
                 program.prog_type,
                 &compatibility_requirements,
             ));
@@ -1624,14 +1632,16 @@ impl EbpfState {
             | ProgramAttachKind::Syscall
             | ProgramAttachKind::Iter => {
                 return Err(unsupported_live_attach_error(
+                    &spec,
                     program.prog_type,
                     &compatibility_requirements,
                 ));
             }
             ProgramAttachKind::StructOps => {
-                return Err(LoadError::Load(
-                    "struct_ops callbacks are not directly attachable; emit them through a struct_ops object instead"
-                        .to_string(),
+                return Err(unsupported_live_attach_error(
+                    &spec,
+                    program.prog_type,
+                    &compatibility_requirements,
                 ));
             }
         }
