@@ -40,6 +40,91 @@ fn intrinsic_commands(spec_text: &str) -> Vec<String> {
         .collect()
 }
 
+fn intrinsic_record(spec_text: &str, command: &str) -> Value {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    record
+        .get("intrinsics")
+        .expect("intrinsics should be present")
+        .as_list()
+        .expect("intrinsics should be a list")
+        .iter()
+        .find(|intrinsic| {
+            intrinsic
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("command"))
+                .and_then(|command| command.as_str().ok())
+                .is_some_and(|candidate| candidate == command)
+        })
+        .unwrap_or_else(|| panic!("expected {command} intrinsic in {spec_text} spec"))
+        .clone()
+}
+
+fn intrinsic_backing_helper_names(spec_text: &str, command: &str) -> Vec<String> {
+    intrinsic_record(spec_text, command)
+        .as_record()
+        .expect("intrinsic should be a record")
+        .get("backing_helpers")
+        .expect("backing helpers should be present")
+        .as_list()
+        .expect("backing helpers should be a list")
+        .iter()
+        .map(|helper| {
+            helper
+                .as_record()
+                .expect("backing helper should be a record")
+                .get("helper")
+                .expect("helper name should be present")
+                .as_str()
+                .expect("helper name should be a string")
+                .to_string()
+        })
+        .collect()
+}
+
+fn intrinsic_backing_helper_kernel_floor(
+    spec_text: &str,
+    command: &str,
+    helper_name: &str,
+) -> (String, String) {
+    let intrinsic = intrinsic_record(spec_text, command);
+    let intrinsic = intrinsic.as_record().expect("intrinsic should be a record");
+    let helper = intrinsic
+        .get("backing_helpers")
+        .expect("backing helpers should be present")
+        .as_list()
+        .expect("backing helpers should be a list")
+        .iter()
+        .find(|helper| {
+            helper
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("helper"))
+                .and_then(|helper| helper.as_str().ok())
+                .is_some_and(|candidate| candidate == helper_name)
+        })
+        .unwrap_or_else(|| panic!("expected {helper_name} backing helper for {command}"));
+    let helper = helper
+        .as_record()
+        .expect("backing helper should be a record");
+    let minimum_kernel = helper
+        .get("minimum_kernel")
+        .expect("minimum kernel should be present")
+        .as_str()
+        .expect("minimum kernel should be a string")
+        .to_string();
+    let minimum_kernel_source = helper
+        .get("minimum_kernel_source")
+        .expect("minimum kernel source should be present")
+        .as_str()
+        .expect("minimum kernel source should be a string")
+        .to_string();
+    (minimum_kernel, minimum_kernel_source)
+}
+
 fn assert_field_backing_helper(
     spec_text: &str,
     field_name: &str,
@@ -749,6 +834,53 @@ fn test_spec_record_intrinsics_follow_program_specific_helper_surfaces() {
     assert!(!raw_tracepoint.contains(&"adjust-message".to_string()));
     assert!(!raw_tracepoint.contains(&"redirect".to_string()));
     assert!(!raw_tracepoint.contains(&"redirect-map".to_string()));
+}
+
+#[test]
+fn test_spec_record_intrinsics_include_backing_helper_metadata() {
+    assert_eq!(
+        intrinsic_backing_helper_names("xdp:lo", "adjust-packet"),
+        vec![
+            "bpf_xdp_adjust_head".to_string(),
+            "bpf_xdp_adjust_meta".to_string(),
+            "bpf_xdp_adjust_tail".to_string(),
+        ]
+    );
+    assert_eq!(
+        intrinsic_backing_helper_names("xdp:lo", "redirect-map"),
+        vec!["bpf_redirect_map".to_string()]
+    );
+    assert_eq!(
+        intrinsic_backing_helper_names("tc:lo:ingress", "assign-socket"),
+        vec!["bpf_sk_assign".to_string()]
+    );
+    assert_eq!(
+        intrinsic_backing_helper_names("sk_msg:/sys/fs/bpf/demo_sockmap", "redirect-socket"),
+        vec![
+            "bpf_msg_redirect_map".to_string(),
+            "bpf_msg_redirect_hash".to_string(),
+        ]
+    );
+    assert_eq!(
+        intrinsic_backing_helper_names("raw_tracepoint:sys_enter", "helper-call"),
+        Vec::<String>::new()
+    );
+
+    let (redirect_map_minimum, redirect_map_source) =
+        intrinsic_backing_helper_kernel_floor("xdp:lo", "redirect-map", "bpf_redirect_map");
+    assert_eq!(redirect_map_minimum, "4.14");
+    assert!(
+        redirect_map_source.contains("include/uapi/linux/bpf.h"),
+        "{redirect_map_source}"
+    );
+
+    let (assign_socket_minimum, assign_socket_source) =
+        intrinsic_backing_helper_kernel_floor("tc:lo:ingress", "assign-socket", "bpf_sk_assign");
+    assert_eq!(assign_socket_minimum, "5.7");
+    assert!(
+        assign_socket_source.contains("include/uapi/linux/bpf.h"),
+        "{assign_socket_source}"
+    );
 }
 
 #[test]
