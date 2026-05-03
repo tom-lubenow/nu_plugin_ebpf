@@ -2131,6 +2131,34 @@ fn test_spec_context_projections_include_parameterized_helper_members() {
 }
 
 #[test]
+fn test_spec_context_projections_include_task_pt_regs_helper_members() {
+    let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
+    let projections = spec_context_projections(&kprobe);
+
+    let arg0 = projection(&projections, "task.pt_regs.arg0");
+    assert_eq!(arg0.root, "task");
+    assert_eq!(arg0.name, "pt_regs.arg0");
+    assert_eq!(arg0.source, "helper_call");
+    assert_eq!(arg0.helper, Some("bpf_task_pt_regs"));
+    assert_eq!(arg0.helper_minimum_kernel, Some("5.15"));
+    assert_eq!(arg0.ty, "u64");
+    assert_eq!(arg0.offset, None);
+    assert!(arg0.supported);
+
+    let retval = projection(&projections, "task.pt_regs.retval");
+    assert_eq!(retval.root, "task");
+    assert_eq!(retval.name, "pt_regs.retval");
+    assert_eq!(retval.helper, Some("bpf_task_pt_regs"));
+    assert_eq!(retval.helper_minimum_kernel, Some("5.15"));
+    assert_eq!(retval.ty, "u64");
+    assert_eq!(retval.offset, None);
+
+    let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let xdp_projections = spec_context_projections(&xdp);
+    projection_absent(&xdp_projections, "task.pt_regs.arg0");
+}
+
+#[test]
 fn test_spec_context_projections_only_include_supported_entries() {
     for program_type in EbpfProgramType::supported_program_types() {
         let target = ProgramSpec::representative_target_for_program_type(*program_type);

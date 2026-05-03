@@ -103,10 +103,10 @@ The `context_projections` table lists projections that are valid for that
 specific parsed target; attach-sensitive projections that would be rejected by
 the compiler are omitted rather than advertised as unusable rows. Projection
 rows include source-backed minimum kernels when known; helper-backed rows also
-include the selected helper and its own floor. Parameterized helper projections
-such as `ancestor_cgroup_id.N` are advertised with `source = helper_call` and a
-null `offset`, because `N` is a required constant path segment rather than a
-struct-field byte offset.
+include the selected helper and its own floor. Helper-call projections such as
+`task.pt_regs.arg0` and parameterized helper projections such as
+`ancestor_cgroup_id.N` are advertised with `source = helper_call` and a null
+`offset`, because they are not direct struct-field byte offsets.
 The `context_writes` table similarly reports assignment kind, indexed-write
 shape, and any helper/kfunc ABI dependency plus its known kernel floor.
 

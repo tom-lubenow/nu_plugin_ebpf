@@ -796,7 +796,7 @@ fn push_struct_field_projections(
 }
 
 #[cfg(target_os = "linux")]
-fn push_parameterized_helper_projection(
+fn push_helper_call_projection(
     projections: &mut Vec<SpecContextProjection>,
     root: &str,
     name: &str,
@@ -834,7 +834,7 @@ fn push_parameterized_context_projections(
     projections: &mut Vec<SpecContextProjection>,
 ) {
     if spec.ctx_field_access_error(&CtxField::CgroupId).is_none() {
-        push_parameterized_helper_projection(
+        push_helper_call_projection(
             projections,
             "ancestor_cgroup_id",
             "N",
@@ -845,7 +845,7 @@ fn push_parameterized_context_projections(
         );
     }
 
-    push_parameterized_helper_projection(
+    push_helper_call_projection(
         projections,
         "skb_ancestor_cgroup_id",
         "N",
@@ -855,7 +855,7 @@ fn push_parameterized_context_projections(
         spec.helper_call_error(BpfHelper::SkbAncestorCgroupId),
     );
 
-    push_parameterized_helper_projection(
+    push_helper_call_projection(
         projections,
         "sk",
         "ancestor_cgroup_id.N",
@@ -864,6 +864,22 @@ fn push_parameterized_context_projections(
         MirType::U64,
         spec.helper_call_error(BpfHelper::SkAncestorCgroupId),
     );
+
+    if spec.ctx_field_access_error(&CtxField::Task).is_none()
+        && spec.helper_call_error(BpfHelper::TaskPtRegs).is_none()
+    {
+        for register in ["arg0", "arg1", "arg2", "arg3", "arg4", "arg5", "retval"] {
+            push_helper_call_projection(
+                projections,
+                "task",
+                &format!("pt_regs.{register}"),
+                &format!("task.pt_regs.{register}"),
+                BpfHelper::TaskPtRegs,
+                MirType::U64,
+                None,
+            );
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]

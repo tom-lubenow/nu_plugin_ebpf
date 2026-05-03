@@ -922,6 +922,11 @@ const KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF = {
     min_kernel: "5.11"
     source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_TASK_PT_REGS = {
+    key: "helper:bpf_task_pt_regs"
+    min_kernel: "5.15"
+    source: "https://github.com/torvalds/linux/blob/v5.15/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SPIN_LOCK = {
     key: "helper:bpf_spin_lock"
     min_kernel: "5.1"
@@ -2508,6 +2513,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_sys_close", feature: $KERNEL_FEATURE_BPF_SYS_CLOSE }
     { name: "bpf_btf_find_by_name_kind", feature: $KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND }
     { name: "bpf_get_current_task_btf", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
+    { name: "bpf_task_pt_regs", feature: $KERNEL_FEATURE_BPF_TASK_PT_REGS }
     { name: "bpf_get_func_ip", feature: $KERNEL_FEATURE_BPF_GET_FUNC_IP }
     { name: "bpf_get_attach_cookie", feature: $KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE }
     { name: "bpf_get_func_arg_cnt", feature: $KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT }
@@ -3672,6 +3678,21 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "task-pt-regs-context"
+        category: "context-surface"
+        tags: [context task pt-regs helper-backed accept]
+        requires: [kernel-btf]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  $ctx.task.pt_regs.arg0 | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
     {
         name: "global-scalar-mut"
@@ -7763,6 +7784,40 @@ def context-projection-kernel-feature [raw_access: string target] {
     null
 }
 
+def context-task-pt-regs-kernel-feature [raw_access: string] {
+    let cleaned = (
+        $raw_access
+        | str trim
+        | split row " "
+        | first
+        | str replace --all ")" ""
+        | str replace --all "(" ""
+        | str replace --all "," ""
+        | str replace --all "\"" ""
+        | str replace --all "'" ""
+        | str replace --all "}" ""
+        | str replace --all "]" ""
+        | str replace --all ";" ""
+    )
+    let parts = ($cleaned | split row ".")
+    if ($parts | length) < 3 {
+        return null
+    }
+
+    let root = ($parts | first)
+    if $root not-in ["task" "current_task"] {
+        return null
+    }
+    if ($parts | get 1) != "pt_regs" {
+        return null
+    }
+    if ($parts | get 2) not-in ["arg0" "arg1" "arg2" "arg3" "arg4" "arg5" "retval"] {
+        return null
+    }
+
+    $KERNEL_FEATURE_BPF_TASK_PT_REGS
+}
+
 def program-kfunc-names [source: string] {
     mut names = []
 
@@ -7968,6 +8023,10 @@ def program-context-field-kernel-features [source: string target] {
             let projection_feature = (context-projection-kernel-feature $raw_access $target)
             if $projection_feature != null {
                 $features = (append-missing-kernel-features $features [$projection_feature])
+            }
+            let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
+            if $task_pt_regs_feature != null {
+                $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
             }
         }
     }
