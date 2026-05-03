@@ -1388,6 +1388,37 @@ fn test_validate_struct_ops_attach_safety_allows_lower_risk_families() {
 }
 
 #[test]
+fn test_validate_struct_ops_attach_target_rejects_callback_specs() {
+    let spec = ProgramSpec::parse("struct_ops:sched_ext_ops.select_cpu")
+        .expect("struct_ops callback spec should parse");
+    let err = super::validate_struct_ops_attach_target(&spec, Span::test_data())
+        .expect_err("callback specs should not be accepted as attach objects");
+
+    assert_eq!(err.msg, "Invalid struct_ops attach target");
+    assert!(err.labels.iter().any(|label| {
+        label
+            .text
+            .contains("target names callback 'sched_ext_ops.select_cpu'")
+    }));
+    assert!(
+        err.help
+            .as_deref()
+            .is_some_and(|help| help.contains("Attach the object with 'struct_ops:sched_ext_ops'"))
+    );
+}
+
+#[test]
+fn test_validate_struct_ops_attach_target_accepts_object_specs() {
+    let spec = ProgramSpec::parse("struct_ops:sched_ext_ops")
+        .expect("struct_ops object spec should parse");
+
+    let value_type_name = super::validate_struct_ops_attach_target(&spec, Span::test_data())
+        .expect("object specs should be accepted as attach objects");
+
+    assert_eq!(value_type_name, "sched_ext_ops");
+}
+
+#[test]
 fn test_validate_required_struct_ops_callbacks_rejects_missing_tcp_congestion_callbacks() {
     if KernelBtf::get()
         .kernel_named_type_size_bytes("tcp_congestion_ops")

@@ -154,6 +154,31 @@ pub(super) fn validate_struct_ops_attach_safety(
         ))
 }
 
+pub(super) fn validate_struct_ops_attach_target<'a>(
+    program_spec: &'a ProgramSpec,
+    span: Span,
+) -> Result<&'a str, LabeledError> {
+    let value_type_name = program_spec
+        .struct_ops_value_type_name()
+        .unwrap_or_else(|| unreachable!("struct_ops attach path requires a struct_ops spec"));
+
+    if let Some(callback_name) = program_spec.struct_ops_callback_name() {
+        return Err(LabeledError::new("Invalid struct_ops attach target")
+            .with_label(
+                format!(
+                    "struct_ops attach expects an object value type, but this target names callback '{}.{}'",
+                    value_type_name, callback_name
+                ),
+                span,
+            )
+            .with_help(format!(
+                "Attach the object with 'struct_ops:{value_type_name}'. Use 'ebpf spec \"struct_ops:{value_type_name}.{callback_name}\"' when you want callback metadata."
+            )));
+    }
+
+    Ok(value_type_name)
+}
+
 pub(super) fn validate_struct_ops_top_level_field_kind(
     value_type_name: &str,
     field_name: &str,

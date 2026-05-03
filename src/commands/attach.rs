@@ -26,13 +26,13 @@ use self::compilation::{
 };
 #[cfg(target_os = "linux")]
 use self::event_stream::EventStreamIterator;
-use self::struct_ops::validate_struct_ops_attach_safety;
 #[cfg(test)]
 use self::struct_ops::{
     StructOpsTopLevelFieldKind, apply_struct_ops_value_field, default_struct_ops_object_name,
     validate_required_struct_ops_callbacks, validate_required_struct_ops_value_fields,
     validate_struct_ops_callback_kfunc_requirements, validate_struct_ops_top_level_field_kind,
 };
+use self::struct_ops::{validate_struct_ops_attach_safety, validate_struct_ops_attach_target};
 
 #[derive(Clone)]
 pub struct EbpfAttach;
@@ -1420,7 +1420,8 @@ fn run_attach(
             .with_help("Use format like 'kprobe:sys_clone' or 'tracepoint:syscalls/sys_enter_read'"),
     })?;
 
-    let object = if let Some(value_type_name) = program_spec.struct_ops_value_type_name() {
+    let object = if program_spec.struct_ops_value_type_name().is_some() {
+        let value_type_name = validate_struct_ops_attach_target(&program_spec, call.head)?;
         if stream {
             return Err(
                 LabeledError::new("Streaming is not supported for struct_ops objects").with_label(
