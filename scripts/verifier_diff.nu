@@ -5292,6 +5292,44 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "timer-init-rejects-invalid-clock-flags"
+        category: "helper-state"
+        tags: [timer helper-call flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_init" $entry.timer timers 99 --kind array'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_timer_init' requires arg2 flags to be CLOCK_REALTIME, CLOCK_MONOTONIC, or CLOCK_BOOTTIME"
+    }
+    {
+        name: "timer-start-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [timer helper-call flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_start" $entry.timer 1000 4'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_timer_start' requires arg2 flags to contain only BPF_F_TIMER_* bits"
+    }
+    {
         name: "source-kfunc-task-ref-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]
