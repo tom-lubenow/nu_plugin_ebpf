@@ -9,6 +9,13 @@ fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContex
         .unwrap_or_else(|| panic!("expected ctx.{field_name} in spec context fields"))
 }
 
+fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a SpecContextWrite {
+    writes
+        .iter()
+        .find(|surface| surface.field == field_name)
+        .unwrap_or_else(|| panic!("expected writable ctx.{field_name} in spec context writes"))
+}
+
 #[test]
 fn test_spec_context_fields_include_program_specific_aliases() {
     let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
@@ -2194,4 +2201,40 @@ fn test_context_write_records_filter_target_specific_writes() {
         !tc_egress_writes.iter().any(|surface| surface.field == "sk"),
         "ctx.sk assignment should not be advertised on tc egress"
     );
+}
+
+#[test]
+fn test_context_write_records_include_backing_abi_metadata() {
+    let sock_ops =
+        ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
+    let sock_ops_writes = spec_context_writes(&sock_ops);
+    let cb_flags = context_write(&sock_ops_writes, "cb_flags");
+    assert_eq!(cb_flags.kind, "store");
+    assert_eq!(cb_flags.helper, Some("bpf_sock_ops_cb_flags_set"));
+    assert_eq!(cb_flags.helper_minimum_kernel, Some("4.16"));
+    assert!(cb_flags.kfunc.is_none());
+
+    let cgroup_sysctl = ProgramSpec::parse("cgroup_sysctl:/sys/fs/cgroup")
+        .expect("cgroup_sysctl spec should parse");
+    let cgroup_sysctl_writes = spec_context_writes(&cgroup_sysctl);
+    let new_value = context_write(&cgroup_sysctl_writes, "new_value");
+    assert_eq!(new_value.kind, "sysctl-new-value");
+    assert_eq!(new_value.helper, Some("bpf_sysctl_set_new_value"));
+    assert_eq!(new_value.helper_minimum_kernel, Some("5.2"));
+
+    let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
+    let tc_ingress_writes = spec_context_writes(&tc_ingress);
+    let sk = context_write(&tc_ingress_writes, "sk");
+    assert_eq!(sk.kind, "assign-socket");
+    assert_eq!(sk.helper, Some("bpf_sk_assign"));
+    assert_eq!(sk.helper_minimum_kernel, Some("5.7"));
+
+    let unix_sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+        .expect("cgroup_sock_addr unix spec should parse");
+    let unix_sock_addr_writes = spec_context_writes(&unix_sock_addr);
+    let sun_path = context_write(&unix_sock_addr_writes, "sun_path");
+    assert_eq!(sun_path.kind, "sun-path");
+    assert_eq!(sun_path.kfunc, Some("bpf_sock_addr_set_sun_path"));
+    assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
+    assert!(sun_path.helper.is_none());
 }

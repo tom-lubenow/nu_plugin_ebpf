@@ -62,6 +62,8 @@ pub(crate) struct ContextWriteSurface {
     pub(crate) field_name: &'static str,
     pub(crate) kind: &'static str,
     pub(crate) indexed: bool,
+    pub(crate) helper: Option<BpfHelper>,
+    pub(crate) kfunc: Option<&'static str>,
 }
 
 impl ContextStoreTargetSpec {
@@ -178,6 +180,19 @@ impl ContextStoreTargetSpec {
             _ => false,
         }
     }
+
+    fn backing_helper(&self) -> Option<BpfHelper> {
+        match self {
+            Self::Fixed(CtxStoreTarget::SockOpsCbFlags) => Some(BpfHelper::SockOpsCbFlagsSet),
+            Self::Fixed(_)
+            | Self::SockOpsReplyLongWord
+            | Self::SkbCbWord
+            | Self::CgroupSockAddrUserIp6Word
+            | Self::CgroupSockAddrMsgSrcIp6Word
+            | Self::CgroupSockAddrLocalIp4Alias
+            | Self::CgroupSockAddrLocalIp6WordAlias => None,
+        }
+    }
 }
 
 impl ContextWriteTargetSpec {
@@ -247,6 +262,25 @@ impl ContextWriteTargetSpec {
             Self::SockoptOptvalByte => false,
             Self::AssignSocket => false,
             Self::CgroupSockAddrSunPath => false,
+        }
+    }
+
+    fn backing_helper(&self) -> Option<BpfHelper> {
+        match self {
+            Self::Store(spec) => spec.backing_helper(),
+            Self::SysctlNewValue => Some(BpfHelper::SysctlSetNewValue),
+            Self::AssignSocket => Some(BpfHelper::SkAssign),
+            Self::SockoptOptvalByte | Self::CgroupSockAddrSunPath => None,
+        }
+    }
+
+    fn backing_kfunc(&self) -> Option<&'static str> {
+        match self {
+            Self::CgroupSockAddrSunPath => Some("bpf_sock_addr_set_sun_path"),
+            Self::Store(_)
+            | Self::SysctlNewValue
+            | Self::SockoptOptvalByte
+            | Self::AssignSocket => None,
         }
     }
 }
@@ -396,6 +430,8 @@ impl ContextWriteSurfaceSpec {
             field_name: self.field_name,
             kind: self.target.kind(),
             indexed: self.target.requires_indexed_assignment(),
+            helper: self.target.backing_helper(),
+            kfunc: self.target.backing_kfunc(),
         }
     }
 }

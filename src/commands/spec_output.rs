@@ -4,10 +4,11 @@ use nu_protocol::{Span, Value, record};
 
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
-    BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard, PacketContextKind,
-    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
-    SockOpsCallbackGuard, ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
-    synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
+    BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
+    KfuncCompatibilityRequirement, PacketContextKind, ProbeContext,
+    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
+    ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type,
+    synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -39,6 +40,12 @@ struct SpecContextWrite {
     field: &'static str,
     kind: &'static str,
     indexed: bool,
+    helper: Option<&'static str>,
+    helper_minimum_kernel: Option<&'static str>,
+    helper_minimum_kernel_source: Option<&'static str>,
+    kfunc: Option<&'static str>,
+    kfunc_minimum_kernel: Option<&'static str>,
+    kfunc_minimum_kernel_source: Option<&'static str>,
 }
 
 #[cfg(target_os = "linux")]
@@ -1081,10 +1088,27 @@ fn context_retval_record(retval: Option<SpecContextRetval>, span: Span) -> Value
 fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextWrite> {
     spec.ctx_write_surfaces_for_spec()
         .into_iter()
-        .map(|surface| SpecContextWrite {
-            field: surface.field_name,
-            kind: surface.kind,
-            indexed: surface.indexed,
+        .map(|surface| {
+            let kfunc_requirement = surface
+                .kfunc
+                .and_then(KfuncCompatibilityRequirement::for_name);
+            SpecContextWrite {
+                field: surface.field_name,
+                kind: surface.kind,
+                indexed: surface.indexed,
+                helper: surface.helper.map(BpfHelper::name),
+                helper_minimum_kernel: surface.helper.and_then(BpfHelper::minimum_kernel),
+                helper_minimum_kernel_source: surface
+                    .helper
+                    .and_then(BpfHelper::minimum_kernel_source),
+                kfunc: surface.kfunc,
+                kfunc_minimum_kernel: kfunc_requirement
+                    .as_ref()
+                    .map(|requirement| requirement.minimum_kernel()),
+                kfunc_minimum_kernel_source: kfunc_requirement
+                    .as_ref()
+                    .map(|requirement| requirement.minimum_kernel_source()),
+            }
         })
         .collect()
 }
@@ -1099,6 +1123,12 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "field" => Value::string(surface.field, span),
                     "kind" => Value::string(surface.kind, span),
                     "indexed" => Value::bool(surface.indexed, span),
+                    "helper" => optional_static_str(surface.helper, span),
+                    "helper_minimum_kernel" => optional_static_str(surface.helper_minimum_kernel, span),
+                    "helper_minimum_kernel_source" => optional_static_str(surface.helper_minimum_kernel_source, span),
+                    "kfunc" => optional_static_str(surface.kfunc, span),
+                    "kfunc_minimum_kernel" => optional_static_str(surface.kfunc_minimum_kernel, span),
+                    "kfunc_minimum_kernel_source" => optional_static_str(surface.kfunc_minimum_kernel_source, span),
                 },
                 span,
             )
