@@ -772,6 +772,16 @@ const KERNEL_FEATURE_BPF_CSUM_DIFF = {
     min_kernel: "4.6"
     source: "https://github.com/torvalds/linux/blob/v4.6/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_GET_HASH_RECALC = {
+    key: "helper:bpf_get_hash_recalc"
+    min_kernel: "4.8"
+    source: "https://github.com/torvalds/linux/blob/v4.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_CSUM_LEVEL = {
+    key: "helper:bpf_csum_level"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_REDIRECT_NEIGH = {
     key: "helper:bpf_redirect_neigh"
     min_kernel: "5.10"
@@ -816,6 +826,11 @@ const KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL = {
     key: "helper:bpf_xdp_adjust_tail"
     min_kernel: "4.18"
     source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_XDP_GET_BUFF_LEN = {
+    key: "helper:bpf_xdp_get_buff_len"
+    min_kernel: "5.18"
+    source: "https://github.com/torvalds/linux/blob/v5.18/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_REDIRECT = {
     key: "helper:bpf_redirect"
@@ -887,6 +902,11 @@ const KERNEL_FEATURE_BPF_BPRM_OPTS_SET = {
     min_kernel: "5.11"
     source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF = {
+    key: "helper:bpf_get_current_task_btf"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SPIN_LOCK = {
     key: "helper:bpf_spin_lock"
     min_kernel: "5.1"
@@ -906,6 +926,26 @@ const KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE = {
     key: "helper:bpf_sysctl_set_new_value"
     min_kernel: "5.2"
     source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SYSCTL_GET_NAME = {
+    key: "helper:bpf_sysctl_get_name"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SYSCTL_GET_CURRENT_VALUE = {
+    key: "helper:bpf_sysctl_get_current_value"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SYSCTL_GET_NEW_VALUE = {
+    key: "helper:bpf_sysctl_get_new_value"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT = {
+    key: "helper:bpf_get_func_arg_cnt"
+    min_kernel: "5.17"
+    source: "https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_MSG_APPLY_BYTES = {
     key: "helper:bpf_msg_apply_bytes"
@@ -2400,6 +2440,8 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_get_stackid", feature: $KERNEL_FEATURE_BPF_GET_STACKID }
     { name: "bpf_get_stack", feature: $KERNEL_FEATURE_BPF_GET_STACK }
     { name: "bpf_csum_diff", feature: $KERNEL_FEATURE_BPF_CSUM_DIFF }
+    { name: "bpf_get_hash_recalc", feature: $KERNEL_FEATURE_BPF_GET_HASH_RECALC }
+    { name: "bpf_csum_level", feature: $KERNEL_FEATURE_BPF_CSUM_LEVEL }
     { name: "bpf_skb_load_bytes", feature: $KERNEL_FEATURE_BPF_SKB_LOAD_BYTES }
     { name: "bpf_skb_under_cgroup", feature: $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP }
     { name: "bpf_current_task_under_cgroup", feature: $KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP }
@@ -2410,6 +2452,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_xdp_adjust_head", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD }
     { name: "bpf_xdp_adjust_meta", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_META }
     { name: "bpf_xdp_adjust_tail", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL }
+    { name: "bpf_xdp_get_buff_len", feature: $KERNEL_FEATURE_BPF_XDP_GET_BUFF_LEN }
     { name: "bpf_redirect_map", feature: $KERNEL_FEATURE_BPF_REDIRECT_MAP }
     { name: "bpf_sk_redirect_map", feature: $KERNEL_FEATURE_BPF_SK_REDIRECT_MAP }
     { name: "bpf_sk_redirect_hash", feature: $KERNEL_FEATURE_BPF_SK_REDIRECT_HASH }
@@ -2422,6 +2465,9 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_msg_redirect_hash", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH }
     { name: "bpf_sk_assign", feature: $KERNEL_FEATURE_BPF_SK_ASSIGN }
     { name: "bpf_sysctl_set_new_value", feature: $KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE }
+    { name: "bpf_sysctl_get_name", feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_NAME }
+    { name: "bpf_sysctl_get_current_value", feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_CURRENT_VALUE }
+    { name: "bpf_sysctl_get_new_value", feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_NEW_VALUE }
     { name: "bpf_sk_select_reuseport", feature: $KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT }
     { name: "bpf_ringbuf_output", feature: $KERNEL_FEATURE_BPF_RINGBUF_OUTPUT }
     { name: "bpf_ringbuf_reserve", feature: $KERNEL_FEATURE_BPF_RINGBUF_RESERVE }
@@ -2443,8 +2489,10 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_sys_bpf", feature: $KERNEL_FEATURE_BPF_SYS_BPF }
     { name: "bpf_sys_close", feature: $KERNEL_FEATURE_BPF_SYS_CLOSE }
     { name: "bpf_btf_find_by_name_kind", feature: $KERNEL_FEATURE_BPF_BTF_FIND_BY_NAME_KIND }
+    { name: "bpf_get_current_task_btf", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
     { name: "bpf_get_func_ip", feature: $KERNEL_FEATURE_BPF_GET_FUNC_IP }
     { name: "bpf_get_attach_cookie", feature: $KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE }
+    { name: "bpf_get_func_arg_cnt", feature: $KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT }
     { name: "bpf_timer_init", feature: $KERNEL_FEATURE_BPF_TIMER_INIT }
     { name: "bpf_timer_set_callback", feature: $KERNEL_FEATURE_BPF_TIMER_SET_CALLBACK }
     { name: "bpf_timer_start", feature: $KERNEL_FEATURE_BPF_TIMER_START }
@@ -2774,7 +2822,7 @@ const FIXTURES = [
         target: "fentry:security_file_open"
         program: [
             '{|ctx|'
-            '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  ($ctx.arg.file.f_flags + $ctx.pid + $ctx.arg_count) | count'
             '  0'
             '}'
         ]
@@ -2860,7 +2908,7 @@ const FIXTURES = [
         target: "xdp:lo:drv:frags"
         program: [
             '{|ctx|'
-            '  ($ctx.packet_len + $ctx.ifindex + $ctx.rx_queue_index) | count'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.rx_queue_index + $ctx.xdp_buff_len) | count'
             '  "pass"'
             '}'
         ]
@@ -4222,6 +4270,36 @@ const FIXTURES = [
             '  $ctx.file_pos = 0'
             '  $ctx.new_value = "1"'
             '  $ctx.name | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sysctl-current-value-context"
+        category: "context-surface"
+        tags: [cgroup-sysctl context helper-backed]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_value | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sysctl-new-value-context"
+        category: "context-surface"
+        tags: [cgroup-sysctl context helper-backed]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  $ctx.new_value | count'
             '  "allow"'
             '}'
         ]
@@ -7384,9 +7462,17 @@ def context-field-kernel-feature [field: string target] {
     }
 }
 
-def context-field-helper-kernel-feature [field: string] {
+def context-field-helper-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+
     if $field in ["pid" "tid" "tgid" "pid_tgid" "current_pid_tgid"] {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
+    }
+    if $field == "current_task" {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF
+    }
+    if $field == "task" and not ($target_text | str starts-with "iter:") {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF
     }
     if $field in ["uid" "gid" "uid_gid" "current_uid_gid"] {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID
@@ -7409,8 +7495,17 @@ def context-field-helper-kernel-feature [field: string] {
     if $field == "route_realm" {
         return $KERNEL_FEATURE_BPF_GET_ROUTE_REALM
     }
+    if $field == "csum_level" {
+        return $KERNEL_FEATURE_BPF_CSUM_LEVEL
+    }
+    if $field in ["hash_recalc" "recalc_hash"] {
+        return $KERNEL_FEATURE_BPF_GET_HASH_RECALC
+    }
     if $field == "cgroup_id" {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID
+    }
+    if $field == "skb_cgroup_id" {
+        return $KERNEL_FEATURE_BPF_SK_CGROUP_ID
     }
     if $field == "socket_cookie" {
         return $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE
@@ -7435,6 +7530,35 @@ def context-field-helper-kernel-feature [field: string] {
     }
     if $field == "jiffies" {
         return $KERNEL_FEATURE_BPF_JIFFIES64
+    }
+    if $field in ["func_ip" "function_ip"] {
+        return $KERNEL_FEATURE_BPF_GET_FUNC_IP
+    }
+    if $field in ["attach_cookie" "bpf_cookie"] {
+        return $KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE
+    }
+    if $field in ["perf_counter" "perf_enabled" "perf_running"] {
+        return $KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE
+    }
+    if $field in ["xdp_buff_len" "xdp_buffer_len"] {
+        return $KERNEL_FEATURE_BPF_XDP_GET_BUFF_LEN
+    }
+    if ($target_text | str starts-with "cgroup_sysctl:") {
+        if $field in ["sysctl_name" "name" "sysctl_base_name" "base_name"] {
+            return $KERNEL_FEATURE_BPF_SYSCTL_GET_NAME
+        }
+        if $field in ["sysctl_current_value" "current_value"] {
+            return $KERNEL_FEATURE_BPF_SYSCTL_GET_CURRENT_VALUE
+        }
+        if $field in ["sysctl_new_value" "new_value"] {
+            return $KERNEL_FEATURE_BPF_SYSCTL_GET_NEW_VALUE
+        }
+    }
+    if $field == "arg_count" {
+        return $KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT
+    }
+    if $field in ["kstack" "ustack"] {
+        return $KERNEL_FEATURE_BPF_GET_STACKID
     }
 
     null
@@ -7486,6 +7610,14 @@ def normalize-context-field-token [token: string] {
     | str replace --all "}" ""
     | str replace --all "]" ""
     | str replace --all ";" ""
+}
+
+def context-field-access-is-assignment-lhs? [raw_access: string field: string] {
+    let compact = ($raw_access | str trim | str replace --all " " "")
+    let assign_prefix = $"($field)="
+    let equality_prefix = $"($field)=="
+
+    ($compact | str starts-with $assign_prefix) and not ($compact | str starts-with $equality_prefix)
 }
 
 def normalize-context-projection-token [token: string] {
@@ -7797,9 +7929,11 @@ def program-context-field-kernel-features [source: string target] {
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
-            let helper_feature = (context-field-helper-kernel-feature $field)
-            if $helper_feature != null {
-                $features = (append-missing-kernel-features $features [$helper_feature])
+            if not (context-field-access-is-assignment-lhs? $raw_access $field) {
+                let helper_feature = (context-field-helper-kernel-feature $field $target)
+                if $helper_feature != null {
+                    $features = (append-missing-kernel-features $features [$helper_feature])
+                }
             }
             let projection_feature = (context-projection-kernel-feature $raw_access $target)
             if $projection_feature != null {
@@ -7861,23 +7995,6 @@ def program-surface-helper-kernel-features [source: string target] {
             $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM
         ])
     }
-    if (
-        ($source | str contains "perf_counter")
-        or ($source | str contains "perf_enabled")
-        or ($source | str contains "perf_running")
-    ) {
-        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE])
-    }
-    if (($source | str contains ".kstack") or ($source | str contains ".ustack")) {
-        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_STACKID])
-    }
-    if ($source | str contains "func_ip") {
-        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_FUNC_IP])
-    }
-    if ($source | str contains "attach_cookie") {
-        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE])
-    }
-
     for line in ($source | lines) {
         if ($line | str contains "helper-call ") {
             continue
