@@ -1932,6 +1932,11 @@ const KERNEL_FEATURE_CTX_TASK = {
     min_kernel: "5.11"
     source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_CGROUP = {
+    key: "ctx:cgroup"
+    min_kernel: "5.11"
+    source: "https://github.com/torvalds/linux/blob/v5.11/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_KTIME_BOOT = {
     key: "ctx:ktime_boot"
     min_kernel: "5.8"
@@ -2343,6 +2348,8 @@ const CONTEXT_FIELD_KERNEL_FEATURES = [
     { field: "timestamp", feature: $KERNEL_FEATURE_CTX_TIMESTAMP }
     { field: "task", feature: $KERNEL_FEATURE_CTX_TASK }
     { field: "current_task", feature: $KERNEL_FEATURE_CTX_TASK }
+    { field: "cgroup", feature: $KERNEL_FEATURE_CTX_CGROUP }
+    { field: "current_cgroup", feature: $KERNEL_FEATURE_CTX_CGROUP }
     { field: "ktime_boot", feature: $KERNEL_FEATURE_CTX_KTIME_BOOT }
     { field: "boot_ktime", feature: $KERNEL_FEATURE_CTX_KTIME_BOOT }
     { field: "boot_time", feature: $KERNEL_FEATURE_CTX_KTIME_BOOT }
