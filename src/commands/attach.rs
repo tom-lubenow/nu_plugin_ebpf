@@ -517,7 +517,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.bytes_acked } - Get the total acknowledged byte count
     {|ctx| if ($ctx.op == 4) { $ctx.skb_len }; 1 } - Get the total packet length on a proven packet-aware callback
     {|ctx| if ($ctx.op == 4) { $ctx.skb_tcp_flags }; 1 } - Get packet TCP flags on a proven packet-aware callback
-    {|ctx| if ($ctx.op == 4) { $ctx.skb_hwtstamp }; 1 } - Get packet hardware timestamp on a proven packet-aware callback
+    {|ctx| if ($ctx.op == 16) { $ctx.skb_hwtstamp }; 1 } - Get packet hardware timestamp on a proven timestamp callback
     {|ctx| $ctx.sk.family } - Project the current socket through a typed bpf_sock pointer (fields include bound_dev_if, family, type, protocol, mark, priority, src_ip4, src_ip6, src_port, dst_port, dst_ip4, dst_ip6, state, and rx_queue_mapping)
     Note: sock_ops uses raw integer return codes. Observation-only examples
     should return `1`. `ctx.reply`, `ctx.replylong.<0-3>`, and
@@ -529,7 +529,8 @@ Context parameter syntax (recommended):
     for example `($ctx.args | get 0)`. `ctx.data` / `ctx.data_end` use the
     same guarded packet access model as XDP and tc when packet metadata is
     available, so guarded forms like `if ($ctx.op == 4) { ($ctx.data | get 0) }`
-    are valid on packet-aware sock_ops callbacks. `ctx.sk` uses the same typed `bpf_sock` projection
+    are valid on packet-aware sock_ops callbacks. `ctx.skb_hwtstamp` requires
+    timestamp callbacks (`ctx.op` 16-20). `ctx.sk` uses the same typed `bpf_sock` projection
     model as `cgroup_sock`, `cgroup_sockopt`, `cgroup_sock_addr`, `sk_lookup`,
     and `sk_msg`. Modeled sock_ops helpers also use the ordinary helper
     surface here, including `bpf_getsockopt`, `bpf_setsockopt`,

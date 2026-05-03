@@ -4486,6 +4486,9 @@ const FIXTURES = [
             '  if ($ctx.op == 13) {'
             '    ($ctx.packet_len + $ctx.skb_len + $ctx.skb_tcp_flags) | count'
             '  }'
+            '  if ($ctx.op == 16) {'
+            '    ($ctx.packet_len + $ctx.skb_len + ($ctx.skb_hwtstamp mod 1024)) | count'
+            '  }'
             '  1'
             '}'
         ]
