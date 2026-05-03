@@ -664,6 +664,22 @@ fn test_spec_context_fields_include_netfilter_minimum_kernel_metadata() {
 }
 
 #[test]
+fn test_spec_context_fields_include_lirc_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for field_name in ["sample", "value", "mode"] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some("4.18"));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains("/v4.18/drivers/media/rc/bpf-lirc.c"))
+        );
+    }
+}
+
+#[test]
 fn test_spec_context_fields_include_cgroup_device_minimum_kernel_metadata() {
     let spec = ProgramSpec::parse("cgroup_device:/sys/fs/cgroup")
         .expect("cgroup_device spec should parse");

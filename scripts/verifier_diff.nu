@@ -1651,6 +1651,21 @@ const KERNEL_FEATURE_CTX_NETFILTER_PROTOCOL_FAMILY = {
     min_kernel: "6.4"
     source: "https://github.com/torvalds/linux/blob/v6.4/net/netfilter/nf_bpf_link.c"
 }
+const KERNEL_FEATURE_CTX_LIRC_SAMPLE = {
+    key: "ctx:sample"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/drivers/media/rc/bpf-lirc.c"
+}
+const KERNEL_FEATURE_CTX_LIRC_VALUE = {
+    key: "ctx:value"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/drivers/media/rc/bpf-lirc.c"
+}
+const KERNEL_FEATURE_CTX_LIRC_MODE = {
+    key: "ctx:mode"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/drivers/media/rc/bpf-lirc.c"
+}
 const KERNEL_FEATURE_CTX_PID = {
     key: "ctx:pid"
     min_kernel: "4.2"
@@ -5945,6 +5960,17 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
         if $field == "pf" or $field == "protocol_family" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_NETFILTER_PROTOCOL_FAMILY }
+        }
+    }
+    if ($target_text | str starts-with "lirc_mode2:") {
+        if $field == "sample" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_LIRC_SAMPLE }
+        }
+        if $field == "value" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_LIRC_VALUE }
+        }
+        if $field == "mode" {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_LIRC_MODE }
         }
     }
     if ($target_text | str starts-with "cgroup_device:") {
