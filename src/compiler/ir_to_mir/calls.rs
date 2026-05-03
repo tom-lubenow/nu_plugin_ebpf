@@ -1255,7 +1255,8 @@ impl<'a> HirToMirLowering<'a> {
                         src: MirValue::VReg(lookup_vreg),
                     });
 
-                    let stored_ty = self.named_map_value_type(&map_ref).cloned();
+                    let stored_ty =
+                        self.validated_named_map_value_type(&map_ref, "map-get value schema")?;
                     let runtime_ty = MirType::Ptr {
                         pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
                         address_space: AddressSpace::Map,
@@ -2384,10 +2385,10 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn local_storage_map_value_hint(&self, map_ref: &MapRef) -> MirType {
-        self.named_map_value_type(map_ref)
-            .cloned()
-            .unwrap_or(MirType::Unknown)
+    fn local_storage_map_value_hint(&self, map_ref: &MapRef) -> Result<MirType, CompileError> {
+        Ok(self
+            .validated_named_map_value_type(map_ref, "map-get local-storage value schema")?
+            .unwrap_or(MirType::Unknown))
     }
 
     fn lower_local_storage_map_get(
@@ -2443,7 +2444,7 @@ impl<'a> HirToMirLowering<'a> {
             .unwrap_or(default_flags);
 
         let map_vreg = self.emit_typed_map_fd_load(map_ref.name.clone(), map_ref.kind);
-        let value_ty = self.local_storage_map_value_hint(&map_ref);
+        let value_ty = self.local_storage_map_value_hint(&map_ref)?;
         self.vreg_type_hints.insert(
             map_vreg,
             MirType::MapRef {
@@ -2568,8 +2569,7 @@ impl<'a> HirToMirLowering<'a> {
             kind: map_kind,
         };
         let stored_ty = self
-            .named_map_value_type(&map_ref)
-            .cloned()
+            .validated_named_map_value_type(&map_ref, context)?
             .filter(|ty| !matches!(ty, MirType::Unknown))
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
@@ -2846,7 +2846,8 @@ impl<'a> HirToMirLowering<'a> {
             map: map_ref.clone(),
             key: key_vreg,
         });
-        let stored_ty = self.named_map_value_type(&map_ref).cloned();
+        let stored_ty =
+            self.validated_named_map_value_type(&map_ref, "map-contains value schema")?;
         self.vreg_type_hints.insert(
             lookup_vreg,
             MirType::Ptr {

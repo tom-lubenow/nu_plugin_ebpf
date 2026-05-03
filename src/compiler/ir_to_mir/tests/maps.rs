@@ -1156,6 +1156,41 @@ fn test_lower_map_get_uses_external_typed_struct_schema() {
 }
 
 #[test]
+fn test_lower_map_get_rejects_invalid_external_graph_schema() {
+    let hir = make_map_get_projection_program(DeclId::new(43), DeclId::new(44));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(43), "map-get".to_string());
+    decl_names.insert(DeclId::new(44), "count".to_string());
+
+    let external_schema = HashMap::from([(
+        MapRef {
+            name: "cached_path".to_string(),
+            kind: MapKind::Hash,
+        },
+        manual_map_value_struct(vec![
+            manual_map_value_field("root", MirType::bpf_list_head_struct(), 0),
+            manual_map_value_field("counter", MirType::U64, 16),
+        ]),
+    )]);
+
+    let err = lower_hir_to_mir_with_hints_and_maps(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        Some(&external_schema),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("invalid pinned graph schema should be rejected before projection");
+
+    let msg = err.to_string();
+    assert!(msg.contains("map-get value schema"));
+    assert!(msg.contains("contains:TYPE:FIELD"));
+}
+
+#[test]
 fn test_lower_map_get_uses_external_record_string_semantics() {
     let lookup_var = VarId::new(330);
     let map_get_decl = DeclId::new(214);

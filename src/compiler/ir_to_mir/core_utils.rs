@@ -1169,6 +1169,22 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn validated_named_map_value_type(
+        &self,
+        map: &MapRef,
+        context: &str,
+    ) -> Result<Option<MirType>, CompileError> {
+        let Some(ty) = self.named_map_value_type(map) else {
+            return Ok(None);
+        };
+        if self.externally_seeded_map_value_types.contains(map)
+            || self.declared_map_value_types.contains(map)
+        {
+            Self::validate_named_map_value_type_for_map(map, ty, context)?;
+        }
+        Ok(Some(ty.clone()))
+    }
+
     pub(super) fn named_map_key_type(&self, map: &MapRef) -> Option<&MirType> {
         if self.conflicting_map_key_types.contains(map) {
             None

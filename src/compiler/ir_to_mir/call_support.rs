@@ -159,9 +159,12 @@ impl<'a> HirToMirLowering<'a> {
                     _ => (MirType::Unknown, MirType::Unknown),
                 };
                 if matches!(value_ty, MirType::Unknown)
-                    && let Some(named_value_ty) = self.named_map_value_type(map_ref)
+                    && let Some(named_value_ty) = self.validated_named_map_value_type(
+                        map_ref,
+                        "helper-call bpf_for_each_map_elem value schema",
+                    )?
                 {
-                    value_ty = named_value_ty.clone();
+                    value_ty = named_value_ty;
                 }
                 Ok(vec![
                     SubfunctionArgSeed {
