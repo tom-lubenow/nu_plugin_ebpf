@@ -2112,6 +2112,14 @@ fn test_spec_context_projections_include_parameterized_helper_members() {
     let cgroup_skb = ProgramSpec::parse("cgroup_skb:/sys/fs/cgroup:egress")
         .expect("cgroup_skb spec should parse");
     let cgroup_skb_projections = spec_context_projections(&cgroup_skb);
+    let sk_cgroup = projection(&cgroup_skb_projections, "sk.cgroup_id");
+    assert_eq!(sk_cgroup.root, "sk");
+    assert_eq!(sk_cgroup.name, "cgroup_id");
+    assert_eq!(sk_cgroup.helper, Some("bpf_sk_cgroup_id"));
+    assert_eq!(sk_cgroup.helper_minimum_kernel, Some("5.8"));
+    assert_eq!(sk_cgroup.ty, "u64");
+    assert_eq!(sk_cgroup.offset, None);
+
     let sk_ancestor = projection(&cgroup_skb_projections, "sk.ancestor_cgroup_id.N");
     assert_eq!(sk_ancestor.root, "sk");
     assert_eq!(sk_ancestor.name, "ancestor_cgroup_id.N");
@@ -2127,6 +2135,7 @@ fn test_spec_context_projections_include_parameterized_helper_members() {
     let sk_msg =
         ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg spec should parse");
     let sk_msg_projections = spec_context_projections(&sk_msg);
+    projection_absent(&sk_msg_projections, "sk.cgroup_id");
     projection_absent(&sk_msg_projections, "sk.ancestor_cgroup_id.N");
 }
 

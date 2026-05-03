@@ -858,6 +858,16 @@ fn push_parameterized_context_projections(
     push_helper_call_projection(
         projections,
         "sk",
+        "cgroup_id",
+        "sk.cgroup_id",
+        BpfHelper::SkCgroupId,
+        MirType::U64,
+        spec.helper_call_error(BpfHelper::SkCgroupId),
+    );
+
+    push_helper_call_projection(
+        projections,
+        "sk",
         "ancestor_cgroup_id.N",
         "sk.ancestor_cgroup_id.N",
         BpfHelper::SkAncestorCgroupId,
