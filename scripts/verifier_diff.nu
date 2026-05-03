@@ -3,6 +3,7 @@
 const REPO_ROOT = (path self | path dirname | path dirname)
 const BPFFS = "/sys/fs/bpf"
 const VALID_TIERS = ["fast" "btf" "kernel" "vm-only"]
+const VALID_TEST_LANES = ["host-safe" "host-gated" "dry-run" "vm-only"]
 const VALID_HOST_FEATURES = [
     "cgroup-v2"
     "kernel-btf"
@@ -9873,6 +9874,112 @@ def fixture-kernel-compatibility [fixture kernel_release] {
     }
 }
 
+def test-lane-rank [lane: string] {
+    if $lane == "host-safe" {
+        0
+    } else if $lane == "host-gated" {
+        1
+    } else if $lane == "dry-run" {
+        2
+    } else if $lane == "vm-only" {
+        3
+    } else {
+        0
+    }
+}
+
+def stricter-test-lane [left: string right: string] {
+    if (test-lane-rank $right) > (test-lane-rank $left) {
+        $right
+    } else {
+        $left
+    }
+}
+
+def aggregate-test-lanes [lanes] {
+    mut lane = "host-safe"
+
+    for candidate in $lanes {
+        if $candidate != null and $candidate != "" {
+            $lane = (stricter-test-lane $lane $candidate)
+        }
+    }
+
+    $lane
+}
+
+def kernel-feature-default-test-lane [feature] {
+    let key = ($feature | get -o key | default "")
+
+    if ($key | str starts-with "struct_ops:") {
+        return "vm-only"
+    }
+
+    if $key in [
+        "program:BPF_PROG_TYPE_STRUCT_OPS"
+        "program:BPF_PROG_TYPE_LWT"
+        "attach:netfilter-link"
+    ] {
+        return "vm-only"
+    }
+
+    if $key in [
+        "program:BPF_PROG_TYPE_EXT"
+        "program:BPF_PROG_TYPE_SYSCALL"
+    ] {
+        return "dry-run"
+    }
+
+    if $key in [
+        "section:raw_tracepoint.w"
+        "program:BPF_PROG_TYPE_SOCKET_FILTER"
+        "program:BPF_PROG_TYPE_XDP"
+        "attach:xdp-skb"
+        "attach:xdp-drv"
+        "attach:xdp-hw"
+        "section:xdp.frags"
+        "program:BPF_PROG_TYPE_SCHED_CLS"
+        "program:BPF_PROG_TYPE_SCHED_ACT"
+        "program:BPF_PROG_TYPE_SK_LOOKUP"
+        "attach:BPF_LSM_CGROUP"
+        "program:BPF_PROG_TYPE_FLOW_DISSECTOR"
+        "attach:tcx"
+        "attach:netkit"
+        "attach:netfilter-defrag"
+        "program:BPF_PROG_TYPE_LWT_SEG6LOCAL"
+        "program:BPF_PROG_TYPE_SK_MSG"
+        "program:BPF_PROG_TYPE_SK_SKB"
+        "attach:BPF_SK_REUSEPORT_SELECT"
+        "attach:BPF_SK_REUSEPORT_SELECT_OR_MIGRATE"
+        "program:BPF_PROG_TYPE_CGROUP_SKB"
+        "program:BPF_PROG_TYPE_CGROUP_SOCK"
+        "program:BPF_PROG_TYPE_CGROUP_DEVICE"
+        "program:BPF_PROG_TYPE_CGROUP_SOCK_ADDR"
+        "program:BPF_PROG_TYPE_CGROUP_SYSCTL"
+        "program:BPF_PROG_TYPE_CGROUP_SOCKOPT"
+        "program:BPF_PROG_TYPE_SOCK_OPS"
+        "attach:BPF_CGROUP_UNIX_SOCK_ADDR"
+        "program:BPF_PROG_TYPE_LIRC_MODE2"
+    ] {
+        return "host-gated"
+    }
+
+    "host-safe"
+}
+
+def fixture-default-test-lane [fixture] {
+    let explicit = ($fixture | get -o default_test_lane)
+    if $explicit != null {
+        return $explicit
+    }
+
+    let lanes = (
+        fixture-kernel-features $fixture
+        | each {|feature| kernel-feature-default-test-lane $feature }
+    )
+    aggregate-test-lanes $lanes
+}
+
 def kernel-feature-labels [features] {
     $features
     | each {|feature|
@@ -9915,6 +10022,7 @@ def fixture-summary [fixture compat_kernel] {
         requires: (optional $fixture requires [])
         kernel_requires: (optional $fixture kernel_requires [])
         kernel_features: (fixture-kernel-features $fixture)
+        default_test_lane: (fixture-default-test-lane $fixture)
         effective_min_kernel: (fixture-effective-min-kernel $fixture | default "")
         effective_max_kernel_exclusive: (fixture-effective-max-kernel-exclusive $fixture | default "")
         effective_min_kernel_sources: (fixture-effective-min-kernel-sources $fixture)
@@ -9959,6 +10067,12 @@ def kernel-accept-compat-reason-count [fixtures kernel_release reason_prefix: st
     | length
 }
 
+def fixture-test-lane-count [fixtures lane: string] {
+    $fixtures
+    | where {|fixture| (fixture-default-test-lane $fixture) == $lane }
+    | length
+}
+
 def fixture-matrix-rows [fixtures compat_kernel] {
     mut rows = []
 
@@ -9997,6 +10111,10 @@ def fixture-matrix-rows [fixtures compat_kernel] {
                 kernel_skip: (fixture-status-count $category_fixtures kernel skip)
                 kernel_accept_versioned: (kernel-accept-versioned-count $category_fixtures true)
                 kernel_accept_unversioned: (kernel-accept-versioned-count $category_fixtures false)
+                lane_host_safe: (fixture-test-lane-count $category_fixtures "host-safe")
+                lane_host_gated: (fixture-test-lane-count $category_fixtures "host-gated")
+                lane_dry_run: (fixture-test-lane-count $category_fixtures "dry-run")
+                lane_vm_only: (fixture-test-lane-count $category_fixtures "vm-only")
             }
 
             let row = if $compat_kernel == null {
@@ -10024,7 +10142,7 @@ def print-fixture-matrix [fixtures compat_kernel] {
         } else {
             $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_incompatible=($row.kernel_accept_incompatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer) kernel_accept_requires_older=($row.kernel_accept_requires_older)"
         }
-        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned)($compat_text)"
+        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned) lane_host_safe=($row.lane_host_safe) lane_host_gated=($row.lane_host_gated) lane_dry_run=($row.lane_dry_run) lane_vm_only=($row.lane_vm_only)($compat_text)"
     }
 }
 
@@ -10035,6 +10153,16 @@ def validate-tier-option [label: string value] {
 
     if $value not-in $VALID_TIERS {
         fail $"invalid ($label) tier '($value)'; expected one of ($VALID_TIERS | str join ', ')"
+    }
+}
+
+def validate-test-lane-option [label: string value] {
+    if $value == null {
+        return
+    }
+
+    if $value not-in $VALID_TEST_LANES {
+        fail $"invalid ($label) test lane '($value)'; expected one of ($VALID_TEST_LANES | str join ', ')"
     }
 }
 
@@ -10127,6 +10255,7 @@ def validate-fixture-metadata [fixtures] {
 
     for fixture in $fixtures {
         validate-tier-option $"fixture ($fixture.name)" ($fixture | get -o tier)
+        validate-test-lane-option $"fixture ($fixture.name)" ($fixture | get -o default_test_lane)
         validate-status-option $"fixture ($fixture.name) local" $fixture.local
         validate-status-option $"fixture ($fixture.name) kernel" $fixture.kernel
         validate-host-features $fixture requires
@@ -10158,7 +10287,7 @@ def fixture-has-tag [fixture tag] {
     optional $fixture tags [] | any {|fixture_tag| $fixture_tag == $tag }
 }
 
-def fixture-matches-filters [fixture category tag tier exclude_tier local_status kernel_status] {
+def fixture-matches-filters [fixture category tag tier exclude_tier local_status kernel_status test_lane] {
     (
         ($category == null or (optional $fixture category "") == $category)
         and (fixture-has-tag $fixture $tag)
@@ -10166,6 +10295,7 @@ def fixture-matches-filters [fixture category tag tier exclude_tier local_status
         and ($exclude_tier == null or (fixture-tier $fixture) != $exclude_tier)
         and ($local_status == null or $fixture.local == $local_status)
         and ($kernel_status == null or $fixture.kernel == $kernel_status)
+        and ($test_lane == null or (fixture-default-test-lane $fixture) == $test_lane)
     )
 }
 
@@ -10339,9 +10469,10 @@ def select-fixtures-with-requirements [fixtures require_features: bool phase: st
     $selected
 }
 
-def select-fixtures [fixture_name category tag tier exclude_tier local_status kernel_status] {
+def select-fixtures [fixture_name category tag tier exclude_tier local_status kernel_status test_lane] {
     validate-tier-option "selected" $tier
     validate-tier-option "excluded" $exclude_tier
+    validate-test-lane-option "selected" $test_lane
     validate-status-option "local" $local_status
     validate-status-option "kernel" $kernel_status
 
@@ -10357,7 +10488,7 @@ def select-fixtures [fixture_name category tag tier exclude_tier local_status ke
 
     let selected = (
         $fixtures
-        | where {|fixture| fixture-matches-filters $fixture $category $tag $tier $exclude_tier $local_status $kernel_status }
+        | where {|fixture| fixture-matches-filters $fixture $category $tag $tier $exclude_tier $local_status $kernel_status $test_lane }
     )
 
     if (($selected | length) == 0) {
@@ -10380,6 +10511,7 @@ def main [
     --tag: string # Run fixtures containing a tag.
     --tier: string # Run fixtures in a tier: fast, btf, kernel, or vm-only.
     --exclude-tier: string # Exclude fixtures in a tier: fast, btf, kernel, or vm-only.
+    --test-lane: string # Run fixtures in a default test lane: host-safe, host-gated, dry-run, or vm-only.
     --local-status: string # Run fixtures whose expected local status is accept, reject, or skip.
     --kernel-status: string # Run fixtures whose expected kernel status is accept, reject, or skip.
 ] {
@@ -10408,7 +10540,7 @@ def main [
     }
 
     let selected_tier = if $fast { "fast" } else { $tier }
-    let fixtures = (select-fixtures $fixture $category $tag $selected_tier $exclude_tier $local_status $kernel_status)
+    let fixtures = (select-fixtures $fixture $category $tag $selected_tier $exclude_tier $local_status $kernel_status $test_lane)
 
     if $list {
         let summaries = ($fixtures | each {|fixture| fixture-summary $fixture $compat_kernel })
@@ -10423,7 +10555,7 @@ def main [
             } else {
                 $" compat_kernel=($summary.compat_kernel) compatible=($summary.compatible_with_compat_kernel) compat_reason=($summary.compat_kernel_reason)"
             }
-            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) effective_max_kernel_exclusive=($summary.effective_max_kernel_exclusive) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')($compat_text)"
+            print $"($summary.name) local=($summary.local) kernel=($summary.kernel) category=($summary.category) tier=($summary.tier) default_test_lane=($summary.default_test_lane) requires=($summary.requires | str join ',') kernel_requires=($summary.kernel_requires | str join ',') effective_min_kernel=($summary.effective_min_kernel) effective_max_kernel_exclusive=($summary.effective_max_kernel_exclusive) kernel_features=(kernel-feature-labels $summary.kernel_features | str join ',') tags=($summary.tags | str join ',')($compat_text)"
         }
         return
     }
