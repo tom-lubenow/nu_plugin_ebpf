@@ -266,6 +266,34 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
             "6.4",
             "/v6.4/kernel/bpf/btf.c",
         ),
+        (
+            MapValueCompatibilityRequirement::BpfListHead,
+            "map-value:bpf_list_head",
+            "BPF map-value list head field support",
+            "6.2",
+            "/v6.2/kernel/bpf/btf.c",
+        ),
+        (
+            MapValueCompatibilityRequirement::BpfListNode,
+            "map-value:bpf_list_node",
+            "BPF map-value list node field support",
+            "6.2",
+            "/v6.2/kernel/bpf/btf.c",
+        ),
+        (
+            MapValueCompatibilityRequirement::BpfRbRoot,
+            "map-value:bpf_rb_root",
+            "BPF map-value rbtree root field support",
+            "6.4",
+            "/v6.4/kernel/bpf/btf.c",
+        ),
+        (
+            MapValueCompatibilityRequirement::BpfRbNode,
+            "map-value:bpf_rb_node",
+            "BPF map-value rbtree node field support",
+            "6.4",
+            "/v6.4/kernel/bpf/btf.c",
+        ),
     ];
     for (requirement, key, description, minimum, source_suffix) in expected {
         assert_eq!(requirement.key(), key);
@@ -281,6 +309,10 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
         MapValueCompatibilityRequirement::BpfKptr,
         MapValueCompatibilityRequirement::BpfRefcount,
         MapValueCompatibilityRequirement::BpfWorkqueue,
+        MapValueCompatibilityRequirement::BpfListHead,
+        MapValueCompatibilityRequirement::BpfListNode,
+        MapValueCompatibilityRequirement::BpfRbRoot,
+        MapValueCompatibilityRequirement::BpfRbNode,
     ];
     assert_eq!(
         MapValueCompatibilityRequirement::effective_minimum_kernel(&requirements),

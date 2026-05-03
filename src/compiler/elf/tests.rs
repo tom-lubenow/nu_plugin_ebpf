@@ -10062,6 +10062,34 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
                 synthetic: false,
                 bitfield: None,
             },
+            StructField {
+                name: "list_head".to_string(),
+                ty: MirType::bpf_list_head_struct(),
+                offset: 56,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "list_node".to_string(),
+                ty: MirType::bpf_list_node_struct(),
+                offset: 72,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "rb_root".to_string(),
+                ty: MirType::bpf_rb_root_struct(),
+                offset: 88,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "rb_node".to_string(),
+                ty: MirType::bpf_rb_node_struct(),
+                offset: 104,
+                synthetic: false,
+                bitfield: None,
+            },
         ],
     };
     let program = EbpfProgram::with_maps(
@@ -10091,6 +10119,10 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
             MapValueCompatibilityRequirement::BpfKptr,
             MapValueCompatibilityRequirement::BpfWorkqueue,
             MapValueCompatibilityRequirement::BpfRefcount,
+            MapValueCompatibilityRequirement::BpfListHead,
+            MapValueCompatibilityRequirement::BpfListNode,
+            MapValueCompatibilityRequirement::BpfRbRoot,
+            MapValueCompatibilityRequirement::BpfRbNode,
         ]
     );
     assert_eq!(requirements[0].key(), "map-value:bpf_spin_lock");
@@ -10098,6 +10130,10 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
     assert_eq!(requirements[2].key(), "map-value:kptr");
     assert_eq!(requirements[3].key(), "map-value:bpf_wq");
     assert_eq!(requirements[4].key(), "map-value:bpf_refcount");
+    assert_eq!(requirements[5].key(), "map-value:bpf_list_head");
+    assert_eq!(requirements[6].key(), "map-value:bpf_list_node");
+    assert_eq!(requirements[7].key(), "map-value:bpf_rb_root");
+    assert_eq!(requirements[8].key(), "map-value:bpf_rb_node");
     assert_eq!(
         program.map_value_compatibility_minimum_kernel(),
         Some("6.10")

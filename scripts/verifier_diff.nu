@@ -842,6 +842,26 @@ const KERNEL_FEATURE_MAP_VALUE_BPF_REFCOUNT = {
     min_kernel: "6.4"
     source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/btf.c"
 }
+const KERNEL_FEATURE_MAP_VALUE_BPF_LIST_HEAD = {
+    key: "map-value:bpf_list_head"
+    min_kernel: "6.2"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/btf.c"
+}
+const KERNEL_FEATURE_MAP_VALUE_BPF_LIST_NODE = {
+    key: "map-value:bpf_list_node"
+    min_kernel: "6.2"
+    source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/btf.c"
+}
+const KERNEL_FEATURE_MAP_VALUE_BPF_RB_ROOT = {
+    key: "map-value:bpf_rb_root"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/btf.c"
+}
+const KERNEL_FEATURE_MAP_VALUE_BPF_RB_NODE = {
+    key: "map-value:bpf_rb_node"
+    min_kernel: "6.4"
+    source: "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/btf.c"
+}
 const KERNEL_FEATURE_BPF_KPTR_XCHG = {
     key: "helper:bpf_kptr_xchg"
     min_kernel: "5.19"
@@ -2032,6 +2052,10 @@ const MAP_VALUE_KERNEL_FEATURES = [
     { token: "kptr:", feature: $KERNEL_FEATURE_MAP_VALUE_KPTR }
     { token: "bpf_wq", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_WQ }
     { token: "bpf_refcount", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_REFCOUNT }
+    { token: "bpf_list_head", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_LIST_HEAD }
+    { token: "bpf_list_node", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_LIST_NODE }
+    { token: "bpf_rb_root", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_RB_ROOT }
+    { token: "bpf_rb_node", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_RB_NODE }
 ]
 
 const HELPER_KERNEL_FEATURES = [
@@ -4275,6 +4299,21 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "map value graph type spec"
+    }
+    {
+        name: "map-define-rejects-bare-rbtree-node"
+        category: "maps"
+        tags: [maps map-define graph reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{node:bpf_rb_node,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "matching bpf_list_node/bpf_rb_node object fields"
     }
     {
         name: "timer-map-define-lowers-init-start-cancel"

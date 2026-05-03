@@ -132,6 +132,14 @@ fn collect_map_value_compatibility_requirements_for_type(
         Some(MapValueCompatibilityRequirement::BpfWorkqueue)
     } else if ty.is_bpf_refcount_struct() {
         Some(MapValueCompatibilityRequirement::BpfRefcount)
+    } else if ty.is_bpf_list_head_struct() {
+        Some(MapValueCompatibilityRequirement::BpfListHead)
+    } else if ty.is_bpf_list_node_struct() {
+        Some(MapValueCompatibilityRequirement::BpfListNode)
+    } else if ty.is_bpf_rb_root_struct() {
+        Some(MapValueCompatibilityRequirement::BpfRbRoot)
+    } else if ty.is_bpf_rb_node_struct() {
+        Some(MapValueCompatibilityRequirement::BpfRbNode)
     } else {
         None
     };

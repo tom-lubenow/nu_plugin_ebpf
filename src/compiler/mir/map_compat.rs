@@ -51,6 +51,8 @@ const LINUX_BPF_H_V6_1_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V6_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.2/include/uapi/linux/bpf.h";
+const LINUX_BTF_C_V6_2_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/btf.c";
 const LINUX_BPF_H_V6_9_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.9/include/uapi/linux/bpf.h";
 const LINUX_BTF_C_V6_4_SOURCE: &str =
@@ -146,6 +148,10 @@ pub enum MapValueCompatibilityRequirement {
     BpfKptr,
     BpfWorkqueue,
     BpfRefcount,
+    BpfListHead,
+    BpfListNode,
+    BpfRbRoot,
+    BpfRbNode,
 }
 
 impl MapValueCompatibilityRequirement {
@@ -156,6 +162,10 @@ impl MapValueCompatibilityRequirement {
             Self::BpfKptr => "map-value:kptr",
             Self::BpfWorkqueue => "map-value:bpf_wq",
             Self::BpfRefcount => "map-value:bpf_refcount",
+            Self::BpfListHead => "map-value:bpf_list_head",
+            Self::BpfListNode => "map-value:bpf_list_node",
+            Self::BpfRbRoot => "map-value:bpf_rb_root",
+            Self::BpfRbNode => "map-value:bpf_rb_node",
         }
     }
 
@@ -170,6 +180,10 @@ impl MapValueCompatibilityRequirement {
             Self::BpfKptr => "BPF map-value kptr field support",
             Self::BpfWorkqueue => "BPF map-value workqueue field support",
             Self::BpfRefcount => "BPF map-value refcount field support",
+            Self::BpfListHead => "BPF map-value list head field support",
+            Self::BpfListNode => "BPF map-value list node field support",
+            Self::BpfRbRoot => "BPF map-value rbtree root field support",
+            Self::BpfRbNode => "BPF map-value rbtree node field support",
         }
     }
 
@@ -180,6 +194,8 @@ impl MapValueCompatibilityRequirement {
             Self::BpfKptr => "5.19",
             Self::BpfWorkqueue => "6.10",
             Self::BpfRefcount => "6.4",
+            Self::BpfListHead | Self::BpfListNode => "6.2",
+            Self::BpfRbRoot | Self::BpfRbNode => "6.4",
         }
     }
 
@@ -190,6 +206,8 @@ impl MapValueCompatibilityRequirement {
             Self::BpfKptr => LINUX_BPF_VERIFIER_C_V5_19_SOURCE,
             Self::BpfWorkqueue => LINUX_INTERNAL_BPF_H_V6_10_SOURCE,
             Self::BpfRefcount => LINUX_BTF_C_V6_4_SOURCE,
+            Self::BpfListHead | Self::BpfListNode => LINUX_BTF_C_V6_2_SOURCE,
+            Self::BpfRbRoot | Self::BpfRbNode => LINUX_BTF_C_V6_4_SOURCE,
         }
     }
 

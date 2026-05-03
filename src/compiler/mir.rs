@@ -624,6 +624,22 @@ impl MirType {
         Self::opaque_named_struct_with_size("bpf_refcount", 4)
     }
 
+    pub fn bpf_list_head_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_list_head", 16)
+    }
+
+    pub fn bpf_list_node_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_list_node", 16)
+    }
+
+    pub fn bpf_rb_root_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_rb_root", 16)
+    }
+
+    pub fn bpf_rb_node_struct() -> Self {
+        Self::opaque_named_struct_with_size("bpf_rb_node", 24)
+    }
+
     pub fn bpf_kptr_slot_struct(pointee_name: &str) -> Self {
         Self::opaque_named_struct_with_size(
             &format!("{BPF_KPTR_SLOT_STRUCT_PREFIX}{pointee_name}"),
@@ -645,6 +661,22 @@ impl MirType {
 
     pub fn is_bpf_refcount_struct(&self) -> bool {
         self.has_struct_name(&["bpf_refcount"])
+    }
+
+    pub fn is_bpf_list_head_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_list_head"])
+    }
+
+    pub fn is_bpf_list_node_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_list_node"])
+    }
+
+    pub fn is_bpf_rb_root_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_rb_root"])
+    }
+
+    pub fn is_bpf_rb_node_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_rb_node"])
     }
 
     pub fn bpf_kptr_pointee_name(&self) -> Option<&str> {
@@ -947,6 +979,13 @@ impl MirType {
         }
         if self.is_bpf_refcount_struct() {
             return 4;
+        }
+        if self.is_bpf_list_head_struct()
+            || self.is_bpf_list_node_struct()
+            || self.is_bpf_rb_root_struct()
+            || self.is_bpf_rb_node_struct()
+        {
+            return 8;
         }
         if self.is_bpf_kptr_slot_struct() {
             return 8;
