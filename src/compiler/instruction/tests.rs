@@ -4357,10 +4357,16 @@ fn test_kfunc_kernel_compatibility_metadata() {
             .expect("dynptr size should be versioned"),
         KfuncCompatibilityRequirement::for_name("bpf_get_task_exe_file")
             .expect("file kfunc should be versioned"),
+        KfuncCompatibilityRequirement::for_name("scx_bpf_reenqueue_local")
+            .expect("legacy sched_ext kfunc should be versioned"),
     ];
     assert_eq!(
         KfuncCompatibilityRequirement::effective_minimum_kernel(&requirements),
         Some("6.12")
+    );
+    assert_eq!(
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(&requirements),
+        Some("6.23")
     );
     assert!(KfuncCompatibilityRequirement::kernel_version_at_least(
         "6.5.0", "6.5"

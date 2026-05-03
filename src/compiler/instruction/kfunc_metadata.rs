@@ -120,6 +120,23 @@ impl KfuncCompatibilityRequirement {
         minimum
     }
 
+    pub fn effective_maximum_kernel_exclusive(requirements: &[Self]) -> Option<&'static str> {
+        let mut maximum = None;
+        for candidate in requirements
+            .iter()
+            .filter_map(|requirement| requirement.maximum_kernel_exclusive())
+        {
+            let should_replace = match maximum {
+                Some(current) => Self::kernel_version_cmp(candidate, current).is_lt(),
+                None => true,
+            };
+            if should_replace {
+                maximum = Some(candidate);
+            }
+        }
+        maximum
+    }
+
     pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
         !Self::kernel_version_cmp(current, minimum).is_lt()
     }

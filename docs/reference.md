@@ -196,9 +196,10 @@ families, and cgroup UNIX socket-address hooks. Live-load preflight also
 reports source-verified map-kind, global data-section, typed map-value field,
 modeled helper, source-preserved known-kfunc, and source-preserved
 context-field requirements from the compiled object. Compiled program/object
-metadata also exposes an aggregate `compatibility_minimum_kernel` summary
-across those source-verified categories. Known kfunc compatibility windows can
-also carry maximum-exclusive kernel bounds for source-verified transitional
+metadata also exposes an aggregate `compatibility_minimum_kernel` across those
+source-verified categories plus `compatibility_maximum_kernel_exclusive` when
+bounded source-verified features are present. Known kfunc compatibility windows
+can carry maximum-exclusive kernel bounds for source-verified transitional
 kfunc spellings. Context
 fields that lower through modeled
 helpers inherit those helper minimum-kernel/source records, and source-verified

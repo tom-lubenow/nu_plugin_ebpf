@@ -364,6 +364,20 @@ fn aggregate_compatibility_minimum_kernel(
     effective
 }
 
+fn aggregate_compatibility_maximum_kernel_exclusive(
+    maximums: impl IntoIterator<Item = Option<&'static str>>,
+) -> Option<&'static str> {
+    let mut effective = None;
+    for candidate in maximums.into_iter().flatten() {
+        if effective.is_none_or(|current| {
+            ContextFieldCompatibilityRequirement::kernel_version_at_least(current, candidate)
+        }) {
+            effective = Some(candidate);
+        }
+    }
+    effective
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -1004,6 +1018,12 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn kfunc_compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
+
     pub fn map_value_compatibility_requirements(&self) -> Vec<MapValueCompatibilityRequirement> {
         map_value_compatibility_requirements_for_value_types(self.generic_map_value_types.values())
     }
@@ -1047,9 +1067,7 @@ impl EbpfProgramSection {
     /// Highest source-verified minimum kernel required by this program section.
     ///
     /// This summarizes program-family, typed map-value, helper, kfunc, and
-    /// source-preserved context-field floors. It intentionally does not model
-    /// kfunc maximum-exclusive windows; callers that need full availability
-    /// checks should inspect `kfunc_compatibility_requirements()`.
+    /// source-preserved context-field floors.
     pub fn compatibility_minimum_kernel(&self) -> Option<&'static str> {
         aggregate_compatibility_minimum_kernel([
             self.program_compatibility_minimum_kernel(),
@@ -1057,6 +1075,13 @@ impl EbpfProgramSection {
             self.helper_compatibility_minimum_kernel(),
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
+        ])
+    }
+
+    /// Earliest source-verified exclusive upper kernel bound for this section.
+    pub fn compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
+        aggregate_compatibility_maximum_kernel_exclusive([
+            self.kfunc_compatibility_maximum_kernel_exclusive()
         ])
     }
 }
@@ -1671,6 +1696,12 @@ impl EbpfObject {
         )
     }
 
+    pub fn kfunc_compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
+
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         used_context_fields_for_programs(&self.programs)
     }
@@ -1691,8 +1722,6 @@ impl EbpfObject {
     ///
     /// This aggregates program-family, map-kind, global data-section, typed
     /// map-value, helper, kfunc, and source-preserved context-field floors.
-    /// It is a minimum-kernel summary only; kfunc maximum-exclusive windows
-    /// remain available through `kfunc_compatibility_requirements()`.
     pub fn compatibility_minimum_kernel(&self) -> Option<&'static str> {
         aggregate_compatibility_minimum_kernel([
             self.program_compatibility_minimum_kernel(),
@@ -1702,6 +1731,13 @@ impl EbpfObject {
             self.helper_compatibility_minimum_kernel(),
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
+        ])
+    }
+
+    /// Earliest source-verified exclusive upper kernel bound for this object.
+    pub fn compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
+        aggregate_compatibility_maximum_kernel_exclusive([
+            self.kfunc_compatibility_maximum_kernel_exclusive()
         ])
     }
 
@@ -2226,6 +2262,12 @@ impl EbpfProgram {
         )
     }
 
+    pub fn kfunc_compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
+
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         sorted_context_fields(&self.used_ctx_fields)
     }
@@ -2261,8 +2303,6 @@ impl EbpfProgram {
     ///
     /// This aggregates program-family, map-kind, global data-section, typed
     /// map-value, helper, kfunc, and source-preserved context-field floors.
-    /// It is a minimum-kernel summary only; kfunc maximum-exclusive windows
-    /// remain available through `kfunc_compatibility_requirements()`.
     pub fn compatibility_minimum_kernel(&self) -> Option<&'static str> {
         aggregate_compatibility_minimum_kernel([
             self.program_compatibility_minimum_kernel(),
@@ -2272,6 +2312,13 @@ impl EbpfProgram {
             self.helper_compatibility_minimum_kernel(),
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
+        ])
+    }
+
+    /// Earliest source-verified exclusive upper kernel bound for this program.
+    pub fn compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
+        aggregate_compatibility_maximum_kernel_exclusive([
+            self.kfunc_compatibility_maximum_kernel_exclusive()
         ])
     }
 }

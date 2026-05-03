@@ -10337,12 +10337,31 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
     assert_eq!(requirements[1].name(), "bpf_task_acquire");
     assert_eq!(requirements[1].key(), "kfunc:bpf_task_acquire");
     assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(program.kfunc_compatibility_maximum_kernel_exclusive(), None);
     assert_eq!(
         program
             .clone()
             .into_object()
             .kfunc_compatibility_minimum_kernel(),
         Some("6.12")
+    );
+
+    let bounded = EbpfProgram::new(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_kfuncs(["scx_bpf_reenqueue_local"]);
+    assert_eq!(bounded.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(
+        bounded.kfunc_compatibility_maximum_kernel_exclusive(),
+        Some("6.23")
+    );
+    let bounded_object = bounded.into_object();
+    assert_eq!(
+        bounded_object.kfunc_compatibility_maximum_kernel_exclusive(),
+        Some("6.23")
     );
 }
 
@@ -10407,18 +10426,30 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
     );
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
     assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(program.kfunc_compatibility_maximum_kernel_exclusive(), None);
     assert_eq!(
         program.context_field_compatibility_minimum_kernel(),
         Some("5.8")
     );
     assert_eq!(program.compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(program.compatibility_maximum_kernel_exclusive(), None);
 
-    let object = program.into_object();
+    let object = program
+        .with_used_kfuncs(["bpf_get_task_exe_file", "scx_bpf_reenqueue_local"])
+        .into_object();
     assert_eq!(
         object.programs[0].compatibility_minimum_kernel(),
         Some("6.12")
     );
     assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(
+        object.programs[0].compatibility_maximum_kernel_exclusive(),
+        Some("6.23")
+    );
+    assert_eq!(
+        object.compatibility_maximum_kernel_exclusive(),
+        Some("6.23")
+    );
 }
 
 #[test]
