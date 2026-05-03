@@ -6513,6 +6513,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "redirect-tc-action-ifindex"
+        category: "language-surface"
+        tags: [redirect tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  redirect 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-lwt-xmit-ifindex"
+        category: "language-surface"
+        tags: [redirect lwt]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  redirect 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "redirect-map-xdp-devmap"
         category: "language-surface"
         tags: [redirect-map xdp map]
@@ -8344,7 +8370,14 @@ def program-surface-helper-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_PEER])
             } else if ($line | str contains "--neigh") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_NEIGH])
-            } else if ($target_text | str starts-with "xdp:") or ($target_text | str starts-with "tc:") or ($target_text | str starts-with "tcx:") or ($target_text | str starts-with "netkit:") {
+            } else if (
+                ($target_text | str starts-with "xdp:")
+                or ($target_text | str starts-with "tc_action:")
+                or ($target_text | str starts-with "tc:")
+                or ($target_text | str starts-with "tcx:")
+                or ($target_text | str starts-with "netkit:")
+                or ($target_text | str starts-with "lwt_xmit:")
+            ) {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT])
             }
         }
