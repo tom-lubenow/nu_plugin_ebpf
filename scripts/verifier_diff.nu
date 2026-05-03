@@ -2513,7 +2513,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_MAP_HASH]
     }
     {
         name: "map-get-direct-pointer-branch"
@@ -2532,7 +2531,6 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
-        kernel_features: [$KERNEL_FEATURE_MAP_HASH]
     }
     {
         name: "map-define-record-key-put-get"
@@ -6522,6 +6520,10 @@ def program-map-kernel-features [source: string] {
     mut features = []
 
     for line in ($source | lines) {
+        if ($line | str contains "helper-call ") {
+            continue
+        }
+
         let parts = ($line | split row "--kind ")
         if ($parts | length) > 1 {
             let raw_kind = (($parts | get 1) | str trim | split row " " | first)
