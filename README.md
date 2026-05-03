@@ -33,8 +33,9 @@ test lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), and nullable
 minimum-kernel fields. Source-verified feature requirements carry minimum
 kernel versions for base program families, cgroup program families,
 TCX/netkit, netfilter links and defrag targets, XDP attach modes,
-`uprobe.multi`, struct_ops family targets such as `tcp_congestion_ops` and
-`sched_ext_ops`, and cgroup UNIX socket-address hooks, and
+`uprobe.multi`, struct_ops family targets such as `tcp_congestion_ops`,
+`hid_bpf_ops`, `sched_ext_ops`, and `Qdisc_ops`, and cgroup UNIX
+socket-address hooks, and
 `compatibility_minimum_kernel` reports the maximum known requirement for that
 parsed target. Live-load preflight also checks source-verified map-kind, global
 data-section, typed map-value field, all modeled helper, source-preserved

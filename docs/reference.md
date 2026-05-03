@@ -191,7 +191,7 @@ The compiler tracks compatibility requirements at both the program-family and
 parsed-target level. Live-attach rejection messages include these feature
 requirements, for example base program families, kernel BTF, BPF trampolines,
 TCX, netfilter links and defrag targets, route LWT, struct_ops family targets
-such as `tcp_congestion_ops` and `sched_ext_ops`,
+such as `tcp_congestion_ops`, `hid_bpf_ops`, `sched_ext_ops`, and `Qdisc_ops`,
 XDP attach modes and multi-buffer sections, cgroup v2, cgroup program
 families, and cgroup UNIX socket-address hooks. Live-load preflight also
 reports source-verified map-kind, global data-section, typed map-value field,

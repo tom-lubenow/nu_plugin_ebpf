@@ -2500,6 +2500,53 @@ fn test_spec_record_includes_resource_attach_shapes() {
         }),
         "tcp_congestion_ops should carry family compatibility metadata"
     );
+
+    for (spec_text, family, requirement_key, minimum_kernel) in [
+        ("struct_ops:hid_bpf_ops", "hid-bpf", "hid-bpf-ops", "6.11"),
+        ("struct_ops:Qdisc_ops", "qdisc", "qdisc-ops", "6.16"),
+    ] {
+        let spec = ProgramSpec::parse(spec_text).expect("struct_ops family spec should parse");
+        let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
+            .into_record()
+            .expect("spec output should be a record");
+        let attach_shape = record
+            .get("attach_shape")
+            .expect("attach shape should be present")
+            .as_record()
+            .expect("attach shape should be a record");
+        assert_eq!(
+            attach_shape
+                .get("family")
+                .expect("struct_ops family should be present")
+                .as_str()
+                .expect("struct_ops family should be a string"),
+            family
+        );
+        assert_eq!(
+            record
+                .get("compatibility_minimum_kernel")
+                .expect("compatibility minimum should be present")
+                .as_str()
+                .expect("compatibility minimum should be a string"),
+            minimum_kernel
+        );
+        let requirements = record
+            .get("compatibility_requirements")
+            .expect("compatibility requirements should be present")
+            .as_list()
+            .expect("compatibility requirements should be a list");
+        assert!(
+            requirements.iter().any(|requirement| {
+                requirement
+                    .as_record()
+                    .ok()
+                    .and_then(|requirement| requirement.get("key"))
+                    .and_then(|key| key.as_str().ok())
+                    .is_some_and(|key| key == requirement_key)
+            }),
+            "{spec_text} should carry family compatibility metadata"
+        );
+    }
 }
 
 #[test]

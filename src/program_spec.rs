@@ -166,23 +166,29 @@ fn parse_offset(s: &str) -> Result<u64, ProgramSpecParseError> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StructOpsFamily {
     Generic,
-    SchedExt,
     TcpCongestion,
+    HidBpf,
+    SchedExt,
+    Qdisc,
 }
 
 impl StructOpsFamily {
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Generic => "generic",
-            Self::SchedExt => "sched-ext",
             Self::TcpCongestion => "tcp-congestion",
+            Self::HidBpf => "hid-bpf",
+            Self::SchedExt => "sched-ext",
+            Self::Qdisc => "qdisc",
         }
     }
 
     pub(crate) fn from_value_type_name(value_type_name: &str) -> Self {
         match value_type_name {
-            "sched_ext_ops" => Self::SchedExt,
             "tcp_congestion_ops" => Self::TcpCongestion,
+            "hid_bpf_ops" => Self::HidBpf,
+            "sched_ext_ops" => Self::SchedExt,
+            "Qdisc_ops" => Self::Qdisc,
             _ => Self::Generic,
         }
     }
@@ -191,6 +197,12 @@ impl StructOpsFamily {
         match self {
             Self::SchedExt => Some(
                 "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
+            ),
+            Self::HidBpf => Some(
+                "live hid_bpf_ops registration can alter HID input and report handling; prefer --dry-run on the host and use an isolated device or disposable environment for real loads",
+            ),
+            Self::Qdisc => Some(
+                "live Qdisc_ops registration can affect packet scheduling; prefer --dry-run on the host and use an isolated network namespace or VM for real loads",
             ),
             Self::Generic | Self::TcpCongestion => None,
         }
@@ -211,7 +223,7 @@ impl StructOpsFamily {
                     | "init"
                     | "exit"
             ),
-            Self::Generic | Self::TcpCongestion => false,
+            Self::Generic | Self::TcpCongestion | Self::HidBpf | Self::Qdisc => false,
         }
     }
 }
@@ -2721,9 +2733,17 @@ impl ProgramSpec {
                     &mut requirements,
                     ProgramCompatibilityRequirement::TcpCongestionOps,
                 ),
+                StructOpsFamily::HidBpf => push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::HidBpfOps,
+                ),
                 StructOpsFamily::SchedExt => push_compatibility_requirement(
                     &mut requirements,
                     ProgramCompatibilityRequirement::SchedExt,
+                ),
+                StructOpsFamily::Qdisc => push_compatibility_requirement(
+                    &mut requirements,
+                    ProgramCompatibilityRequirement::QdiscOps,
                 ),
                 StructOpsFamily::Generic => {}
             }
@@ -3732,6 +3752,9 @@ mod tests {
         assert!(
             !struct_ops.requires_compatibility_feature(ProgramCompatibilityRequirement::SchedExt)
         );
+        assert!(
+            !struct_ops.requires_compatibility_feature(ProgramCompatibilityRequirement::QdiscOps)
+        );
 
         let tcp_congestion = ProgramSpec::parse("struct_ops:tcp_congestion_ops")
             .expect("tcp_congestion_ops spec should parse");
@@ -3761,6 +3784,31 @@ mod tests {
             tcp_congestion_init
                 .requires_compatibility_feature(ProgramCompatibilityRequirement::TcpCongestionOps)
         );
+
+        for (spec_text, requirement, minimum) in [
+            (
+                "struct_ops:hid_bpf_ops",
+                ProgramCompatibilityRequirement::HidBpfOps,
+                "6.11",
+            ),
+            (
+                "struct_ops:Qdisc_ops",
+                ProgramCompatibilityRequirement::QdiscOps,
+                "6.16",
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec_text).expect("struct_ops family spec should parse");
+            assert!(
+                spec.requires_compatibility_feature(ProgramCompatibilityRequirement::StructOps)
+            );
+            assert!(spec.requires_compatibility_feature(requirement));
+            assert_eq!(
+                ProgramCompatibilityRequirement::effective_minimum_kernel(
+                    &spec.compatibility_requirements()
+                ),
+                Some(minimum)
+            );
+        }
 
         let sched_ext =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext should parse");
@@ -4311,6 +4359,18 @@ mod tests {
                 .expect("tcp_congestion_ops spec should parse")
                 .struct_ops_family(),
             Some(StructOpsFamily::TcpCongestion)
+        );
+        assert_eq!(
+            ProgramSpec::parse("struct_ops:hid_bpf_ops")
+                .expect("hid_bpf_ops spec should parse")
+                .struct_ops_family(),
+            Some(StructOpsFamily::HidBpf)
+        );
+        assert_eq!(
+            ProgramSpec::parse("struct_ops:Qdisc_ops")
+                .expect("Qdisc_ops spec should parse")
+                .struct_ops_family(),
+            Some(StructOpsFamily::Qdisc)
         );
     }
 

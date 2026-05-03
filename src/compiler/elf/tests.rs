@@ -10087,6 +10087,31 @@ fn test_ebpf_object_reports_program_compatibility_requirements() {
         Some("5.6")
     );
 
+    for (value_type_name, requirement, minimum) in [
+        (
+            "hid_bpf_ops",
+            ProgramCompatibilityRequirement::HidBpfOps,
+            "6.11",
+        ),
+        (
+            "Qdisc_ops",
+            ProgramCompatibilityRequirement::QdiscOps,
+            "6.16",
+        ),
+    ] {
+        let object = EbpfObject::struct_ops("demo", value_type_name, vec![0; 8]).build();
+        let requirements = object.program_compatibility_requirements();
+        assert!(
+            requirements.contains(&ProgramCompatibilityRequirement::StructOps),
+            "{value_type_name} should include base struct_ops compatibility"
+        );
+        assert!(
+            requirements.contains(&requirement),
+            "{value_type_name} should include family compatibility"
+        );
+        assert_eq!(object.program_compatibility_minimum_kernel(), Some(minimum));
+    }
+
     let sleepable_callback = EbpfProgram::new(
         EbpfProgramType::StructOps,
         "init",

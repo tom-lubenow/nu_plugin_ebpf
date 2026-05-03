@@ -1660,7 +1660,9 @@ pub enum ProgramCompatibilityRequirement {
     LircMode2,
     StructOps,
     TcpCongestionOps,
+    HidBpfOps,
     SchedExt,
+    QdiscOps,
     CgroupUnixSockAddr,
 }
 
@@ -1728,8 +1730,12 @@ const LINUX_LINK_VMLINUX_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/scripts/link-vmlinux.sh";
 const LINUX_BPF_TCP_CA_V5_6_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.6/net/ipv4/bpf_tcp_ca.c";
+const LINUX_HID_BPF_STRUCT_OPS_V6_11_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.11/drivers/hid/bpf/hid_bpf_struct_ops.c";
 const LINUX_SCHED_EXT_V6_12_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c";
+const LINUX_BPF_QDISC_V6_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.16/net/sched/bpf_qdisc.c";
 const LINUX_TASK_ITER_V5_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.8/kernel/bpf/task_iter.c";
 const LINUX_TASK_ITER_V5_12_SOURCE: &str =
@@ -1837,7 +1843,9 @@ impl ProgramCompatibilityRequirement {
             Self::LircMode2 => "lirc-mode2",
             Self::StructOps => "struct-ops",
             Self::TcpCongestionOps => "tcp-congestion-ops",
+            Self::HidBpfOps => "hid-bpf-ops",
             Self::SchedExt => "sched-ext",
+            Self::QdiscOps => "qdisc-ops",
             Self::CgroupUnixSockAddr => "cgroup-unix-sock-addr",
         }
     }
@@ -1912,7 +1920,9 @@ impl ProgramCompatibilityRequirement {
             Self::LircMode2 => "LIRC mode2 device attach support",
             Self::StructOps => "BPF struct_ops object support",
             Self::TcpCongestionOps => "TCP congestion-control struct_ops support",
+            Self::HidBpfOps => "HID-BPF struct_ops support",
             Self::SchedExt => "sched_ext struct_ops support",
+            Self::QdiscOps => "BPF Qdisc struct_ops support",
             Self::CgroupUnixSockAddr => "cgroup UNIX socket-address hook support",
         }
     }
@@ -1921,7 +1931,9 @@ impl ProgramCompatibilityRequirement {
         match self {
             Self::KernelBtf => "kernel-metadata",
             Self::CgroupV2 | Self::LircMode2 => "attach-resource",
-            Self::TcpCongestionOps | Self::SchedExt => "struct-ops-family",
+            Self::TcpCongestionOps | Self::HidBpfOps | Self::SchedExt | Self::QdiscOps => {
+                "struct-ops-family"
+            }
             Self::NetfilterDefrag
             | Self::XdpSkbAttachMode
             | Self::XdpDrvAttachMode
@@ -1959,7 +1971,9 @@ impl ProgramCompatibilityRequirement {
             | Self::RouteLwt
             | Self::StructOps
             | Self::TcpCongestionOps
-            | Self::SchedExt => "vm-only",
+            | Self::HidBpfOps
+            | Self::SchedExt
+            | Self::QdiscOps => "vm-only",
             Self::RawTracepointWritable
             | Self::SocketFilterProgram
             | Self::XdpProgram
@@ -2087,7 +2101,9 @@ impl ProgramCompatibilityRequirement {
             Self::LircMode2 => Some("4.18"),
             Self::StructOps => Some("5.6"),
             Self::TcpCongestionOps => Some("5.6"),
+            Self::HidBpfOps => Some("6.11"),
             Self::SchedExt => Some("6.12"),
+            Self::QdiscOps => Some("6.16"),
             Self::CgroupUnixSockAddr => Some("6.7"),
             Self::SockMapAttach | Self::CgroupV2 => None,
         }
@@ -2104,6 +2120,7 @@ impl ProgramCompatibilityRequirement {
             Self::CgroupLsm => LINUX_BPF_H_V6_0_SOURCE,
             Self::ExtensionProgram | Self::StructOps => LINUX_BPF_H_V5_6_SOURCE,
             Self::TcpCongestionOps => LINUX_BPF_TCP_CA_V5_6_SOURCE,
+            Self::HidBpfOps => LINUX_HID_BPF_STRUCT_OPS_V6_11_SOURCE,
             Self::SyscallProgram | Self::SkReuseportMigration => LINUX_BPF_H_V5_14_SOURCE,
             Self::BpfIterator => LINUX_BPF_H_V5_8_SOURCE,
             Self::BpfIteratorTaskTarget | Self::BpfIteratorTaskFileTarget => {
@@ -2120,6 +2137,7 @@ impl ProgramCompatibilityRequirement {
             Self::SkSkbSockMapAttach => LINUX_BPF_H_V4_14_SOURCE,
             Self::SkReuseportAttach => LINUX_BPF_H_V4_19_SOURCE,
             Self::SchedExt => LINUX_SCHED_EXT_V6_12_SOURCE,
+            Self::QdiscOps => LINUX_BPF_QDISC_V6_16_SOURCE,
             Self::SocketFilterProgram => LINUX_BPF_H_V3_19_SOURCE,
             Self::KprobeProgram | Self::TcProgram | Self::TcActionProgram => {
                 LINUX_BPF_H_V4_1_SOURCE

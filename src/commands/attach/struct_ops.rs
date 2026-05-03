@@ -104,7 +104,7 @@ impl StructOpsFamily {
     fn required_callbacks(self) -> &'static [&'static str] {
         match self {
             Self::TcpCongestion => &["ssthresh", "cong_avoid", "undo_cwnd"],
-            Self::Generic | Self::SchedExt => &[],
+            Self::Generic | Self::HidBpf | Self::SchedExt | Self::Qdisc => &[],
         }
     }
 
@@ -113,7 +113,7 @@ impl StructOpsFamily {
             Self::TcpCongestion => {
                 "tcp_congestion_ops requires closure members for ssthresh, cong_avoid, and undo_cwnd, for example { ssthresh: {|ctx| 2 }, undo_cwnd: {|ctx| 2 }, cong_avoid: {|ctx| 0 } }"
             }
-            Self::Generic | Self::SchedExt => {
+            Self::Generic | Self::HidBpf | Self::SchedExt | Self::Qdisc => {
                 "Provide closures for the required struct_ops callback members"
             }
         }
@@ -820,7 +820,7 @@ pub(super) fn validate_required_struct_ops_value_fields(
 
             Ok(())
         }
-        StructOpsFamily::Generic => Ok(()),
+        StructOpsFamily::Generic | StructOpsFamily::HidBpf | StructOpsFamily::Qdisc => Ok(()),
     }
 }
 
@@ -918,7 +918,10 @@ pub(super) fn validate_struct_ops_callback_kfunc_requirements(
         StructOpsFamily::SchedExt => {
             validate_sched_ext_callback_kfunc_requirements(body, callback_kfuncs, span)
         }
-        StructOpsFamily::Generic | StructOpsFamily::TcpCongestion => Ok(()),
+        StructOpsFamily::Generic
+        | StructOpsFamily::TcpCongestion
+        | StructOpsFamily::HidBpf
+        | StructOpsFamily::Qdisc => Ok(()),
     }
 }
 

@@ -1366,6 +1366,21 @@ fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default
 }
 
 #[test]
+fn test_validate_struct_ops_attach_safety_rejects_known_behavior_changing_live_loads() {
+    for spec_text in ["struct_ops:hid_bpf_ops", "struct_ops:Qdisc_ops"] {
+        let spec = ProgramSpec::parse(spec_text).expect("struct_ops spec should parse");
+        let err = super::validate_struct_ops_attach_safety(&spec, false, false, Span::test_data())
+            .expect_err("behavior-changing struct_ops attach should require explicit opt-in");
+        assert!(
+            err.labels
+                .iter()
+                .any(|label| label.text.contains("disabled by default")),
+            "unexpected safety diagnostic for {spec_text}: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_validate_struct_ops_attach_safety_allows_sched_ext_dry_run() {
     let spec = ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
     super::validate_struct_ops_attach_safety(&spec, true, false, Span::test_data())
