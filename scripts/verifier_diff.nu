@@ -727,6 +727,11 @@ const KERNEL_FEATURE_BPF_PERF_EVENT_READ_VALUE = {
     min_kernel: "4.15"
     source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE = {
+    key: "helper:bpf_perf_prog_read_value"
+    min_kernel: "4.15"
+    source: "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_OVERRIDE_RETURN = {
     key: "helper:bpf_override_return"
     min_kernel: "4.16"
@@ -2195,6 +2200,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_tail_call", feature: $KERNEL_FEATURE_BPF_TAIL_CALL }
     { name: "bpf_perf_event_read", feature: $KERNEL_FEATURE_BPF_PERF_EVENT_READ }
     { name: "bpf_perf_event_read_value", feature: $KERNEL_FEATURE_BPF_PERF_EVENT_READ_VALUE }
+    { name: "bpf_perf_prog_read_value", feature: $KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE }
     { name: "bpf_override_return", feature: $KERNEL_FEATURE_BPF_OVERRIDE_RETURN }
     { name: "bpf_redirect", feature: $KERNEL_FEATURE_BPF_REDIRECT }
     { name: "bpf_get_stackid", feature: $KERNEL_FEATURE_BPF_GET_STACKID }
@@ -7018,6 +7024,13 @@ def program-surface-helper-kernel-features [source: string target] {
             $KERNEL_FEATURE_BPF_KTIME_GET_NS
             $KERNEL_FEATURE_BPF_MAP_DELETE_ELEM
         ])
+    }
+    if (
+        ($source | str contains "perf_counter")
+        or ($source | str contains "perf_enabled")
+        or ($source | str contains "perf_running")
+    ) {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE])
     }
 
     for line in ($source | lines) {
