@@ -213,11 +213,11 @@ Context parameter syntax (recommended):
     `allow` or `deny`. socket_filter closures can return `drop` / `deny`
     for `0`, or `pass` / `keep` / `allow` to snapshot the full packet by
     returning `ctx.packet_len`. `redirect IFINDEX` is the preferred
-    first-class packet redirect surface on XDP/TC/TCX/Netkit, with optional
+    first-class packet redirect surface on XDP/tc_action/TC/TCX/Netkit, with optional
     `--flags`; XDP still requires `FLAGS = 0`. `adjust-packet
     --head|--meta|--tail DELTA` is the preferred first-class XDP packet
     relayout surface, selecting the corresponding `bpf_xdp_adjust_*`
-    helper automatically. On `tc`, `tcx`, `netkit`, `sk_skb`, and `sk_skb_parser`,
+    helper automatically. On `tc_action`, `tc`, `tcx`, `netkit`, `sk_skb`, and `sk_skb_parser`,
     `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`,
     and `adjust-packet --room LEN_DIFF --mode MODE [--flags FLAGS]`
     are the preferred first-class skb relayout surfaces, selecting
@@ -228,7 +228,7 @@ Context parameter syntax (recommended):
     reading packet bytes again; after skb relayout helpers, reload
     `ctx.data` and `ctx.data_end`. The raw `helper-call
     "bpf_xdp_adjust_*"` and `helper-call "bpf_skb_*"` forms remain
-    available as escape hatches. `tc`, `tcx`, `netkit`, `sk_skb`, and `sk_skb_parser`
+    available as escape hatches. `tc_action`, `tc`, `tcx`, `netkit`, `sk_skb`, and `sk_skb_parser`
     also model skb packet-edit helpers such as `bpf_skb_store_bytes`,
     `bpf_l3_csum_replace`, `bpf_l4_csum_replace`,
     `bpf_get_hash_recalc`, `bpf_csum_update`, and
