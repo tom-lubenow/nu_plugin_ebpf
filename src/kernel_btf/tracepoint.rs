@@ -2,6 +2,22 @@
 
 use super::types::{FieldInfo, TypeInfo};
 
+/// Source used to construct a tracepoint context layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TracepointContextSource {
+    TracefsFormat,
+    WellKnownSyscallFallback,
+}
+
+impl TracepointContextSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TracefsFormat => "tracefs-format",
+            Self::WellKnownSyscallFallback => "well-known-syscall-fallback",
+        }
+    }
+}
+
 /// Tracepoint context layout from kernel BTF
 ///
 /// Tracepoints have structured contexts (not pt_regs like kprobes).
@@ -18,6 +34,10 @@ pub struct TracepointContext {
     pub fields: Vec<FieldInfo>,
     /// Total size of the context struct
     pub size: usize,
+    /// Where the layout metadata came from.
+    pub source: TracepointContextSource,
+    /// Path to the tracefs format file when this layout was read from tracefs.
+    pub source_path: Option<String>,
 }
 
 impl TracepointContext {
@@ -29,12 +49,35 @@ impl TracepointContext {
         fields: Vec<FieldInfo>,
         size: usize,
     ) -> Self {
+        Self::new_with_source(
+            category,
+            name,
+            struct_name,
+            fields,
+            size,
+            TracepointContextSource::TracefsFormat,
+            None,
+        )
+    }
+
+    /// Create a new tracepoint context with explicit provenance.
+    pub fn new_with_source(
+        category: impl Into<String>,
+        name: impl Into<String>,
+        struct_name: impl Into<String>,
+        fields: Vec<FieldInfo>,
+        size: usize,
+        source: TracepointContextSource,
+        source_path: Option<String>,
+    ) -> Self {
         Self {
             category: category.into(),
             name: name.into(),
             struct_name: struct_name.into(),
             fields,
             size,
+            source,
+            source_path,
         }
     }
 
@@ -91,12 +134,14 @@ impl TracepointContext {
             },
         ];
 
-        Self::new(
+        Self::new_with_source(
             "syscalls",
             name,
             format!("trace_event_raw_{}", name),
             fields,
             64, // 8 + 8 + 48
+            TracepointContextSource::WellKnownSyscallFallback,
+            None,
         )
     }
 
@@ -127,12 +172,14 @@ impl TracepointContext {
             },
         ];
 
-        Self::new(
+        Self::new_with_source(
             "syscalls",
             name,
             format!("trace_event_raw_{}", name),
             fields,
             24,
+            TracepointContextSource::WellKnownSyscallFallback,
+            None,
         )
     }
 }

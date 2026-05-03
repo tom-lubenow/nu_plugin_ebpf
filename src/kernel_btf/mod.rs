@@ -19,5 +19,5 @@ pub use service::{
     TrampolineFieldProjection, TrampolineFieldSelector, TrampolineParamInfo, TrampolineValueKind,
     TrampolineValueSpec,
 };
-pub use tracepoint::TracepointContext;
+pub use tracepoint::{TracepointContext, TracepointContextSource};
 pub use types::{BitfieldInfo, FieldInfo, TypeInfo};

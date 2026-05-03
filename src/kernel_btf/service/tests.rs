@@ -114,6 +114,8 @@ format:
 
     assert_eq!(ctx.category, "syscalls");
     assert_eq!(ctx.name, "sys_enter_openat");
+    assert_eq!(ctx.source, TracepointContextSource::TracefsFormat);
+    assert_eq!(ctx.source_path, None);
 
     // Should have 5 non-common fields
     assert_eq!(ctx.fields.len(), 5);
@@ -152,6 +154,11 @@ format:
 fn test_wellknown_sys_enter() {
     let ctx = TracepointContext::sys_enter("sys_enter_openat");
     assert_eq!(ctx.category, "syscalls");
+    assert_eq!(
+        ctx.source,
+        TracepointContextSource::WellKnownSyscallFallback
+    );
+    assert_eq!(ctx.source_path, None);
     assert!(ctx.has_field("id"));
     assert!(ctx.has_field("args"));
 }

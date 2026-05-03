@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::{BtfError, FieldInfo, KernelBtf, TracepointContext, TypeInfo};
+use super::{BtfError, FieldInfo, KernelBtf, TracepointContext, TracepointContextSource, TypeInfo};
 
 impl KernelBtf {
     /// Find the tracefs events directory
@@ -85,7 +85,13 @@ impl KernelBtf {
             }
         })?;
 
-        self.parse_format_file(&content, category, name)
+        self.parse_format_file_with_source(
+            &content,
+            category,
+            name,
+            TracepointContextSource::TracefsFormat,
+            Some(format_path),
+        )
     }
 
     /// Parse a tracefs format file
@@ -104,11 +110,29 @@ impl KernelBtf {
     ///         field:int dfd;  offset:16;      size:8; signed:0;
     ///         field:const char * filename;    offset:24;      size:8; signed:0;
     /// ```
+    #[cfg(test)]
     pub(super) fn parse_format_file(
         &self,
         content: &str,
         category: &str,
         name: &str,
+    ) -> Result<TracepointContext, BtfError> {
+        self.parse_format_file_with_source(
+            content,
+            category,
+            name,
+            TracepointContextSource::TracefsFormat,
+            None,
+        )
+    }
+
+    fn parse_format_file_with_source(
+        &self,
+        content: &str,
+        category: &str,
+        name: &str,
+        source: TracepointContextSource,
+        source_path: Option<String>,
     ) -> Result<TracepointContext, BtfError> {
         let mut fields = Vec::new();
         let mut max_offset = 0usize;
@@ -153,16 +177,19 @@ impl KernelBtf {
             ));
         }
 
-        Ok(TracepointContext::new(
+        Ok(TracepointContext::new_with_source(
             category,
             name,
             format!("trace_event_raw_{}", name),
             fields,
             max_offset,
+            source,
+            source_path,
         ))
     }
 
     /// Parse a single field line from a format file
+    #[cfg(test)]
     pub(super) fn parse_field_line(&self, line: &str) -> Option<FieldInfo> {
         self.parse_field_line_with_context(line, None)
     }

@@ -96,6 +96,10 @@ struct SpecTracepointField {
     size: usize,
     bit_offset: Option<u32>,
     bit_size: Option<u32>,
+    source: &'static str,
+    source_path: Option<String>,
+    context_struct: String,
+    context_size: usize,
 }
 
 #[cfg(target_os = "linux")]
@@ -847,21 +851,31 @@ fn spec_tracepoint_fields(
 
     let ctx = ProbeContext::from_program_spec(spec.clone());
     match ctx.tracepoint_context() {
-        Ok(Some(tracepoint)) => (
-            tracepoint
-                .fields
-                .into_iter()
-                .map(|field| SpecTracepointField {
-                    name: field.name,
-                    ty: type_info_label(&field.type_info),
-                    offset: field.offset,
-                    size: field.size,
-                    bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
-                    bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
-                })
-                .collect(),
-            None,
-        ),
+        Ok(Some(tracepoint)) => {
+            let source = tracepoint.source.label();
+            let source_path = tracepoint.source_path.clone();
+            let context_struct = tracepoint.struct_name.clone();
+            let context_size = tracepoint.size;
+            (
+                tracepoint
+                    .fields
+                    .into_iter()
+                    .map(|field| SpecTracepointField {
+                        name: field.name,
+                        ty: type_info_label(&field.type_info),
+                        offset: field.offset,
+                        size: field.size,
+                        bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+                        bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+                        source,
+                        source_path: source_path.clone(),
+                        context_struct: context_struct.clone(),
+                        context_size,
+                    })
+                    .collect(),
+                None,
+            )
+        }
         Ok(None) => (Vec::new(), None),
         Err(err) => (Vec::new(), Some(err)),
     }
@@ -880,6 +894,10 @@ fn tracepoint_field_records(fields: Vec<SpecTracepointField>, span: Span) -> Vec
                     "size" => optional_usize(Some(field.size), span),
                     "bit_offset" => optional_u32(field.bit_offset, span),
                     "bit_size" => optional_u32(field.bit_size, span),
+                    "source" => Value::string(field.source, span),
+                    "source_path" => optional_string(field.source_path, span),
+                    "context_struct" => Value::string(field.context_struct, span),
+                    "context_size" => optional_usize(Some(field.context_size), span),
                 },
                 span,
             )

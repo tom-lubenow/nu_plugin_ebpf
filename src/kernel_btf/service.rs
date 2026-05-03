@@ -15,7 +15,7 @@ use btf::Btf;
 use btf::btf::{FlattenedType, Type};
 
 use super::pt_regs::{PtRegsError, PtRegsOffsets, fallback_offsets, offsets_from_btf};
-use super::tracepoint::TracepointContext;
+use super::tracepoint::{TracepointContext, TracepointContextSource};
 use super::types::{BitfieldInfo, FieldInfo, TypeInfo};
 
 mod function_list;

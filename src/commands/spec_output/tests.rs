@@ -2047,6 +2047,9 @@ fn test_spec_tracepoint_fields_include_payload_fields_when_available() {
         "expected tracefs syscall fields or the well-known syscall fallback"
     );
     assert!(fields.iter().all(|field| !field.ty.is_empty()));
+    assert!(fields.iter().all(|field| !field.source.is_empty()));
+    assert!(fields.iter().all(|field| !field.context_struct.is_empty()));
+    assert!(fields.iter().all(|field| field.context_size > 0));
 }
 
 #[test]
