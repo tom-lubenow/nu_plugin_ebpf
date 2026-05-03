@@ -227,6 +227,16 @@ const KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT = {
     min_kernel: "6.12"
     source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
 }
+const SCHED_EXT_SLEEPABLE_CALLBACKS = [
+    init_task
+    cgroup_init
+    cgroup_exit
+    cgroup_prep_move
+    cpu_online
+    cpu_offline
+    init
+    exit
+]
 const KERNEL_FEATURE_PROG_LSM_CGROUP = {
     key: "attach:BPF_LSM_CGROUP"
     min_kernel: "6.0"
@@ -6786,6 +6796,20 @@ const FIXTURES = [
         error_contains: "struct_ops attach expects an object value type"
     }
     {
+        name: "struct-ops-sleepable-callback-target-metadata"
+        category: "program-model"
+        tags: [struct-ops callback sleepable metadata attach reject]
+        target: "struct_ops:sched_ext_ops.init"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "struct_ops attach expects an object value type"
+    }
+    {
         name: "timer-init-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
@@ -9513,6 +9537,22 @@ def program-surface-helper-kernel-features [source: string target] {
     $features
 }
 
+def struct-ops-target-sleepable? [target: string] {
+    if not ($target | str starts-with "struct_ops:sched_ext_ops.") {
+        return false
+    }
+
+    let callback = (
+        $target
+        | split row "struct_ops:sched_ext_ops."
+        | get 1
+        | split row ":"
+        | first
+    )
+
+    $callback in $SCHED_EXT_SLEEPABLE_CALLBACKS
+}
+
 def target-kernel-features [target] {
     if $target == null {
         return []
@@ -9555,6 +9595,9 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_PROG_STRUCT_OPS)
         if ($target | str contains "sched_ext_ops") {
             $features = ($features | append $KERNEL_FEATURE_STRUCT_OPS_SCHED_EXT)
+        }
+        if (struct-ops-target-sleepable? $target) {
+            $features = ($features | append $KERNEL_FEATURE_SLEEPABLE_PROGRAM)
         }
     } else if ($target | str starts-with "kprobe.multi:") or ($target | str starts-with "kretprobe.multi:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_KPROBE)
