@@ -5575,6 +5575,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "histogram-helper-surface"
+        category: "language-surface"
+        tags: [histogram map helper metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  42 | histogram'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "random-int-helper-surface"
         category: "language-surface"
         tags: [random helper metadata]
@@ -6534,6 +6548,9 @@ def program-reserved-map-kernel-features [source: string] {
         if (($line | str contains "| emit") or ($line | str contains " events")) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_RINGBUF])
         }
+        if (($line | str contains "| count") or ($line | str contains "| histogram")) {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
+        }
         if ($line | str contains " user_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_USER_RINGBUF])
         }
@@ -6679,6 +6696,12 @@ def program-surface-helper-kernel-features [source: string target] {
     }
     if ($source | str contains "| emit") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_RINGBUF_OUTPUT])
+    }
+    if (($source | str contains "| count") or ($source | str contains "| histogram")) {
+        $features = (append-missing-kernel-features $features [
+            $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM
+            $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM
+        ])
     }
 
     for line in ($source | lines) {
