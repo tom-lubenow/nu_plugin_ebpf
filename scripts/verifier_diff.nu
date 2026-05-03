@@ -652,6 +652,21 @@ const KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID = {
     min_kernel: "4.18"
     source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_GET_CURRENT_ANCESTOR_CGROUP_ID = {
+    key: "helper:bpf_get_current_ancestor_cgroup_id"
+    min_kernel: "5.7"
+    source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SKB_CGROUP_ID = {
+    key: "helper:bpf_skb_cgroup_id"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SKB_ANCESTOR_CGROUP_ID = {
+    key: "helper:bpf_skb_ancestor_cgroup_id"
+    min_kernel: "4.19"
+    source: "https://github.com/torvalds/linux/blob/v4.19/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SK_CGROUP_ID = {
     key: "helper:bpf_sk_cgroup_id"
     min_kernel: "5.8"
@@ -2418,6 +2433,9 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_get_socket_cookie", feature: $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE }
     { name: "bpf_get_socket_uid", feature: $KERNEL_FEATURE_BPF_GET_SOCKET_UID }
     { name: "bpf_get_current_cgroup_id", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID }
+    { name: "bpf_get_current_ancestor_cgroup_id", feature: $KERNEL_FEATURE_BPF_GET_CURRENT_ANCESTOR_CGROUP_ID }
+    { name: "bpf_skb_cgroup_id", feature: $KERNEL_FEATURE_BPF_SKB_CGROUP_ID }
+    { name: "bpf_skb_ancestor_cgroup_id", feature: $KERNEL_FEATURE_BPF_SKB_ANCESTOR_CGROUP_ID }
     { name: "bpf_sk_cgroup_id", feature: $KERNEL_FEATURE_BPF_SK_CGROUP_ID }
     { name: "bpf_sk_ancestor_cgroup_id", feature: $KERNEL_FEATURE_BPF_SK_ANCESTOR_CGROUP_ID }
     { name: "bpf_sk_fullsock", feature: $KERNEL_FEATURE_BPF_SK_FULLSOCK }
@@ -2908,7 +2926,7 @@ const FIXTURES = [
         target: "xdp:lo:drv:frags"
         program: [
             '{|ctx|'
-            '  ($ctx.packet_len + $ctx.ifindex + $ctx.rx_queue_index + $ctx.xdp_buff_len) | count'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.rx_queue_index + $ctx.xdp_buff_len + $ctx.ancestor_cgroup_id.0) | count'
             '  "pass"'
             '}'
         ]
@@ -3754,7 +3772,7 @@ const FIXTURES = [
         target: "tc:lo:egress"
         program: [
             '{|ctx|'
-            '  ($ctx.skb_cgroup_id + $ctx.route_realm + $ctx.cgroup_classid + $ctx.netns_cookie) | count'
+            '  ($ctx.skb_cgroup_id + $ctx.skb_ancestor_cgroup_id.0 + $ctx.route_realm + $ctx.cgroup_classid + $ctx.netns_cookie) | count'
             '  0'
             '}'
         ]
@@ -3803,7 +3821,7 @@ const FIXTURES = [
         target: "tcx:lo:egress"
         program: [
             '{|ctx|'
-            '  ($ctx.skb_cgroup_id + $ctx.route_realm + $ctx.cgroup_classid + $ctx.netns_cookie) | count'
+            '  ($ctx.skb_cgroup_id + $ctx.skb_ancestor_cgroup_id.0 + $ctx.route_realm + $ctx.cgroup_classid + $ctx.netns_cookie) | count'
             '  "pass"'
             '}'
         ]
@@ -3928,7 +3946,7 @@ const FIXTURES = [
         target: "cgroup_skb:/sys/fs/cgroup:egress"
         program: [
             '{|ctx|'
-            '  ($ctx.packet_len + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.remote_ip4 + $ctx.local_port + $ctx.sk.cgroup_id) | count'
+            '  ($ctx.packet_len + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.remote_ip4 + $ctx.local_port + $ctx.sk.cgroup_id + $ctx.sk.ancestor_cgroup_id.0) | count'
             '  "allow"'
             '}'
         ]
@@ -7510,8 +7528,14 @@ def context-field-helper-kernel-feature [field: string target] {
     if $field == "cgroup_id" {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID
     }
+    if $field == "ancestor_cgroup_id" {
+        return $KERNEL_FEATURE_BPF_GET_CURRENT_ANCESTOR_CGROUP_ID
+    }
     if $field == "skb_cgroup_id" {
-        return $KERNEL_FEATURE_BPF_SK_CGROUP_ID
+        return $KERNEL_FEATURE_BPF_SKB_CGROUP_ID
+    }
+    if $field == "skb_ancestor_cgroup_id" {
+        return $KERNEL_FEATURE_BPF_SKB_ANCESTOR_CGROUP_ID
     }
     if $field == "socket_cookie" {
         return $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE

@@ -4047,6 +4047,15 @@ fn assert_ctx_path_count_program_compiles(
     cell_path: CellPath,
     context: &str,
 ) {
+    let _ = compile_ctx_path_count_program(program_type, target, cell_path, context);
+}
+
+fn compile_ctx_path_count_program(
+    program_type: EbpfProgramType,
+    target: &str,
+    cell_path: CellPath,
+    context: &str,
+) -> EbpfProgram {
     let hir = make_ctx_path_call_program(cell_path, DeclId::new(42));
     let probe_ctx = ProbeContext::new(program_type, target);
     let mut decl_names = HashMap::new();
@@ -4073,6 +4082,8 @@ fn assert_ctx_path_count_program_compiles(
         !result.bytecode.is_empty(),
         "{context} should produce bytecode"
     );
+
+    result.into_program(program_type, target, "main", HashMap::new(), HashMap::new())
 }
 
 fn assert_ctx_stack_count_program_compiles(field: &str, map_name: &str, context: &str) {
@@ -11695,6 +11706,70 @@ fn test_context_write_program_reports_backing_helper_compatibility() {
             new_value,
             return_value,
             "context write helper compatibility",
+        );
+        let requirements = program.helper_compatibility_requirements();
+        let requirement = requirements
+            .iter()
+            .find(|requirement| requirement.helper() == helper)
+            .unwrap_or_else(|| panic!("expected helper compatibility for {}", helper.name()));
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/"))
+        );
+    }
+}
+
+#[test]
+fn test_context_path_program_reports_backing_helper_compatibility() {
+    for (program_type, target, cell_path, helper, minimum_kernel) in [
+        (
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member("ancestor_cgroup_id"), int_member(0)],
+            },
+            BpfHelper::GetCurrentAncestorCgroupId,
+            "5.7",
+        ),
+        (
+            EbpfProgramType::Tc,
+            "lo:egress",
+            CellPath {
+                members: vec![string_member("skb_cgroup_id")],
+            },
+            BpfHelper::SkbCgroupId,
+            "4.18",
+        ),
+        (
+            EbpfProgramType::Tc,
+            "lo:egress",
+            CellPath {
+                members: vec![string_member("skb_ancestor_cgroup_id"), int_member(0)],
+            },
+            BpfHelper::SkbAncestorCgroupId,
+            "4.19",
+        ),
+        (
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:egress",
+            CellPath {
+                members: vec![
+                    string_member("sk"),
+                    string_member("ancestor_cgroup_id"),
+                    int_member(0),
+                ],
+            },
+            BpfHelper::SkAncestorCgroupId,
+            "5.8",
+        ),
+    ] {
+        let program = compile_ctx_path_count_program(
+            program_type,
+            target,
+            cell_path,
+            "context path helper compatibility",
         );
         let requirements = program.helper_compatibility_requirements();
         let requirement = requirements
