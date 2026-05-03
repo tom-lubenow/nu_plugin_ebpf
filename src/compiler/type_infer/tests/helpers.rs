@@ -103,6 +103,13 @@ fn emit_timer_map_lookup(func: &mut MirFunction, entry: BlockId, timer: VReg) {
     });
 }
 
+fn timer_map_ref() -> MapRef {
+    MapRef {
+        name: "timer_map".to_string(),
+        kind: MapKind::Array,
+    }
+}
+
 #[test]
 fn test_subfn_polymorphic_id() {
     let mut subfn = MirFunction::with_name("id");
@@ -609,6 +616,70 @@ fn test_type_error_timer_start_rejects_stack_timer_pointer() {
     assert!(errs.iter().any(|e| {
         e.message
             .contains("helper 'bpf_timer_start' arg0 expects map-backed bpf_timer pointer")
+    }));
+}
+
+#[test]
+fn test_type_error_timer_init_rejects_invalid_clock_flags() {
+    let mut func = make_test_function();
+    let timer = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    emit_timer_map_lookup(&mut func, BlockId(0), timer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: timer_map_ref(),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::TimerInit as u32,
+        args: vec![
+            MirValue::VReg(timer),
+            MirValue::VReg(map),
+            MirValue::Const(99),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let type_hints = HashMap::from([(timer, bpf_timer_map_ptr_ty())]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&type_hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_timer_init invalid clock flags error");
+    assert!(errs.iter().any(|e| {
+        e.message.contains(
+            "helper 'bpf_timer_init' requires arg2 flags to be CLOCK_REALTIME, CLOCK_MONOTONIC, or CLOCK_BOOTTIME",
+        )
+    }));
+}
+
+#[test]
+fn test_type_error_timer_start_rejects_invalid_flags() {
+    let mut func = make_test_function();
+    let timer = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    emit_timer_map_lookup(&mut func, BlockId(0), timer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::TimerStart as u32,
+        args: vec![
+            MirValue::VReg(timer),
+            MirValue::Const(1000),
+            MirValue::Const(4),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let type_hints = HashMap::from([(timer, bpf_timer_map_ptr_ty())]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&type_hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_timer_start invalid flags error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_timer_start' requires arg2 flags")
     }));
 }
 
