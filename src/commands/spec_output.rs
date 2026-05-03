@@ -1019,6 +1019,10 @@ fn spec_context_args(
     spec: &crate::program_spec::ProgramSpec,
     resolve_dynamic_args: bool,
 ) -> (Vec<SpecContextArg>, Option<String>) {
+    if spec.struct_ops_value_type_name().is_some() && spec.struct_ops_callback_name().is_none() {
+        return (Vec::new(), None);
+    }
+
     match spec.program_type().arg_access() {
         ProgramValueAccess::None => (Vec::new(), None),
         ProgramValueAccess::PtRegs => (

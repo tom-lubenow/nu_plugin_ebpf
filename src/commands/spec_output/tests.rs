@@ -2717,6 +2717,16 @@ fn test_spec_context_args_include_btf_trampoline_metadata_when_available() {
 }
 
 #[test]
+fn test_spec_context_args_skip_struct_ops_object_without_callback() {
+    let spec =
+        ProgramSpec::parse("struct_ops:sched_ext_ops").expect("struct_ops spec should parse");
+    let (args, err) = spec_context_args(&spec, true);
+
+    assert!(args.is_empty());
+    assert!(err.is_none());
+}
+
+#[test]
 fn test_spec_context_retval_includes_pt_regs_surface() {
     let spec = ProgramSpec::parse("kretprobe:sys_read").expect("kretprobe spec should parse");
     let (retval, err) = spec_context_retval(&spec, true);
