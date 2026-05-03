@@ -469,6 +469,23 @@ fn assert_ctx_sk_helper_projection_lowers(
             ))),
         "{context} should load a scalar field from the helper-returned socket layout"
     );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+    let program =
+        compiled.into_program(program_type, target, "main", HashMap::new(), HashMap::new());
+    let requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == expected_helper)
+        .unwrap_or_else(|| {
+            panic!(
+                "{context} should report {} compatibility metadata",
+                expected_helper.name()
+            )
+        });
+    assert_eq!(requirement.minimum_kernel(), "5.1");
 }
 
 #[test]
