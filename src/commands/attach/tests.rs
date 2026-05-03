@@ -12,8 +12,8 @@ use crate::compiler::mir::{
 };
 use crate::compiler::passes::{ListLowering, MirPass, optimize_with_ssa_hints};
 use crate::compiler::{
-    BpfMapDef, CounterKeySchema, CounterKeySchemaField, EbpfProgramType, MirType, ProbeContext,
-    StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
+    BpfMapDef, CounterKeySchema, CounterKeySchemaField, EbpfProgram, EbpfProgramType, MirType,
+    ProbeContext, StructOpsObjectSpec, StructOpsValueField, compile_mir_to_ebpf_with_hints,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use crate::program_spec::ProgramSpec;
@@ -4232,6 +4232,78 @@ fn assert_ctx_path_store_program_compiles(
         !result.bytecode.is_empty(),
         "{context} should produce bytecode"
     );
+}
+
+fn collect_mir_kfunc_names(program: &crate::compiler::mir::MirProgram) -> HashSet<String> {
+    fn collect_from_inst(inst: &MirInst, out: &mut HashSet<String>) {
+        if let MirInst::CallKfunc { kfunc, .. } = inst {
+            out.insert(kfunc.clone());
+        }
+    }
+
+    fn collect_from_function(func: &crate::compiler::mir::MirFunction, out: &mut HashSet<String>) {
+        for block in &func.blocks {
+            for inst in &block.instructions {
+                collect_from_inst(inst, out);
+            }
+            collect_from_inst(&block.terminator, out);
+        }
+    }
+
+    let mut out = HashSet::new();
+    collect_from_function(&program.main, &mut out);
+    for subfunction in &program.subfunctions {
+        collect_from_function(subfunction, &mut out);
+    }
+    out
+}
+
+fn compile_ctx_path_store_program(
+    program_type: EbpfProgramType,
+    target: &str,
+    cell_path: CellPath,
+    new_value: HirLiteral,
+    return_value: HirLiteral,
+    context: &str,
+) -> EbpfProgram {
+    let hir = make_ctx_path_store_program(cell_path, new_value, return_value);
+    let probe_ctx = ProbeContext::new(program_type, target);
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    let used_kfuncs = collect_mir_kfunc_names(&lowering.program);
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+
+    result
+        .into_program(program_type, target, "main", HashMap::new(), HashMap::new())
+        .with_used_kfuncs(used_kfuncs)
 }
 
 fn make_map_put_get_projection_program(
@@ -11576,6 +11648,91 @@ fn test_compile_cgroup_sock_addr_unix_ctx_sun_path_store_program() {
         HirLiteral::String(b"/tmp/nu-ebpf.sock".to_vec()),
         HirLiteral::String(b"allow".to_vec()),
         "cgroup_sock_addr:connect_unix ctx.sun_path store",
+    );
+}
+
+#[test]
+fn test_context_write_program_reports_backing_helper_compatibility() {
+    for (program_type, target, cell_path, new_value, return_value, helper, minimum_kernel) in [
+        (
+            EbpfProgramType::CgroupSysctl,
+            "/sys/fs/cgroup",
+            CellPath {
+                members: vec![string_member("new_value")],
+            },
+            HirLiteral::String(b"1".to_vec()),
+            HirLiteral::String(b"allow".to_vec()),
+            BpfHelper::SysctlSetNewValue,
+            "5.2",
+        ),
+        (
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            CellPath {
+                members: vec![string_member("cb_flags")],
+            },
+            HirLiteral::Int(1),
+            HirLiteral::Int(1),
+            BpfHelper::SockOpsCbFlagsSet,
+            "4.16",
+        ),
+        (
+            EbpfProgramType::SkLookup,
+            "/proc/self/ns/net",
+            CellPath {
+                members: vec![string_member("sk")],
+            },
+            HirLiteral::Int(0),
+            HirLiteral::Int(1),
+            BpfHelper::SkAssign,
+            "5.7",
+        ),
+    ] {
+        let program = compile_ctx_path_store_program(
+            program_type,
+            target,
+            cell_path,
+            new_value,
+            return_value,
+            "context write helper compatibility",
+        );
+        let requirements = program.helper_compatibility_requirements();
+        let requirement = requirements
+            .iter()
+            .find(|requirement| requirement.helper() == helper)
+            .unwrap_or_else(|| panic!("expected helper compatibility for {}", helper.name()));
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/"))
+        );
+    }
+}
+
+#[test]
+fn test_context_write_program_reports_backing_kfunc_compatibility() {
+    let program = compile_ctx_path_store_program(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+        CellPath {
+            members: vec![string_member("sun_path")],
+        },
+        HirLiteral::String(b"/tmp/nu-ebpf.sock".to_vec()),
+        HirLiteral::String(b"allow".to_vec()),
+        "cgroup_sock_addr:connect_unix ctx.sun_path store",
+    );
+
+    let requirements = program.kfunc_compatibility_requirements();
+    let requirement = requirements
+        .iter()
+        .find(|requirement| requirement.name() == "bpf_sock_addr_set_sun_path")
+        .expect("expected sun_path kfunc compatibility");
+    assert_eq!(requirement.minimum_kernel(), "6.7");
+    assert!(
+        requirement
+            .minimum_kernel_source()
+            .contains("/v6.7/net/core/filter.c")
     );
 }
 
