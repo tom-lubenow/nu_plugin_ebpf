@@ -7403,6 +7403,34 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "redirect-tc-egress-rejects-peer"
+        category: "language-surface"
+        tags: [redirect peer reject tc]
+        target: "tc:lo:egress"
+        program: [
+            '{|ctx|'
+            '  redirect --peer 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_redirect_peer' is only valid in tc/tcx ingress programs"
+    }
+    {
+        name: "redirect-tcx-egress-rejects-peer"
+        category: "language-surface"
+        tags: [redirect peer reject tcx]
+        target: "tcx:lo:egress"
+        program: [
+            '{|ctx|'
+            '  redirect --peer 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_redirect_peer' is only valid in tc/tcx ingress programs"
+    }
+    {
         name: "redirect-lwt-xmit-ifindex"
         category: "language-surface"
         tags: [redirect lwt]
