@@ -902,6 +902,11 @@ const KERNEL_FEATURE_BPF_SK_ASSIGN = {
     min_kernel: "5.7"
     source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE = {
+    key: "helper:bpf_sysctl_set_new_value"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_MSG_APPLY_BYTES = {
     key: "helper:bpf_msg_apply_bytes"
     min_kernel: "4.17"
@@ -2416,6 +2421,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_msg_redirect_map", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP }
     { name: "bpf_msg_redirect_hash", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH }
     { name: "bpf_sk_assign", feature: $KERNEL_FEATURE_BPF_SK_ASSIGN }
+    { name: "bpf_sysctl_set_new_value", feature: $KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE }
     { name: "bpf_sk_select_reuseport", feature: $KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT }
     { name: "bpf_ringbuf_output", feature: $KERNEL_FEATURE_BPF_RINGBUF_OUTPUT }
     { name: "bpf_ringbuf_reserve", feature: $KERNEL_FEATURE_BPF_RINGBUF_RESERVE }
@@ -7878,6 +7884,21 @@ def program-surface-helper-kernel-features [source: string target] {
         }
 
         let trimmed = ($line | str trim)
+        let assigns_sysctl_new_value = (
+            ($trimmed | str contains "$ctx.new_value =")
+            or ($trimmed | str contains "$ctx.new_value=")
+            or ($trimmed | str contains "$ctx.sysctl_new_value =")
+            or ($trimmed | str contains "$ctx.sysctl_new_value=")
+        )
+        let target_supports_ctx_sk_assign = (
+            ($target_text | str starts-with "sk_lookup:")
+            or (($target_text | str starts-with "tc:") and ($target_text | str contains ":ingress"))
+            or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
+        )
+        let assigns_ctx_sk = (
+            ($trimmed | str contains "$ctx.sk =")
+            or ($trimmed | str contains "$ctx.sk=")
+        )
         let map_kind = (source-line-map-kind $line "hash")
         if ($line | str contains "map-get ") and (generic-map-lookup-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
@@ -7927,6 +7948,12 @@ def program-surface-helper-kernel-features [source: string target] {
             }
         }
         if ($line | str contains "assign-socket ") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
+        }
+        if ($target_text | str starts-with "cgroup_sysctl:") and $assigns_sysctl_new_value {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE])
+        }
+        if $target_supports_ctx_sk_assign and $assigns_ctx_sk {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
         }
         if ($line | str contains "adjust-message --apply") {
