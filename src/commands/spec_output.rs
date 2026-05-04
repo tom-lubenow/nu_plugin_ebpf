@@ -42,6 +42,7 @@ struct SpecContextWrite {
     field: &'static str,
     kind: &'static str,
     indexed: bool,
+    context_field_requirement_key: Option<String>,
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     helper: Option<&'static str>,
@@ -1380,6 +1381,10 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                 field: surface.field_name,
                 kind: surface.kind,
                 indexed: surface.indexed,
+                context_field_requirement_key: surface
+                    .context_field_requirement
+                    .as_ref()
+                    .map(ContextFieldCompatibilityRequirement::key),
                 minimum_kernel: surface.minimum_kernel,
                 minimum_kernel_source: surface.minimum_kernel_source,
                 helper: surface.helper.map(BpfHelper::name),
@@ -1414,6 +1419,7 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "field" => Value::string(surface.field, span),
                     "kind" => Value::string(surface.kind, span),
                     "indexed" => Value::bool(surface.indexed, span),
+                    "context_field_requirement_key" => optional_string(surface.context_field_requirement_key, span),
                     "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),
                     "helper" => optional_static_str(surface.helper, span),

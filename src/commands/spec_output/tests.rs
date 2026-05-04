@@ -3683,16 +3683,28 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let sock_ops_writes = spec_context_writes(&sock_ops);
     let reply = context_write(&sock_ops_writes, "reply");
     assert_eq!(reply.kind, "store");
+    assert_eq!(
+        reply.context_field_requirement_key.as_deref(),
+        Some("ctx:reply")
+    );
     assert_eq!(reply.minimum_kernel, Some("4.14"));
     assert!(reply.helper.is_none());
 
     let replylong = context_write(&sock_ops_writes, "replylong");
     assert_eq!(replylong.kind, "store");
     assert!(replylong.indexed);
+    assert_eq!(
+        replylong.context_field_requirement_key.as_deref(),
+        Some("ctx:replylong")
+    );
     assert_eq!(replylong.minimum_kernel, Some("4.14"));
 
     let cb_flags = context_write(&sock_ops_writes, "cb_flags");
     assert_eq!(cb_flags.kind, "store");
+    assert_eq!(
+        cb_flags.context_field_requirement_key.as_deref(),
+        Some("ctx:cb_flags")
+    );
     assert_eq!(cb_flags.minimum_kernel, Some("4.16"));
     assert_eq!(cb_flags.helper, Some("bpf_sock_ops_cb_flags_set"));
     assert_eq!(
@@ -3706,8 +3718,16 @@ fn test_context_write_records_include_backing_abi_metadata() {
         .expect("cgroup_sock spec should parse");
     let cgroup_sock_writes = spec_context_writes(&cgroup_sock);
     let bound_dev_if = context_write(&cgroup_sock_writes, "bound_dev_if");
+    assert_eq!(
+        bound_dev_if.context_field_requirement_key.as_deref(),
+        Some("ctx:bound_dev_if")
+    );
     assert_eq!(bound_dev_if.minimum_kernel, Some("4.10"));
     let mark = context_write(&cgroup_sock_writes, "mark");
+    assert_eq!(
+        mark.context_field_requirement_key.as_deref(),
+        Some("ctx:mark")
+    );
     assert_eq!(mark.minimum_kernel, Some("4.14"));
 
     let cgroup_sysctl = ProgramSpec::parse("cgroup_sysctl:/sys/fs/cgroup")
@@ -3715,6 +3735,10 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let cgroup_sysctl_writes = spec_context_writes(&cgroup_sysctl);
     let new_value = context_write(&cgroup_sysctl_writes, "new_value");
     assert_eq!(new_value.kind, "sysctl-new-value");
+    assert_eq!(
+        new_value.context_field_requirement_key.as_deref(),
+        Some("ctx:sysctl_new_value")
+    );
     assert_eq!(new_value.helper, Some("bpf_sysctl_set_new_value"));
     assert_eq!(
         new_value.helper_requirement_key.as_deref(),
@@ -3726,6 +3750,8 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let tc_ingress_writes = spec_context_writes(&tc_ingress);
     let sk = context_write(&tc_ingress_writes, "sk");
     assert_eq!(sk.kind, "assign-socket");
+    assert_eq!(sk.context_field_requirement_key.as_deref(), Some("ctx:sk"));
+    assert_eq!(sk.minimum_kernel, Some("5.1"));
     assert_eq!(sk.helper, Some("bpf_sk_assign"));
     assert_eq!(sk.helper_minimum_kernel, Some("5.7"));
 
@@ -3734,6 +3760,10 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let cgroup_sockopt_writes = spec_context_writes(&cgroup_sockopt_set);
     let optval = context_write(&cgroup_sockopt_writes, "optval");
     assert_eq!(optval.kind, "sockopt-optval-byte");
+    assert_eq!(
+        optval.context_field_requirement_key.as_deref(),
+        Some("ctx:optval")
+    );
     assert_eq!(optval.minimum_kernel, Some("5.3"));
 
     let unix_sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
@@ -3741,6 +3771,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let unix_sock_addr_writes = spec_context_writes(&unix_sock_addr);
     let sun_path = context_write(&unix_sock_addr_writes, "sun_path");
     assert_eq!(sun_path.kind, "sun-path");
+    assert_eq!(sun_path.context_field_requirement_key, None);
     assert_eq!(sun_path.kfunc, Some("bpf_sock_addr_set_sun_path"));
     assert_eq!(
         sun_path.kfunc_requirement_key.as_deref(),
@@ -3775,6 +3806,14 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
         })
         .expect("ctx.cb_flags write should be present");
 
+    assert_eq!(
+        cb_flags
+            .get("context_field_requirement_key")
+            .expect("context field requirement key should be present")
+            .as_str()
+            .expect("context field requirement key should be a string"),
+        "ctx:cb_flags"
+    );
     assert_eq!(
         cb_flags
             .get("minimum_kernel")

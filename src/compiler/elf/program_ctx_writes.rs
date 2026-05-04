@@ -64,6 +64,7 @@ pub(crate) struct ContextWriteSurface {
     pub(crate) field_name: &'static str,
     pub(crate) kind: &'static str,
     pub(crate) indexed: bool,
+    pub(crate) context_field_requirement: Option<ContextFieldCompatibilityRequirement>,
     pub(crate) minimum_kernel: Option<&'static str>,
     pub(crate) minimum_kernel_source: Option<&'static str>,
     pub(crate) helper: Option<BpfHelper>,
@@ -211,6 +212,18 @@ impl ContextStoreTargetSpec {
             | Self::CgroupSockAddrLocalIp6WordAlias => None,
         }
     }
+
+    fn context_field(&self) -> Option<CtxField> {
+        match self {
+            Self::Fixed(target) => target.ctx_field(),
+            Self::SockOpsReplyLongWord => Some(CtxField::SockOpsReplyLong),
+            Self::SkbCbWord => Some(CtxField::SkbCb),
+            Self::CgroupSockAddrUserIp6Word => Some(CtxField::UserIp6),
+            Self::CgroupSockAddrMsgSrcIp6Word => Some(CtxField::MsgSrcIp6),
+            Self::CgroupSockAddrLocalIp4Alias => Some(CtxField::LocalIp4),
+            Self::CgroupSockAddrLocalIp6WordAlias => Some(CtxField::LocalIp6),
+        }
+    }
 }
 
 impl ContextWriteTargetSpec {
@@ -309,6 +322,14 @@ impl ContextWriteTargetSpec {
             | Self::SockoptOptvalByte
             | Self::AssignSocket
             | Self::CgroupSockAddrSunPath => None,
+        }
+    }
+
+    fn context_field(&self) -> Option<CtxField> {
+        match self {
+            Self::Store(target) => target.context_field(),
+            Self::SysctlNewValue | Self::SockoptOptvalByte | Self::AssignSocket => None,
+            Self::CgroupSockAddrSunPath => None,
         }
     }
 }
@@ -466,20 +487,26 @@ impl ContextWriteSurfaceSpec {
             .is_ok()
     }
 
-    fn minimum_kernel(&self, spec: &ProgramSpec) -> Option<(&'static str, &'static str)> {
+    fn context_field_requirement(
+        &self,
+        spec: &ProgramSpec,
+    ) -> Option<ContextFieldCompatibilityRequirement> {
         let target = spec.target_string();
-        let field_floor = self.field.as_ref().and_then(|field| {
-            ContextFieldCompatibilityRequirement::for_field_on_program_target(
-                field,
-                Some(spec.program_type()),
-                Some(target.as_str()),
+        let field = self.field.clone().or_else(|| self.target.context_field())?;
+
+        ContextFieldCompatibilityRequirement::for_field_on_program_target(
+            &field,
+            Some(spec.program_type()),
+            Some(target.as_str()),
+        )
+    }
+
+    fn minimum_kernel(&self, spec: &ProgramSpec) -> Option<(&'static str, &'static str)> {
+        let field_floor = self.context_field_requirement(spec).map(|requirement| {
+            (
+                requirement.minimum_kernel(),
+                requirement.minimum_kernel_source(),
             )
-            .map(|requirement| {
-                (
-                    requirement.minimum_kernel(),
-                    requirement.minimum_kernel_source(),
-                )
-            })
         });
         let target_floor = self
             .target
@@ -495,6 +522,7 @@ impl ContextWriteSurfaceSpec {
     }
 
     fn surface(&self, spec: &ProgramSpec) -> ContextWriteSurface {
+        let context_field_requirement = self.context_field_requirement(spec);
         let (minimum_kernel, minimum_kernel_source) = self
             .minimum_kernel(spec)
             .map(|(minimum_kernel, minimum_kernel_source)| {
@@ -506,6 +534,7 @@ impl ContextWriteSurfaceSpec {
             field_name: self.field_name,
             kind: self.target.kind(),
             indexed: self.target.requires_indexed_assignment(),
+            context_field_requirement,
             minimum_kernel,
             minimum_kernel_source,
             helper: self.target.backing_helper(),
@@ -539,7 +568,11 @@ const SOCKET_FILTER_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     )];
 
 const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
-    ContextWriteSurfaceSpec::special_write("sk", ContextWriteTargetSpec::AssignSocket),
+    ContextWriteSurfaceSpec::special_write_field(
+        "sk",
+        CtxField::Socket,
+        ContextWriteTargetSpec::AssignSocket,
+    ),
     ContextWriteSurfaceSpec::store_field(
         "mark",
         CtxField::SockMark,
@@ -647,11 +680,16 @@ const CGROUP_SYSCTL_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::SysctlFilePos,
         ContextStoreTargetSpec::Fixed(CtxStoreTarget::SysctlFilePos),
     ),
-    ContextWriteSurfaceSpec::special_write(
+    ContextWriteSurfaceSpec::special_write_field(
         "sysctl_new_value",
+        CtxField::SysctlNewValue,
         ContextWriteTargetSpec::SysctlNewValue,
     ),
-    ContextWriteSurfaceSpec::special_write("new_value", ContextWriteTargetSpec::SysctlNewValue),
+    ContextWriteSurfaceSpec::special_write_field(
+        "new_value",
+        CtxField::SysctlNewValue,
+        ContextWriteTargetSpec::SysctlNewValue,
+    ),
 ];
 
 const SOCK_OPS_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
@@ -771,8 +809,9 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
 ];
 
 const SK_LOOKUP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
-    &[ContextWriteSurfaceSpec::special_write(
+    &[ContextWriteSurfaceSpec::special_write_field(
         "sk",
+        CtxField::Socket,
         ContextWriteTargetSpec::AssignSocket,
     )];
 
