@@ -210,7 +210,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 
 ### Surface Policy
 
-- The long-term first-class command surface is intentionally small: `emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, `tail-call`, and `map-contains`, plus the resource-oriented `map-*` / `global-*` surfaces.
+- The long-term first-class command surface is intentionally small: `emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, `assign-socket`, `tail-call`, and `map-contains`, plus the resource-oriented `map-*` / `global-*` surfaces.
 - Ordinary Nushell primitives should stay ordinary when possible. For example, `random int` is supported directly rather than through a bespoke helper wrapper.
 - `map-*` and `global-*` are convenience surfaces around real eBPF resources, not a second parallel language. Prefer ordinary Nushell variables and expressions until you truly need an explicit shared map/global resource.
 - `helper-call` and `kfunc-call` are ABI escape hatches. They remain available, but the preferred direction is to keep lifting common operations into typed context projection and smaller first-class commands. `kfunc-call` can compile on broad helper-capable surfaces, while exact unmodeled kfunc allowlists remain kernel-verifier enforced and verifier-rewritten metadata operands remain raw ABI details.
