@@ -10380,12 +10380,37 @@ fn test_compile_xdp_ctx_ifindex_alias_counter_program() {
 fn test_compile_xdp_ctx_egress_ifindex_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Xdp,
-        "lo",
+        "devmap",
         CellPath {
             members: vec![string_member("egress_ifindex")],
         },
-        "xdp ctx.egress_ifindex count",
+        "xdp devmap ctx.egress_ifindex count",
     );
+
+    for (target, label) in [("lo", "ordinary xdp"), ("cpumap", "xdp cpumap secondary")] {
+        let hir = make_ctx_path_call_program(
+            CellPath {
+                members: vec![string_member("egress_ifindex")],
+            },
+            DeclId::new(42),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, target);
+        let decl_names = HashMap::from([(DeclId::new(42), "count".to_string())]);
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("non-devmap XDP should reject ctx.egress_ifindex");
+        assert!(
+            err.to_string()
+                .contains("ctx.egress_ifindex is only available on xdp:devmap secondary programs"),
+            "{label} should reject ctx.egress_ifindex with a target-aware error: {err}"
+        );
+    }
 }
 
 #[test]

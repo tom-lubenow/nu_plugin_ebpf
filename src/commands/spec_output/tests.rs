@@ -9,6 +9,13 @@ fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContex
         .unwrap_or_else(|| panic!("expected ctx.{field_name} in spec context fields"))
 }
 
+fn field_absent(fields: &[SpecContextField], field_name: &str) {
+    assert!(
+        !fields.iter().any(|field| field.field == field_name),
+        "ctx.{field_name} should not be present in spec context fields"
+    );
+}
+
 fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a SpecContextWrite {
     writes
         .iter()
@@ -220,6 +227,11 @@ fn test_spec_context_fields_include_program_specific_aliases() {
     );
     let rx_queue_index = field(&fields, "rx_queue_index");
     assert_eq!(rx_queue_index.minimum_kernel, Some("4.16"));
+    field_absent(&fields, "egress_ifindex");
+    let devmap_spec = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
+    let devmap_fields = spec_context_fields(&devmap_spec, false);
+    let egress_ifindex = field(&devmap_fields, "egress_ifindex");
+    assert_eq!(egress_ifindex.minimum_kernel, Some("5.8"));
     let packet_len = field(&fields, "packet_len");
     assert!(packet_len.names.contains(&"packet_len"));
     assert_eq!(packet_len.semantic_type.as_deref(), Some("u32"));

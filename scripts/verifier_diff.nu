@@ -3471,7 +3471,7 @@ const FIXTURES = [
         target: "xdp:devmap"
         program: [
             '{|ctx|'
-            '  ($ctx.packet_len + $ctx.ifindex) | count'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.egress_ifindex) | count'
             '  "pass"'
             '}'
         ]
@@ -4888,6 +4888,37 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "ctx.pid is not available on xdp programs"
+    }
+    {
+        name: "xdp-rejects-egress-ifindex-on-interface"
+        category: "context-policy"
+        tags: [xdp reject devmap]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  $ctx.egress_ifindex | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.egress_ifindex is only available on xdp:devmap secondary programs"
+    }
+    {
+        name: "xdp-rejects-egress-ifindex-on-cpumap"
+        category: "context-policy"
+        tags: [xdp reject cpumap devmap]
+        target: "xdp:cpumap"
+        program: [
+            '{|ctx|'
+            '  $ctx.egress_ifindex | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.egress_ifindex is only available on xdp:devmap secondary programs"
     }
     {
         name: "socket-filter-rejects-direct-data"

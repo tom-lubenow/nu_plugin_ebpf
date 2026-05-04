@@ -101,7 +101,7 @@ The closure receives a context parameter with these fields:
 | `socket_uid` | Owner UID of the socket associated with the current skb | socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser |
 | `netns_cookie` | Stable kernel network-namespace cookie | socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_msg, sock_ops |
 | `rx_queue_index` | XDP receive queue index | xdp |
-| `egress_ifindex` | XDP egress interface index | xdp |
+| `egress_ifindex` | XDP egress interface index | xdp:devmap |
 | `user_family` | Userspace-requested socket family | cgroup_sock_addr |
 | `user_ip4` | IPv4 destination/source address in host byte order | cgroup_sock_addr (*4 hooks) |
 | `user_ip6` | IPv6 address as four host-order `u32` words | cgroup_sock_addr (*6 hooks) |
@@ -330,9 +330,12 @@ and `destination options`), `$ctx.data.eth.payload.ipv4.payload.icmp.payload`
 and `$ctx.data.eth.payload.ipv6.payload.icmpv6.payload` skip the fixed
 8-byte ICMP header, and `$ctx.data.eth.payload.ipv4.payload.tcp.payload`
 skips a runtime-sized TCP header using the data offset. `xdp`
-additionally exposes `ctx.data_meta`, `ctx.ifindex`,
-`ctx.rx_queue_index`, and `ctx.egress_ifindex`; `ctx.ifindex` and
-`ctx.rx_queue_index` require the Linux 4.16 `xdp_md` metadata fields.
+additionally exposes `ctx.data_meta`, `ctx.ifindex`, and
+`ctx.rx_queue_index`; `ctx.ifindex` and `ctx.rx_queue_index` require
+the Linux 4.16 `xdp_md` metadata fields. `xdp:devmap` secondary
+programs additionally expose `ctx.egress_ifindex`, which requires the
+Linux 5.8 `xdp_md` egress metadata field and the devmap expected attach
+type.
 `ctx.data_meta` is a
 packet-metadata pointer: scalar reads such as `($ctx.data_meta | get 0)`
 use the same packet address space as `ctx.data`, but they are guarded
@@ -398,7 +401,10 @@ when driver or hardware mode is intentional. Append
 kernel `xdp.frags` section for multi-buffer packets. `xdp:devmap` and
 `xdp:cpumap` emit the secondary-program `xdp/devmap` and `xdp/cpumap`
 sections with the ordinary XDP context/return surface; they are
-compile/dry-run only until the loader models map-entry program loading. XDP, TC, TCX, Netkit, and LWT also
+compile/dry-run only until the loader models map-entry program loading.
+`ctx.egress_ifindex` follows the kernel verifier rule and is only available
+on `xdp:devmap` secondary programs; ordinary interface XDP and `xdp:cpumap`
+programs still expose ingress ifindex and RX queue metadata. XDP, TC, TCX, Netkit, and LWT also
 model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
 multiples of four, and a null `from` or `to` buffer is accepted only
 when the paired size is zero. `ctx.xdp_buff_len` exposes

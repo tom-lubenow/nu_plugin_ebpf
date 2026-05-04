@@ -7713,9 +7713,28 @@ fn test_probe_context_allows_xdp_md_scalar_fields_on_xdp() {
         ctx.ctx_field_access_error(&CtxField::RxQueueIndex)
             .is_none()
     );
+    let err = ctx
+        .ctx_field_access_error(&CtxField::EgressIfindex)
+        .expect("ordinary XDP should reject devmap-only egress_ifindex");
     assert!(
-        ctx.ctx_field_access_error(&CtxField::EgressIfindex)
+        err.contains("ctx.egress_ifindex is only available on xdp:devmap secondary programs"),
+        "{err}"
+    );
+
+    let devmap = ProbeContext::new(EbpfProgramType::Xdp, "devmap");
+    assert!(
+        devmap
+            .ctx_field_access_error(&CtxField::EgressIfindex)
             .is_none()
+    );
+
+    let cpumap = ProbeContext::new(EbpfProgramType::Xdp, "cpumap");
+    let err = cpumap
+        .ctx_field_access_error(&CtxField::EgressIfindex)
+        .expect("cpumap secondary XDP should reject devmap-only egress_ifindex");
+    assert!(
+        err.contains("ctx.egress_ifindex is only available on xdp:devmap secondary programs"),
+        "{err}"
     );
 }
 

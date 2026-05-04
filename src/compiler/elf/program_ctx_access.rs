@@ -1,5 +1,8 @@
 use super::{CtxField, EbpfProgramType};
-use crate::program_spec::{ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec};
+use crate::program_spec::{
+    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
+    XdpTargetKind,
+};
 
 type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
 
@@ -26,6 +29,7 @@ const ITER_NETLINK_TARGETS: &[&str] = &["netlink"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
     TcEgressOnly,
+    XdpDevmapOnly,
     IterTargetsOnly(&'static [&'static str], &'static str),
     CgroupSockCreateReleaseOnly,
     CgroupSockPostBindOnly,
@@ -71,6 +75,16 @@ impl ContextFieldAccessRequirement {
             Self::TcEgressOnly => attach_shape.is_tc_ingress().then(|| {
                 format!("ctx.{field_name} is only available on tc/tcx egress programs")
             }),
+            Self::XdpDevmapOnly => match attach_shape {
+                ProgramAttachShape::Xdp {
+                    target_kind: XdpTargetKind::Devmap,
+                    ..
+                } => None,
+                ProgramAttachShape::Xdp { .. } => Some(format!(
+                    "ctx.{field_name} is only available on xdp:devmap secondary programs"
+                )),
+                _ => None,
+            },
             Self::IterTargetsOnly(targets, label) => match spec {
                 ProgramSpec::Iter { target } if targets.contains(&target.name.as_str()) => None,
                 ProgramSpec::Iter { .. } => Some(format!(
@@ -342,6 +356,13 @@ const SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] 
     ),
 ];
 
+const XDP_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] =
+    &[ContextFieldAccessSurfaceSpec::new(
+        CtxField::EgressIfindex,
+        "egress_ifindex",
+        ContextFieldAccessRequirement::XdpDevmapOnly,
+    )];
+
 const TC_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
     ContextFieldAccessSurfaceSpec::new(
         CtxField::CgroupClassid,
@@ -594,6 +615,10 @@ const ITER_CTX_FIELD_ACCESS_SURFACES: &[ContextFieldAccessSurfaceSpec] = &[
 ];
 
 const PROGRAM_CTX_FIELD_ACCESS_SURFACES: &[ProgramContextFieldAccessSurfaceSpec] = &[
+    ProgramContextFieldAccessSurfaceSpec {
+        program_type: EbpfProgramType::Xdp,
+        surfaces: XDP_CTX_FIELD_ACCESS_SURFACES,
+    },
     ProgramContextFieldAccessSurfaceSpec {
         program_type: EbpfProgramType::SocketFilter,
         surfaces: SOCKET_FILTER_CTX_FIELD_ACCESS_SURFACES,

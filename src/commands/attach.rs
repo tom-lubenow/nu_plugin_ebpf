@@ -205,7 +205,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.xdp_buff_len } - Get total XDP buffer length
     {|ctx| $ctx.xdp_buffer_len } - Alias for ctx.xdp_buff_len
     {|ctx| $ctx.rx_queue_index } - Get RX queue index
-    {|ctx| $ctx.egress_ifindex } - Get egress interface index
+    {|ctx| $ctx.egress_ifindex } - Get egress interface index on xdp:devmap secondary programs
     Note: XDP closures can return action aliases like `pass`, `drop`,
     `tx`, and `redirect`, TC / tc_action closures can return aliases like `ok`,
     `shot`, `pipe`, and `redirect`, and TCX/Netkit closures can return aliases like
