@@ -5240,7 +5240,7 @@ const FIXTURES = [
         target: "cgroup_sock:/sys/fs/cgroup:post_bind6"
         program: [
             '{|ctx|'
-            '  (($ctx.local_ip6 | get 1) + ($ctx.sk.src_ip6 | get 1) + $ctx.local_port + $ctx.remote_port) | count'
+            '  (($ctx.local_ip6 | get 1) + ($ctx.sk.local_ip6 | get 1) + $ctx.local_port + $ctx.sk.remote_port) | count'
             '  "allow"'
             '}'
         ]
