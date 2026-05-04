@@ -4377,6 +4377,43 @@ fn test_kfunc_kernel_compatibility_metadata() {
 }
 
 #[test]
+fn test_known_kfunc_signatures_have_compatibility_metadata() {
+    fn quoted_kfunc_names(source: &'static str) -> std::collections::BTreeSet<&'static str> {
+        source
+            .split('"')
+            .enumerate()
+            .filter_map(|(idx, part)| {
+                (idx % 2 == 1 && (part.starts_with("bpf_") || part.starts_with("scx_")))
+                    .then_some(part)
+            })
+            .collect()
+    }
+
+    let signature_names = quoted_kfunc_names(include_str!("kfunc_signature.rs"));
+    let metadata_names = quoted_kfunc_names(include_str!("kfunc_metadata.rs"));
+
+    let missing_metadata = signature_names
+        .iter()
+        .filter(|name| KfuncCompatibilityRequirement::for_name(name).is_none())
+        .copied()
+        .collect::<Vec<_>>();
+    assert!(
+        missing_metadata.is_empty(),
+        "modeled kfunc signatures without compatibility metadata: {missing_metadata:?}"
+    );
+
+    let metadata_without_signature = metadata_names
+        .iter()
+        .filter(|name| KfuncSignature::for_name(name).is_none())
+        .copied()
+        .collect::<Vec<_>>();
+    assert!(
+        metadata_without_signature.is_empty(),
+        "kfunc compatibility metadata without a modeled signature: {metadata_without_signature:?}"
+    );
+}
+
+#[test]
 fn test_kfunc_signature_crypto_ctx_kfuncs() {
     let sig = KfuncSignature::for_name("bpf_crypto_ctx_acquire")
         .expect("expected bpf_crypto_ctx_acquire kfunc signature");
