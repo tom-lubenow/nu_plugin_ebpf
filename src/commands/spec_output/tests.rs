@@ -331,6 +331,10 @@ fn test_spec_context_fields_include_program_specific_aliases() {
 
     let ifindex = field(&fields, "ingress_ifindex");
     assert!(ifindex.names.contains(&"ifindex"));
+    assert_eq!(
+        ifindex.requirement_key.as_deref(),
+        Some("ctx:ingress_ifindex")
+    );
     assert_eq!(ifindex.minimum_kernel, Some("4.16"));
     assert!(
         ifindex
@@ -343,11 +347,19 @@ fn test_spec_context_fields_include_program_specific_aliases() {
     let devmap_spec = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
     let devmap_fields = spec_context_fields(&devmap_spec, false);
     let egress_ifindex = field(&devmap_fields, "egress_ifindex");
+    assert_eq!(
+        egress_ifindex.requirement_key.as_deref(),
+        Some("ctx:egress_ifindex")
+    );
     assert_eq!(egress_ifindex.minimum_kernel, Some("5.8"));
     let packet_len = field(&fields, "packet_len");
     assert!(packet_len.names.contains(&"packet_len"));
     assert_eq!(packet_len.semantic_type.as_deref(), Some("u32"));
     assert_eq!(packet_len.runtime_type.as_deref(), Some("u32"));
+    assert_eq!(
+        packet_len.requirement_key.as_deref(),
+        Some("ctx:packet_len")
+    );
     assert_eq!(packet_len.minimum_kernel, Some("4.8"));
     assert!(
         packet_len
@@ -446,6 +458,7 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     let pid = field(&fields, "pid");
     assert_eq!(pid.backing_helper, Some("bpf_get_current_pid_tgid"));
     assert_eq!(pid.backing_helper_minimum_kernel, Some("4.2"));
+    assert_eq!(pid.requirement_key.as_deref(), Some("ctx:pid"));
     assert_eq!(pid.minimum_kernel, Some("4.2"));
     assert!(
         pid.minimum_kernel_source
@@ -793,6 +806,14 @@ fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
 
     assert_eq!(
         packet_len
+            .get("requirement_key")
+            .expect("requirement key should be present")
+            .as_str()
+            .expect("requirement key should be a string"),
+        "ctx:packet_len"
+    );
+    assert_eq!(
+        packet_len
             .get("minimum_kernel")
             .expect("minimum kernel should be present")
             .as_str()
@@ -870,6 +891,14 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .then_some(projection)
         })
         .expect("sk.family projection should be present");
+    assert_eq!(
+        sk_family
+            .get("context_field_requirement_key")
+            .expect("context field requirement key should be present")
+            .as_str()
+            .expect("context field requirement key should be a string"),
+        "ctx:sk"
+    );
     assert_eq!(
         sk_family
             .get("minimum_kernel")
@@ -3200,6 +3229,10 @@ fn test_spec_context_projections_include_socket_members() {
     assert_eq!(family.root, "sk");
     assert_eq!(family.name, "family");
     assert_eq!(family.source, "context_field");
+    assert_eq!(
+        family.context_field_requirement_key.as_deref(),
+        Some("ctx:family")
+    );
     assert_eq!(family.minimum_kernel, Some("4.10"));
     assert!(
         family
@@ -3216,6 +3249,10 @@ fn test_spec_context_projections_include_socket_members() {
     assert_eq!(remote_port.root, "sk");
     assert_eq!(remote_port.name, "remote_port");
     assert_eq!(remote_port.source, "context_field_alias");
+    assert_eq!(
+        remote_port.context_field_requirement_key.as_deref(),
+        Some("ctx:remote_port")
+    );
     assert_eq!(remote_port.minimum_kernel, Some("5.1"));
     assert_eq!(remote_port.helper, None);
     assert_eq!(remote_port.ty, "u16");
@@ -3237,6 +3274,7 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(tcp_snd_cwnd.name, "snd_cwnd");
     assert_eq!(tcp_snd_cwnd.source, "helper_return");
     assert_eq!(tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
+    assert_eq!(tcp_snd_cwnd.context_field_requirement_key, None);
     assert_eq!(tcp_snd_cwnd.helper_minimum_kernel, Some("5.1"));
     assert!(
         tcp_snd_cwnd
@@ -3266,6 +3304,10 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert!(full_remote_port.unsupported_reason.is_none());
 
     let sk_family = projection(&projections, "sk.family");
+    assert_eq!(
+        sk_family.context_field_requirement_key.as_deref(),
+        Some("ctx:sk")
+    );
     assert_eq!(sk_family.minimum_kernel, Some("5.1"));
 }
 

@@ -28,6 +28,7 @@ struct SpecContextField {
     backing_helper_requirement_key: Option<String>,
     backing_helper_minimum_kernel: Option<&'static str>,
     backing_helper_minimum_kernel_source: Option<&'static str>,
+    requirement_key: Option<String>,
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     load_guard: Option<&'static str>,
@@ -61,6 +62,7 @@ struct SpecContextProjection {
     name: String,
     path: String,
     source: &'static str,
+    context_field_requirement_key: Option<String>,
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     helper: Option<&'static str>,
@@ -614,6 +616,9 @@ fn spec_context_fields(
                         .and_then(BpfHelper::minimum_kernel),
                     backing_helper_minimum_kernel_source: backing_helper
                         .and_then(BpfHelper::minimum_kernel_source),
+                    requirement_key: compatibility_requirement
+                        .as_ref()
+                        .map(ContextFieldCompatibilityRequirement::key),
                     minimum_kernel: compatibility_requirement
                         .as_ref()
                         .map(ContextFieldCompatibilityRequirement::minimum_kernel),
@@ -661,6 +666,7 @@ fn context_field_records(
                     "backing_helper_requirement_key" => optional_string(field.backing_helper_requirement_key, span),
                     "backing_helper_minimum_kernel" => optional_static_str(field.backing_helper_minimum_kernel, span),
                     "backing_helper_minimum_kernel_source" => optional_static_str(field.backing_helper_minimum_kernel_source, span),
+                    "requirement_key" => optional_string(field.requirement_key, span),
                     "minimum_kernel" => optional_static_str(field.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(field.minimum_kernel_source, span),
                     "load_guard" => optional_static_str(field.load_guard, span),
@@ -810,6 +816,9 @@ fn push_context_field_projection(
         path: format!("{root}.{name}"),
         name: name.to_string(),
         source,
+        context_field_requirement_key: compatibility_requirement
+            .as_ref()
+            .map(ContextFieldCompatibilityRequirement::key),
         minimum_kernel: compatibility_requirement
             .as_ref()
             .map(ContextFieldCompatibilityRequirement::minimum_kernel),
@@ -856,6 +865,7 @@ fn push_struct_field_projections(
             path: format!("{root}.{}", field.name),
             name: field.name.clone(),
             source,
+            context_field_requirement_key: None,
             minimum_kernel: None,
             minimum_kernel_source: None,
             helper: helper_name,
@@ -876,6 +886,7 @@ fn push_struct_field_projections(
                     path: format!("{root}.{alias}"),
                     name: (*alias).to_string(),
                     source: "helper_return_alias",
+                    context_field_requirement_key: None,
                     minimum_kernel: None,
                     minimum_kernel_source: None,
                     helper: helper_name,
@@ -913,6 +924,7 @@ fn push_helper_call_projection(
         name: name.to_string(),
         path: path.to_string(),
         source: "helper_call",
+        context_field_requirement_key: None,
         minimum_kernel: None,
         minimum_kernel_source: None,
         helper: Some(helper.name()),
@@ -1028,6 +1040,7 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "name" => Value::string(projection.name, span),
                     "path" => Value::string(projection.path, span),
                     "source" => Value::string(projection.source, span),
+                    "context_field_requirement_key" => optional_string(projection.context_field_requirement_key, span),
                     "minimum_kernel" => optional_static_str(projection.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(projection.minimum_kernel_source, span),
                     "helper" => optional_static_str(projection.helper, span),
