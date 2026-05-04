@@ -293,7 +293,7 @@ fn test_infer_helper_ctx_argument_from_context_pointer_load() {
         }
         other => panic!("expected kernel context pointer type, got {:?}", other),
     }
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -324,7 +324,7 @@ fn test_infer_helper_ctx_argument_from_context_pointer_copy() {
     let types = ti
         .infer(&func)
         .expect("expected copied raw ctx pointer to satisfy helper context argument");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -1925,7 +1925,7 @@ fn test_infer_get_socket_cookie_helper_accepts_fentry_const_zero() {
     let types = ti
         .infer(&func)
         .expect("expected null literal to satisfy tracing get_socket_cookie");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -2036,7 +2036,7 @@ fn test_infer_get_socket_cookie_helper_from_cgroup_sock_socket_alias() {
     let types = ti
         .infer(&func)
         .expect("expected cgroup_sock ctx.sk alias to satisfy bpf_get_socket_cookie");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -2062,7 +2062,7 @@ fn test_infer_get_socket_uid_helper_in_cgroup_skb_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_get_socket_uid to infer on cgroup_skb");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U32));
 }
 
 #[test]
@@ -2088,7 +2088,7 @@ fn test_infer_get_socket_uid_helper_in_tc_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_get_socket_uid to infer on tc");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U32));
 }
 
 #[test]
@@ -2114,7 +2114,7 @@ fn test_infer_get_netns_cookie_helper_in_cgroup_sockopt_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_get_netns_cookie to infer on cgroup_sockopt");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -2140,7 +2140,7 @@ fn test_infer_get_netns_cookie_helper_in_sk_msg_program() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_get_netns_cookie to infer on sk_msg");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -2583,7 +2583,12 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
         let types = ti
             .infer(&func)
             .expect("expected skb packet-mutation helper to infer");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        let expected = if helper == BpfHelper::GetHashRecalc {
+            MirType::U32
+        } else {
+            MirType::I64
+        };
+        assert_eq!(types.get(&dst), Some(&expected));
     }
 }
 
@@ -5419,12 +5424,12 @@ fn test_infer_sk_cgroup_helpers_in_cgroup_skb_program() {
         let types = ti
             .infer(&func)
             .expect("expected sk_cgroup helper to infer on cgroup_skb");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        assert_eq!(types.get(&dst), Some(&MirType::U64));
     }
 }
 
 #[test]
-fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
+fn test_infer_get_current_ancestor_cgroup_id_helper_returns_u64() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
@@ -5439,7 +5444,7 @@ fn test_infer_get_current_ancestor_cgroup_id_helper_returns_i64() {
     let types = ti
         .infer(&func)
         .expect("expected bpf_get_current_ancestor_cgroup_id to infer");
-    assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 
 fn make_get_ns_current_pid_tgid_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
@@ -5520,12 +5525,24 @@ fn test_type_error_get_ns_current_pid_tgid_rejects_small_buffer() {
 }
 
 #[test]
-fn test_infer_no_arg_scalar_helpers_return_i64() {
-    for (helper, name) in [
-        (BpfHelper::GetNumaNodeId, "bpf_get_numa_node_id"),
-        (BpfHelper::KtimeGetCoarseNs, "bpf_ktime_get_coarse_ns"),
-        (BpfHelper::KtimeGetTaiNs, "bpf_ktime_get_tai_ns"),
-        (BpfHelper::Jiffies64, "bpf_jiffies64"),
+fn test_infer_no_arg_scalar_helpers_have_precise_returns() {
+    for (helper, name, expected) in [
+        (
+            BpfHelper::GetNumaNodeId,
+            "bpf_get_numa_node_id",
+            MirType::I64,
+        ),
+        (
+            BpfHelper::KtimeGetCoarseNs,
+            "bpf_ktime_get_coarse_ns",
+            MirType::U64,
+        ),
+        (
+            BpfHelper::KtimeGetTaiNs,
+            "bpf_ktime_get_tai_ns",
+            MirType::U64,
+        ),
+        (BpfHelper::Jiffies64, "bpf_jiffies64", MirType::U64),
     ] {
         let mut func = make_test_function();
         let dst = func.alloc_vreg();
@@ -5541,17 +5558,21 @@ fn test_infer_no_arg_scalar_helpers_return_i64() {
         let types = ti
             .infer(&func)
             .unwrap_or_else(|_| panic!("expected {name} to infer"));
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        assert_eq!(types.get(&dst), Some(&expected));
     }
 }
 
 #[test]
 fn test_infer_tc_egress_skb_metadata_helpers() {
-    for (helper, extra_args) in [
-        (BpfHelper::GetCgroupClassid, vec![]),
-        (BpfHelper::GetRouteRealm, vec![]),
-        (BpfHelper::SkbCgroupId, vec![]),
-        (BpfHelper::SkbAncestorCgroupId, vec![MirValue::Const(0)]),
+    for (helper, extra_args, expected) in [
+        (BpfHelper::GetCgroupClassid, vec![], MirType::U32),
+        (BpfHelper::GetRouteRealm, vec![], MirType::U32),
+        (BpfHelper::SkbCgroupId, vec![], MirType::U64),
+        (
+            BpfHelper::SkbAncestorCgroupId,
+            vec![MirValue::Const(0)],
+            MirType::U64,
+        ),
     ] {
         let mut func = make_test_function();
         let ctx = func.alloc_vreg();
@@ -5576,7 +5597,7 @@ fn test_infer_tc_egress_skb_metadata_helpers() {
         let types = ti
             .infer(&func)
             .expect("expected tc-egress skb metadata helper to infer");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        assert_eq!(types.get(&dst), Some(&expected));
     }
 }
 
@@ -5630,7 +5651,7 @@ fn test_infer_lwt_cgroup_metadata_helpers() {
         let types = ti
             .infer(&func)
             .expect("expected lwt cgroup metadata helper to infer");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        assert_eq!(types.get(&dst), Some(&MirType::U32));
     }
 }
 

@@ -204,6 +204,30 @@ pub struct TypeInference<'a> {
 impl<'a> TypeInference<'a> {
     pub(super) fn precise_helper_return_mir_type(helper: BpfHelper) -> Option<MirType> {
         match helper {
+            BpfHelper::GetPrandomU32
+            | BpfHelper::GetSmpProcessorId
+            | BpfHelper::GetHashRecalc
+            | BpfHelper::GetCgroupClassid
+            | BpfHelper::GetRouteRealm
+            | BpfHelper::GetSocketUid => Some(MirType::U32),
+            BpfHelper::KtimeGetNs
+            | BpfHelper::KtimeGetBootNs
+            | BpfHelper::KtimeGetCoarseNs
+            | BpfHelper::KtimeGetTaiNs
+            | BpfHelper::Jiffies64
+            | BpfHelper::GetCurrentPidTgid
+            | BpfHelper::GetCurrentUidGid
+            | BpfHelper::GetCurrentCgroupId
+            | BpfHelper::GetCurrentAncestorCgroupId
+            | BpfHelper::GetSocketCookie
+            | BpfHelper::GetNetnsCookie
+            | BpfHelper::SkbCgroupId
+            | BpfHelper::SkbAncestorCgroupId
+            | BpfHelper::GetFuncIp
+            | BpfHelper::GetAttachCookie
+            | BpfHelper::XdpGetBuffLen
+            | BpfHelper::SkCgroupId
+            | BpfHelper::SkAncestorCgroupId => Some(MirType::U64),
             BpfHelper::SkLookupTcp
             | BpfHelper::SkLookupUdp
             | BpfHelper::SkcLookupTcp

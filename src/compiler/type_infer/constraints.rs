@@ -151,7 +151,18 @@ impl<'a> TypeInference<'a> {
                     }
                     match sig.ret_kind {
                         HelperRetKind::Scalar => {
-                            self.constrain(dst_ty, HMType::I64, "helper_call");
+                            if let Some(helper_kind) = BpfHelper::from_u32(*helper)
+                                && let Some(precise_ty) =
+                                    TypeInference::precise_helper_return_mir_type(helper_kind)
+                            {
+                                self.constrain(
+                                    dst_ty,
+                                    HMType::from_mir_type(&precise_ty),
+                                    "helper_call_scalar_ret",
+                                );
+                            } else {
+                                self.constrain(dst_ty, HMType::I64, "helper_call");
+                            }
                         }
                         HelperRetKind::PointerNonNull | HelperRetKind::PointerMaybeNull => {
                             if let Some(helper_kind) = BpfHelper::from_u32(*helper)

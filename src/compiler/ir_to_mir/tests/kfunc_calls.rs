@@ -1753,17 +1753,18 @@ fn test_helper_call_zero_arg_does_not_inject_src_dst() {
         .instructions
         .iter()
         .find_map(|inst| match inst {
-            MirInst::CallHelper { helper, args, .. } => Some((helper, args)),
+            MirInst::CallHelper { dst, helper, args } => Some((*dst, helper, args)),
             _ => None,
         })
         .expect("expected lowered helper call");
 
-    assert_eq!(*call.0, BpfHelper::GetCurrentPidTgid as u32);
+    assert_eq!(*call.1, BpfHelper::GetCurrentPidTgid as u32);
     assert_eq!(
-        call.1.len(),
+        call.2.len(),
         0,
         "zero-arg helper should not inherit src_dst"
     );
+    assert_eq!(result.type_hints.main.get(&call.0), Some(&MirType::U64));
 }
 
 #[test]

@@ -1003,7 +1003,9 @@ impl<'a> HirToMirLowering<'a> {
                 });
                 match sig.ret_kind {
                     HelperRetKind::Scalar => {
-                        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                        let ret_ty = TypeInference::precise_helper_return_mir_type(helper)
+                            .unwrap_or(MirType::I64);
+                        self.vreg_type_hints.insert(dst_vreg, ret_ty);
                     }
                     HelperRetKind::PointerNonNull | HelperRetKind::PointerMaybeNull => {
                         let ret_ty = TypeInference::precise_helper_return_mir_type(helper)
