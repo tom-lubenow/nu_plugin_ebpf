@@ -11424,44 +11424,53 @@ def validate-host-features [fixture field: string] {
     }
 }
 
-def validate-kernel-feature-metadata [fixture] {
-    let features = (optional $fixture kernel_features [])
+def validate-kernel-feature-key-uniqueness [fixture_name: string origin: string features] {
     let keys = ($features | each {|feature| $feature | get -o key })
 
     for key in ($keys | uniq) {
         if $key == null or $key == "" {
-            fail $"fixture ($fixture.name) declares a kernel feature without key"
+            fail $"fixture ($fixture_name) ($origin) declares a kernel feature without key"
         }
 
         let count = ($keys | where {|candidate| $candidate == $key } | length)
         if $count > 1 {
-            fail $"fixture ($fixture.name) declares duplicate kernel feature key: ($key)"
+            fail $"fixture ($fixture_name) ($origin) declares duplicate kernel feature key: ($key)"
         }
     }
+}
+
+def validate-kernel-feature-record [fixture_name: string origin: string feature] {
+    let key = ($feature | get -o key)
+    let min_kernel = ($feature | get -o min_kernel)
+    let max_kernel = ($feature | get -o max_kernel_exclusive)
+    let source = ($feature | get -o source)
+
+    if $key == null or $key == "" {
+        fail $"fixture ($fixture_name) ($origin) declares a kernel feature without key"
+    }
+    if $min_kernel == null or $min_kernel == "" {
+        fail $"fixture ($fixture_name) ($origin) kernel feature ($key) missing min_kernel"
+    }
+    if $source == null or $source == "" {
+        fail $"fixture ($fixture_name) ($origin) kernel feature ($key) missing source"
+    }
+
+    parse-kernel-version $min_kernel | ignore
+    if $max_kernel != null and $max_kernel != "" {
+        parse-kernel-version $max_kernel | ignore
+        if (kernel-version-compare $max_kernel $min_kernel) <= 0 {
+            fail $"fixture ($fixture_name) ($origin) kernel feature ($key) max_kernel_exclusive=($max_kernel) must be greater than min_kernel=($min_kernel)"
+        }
+    }
+}
+
+def validate-kernel-feature-metadata [fixture] {
+    let features = (optional $fixture kernel_features [])
+    let keys = ($features | each {|feature| $feature | get -o key })
+    validate-kernel-feature-key-uniqueness $fixture.name "explicit kernel_features" $features
 
     for feature in $features {
-        let key = ($feature | get -o key)
-        let min_kernel = ($feature | get -o min_kernel)
-        let max_kernel = ($feature | get -o max_kernel_exclusive)
-        let source = ($feature | get -o source)
-
-        if $key == null or $key == "" {
-            fail $"fixture ($fixture.name) declares a kernel feature without key"
-        }
-        if $min_kernel == null or $min_kernel == "" {
-            fail $"fixture ($fixture.name) kernel feature ($key) missing min_kernel"
-        }
-        if $source == null or $source == "" {
-            fail $"fixture ($fixture.name) kernel feature ($key) missing source"
-        }
-
-        parse-kernel-version $min_kernel | ignore
-        if $max_kernel != null and $max_kernel != "" {
-            parse-kernel-version $max_kernel | ignore
-            if (kernel-version-compare $max_kernel $min_kernel) <= 0 {
-                fail $"fixture ($fixture.name) kernel feature ($key) max_kernel_exclusive=($max_kernel) must be greater than min_kernel=($min_kernel)"
-            }
-        }
+        validate-kernel-feature-record $fixture.name "explicit kernel_features" $feature
     }
 
     for helper_name in (program-helper-names (fixture-program $fixture)) {
@@ -11480,6 +11489,12 @@ def validate-kernel-feature-metadata [fixture] {
         if $known_feature == null and not $explicit_feature {
             fail $"fixture ($fixture.name) calls kfunc ($kfunc_name) without source-backed kernel metadata; add it to KFUNC_KERNEL_FEATURES/KFUNC_KERNEL_FEATURE_FALLBACKS or declare explicit kernel_features metadata"
         }
+    }
+
+    let effective_features = (fixture-kernel-features $fixture)
+    validate-kernel-feature-key-uniqueness $fixture.name "effective kernel_features" $effective_features
+    for feature in $effective_features {
+        validate-kernel-feature-record $fixture.name "effective kernel_features" $feature
     }
 }
 
