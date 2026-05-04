@@ -5742,6 +5742,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-bound-parenthesized-tcp-socket-projection"
+        category: "context-surface"
+        tags: [cgroup-sockopt context alias parenthesized source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let sk = ($ctx.sk)'
+            '  $sk.tcp.snd_cwnd | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-device-context"
         category: "context-surface"
         tags: [cgroup-device context]
@@ -5791,6 +5807,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sysctl-new-value-parenthesized-alias-write"
+        category: "context-surface"
+        tags: [cgroup-sysctl context writable alias parenthesized source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut writable = ($ctx)'
+            '  $writable.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sysctl-current-value-context"
         category: "context-surface"
         tags: [cgroup-sysctl context helper-backed]
@@ -5814,6 +5846,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.new_value | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sysctl-new-value-parenthesized-alias-read"
+        category: "context-surface"
+        tags: [cgroup-sysctl context helper-backed alias parenthesized source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let readable = ($ctx)'
+            '  $readable.new_value | count'
             '  "allow"'
             '}'
         ]
@@ -5865,6 +5913,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let sk = $ctx.sk'
+            '  $sk.rx_queue_mapping | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-bound-socket-parenthesized-projection-context"
+        category: "context-surface"
+        tags: [sock-ops context alias parenthesized source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let sk = ($ctx.sk)'
             '  $sk.rx_queue_mapping | count'
             '  1'
             '}'
