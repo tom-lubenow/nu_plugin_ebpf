@@ -2827,6 +2827,41 @@ fn make_ctx_path_call_program(cell_path: CellPath, decl_id: DeclId) -> HirProgra
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_path_discard_program(cell_path: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(cell_path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 5],
+        ast: vec![None; 5],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_random_int_count_program(random_decl_id: DeclId, count_decl_id: DeclId) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -4116,6 +4151,40 @@ fn compile_ctx_path_count_program(
         &hir,
         Some(&probe_ctx),
         &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+
+    assert!(
+        !result.bytecode.is_empty(),
+        "{context} should produce bytecode"
+    );
+
+    result.into_program(program_type, target, "main", HashMap::new(), HashMap::new())
+}
+
+fn compile_ctx_path_discard_program(
+    program_type: EbpfProgramType,
+    target: &str,
+    cell_path: CellPath,
+    context: &str,
+) -> EbpfProgram {
+    let hir = make_ctx_path_discard_program(cell_path);
+    let probe_ctx = ProbeContext::new(program_type, target);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
         None,
         &HashMap::new(),
         &HashMap::new(),
@@ -11943,6 +12012,40 @@ fn test_context_path_program_reports_backing_helper_compatibility() {
             requirement
                 .minimum_kernel_source()
                 .contains(&format!("/v{minimum_kernel}/"))
+        );
+    }
+}
+
+#[test]
+fn test_current_cgroup_context_path_reports_context_field_compatibility() {
+    for field_name in ["cgroup", "current_cgroup"] {
+        let program = compile_ctx_path_discard_program(
+            EbpfProgramType::Kprobe,
+            "ksys_read",
+            CellPath {
+                members: vec![string_member(field_name)],
+            },
+            "current cgroup context field compatibility",
+        );
+
+        assert!(
+            program.used_context_fields().contains(&CtxField::Cgroup),
+            "expected ctx.{field_name} to preserve source-level cgroup context usage"
+        );
+
+        let requirements = program.context_field_compatibility_requirements();
+        let requirement = requirements
+            .iter()
+            .find(|requirement| requirement.field() == &CtxField::Cgroup)
+            .unwrap_or_else(|| {
+                panic!("expected ctx.{field_name} to report cgroup context compatibility")
+            });
+        assert_eq!(requirement.key(), "ctx:cgroup");
+        assert_eq!(requirement.minimum_kernel(), "5.11");
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains("/v5.11/include/uapi/linux/bpf.h")
         );
     }
 }
