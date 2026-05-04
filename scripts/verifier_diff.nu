@@ -6939,6 +6939,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-in-rich-skb-context"
+        category: "context-surface"
+        tags: [lwt context packet helper-backed source metadata]
+        target: "lwt_in:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.ingress_ifindex + $ctx.ifindex + $ctx.mark + $ctx.priority + $ctx.cb.0) | count'
+            '  ($ctx.hash + $ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm + $ctx.protocol) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lwt-in-context-write"
         category: "context-surface"
         tags: [lwt context writable]
@@ -6968,6 +6983,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-out-rich-skb-context"
+        category: "context-surface"
+        tags: [lwt context packet helper-backed source metadata]
+        target: "lwt_out:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.ingress_ifindex + $ctx.ifindex + $ctx.mark + $ctx.priority + $ctx.cb.2) | count'
+            '  ($ctx.hash + $ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm + $ctx.protocol) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lwt-out-context-write"
         category: "context-surface"
         tags: [lwt context writable]
@@ -6990,6 +7020,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.packet_len + $ctx.hash + $ctx.route_realm + $ctx.gso_size) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-rich-skb-context"
+        category: "context-surface"
+        tags: [lwt context packet helper-backed source metadata seg6local]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.ingress_ifindex + $ctx.ifindex + $ctx.mark + $ctx.priority + $ctx.cb.4) | count'
+            '  ($ctx.hash + $ctx.hash_recalc + $ctx.cgroup_classid + $ctx.route_realm + $ctx.protocol) | count'
             '  "pass"'
             '}'
         ]
