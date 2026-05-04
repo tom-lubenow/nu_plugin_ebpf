@@ -309,6 +309,30 @@ pub(super) fn find_lsm_named_arg_candidate() -> Option<(String, String, u8)> {
     None
 }
 
+pub(super) fn find_lsm_cgroup_named_pointer_projection_candidate()
+-> Option<(String, String, u8, String)> {
+    for (hook_name, arg_name, expected_idx, field_name) in
+        [("socket_bind", "address", 1u8, "sa_family")]
+    {
+        let path = [TrampolineFieldSelector::Field(field_name.to_string())];
+        if matches!(
+            KernelBtf::get().lsm_hook_arg_index_by_name(hook_name, arg_name),
+            Ok(Some(idx)) if idx == expected_idx as usize
+        ) && matches!(
+            KernelBtf::get().lsm_hook_arg_field(hook_name, expected_idx as usize, &path),
+            Ok(Some(_))
+        ) {
+            return Some((
+                hook_name.to_string(),
+                arg_name.to_string(),
+                expected_idx,
+                field_name.to_string(),
+            ));
+        }
+    }
+    None
+}
+
 pub(super) fn find_struct_ops_named_pointer_projection_candidate()
 -> Option<(String, String, String, String)> {
     for (value_type_name, callback_name, arg_name, arg_idx, field_name) in

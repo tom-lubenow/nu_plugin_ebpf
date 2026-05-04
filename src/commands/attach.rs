@@ -1168,8 +1168,8 @@ Requirements:
                 result: None,
             },
             Example {
-                example: "ebpf attach --dry-run 'lsm_cgroup:socket_bind' {|ctx| $ctx.arg2 | count; 1 }",
-                description: "Dry-run a cgroup LSM hook section using BTF-backed hook arguments",
+                example: "ebpf attach --dry-run 'lsm_cgroup:socket_bind' {|ctx| ($ctx.arg.address.sa_family + $ctx.arg.addrlen) | count; 1 }",
+                description: "Dry-run a cgroup LSM hook section using named BTF-backed hook arguments",
                 result: None,
             },
             Example {

@@ -4610,6 +4610,69 @@ fn test_lower_lsm_named_arg_alias_nested_projection() {
 }
 
 #[test]
+fn test_lower_lsm_cgroup_named_arg_alias_nested_projection() {
+    let Some((hook_name, arg_name, expected_idx, field_name)) =
+        find_lsm_cgroup_named_pointer_projection_candidate()
+    else {
+        return;
+    };
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("arg"),
+            string_member(&arg_name),
+            string_member(&field_name),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LsmCgroup, &hook_name);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("named cgroup LSM arg alias nested projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Arg(idx),
+                    ..
+                } if *idx == expected_idx
+            )),
+        "expected named cgroup LSM arg alias to resolve through ctx.arg1 before nested projection"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("named cgroup LSM arg alias nested projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::LsmCgroup,
+        &hook_name,
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
+        .expect(
+            "named cgroup LSM arg scalar projection should report probe_read_kernel compatibility",
+        );
+    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
+}
+
+#[test]
 fn test_lower_captured_int_variable() {
     let capture_var = VarId::new(7);
     let func = HirFunction {

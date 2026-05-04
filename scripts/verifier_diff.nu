@@ -3620,6 +3620,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["helper:bpf_probe_read_kernel"]
     }
     {
+        target: "lsm_cgroup:socket_bind"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.address.sa_family | count'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -4003,6 +4013,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.arg2 + $ctx.arg_count + $ctx.pid) | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lsm-cgroup-named-arg-context"
+        category: "tracing"
+        tags: [lsm-cgroup context named-arg source metadata]
+        requires: [kernel-btf]
+        target: "lsm_cgroup:socket_bind"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.address.sa_family + $ctx.arg.addrlen) | count'
             '  1'
             '}'
         ]
