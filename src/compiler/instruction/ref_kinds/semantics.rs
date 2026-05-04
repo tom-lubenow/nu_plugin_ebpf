@@ -2,6 +2,8 @@ use super::{KfuncAllowedPtrSpaces, KfuncPtrArgRule, KfuncSemantics};
 
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
     const KERNEL_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(false, true, true, false);
+    const KERNEL_ONLY: KfuncAllowedPtrSpaces =
+        KfuncAllowedPtrSpaces::new(false, false, true, false);
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
     const STACK_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, false, false, false);
     const USER_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(false, false, false, true);
@@ -20,6 +22,13 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         arg_idx: 0,
         op: "kfunc bpf_rbtree root",
         allowed: KERNEL_MAP,
+        fixed_size: None,
+        size_from_arg: None,
+    }];
+    const RBTREE_NODE_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc bpf_rbtree node",
+        allowed: KERNEL_ONLY,
         fixed_size: None,
         size_from_arg: None,
     }];
@@ -367,6 +376,10 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         },
         "bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first" => KfuncSemantics {
             ptr_arg_rules: RBTREE_ROOT_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right" => KfuncSemantics {
+            ptr_arg_rules: RBTREE_NODE_RULES,
             positive_size_args: &[],
         },
         "scx_bpf_events" => KfuncSemantics {

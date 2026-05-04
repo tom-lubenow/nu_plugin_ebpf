@@ -5531,6 +5531,20 @@ fn test_kfunc_graph_root_pointer_contracts() {
 }
 
 #[test]
+fn test_kfunc_rbtree_navigation_node_pointer_contracts() {
+    for kfunc in ["bpf_rbtree_root", "bpf_rbtree_left", "bpf_rbtree_right"] {
+        let semantics = kfunc_semantics(kfunc);
+        assert_eq!(semantics.ptr_arg_rules.len(), 1, "{kfunc}");
+        let node = semantics.ptr_arg_rules[0];
+        assert_eq!(node.arg_idx, 0, "{kfunc}");
+        assert!(!node.allowed.allow_stack, "{kfunc}");
+        assert!(!node.allowed.allow_map, "{kfunc}");
+        assert!(node.allowed.allow_kernel, "{kfunc}");
+        assert!(!node.allowed.allow_user, "{kfunc}");
+    }
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel("bpf_task_release", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_put_file", 0));
