@@ -1174,6 +1174,108 @@ fn test_lower_cgroup_sysctl_ctx_alias_new_value_assignment_preserves_metadata() 
 }
 
 #[test]
+fn test_lower_cgroup_sysctl_ctx_alias_new_value_read_preserves_metadata() {
+    let ctx_var = VarId::new(0);
+    let alias_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: alias_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: alias_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("new_value")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sysctl aliased ctx.new_value read should lower");
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::LoadCtxField {
+                        field: CtxField::SysctlNewValue,
+                        slot: Some(_),
+                        ..
+                    }
+                )
+            })
+        }),
+        "aliased ctx.new_value read should lower to a helper-backed context load"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("cgroup_sysctl aliased ctx.new_value read should compile");
+    assert!(
+        compiled.used_ctx_fields.contains(&CtxField::SysctlNewValue),
+        "compiled aliased ctx.new_value read should preserve context compatibility metadata"
+    );
+
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SysctlGetNewValue)
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::SysctlNewValue)
+    );
+}
+
+#[test]
 fn test_lower_cgroup_sock_addr_ctx_sun_path_assignment_records_kfunc_metadata() {
     let hir = make_ctx_upsert_program(
         CellPath {
