@@ -2179,6 +2179,32 @@ fn test_spec_record_includes_attach_shape_metadata() {
         "devmap"
     );
 
+    let iter = ProgramSpec::parse("iter:bpf_link").expect("iter bpf_link spec should parse");
+    let record = spec_record("iter:bpf_link".to_string(), iter, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("kind")
+            .expect("attach shape kind should be present")
+            .as_str()
+            .expect("attach shape kind should be a string"),
+        "iterator"
+    );
+    assert_eq!(
+        attach_shape
+            .get("target_kind")
+            .expect("iterator target kind should be present")
+            .as_str()
+            .expect("iterator target kind should be a string"),
+        "bpf_link"
+    );
+
     let perf_event = ProgramSpec::parse("perf_event:hardware:instructions:cpu=2:pid=42:freq=99")
         .expect("perf_event spec should parse");
     let record = spec_record(

@@ -2365,7 +2365,9 @@ impl ProgramAttachSockAddrHook {
 pub(crate) enum ProgramAttachShape {
     Generic,
     Syscall,
-    Iter,
+    Iter {
+        target_kind: Option<IterTargetKind>,
+    },
     Xdp {
         target_kind: XdpTargetKind,
         mode: XdpAttachMode,
@@ -3365,7 +3367,9 @@ impl ProgramSpec {
     pub(crate) fn attach_shape(&self) -> ProgramAttachShape {
         match self {
             ProgramSpec::Syscall { .. } => ProgramAttachShape::Syscall,
-            ProgramSpec::Iter { .. } => ProgramAttachShape::Iter,
+            ProgramSpec::Iter { target } => ProgramAttachShape::Iter {
+                target_kind: target.known_kind(),
+            },
             ProgramSpec::Xdp { target } => ProgramAttachShape::Xdp {
                 target_kind: target.target_kind,
                 mode: target.attach_mode,
@@ -3665,7 +3669,12 @@ mod tests {
             }
         );
         assert_eq!(syscall.attach_shape(), ProgramAttachShape::Syscall);
-        assert_eq!(iter.attach_shape(), ProgramAttachShape::Iter);
+        assert_eq!(
+            iter.attach_shape(),
+            ProgramAttachShape::Iter {
+                target_kind: Some(IterTargetKind::Task)
+            }
+        );
         assert_eq!(sk_lookup.attach_shape(), ProgramAttachShape::SkLookup);
         assert_eq!(
             flow_dissector.attach_shape(),

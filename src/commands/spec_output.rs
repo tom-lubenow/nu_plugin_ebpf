@@ -307,9 +307,10 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
-        ProgramAttachShape::Iter => Value::record(
+        ProgramAttachShape::Iter { target_kind } => Value::record(
             record! {
                 "kind" => Value::string("iterator", span),
+                "target_kind" => optional_static_str(target_kind.map(|kind| kind.key()), span),
             },
             span,
         ),
