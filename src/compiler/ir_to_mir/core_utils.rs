@@ -439,6 +439,7 @@ impl<'a> HirToMirLowering<'a> {
         });
         SubfunctionArgSeed {
             type_hint,
+            trusted_btf: metadata.as_ref().is_some_and(|meta| meta.trusted_btf),
             metadata,
             synthetic_stack_slot: None,
             non_null: false,

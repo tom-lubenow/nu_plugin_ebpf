@@ -134,6 +134,20 @@ fn verify_mir_with_subfunction_summaries_impl(
                 .map(verifier_type_from_mir)
                 .unwrap_or(VerifierType::Unknown)
         };
+        if func.param_trusted_btf.contains(&i)
+            && let VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                bounds,
+                ..
+            } = &mut ty
+        {
+            *bounds = Some(PtrBounds::new(
+                PtrOrigin::KernelBtf(vreg),
+                0,
+                0,
+                UNKNOWN_KERNEL_BTF_LIMIT,
+            ));
+        }
         if func.param_non_null.contains(&i)
             && let VerifierType::Ptr { nullability, .. } = &mut ty
         {

@@ -3,12 +3,12 @@ use crate::compiler::EbpfProgramType;
 use crate::compiler::TypeInference;
 use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::elf::BpfMapType;
-use crate::compiler::hir::{HirBlock, infer_ctx_param};
+use crate::compiler::hir::{HirBlock, HirClosureParam, HirClosureParamSource, infer_ctx_param};
 use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::passes::optimize_with_ssa_hints;
-use nu_protocol::ast::{Comparison, Operator};
+use nu_protocol::ast::{CellPath, Comparison, Operator};
 use nu_protocol::{DeclId, RegId, VarId};
 
 #[test]
@@ -1218,21 +1218,50 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
 
 #[test]
 fn test_helper_call_find_vma_closure_lowers_to_callback_subprogram() {
+    use crate::compiler::ir_to_mir::tests::helpers::string_member;
+    use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector};
+
+    if KernelBtf::get()
+        .kernel_named_type_field_projection(
+            "vm_area_struct",
+            &[TrampolineFieldSelector::Field("vm_start".to_string())],
+        )
+        .is_err()
+    {
+        return;
+    }
+
     let closure_block_id = nu_protocol::BlockId::new(8);
     let closure = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![HirStmt::LoadLiteral {
-                dst: RegId::new(0),
-                lit: HirLiteral::Int(0),
-            }],
-            terminator: HirTerminator::Return { src: RegId::new(0) },
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("vm_start")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
         }],
         entry: HirBlockId(0),
         spans: vec![],
         ast: vec![],
         comments: vec![],
-        register_count: 1,
+        register_count: 3,
         file_count: 0,
     };
 
@@ -1298,11 +1327,30 @@ fn test_helper_call_find_vma_closure_lowers_to_callback_subprogram() {
         file_count: 0,
     };
 
-    let hir_program = HirProgram::new(
+    let mut hir_program = HirProgram::new(
         main,
         HashMap::from([(closure_block_id, closure)]),
         vec![],
         None,
+    );
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![
+                HirClosureParam {
+                    name: "task".to_string(),
+                    var_id: Some(VarId::new(10)),
+                },
+                HirClosureParam {
+                    name: "vma".to_string(),
+                    var_id: Some(VarId::new(11)),
+                },
+                HirClosureParam {
+                    name: "cb".to_string(),
+                    var_id: Some(VarId::new(12)),
+                },
+            ],
+        },
     );
     let mut decl_names = HashMap::new();
     decl_names.insert(DeclId::new(42), "helper-call".to_string());
@@ -1321,6 +1369,11 @@ fn test_helper_call_find_vma_closure_lowers_to_callback_subprogram() {
     .expect("bpf_find_vma helper-call with closure should lower");
 
     assert_eq!(result.program.subfunctions.len(), 1);
+    let callback = &result.program.subfunctions[0];
+    assert!(callback.param_non_null.contains(&0));
+    assert!(callback.param_non_null.contains(&1));
+    assert!(callback.param_trusted_btf.contains(&0));
+    assert!(callback.param_trusted_btf.contains(&1));
     let entry = result.program.main.entry;
     let block = result.program.main.block(entry);
     assert!(block.instructions.iter().any(|inst| matches!(
@@ -1357,6 +1410,19 @@ fn test_helper_call_find_vma_closure_lowers_to_callback_subprogram() {
             .get(&VReg(1))
             .is_some_and(MirType::is_vm_area_struct_ptr)
     );
+    assert!(matches!(
+        callback_hints.get(&VReg(1)),
+        Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Kernel,
+        }) if matches!(
+            pointee.as_ref(),
+            MirType::Struct {
+                kernel_btf_type_id: Some(_),
+                ..
+            }
+        )
+    ));
     assert!(matches!(
         callback_hints.get(&VReg(2)),
         Some(MirType::Ptr {

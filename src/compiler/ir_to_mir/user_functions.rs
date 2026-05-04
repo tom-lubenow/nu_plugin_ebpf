@@ -1158,6 +1158,7 @@ impl<'a> HirToMirLowering<'a> {
                     metadata: None,
                     synthetic_stack_slot: None,
                     non_null: true,
+                    trusted_btf: false,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::Record {
@@ -1188,6 +1189,7 @@ impl<'a> HirToMirLowering<'a> {
                     metadata: None,
                     synthetic_stack_slot: None,
                     non_null: true,
+                    trusted_btf: false,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::List {
@@ -1224,6 +1226,7 @@ impl<'a> HirToMirLowering<'a> {
                     metadata: None,
                     synthetic_stack_slot: None,
                     non_null: true,
+                    trusted_btf: false,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::String {

@@ -39,6 +39,7 @@ impl MirFunction {
             param_count: 0,
             param_stack_slots: HashMap::new(),
             param_non_null: HashSet::new(),
+            param_trusted_btf: HashSet::new(),
             entry_initialized_dynptr_slots: HashSet::new(),
             global_param_aliases: HashMap::new(),
         }

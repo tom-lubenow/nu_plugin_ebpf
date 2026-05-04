@@ -35,6 +35,12 @@ impl<'a> VccLowerer<'a> {
     ) -> VccValueType {
         let Some(slot) = func.param_stack_slots.get(&(vreg.0 as usize)).copied() else {
             let mut seeded = vcc_type_from_mir(ty);
+            if func.param_trusted_btf.contains(&(vreg.0 as usize))
+                && let VccValueType::Ptr(info) = &mut seeded
+                && info.space == VccAddrSpace::Kernel
+            {
+                info.space = VccAddrSpace::KernelBtf;
+            }
             if func.param_non_null.contains(&(vreg.0 as usize))
                 && let VccValueType::Ptr(info) = &mut seeded
             {

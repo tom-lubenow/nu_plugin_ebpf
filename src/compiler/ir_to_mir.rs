@@ -248,6 +248,7 @@ struct SubfunctionArgSeed {
     metadata: Option<RegMetadata>,
     synthetic_stack_slot: Option<SyntheticStackSlotSeed>,
     non_null: bool,
+    trusted_btf: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

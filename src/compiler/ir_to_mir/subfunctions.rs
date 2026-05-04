@@ -184,6 +184,9 @@ impl<'a> HirToMirLowering<'a> {
         if seed.non_null {
             self.func.param_non_null.insert(param_idx);
         }
+        if seed.trusted_btf {
+            self.func.param_trusted_btf.insert(param_idx);
+        }
 
         if let Some(stack_object) = &seed.synthetic_stack_slot {
             let slot = self.func.alloc_stack_slot(
@@ -198,8 +201,9 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        if let Some(mut meta) = seed.metadata.clone() {
-            meta.trusted_btf = false;
+        if seed.metadata.is_some() || seed.trusted_btf {
+            let mut meta = seed.metadata.clone().unwrap_or_default();
+            meta.trusted_btf = seed.trusted_btf;
             if let Some(reg) = reg {
                 self.reg_metadata.insert(reg.get(), meta.clone());
             }

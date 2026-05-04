@@ -6,6 +6,7 @@ use crate::compiler::instruction::{
     kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{AddressSpace, MapOpKind};
+use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 #[derive(Debug, Clone)]
 pub(super) struct ScalarKfuncOutArgWriteback {
@@ -128,6 +129,10 @@ impl<'a> HirToMirLowering<'a> {
                     address_space: AddressSpace::Stack,
                 },
             });
+            callback_ctx_seed.trusted_btf = false;
+            if let Some(metadata) = &mut callback_ctx_seed.metadata {
+                metadata.trusted_btf = false;
+            }
             callback_ctx_seed
         };
 
@@ -140,6 +145,7 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: false,
+                        trusted_btf: false,
                     },
                     callback_ctx_seed,
                 ])
@@ -177,6 +183,7 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: false,
+                        trusted_btf: false,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -186,6 +193,7 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: true,
+                        trusted_btf: false,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -195,22 +203,25 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: true,
+                        trusted_btf: false,
                     },
                     stack_callback_ctx_seed(),
                 ])
             }
             (BpfHelper::FindVma, 2) => Ok(vec![
                 SubfunctionArgSeed {
-                    type_hint: Some(MirType::named_kernel_struct_ptr("task_struct")),
+                    type_hint: Some(self.kernel_btf_callback_arg_ptr_type("task_struct")),
                     metadata: None,
                     synthetic_stack_slot: None,
-                    non_null: false,
+                    non_null: true,
+                    trusted_btf: true,
                 },
                 SubfunctionArgSeed {
-                    type_hint: Some(MirType::named_kernel_struct_ptr("vm_area_struct")),
+                    type_hint: Some(self.kernel_btf_callback_arg_ptr_type("vm_area_struct")),
                     metadata: None,
                     synthetic_stack_slot: None,
-                    non_null: false,
+                    non_null: true,
+                    trusted_btf: true,
                 },
                 stack_callback_ctx_seed(),
             ]),
@@ -228,6 +239,7 @@ impl<'a> HirToMirLowering<'a> {
                         initialize_dynptr: true,
                     }),
                     non_null: true,
+                    trusted_btf: false,
                 },
                 stack_callback_ctx_seed(),
             ]),
@@ -248,6 +260,7 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: false,
+                        trusted_btf: false,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -257,6 +270,7 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: true,
+                        trusted_btf: false,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -266,6 +280,7 @@ impl<'a> HirToMirLowering<'a> {
                         metadata: None,
                         synthetic_stack_slot: None,
                         non_null: true,
+                        trusted_btf: false,
                     },
                 ])
             }
@@ -370,6 +385,7 @@ impl<'a> HirToMirLowering<'a> {
                     metadata: None,
                     synthetic_stack_slot: None,
                     non_null: false,
+                    trusted_btf: false,
                 },
                 SubfunctionArgSeed {
                     type_hint: Some(MirType::Ptr {
@@ -379,6 +395,7 @@ impl<'a> HirToMirLowering<'a> {
                     metadata: None,
                     synthetic_stack_slot: None,
                     non_null: false,
+                    trusted_btf: false,
                 },
             ]),
             _ => Err(CompileError::UnsupportedInstruction(format!(
@@ -402,6 +419,40 @@ impl<'a> HirToMirLowering<'a> {
                 Some(pointee.as_ref())
             }
             _ => None,
+        }
+    }
+
+    fn kernel_btf_callback_arg_ptr_type(&self, type_name: &str) -> MirType {
+        let fallback = MirType::named_kernel_struct_ptr(type_name);
+        let Ok(TypeInfo::Struct {
+            name,
+            btf_type_id,
+            size,
+            ..
+        }) = KernelBtf::get().kernel_named_type_info(type_name)
+        else {
+            return fallback;
+        };
+        if size == 0 {
+            return fallback;
+        }
+
+        MirType::Ptr {
+            pointee: Box::new(MirType::Struct {
+                name: Some(name),
+                kernel_btf_type_id: btf_type_id,
+                fields: vec![StructField {
+                    name: "__opaque".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: size,
+                    },
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                }],
+            }),
+            address_space: AddressSpace::Kernel,
         }
     }
 

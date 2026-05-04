@@ -10267,6 +10267,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "callback-find-vma-btf-field"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb|'
+            '    $vma.vm_start | count'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "callback-user-ringbuf-drain"
         category: "callbacks"
         tags: [helper-call callback dynptr user-ringbuf]
