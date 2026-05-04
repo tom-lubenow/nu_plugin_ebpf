@@ -3461,6 +3461,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:rx_queue_mapping" "ctx:sk"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let sk = ($ctx.sk)'
+            '  $sk.tcp.snd_cwnd | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
@@ -3491,6 +3502,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_task_pt_regs"]
+    }
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let readable = ($ctx)'
+            '  $readable.new_value | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sysctl_new_value" "helper:bpf_sysctl_get_new_value"]
     }
     {
         target: "cgroup_sysctl:/sys/fs/cgroup"
@@ -3541,6 +3563,17 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         program: [
             '{|ctx|'
             '  mut writable = $ctx'
+            '  $writable.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sysctl_set_new_value"]
+    }
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut writable = ($ctx)'
             '  $writable.new_value = "1"'
             '  "allow"'
             '}'
@@ -10962,7 +10995,35 @@ def append-unique-name [names name: string] {
     }
 }
 
-def context-variable-binding [line: string context_names] {
+def trim-simple-parentheses [text: string] {
+    mut value = ($text | str trim)
+
+    loop {
+        if ($value | str length) < 2 {
+            break
+        }
+        if not (($value | str starts-with "(") and ($value | str ends-with ")")) {
+            break
+        }
+
+        $value = ($value | str substring 1..-2 | str trim)
+    }
+
+    $value
+}
+
+def declaration-binding-name [raw_name: string] {
+    $raw_name
+    | str trim
+    | split row ":"
+    | first
+    | str trim
+    | split row " "
+    | first
+    | str trim
+}
+
+def declaration-assignment [line: string] {
     let trimmed = ($line | str trim)
     let prefix = if ($trimmed | str starts-with "let ") {
         "let "
@@ -10973,36 +11034,36 @@ def context-variable-binding [line: string context_names] {
     }
 
     let body = ($trimmed | str substring ($prefix | str length)..)
+    let assignment_parts = ($body | split row "=")
+    if ($assignment_parts | length) < 2 {
+        return null
+    }
+
+    let name = (declaration-binding-name ($assignment_parts | first))
+    if $name == "" {
+        return null
+    }
+
+    {
+        name: $name
+        rhs: ($assignment_parts | skip 1 | str join "=" | str trim)
+    }
+}
+
+def declaration-rhs-token [assignment] {
+    trim-simple-parentheses (($assignment.rhs | split row ";" | first) | str trim)
+}
+
+def context-variable-binding [line: string context_names] {
+    let assignment = (declaration-assignment $line)
+    if $assignment == null {
+        return null
+    }
+
+    let rhs = (declaration-rhs-token $assignment)
     for context_name in $context_names {
-        let assignment_parts = if ($body | str contains $" = $($context_name)") {
-            $body | split row $" = $($context_name)"
-        } else if ($body | str contains $"=$($context_name)") {
-            $body | split row $"=$($context_name)"
-        } else {
-            continue
-        }
-        if ($assignment_parts | length) < 2 {
-            continue
-        }
-
-        let suffix = (($assignment_parts | get 1) | str trim)
-        if not (($suffix == "") or ($suffix | str starts-with ";")) {
-            continue
-        }
-
-        let name = (
-            $assignment_parts
-            | first
-            | str trim
-            | split row ":"
-            | first
-            | str trim
-            | split row " "
-            | first
-            | str trim
-        )
-        if $name != "" {
-            return $name
+        if $rhs == $"$($context_name)" {
+            return $assignment.name
         }
     }
 
@@ -11057,43 +11118,21 @@ def program-context-variable-names [source: string] {
 }
 
 def context-root-binding [line: string context_names] {
-    let trimmed = ($line | str trim)
-    let prefix = if ($trimmed | str starts-with "let ") {
-        "let "
-    } else if ($trimmed | str starts-with "mut ") {
-        "mut "
-    } else {
+    let assignment = (declaration-assignment $line)
+    if $assignment == null {
         return null
     }
 
-    let body = ($trimmed | str substring ($prefix | str length)..)
+    let rhs = (declaration-rhs-token $assignment)
     for context_name in $context_names {
-        let assignment_parts = if ($body | str contains $" = $($context_name).") {
-            $body | split row $" = $($context_name)."
-        } else if ($body | str contains $"=$($context_name).") {
-            $body | split row $"=$($context_name)."
-        } else {
-            continue
-        }
-        if ($assignment_parts | length) < 2 {
+        let prefix = $"$($context_name)."
+        if not ($rhs | str starts-with $prefix) {
             continue
         }
 
-        let name = (
-            $assignment_parts
-            | first
-            | str trim
-            | split row ":"
-            | first
-            | str trim
-        )
-        if $name == "" {
-            continue
-        }
-
-        let root = (normalize-context-field-token ($assignment_parts | get 1))
+        let root = (normalize-context-field-token ($rhs | str substring ($prefix | str length)..))
         if $root in ["sk" "migrating_sk" "migrating_socket" "task" "current_task"] {
-            return { name: $name root: $root }
+            return { name: $assignment.name root: $root }
         }
     }
 
