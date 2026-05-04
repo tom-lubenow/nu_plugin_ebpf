@@ -3324,6 +3324,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:rx_queue_mapping" "ctx:sk"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  $sk.tcp.snd_cwnd | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_tcp_sock"]
+    }
+    {
         target: "kprobe:sys_clone"
         program: [
             '{|ctx|'
@@ -5440,6 +5451,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.retval = 0'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-bound-tcp-socket-projection"
+        category: "context-surface"
+        tags: [cgroup-sockopt context source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  $sk.tcp.snd_cwnd | count'
             '  "allow"'
             '}'
         ]
