@@ -3286,6 +3286,7 @@ const CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "cgroup_sysctl:/sys/fs/cgroup" field: "new_value" feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_NEW_VALUE }
     { target: "fentry:security_file_open" field: "arg_count" feature: $KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT }
     { target: "raw_tracepoint:sys_enter" field: "kstack" feature: $KERNEL_FEATURE_BPF_GET_STACKID }
+    { target: "raw_tracepoint:sys_enter" field: "ustack" feature: $KERNEL_FEATURE_BPF_GET_STACKID }
 ]
 
 const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [

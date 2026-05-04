@@ -356,6 +356,9 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     let ustack = field(&fields, "ustack");
     assert_eq!(ustack.semantic_type.as_deref(), Some("i64"));
     assert_eq!(ustack.runtime_type.as_deref(), Some("i64"));
+    assert_eq!(ustack.backing_helper, Some("bpf_get_stackid"));
+    assert_eq!(ustack.backing_helper_minimum_kernel, Some("4.6"));
+    assert_eq!(ustack.minimum_kernel, Some("4.6"));
 }
 
 #[test]
