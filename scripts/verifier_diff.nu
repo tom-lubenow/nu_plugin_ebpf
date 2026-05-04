@@ -3494,6 +3494,52 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
+const PROGRAM_SURFACE_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|event|'
+            '  $event.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sysctl_set_new_value"]
+    }
+    {
+        target: "tc_action:demo"
+        program: [
+            '{|event|'
+            '  $event.sk = 0'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_assign"]
+    }
+    {
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|event|'
+            '  $event.cb_flags = 1'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sock_ops_cb_flags_set"]
+    }
+]
+
+const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|event|'
+            '  $event.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
+    }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -10643,6 +10689,22 @@ def context-field-access-is-assignment-lhs? [raw_access: string field: string] {
     ($compact | str starts-with $assign_prefix) and not ($compact | str starts-with $equality_prefix)
 }
 
+def line-assigns-context-field? [line: string context_names fields] {
+    let trimmed = ($line | str trim)
+    for context_name in $context_names {
+        for field in $fields {
+            if (
+                ($trimmed | str contains $"$($context_name).($field) =")
+                or ($trimmed | str contains $"$($context_name).($field)=")
+            ) {
+                return true
+            }
+        }
+    }
+
+    false
+}
+
 def context-projection-parts [token: string] {
     let cleaned = (
         $token
@@ -11143,6 +11205,7 @@ def program-helper-kernel-features [source: string] {
 def program-kfunc-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
+    let context_names = (program-context-variable-names $source)
 
     for kfunc_name in (program-kfunc-names $source) {
         let feature = (kfunc-kernel-feature $kfunc_name)
@@ -11156,7 +11219,7 @@ def program-kfunc-kernel-features [source: string target] {
         if (
             ($target_text | str starts-with "cgroup_sock_addr:")
             and ($target_text | str contains "_unix")
-            and (($trimmed | str contains "$ctx.sun_path =") or ($trimmed | str contains "$ctx.sun_path="))
+            and (line-assigns-context-field? $trimmed $context_names ["sun_path"])
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH])
         }
@@ -11216,6 +11279,7 @@ def program-context-field-kernel-features [source: string target] {
 def program-surface-helper-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
+    let context_names = (program-context-variable-names $source)
     let target_uses_skb_cgroup_helper = (
         ($target_text | str starts-with "tc_action:")
         or ($target_text | str starts-with "tc:")
@@ -11270,10 +11334,7 @@ def program-surface-helper-kernel-features [source: string target] {
 
         let trimmed = ($line | str trim)
         let assigns_sysctl_new_value = (
-            ($trimmed | str contains "$ctx.new_value =")
-            or ($trimmed | str contains "$ctx.new_value=")
-            or ($trimmed | str contains "$ctx.sysctl_new_value =")
-            or ($trimmed | str contains "$ctx.sysctl_new_value=")
+            line-assigns-context-field? $trimmed $context_names ["new_value" "sysctl_new_value"]
         )
         let target_supports_ctx_sk_assign = (
             ($target_text | str starts-with "sk_lookup:")
@@ -11282,8 +11343,7 @@ def program-surface-helper-kernel-features [source: string target] {
             or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
         )
         let assigns_ctx_sk = (
-            ($trimmed | str contains "$ctx.sk =")
-            or ($trimmed | str contains "$ctx.sk=")
+            line-assigns-context-field? $trimmed $context_names ["sk"]
         )
         let map_kind = (source-line-map-kind $line "hash")
         if ($line | str contains "map-get ") and (generic-map-lookup-kind? $map_kind) {
@@ -11384,7 +11444,7 @@ def program-surface-helper-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
             }
         }
-        if ($target_text | str starts-with "sock_ops:") and (($trimmed | str contains "$ctx.cb_flags =") or ($trimmed | str contains "$ctx.cb_flags=")) {
+        if ($target_text | str starts-with "sock_ops:") and (line-assigns-context-field? $trimmed $context_names ["cb_flags"]) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET])
         }
         if ($target_text | str starts-with "xdp:") {
@@ -12226,6 +12286,42 @@ def validate-program-context-field-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-surface-helper-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_SURFACE_HELPER_KERNEL_FEATURE_EXPECTATIONS {
+        let target = $expectation.target
+        let program = ($expectation.program | str join "\n")
+        let expected_keys = ($expectation.feature_keys | sort)
+        let actual_keys = (
+            program-surface-helper-kernel-features $program $target
+            | each {|feature| $feature.key }
+            | sort
+        )
+        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+
+        if ($missing | length) > 0 {
+            fail $"program-surface-helper-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+        }
+    }
+}
+
+def validate-program-kfunc-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS {
+        let target = $expectation.target
+        let program = ($expectation.program | str join "\n")
+        let expected_keys = ($expectation.feature_keys | sort)
+        let actual_keys = (
+            program-kfunc-kernel-features $program $target
+            | each {|feature| $feature.key }
+            | sort
+        )
+        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+
+        if ($missing | length) > 0 {
+            fail $"program-kfunc-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
@@ -12233,6 +12329,8 @@ def validate-fixture-metadata [fixtures] {
     validate-context-field-helper-kernel-feature-expectations
     validate-context-projection-kernel-feature-expectations
     validate-program-context-field-kernel-feature-expectations
+    validate-program-surface-helper-kernel-feature-expectations
+    validate-program-kfunc-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 
