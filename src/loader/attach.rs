@@ -361,70 +361,67 @@ pub(super) fn kernel_context_field_minimum_requirement_detail(
     ))
 }
 
-fn current_kernel_program_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
-    let current_kernel = current_kernel_release()?;
+pub(super) fn kernel_object_compatibility_requirement_detail(
+    object: &crate::compiler::EbpfObject,
+    current_kernel: &str,
+) -> Option<String> {
     let requirements = object.program_compatibility_requirements();
-    kernel_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
-}
+    if let Some(detail) = kernel_minimum_requirement_detail(&requirements, current_kernel) {
+        return Some(detail);
+    }
 
-fn current_kernel_map_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let requirements = object.map_compatibility_requirements();
-    if requirements.is_empty() {
-        return None;
+    if !requirements.is_empty()
+        && let Some(detail) = kernel_map_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
     }
-    let current_kernel = current_kernel_release()?;
-    kernel_map_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
-}
 
-fn current_kernel_map_value_minimum_error(
-    object: &crate::compiler::EbpfObject,
-) -> Option<LoadError> {
     let requirements = object.map_value_compatibility_requirements();
-    if requirements.is_empty() {
-        return None;
+    if !requirements.is_empty()
+        && let Some(detail) =
+            kernel_map_value_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
     }
-    let current_kernel = current_kernel_release()?;
-    kernel_map_value_minimum_requirement_detail(&requirements, &current_kernel)
-        .map(LoadError::Attach)
-}
 
-fn current_kernel_global_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let requirements = object.global_compatibility_requirements();
-    if requirements.is_empty() {
-        return None;
+    if !requirements.is_empty()
+        && let Some(detail) =
+            kernel_global_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
     }
-    let current_kernel = current_kernel_release()?;
-    kernel_global_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
-}
 
-fn current_kernel_helper_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let requirements = object.helper_compatibility_requirements();
-    if requirements.is_empty() {
-        return None;
+    if !requirements.is_empty()
+        && let Some(detail) =
+            kernel_helper_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
     }
-    let current_kernel = current_kernel_release()?;
-    kernel_helper_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
-}
 
-fn current_kernel_kfunc_minimum_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let requirements = object.kfunc_compatibility_requirements();
-    if requirements.is_empty() {
-        return None;
+    if !requirements.is_empty()
+        && let Some(detail) = kernel_kfunc_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
     }
-    let current_kernel = current_kernel_release()?;
-    kernel_kfunc_minimum_requirement_detail(&requirements, &current_kernel).map(LoadError::Attach)
+
+    let requirements = object.context_field_compatibility_requirements();
+    if !requirements.is_empty()
+        && let Some(detail) =
+            kernel_context_field_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
+    }
+
+    None
 }
 
-fn current_kernel_context_field_minimum_error(
-    object: &crate::compiler::EbpfObject,
-) -> Option<LoadError> {
-    let requirements = object.context_field_compatibility_requirements();
-    if requirements.is_empty() {
-        return None;
-    }
+fn current_kernel_compatibility_error(object: &crate::compiler::EbpfObject) -> Option<LoadError> {
     let current_kernel = current_kernel_release()?;
-    kernel_context_field_minimum_requirement_detail(&requirements, &current_kernel)
-        .map(LoadError::Attach)
+    kernel_object_compatibility_requirement_detail(object, &current_kernel).map(LoadError::Attach)
 }
 
 const SYSCALL_SYMBOL_PREFIXES: &[&str] = &[
@@ -770,25 +767,7 @@ impl EbpfState {
                 &compatibility_requirements,
             ));
         }
-        if let Some(err) = current_kernel_program_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_map_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_map_value_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_global_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_helper_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_kfunc_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_context_field_minimum_error(object) {
+        if let Some(err) = current_kernel_compatibility_error(object) {
             return Err(err);
         }
         let syscall_probe_symbols = match &spec {
@@ -1765,25 +1744,7 @@ impl EbpfState {
             )));
         }
 
-        if let Some(err) = current_kernel_program_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_map_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_map_value_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_global_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_helper_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_kfunc_minimum_error(object) {
-            return Err(err);
-        }
-        if let Some(err) = current_kernel_context_field_minimum_error(object) {
+        if let Some(err) = current_kernel_compatibility_error(object) {
             return Err(err);
         }
 

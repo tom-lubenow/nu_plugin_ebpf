@@ -2,7 +2,7 @@ use super::attach::{
     kernel_context_field_minimum_requirement_detail, kernel_global_minimum_requirement_detail,
     kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
     kernel_map_minimum_requirement_detail, kernel_map_value_minimum_requirement_detail,
-    kernel_minimum_requirement_detail,
+    kernel_minimum_requirement_detail, kernel_object_compatibility_requirement_detail,
 };
 use super::*;
 use crate::compiler::mir::{CtxField, MapKind};
@@ -1893,6 +1893,34 @@ fn test_kernel_minimum_requirement_detail_reports_sched_ext_struct_ops_floor() {
     assert!(msg.contains(ProgramCompatibilityRequirement::SchedExt.description()));
     assert!(msg.contains("kernel>=5.6"));
     assert!(msg.contains("kernel>=6.12"));
+}
+
+#[test]
+fn test_kernel_object_compatibility_requirement_detail_reports_program_floor() {
+    let object =
+        EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo:frags", "main", vec![]).into_object();
+
+    let msg = kernel_object_compatibility_requirement_detail(&object, "5.17.0-test")
+        .expect("kernel 5.17 should be too old for XDP frags");
+
+    assert!(msg.contains("parsed target requires kernel>=5.18"));
+    assert!(msg.contains("current kernel is 5.17.0-test"));
+    assert!(msg.contains(ProgramCompatibilityRequirement::XdpMultiBuffer.description()));
+}
+
+#[test]
+fn test_kernel_object_compatibility_requirement_detail_reports_compiled_feature_floor() {
+    let object =
+        EbpfProgram::from_bytecode(EbpfProgramType::Kprobe, "do_sys_openat2", "main", vec![])
+            .with_used_kfuncs(["bpf_get_task_exe_file"])
+            .into_object();
+
+    let msg = kernel_object_compatibility_requirement_detail(&object, "6.11.0-test")
+        .expect("kernel 6.11 should be too old for bpf_get_task_exe_file");
+
+    assert!(msg.contains("compiled kfuncs require kernel>=6.12"));
+    assert!(msg.contains("current kernel is 6.11.0-test"));
+    assert!(msg.contains("bpf_get_task_exe_file kfunc support"));
 }
 
 #[test]
