@@ -214,6 +214,20 @@ fn test_lower_cgroup_skb_ctx_sk_cgroup_id_projection_calls_helper() {
                 } if *helper == BpfHelper::SkCgroupId as u32 && args.len() == 1
             )))
     );
+    let helper_dst = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { dst, helper, .. } if *helper == BpfHelper::SkCgroupId as u32 => {
+                Some(*dst)
+            }
+            _ => None,
+        })
+        .expect("expected socket cgroup helper destination");
+    assert_eq!(result.type_hints.main.get(&helper_dst), Some(&MirType::U64));
 
     let compiled =
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
@@ -317,6 +331,22 @@ fn test_lower_cgroup_skb_ctx_sk_ancestor_cgroup_id_projection_calls_helper() {
                     && matches!(args.as_slice(), [MirValue::VReg(_), MirValue::Const(1)])
             )))
     );
+    let helper_dst = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { dst, helper, .. }
+                if *helper == BpfHelper::SkAncestorCgroupId as u32 =>
+            {
+                Some(*dst)
+            }
+            _ => None,
+        })
+        .expect("expected socket ancestor cgroup helper destination");
+    assert_eq!(result.type_hints.main.get(&helper_dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -4253,6 +4283,19 @@ fn test_lower_tc_egress_skb_ancestor_cgroup_id_projection_calls_helper() {
         } if *helper == BpfHelper::SkbAncestorCgroupId as u32
             && matches!(args.as_slice(), [MirValue::VReg(_), MirValue::Const(3)])
     )));
+    let helper_dst = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { dst, helper, .. }
+                if *helper == BpfHelper::SkbAncestorCgroupId as u32 =>
+            {
+                Some(*dst)
+            }
+            _ => None,
+        })
+        .expect("expected skb ancestor cgroup helper destination");
+    assert_eq!(result.type_hints.main.get(&helper_dst), Some(&MirType::U64));
 }
 
 #[test]
@@ -4700,6 +4743,19 @@ fn test_lower_kprobe_ctx_ancestor_cgroup_id_projection_calls_helper() {
         } if *helper == BpfHelper::GetCurrentAncestorCgroupId as u32
             && args == &[MirValue::Const(2)]
     )));
+    let helper_dst = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { dst, helper, .. }
+                if *helper == BpfHelper::GetCurrentAncestorCgroupId as u32 =>
+            {
+                Some(*dst)
+            }
+            _ => None,
+        })
+        .expect("expected current ancestor cgroup helper destination");
+    assert_eq!(result.type_hints.main.get(&helper_dst), Some(&MirType::U64));
 }
 
 #[test]

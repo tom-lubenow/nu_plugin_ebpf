@@ -129,8 +129,8 @@ impl<'a> HirToMirLowering<'a> {
         self.terminate(MirInst::Jump { target: join_block });
 
         self.current_block = join_block;
-        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
-        Ok(Some(MirType::I64))
+        self.vreg_type_hints.insert(dst_vreg, MirType::U64);
+        Ok(Some(MirType::U64))
     }
 
     fn try_lower_socket_helper_projection(

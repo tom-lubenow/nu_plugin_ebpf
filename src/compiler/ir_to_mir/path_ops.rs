@@ -403,10 +403,10 @@ impl<'a> HirToMirLowering<'a> {
             helper: helper as u32,
             args,
         });
-        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+        self.vreg_type_hints.insert(dst_vreg, MirType::U64);
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
-        meta.field_type = Some(MirType::I64);
+        meta.field_type = Some(MirType::U64);
         meta.root_ctx_field = None;
         meta.trusted_btf = false;
         meta.source_var = None;
