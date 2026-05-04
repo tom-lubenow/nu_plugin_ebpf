@@ -1607,6 +1607,34 @@ fn test_lower_cgroup_sock_post_bind_ctx_socket_local_alias_fields() {
 }
 
 #[test]
+fn test_lower_sk_reuseport_migrating_socket_remote_alias_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("migrating_sk"), string_member("remote_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "migrate");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_reuseport ctx.migrating_sk.remote_port should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::RemotePort),
+        "ctx.migrating_sk.remote_port should imply remote_port compatibility metadata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("sk_reuseport ctx.migrating_sk.remote_port should compile");
+}
+
+#[test]
 fn test_lower_ctx_socket_projection_records_implied_context_compatibility_fields() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("mark")],
