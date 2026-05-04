@@ -3514,6 +3514,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_task_pt_regs"]
     }
     {
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  let cg = $ctx.current_cgroup'
+            '  $cg.kn.id | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:cgroup" "helper:bpf_get_current_task_btf" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -5174,6 +5185,22 @@ const FIXTURES = [
             '{|ctx|'
             '  let task = $ctx.task'
             '  $task.pt_regs.arg0 | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "current-cgroup-bound-context"
+        category: "context-surface"
+        tags: [context cgroup btf source metadata accept]
+        requires: [kernel-btf]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  let cg = $ctx.current_cgroup'
+            '  $cg.kn.id | count'
             '  0'
             '}'
         ]
