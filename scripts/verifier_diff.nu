@@ -6582,6 +6582,104 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-rbtree-root-from-node"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let node = (kfunc-call "bpf_rbtree_first" $entry.root)'
+            '    if $node {'
+            '      let root = (kfunc-call "bpf_rbtree_root" $node)'
+            '      if $root {'
+            '        0'
+            '      }'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-left-from-node"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let node = (kfunc-call "bpf_rbtree_first" $entry.root)'
+            '    if $node {'
+            '      let left = (kfunc-call "bpf_rbtree_left" $node)'
+            '      if $left {'
+            '        0'
+            '      }'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-right-from-node"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let node = (kfunc-call "bpf_rbtree_first" $entry.root)'
+            '    if $node {'
+            '      let right = (kfunc-call "bpf_rbtree_right" $node)'
+            '      if $right {'
+            '        0'
+            '      }'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-root-rejects-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let root = (kfunc-call "bpf_rbtree_root" $entry.root)'
+            '    if $root {'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects kernel pointer, got Map"
+    }
+    {
         name: "source-kfunc-rbtree-add-map-root"
         category: "helper-state"
         tags: [kfunc object graph callback source accept]
