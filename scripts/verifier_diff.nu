@@ -3609,6 +3609,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let regs = $ctx.arg0'
+            '  $regs.orig_ax | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -3906,6 +3917,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tp-btf-bound-arg-context"
+        category: "tracing"
+        tags: [tp-btf context alias]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let regs = $ctx.arg0'
+            '  ($regs.orig_ax + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "fentry-context"
         category: "tracing"
         tags: [fentry context]
@@ -3945,6 +3972,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lsm-bound-arg-context"
+        category: "tracing"
+        tags: [lsm context alias]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let file = $ctx.arg.file'
+            '  ($file.f_flags + $ctx.pid) | count'
             '  0'
             '}'
         ]
