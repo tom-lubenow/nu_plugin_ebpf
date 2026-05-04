@@ -867,6 +867,32 @@ fn test_verify_mir_for_probe_context_btf_arg_allows_direct_kernel_pointer_load()
 }
 
 #[test]
+fn test_verify_mir_trusted_btf_param_allows_direct_kernel_pointer_load() {
+    let (mut func, entry) = new_mir_function();
+    let vma = func.alloc_vreg();
+    assert_eq!(vma, VReg(0));
+    func.param_count = 1;
+    func.param_non_null.insert(0);
+    func.param_trusted_btf.insert(0);
+
+    let vm_start = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst: vm_start,
+        ptr: vma,
+        offset: 0,
+        ty: MirType::U64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(vma, MirType::named_kernel_struct_ptr("vm_area_struct"));
+    types.insert(vm_start, MirType::U64);
+
+    verify_mir(&func, &types)
+        .expect("expected trusted BTF callback parameter to allow direct kernel pointer loads");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_netfilter_state_allows_direct_kernel_pointer_load() {
     let (mut func, entry) = new_mir_function();
     let state = func.alloc_vreg();
