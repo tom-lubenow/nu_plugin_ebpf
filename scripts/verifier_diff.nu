@@ -3332,7 +3332,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  "allow"'
             '}'
         ]
-        feature_keys: ["ctx:sk" "helper:bpf_tcp_sock"]
+        feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
     }
     {
         target: "kprobe:sys_clone"
@@ -10443,7 +10443,7 @@ def context-field-access-is-assignment-lhs? [raw_access: string field: string] {
     ($compact | str starts-with $assign_prefix) and not ($compact | str starts-with $equality_prefix)
 }
 
-def normalize-context-projection-token [token: string] {
+def context-projection-parts [token: string] {
     let cleaned = (
         $token
         | str trim
@@ -10460,11 +10460,20 @@ def normalize-context-projection-token [token: string] {
     )
     let parts = ($cleaned | split row ".")
     if ($parts | length) < 2 {
-        return null
+        return []
     }
 
     let root = ($parts | first)
     if $root not-in ["sk" "migrating_sk" "migrating_socket"] {
+        return []
+    }
+
+    $parts
+}
+
+def normalize-context-projection-token [token: string] {
+    let parts = (context-projection-parts $token)
+    if ($parts | length) < 2 {
         return null
     }
 
@@ -10551,6 +10560,27 @@ def context-projection-kernel-feature [raw_access: string target] {
     }
     if $field == "rx_queue_mapping" {
         return $KERNEL_FEATURE_CTX_BPF_SOCK_RX_QUEUE_MAPPING
+    }
+
+    null
+}
+
+def context-projection-kernel-read-feature [raw_access: string] {
+    let parts = (context-projection-parts $raw_access)
+    if ($parts | length) < 2 {
+        return null
+    }
+
+    let member = ($parts | get 1)
+    if (bpf-sock-projection-context-field $member) != null {
+        return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
+    }
+    let helper_backed_socket_projection = (
+        ($parts | length) >= 3
+        and ($member in ["tcp" "tcp_sock" "full" "fullsock" "full_sock" "listener"])
+    )
+    if $helper_backed_socket_projection {
+        return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
 
     null
@@ -10722,6 +10752,10 @@ def bound-context-projection-kernel-features [source: string target context_name
                 let projection_feature = (context-projection-kernel-feature $raw_access $target)
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
+                }
+                let read_feature = (context-projection-kernel-read-feature $raw_access)
+                if $read_feature != null {
+                    $features = (append-missing-kernel-features $features [$read_feature])
                 }
                 let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
                 if $task_pt_regs_feature != null {
@@ -10953,6 +10987,10 @@ def program-context-field-kernel-features [source: string target] {
                 let projection_feature = (context-projection-kernel-feature $raw_access $target)
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
+                }
+                let read_feature = (context-projection-kernel-read-feature $raw_access)
+                if $read_feature != null {
+                    $features = (append-missing-kernel-features $features [$read_feature])
                 }
                 let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
                 if $task_pt_regs_feature != null {

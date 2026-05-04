@@ -577,7 +577,8 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let dst_vreg = self.get_vreg(src_dst);
+        let had_source_vreg = self.reg_map.contains_key(&src_dst.get());
+        let source_dst_vreg = self.get_vreg(src_dst);
 
         if !self.is_context_reg(src_dst) {
             let constant_value = self
@@ -585,7 +586,7 @@ impl<'a> HirToMirLowering<'a> {
                 .and_then(|meta| meta.constant_value.as_ref())
                 .and_then(|value| Self::constant_follow_cell_path(value, &path));
             let path_desc = Self::typed_value_path_desc(&path.members);
-            let mut source_vreg = dst_vreg;
+            let mut source_vreg = source_dst_vreg;
             let mut base_runtime_ty = self
                 .typed_value_runtime_type(src_dst, source_vreg)
                 .ok_or_else(|| {
@@ -607,6 +608,11 @@ impl<'a> HirToMirLowering<'a> {
                         ))
                     })?;
             }
+            let dst_vreg = if had_source_vreg {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                source_dst_vreg
+            };
             let base_vreg = self.func.alloc_vreg();
             self.emit(MirInst::Copy {
                 dst: base_vreg,
@@ -636,7 +642,7 @@ impl<'a> HirToMirLowering<'a> {
             );
             let projected_ty = self.lower_typed_value_projection(
                 src_dst,
-                source_vreg,
+                dst_vreg,
                 base_vreg,
                 &base_runtime_ty,
                 &path.members,
@@ -670,6 +676,8 @@ impl<'a> HirToMirLowering<'a> {
             self.set_reg_constant_value(src_dst, constant_value);
             return Ok(());
         }
+
+        let dst_vreg = source_dst_vreg;
 
         if self.lower_context_helper_backed_cgroup_id_projection(src_dst, dst_vreg, &path)? {
             return Ok(());

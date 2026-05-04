@@ -563,15 +563,49 @@ fn test_lower_bound_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
             .blocks
             .iter()
             .any(|block| block.instructions.iter().any(|inst| matches!(
-                inst,
-                MirInst::CallHelper {
-                    helper,
-                    args,
-                    ..
-                } if *helper == BpfHelper::TcpSock as u32 && args.len() == 1
+                    inst,
+                    MirInst::CallHelper {
+                        helper,
+                        args,
+                        ..
+                    } if *helper == BpfHelper::TcpSock as u32 && args.len() == 1
             ))),
         "bound socket projection should call bpf_tcp_sock"
     );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("bound ctx.sk.tcp projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirements = program.helper_compatibility_requirements();
+    let helper_requirement = helper_requirements
+        .iter()
+        .find(|requirement| requirement.helper() == BpfHelper::TcpSock)
+        .expect("bound ctx.sk.tcp projection should report bpf_tcp_sock compatibility");
+    assert_eq!(helper_requirement.minimum_kernel(), "5.1");
+    let probe_read_requirement = helper_requirements
+        .iter()
+        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
+        .expect("bound ctx.sk.tcp field read should report probe_read_kernel compatibility");
+    assert_eq!(probe_read_requirement.minimum_kernel(), "5.5");
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.5"));
+
+    let socket_requirement = program
+        .context_field_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.key() == "ctx:sk")
+        .expect("bound ctx.sk.tcp projection should preserve ctx.sk compatibility metadata");
+    assert_eq!(socket_requirement.minimum_kernel(), "5.3");
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("5.3")
+    );
+    assert_eq!(program.compatibility_minimum_kernel(), Some("5.5"));
 }
 
 #[test]
