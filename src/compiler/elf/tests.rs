@@ -5246,9 +5246,16 @@ fn test_elf_map_btf_emits_graph_root_decl_tag() {
                 bitfield: None,
             },
             StructField {
+                name: "root".to_string(),
+                ty: MirType::bpf_rb_root_struct_with_contains("rb_item", "rb"),
+                offset: 16,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
                 name: "cookie".to_string(),
                 ty: MirType::U64,
-                offset: 16,
+                offset: 32,
                 synthetic: false,
                 bitfield: None,
             },
@@ -5299,10 +5306,25 @@ fn test_elf_map_btf_emits_graph_root_decl_tag() {
             .is_ok()
     );
     assert!(
+        btf.id_by_type_name_kind("bpf_rb_root", BtfKind::Struct)
+            .is_ok()
+    );
+    assert!(
+        btf.id_by_type_name_kind("bpf_rb_node", BtfKind::Struct)
+            .is_ok()
+    );
+    assert!(btf.id_by_type_name_kind("rb_item", BtfKind::Struct).is_ok());
+    assert!(
         btf_data
             .windows(b"contains:node_data:node\0".len())
             .any(|w| w == b"contains:node_data:node\0"),
         "graph root field should carry contains:TYPE:FIELD BTF decl tag"
+    );
+    assert!(
+        btf_data
+            .windows(b"contains:rb_item:rb\0".len())
+            .any(|w| w == b"contains:rb_item:rb\0"),
+        "rb root field should carry contains:TYPE:FIELD BTF decl tag"
     );
     assert!(
         btf_data
