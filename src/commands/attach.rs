@@ -608,8 +608,13 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get the skb ifindex
     {|ctx| $ctx.tc_index } - Get the skb tc_index
     {|ctx| $ctx.hash }    - Get the skb hash
+    {|ctx| $ctx.hash_recalc } - Get the skb hash via bpf_get_hash_recalc
+    {|ctx| $ctx.csum_level } - Query the skb checksum level
     {|ctx| $ctx.priority } - Get the skb priority
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the skb socket
+    {|ctx| $ctx.socket_uid } - Get the owner UID for the skb socket
     {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.sk.family } - Project the skb socket through a typed bpf_sock pointer
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
     {|ctx| $ctx.remote_port } - Get the remote port in host byte order
@@ -656,8 +661,13 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.ifindex } - Get the skb ifindex
     {|ctx| $ctx.tc_index } - Get the skb tc_index
     {|ctx| $ctx.hash }    - Get the skb hash
+    {|ctx| $ctx.hash_recalc } - Get the skb hash via bpf_get_hash_recalc
+    {|ctx| $ctx.csum_level } - Query the skb checksum level
     {|ctx| $ctx.priority } - Get the skb priority
+    {|ctx| $ctx.socket_cookie } - Get the stable socket cookie for the skb socket
+    {|ctx| $ctx.socket_uid } - Get the owner UID for the skb socket
     {|ctx| $ctx.family }  - Get socket family
+    {|ctx| $ctx.sk.family } - Project the skb socket through a typed bpf_sock pointer
     {|ctx| $ctx.remote_ip4 } - Get the remote IPv4 address in host byte order
     {|ctx| $ctx.remote_ip6 } - Get the remote IPv6 address as four host-order u32 words
     {|ctx| $ctx.remote_port } - Get the remote port in host byte order
