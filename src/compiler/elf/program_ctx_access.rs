@@ -1911,7 +1911,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::ArgFields => format!(
-                "ctx.{} is only available on contexts with argument access (kprobe, kprobe.multi, ksyscall, uprobe, uprobe.multi, fentry, fexit, fmod_ret, tp_btf, lsm, lsm_cgroup, struct_ops, and raw_tracepoint)",
+                "ctx.{} is only available on contexts with argument access (kprobe, kprobe.multi, ksyscall, uprobe, uprobe.multi, fentry, fexit, fmod_ret, tp_btf, lsm, lsm_cgroup, struct_ops, raw_tracepoint, raw_tracepoint.w, and perf_event)",
                 field.display_name()
             ),
             Self::ArgCountField => {
