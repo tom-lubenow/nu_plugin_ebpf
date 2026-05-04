@@ -3301,6 +3301,20 @@ const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.listener" helper: "bpf_get_listener_sock" feature: $KERNEL_FEATURE_BPF_GET_LISTENER_SOCK }
 ]
 
+const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  $sk.rx_queue_mapping | count'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["ctx:rx_queue_mapping" "ctx:sk"]
+    }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -5474,6 +5488,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.cb_flags = 1'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-bound-socket-projection-context"
+        category: "context-surface"
+        tags: [sock-ops context source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  $sk.rx_queue_mapping | count'
             '  1'
             '}'
         ]
@@ -10482,6 +10512,105 @@ def context-task-pt-regs-kernel-feature [raw_access: string] {
     $KERNEL_FEATURE_BPF_TASK_PT_REGS
 }
 
+def context-root-binding [line: string] {
+    let trimmed = ($line | str trim)
+    let prefix = if ($trimmed | str starts-with "let ") {
+        "let "
+    } else if ($trimmed | str starts-with "mut ") {
+        "mut "
+    } else {
+        return null
+    }
+
+    let body = ($trimmed | str substring ($prefix | str length)..)
+    let assignment_parts = if ($body | str contains " = $ctx.") {
+        $body | split row " = $ctx."
+    } else if ($body | str contains "=$ctx.") {
+        $body | split row "=$ctx."
+    } else {
+        return null
+    }
+    if ($assignment_parts | length) < 2 {
+        return null
+    }
+
+    let name = (
+        $assignment_parts
+        | first
+        | str trim
+        | split row ":"
+        | first
+        | str trim
+    )
+    if $name == "" {
+        return null
+    }
+
+    let root = (normalize-context-field-token ($assignment_parts | get 1))
+    if $root in ["sk" "migrating_sk" "migrating_socket" "task" "current_task"] {
+        return { name: $name root: $root }
+    }
+
+    null
+}
+
+def program-bound-context-root-aliases [source: string] {
+    mut aliases = []
+
+    for line in ($source | lines) {
+        let binding = (context-root-binding $line)
+        if $binding == null {
+            continue
+        }
+
+        let existing = ($aliases | where {|alias| $alias.name == $binding.name })
+        if ($existing | is-empty) {
+            $aliases = ($aliases | append $binding)
+        } else {
+            $aliases = (
+                $aliases
+                | each {|alias|
+                    if $alias.name == $binding.name { $binding } else { $alias }
+                }
+            )
+        }
+    }
+
+    $aliases
+}
+
+def bound-context-projection-kernel-features [source: string target] {
+    mut features = []
+    let aliases = (program-bound-context-root-aliases $source)
+    if ($aliases | is-empty) {
+        return $features
+    }
+
+    for line in ($source | lines) {
+        for alias in $aliases {
+            let prefix = $"$($alias.name)."
+            let parts = ($line | split row $prefix)
+            if ($parts | length) <= 1 {
+                continue
+            }
+
+            for raw_tail in ($parts | skip 1) {
+                let raw_access = $"($alias.root).($raw_tail)"
+                let projection_feature = (context-projection-kernel-feature $raw_access $target)
+                if $projection_feature != null {
+                    $features = (append-missing-kernel-features $features [$projection_feature])
+                }
+                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
+                if $task_pt_regs_feature != null {
+                    $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
+                }
+            }
+        }
+    }
+
+    $features
+}
+
 def program-kfunc-names [source: string] {
     mut names = []
 
@@ -10706,6 +10835,8 @@ def program-context-field-kernel-features [source: string target] {
             }
         }
     }
+
+    $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target))
 
     $features
 }
@@ -11688,11 +11819,30 @@ def validate-context-projection-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-context-field-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS {
+        let target = $expectation.target
+        let program = ($expectation.program | str join "\n")
+        let expected_keys = ($expectation.feature_keys | sort)
+        let actual_keys = (
+            program-context-field-kernel-features $program $target
+            | each {|feature| $feature.key }
+            | sort
+        )
+        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+
+        if ($missing | length) > 0 {
+            fail $"program-context-field-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
     validate-context-field-helper-kernel-feature-expectations
     validate-context-projection-kernel-feature-expectations
+    validate-program-context-field-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 
