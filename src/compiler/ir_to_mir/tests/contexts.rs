@@ -7,6 +7,7 @@ use crate::compiler::hir::{
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, CtxStoreTarget};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf_with_hints;
+use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
@@ -2809,7 +2810,7 @@ fn test_lower_sk_lookup_ctx_sk_assignment_calls_sk_assign() {
     );
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 
-    let result = lower_hir_to_mir_with_hints(
+    let mut result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &HashMap::new(),
@@ -2833,6 +2834,32 @@ fn test_lower_sk_lookup_ctx_sk_assignment_calls_sk_assign() {
             )
         })
     }));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("sk_lookup ctx.sk assignment should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::SkLookup,
+        "/proc/self/ns/net",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::SkAssign)
+        .expect("ctx.sk assignment should report bpf_sk_assign metadata");
+    assert_eq!(helper_requirement.minimum_kernel(), "5.7");
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.7"));
+    assert_eq!(program.compatibility_minimum_kernel(), Some("5.9"));
 }
 
 #[test]
@@ -3329,6 +3356,32 @@ fn test_lower_sock_ops_ctx_cb_flags_assignment() {
             ..
         }
     )));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("sock_ops ctx.cb_flags assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::SockOpsCbFlags));
+
+    let program = compiled.into_program(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::SockOpsCbFlagsSet)
+        .expect("ctx.cb_flags assignment should report bpf_sock_ops_cb_flags_set metadata");
+    assert_eq!(helper_requirement.minimum_kernel(), "4.16");
+
+    let ctx_requirement = program
+        .context_field_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.key() == "ctx:cb_flags")
+        .expect("ctx.cb_flags assignment should report ctx.cb_flags metadata");
+    assert_eq!(ctx_requirement.minimum_kernel(), "4.16");
 }
 
 #[test]
