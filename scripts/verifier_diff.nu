@@ -6373,6 +6373,29 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-refcount-acquire-rejects-map-field"
+        category: "helper-state"
+        tags: [kfunc object bpf_refcount ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define ref_items --kind hash --value-type "record{refs:bpf_refcount,cookie:u64}"'
+            '  let entry = (0 | map-get ref_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_refcount_acquire_impl" $entry.refs 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects kernel pointer, got Map"
+    }
+    {
         name: "source-kfunc-percpu-obj-new-drop"
         category: "helper-state"
         tags: [kfunc object ref-lifetime source accept]

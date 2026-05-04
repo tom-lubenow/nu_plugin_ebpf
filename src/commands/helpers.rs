@@ -413,6 +413,9 @@ map. `bpf_wq` and `bpf_refcount` are also top-level verifier-managed fields
 for hash, array, or lru-hash maps. `kptr:TYPE` declares an 8-byte-aligned
 top-level map-value kptr slot for hash, array, or lru-hash maps and emits the
 required `__kptr` BTF type tag.
+`bpf_refcount_acquire_impl` expects a pointer to the containing refcounted
+object rather than a raw `bpf_refcount` field pointer, so direct acquire from a
+projected map field is rejected until object payload schemas are modeled.
 Graph roots use `bpf_list_head:TYPE:FIELD` or `bpf_rb_root:TYPE:FIELD`, where
 `TYPE` is the contained object type name and `FIELD` is its list/rbtree node
 field; the compiler emits the matching `contains:TYPE:FIELD` BTF declaration
