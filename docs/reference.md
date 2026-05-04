@@ -219,7 +219,8 @@ restrictive default lane across those requirements. The `intrinsics` list is pro
 attach-aware, and first-class helper-backed commands expose `backing_helpers`
 records with source-checked helper minimum-kernel metadata. Mode- or
 kind-sensitive intrinsic rows also expose `variants` records that map the
-accepted flag/kind to the exact helper and helper floor for the parsed target.
+accepted flag/kind to the exact helper floor and, for map-family choices, the
+map-kind compatibility floor for the parsed target.
 Individual
 context-field and context-write records also carry nullable `minimum_kernel`
 and `minimum_kernel_source` fields when direct UAPI fields, write-only

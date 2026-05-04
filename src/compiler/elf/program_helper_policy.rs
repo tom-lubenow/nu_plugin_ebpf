@@ -3,7 +3,7 @@ use super::{
     ProgramIntrinsic, ProgramIntrinsicVariant,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::MapKind;
+use crate::compiler::mir::{MapKind, MapOpKind};
 use crate::program_spec::{
     ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec, StructOpsFamily,
 };
@@ -1541,6 +1541,84 @@ impl ProgramSpec {
         }
     }
 
+    fn push_map_kind_intrinsic_variant(
+        &self,
+        variants: &mut Vec<ProgramIntrinsicVariant>,
+        map_kind: MapKind,
+        helper: BpfHelper,
+    ) {
+        self.push_intrinsic_variant(variants, "kind", map_kind.key(), helper, Some(map_kind));
+    }
+
+    fn push_generic_map_op_variants(
+        &self,
+        variants: &mut Vec<ProgramIntrinsicVariant>,
+        op: MapOpKind,
+        helper: BpfHelper,
+    ) {
+        for map_kind in MapKind::all()
+            .iter()
+            .copied()
+            .filter(|map_kind| map_kind.supports_generic_map_op(op))
+        {
+            self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
+        }
+    }
+
+    fn local_storage_get_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
+        match map_kind {
+            MapKind::SkStorage => Some(BpfHelper::SkStorageGet),
+            MapKind::InodeStorage => Some(BpfHelper::InodeStorageGet),
+            MapKind::TaskStorage => Some(BpfHelper::TaskStorageGet),
+            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageGet),
+            _ => None,
+        }
+    }
+
+    fn local_storage_delete_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
+        match map_kind {
+            MapKind::SkStorage => Some(BpfHelper::SkStorageDelete),
+            MapKind::InodeStorage => Some(BpfHelper::InodeStorageDelete),
+            MapKind::TaskStorage => Some(BpfHelper::TaskStorageDelete),
+            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageDelete),
+            _ => None,
+        }
+    }
+
+    fn socket_map_update_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
+        match map_kind {
+            MapKind::SockMap => Some(BpfHelper::SockMapUpdate),
+            MapKind::SockHash => Some(BpfHelper::SockHashUpdate),
+            _ => None,
+        }
+    }
+
+    fn push_local_storage_get_variants(&self, variants: &mut Vec<ProgramIntrinsicVariant>) {
+        for map_kind in [
+            MapKind::SkStorage,
+            MapKind::InodeStorage,
+            MapKind::TaskStorage,
+            MapKind::CgrpStorage,
+        ] {
+            if let Some(helper) = Self::local_storage_get_helper_for_kind(map_kind) {
+                self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
+            }
+        }
+    }
+
+    fn push_local_storage_delete_variants(&self, variants: &mut Vec<ProgramIntrinsicVariant>) {
+        for map_kind in [
+            MapKind::SkStorage,
+            MapKind::InodeStorage,
+            MapKind::TaskStorage,
+            MapKind::CgrpStorage,
+        ] {
+            if let Some(helper) = Self::local_storage_delete_helper_for_kind(map_kind) {
+                self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
+            }
+        }
+    }
+
     pub(crate) fn intrinsic_variants(
         &self,
         intrinsic: ProgramIntrinsic,
@@ -1631,6 +1709,84 @@ impl ProgramSpec {
                         map_kind.key(),
                         BpfHelper::RedirectMap,
                         Some(map_kind),
+                    );
+                }
+            }
+            ProgramIntrinsic::TailCall => {
+                self.push_map_kind_intrinsic_variant(
+                    &mut variants,
+                    MapKind::ProgArray,
+                    BpfHelper::TailCall,
+                );
+            }
+            ProgramIntrinsic::MapGet => {
+                self.push_generic_map_op_variants(
+                    &mut variants,
+                    MapOpKind::Lookup,
+                    BpfHelper::MapLookupElem,
+                );
+                self.push_local_storage_get_variants(&mut variants);
+            }
+            ProgramIntrinsic::MapContains => {
+                self.push_generic_map_op_variants(
+                    &mut variants,
+                    MapOpKind::Lookup,
+                    BpfHelper::MapLookupElem,
+                );
+                self.push_map_kind_intrinsic_variant(
+                    &mut variants,
+                    MapKind::BloomFilter,
+                    BpfHelper::MapPeekElem,
+                );
+                self.push_map_kind_intrinsic_variant(
+                    &mut variants,
+                    MapKind::CgroupArray,
+                    self.program_type().cgroup_array_membership_helper(),
+                );
+                self.push_local_storage_get_variants(&mut variants);
+            }
+            ProgramIntrinsic::MapPut => {
+                self.push_generic_map_op_variants(
+                    &mut variants,
+                    MapOpKind::Update,
+                    BpfHelper::MapUpdateElem,
+                );
+                for map_kind in [MapKind::SockMap, MapKind::SockHash] {
+                    if let Some(helper) = Self::socket_map_update_helper_for_kind(map_kind) {
+                        self.push_map_kind_intrinsic_variant(&mut variants, map_kind, helper);
+                    }
+                }
+            }
+            ProgramIntrinsic::MapDelete => {
+                self.push_generic_map_op_variants(
+                    &mut variants,
+                    MapOpKind::Delete,
+                    BpfHelper::MapDeleteElem,
+                );
+                self.push_local_storage_delete_variants(&mut variants);
+            }
+            ProgramIntrinsic::MapPush => {
+                self.push_generic_map_op_variants(
+                    &mut variants,
+                    MapOpKind::Push,
+                    BpfHelper::MapPushElem,
+                );
+            }
+            ProgramIntrinsic::MapPeek => {
+                for map_kind in [MapKind::Queue, MapKind::Stack] {
+                    self.push_map_kind_intrinsic_variant(
+                        &mut variants,
+                        map_kind,
+                        BpfHelper::MapPeekElem,
+                    );
+                }
+            }
+            ProgramIntrinsic::MapPop => {
+                for map_kind in [MapKind::Queue, MapKind::Stack] {
+                    self.push_map_kind_intrinsic_variant(
+                        &mut variants,
+                        map_kind,
+                        BpfHelper::MapPopElem,
                     );
                 }
             }

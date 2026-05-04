@@ -1379,6 +1379,96 @@ fn test_spec_record_intrinsics_include_mode_and_kind_variants() {
             "bpf_sk_select_reuseport".to_string(),
         )]
     );
+
+    let raw_map_get = intrinsic_variant_entries("raw_tracepoint:sys_enter", "map-get");
+    assert!(raw_map_get.contains(&(
+        "kind".to_string(),
+        "hash".to_string(),
+        "bpf_map_lookup_elem".to_string()
+    )));
+    assert!(raw_map_get.contains(&(
+        "kind".to_string(),
+        "lru-per-cpu-hash".to_string(),
+        "bpf_map_lookup_elem".to_string()
+    )));
+    assert!(raw_map_get.contains(&(
+        "kind".to_string(),
+        "task-storage".to_string(),
+        "bpf_task_storage_get".to_string()
+    )));
+    assert!(!raw_map_get.iter().any(|(_, value, _)| value == "sockmap"));
+
+    let tc_map_contains = intrinsic_variant_entries("tc:lo:ingress", "map-contains");
+    assert!(tc_map_contains.contains(&(
+        "kind".to_string(),
+        "bloom-filter".to_string(),
+        "bpf_map_peek_elem".to_string()
+    )));
+    assert!(tc_map_contains.contains(&(
+        "kind".to_string(),
+        "cgroup-array".to_string(),
+        "bpf_skb_under_cgroup".to_string()
+    )));
+    let xdp_cgroup_array =
+        intrinsic_variant_record_by("xdp:lo", "map-contains", "kind", "cgroup-array");
+    assert_eq!(
+        xdp_cgroup_array
+            .get("backing_helper")
+            .expect("cgroup-array map-contains helper should be present")
+            .as_str()
+            .expect("cgroup-array helper should be a string"),
+        "bpf_current_task_under_cgroup"
+    );
+
+    let sock_ops_map_put = intrinsic_variant_entries("sock_ops:/sys/fs/cgroup", "map-put");
+    assert!(sock_ops_map_put.contains(&(
+        "kind".to_string(),
+        "sockmap".to_string(),
+        "bpf_sock_map_update".to_string()
+    )));
+    assert!(sock_ops_map_put.contains(&(
+        "kind".to_string(),
+        "sockhash".to_string(),
+        "bpf_sock_hash_update".to_string()
+    )));
+
+    assert_eq!(
+        intrinsic_variant_entries("raw_tracepoint:sys_enter", "map-pop"),
+        vec![
+            (
+                "kind".to_string(),
+                "queue".to_string(),
+                "bpf_map_pop_elem".to_string(),
+            ),
+            (
+                "kind".to_string(),
+                "stack".to_string(),
+                "bpf_map_pop_elem".to_string(),
+            ),
+        ]
+    );
+    let bloom_push = intrinsic_variant_record_by(
+        "raw_tracepoint:sys_enter",
+        "map-push",
+        "kind",
+        "bloom-filter",
+    );
+    assert_eq!(
+        bloom_push
+            .get("map_requirement_key")
+            .expect("bloom-filter map-push requirement should be present")
+            .as_str()
+            .expect("bloom-filter map-push requirement should be a string"),
+        "map:BPF_MAP_TYPE_BLOOM_FILTER"
+    );
+    assert_eq!(
+        intrinsic_variant_entries("raw_tracepoint:sys_enter", "tail-call"),
+        vec![(
+            "kind".to_string(),
+            "prog-array".to_string(),
+            "bpf_tail_call".to_string(),
+        )]
+    );
 }
 
 #[test]
