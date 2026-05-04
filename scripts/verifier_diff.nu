@@ -7821,6 +7821,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-tcp-btf-field"
+        category: "context-surface"
+        tags: [iter context socket btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:tcp"
+        program: [
+            '{|ctx|'
+            '  if $ctx.sk_common { $ctx.sk_common.skc_family | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-udp-context"
         category: "context-surface"
         tags: [iter context socket]
@@ -7844,6 +7859,21 @@ const FIXTURES = [
             '{|ctx|'
             '  $ctx.uid | count'
             '  if $ctx.unix_sk { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-unix-btf-field"
+        category: "context-surface"
+        tags: [iter context socket btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:unix"
+        program: [
+            '{|ctx|'
+            '  if $ctx.unix_sk { $ctx.unix_sk.sk.__sk_common.skc_family | count }'
             '  0'
             '}'
         ]
@@ -7915,6 +7945,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  if $ctx.netlink_sk { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-netlink-btf-field"
+        category: "context-surface"
+        tags: [iter context socket btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:netlink"
+        program: [
+            '{|ctx|'
+            '  if $ctx.netlink_sk { $ctx.netlink_sk.sk.__sk_common.skc_family | count }'
             '  0'
             '}'
         ]
