@@ -212,6 +212,58 @@ fn assert_field_backing_helper(
     );
 }
 
+fn assert_accessible_helper_backed_context_fields_report_metadata(spec_text: &str) {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let mut seen = Vec::new();
+    let mut checked = 0;
+
+    for entry in spec.program_type().ctx_field_name_entries() {
+        if seen.iter().any(|field| field == &entry.field) {
+            continue;
+        }
+        seen.push(entry.field.clone());
+
+        if spec.ctx_field_access_error(&entry.field).is_some() {
+            continue;
+        }
+
+        let Some(helper) = ctx_field_backing_helper(&entry.field) else {
+            continue;
+        };
+        let Some(minimum_kernel) = helper.minimum_kernel() else {
+            continue;
+        };
+
+        let field = field(&fields, &entry.field.display_name());
+        assert_eq!(
+            field.backing_helper,
+            Some(helper.name()),
+            "{spec_text} ctx.{} should report its backing helper",
+            entry.field.display_name()
+        );
+        assert_eq!(
+            field.backing_helper_minimum_kernel,
+            Some(minimum_kernel),
+            "{spec_text} ctx.{} should report its backing helper minimum kernel",
+            entry.field.display_name()
+        );
+        assert!(
+            field
+                .backing_helper_minimum_kernel_source
+                .is_some_and(|source| source.contains(&format!("/v{minimum_kernel}/"))),
+            "{spec_text} ctx.{} should report a source link for backing helper {minimum_kernel}",
+            entry.field.display_name()
+        );
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "{spec_text} should expose at least one helper-backed context field"
+    );
+}
+
 #[test]
 fn test_spec_context_fields_include_program_specific_aliases() {
     let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
@@ -417,6 +469,21 @@ fn test_spec_context_fields_label_specialized_helper_backed_fields() {
         ),
     ] {
         assert_field_backing_helper(spec, field, helper, minimum_kernel);
+    }
+}
+
+#[test]
+fn test_spec_context_fields_report_backing_helper_metadata_invariants() {
+    for spec_text in [
+        "raw_tracepoint:sys_enter",
+        "fentry:security_file_open",
+        "tc:lo:ingress",
+        "sk_lookup:/proc/self/ns/net",
+        "perf_event:software:cpu-clock",
+        "xdp:lo",
+        "cgroup_sysctl:/sys/fs/cgroup",
+    ] {
+        assert_accessible_helper_backed_context_fields_report_metadata(spec_text);
     }
 }
 
