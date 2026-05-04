@@ -1,5 +1,9 @@
 use super::*;
 
+fn record_store_requires_pointer(ty: &MirType) -> bool {
+    matches!(ty, MirType::Array { .. } | MirType::Struct { .. }) || ty.size() > 8
+}
+
 impl<'a> MirToEbpfCompiler<'a> {
     fn value_is_packet_ptr(&self, value: &MirValue) -> bool {
         match value {
@@ -112,6 +116,63 @@ impl<'a> MirToEbpfCompiler<'a> {
         let offset = self.slot_offset_i16(slot, offset)?;
         let val_reg = self.value_to_reg(val)?;
         self.emit_store(EbpfReg::R10, offset, val_reg, size)?;
+        Ok(())
+    }
+
+    pub(super) fn compile_record_store_inst(
+        &mut self,
+        buffer: StackSlotId,
+        field_offset: usize,
+        val: &MirValue,
+        ty: &MirType,
+    ) -> Result<(), CompileError> {
+        let size = ty.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "record store size must be positive".into(),
+            ));
+        }
+
+        let field_offset = i32::try_from(field_offset).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "record store field offset {} out of range",
+                field_offset
+            ))
+        })?;
+        let dst_offset = self.slot_offset_i16(buffer, field_offset)?;
+
+        if record_store_requires_pointer(ty) {
+            if matches!(val, MirValue::Const(_)) {
+                return Err(CompileError::UnsupportedInstruction(
+                    "record store expects stack/map pointer for aggregate field".into(),
+                ));
+            }
+            let src_reg = self.value_to_reg(val)?;
+            let copy_size = match val {
+                MirValue::VReg(vreg) => {
+                    self.vreg_stack_or_map_copy_size(*vreg, size)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "record store expects stack/map pointer for aggregate field".into(),
+                            )
+                        })?
+                }
+                MirValue::StackSlot(_) => size,
+                MirValue::Const(_) => unreachable!(),
+            }
+            .min(size);
+
+            if copy_size > 0 {
+                self.emit_copy_bytes(src_reg, 0, EbpfReg::R10, dst_offset, copy_size, EbpfReg::R0)?;
+            }
+            if copy_size < size {
+                let pad_offset = self.add_i16_offset(dst_offset, copy_size)?;
+                self.emit_zero_bytes(EbpfReg::R10, pad_offset, size - copy_size, EbpfReg::R0)?;
+            }
+        } else {
+            let val_reg = self.value_to_reg(val)?;
+            self.emit_store(EbpfReg::R10, dst_offset, val_reg, size)?;
+        }
         Ok(())
     }
 

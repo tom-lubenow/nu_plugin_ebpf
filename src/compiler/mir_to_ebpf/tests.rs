@@ -9,6 +9,7 @@ use std::sync::Arc;
 mod bpf_calls;
 mod core_codegen;
 mod maps_helpers;
+mod record_store;
 mod strings_lists;
 
 fn make_ir_block(instructions: Vec<Instruction>) -> IrBlock {
