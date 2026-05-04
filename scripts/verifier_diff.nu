@@ -388,8 +388,14 @@ const KERNEL_FEATURE_ITER_TARGET_DMABUF = {
     source: "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c"
 }
 const PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS = [
+    { target: "fentry:security_file_open" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline"] }
     { target: "fentry.s:security_file_open" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline" "section:sleepable-program"] }
+    { target: "fexit:ksys_read" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline"] }
+    { target: "fexit.s:ksys_read" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline" "section:sleepable-program"] }
+    { target: "fmod_ret:security_file_open" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline"] }
+    { target: "fmod_ret.s:security_file_open" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline" "section:sleepable-program"] }
     { target: "tp_btf:sys_enter" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING"] }
+    { target: "lsm:file_open" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline" "program:BPF_PROG_TYPE_LSM"] }
     { target: "lsm_cgroup:socket_bind" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline" "program:BPF_PROG_TYPE_LSM" "attach:BPF_LSM_CGROUP"] }
     { target: "lsm.s:file_open" feature_keys: ["kernel:btf-vmlinux" "program:BPF_PROG_TYPE_TRACING" "program:bpf-trampoline" "program:BPF_PROG_TYPE_LSM" "section:sleepable-program"] }
     { target: "struct_ops:sched_ext_ops.init" feature_keys: ["kernel:btf-vmlinux" "program:bpf-trampoline" "program:BPF_PROG_TYPE_STRUCT_OPS" "struct_ops:sched_ext_ops" "section:sleepable-program"] }
@@ -4113,11 +4119,101 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "fentry-sleepable-context"
+        category: "tracing"
+        tags: [fentry sleepable context]
+        requires: [kernel-btf]
+        target: "fentry.s:security_file_open"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.file.f_flags + $ctx.pid + $ctx.arg_count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fexit-context"
+        category: "tracing"
+        tags: [fexit context]
+        requires: [kernel-btf]
+        target: "fexit:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.arg0 + $ctx.pid + $ctx.arg_count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fexit-sleepable-context"
+        category: "tracing"
+        tags: [fexit sleepable context]
+        requires: [kernel-btf]
+        target: "fexit.s:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.arg0 + $ctx.pid + $ctx.arg_count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fmod-ret-context"
+        category: "tracing"
+        tags: [fmod-ret context]
+        requires: [kernel-btf]
+        target: "fmod_ret:security_file_open"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.arg.file.f_flags + $ctx.pid + $ctx.arg_count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fmod-ret-sleepable-context"
+        category: "tracing"
+        tags: [fmod-ret sleepable context]
+        requires: [kernel-btf]
+        target: "fmod_ret.s:security_file_open"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.arg.file.f_flags + $ctx.pid + $ctx.arg_count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lsm-context"
         category: "tracing"
         tags: [lsm context]
         requires: [kernel-btf]
         target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lsm-sleepable-context"
+        category: "tracing"
+        tags: [lsm sleepable context]
+        requires: [kernel-btf]
+        target: "lsm.s:file_open"
         program: [
             '{|ctx|'
             '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
