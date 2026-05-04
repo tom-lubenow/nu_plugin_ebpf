@@ -6437,6 +6437,97 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-list-front-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_list_front" $entry.root)'
+            '    if $obj {'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-list-back-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_list_back" $entry.root)'
+            '    if $obj {'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-first-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_rbtree_first" $entry.root)'
+            '    if $obj {'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-remove-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let node = (kfunc-call "bpf_rbtree_first" $entry.root)'
+            '    if $node {'
+            '      let obj = (kfunc-call "bpf_rbtree_remove" $entry.root $node)'
+            '      if $obj {'
+            '        kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '      }'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-task-acquire-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]
