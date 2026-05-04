@@ -1623,6 +1623,7 @@ pub enum HelperRetKind {
 pub enum KfuncArgKind {
     Scalar,
     Pointer,
+    Subprogram,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

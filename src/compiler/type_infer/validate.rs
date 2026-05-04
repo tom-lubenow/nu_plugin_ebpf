@@ -844,6 +844,14 @@ impl<'a> TypeInference<'a> {
                                 )));
                             }
                         }
+                        KfuncArgKind::Subprogram => {
+                            if !matches!(arg_ty, MirType::Subprogram { .. }) {
+                                errors.push(TypeError::new(format!(
+                                    "kfunc '{}' arg{} expects callback subprogram, got {:?}",
+                                    kfunc, idx, arg_ty
+                                )));
+                            }
+                        }
                         KfuncArgKind::Pointer => match arg_ty {
                             MirType::Ptr { address_space, .. } => {
                                 let requires_stack =

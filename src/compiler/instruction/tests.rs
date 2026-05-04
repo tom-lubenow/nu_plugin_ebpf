@@ -4449,6 +4449,17 @@ fn test_kfunc_signature_kptr_container_impls() {
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
 
+    let sig = KfuncSignature::for_name("bpf_rbtree_add_impl")
+        .expect("expected bpf_rbtree_add_impl kfunc signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Subprogram);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(4), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+
     let sig = KfuncSignature::for_name("bpf_list_front")
         .expect("expected bpf_list_front kfunc signature");
     assert_eq!(sig.min_args, 1);

@@ -315,6 +315,66 @@ impl<'a> HirToMirLowering<'a> {
         Ok(MirValue::VReg(callback_vreg))
     }
 
+    pub(super) fn lower_kfunc_callback_subprogram_arg(
+        &mut self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg_reg: RegId,
+    ) -> Result<MirValue, CompileError> {
+        let block_id = self
+            .get_metadata(arg_reg)
+            .and_then(|meta| meta.closure_block_id)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "kfunc-call '{}' arg{} requires a closure or block literal callback",
+                    kfunc, arg_idx
+                ))
+            })?;
+        let arg_seeds = self.kfunc_callback_subfunction_arg_seeds(kfunc, arg_idx)?;
+        let subfn = self.lower_helper_callback_subfunction(
+            block_id,
+            &format!("{}_callback_{}", kfunc, block_id.get()),
+            &arg_seeds,
+        )?;
+        let callback_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadSubprogram {
+            dst: callback_vreg,
+            subfn,
+        });
+        Ok(MirValue::VReg(callback_vreg))
+    }
+
+    fn kfunc_callback_subfunction_arg_seeds(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
+        match (kfunc, arg_idx) {
+            ("bpf_rbtree_add_impl", 2) => Ok(vec![
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::Ptr {
+                        pointee: Box::new(MirType::Unknown),
+                        address_space: AddressSpace::Kernel,
+                    }),
+                    metadata: None,
+                    synthetic_stack_slot: None,
+                },
+                SubfunctionArgSeed {
+                    type_hint: Some(MirType::Ptr {
+                        pointee: Box::new(MirType::Unknown),
+                        address_space: AddressSpace::Kernel,
+                    }),
+                    metadata: None,
+                    synthetic_stack_slot: None,
+                },
+            ]),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "kfunc-call '{}' arg{} callback lowering is not modeled yet",
+                kfunc, arg_idx
+            ))),
+        }
+    }
+
     pub(super) fn aggregate_call_value_type<'b>(ty: &'b MirType) -> Option<&'b MirType> {
         match ty {
             MirType::Array { .. } | MirType::Struct { .. } => Some(ty),

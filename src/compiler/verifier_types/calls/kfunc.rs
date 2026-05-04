@@ -5,6 +5,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
     arg_idx: usize,
     arg: VReg,
     expected: KfuncArgKind,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -15,6 +16,14 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                 errors.push(VerifierTypeError::new(format!(
                     "kfunc '{}' arg{} expects scalar, got {:?}",
                     kfunc, arg_idx, ty
+                )));
+            }
+        }
+        KfuncArgKind::Subprogram => {
+            if !matches!(types.get(&arg), Some(MirType::Subprogram { .. })) {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} expects callback subprogram",
+                    kfunc, arg_idx
                 )));
             }
         }

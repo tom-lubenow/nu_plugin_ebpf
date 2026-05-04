@@ -127,6 +127,17 @@ impl<'a> VccLowerer<'a> {
         for (idx, arg) in args.iter().enumerate() {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
+                KfuncArgKind::Subprogram => {
+                    if !matches!(self.types.get(arg), Some(MirType::Subprogram { .. })) {
+                        return Err(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Scalar,
+                                actual: VccTypeClass::Unknown,
+                            },
+                            format!("kfunc '{}' arg{} expects callback subprogram", kfunc, idx),
+                        ));
+                    }
+                }
                 KfuncArgKind::Pointer => {
                     if !self.is_pointer_reg(*arg)
                         && Self::kfunc_pointer_arg_allows_const_zero(kfunc, idx)

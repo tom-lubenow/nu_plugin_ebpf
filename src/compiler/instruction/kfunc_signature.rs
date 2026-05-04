@@ -5,6 +5,7 @@ impl KfuncSignature {
     pub fn for_name(name: &str) -> Option<Self> {
         const S: KfuncArgKind = KfuncArgKind::Scalar;
         const P: KfuncArgKind = KfuncArgKind::Pointer;
+        const F: KfuncArgKind = KfuncArgKind::Subprogram;
 
         match name {
             "bpf_task_acquire" => Some(Self {
@@ -490,7 +491,7 @@ impl KfuncSignature {
             "bpf_rbtree_add_impl" => Some(Self {
                 min_args: 5,
                 max_args: 5,
-                arg_kinds: [P, P, S, S, S],
+                arg_kinds: [P, P, F, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "bpf_rbtree_first" => Some(Self {

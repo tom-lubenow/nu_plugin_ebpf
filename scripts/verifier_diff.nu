@@ -6528,6 +6528,51 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-rbtree-add-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph callback source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_rbtree_add_impl" $entry.root $obj {|a b| 0} 0 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-add-rejects-non-callback"
+        category: "helper-state"
+        tags: [kfunc object graph callback source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_rbtree_add_impl" $entry.root $obj 0 0 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a closure or block literal callback"
+    }
+    {
         name: "source-kfunc-task-acquire-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]

@@ -10400,10 +10400,12 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
         dst: off,
         src: MirValue::Const(0),
     });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: less,
-        src: MirValue::Const(0),
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: less,
+            subfn: SubfunctionId(0),
+        });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: type_id,
         src: MirValue::Const(1),
@@ -10445,7 +10447,22 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
     );
     types.insert(meta, MirType::I64);
     types.insert(off, MirType::I64);
-    types.insert(less, MirType::I64);
+    types.insert(
+        less,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Kernel,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Kernel,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
     types.insert(type_id, MirType::I64);
     types.insert(
         obj,
@@ -10487,10 +10504,12 @@ fn test_kfunc_rbtree_add_rejects_task_reference_on_arg1() {
         dst: off,
         src: MirValue::Const(0),
     });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: less,
-        src: MirValue::Const(0),
-    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: less,
+            subfn: SubfunctionId(0),
+        });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: pid,
         src: MirValue::Const(123),
@@ -10538,7 +10557,22 @@ fn test_kfunc_rbtree_add_rejects_task_reference_on_arg1() {
     );
     types.insert(meta, MirType::I64);
     types.insert(off, MirType::I64);
-    types.insert(less, MirType::I64);
+    types.insert(
+        less,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Kernel,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::Unknown),
+                    address_space: AddressSpace::Kernel,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
     types.insert(pid, MirType::I64);
     types.insert(
         task,

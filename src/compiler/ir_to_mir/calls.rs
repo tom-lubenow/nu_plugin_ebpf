@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperExplicitMapKindFamily, HelperRetKind, HelperSignature,
-    KfuncRetKind, KfuncSignature, helper_acquire_ref_kind,
+    KfuncArgKind, KfuncRetKind, KfuncSignature, helper_acquire_ref_kind,
 };
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, MapOpKind, STRING_COUNTER_MAP_NAME,
@@ -814,6 +814,23 @@ impl<'a> HirToMirLowering<'a> {
                 let mut call_args = Vec::with_capacity(args.len());
                 let mut writebacks = Vec::new();
                 for (idx, (arg_vreg, arg_reg)) in args.into_iter().enumerate() {
+                    if kfunc_signature
+                        .is_some_and(|sig| matches!(sig.arg_kind(idx), KfuncArgKind::Subprogram))
+                    {
+                        let arg_reg = arg_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "kfunc-call '{}' arg{} requires an explicit callback argument",
+                                kfunc, idx
+                            ))
+                        })?;
+                        let MirValue::VReg(call_arg_vreg) =
+                            self.lower_kfunc_callback_subprogram_arg(&kfunc, idx, arg_reg)?
+                        else {
+                            unreachable!("callback lowering always returns a vreg")
+                        };
+                        call_args.push(call_arg_vreg);
+                        continue;
+                    }
                     let (call_arg_vreg, writeback) =
                         self.materialize_scalar_kfunc_out_arg(&kfunc, idx, arg_vreg, arg_reg)?;
                     call_args.push(call_arg_vreg);
