@@ -450,7 +450,7 @@ Example:
             .named(
                 "value-type",
                 SyntaxShape::String,
-                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, and kptr:TYPE",
+                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, kptr:TYPE, bpf_list_head:TYPE:FIELD, and bpf_rb_root:TYPE:FIELD",
                 None,
             )
             .named(
