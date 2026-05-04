@@ -4149,6 +4149,42 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "fexit-func-arg-ret-helper-calls"
+        category: "tracing"
+        tags: [fexit helper-call context source metadata]
+        requires: [kernel-btf]
+        target: "fexit:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let arg0 = "01234567"'
+            '  let retval = "01234567"'
+            '  (helper-call "bpf_get_func_arg" $ctx 0 $arg0) | count'
+            '  (helper-call "bpf_get_func_ret" $ctx $retval) | count'
+            '  (helper-call "bpf_get_func_arg_cnt" $ctx) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fentry-func-ret-helper-reject"
+        category: "tracing"
+        tags: [fentry helper-call context reject]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  let retval = "01234567"'
+            '  helper-call "bpf_get_func_ret" $ctx $retval'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_func_ret' is only valid in fexit and fmod_ret programs"
+    }
+    {
         name: "fexit-sleepable-context"
         category: "tracing"
         tags: [fexit sleepable context]
