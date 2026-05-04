@@ -1121,6 +1121,46 @@ mod tests {
         }
     }
 
+    fn assert_available_write_surfaces_have_context_requirements(spec_source: &str) {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+        let table = spec.ctx_write_surfaces().unwrap_or(&[]);
+
+        for surface in table {
+            if !surface.is_available(&spec) {
+                continue;
+            }
+
+            let reported = surface.surface(&spec);
+            let expected_field = surface.context_field();
+            assert_eq!(
+                reported.context_field_requirement.is_some(),
+                expected_field.is_some(),
+                "{spec_source} ctx.{} should report a context-field requirement iff the write surface maps to a context field",
+                surface.field_name
+            );
+
+            if let Some(expected_field) = expected_field {
+                let requirement =
+                    reported
+                        .context_field_requirement
+                        .as_ref()
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "{spec_source} ctx.{} should have a context-field requirement",
+                                surface.field_name
+                            )
+                        });
+                assert_eq!(
+                    requirement.field(),
+                    &expected_field,
+                    "{spec_source} ctx.{} should report compatibility for the backing context field",
+                    surface.field_name
+                );
+            }
+        }
+    }
+
     fn all_context_write_surface_tables() -> [(&'static str, &'static [ContextWriteSurfaceSpec]); 11]
     {
         [
@@ -1287,6 +1327,40 @@ mod tests {
             "sk_lookup:/proc/self/ns/net",
         ] {
             assert_reported_write_surfaces_match_table(spec_source);
+        }
+    }
+
+    #[test]
+    fn test_available_context_write_surfaces_have_context_requirements() {
+        for spec_source in [
+            "socket_filter:udp4:127.0.0.1:31337",
+            "tc:lo:ingress",
+            "tc:lo:egress",
+            "tcx:lo:ingress",
+            "tcx:lo:egress",
+            "netkit:lo:primary",
+            "netkit:lo:peer",
+            "tc_action:diff-action",
+            "sk_skb:/sys/fs/bpf/demo_sockmap",
+            "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+            "lwt_in:demo-route",
+            "lwt_out:demo-route",
+            "lwt_xmit:demo-route",
+            "lwt_seg6local:demo-route",
+            "cgroup_skb:/sys/fs/cgroup:ingress",
+            "cgroup_skb:/sys/fs/cgroup:egress",
+            "cgroup_sock:/sys/fs/cgroup:sock_create",
+            "cgroup_sock:/sys/fs/cgroup:post_bind4",
+            "cgroup_sysctl:/sys/fs/cgroup",
+            "sock_ops:/sys/fs/cgroup",
+            "cgroup_sockopt:/sys/fs/cgroup:get",
+            "cgroup_sockopt:/sys/fs/cgroup:set",
+            "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+            "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+            "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+            "sk_lookup:/proc/self/ns/net",
+        ] {
+            assert_available_write_surfaces_have_context_requirements(spec_source);
         }
     }
 
