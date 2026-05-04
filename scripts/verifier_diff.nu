@@ -5951,6 +5951,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "socket-filter-rich-skb-context"
+        category: "context-surface"
+        tags: [socket-filter context packet source metadata]
+        target: "socket_filter:udp4:127.0.0.1:31337"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex + $ctx.ingress_ifindex + $ctx.pkt_type + $ctx.queue_mapping + $ctx.protocol + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.tc_index + $ctx.hash + $ctx.mark + $ctx.priority) | count'
+            '  ($ctx.socket_cookie + $ctx.socket_uid + $ctx.sk.family + $ctx.cb.0) | count'
+            '  "keep"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-skb-egress-context"
         category: "context-surface"
         tags: [cgroup-skb context]
