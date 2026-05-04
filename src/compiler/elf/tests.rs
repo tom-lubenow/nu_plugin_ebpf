@@ -4497,6 +4497,59 @@ fn test_program_intrinsic_command_registry() {
 }
 
 #[test]
+fn test_intrinsic_context_field_requirements_are_target_aware() {
+    for (spec_source, minimum_kernel) in [
+        ("tc:lo:ingress", "5.1"),
+        ("tcx:lo:ingress", "5.1"),
+        ("tc_action:diff-action", "5.1"),
+        ("sk_lookup:/proc/self/ns/net", "5.9"),
+    ] {
+        let spec = ProgramSpec::parse(spec_source).expect("program spec should parse");
+        let requirements =
+            spec.intrinsic_context_field_requirements(ProgramIntrinsic::AssignSocket);
+        assert_eq!(
+            requirements.len(),
+            1,
+            "{spec_source} assign-socket should report one context requirement"
+        );
+        assert_eq!(requirements[0].field(), &CtxField::Socket);
+        assert_eq!(requirements[0].key(), "ctx:sk");
+        assert_eq!(requirements[0].minimum_kernel(), minimum_kernel);
+        assert!(
+            requirements[0]
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/")),
+            "{}",
+            requirements[0].minimum_kernel_source()
+        );
+    }
+
+    for spec_source in ["tc:lo:egress", "tcx:lo:egress", "netkit:lo:primary"] {
+        let spec = ProgramSpec::parse(spec_source).expect("program spec should parse");
+        assert!(
+            spec.intrinsic_context_field_requirements(ProgramIntrinsic::AssignSocket)
+                .is_empty(),
+            "{spec_source} should not report requirements for unsupported assign-socket"
+        );
+    }
+
+    let sk_lookup =
+        ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("program spec should parse");
+    for intrinsic in ProgramIntrinsic::all()
+        .iter()
+        .copied()
+        .filter(|intrinsic| *intrinsic != ProgramIntrinsic::AssignSocket)
+    {
+        assert!(
+            sk_lookup
+                .intrinsic_context_field_requirements(intrinsic)
+                .is_empty(),
+            "{intrinsic:?} should not report context requirements until it has a modeled context ABI dependency"
+        );
+    }
+}
+
+#[test]
 fn test_program_type_supports_probe_intrinsics() {
     assert!(EbpfProgramType::Tracepoint.supports_intrinsic(ProgramIntrinsic::Emit));
     assert!(EbpfProgramType::Fentry.supports_intrinsic(ProgramIntrinsic::HelperCall));
