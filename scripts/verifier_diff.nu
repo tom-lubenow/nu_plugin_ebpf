@@ -6892,6 +6892,25 @@ const FIXTURES = [
         error_contains: "unreleased RCU read lock"
     }
     {
+        name: "source-kfunc-rcu-read-unlock-rejects-mixed-join"
+        category: "helper-state"
+        tags: [kfunc rcu source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_rcu_read_lock"'
+            '  }'
+            '  kfunc-call "bpf_rcu_read_unlock"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_rcu_read_lock"
+    }
+    {
         name: "source-kfunc-preempt-disable-enable"
         category: "helper-state"
         tags: [kfunc preempt source accept]
@@ -6935,6 +6954,25 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased preempt disable"
+    }
+    {
+        name: "source-kfunc-preempt-enable-rejects-mixed-join"
+        category: "helper-state"
+        tags: [kfunc preempt source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_preempt_disable"'
+            '  }'
+            '  kfunc-call "bpf_preempt_enable"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_preempt_disable"
     }
     {
         name: "source-kfunc-local-irq-save-restore"
@@ -7003,6 +7041,26 @@ const FIXTURES = [
         error_contains: "requires a matching bpf_local_irq_save"
     }
     {
+        name: "source-kfunc-local-irq-restore-rejects-mixed-join"
+        category: "helper-state"
+        tags: [kfunc irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_local_irq_save" $flags'
+            '  }'
+            '  kfunc-call "bpf_local_irq_restore" $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_local_irq_save"
+    }
+    {
         name: "source-kfunc-res-spin-lock-unlock"
         category: "helper-state"
         tags: [kfunc res-spin-lock source accept]
@@ -7046,6 +7104,25 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased res spin lock"
+    }
+    {
+        name: "source-kfunc-res-spin-unlock-rejects-mixed-join"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '  }'
+            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_res_spin_lock"
     }
     {
         name: "source-kfunc-res-spin-irqsave-unlock-irqrestore"
@@ -7106,6 +7183,26 @@ const FIXTURES = [
             '  let other_flags = "11111111"'
             '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $saved_flags'
             '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $other_flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_res_spin_lock_irqsave"
+    }
+    {
+        name: "source-kfunc-res-spin-irqrestore-rejects-mixed-join"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
+            '  }'
+            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
             '  0'
             '}'
         ]
