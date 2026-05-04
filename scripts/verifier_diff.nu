@@ -3769,6 +3769,36 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
+const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  let arg0 = "01234567"'
+            '  let retval = "01234567"'
+            '  (helper-call "bpf_get_func_arg" $ctx 0 $arg0) | count'
+            '  (helper-call "bpf_get_func_ret" $ctx $retval) | count'
+            '  (helper-call "bpf_get_func_arg_cnt" $ctx) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "helper:bpf_get_func_arg"
+            "helper:bpf_get_func_ret"
+            "helper:bpf_get_func_arg_cnt"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let key = "01234567"'
+            '  helper-call "bpf_map_lookup_percpu_elem" per_cpu_values $key 0 --kind per-cpu-array'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_map_lookup_percpu_elem"]
+    }
+]
+
 const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
@@ -13267,6 +13297,23 @@ def validate-program-surface-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-helper-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let expected_keys = ($expectation.feature_keys | sort)
+        let actual_keys = (
+            program-helper-kernel-features $program
+            | each {|feature| $feature.key }
+            | sort
+        )
+        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+
+        if ($missing | length) > 0 {
+            fail $"program-helper-kernel-features drifted: missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+        }
+    }
+}
+
 def validate-program-kfunc-kernel-feature-expectations [] {
     for expectation in $PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
@@ -13293,6 +13340,7 @@ def validate-fixture-metadata [fixtures] {
     validate-context-projection-kernel-feature-expectations
     validate-program-context-field-kernel-feature-expectations
     validate-program-surface-kernel-feature-expectations
+    validate-program-helper-kernel-feature-expectations
     validate-program-kfunc-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
