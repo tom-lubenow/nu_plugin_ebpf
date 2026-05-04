@@ -11895,7 +11895,17 @@ fn test_context_write_program_reports_direct_field_compatibility() {
 
 #[test]
 fn test_context_write_program_reports_backing_helper_compatibility() {
-    for (program_type, target, cell_path, new_value, return_value, helper, minimum_kernel) in [
+    for (
+        program_type,
+        target,
+        cell_path,
+        new_value,
+        return_value,
+        helper,
+        minimum_kernel,
+        context_field,
+        context_minimum_kernel,
+    ) in [
         (
             EbpfProgramType::CgroupSysctl,
             "/sys/fs/cgroup",
@@ -11905,6 +11915,8 @@ fn test_context_write_program_reports_backing_helper_compatibility() {
             HirLiteral::String(b"1".to_vec()),
             HirLiteral::String(b"allow".to_vec()),
             BpfHelper::SysctlSetNewValue,
+            "5.2",
+            CtxField::SysctlNewValue,
             "5.2",
         ),
         (
@@ -11917,6 +11929,8 @@ fn test_context_write_program_reports_backing_helper_compatibility() {
             HirLiteral::Int(1),
             BpfHelper::SockOpsCbFlagsSet,
             "4.16",
+            CtxField::SockOpsCbFlags,
+            "4.16",
         ),
         (
             EbpfProgramType::SkLookup,
@@ -11928,6 +11942,8 @@ fn test_context_write_program_reports_backing_helper_compatibility() {
             HirLiteral::Int(1),
             BpfHelper::SkAssign,
             "5.7",
+            CtxField::Socket,
+            "5.9",
         ),
     ] {
         let program = compile_ctx_path_store_program(
@@ -11948,6 +11964,23 @@ fn test_context_write_program_reports_backing_helper_compatibility() {
             requirement
                 .minimum_kernel_source()
                 .contains(&format!("/v{minimum_kernel}/"))
+        );
+
+        let context_requirements = program.context_field_compatibility_requirements();
+        let context_requirement = context_requirements
+            .iter()
+            .find(|requirement| requirement.field() == &context_field)
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected context field compatibility for {}",
+                    context_field.display_name()
+                )
+            });
+        assert_eq!(context_requirement.minimum_kernel(), context_minimum_kernel);
+        assert!(
+            context_requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{context_minimum_kernel}/"))
         );
     }
 }

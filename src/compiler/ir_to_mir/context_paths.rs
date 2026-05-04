@@ -51,7 +51,7 @@ impl<'a> HirToMirLowering<'a> {
     fn resolve_ctx_write_target_from_path(
         &self,
         path: &CellPath,
-    ) -> Result<CtxWriteTarget, CompileError> {
+    ) -> Result<(CtxWriteTarget, Option<CtxField>), CompileError> {
         let path_desc = Self::typed_value_path_desc(&path.members);
         let Some(ctx) = self.probe_ctx else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -72,7 +72,7 @@ impl<'a> HirToMirLowering<'a> {
             }
         };
 
-        ctx.resolve_ctx_write_target(&field_name, index)
+        ctx.resolve_ctx_write_target_with_context_field(&field_name, index)
             .map_err(CompileError::UnsupportedInstruction)
     }
 
@@ -454,7 +454,11 @@ impl<'a> HirToMirLowering<'a> {
                 &path_desc,
             );
         }
-        match self.resolve_ctx_write_target_from_path(path)? {
+        let (target, context_field) = self.resolve_ctx_write_target_from_path(path)?;
+        if let Some(field) = context_field {
+            self.implied_ctx_fields.insert(field);
+        }
+        match target {
             CtxWriteTarget::StoreField(target) => {
                 let target_ty = target.value_type();
                 let stored_vreg =

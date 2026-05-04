@@ -492,13 +492,17 @@ impl ContextWriteSurfaceSpec {
         spec: &ProgramSpec,
     ) -> Option<ContextFieldCompatibilityRequirement> {
         let target = spec.target_string();
-        let field = self.field.clone().or_else(|| self.target.context_field())?;
+        let field = self.context_field()?;
 
         ContextFieldCompatibilityRequirement::for_field_on_program_target(
             &field,
             Some(spec.program_type()),
             Some(target.as_str()),
         )
+    }
+
+    fn context_field(&self) -> Option<CtxField> {
+        self.field.clone().or_else(|| self.target.context_field())
     }
 
     fn minimum_kernel(&self, spec: &ProgramSpec) -> Option<(&'static str, &'static str)> {
@@ -1001,6 +1005,7 @@ impl ProgramSpec {
             .and_then(|surface| surface.resolve_store_target(self, index))
     }
 
+    #[cfg(test)]
     pub(crate) fn resolve_ctx_write_target(
         &self,
         field_name: &str,
@@ -1008,6 +1013,17 @@ impl ProgramSpec {
     ) -> Option<Result<CtxWriteTarget, String>> {
         self.ctx_write_surface_for_name(field_name)
             .map(|surface| surface.resolve_write_target(self, index))
+    }
+
+    pub(crate) fn resolve_ctx_write_target_with_context_field(
+        &self,
+        field_name: &str,
+        index: Option<usize>,
+    ) -> Option<Result<(CtxWriteTarget, Option<CtxField>), String>> {
+        self.ctx_write_surface_for_name(field_name).map(|surface| {
+            let target = surface.resolve_write_target(self, index)?;
+            Ok((target, surface.context_field()))
+        })
     }
 
     pub(crate) fn ctx_store_target_error(&self, store_target: &CtxStoreTarget) -> Option<String> {

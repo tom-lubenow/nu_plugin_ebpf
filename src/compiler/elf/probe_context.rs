@@ -899,6 +899,7 @@ impl ProbeContext {
         Err(format!("ctx.{} is read-only", field.display_name()))
     }
 
+    #[cfg(test)]
     pub(crate) fn resolve_ctx_write_target(
         &self,
         field_name: &str,
@@ -913,6 +914,23 @@ impl ProbeContext {
 
         self.resolve_ctx_store_target(field_name, index)
             .map(CtxWriteTarget::StoreField)
+    }
+
+    pub(crate) fn resolve_ctx_write_target_with_context_field(
+        &self,
+        field_name: &str,
+        index: Option<usize>,
+    ) -> Result<(CtxWriteTarget, Option<CtxField>), String> {
+        if let Some(result) = self
+            .parsed_program_spec()
+            .and_then(|spec| spec.resolve_ctx_write_target_with_context_field(field_name, index))
+        {
+            return result;
+        }
+
+        let store_target = self.resolve_ctx_store_target(field_name, index)?;
+        let context_field = store_target.ctx_field();
+        Ok((CtxWriteTarget::StoreField(store_target), context_field))
     }
 
     pub(crate) fn ctx_store_target_error(&self, target: &CtxStoreTarget) -> Option<String> {

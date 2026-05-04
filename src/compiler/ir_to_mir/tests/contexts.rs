@@ -1026,6 +1026,14 @@ fn test_lower_cgroup_sysctl_ctx_new_value_assignment() {
     )
     .expect("cgroup_sysctl ctx.new_value assignment should lower");
 
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SysctlNewValue),
+        "ctx.new_value assignment should preserve source-level context compatibility metadata"
+    );
+
     let block = result.program.main.block(result.program.main.entry);
     assert!(block.instructions.iter().any(|inst| matches!(
         inst,
@@ -1044,6 +1052,8 @@ fn test_lower_cgroup_sysctl_ctx_new_value_assignment() {
     let compiled =
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
             .expect("cgroup_sysctl ctx.new_value assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::SysctlNewValue));
+
     let program = compiled.into_program(
         EbpfProgramType::CgroupSysctl,
         "/sys/fs/cgroup",
@@ -1057,6 +1067,12 @@ fn test_lower_cgroup_sysctl_ctx_new_value_assignment() {
         .find(|requirement| requirement.helper() == BpfHelper::SysctlSetNewValue)
         .expect("ctx.new_value assignment should report bpf_sysctl_set_new_value metadata");
     assert_eq!(helper_requirement.minimum_kernel(), "5.2");
+    let context_requirement = program
+        .context_field_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.field() == &CtxField::SysctlNewValue)
+        .expect("ctx.new_value assignment should report sysctl_new_value context metadata");
+    assert_eq!(context_requirement.minimum_kernel(), "5.2");
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.2"));
     assert_eq!(program.compatibility_minimum_kernel(), Some("5.2"));
 }
@@ -3081,6 +3097,14 @@ fn test_lower_sk_lookup_ctx_sk_assignment_calls_sk_assign() {
     )
     .expect("sk_lookup ctx.sk assignment should lower to bpf_sk_assign");
 
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::Socket),
+        "ctx.sk assignment should preserve source-level socket context compatibility metadata"
+    );
+
     assert!(result.program.main.blocks.iter().any(|block| {
         block.instructions.iter().any(|inst| {
             matches!(
@@ -3106,6 +3130,8 @@ fn test_lower_sk_lookup_ctx_sk_assignment_calls_sk_assign() {
     let compiled =
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
             .expect("sk_lookup ctx.sk assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::Socket));
+
     let program = compiled.into_program(
         EbpfProgramType::SkLookup,
         "/proc/self/ns/net",
@@ -3119,6 +3145,12 @@ fn test_lower_sk_lookup_ctx_sk_assignment_calls_sk_assign() {
         .find(|requirement| requirement.helper() == BpfHelper::SkAssign)
         .expect("ctx.sk assignment should report bpf_sk_assign metadata");
     assert_eq!(helper_requirement.minimum_kernel(), "5.7");
+    let context_requirement = program
+        .context_field_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.field() == &CtxField::Socket)
+        .expect("ctx.sk assignment should report socket context metadata");
+    assert_eq!(context_requirement.minimum_kernel(), "5.9");
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.7"));
     assert_eq!(program.compatibility_minimum_kernel(), Some("5.9"));
 }
