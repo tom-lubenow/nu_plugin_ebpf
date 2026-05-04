@@ -4451,6 +4451,13 @@ fn test_lower_kprobe_ctx_cgroup_alias_projects_current_task_default_cgroup() {
             result.type_hints.main.values().any(MirType::is_cgroup_ptr),
             "expected {alias} to type as a cgroup pointer"
         );
+        assert!(
+            result
+                .type_hints
+                .used_ctx_fields
+                .contains(&CtxField::Cgroup),
+            "expected {alias} to preserve source-level cgroup context compatibility metadata"
+        );
     }
 }
 
@@ -4507,6 +4514,13 @@ fn test_lower_tracepoint_current_cgroup_alias_projects_builtin_default_cgroup() 
     assert!(
         result.type_hints.main.values().any(MirType::is_cgroup_ptr),
         "expected current_cgroup to type as a cgroup pointer"
+    );
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::Cgroup),
+        "expected current_cgroup to preserve source-level cgroup context compatibility metadata"
     );
 }
 

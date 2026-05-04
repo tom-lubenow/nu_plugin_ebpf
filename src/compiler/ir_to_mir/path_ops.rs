@@ -487,6 +487,7 @@ impl<'a> HirToMirLowering<'a> {
         root_members_consumed: usize,
     ) -> Result<(), CompileError> {
         let task_field = CtxField::Task;
+        self.implied_ctx_fields.insert(CtxField::Cgroup);
         let task_type_spec = ProbeContext::resolve_ctx_field_type_spec(self.probe_ctx, &task_field)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
