@@ -5548,7 +5548,6 @@ fn test_kfunc_graph_root_pointer_contracts() {
         "bpf_list_front",
         "bpf_list_back",
         "bpf_rbtree_add_impl",
-        "bpf_rbtree_remove",
         "bpf_rbtree_first",
     ] {
         let semantics = kfunc_semantics(kfunc);
@@ -5560,6 +5559,21 @@ fn test_kfunc_graph_root_pointer_contracts() {
         assert!(root.allowed.allow_kernel, "{kfunc}");
         assert!(!root.allowed.allow_user, "{kfunc}");
     }
+
+    let semantics = kfunc_semantics("bpf_rbtree_remove");
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+    let root = semantics.ptr_arg_rules[0];
+    assert_eq!(root.arg_idx, 0);
+    assert!(!root.allowed.allow_stack);
+    assert!(root.allowed.allow_map);
+    assert!(root.allowed.allow_kernel);
+    assert!(!root.allowed.allow_user);
+    let node = semantics.ptr_arg_rules[1];
+    assert_eq!(node.arg_idx, 1);
+    assert!(!node.allowed.allow_stack);
+    assert!(!node.allowed.allow_map);
+    assert!(node.allowed.allow_kernel);
+    assert!(!node.allowed.allow_user);
 }
 
 #[test]

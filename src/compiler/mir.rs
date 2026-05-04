@@ -769,6 +769,16 @@ impl MirType {
         self.has_struct_name(&["bpf_rb_node"])
     }
 
+    pub fn field_type_at_offset(&self, offset: usize) -> Option<&MirType> {
+        let MirType::Struct { fields, .. } = self else {
+            return None;
+        };
+        fields
+            .iter()
+            .find(|field| !field.synthetic && field.offset == offset)
+            .map(|field| &field.ty)
+    }
+
     pub fn bpf_graph_root_info(&self) -> Option<BpfGraphRootInfo<'_>> {
         let MirType::Struct {
             name: Some(name), ..

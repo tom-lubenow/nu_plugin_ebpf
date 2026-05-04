@@ -25,6 +25,22 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         fixed_size: None,
         size_from_arg: None,
     }];
+    const RBTREE_REMOVE_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 0,
+            op: "kfunc bpf_rbtree root",
+            allowed: KERNEL_MAP,
+            fixed_size: None,
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc bpf_rbtree node",
+            allowed: KERNEL_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        },
+    ];
     const RBTREE_NODE_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
         arg_idx: 0,
         op: "kfunc bpf_rbtree node",
@@ -374,8 +390,12 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             ptr_arg_rules: LIST_ROOT_RULES,
             positive_size_args: &[],
         },
-        "bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first" => KfuncSemantics {
+        "bpf_rbtree_add_impl" | "bpf_rbtree_first" => KfuncSemantics {
             ptr_arg_rules: RBTREE_ROOT_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_rbtree_remove" => KfuncSemantics {
+            ptr_arg_rules: RBTREE_REMOVE_RULES,
             positive_size_args: &[],
         },
         "bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right" => KfuncSemantics {

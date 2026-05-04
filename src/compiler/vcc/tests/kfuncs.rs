@@ -11040,6 +11040,46 @@ fn test_verify_mir_kfunc_rbtree_root_requires_kernel_pointer_arg() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_rbtree_left_rejects_list_node_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let node = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_left".to_string(),
+        btf_id: None,
+        args: vec![node],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        node,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_rb_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected graph node kind mismatch");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("expects bpf_rb_node pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_rbtree_root_accepts_kernel_pointer_arg() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

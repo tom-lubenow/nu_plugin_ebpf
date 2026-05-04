@@ -34,6 +34,63 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn kfunc_graph_pointee_mismatch(
+        kfunc: &str,
+        arg_idx: usize,
+        pointee: &MirType,
+    ) -> Option<&'static str> {
+        if matches!(pointee, MirType::Unknown) {
+            return None;
+        }
+
+        let offset_zero_field = || pointee.field_type_at_offset(0);
+        let matches_expected = match (kfunc, arg_idx) {
+            (
+                "bpf_list_push_front_impl"
+                | "bpf_list_push_back_impl"
+                | "bpf_list_pop_front"
+                | "bpf_list_pop_back"
+                | "bpf_list_front"
+                | "bpf_list_back",
+                0,
+            ) => {
+                pointee.is_bpf_list_head_struct()
+                    || offset_zero_field().is_some_and(MirType::is_bpf_list_head_struct)
+            }
+            ("bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first", 0) => {
+                pointee.is_bpf_rb_root_struct()
+                    || offset_zero_field().is_some_and(MirType::is_bpf_rb_root_struct)
+            }
+            ("bpf_rbtree_remove", 1)
+            | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => {
+                pointee.is_bpf_rb_node_struct()
+            }
+            _ => return None,
+        };
+
+        if matches_expected {
+            None
+        } else {
+            Some(match (kfunc, arg_idx) {
+                (
+                    "bpf_list_push_front_impl"
+                    | "bpf_list_push_back_impl"
+                    | "bpf_list_pop_front"
+                    | "bpf_list_pop_back"
+                    | "bpf_list_front"
+                    | "bpf_list_back",
+                    0,
+                ) => "bpf_list_head",
+                ("bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first", 0) => {
+                    "bpf_rb_root"
+                }
+                ("bpf_rbtree_remove", 1)
+                | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => "bpf_rb_node",
+                _ => unreachable!(),
+            })
+        }
+    }
+
     pub(super) fn mir_is_numeric(ty: &MirType) -> bool {
         matches!(
             ty,
@@ -853,6 +910,14 @@ impl<'a> TypeInference<'a> {
                                 kfunc, rule.arg_idx
                             )));
                         }
+                    }
+                    if let Some(expected) =
+                        Self::kfunc_graph_pointee_mismatch(kfunc, rule.arg_idx, &pointee)
+                    {
+                        errors.push(TypeError::new(format!(
+                            "{} expects {} pointer, got {:?}",
+                            rule.op, expected, pointee
+                        )));
                     }
                     if let Some(size_arg) = size_from_arg
                         && access_size.is_none()

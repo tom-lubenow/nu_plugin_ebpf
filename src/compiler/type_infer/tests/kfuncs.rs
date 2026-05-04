@@ -3713,6 +3713,56 @@ fn test_infer_kfunc_rbtree_navigation_pointer_returns() {
 }
 
 #[test]
+fn test_type_error_kfunc_rejects_mismatched_graph_node_kind() {
+    let mut func = make_test_function();
+    let type_id = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let list_head = func.alloc_vreg();
+    let list_node = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: type_id,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: list_head,
+        kfunc: "bpf_obj_new_impl".to_string(),
+        btf_id: None,
+        args: vec![type_id, meta],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: list_node,
+        kfunc: "bpf_list_front".to_string(),
+        btf_id: None,
+        args: vec![list_head],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_left".to_string(),
+        btf_id: None,
+        args: vec![list_node],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected graph node kind mismatch");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_rbtree node expects bpf_rb_node pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_rbtree_left_requires_kernel_space() {
     let mut func = make_test_function();
     let node = func.alloc_vreg();

@@ -6908,6 +6908,32 @@ const FIXTURES = [
         error_contains: "expects kernel pointer, got Map"
     }
     {
+        name: "source-kfunc-rbtree-left-rejects-list-node"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let node = (kfunc-call "bpf_list_front" $entry.root)'
+            '    if $node {'
+            '      let left = (kfunc-call "bpf_rbtree_left" $node)'
+            '      if $left {'
+            '        0'
+            '      }'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects bpf_rb_node pointer"
+    }
+    {
         name: "source-kfunc-rbtree-add-map-root"
         category: "helper-state"
         tags: [kfunc object graph callback source accept]
