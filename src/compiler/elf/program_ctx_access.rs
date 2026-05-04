@@ -1917,7 +1917,7 @@ impl BaseContextFieldAccessRequirement {
             Self::ArgCountField => {
                 "ctx.arg_count is only available on BTF-backed tracing contexts (fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup)".to_string()
             }
-            Self::RetvalField => "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit, fmod_ret)".to_string(),
+            Self::RetvalField => "ctx.retval is only available on return probes with return-value access (kretprobe, kretprobe.multi, kretsyscall, uretprobe, uretprobe.multi, fexit, and fmod_ret)".to_string(),
             Self::TracepointFields => match field {
                 CtxField::TracepointField(name) => format!(
                     "ctx.{} is only available on typed tracepoints (`tracepoint:category/name`)",

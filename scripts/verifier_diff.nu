@@ -395,8 +395,10 @@ const PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "struct_ops:sched_ext_ops.init" feature_keys: ["kernel:btf-vmlinux" "program:bpf-trampoline" "program:BPF_PROG_TYPE_STRUCT_OPS" "struct_ops:sched_ext_ops" "section:sleepable-program"] }
     { target: "struct_ops:tcp_congestion_ops" feature_keys: ["kernel:btf-vmlinux" "program:bpf-trampoline" "program:BPF_PROG_TYPE_STRUCT_OPS" "struct_ops:tcp_congestion_ops"] }
     { target: "kprobe.multi:vfs_*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_KPROBE_MULTI"] }
+    { target: "kretprobe.multi:vfs_*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_KPROBE_MULTI"] }
     { target: "uprobe.s:/bin/bash:main" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "section:sleepable-program"] }
     { target: "uprobe.multi.s:/bin/bash:read*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_UPROBE_MULTI" "section:sleepable-program"] }
+    { target: "uretprobe.multi.s:/bin/bash:read*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_UPROBE_MULTI" "section:sleepable-program"] }
     { target: "raw_tracepoint.w:sys_enter" feature_keys: ["program:BPF_PROG_TYPE_RAW_TRACEPOINT" "section:raw_tracepoint.w"] }
     { target: "tracepoint:syscalls/sys_enter_openat" feature_keys: ["program:BPF_PROG_TYPE_TRACEPOINT"] }
     { target: "perf_event:software:cpu-clock:period=100000" feature_keys: ["program:BPF_PROG_TYPE_PERF_EVENT"] }
@@ -3813,6 +3815,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "kretprobe-multi-context"
+        category: "tracing"
+        tags: [kretprobe-multi context]
+        target: "kretprobe.multi:vfs_*"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "uprobe-multi-context"
         category: "tracing"
         tags: [uprobe-multi context]
@@ -3820,6 +3836,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.pid + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "uretprobe-multi-context"
+        category: "tracing"
+        tags: [uretprobe-multi context]
+        target: "uretprobe.multi:/bin/true:*"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.pid + $ctx.func_ip) | count'
             '  0'
             '}'
         ]

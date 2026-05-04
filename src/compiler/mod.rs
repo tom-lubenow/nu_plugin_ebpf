@@ -113,7 +113,7 @@ pub enum CompileError {
     InvalidProgram(String),
 
     #[error(
-        "ctx.retval is only available on return probes with return-value access (kretprobe, uretprobe, fexit, fmod_ret)"
+        "ctx.retval is only available on return probes with return-value access (kretprobe, kretprobe.multi, kretsyscall, uretprobe, uretprobe.multi, fexit, and fmod_ret)"
     )]
     RetvalOnNonReturnProbe,
 
