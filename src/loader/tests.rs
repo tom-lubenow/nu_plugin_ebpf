@@ -5,6 +5,7 @@ use super::attach::{
     kernel_minimum_requirement_detail, kernel_object_compatibility_requirement_detail,
 };
 use super::*;
+use crate::compiler::instruction::{EbpfBuilder, EbpfInsn};
 use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField,
@@ -1921,6 +1922,24 @@ fn test_kernel_object_compatibility_requirement_detail_reports_compiled_feature_
     assert!(msg.contains("compiled kfuncs require kernel>=6.12"));
     assert!(msg.contains("current kernel is 6.11.0-test"));
     assert!(msg.contains("bpf_get_task_exe_file kfunc support"));
+}
+
+#[test]
+fn test_kernel_object_compatibility_requirement_detail_prefers_context_field_floor() {
+    let mut builder = EbpfBuilder::new();
+    builder
+        .push(EbpfInsn::call(BpfHelper::XdpGetBuffLen))
+        .push(EbpfInsn::exit());
+    let object = EbpfProgram::new(EbpfProgramType::Xdp, "lo", "main", builder)
+        .with_used_context_fields([CtxField::XdpBuffLen])
+        .into_object();
+
+    let msg = kernel_object_compatibility_requirement_detail(&object, "5.17.0-test")
+        .expect("kernel 5.17 should be too old for ctx.xdp_buff_len");
+
+    assert!(msg.contains("compiled context fields require kernel>=5.18"));
+    assert!(msg.contains("ctx.xdp_buff_len context field support"));
+    assert!(!msg.contains("compiled helpers require kernel>=5.18"));
 }
 
 #[test]

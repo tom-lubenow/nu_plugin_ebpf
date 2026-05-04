@@ -393,6 +393,14 @@ pub(super) fn kernel_object_compatibility_requirement_detail(
         return Some(detail);
     }
 
+    let requirements = object.context_field_compatibility_requirements();
+    if !requirements.is_empty()
+        && let Some(detail) =
+            kernel_context_field_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
+    }
+
     let requirements = object.helper_compatibility_requirements();
     if !requirements.is_empty()
         && let Some(detail) =
@@ -404,14 +412,6 @@ pub(super) fn kernel_object_compatibility_requirement_detail(
     let requirements = object.kfunc_compatibility_requirements();
     if !requirements.is_empty()
         && let Some(detail) = kernel_kfunc_minimum_requirement_detail(&requirements, current_kernel)
-    {
-        return Some(detail);
-    }
-
-    let requirements = object.context_field_compatibility_requirements();
-    if !requirements.is_empty()
-        && let Some(detail) =
-            kernel_context_field_minimum_requirement_detail(&requirements, current_kernel)
     {
         return Some(detail);
     }
