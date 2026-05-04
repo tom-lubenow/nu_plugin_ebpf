@@ -340,7 +340,10 @@ impl VccVerifier {
         (match ty {
             VccValueType::Scalar { range } => matches!(range, Some(VccRange { min: 0, max: 0 })),
             VccValueType::Bool => false,
-            VccValueType::Ptr(_) | VccValueType::Unknown | VccValueType::Uninit => false,
+            VccValueType::Ptr(_)
+            | VccValueType::Unknown
+            | VccValueType::StalePacketPtr
+            | VccValueType::Uninit => false,
         }) || matches!(value, VccValue::Imm(0))
     }
 }

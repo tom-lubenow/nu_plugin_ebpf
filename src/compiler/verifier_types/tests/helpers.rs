@@ -9497,7 +9497,7 @@ fn test_verify_mir_for_probe_context_xdp_adjust_meta_invalidates_prior_packet_po
         .expect_err("expected stale packet pointer load to fail after xdp_adjust_meta");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("load requires pointer type")),
+            .any(|e| e.message.contains("stale packet pointer")),
         "unexpected errors: {:?}",
         err
     );
@@ -10516,7 +10516,7 @@ fn test_verify_mir_for_probe_context_skb_pull_data_invalidates_prior_packet_poin
         .expect_err("expected stale packet pointer load to fail after skb_pull_data");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("load requires pointer type")),
+            .any(|e| e.message.contains("stale packet pointer")),
         "unexpected errors: {:?}",
         err
     );
@@ -10738,7 +10738,7 @@ fn test_verify_mir_for_probe_context_msg_data_helpers_invalidate_prior_packet_po
             .expect_err("expected stale packet pointer load to fail after message data helper");
         assert!(
             err.iter()
-                .any(|e| e.message.contains("load requires pointer type")),
+                .any(|e| e.message.contains("stale packet pointer")),
             "{} produced unexpected errors: {:?}",
             helper.name(),
             err
@@ -11052,7 +11052,7 @@ fn test_verify_mir_for_probe_context_store_hdr_opt_invalidates_prior_packet_poin
         .expect_err("expected stale packet pointer load to fail after store_hdr_opt");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("load requires pointer type")),
+            .any(|e| e.message.contains("stale packet pointer")),
         "unexpected errors: {:?}",
         err
     );
@@ -11179,7 +11179,7 @@ fn test_verify_mir_for_probe_context_packet_mutating_subfn_invalidates_prior_pac
     .expect_err("expected stale packet pointer load to fail after packet-mutating subfn");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("load requires pointer")),
+            .any(|e| e.message.contains("stale packet pointer")),
         "unexpected errors: {:?}",
         err
     );

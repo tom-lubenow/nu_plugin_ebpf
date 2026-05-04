@@ -56,6 +56,13 @@ pub(in crate::compiler::verifier_types) fn require_ptr_with_space(
             )));
             None
         }
+        VerifierType::StalePacketPtr => {
+            errors.push(VerifierTypeError::new(format!(
+                "{op} uses stale packet pointer v{} after a packet-mutating helper; reload ctx.data/data_end before access",
+                ptr.0
+            )));
+            None
+        }
         other => {
             errors.push(VerifierTypeError::new(format!(
                 "{op} requires pointer type, got {:?}",

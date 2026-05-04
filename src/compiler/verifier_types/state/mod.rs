@@ -93,6 +93,7 @@ impl PtrBounds {
 pub(super) enum VerifierType {
     Uninit,
     Unknown,
+    StalePacketPtr,
     Scalar,
     Bool,
     Ptr {
@@ -438,7 +439,7 @@ impl VerifierState {
             ) {
                 continue;
             }
-            self.regs[idx] = VerifierType::Unknown;
+            self.regs[idx] = VerifierType::StalePacketPtr;
             self.ranges[idx] = ValueRange::Unknown;
             self.non_zero[idx] = false;
             self.not_equal[idx].clear();

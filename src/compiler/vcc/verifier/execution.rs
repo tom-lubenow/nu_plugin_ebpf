@@ -360,6 +360,10 @@ impl VccVerifier {
                         }
                         info
                     }
+                    VccValueType::StalePacketPtr => {
+                        self.errors.push(Self::stale_packet_pointer_error(op));
+                        return;
+                    }
                     other => {
                         self.errors.push(VccError::new(
                             VccErrorKind::InvalidLoadStore,
@@ -427,6 +431,10 @@ impl VccVerifier {
                             return;
                         }
                         info
+                    }
+                    VccValueType::StalePacketPtr => {
+                        self.errors.push(Self::stale_packet_pointer_error(op));
+                        return;
                     }
                     other => {
                         self.errors.push(VccError::new(
@@ -957,6 +965,11 @@ impl VccVerifier {
                             }
                         }
                     }
+                    VccValueType::StalePacketPtr => {
+                        self.errors
+                            .push(Self::stale_packet_pointer_error("load"));
+                        return;
+                    }
                     other => {
                         self.errors.push(VccError::new(
                             VccErrorKind::InvalidLoadStore,
@@ -1037,6 +1050,11 @@ impl VccVerifier {
                                 ));
                             }
                         }
+                    }
+                    VccValueType::StalePacketPtr => {
+                        self.errors
+                            .push(Self::stale_packet_pointer_error("store"));
+                        return;
                     }
                     other => {
                         self.errors.push(VccError::new(
@@ -2359,6 +2377,15 @@ impl VccVerifier {
                 }
             }
         }
+    }
+
+    fn stale_packet_pointer_error(op: &str) -> VccError {
+        VccError::new(
+            VccErrorKind::InvalidLoadStore,
+            format!(
+                "{op} uses stale packet pointer after a packet-mutating helper; reload ctx.data/data_end before access"
+            ),
+        )
     }
 }
 

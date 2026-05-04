@@ -7,6 +7,7 @@ pub(in crate::compiler::verifier_types) fn join_type(
     use VerifierType::*;
     match (a, b) {
         (Uninit, other) | (other, Uninit) => other,
+        (StalePacketPtr, _) | (_, StalePacketPtr) => StalePacketPtr,
         (Unknown, _) | (_, Unknown) => Unknown,
         (Scalar, Scalar) => Scalar,
         (Bool, Bool) => Bool,

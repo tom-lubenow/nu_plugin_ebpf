@@ -7534,6 +7534,40 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-packet-xdp-meta-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp packet-bounds reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-packet --meta 0'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-packet-xdp-meta-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp packet-bounds accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --meta 0'
+            '  ($ctx.data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "adjust-packet-xdp-tail"
         category: "language-surface"
         tags: [adjust-packet xdp]

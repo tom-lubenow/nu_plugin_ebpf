@@ -286,7 +286,7 @@ impl VccState {
                 })
             );
             if is_packet_ptr {
-                *ty = VccValueType::Unknown;
+                *ty = VccValueType::StalePacketPtr;
                 invalidated.push(*reg);
             }
         }
@@ -1172,6 +1172,7 @@ impl VccState {
                     kfunc_ref: None,
                 }),
                 VccValueType::Bool => VccValueType::Bool,
+                VccValueType::StalePacketPtr => VccValueType::StalePacketPtr,
                 VccValueType::Unknown => VccValueType::Unknown,
                 VccValueType::Uninit => VccValueType::Uninit,
             };
@@ -1470,6 +1471,9 @@ impl VccState {
                 .merge_ptr_types(lp, rp)
                 .map(VccValueType::Ptr)
                 .unwrap_or(VccValueType::Unknown),
+            (VccValueType::StalePacketPtr, _) | (_, VccValueType::StalePacketPtr) => {
+                VccValueType::StalePacketPtr
+            }
             (left, right) if left == right => left,
             _ => VccValueType::Unknown,
         }

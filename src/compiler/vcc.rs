@@ -203,6 +203,7 @@ impl VccRange {
 pub enum VccValueType {
     Uninit,
     Unknown,
+    StalePacketPtr,
     Bool,
     Scalar { range: Option<VccRange> },
     Ptr(VccPointerInfo),
@@ -213,6 +214,7 @@ impl VccValueType {
         match self {
             VccValueType::Uninit => VccTypeClass::Uninit,
             VccValueType::Unknown => VccTypeClass::Unknown,
+            VccValueType::StalePacketPtr => VccTypeClass::Unknown,
             VccValueType::Bool => VccTypeClass::Bool,
             VccValueType::Scalar { .. } => VccTypeClass::Scalar,
             VccValueType::Ptr(_) => VccTypeClass::Ptr,

@@ -39,7 +39,8 @@ impl VccVerifier {
                         false,
                     );
                 }
-                Ok(VccValueType::Uninit | VccValueType::Unknown) | Err(_) => {}
+                Ok(VccValueType::Uninit | VccValueType::Unknown | VccValueType::StalePacketPtr)
+                | Err(_) => {}
             }
             if let Some(refinement) = state.cond_refinement(cond_reg) {
                 match refinement {

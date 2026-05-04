@@ -447,7 +447,7 @@ fn direct_branch_guard(cond: VReg, cond_ty: VerifierType) -> Option<Guard> {
             ptr: cond,
             true_is_non_null: true,
         }),
-        VerifierType::Uninit | VerifierType::Unknown => None,
+        VerifierType::Uninit | VerifierType::Unknown | VerifierType::StalePacketPtr => None,
     }
 }
 

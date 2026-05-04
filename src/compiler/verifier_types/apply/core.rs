@@ -132,7 +132,9 @@ pub(super) fn apply_unary_inst(
                         reg: *src_reg,
                         true_is_non_zero: false,
                     }),
-                    VerifierType::Uninit | VerifierType::Unknown => None,
+                    VerifierType::Uninit | VerifierType::Unknown | VerifierType::StalePacketPtr => {
+                        None
+                    }
                 })
         } else {
             None
