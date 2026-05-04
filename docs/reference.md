@@ -217,10 +217,12 @@ versions, `compatibility_minimum_kernel` reports the maximum known requirement
 for the parsed target, and `compatibility_default_test_lane` reports the most
 restrictive default lane across those requirements. The `intrinsics` list is program- and
 attach-aware, and first-class helper-backed commands expose `backing_helpers`
-records with source-checked helper minimum-kernel metadata. Mode- or
-kind-sensitive intrinsic rows also expose `variants` records that map the
-accepted flag/kind to the exact helper floor and, for map-family choices, the
-map-kind compatibility floor for the parsed target.
+records with source-checked helper minimum-kernel metadata. Intrinsics that
+imply a context-field ABI dependency expose `context_field_requirements`, such
+as `assign-socket` reporting `ctx:sk` for supported tc and sk_lookup targets.
+Mode- or kind-sensitive intrinsic rows also expose `variants` records that map
+the accepted flag/kind to the exact helper floor and, for map-family choices,
+the map-kind compatibility floor for the parsed target.
 Individual
 context-field and context-write records also carry nullable `minimum_kernel`
 and `minimum_kernel_source` fields when direct UAPI fields, write-only
@@ -635,7 +637,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, direct context-field compatibility keys, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors plus map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, direct context-field compatibility keys, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |
@@ -678,6 +680,10 @@ helper/kfunc minimum-kernel and source fields, plus nullable kfunc
 maximum-exclusive windows, so surfaces such as `ctx.reply`, `ctx.mark`,
 `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and `ctx.sun_path` can be inspected
 before writing code that depends on them.
+`intrinsics` rows include aggregate `backing_helpers` plus
+`context_field_requirements` when an intrinsic implies a context-field ABI
+dependency. For example, `assign-socket` reports the target-specific `ctx:sk`
+minimum kernel alongside its `bpf_sk_assign` helper floor.
 
 ## Helper Commands (inside closures)
 

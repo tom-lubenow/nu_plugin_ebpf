@@ -58,6 +58,9 @@ Kind-sensitive intrinsic variants such as `redirect-map --kind devmap-hash`
 and `redirect-socket --kind sockhash` also report their selected map kind,
 map requirement key, and source-backed map minimum kernel separately from the
 backing helper floor.
+Intrinsic rows can also report target-aware `context_field_requirements` when
+the command implies a context ABI dependency; for example `assign-socket`
+advertises the `ctx:sk` floor for the parsed attach target.
 Writable context surface records report direct write-surface floors when known
 and whether an assignment lowers through a helper or kfunc, including separate
 source-backed minimum-kernel/source fields for ABI-backed writes such as
@@ -114,7 +117,7 @@ context surfaces with backing helper/kfunc metadata where applicable, return ali
 target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
 supported first-class intrinsic commands with helper-backed mode/kind variants,
-live-attach/default safety, and
+intrinsic context-field requirements, live-attach/default safety, and
 compatibility requirement labels before you attempt to compile or attach a
 closure.
 The `context_projections` table lists projections that are valid for that
@@ -132,7 +135,9 @@ Each `intrinsics` row includes aggregate `backing_helpers`; mode- or
 kind-sensitive commands such as `adjust-packet`, `adjust-message`, `redirect`,
 `redirect-map`, and `redirect-socket` also include `variants` records that map
 the supported flag/kind to the exact helper and helper kernel floor for the
-parsed target.
+parsed target. Intrinsics that imply a context-field ABI dependency also include
+`context_field_requirements`, such as `assign-socket` requiring `ctx:sk` on
+supported tc and sk_lookup targets.
 
 Structured `attach_shape` records are emitted for attach families where the
 parsed target or attach resource changes compiler, loader, or verifier policy:
