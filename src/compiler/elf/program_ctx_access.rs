@@ -1,36 +1,52 @@
 use super::{CtxField, EbpfProgramType};
 use crate::program_spec::{
-    ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook, ProgramSpec,
-    XdpTargetKind,
+    IterTargetKind, ProgramAttachAddressFamily, ProgramAttachShape, ProgramAttachSockAddrHook,
+    ProgramSpec, XdpTargetKind,
 };
 
 type BaseContextFieldAccessSurfaceSpec = (&'static [CtxField], BaseContextFieldAccessRequirement);
 
-const ITER_TASK_PAYLOAD_TARGETS: &[&str] = &["task", "task_file", "task_vma"];
-const ITER_TASK_FILE_TARGETS: &[&str] = &["task_file"];
-const ITER_TASK_VMA_TARGETS: &[&str] = &["task_vma"];
-const ITER_CGROUP_TARGETS: &[&str] = &["cgroup"];
-const ITER_MAP_TARGETS: &[&str] = &["bpf_map", "bpf_map_elem", "bpf_sk_storage_map", "sockmap"];
-const ITER_MAP_KEY_TARGETS: &[&str] = &["bpf_map_elem", "sockmap"];
-const ITER_MAP_VALUE_TARGETS: &[&str] = &["bpf_map_elem", "bpf_sk_storage_map"];
-const ITER_PROG_TARGETS: &[&str] = &["bpf_prog"];
-const ITER_LINK_TARGETS: &[&str] = &["bpf_link"];
-const ITER_SOCK_TARGETS: &[&str] = &["bpf_sk_storage_map", "sockmap"];
-const ITER_TCP_TARGETS: &[&str] = &["tcp"];
-const ITER_UDP_TARGETS: &[&str] = &["udp"];
-const ITER_UNIX_TARGETS: &[&str] = &["unix"];
-const ITER_SOCKET_UID_TARGETS: &[&str] = &["tcp", "udp", "unix"];
-const ITER_DMABUF_TARGETS: &[&str] = &["dmabuf"];
-const ITER_IPV6_ROUTE_TARGETS: &[&str] = &["ipv6_route"];
-const ITER_KMEM_CACHE_TARGETS: &[&str] = &["kmem_cache"];
-const ITER_KSYM_TARGETS: &[&str] = &["ksym"];
-const ITER_NETLINK_TARGETS: &[&str] = &["netlink"];
+const ITER_TASK_PAYLOAD_TARGETS: &[IterTargetKind] = &[
+    IterTargetKind::Task,
+    IterTargetKind::TaskFile,
+    IterTargetKind::TaskVma,
+];
+const ITER_TASK_FILE_TARGETS: &[IterTargetKind] = &[IterTargetKind::TaskFile];
+const ITER_TASK_VMA_TARGETS: &[IterTargetKind] = &[IterTargetKind::TaskVma];
+const ITER_CGROUP_TARGETS: &[IterTargetKind] = &[IterTargetKind::Cgroup];
+const ITER_MAP_TARGETS: &[IterTargetKind] = &[
+    IterTargetKind::BpfMap,
+    IterTargetKind::BpfMapElem,
+    IterTargetKind::BpfSkStorageMap,
+    IterTargetKind::Sockmap,
+];
+const ITER_MAP_KEY_TARGETS: &[IterTargetKind] =
+    &[IterTargetKind::BpfMapElem, IterTargetKind::Sockmap];
+const ITER_MAP_VALUE_TARGETS: &[IterTargetKind] =
+    &[IterTargetKind::BpfMapElem, IterTargetKind::BpfSkStorageMap];
+const ITER_PROG_TARGETS: &[IterTargetKind] = &[IterTargetKind::BpfProg];
+const ITER_LINK_TARGETS: &[IterTargetKind] = &[IterTargetKind::BpfLink];
+const ITER_SOCK_TARGETS: &[IterTargetKind] =
+    &[IterTargetKind::BpfSkStorageMap, IterTargetKind::Sockmap];
+const ITER_TCP_TARGETS: &[IterTargetKind] = &[IterTargetKind::Tcp];
+const ITER_UDP_TARGETS: &[IterTargetKind] = &[IterTargetKind::Udp];
+const ITER_UNIX_TARGETS: &[IterTargetKind] = &[IterTargetKind::Unix];
+const ITER_SOCKET_UID_TARGETS: &[IterTargetKind] = &[
+    IterTargetKind::Tcp,
+    IterTargetKind::Udp,
+    IterTargetKind::Unix,
+];
+const ITER_DMABUF_TARGETS: &[IterTargetKind] = &[IterTargetKind::Dmabuf];
+const ITER_IPV6_ROUTE_TARGETS: &[IterTargetKind] = &[IterTargetKind::Ipv6Route];
+const ITER_KMEM_CACHE_TARGETS: &[IterTargetKind] = &[IterTargetKind::KmemCache];
+const ITER_KSYM_TARGETS: &[IterTargetKind] = &[IterTargetKind::Ksym];
+const ITER_NETLINK_TARGETS: &[IterTargetKind] = &[IterTargetKind::Netlink];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContextFieldAccessRequirement {
     TcEgressOnly,
     XdpDevmapOnly,
-    IterTargetsOnly(&'static [&'static str], &'static str),
+    IterTargetsOnly(&'static [IterTargetKind], &'static str),
     CgroupSockCreateReleaseOnly,
     CgroupSockPostBindOnly,
     CgroupSockPostBindIpv4Only,
@@ -86,7 +102,13 @@ impl ContextFieldAccessRequirement {
                 _ => None,
             },
             Self::IterTargetsOnly(targets, label) => match spec {
-                ProgramSpec::Iter { target } if targets.contains(&target.name.as_str()) => None,
+                ProgramSpec::Iter { target }
+                    if target
+                        .known_kind()
+                        .is_some_and(|kind| targets.contains(&kind)) =>
+                {
+                    None
+                }
                 ProgramSpec::Iter { .. } => Some(format!(
                     "ctx.{field_name} is only available on {label} programs"
                 )),

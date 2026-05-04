@@ -656,6 +656,125 @@ pub struct IterTarget {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IterTargetKind {
+    Task,
+    TaskFile,
+    TaskVma,
+    BpfMap,
+    Cgroup,
+    BpfMapElem,
+    BpfSkStorageMap,
+    Sockmap,
+    BpfProg,
+    BpfLink,
+    Tcp,
+    Udp,
+    Unix,
+    Ipv6Route,
+    Ksym,
+    Netlink,
+    KmemCache,
+    Dmabuf,
+}
+
+impl IterTargetKind {
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::Task,
+            Self::TaskFile,
+            Self::TaskVma,
+            Self::BpfMap,
+            Self::Cgroup,
+            Self::BpfMapElem,
+            Self::BpfSkStorageMap,
+            Self::Sockmap,
+            Self::BpfProg,
+            Self::BpfLink,
+            Self::Tcp,
+            Self::Udp,
+            Self::Unix,
+            Self::Ipv6Route,
+            Self::Ksym,
+            Self::Netlink,
+            Self::KmemCache,
+            Self::Dmabuf,
+        ]
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "task" => Self::Task,
+            "task_file" => Self::TaskFile,
+            "task_vma" => Self::TaskVma,
+            "bpf_map" => Self::BpfMap,
+            "cgroup" => Self::Cgroup,
+            "bpf_map_elem" => Self::BpfMapElem,
+            "bpf_sk_storage_map" => Self::BpfSkStorageMap,
+            "sockmap" => Self::Sockmap,
+            "bpf_prog" => Self::BpfProg,
+            "bpf_link" => Self::BpfLink,
+            "tcp" => Self::Tcp,
+            "udp" => Self::Udp,
+            "unix" => Self::Unix,
+            "ipv6_route" => Self::Ipv6Route,
+            "ksym" => Self::Ksym,
+            "netlink" => Self::Netlink,
+            "kmem_cache" => Self::KmemCache,
+            "dmabuf" => Self::Dmabuf,
+            _ => return None,
+        })
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Task => "task",
+            Self::TaskFile => "task_file",
+            Self::TaskVma => "task_vma",
+            Self::BpfMap => "bpf_map",
+            Self::Cgroup => "cgroup",
+            Self::BpfMapElem => "bpf_map_elem",
+            Self::BpfSkStorageMap => "bpf_sk_storage_map",
+            Self::Sockmap => "sockmap",
+            Self::BpfProg => "bpf_prog",
+            Self::BpfLink => "bpf_link",
+            Self::Tcp => "tcp",
+            Self::Udp => "udp",
+            Self::Unix => "unix",
+            Self::Ipv6Route => "ipv6_route",
+            Self::Ksym => "ksym",
+            Self::Netlink => "netlink",
+            Self::KmemCache => "kmem_cache",
+            Self::Dmabuf => "dmabuf",
+        }
+    }
+
+    fn compatibility_requirement(self) -> ProgramCompatibilityRequirement {
+        match self {
+            Self::Task => ProgramCompatibilityRequirement::BpfIteratorTaskTarget,
+            Self::TaskFile => ProgramCompatibilityRequirement::BpfIteratorTaskFileTarget,
+            Self::TaskVma => ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
+            Self::BpfMap => ProgramCompatibilityRequirement::BpfIteratorBpfMapTarget,
+            Self::Cgroup => ProgramCompatibilityRequirement::BpfIteratorCgroupTarget,
+            Self::BpfMapElem => ProgramCompatibilityRequirement::BpfIteratorBpfMapElemTarget,
+            Self::BpfSkStorageMap => {
+                ProgramCompatibilityRequirement::BpfIteratorBpfSkStorageMapTarget
+            }
+            Self::Sockmap => ProgramCompatibilityRequirement::BpfIteratorSockmapTarget,
+            Self::BpfProg => ProgramCompatibilityRequirement::BpfIteratorBpfProgTarget,
+            Self::BpfLink => ProgramCompatibilityRequirement::BpfIteratorBpfLinkTarget,
+            Self::Tcp => ProgramCompatibilityRequirement::BpfIteratorTcpTarget,
+            Self::Udp => ProgramCompatibilityRequirement::BpfIteratorUdpTarget,
+            Self::Unix => ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
+            Self::Ipv6Route => ProgramCompatibilityRequirement::BpfIteratorIpv6RouteTarget,
+            Self::Ksym => ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
+            Self::Netlink => ProgramCompatibilityRequirement::BpfIteratorNetlinkTarget,
+            Self::KmemCache => ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget,
+            Self::Dmabuf => ProgramCompatibilityRequirement::BpfIteratorDmabufTarget,
+        }
+    }
+}
+
 impl IterTarget {
     /// Parse a BPF iterator target name.
     pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
@@ -672,6 +791,15 @@ impl IterTarget {
 
     pub fn target_string(&self) -> String {
         self.name.clone()
+    }
+
+    pub fn known_kind(&self) -> Option<IterTargetKind> {
+        IterTargetKind::from_name(&self.name)
+    }
+
+    fn compatibility_requirement(&self) -> Option<ProgramCompatibilityRequirement> {
+        self.known_kind()
+            .map(IterTargetKind::compatibility_requirement)
     }
 }
 
@@ -2850,7 +2978,7 @@ impl ProgramSpec {
         }
 
         if let ProgramSpec::Iter { target } = self {
-            if let Some(requirement) = iterator_target_compatibility_requirement(&target.name) {
+            if let Some(requirement) = target.compatibility_requirement() {
                 push_compatibility_requirement(&mut requirements, requirement);
             }
         }
@@ -3320,83 +3448,6 @@ impl ProgramSpec {
             _ => ProgramAttachShape::Generic,
         }
     }
-}
-
-const ITERATOR_TARGET_COMPATIBILITY_REQUIREMENTS: &[(&str, ProgramCompatibilityRequirement)] = &[
-    (
-        "task",
-        ProgramCompatibilityRequirement::BpfIteratorTaskTarget,
-    ),
-    (
-        "task_file",
-        ProgramCompatibilityRequirement::BpfIteratorTaskFileTarget,
-    ),
-    (
-        "task_vma",
-        ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
-    ),
-    (
-        "bpf_map",
-        ProgramCompatibilityRequirement::BpfIteratorBpfMapTarget,
-    ),
-    (
-        "cgroup",
-        ProgramCompatibilityRequirement::BpfIteratorCgroupTarget,
-    ),
-    (
-        "bpf_map_elem",
-        ProgramCompatibilityRequirement::BpfIteratorBpfMapElemTarget,
-    ),
-    (
-        "bpf_sk_storage_map",
-        ProgramCompatibilityRequirement::BpfIteratorBpfSkStorageMapTarget,
-    ),
-    (
-        "sockmap",
-        ProgramCompatibilityRequirement::BpfIteratorSockmapTarget,
-    ),
-    (
-        "bpf_prog",
-        ProgramCompatibilityRequirement::BpfIteratorBpfProgTarget,
-    ),
-    (
-        "bpf_link",
-        ProgramCompatibilityRequirement::BpfIteratorBpfLinkTarget,
-    ),
-    ("tcp", ProgramCompatibilityRequirement::BpfIteratorTcpTarget),
-    ("udp", ProgramCompatibilityRequirement::BpfIteratorUdpTarget),
-    (
-        "unix",
-        ProgramCompatibilityRequirement::BpfIteratorUnixTarget,
-    ),
-    (
-        "ipv6_route",
-        ProgramCompatibilityRequirement::BpfIteratorIpv6RouteTarget,
-    ),
-    (
-        "ksym",
-        ProgramCompatibilityRequirement::BpfIteratorKsymTarget,
-    ),
-    (
-        "netlink",
-        ProgramCompatibilityRequirement::BpfIteratorNetlinkTarget,
-    ),
-    (
-        "kmem_cache",
-        ProgramCompatibilityRequirement::BpfIteratorKmemCacheTarget,
-    ),
-    (
-        "dmabuf",
-        ProgramCompatibilityRequirement::BpfIteratorDmabufTarget,
-    ),
-];
-
-fn iterator_target_compatibility_requirement(
-    target: &str,
-) -> Option<ProgramCompatibilityRequirement> {
-    ITERATOR_TARGET_COMPATIBILITY_REQUIREMENTS
-        .iter()
-        .find_map(|(name, requirement)| (*name == target).then_some(*requirement))
 }
 
 fn push_compatibility_requirement(
@@ -4087,7 +4138,9 @@ mod tests {
             )
         );
 
-        for (target, requirement) in ITERATOR_TARGET_COMPATIBILITY_REQUIREMENTS {
+        for kind in IterTargetKind::all().iter().copied() {
+            let target = kind.key();
+            let requirement = kind.compatibility_requirement();
             let spec_text = format!("iter:{target}");
             let spec = ProgramSpec::parse(&spec_text).expect("iter spec should parse");
             let minimum_kernel = requirement
@@ -4096,7 +4149,7 @@ mod tests {
             assert!(
                 spec.requires_compatibility_feature(ProgramCompatibilityRequirement::BpfIterator)
             );
-            assert!(spec.requires_compatibility_feature(*requirement));
+            assert!(spec.requires_compatibility_feature(requirement));
             assert_eq!(
                 ProgramCompatibilityRequirement::effective_minimum_kernel(
                     &spec.compatibility_requirements()
@@ -4116,9 +4169,9 @@ mod tests {
             .filter(|requirement| requirement.category() == "iterator-target")
         {
             assert!(
-                ITERATOR_TARGET_COMPATIBILITY_REQUIREMENTS
+                IterTargetKind::all()
                     .iter()
-                    .any(|(_, mapped)| *mapped == requirement),
+                    .any(|kind| kind.compatibility_requirement() == requirement),
                 "{requirement:?} should be mapped from an iter:TARGET spec"
             );
         }
@@ -4766,6 +4819,17 @@ mod tests {
     fn test_iter_target_requires_non_empty_name() {
         let target = IterTarget::parse("task").expect("BPF iterator target should parse");
         assert_eq!(target.target_string(), "task");
+        assert_eq!(target.known_kind(), Some(IterTargetKind::Task));
+        assert_eq!(
+            target.compatibility_requirement(),
+            Some(ProgramCompatibilityRequirement::BpfIteratorTaskTarget)
+        );
+
+        let unknown =
+            IterTarget::parse("future_target").expect("unknown BPF iterator target should parse");
+        assert_eq!(unknown.target_string(), "future_target");
+        assert_eq!(unknown.known_kind(), None);
+        assert_eq!(unknown.compatibility_requirement(), None);
 
         let err = IterTarget::parse("").expect_err("empty BPF iterator target should be rejected");
         assert_eq!(err.to_string(), "BPF iterator target cannot be empty");

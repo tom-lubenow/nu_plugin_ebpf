@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::compiler::{EbpfProgramType, ctx_field_backing_helper};
+use crate::program_spec::IterTargetKind;
 
 use super::CtxField;
 
@@ -534,16 +535,22 @@ fn target_context_field_kernel_floor(
         return None;
     }
 
-    Some(match (field, target?) {
-        (CtxField::IterTask, "task_vma") => ("5.12", LINUX_TASK_ITER_V5_12_SOURCE),
-        (CtxField::IterMap, "bpf_map_elem") => ("5.9", LINUX_MAP_ITER_V5_9_SOURCE),
-        (CtxField::IterMap, "bpf_sk_storage_map") => ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE),
-        (CtxField::IterMap, "sockmap") => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
-        (CtxField::IterMapKey, "sockmap") => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
-        (CtxField::IterMapValue, "bpf_sk_storage_map") => ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE),
-        (CtxField::IterSock, "sockmap") => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
-        (CtxField::IterUid, "udp") => ("5.9", LINUX_UDP_V5_9_SOURCE),
-        (CtxField::IterUid, "unix") => ("5.15", LINUX_AF_UNIX_V5_15_SOURCE),
+    let target = IterTargetKind::from_name(target?)?;
+
+    Some(match (field, target) {
+        (CtxField::IterTask, IterTargetKind::TaskVma) => ("5.12", LINUX_TASK_ITER_V5_12_SOURCE),
+        (CtxField::IterMap, IterTargetKind::BpfMapElem) => ("5.9", LINUX_MAP_ITER_V5_9_SOURCE),
+        (CtxField::IterMap, IterTargetKind::BpfSkStorageMap) => {
+            ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE)
+        }
+        (CtxField::IterMap, IterTargetKind::Sockmap) => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
+        (CtxField::IterMapKey, IterTargetKind::Sockmap) => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
+        (CtxField::IterMapValue, IterTargetKind::BpfSkStorageMap) => {
+            ("5.9", LINUX_BPF_SK_STORAGE_V5_9_SOURCE)
+        }
+        (CtxField::IterSock, IterTargetKind::Sockmap) => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
+        (CtxField::IterUid, IterTargetKind::Udp) => ("5.9", LINUX_UDP_V5_9_SOURCE),
+        (CtxField::IterUid, IterTargetKind::Unix) => ("5.15", LINUX_AF_UNIX_V5_15_SOURCE),
         _ => return None,
     })
 }
