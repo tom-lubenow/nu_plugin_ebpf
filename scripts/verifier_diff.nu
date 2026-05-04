@@ -6847,6 +6847,273 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_res_spin_lock' arg0 expects pointer"
     }
     {
+        name: "source-kfunc-rcu-read-lock-unlock"
+        category: "helper-state"
+        tags: [kfunc rcu source accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_rcu_read_lock"'
+            '  kfunc-call "bpf_rcu_read_unlock"'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rcu-read-unlock-rejects-unmatched"
+        category: "helper-state"
+        tags: [kfunc rcu source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_rcu_read_unlock"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_rcu_read_lock"
+    }
+    {
+        name: "source-kfunc-rcu-read-lock-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc rcu source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_rcu_read_lock"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased RCU read lock"
+    }
+    {
+        name: "source-kfunc-preempt-disable-enable"
+        category: "helper-state"
+        tags: [kfunc preempt source accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_preempt_disable"'
+            '  kfunc-call "bpf_preempt_enable"'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-preempt-enable-rejects-unmatched"
+        category: "helper-state"
+        tags: [kfunc preempt source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_preempt_enable"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_preempt_disable"
+    }
+    {
+        name: "source-kfunc-preempt-disable-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc preempt source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_preempt_disable"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased preempt disable"
+    }
+    {
+        name: "source-kfunc-local-irq-save-restore"
+        category: "helper-state"
+        tags: [kfunc irq source accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_local_irq_save" $flags'
+            '  kfunc-call "bpf_local_irq_restore" $flags'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-local-irq-restore-rejects-unmatched"
+        category: "helper-state"
+        tags: [kfunc irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_local_irq_restore" $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_local_irq_save"
+    }
+    {
+        name: "source-kfunc-local-irq-save-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_local_irq_save" $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased local irq disable"
+    }
+    {
+        name: "source-kfunc-local-irq-restore-rejects-slot-mismatch"
+        category: "helper-state"
+        tags: [kfunc irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let saved_flags = "00000000"'
+            '  let other_flags = "11111111"'
+            '  kfunc-call "bpf_local_irq_save" $saved_flags'
+            '  kfunc-call "bpf_local_irq_restore" $other_flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_local_irq_save"
+    }
+    {
+        name: "source-kfunc-res-spin-lock-unlock"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-res-spin-unlock-rejects-unmatched"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_res_spin_lock"
+    }
+    {
+        name: "source-kfunc-res-spin-lock-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased res spin lock"
+    }
+    {
+        name: "source-kfunc-res-spin-irqsave-unlock-irqrestore"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
+            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-res-spin-irqrestore-rejects-unmatched"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_res_spin_lock_irqsave"
+    }
+    {
+        name: "source-kfunc-res-spin-irqsave-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased res spin lock irqsave"
+    }
+    {
+        name: "source-kfunc-res-spin-irqrestore-rejects-slot-mismatch"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let saved_flags = "00000000"'
+            '  let other_flags = "11111111"'
+            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $saved_flags'
+            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $other_flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_res_spin_lock_irqsave"
+    }
+    {
         name: "source-kfunc-sched-ext-node-min-kernel"
         category: "kfunc"
         tags: [kfunc sched-ext source metadata]
