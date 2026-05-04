@@ -2053,18 +2053,19 @@ fn test_spec_context_fields_include_sk_reuseport_minimum_kernel_metadata() {
         );
     }
 
-    let migrate =
-        ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport migrate spec should parse");
-    let migrate_fields = spec_context_fields(&migrate, false);
+    for spec_text in ["sk_reuseport:select", "sk_reuseport:migrate"] {
+        let spec = ProgramSpec::parse(spec_text).expect("sk_reuseport spec should parse");
+        let fields = spec_context_fields(&spec, false);
 
-    for field_name in ["sk", "migrating_sk"] {
-        let field = field(&migrate_fields, field_name);
-        assert_eq!(field.minimum_kernel, Some("5.14"));
-        assert!(
-            field
-                .minimum_kernel_source
-                .is_some_and(|source| source.contains("/v5.14/include/uapi/linux/bpf.h"))
-        );
+        for field_name in ["sk", "migrating_sk"] {
+            let field = field(&fields, field_name);
+            assert_eq!(field.minimum_kernel, Some("5.14"));
+            assert!(
+                field
+                    .minimum_kernel_source
+                    .is_some_and(|source| source.contains("/v5.14/include/uapi/linux/bpf.h"))
+            );
+        }
     }
 }
 
