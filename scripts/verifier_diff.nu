@@ -5981,6 +5981,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-skb-rich-egress-context"
+        category: "context-surface"
+        tags: [cgroup-skb context egress source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.ingress_ifindex + $ctx.ifindex + $ctx.tc_index + $ctx.hash + $ctx.tstamp + $ctx.hwtstamp) | count'
+            '  (($ctx.remote_ip6 | get 0) + ($ctx.local_ip6 | get 1) + $ctx.family + $ctx.socket_cookie + $ctx.socket_uid + $ctx.netns_cookie) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-skb-egress-timestamp-context-write"
         category: "context-surface"
         tags: [cgroup-skb context writable timestamp egress]
