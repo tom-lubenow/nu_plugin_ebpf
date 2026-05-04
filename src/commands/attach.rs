@@ -816,8 +816,17 @@ Context parameter syntax (recommended):
 
   lwt_* fields:
     {|ctx| $ctx.packet_len } - Get packet length from __sk_buff.len
+    {|ctx| $ctx.len } - Alias for ctx.packet_len
     {|ctx| $ctx.eth_protocol } - Get skb protocol / ethertype in host byte order
     {|ctx| $ctx.protocol } - Alias for ctx.eth_protocol
+    {|ctx| $ctx.pkt_type } - Get skb packet type
+    {|ctx| $ctx.queue_mapping } - Get skb queue mapping
+    {|ctx| $ctx.vlan_present } - Get skb VLAN presence metadata
+    {|ctx| $ctx.vlan_tci } - Get skb VLAN TCI
+    {|ctx| $ctx.vlan_proto } - Get skb VLAN protocol in host byte order
+    {|ctx| $ctx.napi_id } - Get skb NAPI ID
+    {|ctx| $ctx.gso_segs } - Get skb GSO segment count
+    {|ctx| $ctx.gso_size } - Get skb GSO segment size
     {|ctx| $ctx.ingress_ifindex } - Get arriving ingress interface index
     {|ctx| $ctx.ifindex } - Get skb interface index
     {|ctx| $ctx.hash } - Get skb hash
