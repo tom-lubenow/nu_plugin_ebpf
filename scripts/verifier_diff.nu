@@ -3303,6 +3303,16 @@ const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [
 
 const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|event|'
+            '  $event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "sock_ops:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -3335,6 +3345,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.arg0 + $ctx.arg1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "raw-tracepoint-context-param-alias"
+        category: "context-surface"
+        tags: [raw-tracepoint context source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|event|'
+            '  $event.pid | count'
             '  0'
             '}'
         ]
@@ -10539,7 +10563,50 @@ def context-task-pt-regs-kernel-feature [raw_access: string] {
     $KERNEL_FEATURE_BPF_TASK_PT_REGS
 }
 
-def context-root-binding [line: string] {
+def append-unique-name [names name: string] {
+    if $name == "" or $name in $names {
+        $names
+    } else {
+        $names | append $name
+    }
+}
+
+def program-context-variable-names [source: string] {
+    mut names = ["ctx"]
+
+    for line in ($source | lines) {
+        let parts = ($line | split row "{|")
+        if ($parts | length) <= 1 {
+            continue
+        }
+
+        let raw_closure = ($parts | skip 1 | first)
+        let closure_parts = ($raw_closure | split row "|")
+        if ($closure_parts | length) == 0 {
+            continue
+        }
+
+        let raw_params = ($closure_parts | first)
+        for raw_param in ($raw_params | split row ",") {
+            let name = (
+                $raw_param
+                | str trim
+                | split row ":"
+                | first
+                | str trim
+                | split row " "
+                | first
+                | str trim
+            )
+            $names = (append-unique-name $names $name)
+        }
+        return $names
+    }
+
+    $names
+}
+
+def context-root-binding [line: string context_names] {
     let trimmed = ($line | str trim)
     let prefix = if ($trimmed | str starts-with "let ") {
         "let "
@@ -10550,42 +10617,44 @@ def context-root-binding [line: string] {
     }
 
     let body = ($trimmed | str substring ($prefix | str length)..)
-    let assignment_parts = if ($body | str contains " = $ctx.") {
-        $body | split row " = $ctx."
-    } else if ($body | str contains "=$ctx.") {
-        $body | split row "=$ctx."
-    } else {
-        return null
-    }
-    if ($assignment_parts | length) < 2 {
-        return null
-    }
+    for context_name in $context_names {
+        let assignment_parts = if ($body | str contains $" = $($context_name).") {
+            $body | split row $" = $($context_name)."
+        } else if ($body | str contains $"=$($context_name).") {
+            $body | split row $"=$($context_name)."
+        } else {
+            continue
+        }
+        if ($assignment_parts | length) < 2 {
+            continue
+        }
 
-    let name = (
-        $assignment_parts
-        | first
-        | str trim
-        | split row ":"
-        | first
-        | str trim
-    )
-    if $name == "" {
-        return null
-    }
+        let name = (
+            $assignment_parts
+            | first
+            | str trim
+            | split row ":"
+            | first
+            | str trim
+        )
+        if $name == "" {
+            continue
+        }
 
-    let root = (normalize-context-field-token ($assignment_parts | get 1))
-    if $root in ["sk" "migrating_sk" "migrating_socket" "task" "current_task"] {
-        return { name: $name root: $root }
+        let root = (normalize-context-field-token ($assignment_parts | get 1))
+        if $root in ["sk" "migrating_sk" "migrating_socket" "task" "current_task"] {
+            return { name: $name root: $root }
+        }
     }
 
     null
 }
 
-def program-bound-context-root-aliases [source: string] {
+def program-bound-context-root-aliases [source: string context_names] {
     mut aliases = []
 
     for line in ($source | lines) {
-        let binding = (context-root-binding $line)
+        let binding = (context-root-binding $line $context_names)
         if $binding == null {
             continue
         }
@@ -10606,9 +10675,9 @@ def program-bound-context-root-aliases [source: string] {
     $aliases
 }
 
-def bound-context-projection-kernel-features [source: string target] {
+def bound-context-projection-kernel-features [source: string target context_names] {
     mut features = []
-    let aliases = (program-bound-context-root-aliases $source)
+    let aliases = (program-bound-context-root-aliases $source $context_names)
     if ($aliases | is-empty) {
         return $features
     }
@@ -10829,41 +10898,44 @@ def program-kfunc-kernel-features [source: string target] {
 
 def program-context-field-kernel-features [source: string target] {
     mut features = []
+    let context_names = (program-context-variable-names $source)
 
     for line in ($source | lines) {
-        let parts = ($line | split row '$ctx.')
-        if ($parts | length) <= 1 {
-            continue
-        }
-
-        for raw_access in ($parts | skip 1) {
-            let field = (normalize-context-field-token $raw_access)
-            if $field == "" {
+        for context_name in $context_names {
+            let parts = ($line | split row $"$($context_name).")
+            if ($parts | length) <= 1 {
                 continue
             }
 
-            let feature = (context-field-kernel-feature $field $target)
-            if $feature != null {
-                $features = (append-missing-kernel-features $features [$feature])
-            }
-            if not (context-field-access-is-assignment-lhs? $raw_access $field) {
-                let helper_feature = (context-field-helper-kernel-feature $field $target)
-                if $helper_feature != null {
-                    $features = (append-missing-kernel-features $features [$helper_feature])
+            for raw_access in ($parts | skip 1) {
+                let field = (normalize-context-field-token $raw_access)
+                if $field == "" {
+                    continue
                 }
-            }
-            let projection_feature = (context-projection-kernel-feature $raw_access $target)
-            if $projection_feature != null {
-                $features = (append-missing-kernel-features $features [$projection_feature])
-            }
-            let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
-            if $task_pt_regs_feature != null {
-                $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
+
+                let feature = (context-field-kernel-feature $field $target)
+                if $feature != null {
+                    $features = (append-missing-kernel-features $features [$feature])
+                }
+                if not (context-field-access-is-assignment-lhs? $raw_access $field) {
+                    let helper_feature = (context-field-helper-kernel-feature $field $target)
+                    if $helper_feature != null {
+                        $features = (append-missing-kernel-features $features [$helper_feature])
+                    }
+                }
+                let projection_feature = (context-projection-kernel-feature $raw_access $target)
+                if $projection_feature != null {
+                    $features = (append-missing-kernel-features $features [$projection_feature])
+                }
+                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
+                if $task_pt_regs_feature != null {
+                    $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
+                }
             }
         }
     }
 
-    $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target))
+    $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target $context_names))
 
     $features
 }
