@@ -34,7 +34,13 @@ impl<'a> VccLowerer<'a> {
         ty: &MirType,
     ) -> VccValueType {
         let Some(slot) = func.param_stack_slots.get(&(vreg.0 as usize)).copied() else {
-            return vcc_type_from_mir(ty);
+            let mut seeded = vcc_type_from_mir(ty);
+            if func.param_non_null.contains(&(vreg.0 as usize))
+                && let VccValueType::Ptr(info) = &mut seeded
+            {
+                info.nullability = VccNullability::NonNull;
+            }
+            return seeded;
         };
         let VccValueType::Ptr(mut info) = vcc_type_from_mir(ty) else {
             return vcc_type_from_mir(ty);

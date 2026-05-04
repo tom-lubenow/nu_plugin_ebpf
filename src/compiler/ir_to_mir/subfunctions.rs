@@ -181,6 +181,9 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(ty) = seed.type_hint.clone() {
             self.vreg_type_hints.insert(vreg, ty);
         }
+        if seed.non_null {
+            self.func.param_non_null.insert(param_idx);
+        }
 
         if let Some(stack_object) = &seed.synthetic_stack_slot {
             let slot = self.func.alloc_stack_slot(

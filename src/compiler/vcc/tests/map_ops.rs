@@ -80,6 +80,35 @@ fn test_verify_mir_helper_map_lookup_null_check_then_load_ok() {
 }
 
 #[test]
+fn test_verify_mir_non_null_map_pointer_param_allows_load() {
+    let (mut func, entry) = new_mir_function();
+    let ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.param_count = 1;
+    func.param_non_null.insert(0);
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected non-null ABI param load to pass");
+}
+
+#[test]
 fn test_verify_mir_zero_scalar_copy_into_typed_pointer_preserves_nullability_across_join() {
     let (mut func, entry) = new_mir_function();
     let true_block = func.alloc_block();

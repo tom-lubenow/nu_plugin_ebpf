@@ -441,6 +441,7 @@ impl<'a> HirToMirLowering<'a> {
             type_hint,
             metadata,
             synthetic_stack_slot: None,
+            non_null: false,
         }
     }
 

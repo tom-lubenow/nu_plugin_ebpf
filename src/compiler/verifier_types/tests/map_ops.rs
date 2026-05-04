@@ -126,6 +126,37 @@ fn test_typed_map_pointer_param_requires_null_check_before_load() {
 }
 
 #[test]
+fn test_typed_map_pointer_non_null_param_allows_load() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_ptr = func.alloc_vreg();
+    func.param_count = 1;
+    func.param_non_null.insert(0);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst,
+        ptr: map_ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected non-null ABI param load to pass");
+}
+
+#[test]
 fn test_map_lookup_rejects_unsupported_map_kind() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -247,6 +247,7 @@ struct SubfunctionArgSeed {
     type_hint: Option<MirType>,
     metadata: Option<RegMetadata>,
     synthetic_stack_slot: Option<SyntheticStackSlotSeed>,
+    non_null: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

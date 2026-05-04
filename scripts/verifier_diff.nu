@@ -8038,7 +8038,7 @@ const FIXTURES = [
             '  let entry = (0 | map-get timers --kind array)'
             '  if $entry {'
             '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val|'
-            '      if $val { $val.cookie | count }'
+            '      $val.cookie | count'
             '      0'
             '    }'
             '  }'

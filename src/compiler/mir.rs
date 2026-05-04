@@ -2342,6 +2342,8 @@ pub struct MirFunction {
     pub param_count: usize,
     /// Synthetic stack slots that model stack-object parameters for verifier/VCC analysis.
     pub param_stack_slots: HashMap<usize, StackSlotId>,
+    /// ABI-backed pointer parameters that are known non-null at function entry.
+    pub param_non_null: HashSet<usize>,
     /// Synthetic dynptr parameter slots that enter initialized.
     pub entry_initialized_dynptr_slots: HashSet<StackSlotId>,
     /// Mutable-global symbols that semantically alias incoming parameters.

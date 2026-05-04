@@ -139,6 +139,7 @@ impl<'a> HirToMirLowering<'a> {
                         type_hint: Some(MirType::I64),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: false,
                     },
                     callback_ctx_seed,
                 ])
@@ -174,6 +175,7 @@ impl<'a> HirToMirLowering<'a> {
                         }),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: false,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -182,6 +184,7 @@ impl<'a> HirToMirLowering<'a> {
                         }),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: true,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -190,6 +193,7 @@ impl<'a> HirToMirLowering<'a> {
                         }),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: true,
                     },
                     stack_callback_ctx_seed(),
                 ])
@@ -199,11 +203,13 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: Some(MirType::named_kernel_struct_ptr("task_struct")),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: false,
                 },
                 SubfunctionArgSeed {
                     type_hint: Some(MirType::named_kernel_struct_ptr("vm_area_struct")),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: false,
                 },
                 stack_callback_ctx_seed(),
             ]),
@@ -220,6 +226,7 @@ impl<'a> HirToMirLowering<'a> {
                         align: 8,
                         initialize_dynptr: true,
                     }),
+                    non_null: true,
                 },
                 stack_callback_ctx_seed(),
             ]),
@@ -239,6 +246,7 @@ impl<'a> HirToMirLowering<'a> {
                         }),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: false,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -247,6 +255,7 @@ impl<'a> HirToMirLowering<'a> {
                         }),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: true,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -255,6 +264,7 @@ impl<'a> HirToMirLowering<'a> {
                         }),
                         metadata: None,
                         synthetic_stack_slot: None,
+                        non_null: true,
                     },
                 ])
             }
@@ -358,6 +368,7 @@ impl<'a> HirToMirLowering<'a> {
                     }),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: false,
                 },
                 SubfunctionArgSeed {
                     type_hint: Some(MirType::Ptr {
@@ -366,6 +377,7 @@ impl<'a> HirToMirLowering<'a> {
                     }),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: false,
                 },
             ]),
             _ => Err(CompileError::UnsupportedInstruction(format!(

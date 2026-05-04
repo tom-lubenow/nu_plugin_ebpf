@@ -1157,6 +1157,7 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: Some(ptr_ty),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: true,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::Record {
@@ -1186,6 +1187,7 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: Some(ptr_ty),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: true,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::List {
@@ -1221,6 +1223,7 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: Some(ptr_ty),
                     metadata: None,
                     synthetic_stack_slot: None,
+                    non_null: true,
                 });
                 args.push(ptr_vreg);
                 AggregateReturnCallSetup::String {
