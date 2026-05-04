@@ -12017,6 +12017,37 @@ fn test_context_path_program_reports_backing_helper_compatibility() {
 }
 
 #[test]
+fn test_socket_projection_context_path_reports_context_field_compatibility() {
+    let program = compile_ctx_path_count_program(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        CellPath {
+            members: vec![string_member("sk"), string_member("family")],
+        },
+        "tc ctx.sk.family context field compatibility",
+    );
+
+    let requirements = program.context_field_compatibility_requirements();
+    for (field, minimum_kernel) in [(CtxField::Socket, "5.1"), (CtxField::Family, "4.14")] {
+        let requirement = requirements
+            .iter()
+            .find(|requirement| requirement.field() == &field)
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected ctx.sk.family to report {} compatibility",
+                    field.display_name()
+                )
+            });
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains(&format!("/v{minimum_kernel}/"))
+        );
+    }
+}
+
+#[test]
 fn test_current_cgroup_context_path_reports_context_field_compatibility() {
     for field_name in ["cgroup", "current_cgroup"] {
         let program = compile_ctx_path_discard_program(
