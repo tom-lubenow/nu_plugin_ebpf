@@ -3313,6 +3313,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["ctx:rx_queue_mapping" "ctx:sk"]
     }
+    {
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  let task = $ctx.task'
+            '  $task.pt_regs.arg0 | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_task_pt_regs"]
+    }
 ]
 
 const FIXTURES = [
@@ -4734,6 +4745,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.task.pt_regs.arg0 | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "task-pt-regs-bound-context"
+        category: "context-surface"
+        tags: [context task pt-regs helper-backed source metadata accept]
+        requires: [kernel-btf]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  let task = $ctx.task'
+            '  $task.pt_regs.arg0 | count'
             '  0'
             '}'
         ]
