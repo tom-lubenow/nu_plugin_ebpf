@@ -13,6 +13,8 @@ use aya_obj::{
 use object::{Endianness, Object as _, ObjectSection as _};
 use std::collections::{HashMap, HashSet};
 
+mod verifier_diff_program_compat;
+
 #[test]
 fn test_hello_world_creation() {
     let prog = EbpfProgram::hello_world("sys_clone");
