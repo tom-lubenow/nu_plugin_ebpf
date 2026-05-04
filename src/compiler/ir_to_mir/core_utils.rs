@@ -219,6 +219,15 @@ impl<'a> HirToMirLowering<'a> {
         src: RegId,
         src_vreg: VReg,
     ) -> Result<(), CompileError> {
+        if let Some(mut src_meta) = self.get_metadata(src).cloned()
+            && src_meta.is_context
+        {
+            src_meta.source_var.get_or_insert(var_id);
+            self.var_mappings.remove(&var_id);
+            self.var_metadata.insert(var_id, src_meta);
+            return Ok(());
+        }
+
         if let Some(src_meta) = self.get_metadata(src).cloned()
             && let Some((materialized_vreg, materialized_meta)) =
                 self.materialize_metadata_record_value(&src_meta)?
