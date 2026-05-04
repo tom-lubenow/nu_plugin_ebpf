@@ -7684,6 +7684,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-bpf-map-btf-field"
+        category: "context-surface"
+        tags: [iter context map btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:bpf_map"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map { $ctx.map.id | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-bpf-map-elem-context"
         category: "context-surface"
         tags: [iter context map]
@@ -7746,6 +7761,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-bpf-prog-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:bpf_prog"
+        program: [
+            '{|ctx|'
+            '  if $ctx.prog { $ctx.prog.len | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-bpf-link-context"
         category: "context-surface"
         tags: [iter context]
@@ -7753,6 +7783,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  if $ctx.link { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-bpf-link-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:bpf_link"
+        program: [
+            '{|ctx|'
+            '  if $ctx.link { $ctx.link.id | count }'
             '  0'
             '}'
         ]
