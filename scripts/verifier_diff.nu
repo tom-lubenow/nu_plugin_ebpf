@@ -3494,7 +3494,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
-const PROGRAM_SURFACE_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
+const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "sk_lookup:/proc/self/ns/net"
+        program: [
+            '{|event|'
+            '  assign-socket 0 --replace'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_sk_assign"]
+    }
     {
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
@@ -11276,7 +11286,7 @@ def program-context-field-kernel-features [source: string target] {
     $features
 }
 
-def program-surface-helper-kernel-features [source: string target] {
+def program-surface-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
     let context_names = (program-context-variable-names $source)
@@ -11402,6 +11412,10 @@ def program-surface-helper-kernel-features [source: string target] {
         }
         if ($line | str contains "assign-socket ") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
+            let socket_context_feature = (context-field-kernel-feature "sk" $target)
+            if $socket_context_feature != null {
+                $features = (append-missing-kernel-features $features [$socket_context_feature])
+            }
         }
         if ($target_text | str starts-with "cgroup_sysctl:") and $assigns_sysctl_new_value {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE])
@@ -11702,7 +11716,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
-    $features = (append-missing-kernel-features $features (program-surface-helper-kernel-features $program ($fixture | get -o target)))
+    $features = (append-missing-kernel-features $features (program-surface-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-struct-ops-kernel-features $program ($fixture | get -o target)))
 
     let legacy_min_kernel = ($fixture | get -o min_kernel)
@@ -12286,20 +12300,20 @@ def validate-program-context-field-kernel-feature-expectations [] {
     }
 }
 
-def validate-program-surface-helper-kernel-feature-expectations [] {
-    for expectation in $PROGRAM_SURFACE_HELPER_KERNEL_FEATURE_EXPECTATIONS {
+def validate-program-surface-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
         let program = ($expectation.program | str join "\n")
         let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
-            program-surface-helper-kernel-features $program $target
+            program-surface-kernel-features $program $target
             | each {|feature| $feature.key }
             | sort
         )
         let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
         if ($missing | length) > 0 {
-            fail $"program-surface-helper-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+            fail $"program-surface-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
         }
     }
 }
@@ -12329,7 +12343,7 @@ def validate-fixture-metadata [fixtures] {
     validate-context-field-helper-kernel-feature-expectations
     validate-context-projection-kernel-feature-expectations
     validate-program-context-field-kernel-feature-expectations
-    validate-program-surface-helper-kernel-feature-expectations
+    validate-program-surface-kernel-feature-expectations
     validate-program-kfunc-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
