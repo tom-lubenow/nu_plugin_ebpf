@@ -883,9 +883,9 @@ const PROGRAM_SPECIFIC_HELPER_POLICIES: &[ProgramSpecificHelperPolicy] =
         label: "syscall",
         modeled_helpers: SYSCALL_MODELED_HELPERS,
     }];
-const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port"];
-const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4"];
-const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6"];
+const CGROUP_SOCK_POST_BIND_ONLY_MEMBERS: &[&str] = &["src_port", "local_port"];
+const CGROUP_SOCK_POST_BIND4_ONLY_MEMBERS: &[&str] = &["src_ip4", "local_ip4"];
+const CGROUP_SOCK_POST_BIND6_ONLY_MEMBERS: &[&str] = &["src_ip6", "local_ip6"];
 const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
     HelperZeroArgRequirementSpec {
         helper: BpfHelper::Redirect,

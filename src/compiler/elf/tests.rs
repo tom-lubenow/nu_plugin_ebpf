@@ -3965,21 +3965,44 @@ fn test_probe_context_socket_projection_error_uses_typed_attach_kind() {
     );
     assert!(
         post_bind4
+            .socket_projection_access_error("local_port")
+            .is_none()
+    );
+    assert!(
+        post_bind4
             .socket_projection_access_error("src_ip4")
+            .is_none()
+    );
+    assert!(
+        post_bind4
+            .socket_projection_access_error("local_ip4")
             .is_none()
     );
     assert_eq!(
         post_bind4.socket_projection_access_error("src_ip6"),
         Some("ctx.sk.src_ip6 is only available on cgroup_sock post_bind6 hooks".to_string())
     );
+    assert_eq!(
+        post_bind4.socket_projection_access_error("local_ip6"),
+        Some("ctx.sk.local_ip6 is only available on cgroup_sock post_bind6 hooks".to_string())
+    );
     assert!(
         post_bind6
             .socket_projection_access_error("src_ip6")
             .is_none()
     );
+    assert!(
+        post_bind6
+            .socket_projection_access_error("local_ip6")
+            .is_none()
+    );
     assert_eq!(
         post_bind6.socket_projection_access_error("src_ip4"),
         Some("ctx.sk.src_ip4 is only available on cgroup_sock post_bind4 hooks".to_string())
+    );
+    assert_eq!(
+        post_bind6.socket_projection_access_error("local_ip4"),
+        Some("ctx.sk.local_ip4 is only available on cgroup_sock post_bind4 hooks".to_string())
     );
     assert_eq!(
         sock_create.socket_projection_access_error("src_port"),
@@ -3988,7 +4011,18 @@ fn test_probe_context_socket_projection_error_uses_typed_attach_kind() {
                 .to_string()
         )
     );
+    assert_eq!(
+        sock_create.socket_projection_access_error("local_port"),
+        Some(
+            "ctx.sk.local_port is only available on cgroup_sock post_bind4/post_bind6 hooks"
+                .to_string()
+        )
+    );
     assert_eq!(sock_create.socket_projection_access_error("dst_port"), None);
+    assert_eq!(
+        sock_create.socket_projection_access_error("remote_port"),
+        None
+    );
 }
 
 #[test]

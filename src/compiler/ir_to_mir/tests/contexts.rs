@@ -1575,6 +1575,38 @@ fn test_lower_cgroup_sock_post_bind_ctx_socket_src_port_field() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_post_bind_ctx_socket_local_alias_fields() {
+    for (member, expected_field) in [
+        ("local_port", CtxField::LocalPort),
+        ("local_ip4", CtxField::LocalIp4),
+        ("remote_port", CtxField::RemotePort),
+        ("remote_ip4", CtxField::RemoteIp4),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member("sk"), string_member(member)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("cgroup_sock post_bind4 ctx.sk.{member} should lower: {err}"));
+
+        assert!(
+            result.type_hints.used_ctx_fields.contains(&expected_field),
+            "ctx.sk.{member} should imply {expected_field:?} compatibility metadata"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("cgroup_sock ctx.sk.{member} should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_ctx_socket_projection_records_implied_context_compatibility_fields() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("mark")],
@@ -1847,6 +1879,33 @@ fn test_lower_cgroup_sock_post_bind4_ctx_socket_src_ip6_rejected() {
     assert!(
         err.to_string()
             .contains("ctx.sk.src_ip6 is only available on cgroup_sock post_bind6 hooks")
+    );
+}
+
+#[test]
+fn test_lower_cgroup_sock_post_bind4_ctx_socket_local_ip6_alias_rejected() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("sk"),
+            string_member("local_ip6"),
+            int_member(0),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:post_bind4");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("cgroup_sock post_bind4 ctx.sk.local_ip6 should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.sk.local_ip6 is only available on cgroup_sock post_bind6 hooks")
     );
 }
 
@@ -3169,6 +3228,37 @@ fn test_lower_sk_lookup_ctx_socket_src_ip6_index_field() {
                 }
             )))
     );
+}
+
+#[test]
+fn test_lower_sk_lookup_ctx_socket_local_ip6_alias_index_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("sk"),
+            string_member("local_ip6"),
+            int_member(0),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_lookup ctx.sk.local_ip6[0] should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::LocalIp6)
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("sk_lookup ctx.sk.local_ip6[0] should compile");
 }
 
 #[test]

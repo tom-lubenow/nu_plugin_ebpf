@@ -3299,6 +3299,8 @@ const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "tc:lo:ingress" raw_access: "sk.full" helper: "bpf_sk_fullsock" feature: $KERNEL_FEATURE_BPF_SK_FULLSOCK }
     { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.tcp" helper: "bpf_tcp_sock" feature: $KERNEL_FEATURE_BPF_TCP_SOCK }
     { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.listener" helper: "bpf_get_listener_sock" feature: $KERNEL_FEATURE_BPF_GET_LISTENER_SOCK }
+    { target: "cgroup_sock:/sys/fs/cgroup:post_bind4" raw_access: "sk.local_ip4" helper: "" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_LOCAL_IP4 }
+    { target: "cgroup_sock:/sys/fs/cgroup:sock_create" raw_access: "sk.remote_port" helper: "" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_REMOTE_PORT }
 ]
 
 const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
@@ -10509,22 +10511,22 @@ def bpf-sock-projection-context-field [member: string] {
     if $member == "priority" {
         return "priority"
     }
-    if $member == "src_ip4" {
+    if $member == "src_ip4" or $member == "local_ip4" {
         return "local_ip4"
     }
-    if $member == "src_ip6" {
+    if $member == "src_ip6" or $member == "local_ip6" {
         return "local_ip6"
     }
-    if $member == "src_port" {
+    if $member == "src_port" or $member == "local_port" {
         return "local_port"
     }
-    if $member == "dst_ip4" {
+    if $member == "dst_ip4" or $member == "remote_ip4" {
         return "remote_ip4"
     }
-    if $member == "dst_ip6" {
+    if $member == "dst_ip6" or $member == "remote_ip6" {
         return "remote_ip6"
     }
-    if $member == "dst_port" {
+    if $member == "dst_port" or $member == "remote_port" {
         return "remote_port"
     }
     if $member == "state" {

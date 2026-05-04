@@ -267,12 +267,32 @@ impl BaseContextFieldSchemaSpec {
     }
 }
 
-pub(crate) fn ctx_field_for_bpf_sock_projection_member(member: &str) -> Option<CtxField> {
+pub(crate) fn canonical_bpf_sock_projection_member(member: &str) -> Option<&'static str> {
     Some(match member {
+        "bound_dev_if" => "bound_dev_if",
+        "family" => "family",
+        "type" | "sock_type" => "type",
+        "protocol" | "ip_protocol" => "protocol",
+        "mark" => "mark",
+        "priority" => "priority",
+        "src_ip4" | "local_ip4" => "src_ip4",
+        "src_ip6" | "local_ip6" => "src_ip6",
+        "src_port" | "local_port" => "src_port",
+        "dst_port" | "remote_port" => "dst_port",
+        "dst_ip4" | "remote_ip4" => "dst_ip4",
+        "dst_ip6" | "remote_ip6" => "dst_ip6",
+        "state" => "state",
+        "rx_queue_mapping" => "rx_queue_mapping",
+        _ => return None,
+    })
+}
+
+pub(crate) fn ctx_field_for_bpf_sock_projection_member(member: &str) -> Option<CtxField> {
+    Some(match canonical_bpf_sock_projection_member(member)? {
         "bound_dev_if" => CtxField::BoundDevIf,
         "family" => CtxField::Family,
-        "type" | "sock_type" => CtxField::SockType,
-        "protocol" | "ip_protocol" => CtxField::Protocol,
+        "type" => CtxField::SockType,
+        "protocol" => CtxField::Protocol,
         "mark" => CtxField::SockMark,
         "priority" => CtxField::SockPriority,
         "src_ip4" => CtxField::LocalIp4,
@@ -283,7 +303,7 @@ pub(crate) fn ctx_field_for_bpf_sock_projection_member(member: &str) -> Option<C
         "dst_ip6" => CtxField::RemoteIp6,
         "state" => CtxField::SockState,
         "rx_queue_mapping" => CtxField::SockRxQueueMapping,
-        _ => return None,
+        _ => unreachable!("canonical bpf_sock projection members should all map to ctx fields"),
     })
 }
 

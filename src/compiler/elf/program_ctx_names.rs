@@ -528,7 +528,9 @@ impl ProgramSpec {
 mod tests {
     use super::*;
     use crate::compiler::mir::ContextFieldCompatibilityRequirement;
-    use crate::compiler::{BpfHelper, ctx_field_backing_helper};
+    use crate::compiler::{
+        BpfHelper, ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
+    };
     use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
 
@@ -876,29 +878,61 @@ mod tests {
             let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
                 panic!("expected verifier_diff.nu projection feature for {target} ctx.{raw_access}")
             });
-            let helper = BpfHelper::from_name(helper_name).unwrap_or_else(|| {
-                panic!("projection helper {helper_name} should be modeled in Rust")
-            });
-            let requirement = helper.compatibility_requirement().unwrap_or_else(|| {
-                panic!("projection helper {helper_name} should have compatibility metadata")
-            });
+            let (actual_key, actual_min_kernel, actual_source) = if helper_name.is_empty() {
+                let spec = ProgramSpec::parse(target)
+                    .unwrap_or_else(|err| panic!("{target} should parse in Rust: {err}"));
+                let program_type = spec.program_type();
+                let target_string = spec.target_string();
+                let member = raw_access
+                    .strip_prefix("sk.")
+                    .and_then(|suffix| suffix.split('.').next())
+                    .unwrap_or_else(|| panic!("{target} ctx.{raw_access} should start with sk."));
+                let field = ctx_field_for_bpf_sock_projection_member(member).unwrap_or_else(|| {
+                    panic!("{target} ctx.{raw_access} should map to a bpf_sock ctx field")
+                });
+                let requirement =
+                    ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                        &field,
+                        Some(program_type),
+                        Some(&target_string),
+                    )
+                    .unwrap_or_else(|| {
+                        panic!("{target} ctx.{raw_access} should have compatibility metadata")
+                    });
+
+                (
+                    requirement.key(),
+                    requirement.minimum_kernel(),
+                    requirement.minimum_kernel_source(),
+                )
+            } else {
+                let helper = BpfHelper::from_name(helper_name).unwrap_or_else(|| {
+                    panic!("projection helper {helper_name} should be modeled in Rust")
+                });
+                let requirement = helper.compatibility_requirement().unwrap_or_else(|| {
+                    panic!("projection helper {helper_name} should have compatibility metadata")
+                });
+
+                (
+                    requirement.key(),
+                    requirement.minimum_kernel(),
+                    requirement.minimum_kernel_source(),
+                )
+            };
             let (key, min_kernel, source, max_kernel) =
                 verifier_diff_feature_record(verifier_diff, feature_const);
 
             assert_eq!(
-                key,
-                requirement.key(),
-                "verifier_diff.nu projection helper key drifted for {target} ctx.{raw_access}"
+                key, actual_key,
+                "verifier_diff.nu projection key drifted for {target} ctx.{raw_access}"
             );
             assert_eq!(
-                min_kernel,
-                requirement.minimum_kernel(),
-                "verifier_diff.nu projection helper min_kernel drifted for {target} ctx.{raw_access}"
+                min_kernel, actual_min_kernel,
+                "verifier_diff.nu projection min_kernel drifted for {target} ctx.{raw_access}"
             );
             assert_eq!(
-                source,
-                requirement.minimum_kernel_source(),
-                "verifier_diff.nu projection helper source drifted for {target} ctx.{raw_access}"
+                source, actual_source,
+                "verifier_diff.nu projection source drifted for {target} ctx.{raw_access}"
             );
             assert_eq!(
                 max_kernel, None,

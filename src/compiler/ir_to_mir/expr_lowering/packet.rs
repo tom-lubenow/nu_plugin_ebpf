@@ -769,15 +769,23 @@ impl<'a> HirToMirLowering<'a> {
         match (current_ty, member) {
             (
                 MirType::Struct {
+                    name,
                     fields,
                     kernel_btf_type_id,
                     ..
                 },
                 PathMember::String { val, .. },
             ) => {
+                let field_name =
+                    if name.as_deref() == Some("bpf_sock") && kernel_btf_type_id.is_none() {
+                        crate::compiler::canonical_bpf_sock_projection_member(val)
+                            .unwrap_or(val.as_str())
+                    } else {
+                        val.as_str()
+                    };
                 let field = fields
                     .iter()
-                    .find(|field| !field.synthetic && field.name == *val)
+                    .find(|field| !field.synthetic && field.name == field_name)
                     .map(|field| TypedProjectionStep {
                         offset: field.offset,
                         ty: field.ty.clone(),
