@@ -6769,6 +6769,28 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-rbtree-add-callback-uses-node-args"
+        category: "helper-state"
+        tags: [kfunc object graph callback source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_rbtree_add_impl" $entry.root $obj {|a b| if $a { if $b { 1 } else { 0 } } else { 0 }} 0 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-rbtree-add-rejects-non-callback"
         category: "helper-state"
         tags: [kfunc object graph callback source reject]
