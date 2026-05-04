@@ -1807,6 +1807,75 @@ fn test_kfunc_call_with_explicit_btf_id_compiles() {
 }
 
 #[test]
+fn test_subfunction_kfunc_usage_is_reported_in_compile_result() {
+    use crate::compiler::elf::EbpfProgramType;
+    use crate::compiler::mir::*;
+
+    let mut subfn = MirFunction::with_name("with_rcu_lock");
+    let entry = subfn.alloc_block();
+    subfn.entry = entry;
+
+    let lock_ret = subfn.alloc_vreg();
+    let unlock_ret = subfn.alloc_vreg();
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: lock_ret,
+            kfunc: "bpf_rcu_read_lock".to_string(),
+            btf_id: Some(7001),
+            args: vec![],
+        });
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: unlock_ret,
+            kfunc: "bpf_rcu_read_unlock".to_string(),
+            btf_id: Some(7002),
+            args: vec![],
+        });
+    subfn.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let mut main_func = MirFunction::new();
+    let main_entry = main_func.alloc_block();
+    main_func.entry = main_entry;
+    let result = main_func.alloc_vreg();
+    main_func
+        .block_mut(main_entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: result,
+            subfn: SubfunctionId(0),
+            args: vec![],
+        });
+    main_func.block_mut(main_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(result)),
+    };
+
+    let program = MirProgram {
+        main: main_func,
+        subfunctions: vec![subfn],
+    };
+
+    let result =
+        compile_mir_to_ebpf(&program, None).expect("subfunction kfunc call should compile");
+    assert!(result.used_kfuncs.contains("bpf_rcu_read_lock"));
+    assert!(result.used_kfuncs.contains("bpf_rcu_read_unlock"));
+
+    let program = result.into_program(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.2"));
+}
+
+#[test]
 fn test_kfunc_task_release_compiles_with_copied_cond_and_join() {
     use crate::compiler::mir::*;
 
