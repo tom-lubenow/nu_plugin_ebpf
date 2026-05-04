@@ -6847,6 +6847,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-skb-parser-rich-context"
+        category: "context-surface"
+        tags: [sk-skb-parser context packet helper-backed source metadata]
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.ingress_ifindex + $ctx.ifindex + $ctx.tc_index + $ctx.hash + $ctx.hash_recalc + $ctx.csum_level) | count'
+            '  ($ctx.family + $ctx.remote_ip4 + $ctx.local_ip4 + $ctx.remote_port + $ctx.local_port + $ctx.socket_cookie + $ctx.socket_uid + $ctx.sk.family + $ctx.cb.2) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-skb-parser-data-context-write"
         category: "context-surface"
         tags: [sk-skb-parser context packet writable]
@@ -6871,6 +6886,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.hash + $ctx.hash_recalc + $ctx.csum_level + $ctx.cgroup_classid + $ctx.route_realm) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-xmit-rich-skb-context"
+        category: "context-surface"
+        tags: [lwt context packet helper-backed source metadata]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.gso_segs + $ctx.gso_size + $ctx.ingress_ifindex + $ctx.ifindex + $ctx.priority + $ctx.cb.3) | count'
+            '  ($ctx.hash + $ctx.hash_recalc + $ctx.csum_level + $ctx.cgroup_classid + $ctx.route_realm + $ctx.protocol) | count'
             '  "reroute"'
             '}'
         ]
