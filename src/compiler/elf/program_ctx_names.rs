@@ -528,6 +528,7 @@ impl ProgramSpec {
 mod tests {
     use super::*;
     use crate::compiler::mir::ContextFieldCompatibilityRequirement;
+    use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
 
     fn assert_unique_ctx_field_entry_names(table_name: &str, entries: &[CtxFieldNameEntry]) {
@@ -722,6 +723,69 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "context fields should not have max_kernel_exclusive metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn test_verifier_diff_target_context_field_metadata_matches_rust() {
+        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let table_body = verifier_diff_const_body(
+            verifier_diff,
+            "TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS",
+            '[',
+        );
+
+        for line in table_body.lines() {
+            let Some(target) = verifier_diff_quoted_field(line, "target") else {
+                continue;
+            };
+            let field_name = verifier_diff_quoted_field(line, "field").unwrap_or_else(|| {
+                panic!("expected verifier_diff.nu target context field for {target}")
+            });
+            let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+                panic!(
+                    "expected verifier_diff.nu target context feature for {target} ctx.{field_name}"
+                )
+            });
+            let spec = ProgramSpec::parse(target)
+                .unwrap_or_else(|err| panic!("{target} should parse in Rust: {err}"));
+            let program_type = spec.program_type();
+            let target_string = spec.target_string();
+            let field = program_type
+                .resolve_ctx_field_name(field_name)
+                .unwrap_or_else(|err| {
+                    panic!("{target} ctx.{field_name} should resolve in Rust: {err}")
+                });
+            let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                &field,
+                Some(program_type),
+                Some(&target_string),
+            )
+            .unwrap_or_else(|| {
+                panic!("{target} ctx.{field_name} should have Rust compatibility metadata")
+            });
+            let (key, min_kernel, source, max_kernel) =
+                verifier_diff_feature_record(verifier_diff, feature_const);
+
+            assert_eq!(
+                key,
+                requirement.key(),
+                "verifier_diff.nu target context key drifted for {target} ctx.{field_name}"
+            );
+            assert_eq!(
+                min_kernel,
+                requirement.minimum_kernel(),
+                "verifier_diff.nu target context min_kernel drifted for {target} ctx.{field_name}"
+            );
+            assert_eq!(
+                source,
+                requirement.minimum_kernel_source(),
+                "verifier_diff.nu target context source drifted for {target} ctx.{field_name}"
+            );
+            assert_eq!(
+                max_kernel, None,
+                "target context fields should not have max_kernel_exclusive metadata"
             );
         }
     }

@@ -3232,6 +3232,30 @@ const CONTEXT_FIELD_KERNEL_FEATURES = [
     { field: "ustack", feature: $KERNEL_FEATURE_CTX_USTACK }
 ]
 
+const TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
+    { target: "xdp:lo" field: "packet_len" feature: $KERNEL_FEATURE_CTX_XDP_PACKET_LEN }
+    { target: "xdp:lo" field: "data" feature: $KERNEL_FEATURE_CTX_XDP_DATA }
+    { target: "sk_msg:/sys/fs/bpf/demo_sockmap" field: "packet_len" feature: $KERNEL_FEATURE_CTX_SK_MSG_PACKET_LEN }
+    { target: "sk_msg:/sys/fs/bpf/demo_sockmap" field: "sk" feature: $KERNEL_FEATURE_CTX_SK_MSG_SK }
+    { target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap" field: "sk" feature: $KERNEL_FEATURE_CTX_SK_SKB_SK }
+    { target: "tc:lo:ingress" field: "sk" feature: $KERNEL_FEATURE_CTX_SKB_SK }
+    { target: "sk_reuseport:migrate" field: "migrating_sk" feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_MIGRATING_SK }
+    { target: "sock_ops:/sys/fs/cgroup" field: "packet_len" feature: $KERNEL_FEATURE_CTX_SOCK_OPS_PACKET_LEN }
+    { target: "netfilter:ipv4:pre_routing:priority=-100:defrag" field: "hook" feature: $KERNEL_FEATURE_CTX_NETFILTER_HOOK }
+    { target: "lirc_mode2:/dev/lirc0" field: "sample" feature: $KERNEL_FEATURE_CTX_LIRC_SAMPLE }
+    { target: "perf_event:software:cpu-clock:period=100000" field: "addr" feature: $KERNEL_FEATURE_CTX_PERF_ADDR }
+    { target: "cgroup_device:/sys/fs/cgroup" field: "major" feature: $KERNEL_FEATURE_CTX_DEVICE_MAJOR }
+    { target: "cgroup_sysctl:/sys/fs/cgroup" field: "write" feature: $KERNEL_FEATURE_CTX_SYSCTL_WRITE }
+    { target: "cgroup_sockopt:/sys/fs/cgroup:get" field: "optval" feature: $KERNEL_FEATURE_CTX_SOCKOPT_OPTVAL }
+    { target: "cgroup_sock:/sys/fs/cgroup:sock_create" field: "state" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_STATE }
+    { target: "sk_lookup:/proc/self/ns/net" field: "cookie" feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_COOKIE }
+    { target: "cgroup_sock_addr:/sys/fs/cgroup:connect4" field: "user_ip4" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_IP4 }
+    { target: "iter:task_vma" field: "task" feature: $KERNEL_FEATURE_CTX_ITER_TASK_VMA_TASK }
+    { target: "iter:bpf_map_elem" field: "map" feature: $KERNEL_FEATURE_CTX_ITER_MAP_ELEM_MAP }
+    { target: "iter:sockmap" field: "sk" feature: $KERNEL_FEATURE_CTX_ITER_SOCKMAP_SOCK }
+    { target: "iter:unix" field: "uid" feature: $KERNEL_FEATURE_CTX_ITER_UNIX_UID }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -11556,8 +11580,30 @@ def validate-program-target-kernel-feature-expectations [] {
     }
 }
 
+def validate-target-context-field-kernel-feature-expectations [] {
+    for expectation in $TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS {
+        let target = $expectation.target
+        let field = $expectation.field
+        let expected = $expectation.feature
+        let actual = (context-field-kernel-feature $field $target)
+
+        if $actual == null {
+            fail $"context-field-kernel-feature missing expected target-aware metadata for ($target) ctx.($field)"
+        }
+
+        for key in [key min_kernel source max_kernel_exclusive] {
+            let expected_value = ($expected | get -o $key)
+            let actual_value = ($actual | get -o $key)
+            if $expected_value != $actual_value {
+                fail $"context-field-kernel-feature drifted for ($target) ctx.($field): ($key) expected=($expected_value) actual=($actual_value)"
+            }
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
+    validate-target-context-field-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 
