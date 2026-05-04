@@ -19,7 +19,6 @@ use super::struct_ops::{
     validate_required_struct_ops_value_fields, validate_struct_ops_callback_kfunc_requirements,
     validate_struct_ops_top_level_field_kind,
 };
-use crate::compiler::mir::{MirFunction, MirInst, MirProgram};
 use crate::compiler::{
     EbpfObject, MapRef, MirCompileResult, MirType, ProbeContext, ProgramIntrinsic,
     StructOpsObjectSpec, UserFunctionSig, UserParam, UserParamKind,
@@ -177,7 +176,6 @@ pub(super) struct CompiledClosureArtifacts {
     pub(super) generic_map_value_types: HashMap<MapRef, MirType>,
     pub(super) generic_map_value_semantics:
         HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
-    pub(super) used_kfuncs: HashSet<String>,
 }
 
 pub(super) fn value_to_spanned_closure(
@@ -201,30 +199,6 @@ pub(super) fn value_to_spanned_closure(
             )
             .with_help("Use a closure like {|ctx| ... } for ordinary program types")),
     }
-}
-
-fn collect_used_kfuncs(program: &MirProgram) -> HashSet<String> {
-    fn collect_from_inst(inst: &MirInst, out: &mut HashSet<String>) {
-        if let MirInst::CallKfunc { kfunc, .. } = inst {
-            out.insert(kfunc.clone());
-        }
-    }
-
-    fn collect_from_function(func: &MirFunction, out: &mut HashSet<String>) {
-        for block in &func.blocks {
-            for inst in &block.instructions {
-                collect_from_inst(inst, out);
-            }
-            collect_from_inst(&block.terminator, out);
-        }
-    }
-
-    let mut out = HashSet::new();
-    collect_from_function(&program.main, &mut out);
-    for subfn in &program.subfunctions {
-        collect_from_function(subfn, &mut out);
-    }
-    out
 }
 
 fn fetch_view_source(
@@ -1585,8 +1559,6 @@ pub(super) fn compile_closure_with_context(
         );
     }
 
-    let used_kfuncs = collect_used_kfuncs(&mir_program);
-
     let compile_result = compile_mir_to_ebpf_with_hints_and_globals(
         &mir_program,
         Some(probe_context),
@@ -1605,7 +1577,6 @@ pub(super) fn compile_closure_with_context(
         compile_result,
         generic_map_value_types,
         generic_map_value_semantics,
-        used_kfuncs,
     })
 }
 
@@ -1655,15 +1626,15 @@ pub(super) fn compile_struct_ops_object(
                     object_name,
                     sanitize_struct_ops_component(field_name)
                 );
+                let used_kfuncs = compiled.compile_result.used_kfuncs.clone();
                 callback_fields.insert(field_name.to_string());
-                callback_kfuncs.insert(field_name.to_string(), compiled.used_kfuncs.clone());
-                let mut callback = compiled.compile_result.into_struct_ops_callback(
+                callback_kfuncs.insert(field_name.to_string(), used_kfuncs);
+                let callback = compiled.compile_result.into_struct_ops_callback(
                     field_name.as_str(),
                     callback_name,
                     compiled.generic_map_value_types,
                     compiled.generic_map_value_semantics,
                 );
-                callback.program = callback.program.with_used_kfuncs(compiled.used_kfuncs);
                 callbacks.push(callback);
             }
             _ => {

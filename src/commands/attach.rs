@@ -1472,7 +1472,6 @@ fn run_attach(
                 compiled.generic_map_value_types,
                 compiled.generic_map_value_semantics,
             )
-            .with_used_kfuncs(compiled.used_kfuncs)
             .with_program_spec(program_spec);
         if pin_group.is_some() {
             program = program.with_pinning();
