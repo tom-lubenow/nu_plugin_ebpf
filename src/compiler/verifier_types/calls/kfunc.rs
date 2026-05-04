@@ -295,6 +295,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
 pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
     kfunc: &str,
     args: &[VReg],
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -346,6 +347,14 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             state,
             errors,
         );
+        if let Some(MirType::Ptr { pointee, .. }) = types.get(arg)
+            && let Some(expected) = kfunc_graph_pointee_mismatch(kfunc, rule.arg_idx, pointee)
+        {
+            errors.push(VerifierTypeError::new(format!(
+                "{} expects {} pointer, got {:?}",
+                rule.op, expected, pointee
+            )));
+        }
     }
 
     for (ptr_arg_idx, arg) in args.iter().enumerate() {

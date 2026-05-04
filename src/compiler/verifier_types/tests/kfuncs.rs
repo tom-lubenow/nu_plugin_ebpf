@@ -11521,6 +11521,105 @@ fn test_kfunc_rbtree_root_requires_kernel_pointer_arg() {
 }
 
 #[test]
+fn test_kfunc_rbtree_left_rejects_list_node_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let node = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_left".to_string(),
+        btf_id: None,
+        args: vec![node],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        node,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_rb_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected graph node kind mismatch");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("expects bpf_rb_node pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_list_front_accepts_offset_zero_enclosing_root_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let root = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_list_front".to_string(),
+        btf_id: None,
+        args: vec![root],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let enclosing_root = MirType::Struct {
+        name: Some("list_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            crate::compiler::mir::StructField {
+                name: "root".to_string(),
+                ty: MirType::bpf_list_head_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            crate::compiler::mir::StructField {
+                name: "count".to_string(),
+                ty: MirType::I64,
+                offset: 16,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+
+    let mut types = HashMap::new();
+    types.insert(
+        root,
+        MirType::Ptr {
+            pointee: Box::new(enclosing_root),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected offset-zero list root pointer to verify");
+}
+
+#[test]
 fn test_kfunc_rbtree_root_accepts_kernel_pointer_arg() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
