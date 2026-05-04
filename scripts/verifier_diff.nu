@@ -427,6 +427,53 @@ const PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "syscall:demo" feature_keys: ["program:BPF_PROG_TYPE_SYSCALL"] }
     { target: "freplace:replace_me" feature_keys: ["program:BPF_PROG_TYPE_EXT"] }
 ]
+const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_DEVMAP_HASH"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_lookup_percpu_elem" per_cpu_values key0 0 --kind lru-per-cpu-hash'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_LRU_PERCPU_HASH"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb| 0 } "ctx" 0 --kind per-cpu-array'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_PERCPU_ARRAY"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_timer_init" timer timers 0 --kind array'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_ARRAY"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_map_push_elem" queue_or_bloom 1 0 --kind bloom-filter'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_BLOOM_FILTER"]
+    }
+]
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
@@ -2534,6 +2581,16 @@ const MAP_VALUE_KERNEL_FEATURES = [
     { token: "bpf_list_node", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_LIST_NODE }
     { token: "bpf_rb_root", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_RB_ROOT }
     { token: "bpf_rb_node", feature: $KERNEL_FEATURE_MAP_VALUE_BPF_RB_NODE }
+]
+
+const HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES = [
+    { helper: "bpf_map_push_elem", kinds: ["queue" "stack" "bloom-filter"] }
+    { helper: "bpf_map_peek_elem", kinds: ["queue" "stack" "bloom-filter"] }
+    { helper: "bpf_map_pop_elem", kinds: ["queue" "stack"] }
+    { helper: "bpf_redirect_map", kinds: ["devmap" "devmap-hash" "cpumap" "xskmap"] }
+    { helper: "bpf_map_lookup_percpu_elem", kinds: ["per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
+    { helper: "bpf_for_each_map_elem", kinds: ["hash" "array" "lru-hash" "per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
+    { helper: "bpf_timer_init", kinds: ["hash" "array" "lru-hash"] }
 ]
 
 const BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID = [
@@ -9631,6 +9688,32 @@ def map-kind-kernel-feature [kind: string] {
     }
 }
 
+def helper-call-explicit-map-kind-kernel-feature [line: string] {
+    if not (($line | str contains "helper-call ") and ($line | str contains "--kind ")) {
+        return null
+    }
+
+    let parts = ($line | split row "helper-call ")
+    if ($parts | length) <= 1 {
+        return null
+    }
+
+    let raw_helper = (($parts | get 1) | str trim | split row " " | first)
+    let helper_name = (normalize-helper-name-token $raw_helper)
+    let matches = ($HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let kind = (source-line-map-kind $line "")
+    let supported_kinds = ($matches | first | get kinds)
+    if $kind not-in $supported_kinds {
+        return null
+    }
+
+    map-kind-kernel-feature $kind
+}
+
 def source-line-map-kind [line: string default_kind: string] {
     let parts = ($line | split row "--kind ")
     if ($parts | length) <= 1 {
@@ -10827,6 +10910,10 @@ def program-map-kernel-features [source: string] {
 
     for line in ($source | lines) {
         if ($line | str contains "helper-call ") {
+            let feature = (helper-call-explicit-map-kind-kernel-feature $line)
+            if $feature != null {
+                $features = (append-missing-kernel-features $features [$feature])
+            }
             continue
         }
 
@@ -11932,6 +12019,23 @@ def validate-program-target-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-map-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let expected_keys = ($expectation.feature_keys | sort)
+        let actual_keys = (
+            program-map-kernel-features $program
+            | each {|feature| $feature.key }
+            | sort
+        )
+        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+
+        if ($missing | length) > 0 {
+            fail $"program-map-kernel-features drifted: missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+        }
+    }
+}
+
 def validate-target-context-field-kernel-feature-expectations [] {
     for expectation in $TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
@@ -12015,6 +12119,7 @@ def validate-program-context-field-kernel-feature-expectations [] {
 
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
+    validate-program-map-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
     validate-context-field-helper-kernel-feature-expectations
     validate-context-projection-kernel-feature-expectations
