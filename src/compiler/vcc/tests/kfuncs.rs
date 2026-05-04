@@ -407,11 +407,12 @@ fn test_verify_mir_kfunc_res_spin_lock_irqsave_requires_stack_flags_pointer() {
 }
 
 #[test]
-fn test_verify_mir_kfunc_list_push_front_requires_kernel_space() {
+fn test_verify_mir_kfunc_list_push_front_requires_graph_root_space() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
 
     let stack_ptr = func.alloc_vreg();
+    let node = func.alloc_vreg();
     let meta = func.alloc_vreg();
     let off = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -427,7 +428,7 @@ fn test_verify_mir_kfunc_list_push_front_requires_kernel_space() {
         dst,
         kfunc: "bpf_list_push_front_impl".to_string(),
         btf_id: None,
-        args: vec![stack_ptr, stack_ptr, meta, off],
+        args: vec![stack_ptr, node, meta, off],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -439,14 +440,22 @@ fn test_verify_mir_kfunc_list_push_front_requires_kernel_space() {
             address_space: AddressSpace::Stack,
         },
     );
+    types.insert(
+        node,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
     types.insert(meta, MirType::I64);
     types.insert(off, MirType::I64);
     types.insert(dst, MirType::I64);
 
-    let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+    let err = verify_mir(&func, &types).expect_err("expected graph-root kfunc arg error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("arg0 expects pointer in [Kernel]")),
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_list root expects pointer in [Map, Kernel]")),
         "unexpected error messages: {:?}",
         err
     );
@@ -2013,7 +2022,7 @@ fn test_verify_mir_kfunc_scx_exit_bstr_requires_stack_slot_base_data() {
 }
 
 #[test]
-fn test_verify_mir_kfunc_rbtree_first_requires_kernel_space() {
+fn test_verify_mir_kfunc_rbtree_first_requires_graph_root_space() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
 
@@ -2043,10 +2052,11 @@ fn test_verify_mir_kfunc_rbtree_first_requires_kernel_space() {
         },
     );
 
-    let err = verify_mir(&func, &types).expect_err("expected kernel-pointer kfunc arg error");
+    let err = verify_mir(&func, &types).expect_err("expected graph-root kfunc arg error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("arg0 expects pointer in [Kernel]")),
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_rbtree root expects pointer in [Map, Kernel]")),
         "unexpected error messages: {:?}",
         err
     );

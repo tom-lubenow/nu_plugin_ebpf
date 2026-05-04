@@ -1,6 +1,7 @@
 use super::{KfuncAllowedPtrSpaces, KfuncPtrArgRule, KfuncSemantics};
 
 pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
+    const KERNEL_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(false, true, true, false);
     const STACK_MAP: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, true, false, false);
     const STACK_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(true, false, false, false);
     const USER_ONLY: KfuncAllowedPtrSpaces = KfuncAllowedPtrSpaces::new(false, false, false, true);
@@ -8,6 +9,20 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         ptr_arg_rules: &[],
         positive_size_args: &[],
     };
+    const LIST_ROOT_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc bpf_list root",
+        allowed: KERNEL_MAP,
+        fixed_size: None,
+        size_from_arg: None,
+    }];
+    const RBTREE_ROOT_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 0,
+        op: "kfunc bpf_rbtree root",
+        allowed: KERNEL_MAP,
+        fixed_size: None,
+        size_from_arg: None,
+    }];
     const PATH_D_PATH_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
         arg_idx: 1,
         op: "kfunc path_d_path buffer",
@@ -339,6 +354,19 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         },
         "bpf_crypto_decrypt" => KfuncSemantics {
             ptr_arg_rules: CRYPTO_DECRYPT_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_list_push_front_impl"
+        | "bpf_list_push_back_impl"
+        | "bpf_list_pop_front"
+        | "bpf_list_pop_back"
+        | "bpf_list_front"
+        | "bpf_list_back" => KfuncSemantics {
+            ptr_arg_rules: LIST_ROOT_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first" => KfuncSemantics {
+            ptr_arg_rules: RBTREE_ROOT_RULES,
             positive_size_args: &[],
         },
         "scx_bpf_events" => KfuncSemantics {

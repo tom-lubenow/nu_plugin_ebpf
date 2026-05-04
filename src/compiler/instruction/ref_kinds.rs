@@ -914,24 +914,29 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
     if matches!(
         (kfunc, arg_idx),
         ("bpf_list_push_front_impl", 0)
-            | ("bpf_list_push_front_impl", 1)
             | ("bpf_list_push_back_impl", 0)
-            | ("bpf_list_push_back_impl", 1)
             | ("bpf_list_pop_front", 0)
             | ("bpf_list_pop_back", 0)
             | ("bpf_list_front", 0)
             | ("bpf_list_back", 0)
+            | ("bpf_rbtree_remove", 0)
+            | ("bpf_rbtree_add_impl", 0)
+            | ("bpf_rbtree_first", 0)
+    ) {
+        return false;
+    }
+    if matches!(
+        (kfunc, arg_idx),
+        ("bpf_list_push_front_impl", 1)
+            | ("bpf_list_push_back_impl", 1)
             | ("bpf_path_d_path", 0)
             | ("bpf_map_sum_elem_count", 0)
             | ("bpf_res_spin_lock", 0)
             | ("bpf_res_spin_unlock", 0)
             | ("bpf_res_spin_lock_irqsave", 0)
             | ("bpf_res_spin_unlock_irqrestore", 0)
-            | ("bpf_rbtree_remove", 0)
             | ("bpf_rbtree_remove", 1)
-            | ("bpf_rbtree_add_impl", 0)
             | ("bpf_rbtree_add_impl", 1)
-            | ("bpf_rbtree_first", 0)
             | ("bpf_rbtree_root", 0)
             | ("bpf_rbtree_left", 0)
             | ("bpf_rbtree_right", 0)

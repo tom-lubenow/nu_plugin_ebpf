@@ -187,6 +187,7 @@ pub(in crate::compiler::verifier_types) fn kfunc_allowed_spaces(
         (true, true, true, false) => {
             &[AddressSpace::Stack, AddressSpace::Map, AddressSpace::Kernel]
         }
+        (false, true, true, false) => &[AddressSpace::Map, AddressSpace::Kernel],
         (false, false, true, false) => &[AddressSpace::Kernel],
         (false, false, false, true) => &[AddressSpace::User],
         (true, false, false, false) => &[AddressSpace::Stack],
@@ -225,6 +226,40 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
         return;
     }
     let allowed = kfunc_allowed_spaces(allow_stack, allow_map, allow_kernel, allow_user);
+    if access_size.is_none() {
+        match state.get(arg) {
+            VerifierType::Ptr {
+                nullability: Nullability::Null,
+                ..
+            } => {
+                errors.push(VerifierTypeError::new(format!(
+                    "{op} uses null pointer v{}",
+                    arg.0
+                )));
+            }
+            VerifierType::Ptr { space, .. } => {
+                if !allowed.contains(&space) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "{op} expects pointer in {:?}, got {:?}",
+                        allowed, space
+                    )));
+                }
+            }
+            VerifierType::Uninit => {
+                errors.push(VerifierTypeError::new(format!(
+                    "{op} uses uninitialized pointer v{}",
+                    arg.0
+                )));
+            }
+            other => {
+                errors.push(VerifierTypeError::new(format!(
+                    "{op} expected pointer, got {:?}",
+                    other
+                )));
+            }
+        }
+        return;
+    }
     let Some(VerifierType::Ptr { space, bounds, .. }) =
         require_ptr_with_space(arg, op, allowed, state, errors)
     else {

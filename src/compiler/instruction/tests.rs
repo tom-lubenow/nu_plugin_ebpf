@@ -5496,6 +5496,30 @@ fn test_kfunc_pointer_arg_ref_kind_mappings() {
 }
 
 #[test]
+fn test_kfunc_graph_root_pointer_contracts() {
+    for kfunc in [
+        "bpf_list_push_front_impl",
+        "bpf_list_push_back_impl",
+        "bpf_list_pop_front",
+        "bpf_list_pop_back",
+        "bpf_list_front",
+        "bpf_list_back",
+        "bpf_rbtree_add_impl",
+        "bpf_rbtree_remove",
+        "bpf_rbtree_first",
+    ] {
+        let semantics = kfunc_semantics(kfunc);
+        assert_eq!(semantics.ptr_arg_rules.len(), 1, "{kfunc}");
+        let root = semantics.ptr_arg_rules[0];
+        assert_eq!(root.arg_idx, 0, "{kfunc}");
+        assert!(!root.allowed.allow_stack, "{kfunc}");
+        assert!(root.allowed.allow_map, "{kfunc}");
+        assert!(root.allowed.allow_kernel, "{kfunc}");
+        assert!(!root.allowed.allow_user, "{kfunc}");
+    }
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel("bpf_task_release", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_put_file", 0));
@@ -5506,15 +5530,15 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel("bpf_crypto_encrypt", 0));
     assert!(kfunc_pointer_arg_requires_kernel(
         "bpf_list_push_front_impl",
-        0
-    ));
-    assert!(kfunc_pointer_arg_requires_kernel(
-        "bpf_list_push_front_impl",
         1
     ));
-    assert!(kfunc_pointer_arg_requires_kernel("bpf_list_front", 0));
-    assert!(kfunc_pointer_arg_requires_kernel("bpf_list_back", 0));
-    assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
+    assert!(!kfunc_pointer_arg_requires_kernel(
+        "bpf_list_push_front_impl",
+        0
+    ));
+    assert!(!kfunc_pointer_arg_requires_kernel("bpf_list_front", 0));
+    assert!(!kfunc_pointer_arg_requires_kernel("bpf_list_back", 0));
+    assert!(!kfunc_pointer_arg_requires_kernel("bpf_rbtree_first", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_root", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_left", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_rbtree_right", 0));

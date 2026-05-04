@@ -1147,7 +1147,7 @@ fn test_type_error_kfunc_scx_dsq_move_vtime_requires_stack_iterator_pointer_arg0
 }
 
 #[test]
-fn test_type_error_kfunc_list_push_front_requires_kernel_space() {
+fn test_type_error_kfunc_list_push_front_requires_graph_root_space() {
     let mut func = make_test_function();
     let head = func.alloc_vreg();
     let node = func.alloc_vreg();
@@ -1184,10 +1184,11 @@ fn test_type_error_kfunc_list_push_front_requires_kernel_space() {
     let mut ti = TypeInference::new(None);
     let errs = ti
         .infer(&func)
-        .expect_err("expected list-push-front kernel-pointer kfunc type error");
+        .expect_err("expected list-push-front graph-root kfunc type error");
     assert!(
-        errs.iter()
-            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_list root expects pointer in [Map, Kernel]")),
         "unexpected errors: {:?}",
         errs
     );
@@ -2299,7 +2300,7 @@ fn test_type_error_kfunc_scx_exit_bstr_requires_stack_slot_base_data() {
 }
 
 #[test]
-fn test_type_error_kfunc_rbtree_first_requires_kernel_space() {
+fn test_type_error_kfunc_rbtree_first_requires_graph_root_space() {
     let mut func = make_test_function();
     let root = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -2320,10 +2321,11 @@ fn test_type_error_kfunc_rbtree_first_requires_kernel_space() {
     let mut ti = TypeInference::new(None);
     let errs = ti
         .infer(&func)
-        .expect_err("expected rbtree_first kernel-pointer kfunc type error");
+        .expect_err("expected rbtree_first graph-root kfunc type error");
     assert!(
-        errs.iter()
-            .any(|e| e.message.contains("arg0 expects kernel pointer")),
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_rbtree root expects pointer in [Map, Kernel]")),
         "unexpected errors: {:?}",
         errs
     );

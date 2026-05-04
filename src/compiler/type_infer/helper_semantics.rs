@@ -172,6 +172,7 @@ impl<'a> TypeInference<'a> {
         match (allow_stack, allow_map, allow_kernel, allow_user) {
             (true, true, false, false) => "[Stack, Map]",
             (true, true, true, false) => "[Stack, Map, Kernel]",
+            (false, true, true, false) => "[Map, Kernel]",
             (false, false, true, false) => "[Kernel]",
             (false, false, false, true) => "[User]",
             (true, false, false, false) => "[Stack]",

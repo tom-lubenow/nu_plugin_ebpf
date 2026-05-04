@@ -6339,6 +6339,104 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-obj-new-drop"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-obj-new-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-obj-drop-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    kfunc-call "bpf_obj_drop_impl" $task 0'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects object reference"
+    }
+    {
+        name: "source-kfunc-list-push-front-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_list_push_front_impl" $entry.root $obj 0 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-list-pop-front-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_list_pop_front" $entry.root)'
+            '    if $obj {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-task-acquire-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]
