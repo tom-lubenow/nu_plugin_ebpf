@@ -977,6 +977,38 @@ pub(crate) fn static_ctx_field_projection_spec(
     raw_ctx_field_projection_spec(field)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bpf_sock_projection_aliases_canonicalize_to_same_context_field() {
+        for canonical in [
+            "type", "protocol", "src_ip4", "src_ip6", "src_port", "dst_ip4", "dst_ip6", "dst_port",
+        ] {
+            let canonical_field = ctx_field_for_bpf_sock_projection_member(canonical)
+                .unwrap_or_else(|| panic!("{canonical} should map to a context field"));
+
+            for alias in bpf_sock_projection_member_aliases(canonical) {
+                assert_eq!(
+                    canonical_bpf_sock_projection_member(alias),
+                    Some(canonical),
+                    "{alias} should canonicalize to {canonical}"
+                );
+                assert_eq!(
+                    ctx_field_for_bpf_sock_projection_member(alias),
+                    Some(canonical_field.clone()),
+                    "{alias} should preserve {canonical}'s context metadata"
+                );
+                assert!(
+                    bpf_sock_projection_member_aliases(alias).is_empty(),
+                    "alias table should be keyed by canonical member names only"
+                );
+            }
+        }
+    }
+}
+
 pub(crate) fn program_type_ctx_field_projection_spec(
     program_type: EbpfProgramType,
     field: &CtxField,
