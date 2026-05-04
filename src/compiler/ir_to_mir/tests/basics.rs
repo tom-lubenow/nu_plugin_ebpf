@@ -2482,6 +2482,24 @@ fn test_lower_netfilter_state_pointer_hop_preserves_trusted_btf_provenance() {
         direct_kernel_pointer_loads >= 1,
         "expected netfilter trusted BTF pointer hop to use a direct load"
     );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("netfilter trusted pointer-hop projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Netfilter,
+        "ipv4:pre_routing",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
+        .expect("netfilter scalar BTF projection should report probe_read_kernel compatibility");
+    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.5"));
 }
 
 #[test]

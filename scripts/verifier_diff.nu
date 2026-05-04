@@ -3504,6 +3504,48 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_task_pt_regs"]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_openat"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_task.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_openat"
+        program: [
+            '{|ctx|'
+            '  $ctx.ifindex | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  ($ctx.state.in.ifindex + $ctx.skb.len) | count'
+            '  "accept"'
+            '}'
+        ]
+        feature_keys: ["ctx:state" "ctx:skb" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  let state = ($ctx.nf_state)'
+            '  let skb = $ctx.skb'
+            '  ($state.in.ifindex + $skb.len) | count'
+            '  "accept"'
+            '}'
+        ]
+        feature_keys: ["ctx:state" "ctx:skb" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -5703,6 +5745,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.hook + $ctx.pf + $ctx.protocol_family + $ctx.state.in.ifindex + $ctx.nf_state.out.ifindex + $ctx.skb.len) | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-bound-state-context"
+        category: "context-surface"
+        tags: [netfilter context alias]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  let state = ($ctx.nf_state)'
+            '  let skb = $ctx.skb'
+            '  ($state.in.ifindex + $skb.len) | count'
             '  "accept"'
             '}'
         ]
@@ -10675,6 +10733,11 @@ def target-context-field-alias-kernel-feature [field: string target] {
 }
 
 def context-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if ($target_text | str starts-with "tracepoint:") and not (tracepoint-built-in-context-field? $field) {
+        return null
+    }
+
     let target_alias = (target-context-field-alias-kernel-feature $field $target)
     if $target_alias.matched {
         return $target_alias.feature
@@ -10691,6 +10754,9 @@ def context-field-kernel-feature [field: string target] {
 def context-field-helper-kernel-feature [field: string target] {
     let target_text = ($target | default "")
 
+    if ($target_text | str starts-with "tracepoint:") and not (tracepoint-built-in-context-field? $field) {
+        return null
+    }
     if $field in ["pid" "tid" "tgid" "pid_tgid" "current_pid_tgid"] {
         return $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
     }
@@ -10874,6 +10940,21 @@ def line-assigns-context-field? [line: string context_names fields] {
     false
 }
 
+def context-projection-root? [root: string] {
+    $root in [
+        "sk"
+        "migrating_sk"
+        "migrating_socket"
+        "task"
+        "current_task"
+        "cgroup"
+        "current_cgroup"
+        "state"
+        "nf_state"
+        "skb"
+    ]
+}
+
 def context-projection-parts [token: string] {
     let cleaned = (
         $token
@@ -10895,11 +10976,52 @@ def context-projection-parts [token: string] {
     }
 
     let root = ($parts | first)
-    if $root not-in ["sk" "migrating_sk" "migrating_socket"] {
+    if not (context-projection-root? $root) {
         return []
     }
 
     $parts
+}
+
+def tracepoint-built-in-context-field? [field: string] {
+    $field in [
+        "pid"
+        "tid"
+        "tgid"
+        "pid_tgid"
+        "current_pid_tgid"
+        "uid"
+        "gid"
+        "uid_gid"
+        "current_uid_gid"
+        "comm"
+        "current_task"
+        "current_cgroup"
+        "cpu"
+        "numa_node"
+        "numa_node_id"
+        "random"
+        "prandom_u32"
+        "ktime"
+        "timestamp"
+        "ktime_boot"
+        "boot_ktime"
+        "boot_time"
+        "ktime_coarse"
+        "coarse_ktime"
+        "coarse_time"
+        "ktime_tai"
+        "tai_ktime"
+        "tai_time"
+        "jiffies"
+        "func_ip"
+        "function_ip"
+        "attach_cookie"
+        "bpf_cookie"
+        "cgroup_id"
+        "kstack"
+        "ustack"
+    ]
 }
 
 def normalize-context-projection-token [token: string] {
@@ -10996,7 +11118,35 @@ def context-projection-kernel-feature [raw_access: string target] {
     null
 }
 
-def context-projection-kernel-read-feature [raw_access: string] {
+def trusted-btf-projection-kernel-read? [parts target] {
+    if ($parts | length) < 2 {
+        return false
+    }
+
+    let target_text = ($target | default "")
+    let root = ($parts | first)
+    let first_member = ($parts | get 1)
+
+    if $root in ["current_task" "current_cgroup"] {
+        return true
+    }
+    if $root in ["task" "cgroup"] {
+        if ($target_text | str starts-with "tracepoint:") {
+            return false
+        }
+        if $root == "task" and $first_member == "pt_regs" {
+            return false
+        }
+        return true
+    }
+    if ($target_text | str starts-with "netfilter:") and ($root in ["state" "nf_state" "skb"]) {
+        return true
+    }
+
+    false
+}
+
+def context-projection-kernel-read-feature [raw_access: string target] {
     let parts = (context-projection-parts $raw_access)
     if ($parts | length) < 2 {
         return null
@@ -11011,6 +11161,9 @@ def context-projection-kernel-read-feature [raw_access: string] {
         and ($member in ["tcp" "tcp_sock" "full" "fullsock" "full_sock" "listener"])
     )
     if $helper_backed_socket_projection {
+        return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
+    }
+    if (trusted-btf-projection-kernel-read? $parts $target) {
         return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
 
@@ -11195,7 +11348,7 @@ def context-root-binding [line: string context_names] {
         }
 
         let root = (normalize-context-field-token ($rhs | str substring ($prefix | str length)..))
-        if $root in ["sk" "migrating_sk" "migrating_socket" "task" "current_task"] {
+        if (context-projection-root? $root) {
             return { name: $assignment.name root: $root }
         }
     }
@@ -11249,7 +11402,7 @@ def bound-context-projection-kernel-features [source: string target context_name
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
                 }
-                let read_feature = (context-projection-kernel-read-feature $raw_access)
+                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
                 if $read_feature != null {
                     $features = (append-missing-kernel-features $features [$read_feature])
                 }
@@ -11493,7 +11646,7 @@ def program-context-field-kernel-features [source: string target] {
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
                 }
-                let read_feature = (context-projection-kernel-read-feature $raw_access)
+                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
                 if $read_feature != null {
                     $features = (append-missing-kernel-features $features [$read_feature])
                 }
