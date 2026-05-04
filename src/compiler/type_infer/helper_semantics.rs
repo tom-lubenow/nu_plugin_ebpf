@@ -114,6 +114,10 @@ impl<'a> TypeInference<'a> {
         kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
         kfunc_unknown_dynptr_copy_shared(kfunc)
     }
@@ -1027,6 +1031,22 @@ impl<'a> TypeInference<'a> {
             if !is_const {
                 errors.push(TypeError::new(format!(
                     "kfunc '{}' arg{} must be known constant",
+                    kfunc, idx
+                )));
+            }
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            if !Self::kfunc_scalar_arg_requires_zero(kfunc, idx) {
+                continue;
+            }
+            let is_zero = matches!(
+                self.value_range_for(&MirValue::VReg(*arg), value_ranges),
+                ValueRange::Known { min: 0, max: 0 }
+            );
+            if !is_zero {
+                errors.push(TypeError::new(format!(
+                    "kfunc '{}' arg{} must be known zero",
                     kfunc, idx
                 )));
             }

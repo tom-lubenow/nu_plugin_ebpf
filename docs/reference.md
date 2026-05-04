@@ -710,6 +710,9 @@ before writing code that depends on them.
 pointer/ref semantics, and the program-specific kfunc surfaces it knows about,
 but exact kfunc availability is still kernel-version and program-type specific;
 the kernel verifier remains the final authority for unmodeled kfunc allowlists.
+For raw object and graph kfuncs, operands that map to verifier-rewritten
+`__ign` metadata parameters must be known zero in source; the kernel replaces
+them during load with the appropriate BTF metadata when the call is valid.
 
 Stack trace ID collection should normally use first-class context fields: `$ctx.kstack` for kernel stacks and `$ctx.ustack` for user stacks. The backing `bpf_get_stackid` helper is constrained to tracing/perf-style program families and stack-trace maps, with flags limited to the skip field plus `BPF_F_USER_STACK`, `BPF_F_FAST_STACK_CMP`, and `BPF_F_REUSE_STACKID`. `bpf_get_stack` remains available through `helper-call` for custom buffers, maps, and flags, and accepts a stack/map buffer with a nonnegative size, including `0`. `bpf_get_task_stack` is also modeled for task-pointer inputs such as `ctx.task`, with the same stack/map output-buffer and nonnegative-size checks. Stack-copy helper flags are limited to the skip field plus `BPF_F_USER_STACK` and `BPF_F_USER_BUILD_ID`.
 Perf-event counter snapshots should normally use `ctx.perf_counter`, `ctx.perf_enabled`, and `ctx.perf_running`; the backing `bpf_perf_prog_read_value` helper is modeled and constrained to `perf_event` programs.

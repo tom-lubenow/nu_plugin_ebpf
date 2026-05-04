@@ -6412,6 +6412,45 @@ const FIXTURES = [
         error_contains: "arg0 must be > 0"
     }
     {
+        name: "source-kfunc-obj-new-rejects-dynamic-meta"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let meta = ($ctx.pid + 1)'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 $meta)'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg1 must be known zero"
+    }
+    {
+        name: "source-kfunc-obj-drop-rejects-nonzero-meta"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 1'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg1 must be known zero"
+    }
+    {
         name: "source-kfunc-refcount-acquire-rejects-map-field"
         category: "helper-state"
         tags: [kfunc object bpf_refcount ref-lifetime source reject]
@@ -6508,6 +6547,26 @@ const FIXTURES = [
         error_contains: "arg0 must be > 0"
     }
     {
+        name: "source-kfunc-percpu-obj-drop-rejects-dynamic-meta"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    let meta = ($ctx.pid + 1)'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj $meta'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg1 must be known zero"
+    }
+    {
         name: "source-kfunc-percpu-obj-drop-rejects-task-ref"
         category: "helper-state"
         tags: [kfunc object ref-lifetime source reject]
@@ -6568,6 +6627,30 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "source-kfunc-list-push-front-rejects-dynamic-meta"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      let meta = ($ctx.pid + 1)'
+            '      kfunc-call "bpf_list_push_front_impl" $entry.root $obj $meta 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg2 must be known zero"
     }
     {
         name: "source-kfunc-list-push-back-map-root"
@@ -6845,6 +6928,30 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-add-rejects-dynamic-meta"
+        category: "helper-state"
+        tags: [kfunc object graph callback source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      let meta = ($ctx.pid + 1)'
+            '      kfunc-call "bpf_rbtree_add_impl" $entry.root $obj {|a b| 0} $meta 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg3 must be known zero"
     }
     {
         name: "source-kfunc-rbtree-add-callback-uses-node-args"

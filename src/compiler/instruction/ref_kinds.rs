@@ -1148,6 +1148,20 @@ pub fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> boo
     ) || KernelBtf::get().kfunc_scalar_arg_requires_known_const(kfunc, arg_idx)
 }
 
+pub fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_obj_new_impl", 1)
+            | ("bpf_obj_drop_impl", 1)
+            | ("bpf_refcount_acquire_impl", 1)
+            | ("bpf_percpu_obj_new_impl", 1)
+            | ("bpf_percpu_obj_drop_impl", 1)
+            | ("bpf_list_push_front_impl", 2)
+            | ("bpf_list_push_back_impl", 2)
+            | ("bpf_rbtree_add_impl", 3)
+    )
+}
+
 pub fn kfunc_scalar_arg_requires_positive(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),

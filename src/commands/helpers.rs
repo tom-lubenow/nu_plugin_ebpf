@@ -275,6 +275,8 @@ impl PluginCommand for KfuncCall {
         r#"Advanced helper for invoking BTF-described kernel kfuncs.
 The first positional argument must be a literal kfunc name.
 If omitted, --btf-id is resolved automatically from kernel BTF.
+Verifier-rewritten metadata operands such as __ign placeholders must be known
+zero at source level.
 
 Prefer a first-class command or ordinary Nushell syntax when the operation is
 already modeled directly."#

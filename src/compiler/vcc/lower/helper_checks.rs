@@ -345,6 +345,10 @@ impl<'a> VccLowerer<'a> {
         kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_iter_lifecycle(
         kfunc: &str,
     ) -> Option<KfuncUnknownIterLifecycle> {
@@ -1864,6 +1868,17 @@ impl<'a> VccLowerer<'a> {
             out.push(VccInst::AssertKnownConst {
                 value: VccValue::Reg(VccReg(arg.0)),
                 message: format!("kfunc '{}' arg{} must be known constant", kfunc, idx),
+            });
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            if !Self::kfunc_scalar_arg_requires_zero(kfunc, idx) {
+                continue;
+            }
+            out.push(VccInst::AssertConstEq {
+                value: VccValue::Reg(VccReg(arg.0)),
+                expected: 0,
+                message: format!("kfunc '{}' arg{} must be known zero", kfunc, idx),
             });
         }
 

@@ -1760,9 +1760,10 @@ pub use ref_kinds::{
     kfunc_pointer_arg_requires_stack_or_map, kfunc_pointer_arg_requires_stack_slot_base,
     kfunc_pointer_arg_requires_user, kfunc_pointer_arg_size_from_scalar,
     kfunc_ref_kind_from_bpf_type_name, kfunc_release_ref_arg_index, kfunc_release_ref_kind,
-    kfunc_scalar_arg_requires_known_const, kfunc_scalar_arg_requires_positive, kfunc_semantics,
-    kfunc_unknown_dynptr_args, kfunc_unknown_dynptr_copy, kfunc_unknown_iter_lifecycle,
-    kfunc_unknown_stack_object_copy, kfunc_unknown_stack_object_lifecycle,
+    kfunc_scalar_arg_requires_known_const, kfunc_scalar_arg_requires_positive,
+    kfunc_scalar_arg_requires_zero, kfunc_semantics, kfunc_unknown_dynptr_args,
+    kfunc_unknown_dynptr_copy, kfunc_unknown_iter_lifecycle, kfunc_unknown_stack_object_copy,
+    kfunc_unknown_stack_object_lifecycle,
 };
 
 #[path = "instruction/helper_metadata.rs"]

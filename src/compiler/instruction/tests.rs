@@ -5037,6 +5037,28 @@ fn test_kfunc_scalar_arg_requires_known_const_static_mapping() {
 }
 
 #[test]
+fn test_kfunc_scalar_arg_requires_zero_static_mapping() {
+    assert!(kfunc_scalar_arg_requires_zero("bpf_obj_new_impl", 1));
+    assert!(kfunc_scalar_arg_requires_zero("bpf_obj_drop_impl", 1));
+    assert!(kfunc_scalar_arg_requires_zero(
+        "bpf_refcount_acquire_impl",
+        1
+    ));
+    assert!(kfunc_scalar_arg_requires_zero("bpf_percpu_obj_new_impl", 1));
+    assert!(kfunc_scalar_arg_requires_zero(
+        "bpf_percpu_obj_drop_impl",
+        1
+    ));
+    assert!(kfunc_scalar_arg_requires_zero(
+        "bpf_list_push_front_impl",
+        2
+    ));
+    assert!(kfunc_scalar_arg_requires_zero("bpf_list_push_back_impl", 2));
+    assert!(kfunc_scalar_arg_requires_zero("bpf_rbtree_add_impl", 3));
+    assert!(!kfunc_scalar_arg_requires_zero("bpf_rbtree_add_impl", 4));
+}
+
+#[test]
 fn test_kfunc_scalar_arg_requires_positive_static_mapping() {
     assert!(kfunc_scalar_arg_requires_positive("bpf_path_d_path", 2));
     assert!(kfunc_scalar_arg_requires_positive("scx_bpf_events", 1));

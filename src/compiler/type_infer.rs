@@ -38,7 +38,8 @@ use super::instruction::{
     kfunc_pointer_arg_size_from_scalar as kfunc_pointer_arg_size_from_scalar_shared,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
     kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
-    kfunc_semantics, kfunc_unknown_dynptr_copy as kfunc_unknown_dynptr_copy_shared,
+    kfunc_scalar_arg_requires_zero as kfunc_scalar_arg_requires_zero_shared, kfunc_semantics,
+    kfunc_unknown_dynptr_copy as kfunc_unknown_dynptr_copy_shared,
     kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
 };
 use super::mir::{
