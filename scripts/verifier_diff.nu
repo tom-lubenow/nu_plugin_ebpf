@@ -6492,6 +6492,28 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-list-push-back-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_list_push_back_impl" $entry.root $obj 0 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-list-pop-front-map-root"
         category: "helper-state"
         tags: [kfunc object graph source accept]
@@ -6503,6 +6525,28 @@ const FIXTURES = [
             '  let entry = (0 | map-get graph_items --kind hash)'
             '  if $entry {'
             '    let obj = (kfunc-call "bpf_list_pop_front" $entry.root)'
+            '    if $obj {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-list-pop-back-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_list_pop_back" $entry.root)'
             '    if $obj {'
             '      kfunc-call "bpf_obj_drop_impl" $obj 0'
             '    }'
