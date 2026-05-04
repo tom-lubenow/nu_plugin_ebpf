@@ -5,7 +5,8 @@ use crate::compiler::instruction::{
     KfuncArgKind, KfuncRetKind, KfuncSignature, helper_acquire_ref_kind,
 };
 use crate::compiler::mir::{
-    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, MapOpKind, STRING_COUNTER_MAP_NAME,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME, CtxField, MapOpKind,
+    STRING_COUNTER_MAP_NAME,
 };
 use crate::compiler::{ProgramIntrinsic, TypeInference};
 
@@ -707,6 +708,7 @@ impl<'a> HirToMirLowering<'a> {
                         MirValue::Const(flags as i64),
                     ],
                 });
+                self.implied_ctx_fields.insert(CtxField::Socket);
                 self.vreg_type_hints.insert(dst_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }

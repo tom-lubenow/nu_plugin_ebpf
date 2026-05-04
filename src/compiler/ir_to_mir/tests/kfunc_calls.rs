@@ -3468,6 +3468,14 @@ fn test_assign_socket_intrinsic_lowers_to_sk_assign_and_compiles() {
     )
     .expect("assign-socket intrinsic should lower on sk_lookup");
 
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::Socket),
+        "assign-socket should preserve destination socket context compatibility metadata"
+    );
+
     let entry = result.program.main.entry;
     let block = result.program.main.block(entry);
     assert!(block.instructions.iter().any(|inst| matches!(
@@ -3494,6 +3502,7 @@ fn test_assign_socket_intrinsic_lowers_to_sk_assign_and_compiles() {
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
             .expect("assign-socket intrinsic should compile on sk_lookup");
 
+    assert!(compiled.used_ctx_fields.contains(&CtxField::Socket));
     assert!(!compiled.bytecode.is_empty(), "Should produce bytecode");
 }
 
