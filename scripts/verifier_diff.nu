@@ -3622,6 +3622,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["helper:bpf_probe_read_kernel"]
     }
     {
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0 | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
         target: "lsm_cgroup:socket_bind"
         program: [
             '{|ctx|'
@@ -3921,6 +3931,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.cpu + $ctx.sample_period + $ctx.addr + $ctx.perf_counter) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "perf-event-pt-regs-arg-context"
+        category: "context-surface"
+        tags: [perf-event context pt-regs]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0 + $ctx.arg1) | count'
             '  0'
             '}'
         ]
