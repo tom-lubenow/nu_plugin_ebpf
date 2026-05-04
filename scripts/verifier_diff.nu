@@ -3256,6 +3256,38 @@ const TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "iter:unix" field: "uid" feature: $KERNEL_FEATURE_CTX_ITER_UNIX_UID }
 ]
 
+const CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
+    { target: "raw_tracepoint:sys_enter" field: "pid" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
+    { target: "raw_tracepoint:sys_enter" field: "current_task" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
+    { target: "raw_tracepoint:sys_enter" field: "uid" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID }
+    { target: "raw_tracepoint:sys_enter" field: "comm" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_COMM }
+    { target: "raw_tracepoint:sys_enter" field: "cpu" feature: $KERNEL_FEATURE_BPF_GET_SMP_PROCESSOR_ID }
+    { target: "raw_tracepoint:sys_enter" field: "random" feature: $KERNEL_FEATURE_BPF_GET_PRANDOM_U32 }
+    { target: "tc:lo:ingress" field: "cgroup_classid" feature: $KERNEL_FEATURE_BPF_GET_CGROUP_CLASSID }
+    { target: "tc:lo:ingress" field: "route_realm" feature: $KERNEL_FEATURE_BPF_GET_ROUTE_REALM }
+    { target: "tc:lo:ingress" field: "csum_level" feature: $KERNEL_FEATURE_BPF_CSUM_LEVEL }
+    { target: "tc:lo:ingress" field: "hash_recalc" feature: $KERNEL_FEATURE_BPF_GET_HASH_RECALC }
+    { target: "raw_tracepoint:sys_enter" field: "cgroup_id" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_CGROUP_ID }
+    { target: "tc:lo:ingress" field: "skb_cgroup_id" feature: $KERNEL_FEATURE_BPF_SKB_CGROUP_ID }
+    { target: "tc:lo:ingress" field: "socket_cookie" feature: $KERNEL_FEATURE_BPF_GET_SOCKET_COOKIE }
+    { target: "tc:lo:ingress" field: "socket_uid" feature: $KERNEL_FEATURE_BPF_GET_SOCKET_UID }
+    { target: "sk_lookup:/proc/self/ns/net" field: "netns_cookie" feature: $KERNEL_FEATURE_BPF_GET_NETNS_COOKIE }
+    { target: "raw_tracepoint:sys_enter" field: "ktime" feature: $KERNEL_FEATURE_BPF_KTIME_GET_NS }
+    { target: "raw_tracepoint:sys_enter" field: "ktime_boot" feature: $KERNEL_FEATURE_BPF_KTIME_GET_BOOT_NS }
+    { target: "raw_tracepoint:sys_enter" field: "ktime_coarse" feature: $KERNEL_FEATURE_BPF_KTIME_GET_COARSE_NS }
+    { target: "raw_tracepoint:sys_enter" field: "ktime_tai" feature: $KERNEL_FEATURE_BPF_KTIME_GET_TAI_NS }
+    { target: "raw_tracepoint:sys_enter" field: "jiffies" feature: $KERNEL_FEATURE_BPF_JIFFIES64 }
+    { target: "fentry:security_file_open" field: "func_ip" feature: $KERNEL_FEATURE_BPF_GET_FUNC_IP }
+    { target: "fentry:security_file_open" field: "attach_cookie" feature: $KERNEL_FEATURE_BPF_GET_ATTACH_COOKIE }
+    { target: "perf_event:software:cpu-clock:period=100000" field: "perf_counter" feature: $KERNEL_FEATURE_BPF_PERF_PROG_READ_VALUE }
+    { target: "xdp:lo" field: "xdp_buff_len" feature: $KERNEL_FEATURE_BPF_XDP_GET_BUFF_LEN }
+    { target: "cgroup_sysctl:/sys/fs/cgroup" field: "name" feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_NAME }
+    { target: "cgroup_sysctl:/sys/fs/cgroup" field: "current_value" feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_CURRENT_VALUE }
+    { target: "cgroup_sysctl:/sys/fs/cgroup" field: "new_value" feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_NEW_VALUE }
+    { target: "fentry:security_file_open" field: "arg_count" feature: $KERNEL_FEATURE_BPF_GET_FUNC_ARG_CNT }
+    { target: "raw_tracepoint:sys_enter" field: "kstack" feature: $KERNEL_FEATURE_BPF_GET_STACKID }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -11601,9 +11633,31 @@ def validate-target-context-field-kernel-feature-expectations [] {
     }
 }
 
+def validate-context-field-helper-kernel-feature-expectations [] {
+    for expectation in $CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS {
+        let target = $expectation.target
+        let field = $expectation.field
+        let expected = $expectation.feature
+        let actual = (context-field-helper-kernel-feature $field $target)
+
+        if $actual == null {
+            fail $"context-field-helper-kernel-feature missing expected metadata for ($target) ctx.($field)"
+        }
+
+        for key in [key min_kernel source max_kernel_exclusive] {
+            let expected_value = ($expected | get -o $key)
+            let actual_value = ($actual | get -o $key)
+            if $expected_value != $actual_value {
+                fail $"context-field-helper-kernel-feature drifted for ($target) ctx.($field): ($key) expected=($expected_value) actual=($actual_value)"
+            }
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
+    validate-context-field-helper-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 

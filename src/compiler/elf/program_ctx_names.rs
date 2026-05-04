@@ -527,6 +527,7 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::ctx_field_backing_helper;
     use crate::compiler::mir::ContextFieldCompatibilityRequirement;
     use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
@@ -786,6 +787,69 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "target context fields should not have max_kernel_exclusive metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn test_verifier_diff_context_field_helper_metadata_matches_rust() {
+        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let table_body = verifier_diff_const_body(
+            verifier_diff,
+            "CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS",
+            '[',
+        );
+
+        for line in table_body.lines() {
+            let Some(target) = verifier_diff_quoted_field(line, "target") else {
+                continue;
+            };
+            let field_name = verifier_diff_quoted_field(line, "field").unwrap_or_else(|| {
+                panic!("expected verifier_diff.nu helper-backed context field for {target}")
+            });
+            let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+                panic!(
+                    "expected verifier_diff.nu helper-backed context feature for {target} ctx.{field_name}"
+                )
+            });
+            let spec = ProgramSpec::parse(target)
+                .unwrap_or_else(|err| panic!("{target} should parse in Rust: {err}"));
+            let program_type = spec.program_type();
+            let field = program_type
+                .resolve_ctx_field_name(field_name)
+                .unwrap_or_else(|err| {
+                    panic!("{target} ctx.{field_name} should resolve in Rust: {err}")
+                });
+            let helper = ctx_field_backing_helper(&field).unwrap_or_else(|| {
+                panic!("{target} ctx.{field_name} should have a backing helper")
+            });
+            let requirement = helper.compatibility_requirement().unwrap_or_else(|| {
+                panic!(
+                    "{target} ctx.{field_name} backing helper {} should have compatibility metadata",
+                    helper.name()
+                )
+            });
+            let (key, min_kernel, source, max_kernel) =
+                verifier_diff_feature_record(verifier_diff, feature_const);
+
+            assert_eq!(
+                key,
+                requirement.key(),
+                "verifier_diff.nu context helper key drifted for {target} ctx.{field_name}"
+            );
+            assert_eq!(
+                min_kernel,
+                requirement.minimum_kernel(),
+                "verifier_diff.nu context helper min_kernel drifted for {target} ctx.{field_name}"
+            );
+            assert_eq!(
+                source,
+                requirement.minimum_kernel_source(),
+                "verifier_diff.nu context helper source drifted for {target} ctx.{field_name}"
+            );
+            assert_eq!(
+                max_kernel, None,
+                "context helper features should not have max_kernel_exclusive metadata"
             );
         }
     }
