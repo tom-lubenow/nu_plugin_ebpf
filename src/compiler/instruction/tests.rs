@@ -750,6 +750,119 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
 }
 
 #[test]
+fn test_verifier_diff_helper_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+    let helper_ids_body = nu_const_body(verifier_diff, "BPF_HELPER_IDS", '[');
+    let mut helper_ids = std::collections::BTreeMap::new();
+    for line in helper_ids_body.lines() {
+        let Some(name) = quoted_field(line, "name") else {
+            continue;
+        };
+        let id = numeric_field(line, "id")
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu helper id for {name}"));
+        assert!(
+            helper_ids.insert(id, name).is_none(),
+            "duplicate verifier_diff.nu helper id {id}"
+        );
+    }
+
+    let floors_body = nu_const_body(verifier_diff, "BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID", '[');
+    let mut floors = Vec::new();
+    for line in floors_body.lines() {
+        let Some(max_id) = numeric_field(line, "max_id") else {
+            continue;
+        };
+        let min_kernel = quoted_field(line, "min_kernel").unwrap_or_else(|| {
+            panic!("expected helper floor max_id={max_id} to declare min_kernel")
+        });
+        floors.push((max_id, min_kernel));
+    }
+
+    let mut modeled_helper_count = 0;
+    for helper_id in 1..=211 {
+        let helper = BpfHelper::from_u32(helper_id)
+            .unwrap_or_else(|| panic!("expected modeled helper id {helper_id}"));
+        modeled_helper_count += 1;
+        let requirement = helper
+            .compatibility_requirement()
+            .expect("modeled helper should have compatibility metadata");
+        assert_eq!(
+            helper_ids.get(&helper_id).copied(),
+            Some(helper.name()),
+            "verifier_diff.nu helper ID table drifted for id {helper_id}"
+        );
+
+        let (_, min_kernel) = floors
+            .iter()
+            .find(|(max_id, _)| helper_id <= *max_id)
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu helper floor for id {helper_id}"));
+        assert_eq!(
+            *min_kernel,
+            requirement.minimum_kernel(),
+            "verifier_diff.nu helper floor drifted for {}",
+            helper.name()
+        );
+        assert_eq!(
+            format!(
+                "https://github.com/torvalds/linux/blob/v{min_kernel}/include/uapi/linux/bpf.h"
+            ),
+            requirement.minimum_kernel_source(),
+            "verifier_diff.nu generated helper source drifted for {}",
+            helper.name()
+        );
+    }
+    assert_eq!(modeled_helper_count, 211);
+    assert_eq!(helper_ids.len(), 211);
+
+    for (helper_id, name) in &helper_ids {
+        let helper = BpfHelper::from_u32(*helper_id)
+            .unwrap_or_else(|| panic!("verifier_diff.nu has unmodeled helper id {helper_id}"));
+        assert_eq!(
+            helper.name(),
+            *name,
+            "verifier_diff.nu helper name drifted for id {helper_id}"
+        );
+    }
+
+    let explicit_body = nu_const_body(verifier_diff, "HELPER_KERNEL_FEATURES", '[');
+    for line in explicit_body.lines() {
+        let Some(name) = quoted_field(line, "name") else {
+            continue;
+        };
+        let helper = BpfHelper::from_name(name).unwrap_or_else(|| {
+            panic!("explicit verifier_diff.nu helper feature {name} is unmodeled")
+        });
+        assert_eq!(
+            helper.name(),
+            name,
+            "explicit verifier_diff.nu helper feature should use the canonical helper name"
+        );
+        let requirement = helper
+            .compatibility_requirement()
+            .expect("explicit verifier_diff.nu helper should have compatibility metadata");
+        let feature_const = dollar_field(line, "feature").unwrap_or_else(|| {
+            panic!("expected explicit verifier_diff.nu helper feature for {name}")
+        });
+        let (key, min_kernel, source, max_kernel) = nu_feature_record(verifier_diff, feature_const);
+        assert_eq!(key, requirement.key());
+        assert_eq!(
+            min_kernel,
+            requirement.minimum_kernel(),
+            "explicit verifier_diff.nu helper min_kernel drifted for {name}"
+        );
+        assert_eq!(
+            source,
+            requirement.minimum_kernel_source(),
+            "explicit verifier_diff.nu helper source drifted for {name}"
+        );
+        assert_eq!(
+            max_kernel, None,
+            "helpers should not have max_kernel_exclusive metadata"
+        );
+    }
+}
+
+#[test]
 fn test_call_kfunc() {
     let insn = EbpfInsn::call_kfunc(1234);
     let bytes = insn.encode();
@@ -4386,6 +4499,62 @@ fn quoted_kfunc_names(source: &str) -> std::collections::BTreeSet<&str> {
         .collect()
 }
 
+fn nu_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
+    let marker = format!("const {name} = {delimiter}");
+    let start = source
+        .find(&marker)
+        .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name}"))
+        + marker.len();
+    let end_marker = format!("\n{}", if delimiter == '[' { ']' } else { '}' });
+    let end = source[start..]
+        .find(&end_marker)
+        .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name} to terminate"));
+    &source[start..start + end]
+}
+
+fn quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+    let marker = format!("{field}: \"");
+    let start = line.find(&marker)? + marker.len();
+    let rest = &line[start..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+fn dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+    let marker = format!("{field}: $");
+    let start = line.find(&marker)? + marker.len();
+    let rest = &line[start..];
+    let end = rest
+        .find(|c: char| c.is_whitespace() || c == '}')
+        .unwrap_or(rest.len());
+    Some(&rest[..end])
+}
+
+fn numeric_field(line: &str, field: &str) -> Option<u32> {
+    let marker = format!("{field}: ");
+    let start = line.find(&marker)? + marker.len();
+    let rest = &line[start..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+fn nu_feature_record<'a>(
+    script: &'a str,
+    feature_const: &str,
+) -> (&'a str, &'a str, &'a str, Option<&'a str>) {
+    let body = nu_const_body(script, feature_const, '{');
+    let key = quoted_field(body, "key")
+        .unwrap_or_else(|| panic!("expected {feature_const} to declare key"));
+    let min_kernel = quoted_field(body, "min_kernel")
+        .unwrap_or_else(|| panic!("expected {feature_const} to declare min_kernel"));
+    let source = quoted_field(body, "source")
+        .unwrap_or_else(|| panic!("expected {feature_const} to declare source"));
+    let max_kernel = quoted_field(body, "max_kernel_exclusive");
+    (key, min_kernel, source, max_kernel)
+}
+
 #[test]
 fn test_known_kfunc_signatures_have_compatibility_metadata() {
     let signature_names = quoted_kfunc_names(include_str!("kfunc_signature.rs"));
@@ -4414,52 +4583,6 @@ fn test_known_kfunc_signatures_have_compatibility_metadata() {
 
 #[test]
 fn test_verifier_diff_kfunc_metadata_matches_rust() {
-    fn nu_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
-        let marker = format!("const {name} = {delimiter}");
-        let start = source
-            .find(&marker)
-            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name}"))
-            + marker.len();
-        let end_marker = format!("\n{}", if delimiter == '[' { ']' } else { '}' });
-        let end = source[start..]
-            .find(&end_marker)
-            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name} to terminate"));
-        &source[start..start + end]
-    }
-
-    fn quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
-        let marker = format!("{field}: \"");
-        let start = line.find(&marker)? + marker.len();
-        let rest = &line[start..];
-        let end = rest.find('"')?;
-        Some(&rest[..end])
-    }
-
-    fn dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
-        let marker = format!("{field}: $");
-        let start = line.find(&marker)? + marker.len();
-        let rest = &line[start..];
-        let end = rest
-            .find(|c: char| c.is_whitespace() || c == '}')
-            .unwrap_or(rest.len());
-        Some(&rest[..end])
-    }
-
-    fn nu_feature_record<'a>(
-        script: &'a str,
-        feature_const: &str,
-    ) -> (&'a str, &'a str, &'a str, Option<&'a str>) {
-        let body = nu_const_body(script, feature_const, '{');
-        let key = quoted_field(body, "key")
-            .unwrap_or_else(|| panic!("expected {feature_const} to declare key"));
-        let min_kernel = quoted_field(body, "min_kernel")
-            .unwrap_or_else(|| panic!("expected {feature_const} to declare min_kernel"));
-        let source = quoted_field(body, "source")
-            .unwrap_or_else(|| panic!("expected {feature_const} to declare source"));
-        let max_kernel = quoted_field(body, "max_kernel_exclusive");
-        (key, min_kernel, source, max_kernel)
-    }
-
     let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
     let fallback_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
     let mut fallback = std::collections::BTreeMap::new();
