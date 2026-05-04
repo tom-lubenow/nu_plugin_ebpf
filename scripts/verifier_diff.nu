@@ -3692,6 +3692,38 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["ctx:sysctl_new_value"]
     }
+    {
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  (($ctx.data | get 0) + $ctx.packet_len + $ctx.eth_protocol + $ctx.protocol + $ctx.hash + $ctx.bind_inany + $ctx.socket_cookie) | count'
+            '  ($ctx.sk.family + $ctx.sk.mark + $ctx.sk.priority + $ctx.sk.rx_queue_mapping) | count'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:data" "ctx:packet_len" "ctx:eth_protocol" "ctx:protocol" "ctx:hash" "ctx:bind_inany" "ctx:socket_cookie" "ctx:sk" "ctx:family" "ctx:mark" "ctx:priority" "ctx:rx_queue_mapping" "helper:bpf_get_socket_cookie" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.hash_recalc + $ctx.csum_level) | count'
+            '  ($ctx.socket_cookie + $ctx.socket_uid + $ctx.sk.family + $ctx.cb.2) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pkt_type" "ctx:queue_mapping" "ctx:vlan_present" "ctx:vlan_tci" "ctx:vlan_proto" "ctx:hash_recalc" "ctx:csum_level" "ctx:socket_cookie" "ctx:socket_uid" "ctx:sk" "ctx:family" "ctx:cb" "helper:bpf_get_hash_recalc" "helper:bpf_csum_level" "helper:bpf_get_socket_cookie" "helper:bpf_get_socket_uid" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.hash_recalc + $ctx.csum_level + $ctx.cgroup_classid + $ctx.route_realm + $ctx.cb.3) | count'
+            '  "reroute"'
+            '}'
+        ]
+        feature_keys: ["ctx:pkt_type" "ctx:queue_mapping" "ctx:vlan_present" "ctx:vlan_tci" "ctx:vlan_proto" "ctx:hash_recalc" "ctx:csum_level" "ctx:cgroup_classid" "ctx:route_realm" "ctx:cb" "helper:bpf_get_hash_recalc" "helper:bpf_csum_level" "helper:bpf_get_cgroup_classid" "helper:bpf_get_route_realm"]
+    }
 ]
 
 const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
