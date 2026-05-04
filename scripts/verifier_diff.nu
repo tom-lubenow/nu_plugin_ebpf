@@ -3258,6 +3258,7 @@ const TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
 
 const CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "raw_tracepoint:sys_enter" field: "pid" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID }
+    { target: "raw_tracepoint:sys_enter" field: "task" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
     { target: "raw_tracepoint:sys_enter" field: "current_task" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
     { target: "raw_tracepoint:sys_enter" field: "cgroup" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
     { target: "raw_tracepoint:sys_enter" field: "current_cgroup" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_TASK_BTF }
