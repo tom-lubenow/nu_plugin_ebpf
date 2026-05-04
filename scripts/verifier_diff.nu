@@ -5063,6 +5063,26 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_from_mem' arg3 requires uninitialized dynptr stack object slot"
     }
     {
+        name: "dynptr-from-mem-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_flag_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_flag_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 1 $d'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_from_mem' requires arg2 flags to be 0"
+    }
+    {
         name: "dynptr-read-write-initialized-from-mem"
         category: "helper-state"
         tags: [dynptr accept]
@@ -5103,6 +5123,28 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_read' arg2 requires initialized dynptr stack object"
     }
     {
+        name: "dynptr-read-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_read_flag_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_read_flag_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let out = "0000"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    helper-call "bpf_dynptr_read" $out 4 $d 0 1'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_read' requires arg4 flags to be 0"
+    }
+    {
         name: "dynptr-write-rejects-uninitialized"
         category: "helper-state"
         tags: [dynptr reject]
@@ -5118,6 +5160,28 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_dynptr_write' arg0 requires initialized dynptr stack object"
+    }
+    {
+        name: "dynptr-write-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_write_flag_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_write_flag_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let src = "wxyz"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    helper-call "bpf_dynptr_write" $d 0 $src 4 1'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_write' requires arg4 flags to be 0 for modeled dynptr sources"
     }
     {
         name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
