@@ -3492,6 +3492,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_task_pt_regs"]
     }
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut writable = $ctx'
+            '  $writable.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sysctl_new_value"]
+    }
 ]
 
 const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
@@ -3520,6 +3531,17 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         program: [
             '{|event|'
             '  $event.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sysctl_set_new_value"]
+    }
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut writable = $ctx'
+            '  $writable.new_value = "1"'
             '  "allow"'
             '}'
         ]
@@ -5713,6 +5735,22 @@ const FIXTURES = [
             '  $ctx.file_pos = 0'
             '  $ctx.new_value = "1"'
             '  $ctx.name | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sysctl-new-value-alias-write"
+        category: "context-surface"
+        tags: [cgroup-sysctl context writable alias]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut writable = $ctx'
+            '  $writable.new_value = "1"'
             '  "allow"'
             '}'
         ]
@@ -10924,10 +10962,62 @@ def append-unique-name [names name: string] {
     }
 }
 
+def context-variable-binding [line: string context_names] {
+    let trimmed = ($line | str trim)
+    let prefix = if ($trimmed | str starts-with "let ") {
+        "let "
+    } else if ($trimmed | str starts-with "mut ") {
+        "mut "
+    } else {
+        return null
+    }
+
+    let body = ($trimmed | str substring ($prefix | str length)..)
+    for context_name in $context_names {
+        let assignment_parts = if ($body | str contains $" = $($context_name)") {
+            $body | split row $" = $($context_name)"
+        } else if ($body | str contains $"=$($context_name)") {
+            $body | split row $"=$($context_name)"
+        } else {
+            continue
+        }
+        if ($assignment_parts | length) < 2 {
+            continue
+        }
+
+        let suffix = (($assignment_parts | get 1) | str trim)
+        if not (($suffix == "") or ($suffix | str starts-with ";")) {
+            continue
+        }
+
+        let name = (
+            $assignment_parts
+            | first
+            | str trim
+            | split row ":"
+            | first
+            | str trim
+            | split row " "
+            | first
+            | str trim
+        )
+        if $name != "" {
+            return $name
+        }
+    }
+
+    null
+}
+
 def program-context-variable-names [source: string] {
     mut names = ["ctx"]
+    mut found_closure = false
 
     for line in ($source | lines) {
+        if $found_closure {
+            continue
+        }
+
         let parts = ($line | split row "{|")
         if ($parts | length) <= 1 {
             continue
@@ -10953,7 +11043,14 @@ def program-context-variable-names [source: string] {
             )
             $names = (append-unique-name $names $name)
         }
-        return $names
+        $found_closure = true
+    }
+
+    for line in ($source | lines) {
+        let binding = (context-variable-binding $line $names)
+        if $binding != null {
+            $names = (append-unique-name $names $binding)
+        }
     }
 
     $names
