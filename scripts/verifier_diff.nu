@@ -3506,6 +3506,16 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sk" "helper:bpf_sk_assign"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|event|'
+            '  assign-socket 0'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_sk_assign"]
+    }
+    {
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|event|'
@@ -9396,6 +9406,20 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "assign-socket-tc-ingress-clear"
+        category: "language-surface"
+        tags: [assign-socket tc]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  assign-socket 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
     {
         name: "assign-socket-tc-action-rejects-flags"
