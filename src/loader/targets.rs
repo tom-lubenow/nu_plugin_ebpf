@@ -278,7 +278,10 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
         | ProgramSpec::Uretprobe { .. }
         | ProgramSpec::UprobeMulti { .. }
         | ProgramSpec::UretprobeMulti { .. } => Ok(()),
-        ProgramSpec::Xdp { target } => validate_network_interface_target(&target.interface),
+        ProgramSpec::Xdp { target } if target.is_interface() => {
+            validate_network_interface_target(&target.interface)
+        }
+        ProgramSpec::Xdp { .. } => Ok(()),
         ProgramSpec::PerfEvent { target } => {
             if let Some(cpu) = target.cpu {
                 let online = online_cpus().map_err(|(_, e)| {
@@ -401,7 +404,7 @@ fn validate_struct_ops_value_type(value_type_name: &str) -> Result<(), LoadError
 /// - `uprobe.multi.s:/path/to/binary:function_pattern`
 /// - `uretprobe.multi:/path/to/binary:function_pattern`
 /// - `uretprobe.multi.s:/path/to/binary:function_pattern`
-/// - `xdp:interface`, `xdp:interface:frags`, or `xdp:interface:drv:frags`
+/// - `xdp:interface`, `xdp:interface:frags`, `xdp:interface:drv:frags`, `xdp:devmap`, or `xdp:cpumap`
 /// - `perf_event:software:cpu-clock[:cpu=N][:pid=N][:period=N|freq=N]`
 /// - `socket_filter:udp4:127.0.0.1:31337`
 /// - `sk_lookup:/proc/self/ns/net`

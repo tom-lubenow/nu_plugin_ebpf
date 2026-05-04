@@ -1496,6 +1496,8 @@ pub(super) const PROGRAM_COMPATIBILITY_REQUIREMENTS: &[ProgramCompatibilityRequi
     ProgramCompatibilityRequirement::XdpSkbAttachMode,
     ProgramCompatibilityRequirement::XdpDrvAttachMode,
     ProgramCompatibilityRequirement::XdpHwAttachMode,
+    ProgramCompatibilityRequirement::XdpDevmapAttach,
+    ProgramCompatibilityRequirement::XdpCpumapAttach,
     ProgramCompatibilityRequirement::TcProgram,
     ProgramCompatibilityRequirement::SkLookupProgram,
     ProgramCompatibilityRequirement::TracingProgram,

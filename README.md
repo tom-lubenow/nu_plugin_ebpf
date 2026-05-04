@@ -13,7 +13,7 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 
 - Most tracing paths are observational, but `struct_ops` can change kernel behavior.
 - Live loads for unclassified or high-risk `struct_ops` families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops`.
-- `raw_tracepoint.w`, `fmod_ret`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, `syscall`, and direct `struct_ops:<value_type>.<callback>` callback targets currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation or, for callbacks, until they are emitted through a `struct_ops` object.
+- `raw_tracepoint.w`, `fmod_ret`, `xdp:devmap`, `xdp:cpumap`, `flow_dissector`, `netfilter`, `lwt_*`, `tc_action`, `netkit`, `sk_reuseport`, `lsm_cgroup`, `cgroup_sock_addr:*_unix`, `freplace`, `syscall`, and direct `struct_ops:<value_type>.<callback>` callback targets currently support compile/dry-run only; live attach intentionally returns an unsupported error until the loader has a safe attach implementation or, for callbacks, until they are emitted through a `struct_ops` object.
 - Prefer `--dry-run` on the host and use an isolated VM or disposable environment for unclassified or risky `struct_ops` families.
 
 ## Project Status
@@ -36,7 +36,8 @@ metadata, not live-attach authorization flags; use the separate
 requirements carry minimum
 kernel versions for base program families, cgroup program families,
 TCX/netkit, netfilter links and defrag targets, XDP attach modes,
-`uprobe.multi`, struct_ops family targets such as `tcp_congestion_ops`,
+XDP devmap/cpumap secondary program sections, `uprobe.multi`,
+struct_ops family targets such as `tcp_congestion_ops`,
 `hid_bpf_ops`, `sched_ext_ops`, and `Qdisc_ops`, and cgroup UNIX
 socket-address hooks, and
 `compatibility_minimum_kernel` reports the maximum known requirement for that

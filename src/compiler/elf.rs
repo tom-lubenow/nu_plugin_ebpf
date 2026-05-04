@@ -1603,6 +1603,8 @@ pub enum ProgramCompatibilityRequirement {
     XdpSkbAttachMode,
     XdpDrvAttachMode,
     XdpHwAttachMode,
+    XdpDevmapAttach,
+    XdpCpumapAttach,
     TcProgram,
     SkLookupProgram,
     TracingProgram,
@@ -1816,6 +1818,8 @@ impl ProgramCompatibilityRequirement {
             Self::XdpSkbAttachMode => "xdp-attach-skb",
             Self::XdpDrvAttachMode => "xdp-attach-drv",
             Self::XdpHwAttachMode => "xdp-attach-hw",
+            Self::XdpDevmapAttach => "xdp-attach-devmap",
+            Self::XdpCpumapAttach => "xdp-attach-cpumap",
             Self::TcProgram => "tc-program",
             Self::SkLookupProgram => "sk-lookup-program",
             Self::TracingProgram => "tracing-program",
@@ -1891,6 +1895,8 @@ impl ProgramCompatibilityRequirement {
             Self::XdpSkbAttachMode => "XDP generic/SKB attach mode flag support",
             Self::XdpDrvAttachMode => "XDP native/driver attach mode flag support",
             Self::XdpHwAttachMode => "XDP hardware-offload attach mode flag support",
+            Self::XdpDevmapAttach => "XDP devmap secondary program attach support",
+            Self::XdpCpumapAttach => "XDP cpumap secondary program attach support",
             Self::TcProgram => "traffic-control classifier BPF program support",
             Self::SkLookupProgram => "socket lookup BPF program support",
             Self::TracingProgram => "BPF tracing program support",
@@ -1968,6 +1974,8 @@ impl ProgramCompatibilityRequirement {
             | Self::XdpSkbAttachMode
             | Self::XdpDrvAttachMode
             | Self::XdpHwAttachMode
+            | Self::XdpDevmapAttach
+            | Self::XdpCpumapAttach
             | Self::SkReuseportMigration
             | Self::CgroupUnixSockAddr => "attach-mode",
             Self::SleepableProgram | Self::XdpMultiBuffer => "section-feature",
@@ -2018,6 +2026,8 @@ impl ProgramCompatibilityRequirement {
             | Self::XdpSkbAttachMode
             | Self::XdpDrvAttachMode
             | Self::XdpHwAttachMode
+            | Self::XdpDevmapAttach
+            | Self::XdpCpumapAttach
             | Self::RouteLwtSeg6Local
             | Self::SockMapAttach
             | Self::SkMsgSockMapAttach
@@ -2096,6 +2106,8 @@ impl ProgramCompatibilityRequirement {
             Self::XdpProgram => Some("4.8"),
             Self::XdpSkbAttachMode | Self::XdpDrvAttachMode => Some("4.12"),
             Self::XdpHwAttachMode => Some("4.13"),
+            Self::XdpDevmapAttach => Some("5.8"),
+            Self::XdpCpumapAttach => Some("5.9"),
             Self::PerfEventProgram => Some("4.9"),
             Self::RawTracepointProgram => Some("4.17"),
             Self::SkLookupProgram => Some("5.9"),
@@ -2196,6 +2208,8 @@ impl ProgramCompatibilityRequirement {
             Self::XdpProgram => LINUX_BPF_H_V4_8_SOURCE,
             Self::XdpSkbAttachMode | Self::XdpDrvAttachMode => LINUX_IF_LINK_H_V4_12_SOURCE,
             Self::XdpHwAttachMode => LINUX_IF_LINK_H_V4_13_SOURCE,
+            Self::XdpDevmapAttach => LINUX_BPF_H_V5_8_SOURCE,
+            Self::XdpCpumapAttach => LINUX_BPF_H_V5_9_SOURCE,
             Self::PerfEventProgram => LINUX_BPF_H_V4_9_SOURCE,
             Self::RawTracepointProgram => LINUX_BPF_H_V4_17_SOURCE,
             Self::SkLookupProgram => LINUX_BPF_H_V5_9_SOURCE,
@@ -2364,6 +2378,7 @@ pub enum ProgramTargetKind {
     UserFunction,
     UserFunctionPattern,
     NetworkInterface,
+    XdpSecondaryProgram,
     PerfEventTarget,
     SocketFilterTarget,
     NetworkNamespacePath,
@@ -2399,6 +2414,7 @@ impl ProgramTargetKind {
             Self::UserFunction => "user-function",
             Self::UserFunctionPattern => "user-function-pattern",
             Self::NetworkInterface => "network-interface",
+            Self::XdpSecondaryProgram => "xdp-secondary-program",
             Self::PerfEventTarget => "perf-event-target",
             Self::SocketFilterTarget => "socket-filter-target",
             Self::NetworkNamespacePath => "network-namespace-path",

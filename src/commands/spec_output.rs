@@ -313,9 +313,14 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
-        ProgramAttachShape::Xdp { mode, frags } => Value::record(
+        ProgramAttachShape::Xdp {
+            target_kind,
+            mode,
+            frags,
+        } => Value::record(
             record! {
                 "kind" => Value::string("xdp", span),
+                "target_kind" => Value::string(target_kind.key(), span),
                 "mode" => Value::string(mode.key(), span),
                 "frags" => Value::bool(frags, span),
             },

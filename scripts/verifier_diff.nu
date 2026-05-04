@@ -112,6 +112,16 @@ const KERNEL_FEATURE_XDP_ATTACH_HW = {
     min_kernel: "4.13"
     source: "https://github.com/torvalds/linux/blob/v4.13/include/uapi/linux/if_link.h"
 }
+const KERNEL_FEATURE_XDP_ATTACH_DEVMAP = {
+    key: "attach:BPF_XDP_DEVMAP"
+    min_kernel: "5.8"
+    source: "https://github.com/torvalds/linux/blob/v5.8/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_XDP_ATTACH_CPUMAP = {
+    key: "attach:BPF_XDP_CPUMAP"
+    min_kernel: "5.9"
+    source: "https://github.com/torvalds/linux/blob/v5.9/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_XDP_MULTI_BUFFER = {
     key: "section:xdp.frags"
     min_kernel: "5.18"
@@ -3448,6 +3458,34 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.packet_len + $ctx.ifindex + $ctx.rx_queue_index + $ctx.xdp_buff_len + $ctx.ancestor_cgroup_id.0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "xdp-devmap-secondary-context"
+        category: "program-model"
+        tags: [xdp devmap context]
+        target: "xdp:devmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.ifindex) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "xdp-cpumap-secondary-context"
+        category: "program-model"
+        tags: [xdp cpumap context]
+        target: "xdp:cpumap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.packet_len + $ctx.rx_queue_index) | count'
             '  "pass"'
             '}'
         ]
@@ -9719,7 +9757,11 @@ def target-kernel-features [target] {
     } else if ($target | str starts-with "xdp:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_XDP)
         let xdp_parts = ($target | split row ":")
-        if ("hw" in $xdp_parts) or ("hardware" in $xdp_parts) or ("offload" in $xdp_parts) {
+        if ("devmap" in $xdp_parts) {
+            $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_DEVMAP)
+        } else if ("cpumap" in $xdp_parts) {
+            $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_CPUMAP)
+        } else if ("hw" in $xdp_parts) or ("hardware" in $xdp_parts) or ("offload" in $xdp_parts) {
             $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_HW)
         } else if ("drv" in $xdp_parts) or ("driver" in $xdp_parts) or ("native" in $xdp_parts) {
             $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_DRV)
@@ -9951,6 +9993,8 @@ def kernel-feature-default-test-lane [feature] {
         "attach:xdp-skb"
         "attach:xdp-drv"
         "attach:xdp-hw"
+        "attach:BPF_XDP_DEVMAP"
+        "attach:BPF_XDP_CPUMAP"
         "section:xdp.frags"
         "program:BPF_PROG_TYPE_SCHED_CLS"
         "program:BPF_PROG_TYPE_SCHED_ACT"

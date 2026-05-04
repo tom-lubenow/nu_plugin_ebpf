@@ -1962,6 +1962,36 @@ fn test_spec_record_reports_base_program_minimum() {
             .expect("minimum kernel should be a string"),
         "4.12"
     );
+
+    let spec = ProgramSpec::parse("xdp:cpumap").expect("xdp cpumap spec should parse");
+    let record = spec_record("xdp:cpumap".to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let requirements = record
+        .get("compatibility_requirements")
+        .expect("compatibility requirements should be present")
+        .as_list()
+        .expect("compatibility requirements should be a list");
+
+    assert_eq!(
+        record
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "5.9"
+    );
+    assert!(
+        requirements.iter().any(|requirement| {
+            requirement
+                .as_record()
+                .ok()
+                .and_then(|requirement| requirement.get("key"))
+                .and_then(|key| key.as_str().ok())
+                .is_some_and(|key| key == "xdp-attach-cpumap")
+        }),
+        "xdp cpumap attach-mode requirement should be present"
+    );
 }
 
 #[test]
@@ -1990,6 +2020,14 @@ fn test_spec_record_includes_attach_shape_metadata() {
     );
     assert_eq!(
         attach_shape
+            .get("target_kind")
+            .expect("xdp target kind should be present")
+            .as_str()
+            .expect("xdp target kind should be a string"),
+        "interface"
+    );
+    assert_eq!(
+        attach_shape
             .get("mode")
             .expect("xdp mode should be present")
             .as_str()
@@ -2002,6 +2040,37 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("xdp frags should be present")
             .as_bool()
             .expect("xdp frags should be a bool")
+    );
+
+    let xdp_devmap = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
+    let record = spec_record(
+        "xdp:devmap".to_string(),
+        xdp_devmap,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    assert_eq!(
+        record
+            .get("target_kind")
+            .expect("target kind should be present")
+            .as_str()
+            .expect("target kind should be a string"),
+        "xdp-secondary-program"
+    );
+    let attach_shape = record
+        .get("attach_shape")
+        .expect("attach shape should be present")
+        .as_record()
+        .expect("attach shape should be a record");
+    assert_eq!(
+        attach_shape
+            .get("target_kind")
+            .expect("xdp target kind should be present")
+            .as_str()
+            .expect("xdp target kind should be a string"),
+        "devmap"
     );
 
     let perf_event = ProgramSpec::parse("perf_event:hardware:instructions:cpu=2:pid=42:freq=99")

@@ -247,6 +247,7 @@ pub(crate) const CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED: &str =
     "the current Aya cgroup_sock_addr attach surface does not expose BPF_CGROUP_UNIX_* hooks";
 pub(crate) const STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED: &str =
     "struct_ops callbacks are emitted through a struct_ops object and are not directly attachable";
+pub(crate) const XDP_MAP_LIVE_ATTACH_UNSUPPORTED: &str = "XDP devmap/cpumap programs are loaded through map entries, and this loader does not model that attach path yet";
 
 impl ProgramLiveAttachPolicy {
     fn unsupported(note: &'static str) -> Self {
@@ -277,12 +278,40 @@ impl ProgramLiveAttachPolicy {
 /// Parsed xdp target information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XdpTarget {
-    /// Network interface name.
+    /// Network interface name for interface targets; `devmap`/`cpumap` for
+    /// secondary-program section targets.
     pub interface: String,
+    /// XDP attach target kind.
+    pub target_kind: XdpTargetKind,
     /// XDP attach mode. Defaults to SKB/generic mode for safer development attaches.
     pub attach_mode: XdpAttachMode,
     /// Whether the program is multi-buffer capable (`xdp.frags` section).
     pub frags: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XdpTargetKind {
+    Interface,
+    Devmap,
+    Cpumap,
+}
+
+impl XdpTargetKind {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Interface => "interface",
+            Self::Devmap => "devmap",
+            Self::Cpumap => "cpumap",
+        }
+    }
+
+    pub fn section_name(self) -> Option<&'static str> {
+        match self {
+            Self::Interface => None,
+            Self::Devmap => Some("xdp/devmap"),
+            Self::Cpumap => Some("xdp/cpumap"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,13 +332,34 @@ impl XdpAttachMode {
 }
 
 impl XdpTarget {
-    /// Parse an xdp target string of the form `interface[:skb|drv|hw][:frags]`.
+    /// Parse an xdp target string of the form `interface[:skb|drv|hw][:frags]`,
+    /// `devmap`, or `cpumap`.
     pub fn parse(target: &str) -> Result<Self, ProgramSpecParseError> {
         let mut parts = target.split(':');
         let interface = parts.next().unwrap_or_default();
         if interface.is_empty() {
             return Err(ProgramSpecParseError::new(
                 "xdp interface target cannot be empty",
+            ));
+        }
+
+        if matches!(target, "devmap" | "cpumap") {
+            let target_kind = if target == "devmap" {
+                XdpTargetKind::Devmap
+            } else {
+                XdpTargetKind::Cpumap
+            };
+            return Ok(Self {
+                interface: target.to_string(),
+                target_kind,
+                attach_mode: XdpAttachMode::Skb,
+                frags: false,
+            });
+        }
+
+        if matches!(interface, "devmap" | "cpumap") {
+            return Err(ProgramSpecParseError::new(
+                "xdp devmap/cpumap targets do not accept interface attach modes or frags",
             ));
         }
 
@@ -357,12 +407,17 @@ impl XdpTarget {
 
         Ok(Self {
             interface: interface.to_string(),
+            target_kind: XdpTargetKind::Interface,
             attach_mode,
             frags,
         })
     }
 
     pub fn target_string(&self) -> String {
+        if self.target_kind != XdpTargetKind::Interface {
+            return self.target_kind.key().to_string();
+        }
+
         let mut target = self.interface.clone();
         if self.attach_mode != XdpAttachMode::Skb {
             target.push(':');
@@ -375,7 +430,15 @@ impl XdpTarget {
     }
 
     pub fn section_name(&self) -> &'static str {
+        if let Some(section_name) = self.target_kind.section_name() {
+            return section_name;
+        }
+
         if self.frags { "xdp.frags" } else { "xdp" }
+    }
+
+    pub fn is_interface(&self) -> bool {
+        self.target_kind == XdpTargetKind::Interface
     }
 }
 
@@ -2176,6 +2239,7 @@ pub(crate) enum ProgramAttachShape {
     Syscall,
     Iter,
     Xdp {
+        target_kind: XdpTargetKind,
         mode: XdpAttachMode,
         frags: bool,
     },
@@ -2718,13 +2782,17 @@ impl ProgramSpec {
         }
 
         if let ProgramSpec::Xdp { target } = self {
-            let attach_requirement = match target.attach_mode {
-                XdpAttachMode::Skb => ProgramCompatibilityRequirement::XdpSkbAttachMode,
-                XdpAttachMode::Driver => ProgramCompatibilityRequirement::XdpDrvAttachMode,
-                XdpAttachMode::Hardware => ProgramCompatibilityRequirement::XdpHwAttachMode,
+            let attach_requirement = match target.target_kind {
+                XdpTargetKind::Interface => match target.attach_mode {
+                    XdpAttachMode::Skb => ProgramCompatibilityRequirement::XdpSkbAttachMode,
+                    XdpAttachMode::Driver => ProgramCompatibilityRequirement::XdpDrvAttachMode,
+                    XdpAttachMode::Hardware => ProgramCompatibilityRequirement::XdpHwAttachMode,
+                },
+                XdpTargetKind::Devmap => ProgramCompatibilityRequirement::XdpDevmapAttach,
+                XdpTargetKind::Cpumap => ProgramCompatibilityRequirement::XdpCpumapAttach,
             };
             push_compatibility_requirement(&mut requirements, attach_requirement);
-            if target.frags {
+            if target.is_interface() && target.frags {
                 push_compatibility_requirement(
                     &mut requirements,
                     ProgramCompatibilityRequirement::XdpMultiBuffer,
@@ -2832,6 +2900,11 @@ impl ProgramSpec {
     }
 
     pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
+        if let ProgramSpec::Xdp { target } = self {
+            if !target.is_interface() {
+                return ProgramLiveAttachPolicy::unsupported(XDP_MAP_LIVE_ATTACH_UNSUPPORTED);
+            }
+        }
         if let ProgramSpec::CgroupSockAddr { target } = self {
             if target.is_unix() {
                 return ProgramLiveAttachPolicy::unsupported(
@@ -3065,6 +3138,9 @@ impl ProgramSpec {
 
     pub(crate) fn target_kind(&self) -> ProgramTargetKind {
         match self {
+            ProgramSpec::Xdp { target } if !target.is_interface() => {
+                ProgramTargetKind::XdpSecondaryProgram
+            }
             ProgramSpec::StructOps { .. } => ProgramTargetKind::StructOpsValueType,
             ProgramSpec::StructOpsCallback { .. } => ProgramTargetKind::StructOpsCallback,
             _ => self.program_type().target_kind(),
@@ -3163,6 +3239,7 @@ impl ProgramSpec {
             ProgramSpec::Syscall { .. } => ProgramAttachShape::Syscall,
             ProgramSpec::Iter { .. } => ProgramAttachShape::Iter,
             ProgramSpec::Xdp { target } => ProgramAttachShape::Xdp {
+                target_kind: target.target_kind,
                 mode: target.attach_mode,
                 frags: target.frags,
             },
@@ -3516,6 +3593,7 @@ mod tests {
         assert_eq!(
             xdp.attach_shape(),
             ProgramAttachShape::Xdp {
+                target_kind: XdpTargetKind::Interface,
                 mode: XdpAttachMode::Driver,
                 frags: true,
             }
@@ -3737,6 +3815,32 @@ mod tests {
                 &xdp_hw.compatibility_requirements()
             ),
             Some("4.13")
+        );
+
+        let xdp_devmap = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
+        assert!(
+            xdp_devmap
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpDevmapAttach)
+        );
+        assert_eq!(xdp_devmap.section_name(), "xdp/devmap");
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &xdp_devmap.compatibility_requirements()
+            ),
+            Some("5.8")
+        );
+
+        let xdp_cpumap = ProgramSpec::parse("xdp:cpumap").expect("xdp cpumap spec should parse");
+        assert!(
+            xdp_cpumap
+                .requires_compatibility_feature(ProgramCompatibilityRequirement::XdpCpumapAttach)
+        );
+        assert_eq!(xdp_cpumap.section_name(), "xdp/cpumap");
+        assert_eq!(
+            ProgramCompatibilityRequirement::effective_minimum_kernel(
+                &xdp_cpumap.compatibility_requirements()
+            ),
+            Some("5.9")
         );
 
         let fentry_sleepable =
@@ -4056,6 +4160,17 @@ mod tests {
             cgroup_unix_policy
                 .note
                 .is_some_and(|note| note.contains("BPF_CGROUP_UNIX"))
+        );
+
+        let xdp_devmap = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
+        let xdp_devmap_policy = xdp_devmap.live_attach_policy();
+        assert!(!xdp_devmap_policy.loader_supported);
+        assert!(!xdp_devmap_policy.default_allowed);
+        assert!(!xdp_devmap_policy.requires_opt_in);
+        assert!(
+            xdp_devmap_policy
+                .note
+                .is_some_and(|note| note.contains("map entries"))
         );
 
         let sched_ext =
@@ -4660,12 +4775,14 @@ mod tests {
     fn test_xdp_target_requires_non_empty_interface() {
         let target = XdpTarget::parse("lo").expect("xdp target should parse");
         assert_eq!(target.target_string(), "lo");
+        assert_eq!(target.target_kind, XdpTargetKind::Interface);
         assert_eq!(target.attach_mode, XdpAttachMode::Skb);
         assert!(!target.frags);
         assert_eq!(target.section_name(), "xdp");
 
         let frags = XdpTarget::parse("lo:frags").expect("xdp frags target should parse");
         assert_eq!(frags.interface, "lo");
+        assert_eq!(frags.target_kind, XdpTargetKind::Interface);
         assert_eq!(frags.attach_mode, XdpAttachMode::Skb);
         assert!(frags.frags);
         assert_eq!(frags.target_string(), "lo:frags");
@@ -4673,6 +4790,7 @@ mod tests {
 
         let driver = XdpTarget::parse("lo:native").expect("xdp native target should parse");
         assert_eq!(driver.interface, "lo");
+        assert_eq!(driver.target_kind, XdpTargetKind::Interface);
         assert_eq!(driver.attach_mode, XdpAttachMode::Driver);
         assert!(!driver.frags);
         assert_eq!(driver.target_string(), "lo:drv");
@@ -4681,10 +4799,30 @@ mod tests {
         let hardware_frags =
             XdpTarget::parse("lo:frags:offload").expect("xdp hw frags target should parse");
         assert_eq!(hardware_frags.interface, "lo");
+        assert_eq!(hardware_frags.target_kind, XdpTargetKind::Interface);
         assert_eq!(hardware_frags.attach_mode, XdpAttachMode::Hardware);
         assert!(hardware_frags.frags);
         assert_eq!(hardware_frags.target_string(), "lo:hw:frags");
         assert_eq!(hardware_frags.section_name(), "xdp.frags");
+
+        let devmap = XdpTarget::parse("devmap").expect("xdp devmap target should parse");
+        assert_eq!(devmap.target_kind, XdpTargetKind::Devmap);
+        assert_eq!(devmap.target_string(), "devmap");
+        assert_eq!(devmap.section_name(), "xdp/devmap");
+        assert!(!devmap.is_interface());
+
+        let cpumap = XdpTarget::parse("cpumap").expect("xdp cpumap target should parse");
+        assert_eq!(cpumap.target_kind, XdpTargetKind::Cpumap);
+        assert_eq!(cpumap.target_string(), "cpumap");
+        assert_eq!(cpumap.section_name(), "xdp/cpumap");
+        assert!(!cpumap.is_interface());
+
+        let err = XdpTarget::parse("devmap:frags")
+            .expect_err("xdp devmap should reject interface options");
+        assert_eq!(
+            err.to_string(),
+            "xdp devmap/cpumap targets do not accept interface attach modes or frags"
+        );
 
         let err = XdpTarget::parse("").expect_err("empty xdp interface should be rejected");
         assert_eq!(err.to_string(), "xdp interface target cannot be empty");
@@ -4764,6 +4902,7 @@ mod tests {
             ProgramSpec::Xdp {
                 target: XdpTarget {
                     ref interface,
+                    target_kind: XdpTargetKind::Interface,
                     attach_mode: XdpAttachMode::Skb,
                     frags: true
                 }

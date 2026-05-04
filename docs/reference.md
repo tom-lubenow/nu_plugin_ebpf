@@ -192,8 +192,8 @@ parsed-target level. Live-attach rejection messages include these feature
 requirements, for example base program families, kernel BTF, BPF trampolines,
 TCX, netfilter links and defrag targets, route LWT, struct_ops family targets
 such as `tcp_congestion_ops`, `hid_bpf_ops`, `sched_ext_ops`, and `Qdisc_ops`,
-XDP attach modes and multi-buffer sections, cgroup v2, cgroup program
-families, and cgroup UNIX socket-address hooks. Live-load preflight also
+XDP attach modes, devmap/cpumap secondary sections, and multi-buffer sections,
+cgroup v2, cgroup program families, and cgroup UNIX socket-address hooks. Live-load preflight also
 reports source-verified map-kind, global data-section, typed map-value field,
 modeled helper, source-preserved known-kfunc, and source-preserved
 context-field requirements from the compiled object. Compiled program/object
@@ -395,7 +395,10 @@ requires Linux 4.12. Driver mode also requires Linux 4.12, and hardware
 offload mode requires Linux 4.13. Use `xdp:IFACE:drv` or `xdp:IFACE:hw`
 when driver or hardware mode is intentional. Append
 `:frags`, for example `xdp:IFACE:drv:frags`, when the program needs the
-kernel `xdp.frags` section for multi-buffer packets. XDP, TC, TCX, Netkit, and LWT also
+kernel `xdp.frags` section for multi-buffer packets. `xdp:devmap` and
+`xdp:cpumap` emit the secondary-program `xdp/devmap` and `xdp/cpumap`
+sections with the ordinary XDP context/return surface; they are
+compile/dry-run only until the loader models map-entry program loading. XDP, TC, TCX, Netkit, and LWT also
 model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
 multiples of four, and a null `from` or `to` buffer is accepted only
 when the paired size is zero. `ctx.xdp_buff_len` exposes

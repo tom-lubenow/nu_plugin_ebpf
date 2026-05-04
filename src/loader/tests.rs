@@ -15,7 +15,7 @@ use crate::compiler::{
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
     CgroupSockAddrAttachKind, CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, UprobeMultiTarget,
-    XdpAttachMode, XdpTarget,
+    XdpAttachMode, XdpTarget, XdpTargetKind,
 };
 use std::collections::HashMap;
 
@@ -415,6 +415,7 @@ fn test_parse_program_spec_xdp_is_structured() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                target_kind: XdpTargetKind::Interface,
                 attach_mode: XdpAttachMode::Skb,
                 frags: false,
             },
@@ -431,6 +432,7 @@ fn test_parse_program_spec_xdp_frags_is_structured() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                target_kind: XdpTargetKind::Interface,
                 attach_mode: XdpAttachMode::Skb,
                 frags: true,
             },
@@ -441,6 +443,39 @@ fn test_parse_program_spec_xdp_frags_is_structured() {
 }
 
 #[test]
+fn test_parse_program_spec_xdp_map_targets_are_structured() {
+    let devmap = parse_program_spec("xdp:devmap").unwrap();
+    assert_eq!(
+        devmap,
+        ProgramSpec::Xdp {
+            target: XdpTarget {
+                interface: "devmap".to_string(),
+                target_kind: XdpTargetKind::Devmap,
+                attach_mode: XdpAttachMode::Skb,
+                frags: false,
+            },
+        }
+    );
+    assert_eq!(devmap.to_string(), "xdp:devmap");
+    assert_eq!(devmap.section_name(), "xdp/devmap");
+
+    let cpumap = parse_program_spec("xdp:cpumap").unwrap();
+    assert_eq!(
+        cpumap,
+        ProgramSpec::Xdp {
+            target: XdpTarget {
+                interface: "cpumap".to_string(),
+                target_kind: XdpTargetKind::Cpumap,
+                attach_mode: XdpAttachMode::Skb,
+                frags: false,
+            },
+        }
+    );
+    assert_eq!(cpumap.to_string(), "xdp:cpumap");
+    assert_eq!(cpumap.section_name(), "xdp/cpumap");
+}
+
+#[test]
 fn test_parse_program_spec_xdp_attach_modes() {
     let spec = parse_program_spec("xdp:lo:drv").unwrap();
     assert_eq!(
@@ -448,6 +483,7 @@ fn test_parse_program_spec_xdp_attach_modes() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                target_kind: XdpTargetKind::Interface,
                 attach_mode: XdpAttachMode::Driver,
                 frags: false,
             },
@@ -461,6 +497,7 @@ fn test_parse_program_spec_xdp_attach_modes() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                target_kind: XdpTargetKind::Interface,
                 attach_mode: XdpAttachMode::Hardware,
                 frags: true,
             },
@@ -475,6 +512,7 @@ fn test_parse_program_spec_xdp_attach_modes() {
         ProgramSpec::Xdp {
             target: XdpTarget {
                 interface: "lo".to_string(),
+                target_kind: XdpTargetKind::Interface,
                 attach_mode: XdpAttachMode::Skb,
                 frags: true,
             },
@@ -1694,6 +1732,43 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn test_attach_rejects_xdp_map_targets_before_loading() {
+    let state = EbpfState::new();
+
+    for (target, requirement, minimum) in [
+        (
+            "devmap",
+            ProgramCompatibilityRequirement::XdpDevmapAttach,
+            "5.8",
+        ),
+        (
+            "cpumap",
+            ProgramCompatibilityRequirement::XdpCpumapAttach,
+            "5.9",
+        ),
+    ] {
+        let object =
+            EbpfProgram::from_bytecode(EbpfProgramType::Xdp, target, "main", vec![]).into_object();
+        let err = state
+            .attach(&object)
+            .expect_err("XDP map targets should reject live attach before ELF emission");
+
+        assert!(
+            matches!(
+                err,
+                LoadError::Attach(ref msg)
+                    if msg.contains("live attach for xdp programs is not supported by this loader yet")
+                        && msg.contains("map entries")
+                        && msg.contains("use --dry-run to compile")
+                        && msg.contains(requirement.description())
+                        && msg.contains(&format!("kernel>={minimum}"))
+            ),
+            "unexpected XDP {target} live-attach error: {err:?}"
+        );
     }
 }
 
