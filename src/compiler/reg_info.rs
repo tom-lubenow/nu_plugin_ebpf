@@ -13,6 +13,7 @@ const CALLER_SAVED: [EbpfReg; 5] = [
 const SCRATCH_LIST_PUSH: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
 const SCRATCH_LIST_GET: [EbpfReg; 1] = [EbpfReg::R1];
 const SCRATCH_STRING_APPEND: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
+const SCRATCH_STRCMP: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
 const SCRATCH_STRING_APPEND_INT: [EbpfReg; 5] = [
     EbpfReg::R1,
     EbpfReg::R2,
@@ -62,6 +63,7 @@ pub fn scratch_clobbers(inst: &MirInst) -> &'static [EbpfReg] {
                 &SCRATCH_STRING_APPEND
             }
         },
+        MirInst::StrCmp { .. } => &SCRATCH_STRCMP,
         MirInst::IntToString { .. } => &SCRATCH_INT_TO_STRING,
         MirInst::Histogram { .. } => &SCRATCH_HISTOGRAM,
         _ => &[],

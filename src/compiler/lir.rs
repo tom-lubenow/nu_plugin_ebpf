@@ -567,6 +567,7 @@ impl LirInst {
                     &SCRATCH_STRING_APPEND
                 }
             },
+            LirInst::StrCmp { .. } => &SCRATCH_STRCMP,
             LirInst::IntToString { .. } => &SCRATCH_INT_TO_STRING,
             LirInst::Histogram { .. } => &SCRATCH_HISTOGRAM,
             _ => &[],
@@ -584,6 +585,7 @@ const CALLER_SAVED: [EbpfReg; 5] = [
 const SCRATCH_LIST_PUSH: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
 const SCRATCH_LIST_GET: [EbpfReg; 1] = [EbpfReg::R1];
 const SCRATCH_STRING_APPEND: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
+const SCRATCH_STRCMP: [EbpfReg; 2] = [EbpfReg::R1, EbpfReg::R2];
 const SCRATCH_STRING_APPEND_INT: [EbpfReg; 5] = [
     EbpfReg::R1,
     EbpfReg::R2,

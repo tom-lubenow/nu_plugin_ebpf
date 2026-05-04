@@ -216,6 +216,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_int_to_string_inst(*dst_buffer, *dst_len, *val)?;
             }
 
+            LirInst::StrCmp { dst, lhs, rhs, len } => {
+                self.compile_strcmp_inst(*dst, *lhs, *rhs, *len)?;
+            }
+
             LirInst::RecordStore {
                 buffer,
                 field_offset,
@@ -223,14 +227,6 @@ impl<'a> MirToEbpfCompiler<'a> {
                 ty,
             } => {
                 self.compile_record_store_inst(*buffer, *field_offset, val, ty)?;
-            }
-
-            // Instruction reserved for future features
-            LirInst::StrCmp { .. } => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "LIR instruction {:?} not yet implemented",
-                    inst
-                )));
             }
 
             LirInst::Placeholder => {

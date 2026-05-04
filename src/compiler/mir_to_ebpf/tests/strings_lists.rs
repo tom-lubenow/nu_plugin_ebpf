@@ -161,6 +161,39 @@ fn test_string_append_slot() {
 }
 
 #[test]
+fn test_strcmp_compiles() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let lhs = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let rhs = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::StrCmp {
+        dst,
+        lhs,
+        rhs,
+        len: 8,
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let result = compile_mir_to_ebpf(&program, None);
+    if let Err(err) = result {
+        panic!("StrCmp should compile: {err:?}");
+    }
+}
+
+#[test]
 fn test_string_append_integer() {
     // Test appending an integer to a string (integer interpolation)
     use crate::compiler::mir::*;

@@ -176,6 +176,30 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    pub(super) fn compile_strcmp_inst(
+        &mut self,
+        dst: VReg,
+        lhs: StackSlotId,
+        rhs: StackSlotId,
+        len: usize,
+    ) -> Result<(), CompileError> {
+        let dst_reg = self.alloc_dst_reg(dst)?;
+        let lhs_base = self.slot_offset_i16(lhs, 0)?;
+        let rhs_base = self.slot_offset_i16(rhs, 0)?;
+
+        self.instructions.push(EbpfInsn::mov64_imm(dst_reg, 1));
+        for idx in 0..len {
+            let lhs_offset = self.add_i16_offset(lhs_base, idx)?;
+            let rhs_offset = self.add_i16_offset(rhs_base, idx)?;
+            self.emit_load(EbpfReg::R1, EbpfReg::R10, lhs_offset, 1)?;
+            self.emit_load(EbpfReg::R2, EbpfReg::R10, rhs_offset, 1)?;
+            self.instructions
+                .push(EbpfInsn::jeq_reg(EbpfReg::R1, EbpfReg::R2, 1));
+            self.instructions.push(EbpfInsn::mov64_imm(dst_reg, 0));
+        }
+        Ok(())
+    }
+
     pub(super) fn compile_binop(
         &mut self,
         dst: VReg,
