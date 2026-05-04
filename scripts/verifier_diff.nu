@@ -473,6 +473,51 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["map:BPF_MAP_TYPE_BLOOM_FILTER"]
     }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_ringbuf_query" custom_ringbuf 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_RINGBUF"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_stackid" $ctx custom_stacks 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_STACK_TRACE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_sk_redirect_hash" $ctx socket_hash 0 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_SOCKHASH"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_sk_storage_get" socket_storage $ctx.sk 0 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_SK_STORAGE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_perf_event_output" $ctx custom_perf_out 0 "abcd" 4'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_PERF_EVENT_ARRAY"]
+    }
 ]
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
@@ -2591,6 +2636,39 @@ const HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES = [
     { helper: "bpf_map_lookup_percpu_elem", kinds: ["per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
     { helper: "bpf_for_each_map_elem", kinds: ["hash" "array" "lru-hash" "per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
     { helper: "bpf_timer_init", kinds: ["hash" "array" "lru-hash"] }
+]
+
+const HELPER_CALL_FIXED_MAP_KIND_FEATURES = [
+    { helper: "bpf_tail_call", kind: "prog-array" }
+    { helper: "bpf_perf_event_output", kind: "perf-event-array" }
+    { helper: "bpf_skb_output", kind: "perf-event-array" }
+    { helper: "bpf_xdp_output", kind: "perf-event-array" }
+    { helper: "bpf_perf_event_read", kind: "perf-event-array" }
+    { helper: "bpf_perf_event_read_value", kind: "perf-event-array" }
+    { helper: "bpf_get_stackid", kind: "stack-trace" }
+    { helper: "bpf_skb_under_cgroup", kind: "cgroup-array" }
+    { helper: "bpf_current_task_under_cgroup", kind: "cgroup-array" }
+    { helper: "bpf_ringbuf_output", kind: "ringbuf" }
+    { helper: "bpf_ringbuf_reserve", kind: "ringbuf" }
+    { helper: "bpf_ringbuf_reserve_dynptr", kind: "ringbuf" }
+    { helper: "bpf_ringbuf_query", kind: "ringbuf" }
+    { helper: "bpf_user_ringbuf_drain", kind: "user-ringbuf" }
+    { helper: "bpf_sk_redirect_map", kind: "sockmap" }
+    { helper: "bpf_sock_map_update", kind: "sockmap" }
+    { helper: "bpf_msg_redirect_map", kind: "sockmap" }
+    { helper: "bpf_sock_hash_update", kind: "sockhash" }
+    { helper: "bpf_msg_redirect_hash", kind: "sockhash" }
+    { helper: "bpf_sk_redirect_hash", kind: "sockhash" }
+    { helper: "bpf_sk_select_reuseport", kind: "reuseport-sockarray" }
+    { helper: "bpf_sk_storage_get", kind: "sk-storage" }
+    { helper: "bpf_sk_storage_delete", kind: "sk-storage" }
+    { helper: "bpf_task_storage_get", kind: "task-storage" }
+    { helper: "bpf_task_storage_delete", kind: "task-storage" }
+    { helper: "bpf_inode_storage_get", kind: "inode-storage" }
+    { helper: "bpf_inode_storage_delete", kind: "inode-storage" }
+    { helper: "bpf_cgrp_storage_get", kind: "cgrp-storage" }
+    { helper: "bpf_cgrp_storage_delete", kind: "cgrp-storage" }
+    { helper: "bpf_get_local_storage", kind: "deprecated-cgroup-storage" }
 ]
 
 const BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID = [
@@ -9688,8 +9766,8 @@ def map-kind-kernel-feature [kind: string] {
     }
 }
 
-def helper-call-explicit-map-kind-kernel-feature [line: string] {
-    if not (($line | str contains "helper-call ") and ($line | str contains "--kind ")) {
+def source-line-helper-call-name [line: string] {
+    if not ($line | str contains "helper-call ") {
         return null
     }
 
@@ -9699,7 +9777,34 @@ def helper-call-explicit-map-kind-kernel-feature [line: string] {
     }
 
     let raw_helper = (($parts | get 1) | str trim | split row " " | first)
-    let helper_name = (normalize-helper-name-token $raw_helper)
+    normalize-helper-name-token $raw_helper
+}
+
+def helper-call-fixed-map-kind-kernel-feature [line: string] {
+    let helper_name = (source-line-helper-call-name $line)
+    if $helper_name == null {
+        return null
+    }
+
+    let matches = ($HELPER_CALL_FIXED_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let kind = ($matches | first | get kind)
+    map-kind-kernel-feature $kind
+}
+
+def helper-call-explicit-map-kind-kernel-feature [line: string] {
+    if not (($line | str contains "helper-call ") and ($line | str contains "--kind ")) {
+        return null
+    }
+
+    let helper_name = (source-line-helper-call-name $line)
+    if $helper_name == null {
+        return null
+    }
+
     let matches = ($HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
     if ($matches | is-empty) {
         return null
@@ -10910,6 +11015,10 @@ def program-map-kernel-features [source: string] {
 
     for line in ($source | lines) {
         if ($line | str contains "helper-call ") {
+            let fixed_feature = (helper-call-fixed-map-kind-kernel-feature $line)
+            if $fixed_feature != null {
+                $features = (append-missing-kernel-features $features [$fixed_feature])
+            }
             let feature = (helper-call-explicit-map-kind-kernel-feature $line)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
