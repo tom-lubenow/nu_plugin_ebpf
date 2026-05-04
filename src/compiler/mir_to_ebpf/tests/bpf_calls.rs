@@ -236,6 +236,76 @@ fn test_bpf_to_bpf_call_simple() {
     assert!(has_call, "Should contain a BPF-to-BPF call instruction");
 }
 
+#[test]
+fn test_subfunction_context_field_usage_is_reported_in_compile_result() {
+    use crate::compiler::elf::EbpfProgramType;
+    use crate::compiler::mir::*;
+
+    let mut subfn = MirFunction::with_name("current_pid");
+    let entry = subfn.alloc_block();
+    subfn.entry = entry;
+    let pid = subfn.alloc_vreg();
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: pid,
+            field: CtxField::Pid,
+            slot: None,
+        });
+    subfn.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(pid)),
+    };
+
+    let mut main_func = MirFunction::new();
+    let main_entry = main_func.alloc_block();
+    main_func.entry = main_entry;
+    let raw_pid = main_func.alloc_vreg();
+    let widened_pid = main_func.alloc_vreg();
+    main_func
+        .block_mut(main_entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: raw_pid,
+            subfn: SubfunctionId(0),
+            args: vec![],
+        });
+    main_func
+        .block_mut(main_entry)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: widened_pid,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(raw_pid),
+            rhs: MirValue::Const(0),
+        });
+    main_func.block_mut(main_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(widened_pid)),
+    };
+
+    let program = MirProgram {
+        main: main_func,
+        subfunctions: vec![subfn],
+    };
+
+    let result =
+        compile_mir_to_ebpf(&program, None).expect("subfunction context load should compile");
+    assert!(result.used_ctx_fields.contains(&CtxField::Pid));
+
+    let program = result.into_program(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert_eq!(program.used_context_fields(), vec![CtxField::Pid]);
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("4.2")
+    );
+}
+
 /// Test BPF-to-BPF call with multiple arguments
 #[test]
 fn test_bpf_to_bpf_call_multi_args() {
