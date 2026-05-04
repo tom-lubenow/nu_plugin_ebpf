@@ -3,7 +3,7 @@ use super::{
     ProgramIntrinsic, ProgramIntrinsicVariant,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::{MapKind, MapOpKind};
+use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, MapKind, MapOpKind};
 use crate::program_spec::{
     ProgramAttachAddressFamily, ProgramAttachSockAddrHook, ProgramSpec, StructOpsFamily,
 };
@@ -1520,6 +1520,29 @@ impl ProgramSpec {
             _ => {}
         }
         helpers
+    }
+
+    pub(crate) fn intrinsic_context_field_requirements(
+        &self,
+        intrinsic: ProgramIntrinsic,
+    ) -> Vec<ContextFieldCompatibilityRequirement> {
+        if !self.supports_intrinsic(intrinsic) {
+            return Vec::new();
+        }
+
+        match intrinsic {
+            ProgramIntrinsic::AssignSocket => {
+                let target = self.target_string();
+                ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                    &CtxField::Socket,
+                    Some(self.program_type()),
+                    Some(target.as_str()),
+                )
+                .into_iter()
+                .collect()
+            }
+            _ => Vec::new(),
+        }
     }
 
     fn push_intrinsic_variant(

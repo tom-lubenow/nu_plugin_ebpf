@@ -1225,6 +1225,28 @@ fn intrinsic_backing_helper_records(
 }
 
 #[cfg(target_os = "linux")]
+fn intrinsic_context_field_requirement_records(
+    spec: &crate::program_spec::ProgramSpec,
+    intrinsic: ProgramIntrinsic,
+    span: Span,
+) -> Vec<Value> {
+    spec.intrinsic_context_field_requirements(intrinsic)
+        .into_iter()
+        .map(|requirement| {
+            Value::record(
+                record! {
+                    "field" => Value::string(requirement.field().display_name(), span),
+                    "context_field_requirement_key" => Value::string(requirement.key(), span),
+                    "minimum_kernel" => Value::string(requirement.minimum_kernel(), span),
+                    "minimum_kernel_source" => Value::string(requirement.minimum_kernel_source(), span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn intrinsic_variant_record(
     selector: &'static str,
     value: &'static str,
@@ -1482,6 +1504,8 @@ pub(super) fn spec_record(
         .map(|intrinsic| {
             let capability = intrinsic.required_capability();
             let backing_helpers = intrinsic_backing_helper_records(&spec, *intrinsic, span);
+            let context_field_requirements =
+                intrinsic_context_field_requirement_records(&spec, *intrinsic, span);
             let variants = intrinsic_variant_records(&spec, *intrinsic, span);
             Value::record(
                 record! {
@@ -1489,6 +1513,7 @@ pub(super) fn spec_record(
                     "capability" => Value::string(capability.key(), span),
                     "capability_description" => Value::string(capability.description(), span),
                     "backing_helpers" => Value::list(backing_helpers, span),
+                    "context_field_requirements" => Value::list(context_field_requirements, span),
                     "variants" => Value::list(variants, span),
                 },
                 span,

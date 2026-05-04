@@ -193,6 +193,56 @@ fn intrinsic_backing_helper_kernel_floor(
     (minimum_kernel, minimum_kernel_source)
 }
 
+fn intrinsic_context_field_requirements(
+    spec_text: &str,
+    command: &str,
+) -> Vec<(String, String, String, String)> {
+    intrinsic_record(spec_text, command)
+        .as_record()
+        .expect("intrinsic should be a record")
+        .get("context_field_requirements")
+        .expect("intrinsic context field requirements should be present")
+        .as_list()
+        .expect("intrinsic context field requirements should be a list")
+        .iter()
+        .map(|requirement| {
+            let requirement = requirement
+                .as_record()
+                .expect("intrinsic context field requirement should be a record");
+            let field = requirement
+                .get("field")
+                .expect("context field should be present")
+                .as_str()
+                .expect("context field should be a string")
+                .to_string();
+            let requirement_key = requirement
+                .get("context_field_requirement_key")
+                .expect("context field requirement key should be present")
+                .as_str()
+                .expect("context field requirement key should be a string")
+                .to_string();
+            let minimum_kernel = requirement
+                .get("minimum_kernel")
+                .expect("context field minimum kernel should be present")
+                .as_str()
+                .expect("context field minimum kernel should be a string")
+                .to_string();
+            let minimum_kernel_source = requirement
+                .get("minimum_kernel_source")
+                .expect("context field minimum kernel source should be present")
+                .as_str()
+                .expect("context field minimum kernel source should be a string")
+                .to_string();
+            (
+                field,
+                requirement_key,
+                minimum_kernel,
+                minimum_kernel_source,
+            )
+        })
+        .collect()
+}
+
 fn assert_field_backing_helper(
     spec_text: &str,
     field_name: &str,
@@ -1195,6 +1245,37 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
     assert_eq!(
         intrinsic_backing_helper_names("sk_lookup:/proc/self/ns/net", "assign-socket"),
         vec!["bpf_sk_assign".to_string()]
+    );
+    assert_eq!(
+        intrinsic_context_field_requirements("tc:lo:ingress", "assign-socket")
+            .into_iter()
+            .map(|(field, key, minimum, _source)| (field, key, minimum))
+            .collect::<Vec<_>>(),
+        vec![("sk".to_string(), "ctx:sk".to_string(), "5.1".to_string())]
+    );
+    assert_eq!(
+        intrinsic_context_field_requirements("tc_action:diff-action", "assign-socket")
+            .into_iter()
+            .map(|(field, key, minimum, _source)| (field, key, minimum))
+            .collect::<Vec<_>>(),
+        vec![("sk".to_string(), "ctx:sk".to_string(), "5.1".to_string())]
+    );
+    let sk_lookup_assign_socket_context =
+        intrinsic_context_field_requirements("sk_lookup:/proc/self/ns/net", "assign-socket");
+    assert_eq!(
+        sk_lookup_assign_socket_context
+            .iter()
+            .map(|(field, key, minimum, _source)| {
+                (field.as_str(), key.as_str(), minimum.as_str())
+            })
+            .collect::<Vec<_>>(),
+        vec![("sk", "ctx:sk", "5.9")]
+    );
+    assert!(
+        sk_lookup_assign_socket_context
+            .first()
+            .is_some_and(|(_field, _key, _minimum, source)| source.contains("/v5.9/")),
+        "{sk_lookup_assign_socket_context:?}"
     );
     let tc_map_contains = intrinsic_backing_helper_names("tc:lo:ingress", "map-contains");
     assert!(tc_map_contains.contains(&"bpf_map_lookup_elem".to_string()));
