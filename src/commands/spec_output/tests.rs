@@ -264,6 +264,47 @@ fn assert_accessible_helper_backed_context_fields_report_metadata(spec_text: &st
     );
 }
 
+fn assert_helper_backed_context_projections_report_metadata(spec_text: &str) {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let projections = spec_context_projections(&spec);
+    let mut checked = 0;
+
+    for projection in projections {
+        let Some(helper_name) = projection.helper else {
+            continue;
+        };
+        let helper = BpfHelper::from_name(helper_name).unwrap_or_else(|| {
+            panic!(
+                "{spec_text} projection {} should use a modeled helper",
+                projection.path
+            )
+        });
+        let Some(minimum_kernel) = helper.minimum_kernel() else {
+            continue;
+        };
+
+        assert_eq!(
+            projection.helper_minimum_kernel,
+            Some(minimum_kernel),
+            "{spec_text} projection {} should report helper minimum kernel",
+            projection.path
+        );
+        assert!(
+            projection
+                .helper_minimum_kernel_source
+                .is_some_and(|source| source.contains(&format!("/v{minimum_kernel}/"))),
+            "{spec_text} projection {} should report a source link for helper {minimum_kernel}",
+            projection.path
+        );
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "{spec_text} should expose at least one helper-backed context projection"
+    );
+}
+
 #[test]
 fn test_spec_context_fields_include_program_specific_aliases() {
     let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
@@ -484,6 +525,19 @@ fn test_spec_context_fields_report_backing_helper_metadata_invariants() {
         "cgroup_sysctl:/sys/fs/cgroup",
     ] {
         assert_accessible_helper_backed_context_fields_report_metadata(spec_text);
+    }
+}
+
+#[test]
+fn test_spec_context_projections_report_helper_metadata_invariants() {
+    for spec_text in [
+        "tc:lo:ingress",
+        "cgroup_skb:/sys/fs/cgroup:egress",
+        "kprobe:sys_read",
+        "xdp:lo",
+        "tc:lo:egress",
+    ] {
+        assert_helper_backed_context_projections_report_metadata(spec_text);
     }
 }
 
