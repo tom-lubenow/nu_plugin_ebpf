@@ -4480,6 +4480,140 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tcx-egress-target-metadata"
+        category: "program-model"
+        tags: [tcx metadata]
+        requires: [loopback-interface]
+        target: "tcx:lo:egress"
+        program: [
+            '{|ctx|'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netkit-peer-target-metadata"
+        category: "program-model"
+        tags: [netkit metadata]
+        requires: [loopback-interface]
+        target: "netkit:lo:peer"
+        program: [
+            '{|ctx|'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "flow-dissector-target-metadata"
+        category: "program-model"
+        tags: [flow-dissector metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  "fallback"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-defrag-target-metadata"
+        category: "program-model"
+        tags: [netfilter metadata]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-target-metadata"
+        category: "program-model"
+        tags: [lwt metadata seg6local]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-reuseport-migrate-target-metadata"
+        category: "program-model"
+        tags: [sk-reuseport metadata migrate]
+        target: "sk_reuseport:migrate"
+        program: [
+            '{|ctx|'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-unix-target-metadata"
+        category: "program-model"
+        tags: [cgroup-sock-addr metadata unix]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "syscall-target-metadata"
+        category: "program-model"
+        tags: [syscall metadata]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "freplace-target-metadata"
+        category: "program-model"
+        tags: [freplace metadata]
+        target: "freplace:replace_me"
+        program: [
+            '{|ctx|'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-task-vma-target-metadata"
+        category: "program-model"
+        tags: [iter metadata task-vma]
+        target: "iter:task_vma"
+        program: [
+            '{|ctx|'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-put-get-null-checked"
         category: "maps"
         tags: [hash-map null-check]
