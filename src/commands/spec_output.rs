@@ -2,13 +2,13 @@
 
 use nu_protocol::{Span, Value, record};
 
-use crate::compiler::mir::{AddressSpace, CtxField, MirType};
+use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
     KfuncCompatibilityRequirement, MapKind, PacketContextKind, ProbeContext,
     ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
-    ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type,
-    synthetic_bpf_tcp_sock_type,
+    bpf_sock_projection_member_aliases, ctx_field_backing_helper,
+    ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
 use crate::program_spec::ProgramAttachShape;
@@ -695,27 +695,40 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 &entry.field,
                 &field.name,
             );
-            projections.push(SpecContextProjection {
-                root: root.clone(),
-                path: format!("{root}.{}", field.name),
-                name: field.name,
-                source: "context_field",
-                minimum_kernel: compatibility_requirement
-                    .as_ref()
-                    .map(ContextFieldCompatibilityRequirement::minimum_kernel),
-                minimum_kernel_source: compatibility_requirement
-                    .as_ref()
-                    .map(ContextFieldCompatibilityRequirement::minimum_kernel_source),
-                helper: None,
-                helper_minimum_kernel: None,
-                helper_minimum_kernel_source: None,
-                ty: mir_type_label(&field.ty),
-                offset: Some(field.offset),
-                bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
-                bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
-                supported: true,
-                unsupported_reason: None,
-            });
+            push_context_field_projection(
+                &mut projections,
+                &root,
+                &field.name,
+                "context_field",
+                &field,
+                compatibility_requirement,
+            );
+
+            if matches!(entry.field, CtxField::Socket | CtxField::MigratingSocket) {
+                for alias in bpf_sock_projection_member_aliases(&field.name) {
+                    let unsupported_reason = match entry.field {
+                        CtxField::Socket => spec.socket_projection_access_error(alias),
+                        _ => None,
+                    };
+                    if unsupported_reason.is_some() {
+                        continue;
+                    }
+                    let compatibility_requirement = context_projection_compatibility_requirement(
+                        spec,
+                        &target,
+                        &entry.field,
+                        alias,
+                    );
+                    push_context_field_projection(
+                        &mut projections,
+                        &root,
+                        alias,
+                        "context_field_alias",
+                        &field,
+                        compatibility_requirement,
+                    );
+                }
+            }
         }
 
         if matches!(entry.field, CtxField::Socket) {
@@ -768,6 +781,38 @@ fn context_projection_compatibility_requirement(
 }
 
 #[cfg(target_os = "linux")]
+fn push_context_field_projection(
+    projections: &mut Vec<SpecContextProjection>,
+    root: &str,
+    name: &str,
+    source: &'static str,
+    field: &StructField,
+    compatibility_requirement: Option<ContextFieldCompatibilityRequirement>,
+) {
+    projections.push(SpecContextProjection {
+        root: root.to_string(),
+        path: format!("{root}.{name}"),
+        name: name.to_string(),
+        source,
+        minimum_kernel: compatibility_requirement
+            .as_ref()
+            .map(ContextFieldCompatibilityRequirement::minimum_kernel),
+        minimum_kernel_source: compatibility_requirement
+            .as_ref()
+            .map(ContextFieldCompatibilityRequirement::minimum_kernel_source),
+        helper: None,
+        helper_minimum_kernel: None,
+        helper_minimum_kernel_source: None,
+        ty: mir_type_label(&field.ty),
+        offset: Some(field.offset),
+        bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+        bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+        supported: true,
+        unsupported_reason: None,
+    });
+}
+
+#[cfg(target_os = "linux")]
 fn push_struct_field_projections(
     projections: &mut Vec<SpecContextProjection>,
     root: &str,
@@ -776,7 +821,7 @@ fn push_struct_field_projections(
     ty: MirType,
     unsupported_reason: Option<String>,
 ) {
-    let MirType::Struct { fields, .. } = ty else {
+    let MirType::Struct { name, fields, .. } = ty else {
         return;
     };
     if unsupported_reason.is_some() {
@@ -785,12 +830,13 @@ fn push_struct_field_projections(
     let helper_name = helper.map(BpfHelper::name);
     let helper_minimum_kernel = helper.and_then(BpfHelper::minimum_kernel);
     let helper_minimum_kernel_source = helper.and_then(BpfHelper::minimum_kernel_source);
+    let include_bpf_sock_aliases = name.as_deref() == Some("bpf_sock");
 
     for field in fields.into_iter().filter(|field| !field.synthetic) {
         projections.push(SpecContextProjection {
             root: root.to_string(),
             path: format!("{root}.{}", field.name),
-            name: field.name,
+            name: field.name.clone(),
             source,
             minimum_kernel: None,
             minimum_kernel_source: None,
@@ -804,6 +850,27 @@ fn push_struct_field_projections(
             supported: true,
             unsupported_reason: None,
         });
+        if include_bpf_sock_aliases {
+            for alias in bpf_sock_projection_member_aliases(&field.name) {
+                projections.push(SpecContextProjection {
+                    root: root.to_string(),
+                    path: format!("{root}.{alias}"),
+                    name: (*alias).to_string(),
+                    source: "helper_return_alias",
+                    minimum_kernel: None,
+                    minimum_kernel_source: None,
+                    helper: helper_name,
+                    helper_minimum_kernel,
+                    helper_minimum_kernel_source,
+                    ty: mir_type_label(&field.ty),
+                    offset: Some(field.offset),
+                    bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+                    bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+                    supported: true,
+                    unsupported_reason: None,
+                });
+            }
+        }
     }
 }
 

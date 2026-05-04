@@ -3065,7 +3065,19 @@ fn test_spec_context_projections_include_socket_members() {
     assert!(family.supported);
     assert!(family.unsupported_reason.is_none());
 
+    let remote_port = projection(&projections, "sk.remote_port");
+    assert_eq!(remote_port.root, "sk");
+    assert_eq!(remote_port.name, "remote_port");
+    assert_eq!(remote_port.source, "context_field_alias");
+    assert_eq!(remote_port.minimum_kernel, Some("5.1"));
+    assert_eq!(remote_port.helper, None);
+    assert_eq!(remote_port.ty, "u16");
+    assert_eq!(remote_port.offset, Some(48));
+    assert!(remote_port.supported);
+    assert!(remote_port.unsupported_reason.is_none());
+
     projection_absent(&projections, "sk.src_ip4");
+    projection_absent(&projections, "sk.local_ip4");
 }
 
 #[test]
@@ -3095,6 +3107,17 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert!(full_family.supported);
     assert!(full_family.unsupported_reason.is_none());
 
+    let full_remote_port = projection(&projections, "sk.full.remote_port");
+    assert_eq!(full_remote_port.root, "sk.full");
+    assert_eq!(full_remote_port.name, "remote_port");
+    assert_eq!(full_remote_port.source, "helper_return_alias");
+    assert_eq!(full_remote_port.helper, Some("bpf_sk_fullsock"));
+    assert_eq!(full_remote_port.helper_minimum_kernel, Some("5.1"));
+    assert_eq!(full_remote_port.ty, "u16");
+    assert_eq!(full_remote_port.offset, Some(48));
+    assert!(full_remote_port.supported);
+    assert!(full_remote_port.unsupported_reason.is_none());
+
     let sk_family = projection(&projections, "sk.family");
     assert_eq!(sk_family.minimum_kernel, Some("5.1"));
 }
@@ -3110,7 +3133,31 @@ fn test_spec_context_projections_respect_attach_sensitive_socket_members() {
     assert_eq!(src_ip4.minimum_kernel, Some("4.17"));
     assert!(src_ip4.unsupported_reason.is_none());
 
+    let local_ip4 = projection(&projections, "sk.local_ip4");
+    assert!(local_ip4.supported);
+    assert_eq!(local_ip4.source, "context_field_alias");
+    assert_eq!(local_ip4.minimum_kernel, Some("4.17"));
+    assert_eq!(local_ip4.offset, src_ip4.offset);
+    assert!(local_ip4.unsupported_reason.is_none());
+
     projection_absent(&projections, "sk.src_ip6");
+    projection_absent(&projections, "sk.local_ip6");
+}
+
+#[test]
+fn test_spec_context_projections_include_migrating_socket_alias_members() {
+    let spec =
+        ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport migrate spec should parse");
+    let projections = spec_context_projections(&spec);
+
+    let remote_port = projection(&projections, "migrating_sk.remote_port");
+    assert_eq!(remote_port.root, "migrating_sk");
+    assert_eq!(remote_port.name, "remote_port");
+    assert_eq!(remote_port.source, "context_field_alias");
+    assert_eq!(remote_port.ty, "u16");
+    assert_eq!(remote_port.offset, Some(48));
+    assert!(remote_port.supported);
+    assert!(remote_port.unsupported_reason.is_none());
 }
 
 #[test]

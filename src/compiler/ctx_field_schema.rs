@@ -287,6 +287,20 @@ pub(crate) fn canonical_bpf_sock_projection_member(member: &str) -> Option<&'sta
     })
 }
 
+pub(crate) fn bpf_sock_projection_member_aliases(member: &str) -> &'static [&'static str] {
+    match member {
+        "type" => &["sock_type"],
+        "protocol" => &["ip_protocol"],
+        "src_ip4" => &["local_ip4"],
+        "src_ip6" => &["local_ip6"],
+        "src_port" => &["local_port"],
+        "dst_ip4" => &["remote_ip4"],
+        "dst_ip6" => &["remote_ip6"],
+        "dst_port" => &["remote_port"],
+        _ => &[],
+    }
+}
+
 pub(crate) fn ctx_field_for_bpf_sock_projection_member(member: &str) -> Option<CtxField> {
     Some(match canonical_bpf_sock_projection_member(member)? {
         "bound_dev_if" => CtxField::BoundDevIf,
