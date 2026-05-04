@@ -3450,6 +3450,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "raw_tracepoint.w:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pid + $ctx.ktime) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "ctx:timestamp" "helper:bpf_get_current_pid_tgid" "helper:bpf_ktime_get_ns"]
+    }
+    {
         target: "sock_ops:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -6440,6 +6450,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.arg0 + $ctx.arg1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "raw-tracepoint-writable-current-context"
+        category: "context-surface"
+        tags: [raw-tracepoint-w context current]
+        target: "raw_tracepoint.w:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pid + $ctx.ktime + $ctx.cpu) | count'
             '  0'
             '}'
         ]
