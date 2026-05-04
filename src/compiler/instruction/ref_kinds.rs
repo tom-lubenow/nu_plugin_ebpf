@@ -1141,12 +1141,18 @@ pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool 
 pub fn kfunc_scalar_arg_requires_known_const(kfunc: &str, arg_idx: usize) -> bool {
     matches!(
         (kfunc, arg_idx),
-        ("bpf_dynptr_slice", 3) | ("bpf_dynptr_slice_rdwr", 3)
+        ("bpf_dynptr_slice", 3)
+            | ("bpf_dynptr_slice_rdwr", 3)
+            | ("bpf_obj_new_impl", 0)
+            | ("bpf_percpu_obj_new_impl", 0)
     ) || KernelBtf::get().kfunc_scalar_arg_requires_known_const(kfunc, arg_idx)
 }
 
 pub fn kfunc_scalar_arg_requires_positive(kfunc: &str, arg_idx: usize) -> bool {
-    kfunc_semantics(kfunc).positive_size_args.contains(&arg_idx)
+    matches!(
+        (kfunc, arg_idx),
+        ("bpf_obj_new_impl", 0) | ("bpf_percpu_obj_new_impl", 0)
+    ) || kfunc_semantics(kfunc).positive_size_args.contains(&arg_idx)
         || KernelBtf::get().kfunc_scalar_arg_requires_positive(kfunc, arg_idx)
 }
 

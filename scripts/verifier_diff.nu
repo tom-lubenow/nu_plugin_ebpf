@@ -6373,6 +6373,45 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-obj-new-rejects-dynamic-type-id"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let type_id = ($ctx.pid + 1)'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" $type_id 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 must be known constant"
+    }
+    {
+        name: "source-kfunc-obj-new-rejects-zero-type-id"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 0 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 must be > 0"
+    }
+    {
         name: "source-kfunc-refcount-acquire-rejects-map-field"
         category: "helper-state"
         tags: [kfunc object bpf_refcount ref-lifetime source reject]
@@ -6428,6 +6467,45 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-percpu-obj-new-rejects-dynamic-type-id"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let type_id = ($ctx.pid + 1)'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" $type_id 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 must be known constant"
+    }
+    {
+        name: "source-kfunc-percpu-obj-new-rejects-zero-type-id"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 0 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 must be > 0"
     }
     {
         name: "source-kfunc-percpu-obj-drop-rejects-task-ref"

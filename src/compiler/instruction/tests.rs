@@ -5025,6 +5025,11 @@ fn test_kfunc_scalar_arg_requires_known_const_static_mapping() {
         "bpf_dynptr_slice_rdwr",
         3
     ));
+    assert!(kfunc_scalar_arg_requires_known_const("bpf_obj_new_impl", 0));
+    assert!(kfunc_scalar_arg_requires_known_const(
+        "bpf_percpu_obj_new_impl",
+        0
+    ));
     assert!(!kfunc_scalar_arg_requires_known_const(
         "bpf_dynptr_slice",
         2
@@ -5036,6 +5041,11 @@ fn test_kfunc_scalar_arg_requires_positive_static_mapping() {
     assert!(kfunc_scalar_arg_requires_positive("bpf_path_d_path", 2));
     assert!(kfunc_scalar_arg_requires_positive("scx_bpf_events", 1));
     assert!(kfunc_scalar_arg_requires_positive("bpf_dynptr_slice", 3));
+    assert!(kfunc_scalar_arg_requires_positive("bpf_obj_new_impl", 0));
+    assert!(kfunc_scalar_arg_requires_positive(
+        "bpf_percpu_obj_new_impl",
+        0
+    ));
     assert!(!kfunc_scalar_arg_requires_positive("bpf_dynptr_slice", 2));
 }
 
