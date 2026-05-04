@@ -5279,6 +5279,25 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_read' requires arg4 flags to be 0"
     }
     {
+        name: "dynptr-read-rejects-use-after-ringbuf-submit"
+        category: "helper-state"
+        tags: [dynptr ringbuf ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let out = "0000"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  helper-call "bpf_dynptr_read" $out 4 $d 0 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_read' arg2 ringbuf dynptr reservation already released"
+    }
+    {
         name: "dynptr-write-rejects-uninitialized"
         category: "helper-state"
         tags: [dynptr reject]
@@ -5316,6 +5335,43 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_dynptr_write' requires arg4 flags to be 0 for modeled dynptr sources"
+    }
+    {
+        name: "dynptr-write-rejects-use-after-ringbuf-submit"
+        category: "helper-state"
+        tags: [dynptr ringbuf ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let src = "wxyz"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  helper-call "bpf_dynptr_write" $d 0 $src 4 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_write' arg0 ringbuf dynptr reservation already released"
+    }
+    {
+        name: "dynptr-data-rejects-use-after-ringbuf-submit"
+        category: "helper-state"
+        tags: [dynptr ringbuf ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  helper-call "bpf_dynptr_data" $d 0 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_data' arg0 ringbuf dynptr reservation already released"
     }
     {
         name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
