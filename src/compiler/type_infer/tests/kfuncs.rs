@@ -3627,10 +3627,88 @@ fn test_infer_kfunc_list_front_pointer_return() {
         .infer(&func)
         .expect("expected list_front kfunc type inference");
     match types.get(&dst) {
-        Some(MirType::Ptr { address_space, .. }) => {
+        Some(MirType::Ptr {
+            address_space,
+            pointee,
+        }) => {
             assert_eq!(*address_space, AddressSpace::Kernel);
+            assert!(pointee.is_bpf_list_node_struct());
         }
         other => panic!("expected kernel pointer return, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_infer_kfunc_rbtree_navigation_pointer_returns() {
+    let mut func = make_test_function();
+    let type_id = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let tree = func.alloc_vreg();
+    let first = func.alloc_vreg();
+    let left = func.alloc_vreg();
+    let root = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: type_id,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: tree,
+        kfunc: "bpf_obj_new_impl".to_string(),
+        btf_id: None,
+        args: vec![type_id, meta],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: first,
+        kfunc: "bpf_rbtree_first".to_string(),
+        btf_id: None,
+        args: vec![tree],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: left,
+        kfunc: "bpf_rbtree_left".to_string(),
+        btf_id: None,
+        args: vec![first],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: root,
+        kfunc: "bpf_rbtree_root".to_string(),
+        btf_id: None,
+        args: vec![first],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected rbtree navigation kfunc type inference");
+
+    for vreg in [first, left] {
+        match types.get(&vreg) {
+            Some(MirType::Ptr {
+                address_space,
+                pointee,
+            }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+                assert!(pointee.is_bpf_rb_node_struct());
+            }
+            other => panic!("expected rb-node kernel pointer return, got {:?}", other),
+        }
+    }
+
+    match types.get(&root) {
+        Some(MirType::Ptr {
+            address_space,
+            pointee,
+        }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+            assert!(pointee.is_bpf_rb_root_struct());
+        }
+        other => panic!("expected rb-root kernel pointer return, got {:?}", other),
     }
 }
 

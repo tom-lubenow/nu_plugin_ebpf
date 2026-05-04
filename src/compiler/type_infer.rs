@@ -250,6 +250,18 @@ impl<'a> TypeInference<'a> {
             | "bpf_cgroup_ancestor"
             | "bpf_cgroup_from_id" => Some(MirType::named_kernel_struct_ptr("cgroup")),
             "bpf_get_task_exe_file" => Some(MirType::named_kernel_struct_ptr("file")),
+            "bpf_list_front" | "bpf_list_back" => Some(MirType::Ptr {
+                pointee: Box::new(MirType::bpf_list_node_struct()),
+                address_space: AddressSpace::Kernel,
+            }),
+            "bpf_rbtree_first" | "bpf_rbtree_left" | "bpf_rbtree_right" => Some(MirType::Ptr {
+                pointee: Box::new(MirType::bpf_rb_node_struct()),
+                address_space: AddressSpace::Kernel,
+            }),
+            "bpf_rbtree_root" => Some(MirType::Ptr {
+                pointee: Box::new(MirType::bpf_rb_root_struct()),
+                address_space: AddressSpace::Kernel,
+            }),
             _ => None,
         }
     }
