@@ -1396,23 +1396,21 @@ impl ProgramSpec {
     }
 
     fn push_local_storage_get_backing_helpers(&self, helpers: &mut Vec<BpfHelper>) {
-        for helper in [
-            BpfHelper::SkStorageGet,
-            BpfHelper::InodeStorageGet,
-            BpfHelper::TaskStorageGet,
-            BpfHelper::CgrpStorageGet,
-        ] {
+        for helper in MapKind::all()
+            .iter()
+            .copied()
+            .filter_map(BpfHelper::local_storage_get_for_map_kind)
+        {
             self.push_intrinsic_backing_helper(helpers, helper);
         }
     }
 
     fn push_local_storage_delete_backing_helpers(&self, helpers: &mut Vec<BpfHelper>) {
-        for helper in [
-            BpfHelper::SkStorageDelete,
-            BpfHelper::InodeStorageDelete,
-            BpfHelper::TaskStorageDelete,
-            BpfHelper::CgrpStorageDelete,
-        ] {
+        for helper in MapKind::all()
+            .iter()
+            .copied()
+            .filter_map(BpfHelper::local_storage_delete_for_map_kind)
+        {
             self.push_intrinsic_backing_helper(helpers, helper);
         }
     }
@@ -1565,57 +1563,19 @@ impl ProgramSpec {
         }
     }
 
-    fn local_storage_get_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
-        match map_kind {
-            MapKind::SkStorage => Some(BpfHelper::SkStorageGet),
-            MapKind::InodeStorage => Some(BpfHelper::InodeStorageGet),
-            MapKind::TaskStorage => Some(BpfHelper::TaskStorageGet),
-            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageGet),
-            _ => None,
-        }
-    }
-
-    fn local_storage_delete_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
-        match map_kind {
-            MapKind::SkStorage => Some(BpfHelper::SkStorageDelete),
-            MapKind::InodeStorage => Some(BpfHelper::InodeStorageDelete),
-            MapKind::TaskStorage => Some(BpfHelper::TaskStorageDelete),
-            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageDelete),
-            _ => None,
-        }
-    }
-
-    fn socket_map_update_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
-        match map_kind {
-            MapKind::SockMap => Some(BpfHelper::SockMapUpdate),
-            MapKind::SockHash => Some(BpfHelper::SockHashUpdate),
-            _ => None,
-        }
-    }
-
     fn push_local_storage_get_variants(&self, variants: &mut Vec<ProgramIntrinsicVariant>) {
-        for map_kind in [
-            MapKind::SkStorage,
-            MapKind::InodeStorage,
-            MapKind::TaskStorage,
-            MapKind::CgrpStorage,
-        ] {
-            if let Some(helper) = Self::local_storage_get_helper_for_kind(map_kind) {
-                self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
-            }
+        for (map_kind, helper) in MapKind::all().iter().copied().filter_map(|map_kind| {
+            BpfHelper::local_storage_get_for_map_kind(map_kind).map(|helper| (map_kind, helper))
+        }) {
+            self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
         }
     }
 
     fn push_local_storage_delete_variants(&self, variants: &mut Vec<ProgramIntrinsicVariant>) {
-        for map_kind in [
-            MapKind::SkStorage,
-            MapKind::InodeStorage,
-            MapKind::TaskStorage,
-            MapKind::CgrpStorage,
-        ] {
-            if let Some(helper) = Self::local_storage_delete_helper_for_kind(map_kind) {
-                self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
-            }
+        for (map_kind, helper) in MapKind::all().iter().copied().filter_map(|map_kind| {
+            BpfHelper::local_storage_delete_for_map_kind(map_kind).map(|helper| (map_kind, helper))
+        }) {
+            self.push_map_kind_intrinsic_variant(variants, map_kind, helper);
         }
     }
 
@@ -1752,7 +1712,7 @@ impl ProgramSpec {
                     BpfHelper::MapUpdateElem,
                 );
                 for map_kind in [MapKind::SockMap, MapKind::SockHash] {
-                    if let Some(helper) = Self::socket_map_update_helper_for_kind(map_kind) {
+                    if let Some(helper) = BpfHelper::socket_map_update_for_map_kind(map_kind) {
                         self.push_map_kind_intrinsic_variant(&mut variants, map_kind, helper);
                     }
                 }

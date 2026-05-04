@@ -1528,6 +1528,73 @@ fn test_storage_helpers_use_fixed_local_storage_map_kinds() {
 }
 
 #[test]
+fn test_local_storage_map_kind_reverse_helper_lookup() {
+    for (kind, get_helper, delete_helper) in [
+        (
+            MapKind::SkStorage,
+            BpfHelper::SkStorageGet,
+            BpfHelper::SkStorageDelete,
+        ),
+        (
+            MapKind::TaskStorage,
+            BpfHelper::TaskStorageGet,
+            BpfHelper::TaskStorageDelete,
+        ),
+        (
+            MapKind::InodeStorage,
+            BpfHelper::InodeStorageGet,
+            BpfHelper::InodeStorageDelete,
+        ),
+        (
+            MapKind::CgrpStorage,
+            BpfHelper::CgrpStorageGet,
+            BpfHelper::CgrpStorageDelete,
+        ),
+    ] {
+        assert_eq!(
+            BpfHelper::local_storage_get_for_map_kind(kind),
+            Some(get_helper)
+        );
+        assert_eq!(
+            BpfHelper::local_storage_delete_for_map_kind(kind),
+            Some(delete_helper)
+        );
+    }
+
+    for kind in MapKind::all() {
+        assert_eq!(
+            BpfHelper::local_storage_get_for_map_kind(*kind).is_some(),
+            kind.is_local_storage(),
+            "local-storage get helper mapping drifted for {kind}",
+        );
+        assert_eq!(
+            BpfHelper::local_storage_delete_for_map_kind(*kind).is_some(),
+            kind.is_local_storage(),
+            "local-storage delete helper mapping drifted for {kind}",
+        );
+    }
+}
+
+#[test]
+fn test_socket_map_kind_reverse_update_helper_lookup() {
+    assert_eq!(
+        BpfHelper::socket_map_update_for_map_kind(MapKind::SockMap),
+        Some(BpfHelper::SockMapUpdate)
+    );
+    assert_eq!(
+        BpfHelper::socket_map_update_for_map_kind(MapKind::SockHash),
+        Some(BpfHelper::SockHashUpdate)
+    );
+    for kind in MapKind::all() {
+        assert_eq!(
+            BpfHelper::socket_map_update_for_map_kind(*kind).is_some(),
+            kind.is_socket_map(),
+            "socket map update helper mapping drifted for {kind}",
+        );
+    }
+}
+
+#[test]
 fn test_helper_signature_get_netns_cookie() {
     let sig = HelperSignature::for_id(BpfHelper::GetNetnsCookie as u32)
         .expect("expected bpf_get_netns_cookie helper signature");

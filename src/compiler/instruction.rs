@@ -1489,6 +1489,34 @@ impl BpfHelper {
         }
     }
 
+    pub const fn local_storage_get_for_map_kind(map_kind: MapKind) -> Option<Self> {
+        match map_kind {
+            MapKind::SkStorage => Some(Self::SkStorageGet),
+            MapKind::InodeStorage => Some(Self::InodeStorageGet),
+            MapKind::TaskStorage => Some(Self::TaskStorageGet),
+            MapKind::CgrpStorage => Some(Self::CgrpStorageGet),
+            _ => None,
+        }
+    }
+
+    pub const fn local_storage_delete_for_map_kind(map_kind: MapKind) -> Option<Self> {
+        match map_kind {
+            MapKind::SkStorage => Some(Self::SkStorageDelete),
+            MapKind::InodeStorage => Some(Self::InodeStorageDelete),
+            MapKind::TaskStorage => Some(Self::TaskStorageDelete),
+            MapKind::CgrpStorage => Some(Self::CgrpStorageDelete),
+            _ => None,
+        }
+    }
+
+    pub const fn socket_map_update_for_map_kind(map_kind: MapKind) -> Option<Self> {
+        match map_kind {
+            MapKind::SockMap => Some(Self::SockMapUpdate),
+            MapKind::SockHash => Some(Self::SockHashUpdate),
+            _ => None,
+        }
+    }
+
     pub const fn local_helper_map_arg_index(self) -> Option<usize> {
         match self {
             Self::TailCall

@@ -2288,34 +2288,6 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn local_storage_get_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
-        match map_kind {
-            MapKind::SkStorage => Some(BpfHelper::SkStorageGet),
-            MapKind::InodeStorage => Some(BpfHelper::InodeStorageGet),
-            MapKind::TaskStorage => Some(BpfHelper::TaskStorageGet),
-            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageGet),
-            _ => None,
-        }
-    }
-
-    fn local_storage_delete_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
-        match map_kind {
-            MapKind::SkStorage => Some(BpfHelper::SkStorageDelete),
-            MapKind::InodeStorage => Some(BpfHelper::InodeStorageDelete),
-            MapKind::TaskStorage => Some(BpfHelper::TaskStorageDelete),
-            MapKind::CgrpStorage => Some(BpfHelper::CgrpStorageDelete),
-            _ => None,
-        }
-    }
-
-    fn socket_map_update_helper_for_kind(map_kind: MapKind) -> Option<BpfHelper> {
-        match map_kind {
-            MapKind::SockMap => Some(BpfHelper::SockMapUpdate),
-            MapKind::SockHash => Some(BpfHelper::SockHashUpdate),
-            _ => None,
-        }
-    }
-
     fn lower_socket_map_put(
         &mut self,
         src_dst: RegId,
@@ -2326,7 +2298,7 @@ impl<'a> HirToMirLowering<'a> {
         key_reg: RegId,
         flags: u64,
     ) -> Result<(), CompileError> {
-        let helper = Self::socket_map_update_helper_for_kind(map_ref.kind).ok_or_else(|| {
+        let helper = BpfHelper::socket_map_update_for_map_kind(map_ref.kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "map-put does not support socket map kind {}",
                 map_ref.kind
@@ -2418,7 +2390,7 @@ impl<'a> HirToMirLowering<'a> {
         src_dst_had_value: bool,
         map_ref: MapRef,
     ) -> Result<(), CompileError> {
-        let helper = Self::local_storage_get_helper_for_kind(map_ref.kind).ok_or_else(|| {
+        let helper = BpfHelper::local_storage_get_for_map_kind(map_ref.kind).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "map-get does not support local-storage map kind {}",
                 map_ref.kind
@@ -2513,12 +2485,13 @@ impl<'a> HirToMirLowering<'a> {
         src_dst_had_value: bool,
         map_ref: MapRef,
     ) -> Result<(), CompileError> {
-        let helper = Self::local_storage_delete_helper_for_kind(map_ref.kind).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "map-delete does not support local-storage map kind {}",
-                map_ref.kind
-            ))
-        })?;
+        let helper =
+            BpfHelper::local_storage_delete_for_map_kind(map_ref.kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "map-delete does not support local-storage map kind {}",
+                    map_ref.kind
+                ))
+            })?;
         let object_vreg = self
             .positional_args
             .get(1)
