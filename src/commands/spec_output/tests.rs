@@ -203,6 +203,11 @@ fn assert_field_backing_helper(
     let fields = spec_context_fields(&spec, false);
     let field = field(&fields, field_name);
     assert_eq!(field.backing_helper, Some(helper));
+    let expected_key = format!("helper:{helper}");
+    assert_eq!(
+        field.backing_helper_requirement_key.as_deref(),
+        Some(expected_key.as_str())
+    );
     assert_eq!(field.backing_helper_minimum_kernel, Some(minimum_kernel));
     assert!(
         field
@@ -236,10 +241,17 @@ fn assert_accessible_helper_backed_context_fields_report_metadata(spec_text: &st
         };
 
         let field = field(&fields, &entry.field.display_name());
+        let expected_key = format!("helper:{}", helper.name());
         assert_eq!(
             field.backing_helper,
             Some(helper.name()),
             "{spec_text} ctx.{} should report its backing helper",
+            entry.field.display_name()
+        );
+        assert_eq!(
+            field.backing_helper_requirement_key.as_deref(),
+            Some(expected_key.as_str()),
+            "{spec_text} ctx.{} should report its backing helper requirement key",
             entry.field.display_name()
         );
         assert_eq!(
@@ -282,7 +294,14 @@ fn assert_helper_backed_context_projections_report_metadata(spec_text: &str) {
         let Some(minimum_kernel) = helper.minimum_kernel() else {
             continue;
         };
+        let expected_key = format!("helper:{}", helper.name());
 
+        assert_eq!(
+            projection.helper_requirement_key.as_deref(),
+            Some(expected_key.as_str()),
+            "{spec_text} projection {} should report helper requirement key",
+            projection.path
+        );
         assert_eq!(
             projection.helper_minimum_kernel,
             Some(minimum_kernel),
@@ -816,6 +835,14 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
 
     assert_eq!(
         tcp_snd_cwnd
+            .get("helper_requirement_key")
+            .expect("helper requirement key should be present")
+            .as_str()
+            .expect("helper requirement key should be a string"),
+        "helper:bpf_tcp_sock"
+    );
+    assert_eq!(
+        tcp_snd_cwnd
             .get("helper_minimum_kernel")
             .expect("helper minimum kernel should be present")
             .as_str()
@@ -1174,6 +1201,27 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
         redirect_map_source.contains("include/uapi/linux/bpf.h"),
         "{redirect_map_source}"
     );
+    let redirect_map_intrinsic = intrinsic_record("xdp:lo", "redirect-map");
+    let redirect_map_helpers = redirect_map_intrinsic
+        .as_record()
+        .expect("redirect-map intrinsic should be a record")
+        .get("backing_helpers")
+        .expect("backing helpers should be present")
+        .as_list()
+        .expect("backing helpers should be a list");
+    let redirect_map_helper = redirect_map_helpers
+        .first()
+        .expect("redirect-map should have a backing helper")
+        .as_record()
+        .expect("backing helper should be a record");
+    assert_eq!(
+        redirect_map_helper
+            .get("helper_requirement_key")
+            .expect("helper requirement key should be present")
+            .as_str()
+            .expect("helper requirement key should be a string"),
+        "helper:bpf_redirect_map"
+    );
 
     let (assign_socket_minimum, assign_socket_source) =
         intrinsic_backing_helper_kernel_floor("tc:lo:ingress", "assign-socket", "bpf_sk_assign");
@@ -1418,6 +1466,14 @@ fn test_spec_record_intrinsics_include_mode_and_kind_variants() {
             .as_str()
             .expect("cgroup-array helper should be a string"),
         "bpf_current_task_under_cgroup"
+    );
+    assert_eq!(
+        xdp_cgroup_array
+            .get("helper_requirement_key")
+            .expect("cgroup-array helper requirement key should be present")
+            .as_str()
+            .expect("cgroup-array helper requirement key should be a string"),
+        "helper:bpf_current_task_under_cgroup"
     );
 
     let sock_ops_map_put = intrinsic_variant_entries("sock_ops:/sys/fs/cgroup", "map-put");
@@ -3597,6 +3653,10 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(cb_flags.kind, "store");
     assert_eq!(cb_flags.minimum_kernel, Some("4.16"));
     assert_eq!(cb_flags.helper, Some("bpf_sock_ops_cb_flags_set"));
+    assert_eq!(
+        cb_flags.helper_requirement_key.as_deref(),
+        Some("helper:bpf_sock_ops_cb_flags_set")
+    );
     assert_eq!(cb_flags.helper_minimum_kernel, Some("4.16"));
     assert!(cb_flags.kfunc.is_none());
 
@@ -3614,6 +3674,10 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let new_value = context_write(&cgroup_sysctl_writes, "new_value");
     assert_eq!(new_value.kind, "sysctl-new-value");
     assert_eq!(new_value.helper, Some("bpf_sysctl_set_new_value"));
+    assert_eq!(
+        new_value.helper_requirement_key.as_deref(),
+        Some("helper:bpf_sysctl_set_new_value")
+    );
     assert_eq!(new_value.helper_minimum_kernel, Some("5.2"));
 
     let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
@@ -3636,6 +3700,10 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let sun_path = context_write(&unix_sock_addr_writes, "sun_path");
     assert_eq!(sun_path.kind, "sun-path");
     assert_eq!(sun_path.kfunc, Some("bpf_sock_addr_set_sun_path"));
+    assert_eq!(
+        sun_path.kfunc_requirement_key.as_deref(),
+        Some("kfunc:bpf_sock_addr_set_sun_path")
+    );
     assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
     assert_eq!(sun_path.kfunc_maximum_kernel_exclusive, None);
     assert!(sun_path.helper.is_none());
@@ -3680,6 +3748,14 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
             .as_str()
             .expect("helper should be a string"),
         "bpf_sock_ops_cb_flags_set"
+    );
+    assert_eq!(
+        cb_flags
+            .get("helper_requirement_key")
+            .expect("helper requirement key should be present")
+            .as_str()
+            .expect("helper requirement key should be a string"),
+        "helper:bpf_sock_ops_cb_flags_set"
     );
     assert_eq!(
         cb_flags

@@ -5,9 +5,9 @@ use nu_protocol::{Span, Value, record};
 use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
-    KfuncCompatibilityRequirement, MapKind, PacketContextKind, ProbeContext,
-    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
-    bpf_sock_projection_member_aliases, ctx_field_backing_helper,
+    HelperCompatibilityRequirement, KfuncCompatibilityRequirement, MapKind, PacketContextKind,
+    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
+    SockOpsCallbackGuard, bpf_sock_projection_member_aliases, ctx_field_backing_helper,
     ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
@@ -25,6 +25,7 @@ struct SpecContextField {
     pointer_non_null: bool,
     trusted_btf_kernel_pointer: bool,
     backing_helper: Option<&'static str>,
+    backing_helper_requirement_key: Option<String>,
     backing_helper_minimum_kernel: Option<&'static str>,
     backing_helper_minimum_kernel_source: Option<&'static str>,
     minimum_kernel: Option<&'static str>,
@@ -43,9 +44,11 @@ struct SpecContextWrite {
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     helper: Option<&'static str>,
+    helper_requirement_key: Option<String>,
     helper_minimum_kernel: Option<&'static str>,
     helper_minimum_kernel_source: Option<&'static str>,
     kfunc: Option<&'static str>,
+    kfunc_requirement_key: Option<String>,
     kfunc_minimum_kernel: Option<&'static str>,
     kfunc_minimum_kernel_source: Option<&'static str>,
     kfunc_maximum_kernel_exclusive: Option<&'static str>,
@@ -61,6 +64,7 @@ struct SpecContextProjection {
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     helper: Option<&'static str>,
+    helper_requirement_key: Option<String>,
     helper_minimum_kernel: Option<&'static str>,
     helper_minimum_kernel_source: Option<&'static str>,
     ty: String,
@@ -275,6 +279,16 @@ fn optional_u32(value: Option<u32>, span: Span) -> Value {
     value
         .map(|value| Value::int(i64::from(value), span))
         .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
+fn helper_requirement_key(helper: BpfHelper) -> Option<String> {
+    HelperCompatibilityRequirement::for_helper(helper).map(HelperCompatibilityRequirement::key)
+}
+
+#[cfg(target_os = "linux")]
+fn kfunc_requirement_key(kfunc: &str) -> Option<String> {
+    KfuncCompatibilityRequirement::for_name(kfunc).map(KfuncCompatibilityRequirement::key)
 }
 
 #[cfg(target_os = "linux")]
@@ -595,6 +609,7 @@ fn spec_context_fields(
                     trusted_btf_kernel_pointer: spec
                         .ctx_field_is_trusted_btf_kernel_pointer(&entry.field),
                     backing_helper: backing_helper.map(BpfHelper::name),
+                    backing_helper_requirement_key: backing_helper.and_then(helper_requirement_key),
                     backing_helper_minimum_kernel: backing_helper
                         .and_then(BpfHelper::minimum_kernel),
                     backing_helper_minimum_kernel_source: backing_helper
@@ -643,6 +658,7 @@ fn context_field_records(
                     "pointer_non_null" => Value::bool(field.pointer_non_null, span),
                     "trusted_btf_kernel_pointer" => Value::bool(field.trusted_btf_kernel_pointer, span),
                     "backing_helper" => optional_static_str(field.backing_helper, span),
+                    "backing_helper_requirement_key" => optional_string(field.backing_helper_requirement_key, span),
                     "backing_helper_minimum_kernel" => optional_static_str(field.backing_helper_minimum_kernel, span),
                     "backing_helper_minimum_kernel_source" => optional_static_str(field.backing_helper_minimum_kernel_source, span),
                     "minimum_kernel" => optional_static_str(field.minimum_kernel, span),
@@ -801,6 +817,7 @@ fn push_context_field_projection(
             .as_ref()
             .map(ContextFieldCompatibilityRequirement::minimum_kernel_source),
         helper: None,
+        helper_requirement_key: None,
         helper_minimum_kernel: None,
         helper_minimum_kernel_source: None,
         ty: mir_type_label(&field.ty),
@@ -828,6 +845,7 @@ fn push_struct_field_projections(
         return;
     }
     let helper_name = helper.map(BpfHelper::name);
+    let helper_requirement_feature_key = helper.and_then(helper_requirement_key);
     let helper_minimum_kernel = helper.and_then(BpfHelper::minimum_kernel);
     let helper_minimum_kernel_source = helper.and_then(BpfHelper::minimum_kernel_source);
     let include_bpf_sock_aliases = name.as_deref() == Some("bpf_sock");
@@ -841,6 +859,7 @@ fn push_struct_field_projections(
             minimum_kernel: None,
             minimum_kernel_source: None,
             helper: helper_name,
+            helper_requirement_key: helper_requirement_feature_key.clone(),
             helper_minimum_kernel,
             helper_minimum_kernel_source,
             ty: mir_type_label(&field.ty),
@@ -860,6 +879,7 @@ fn push_struct_field_projections(
                     minimum_kernel: None,
                     minimum_kernel_source: None,
                     helper: helper_name,
+                    helper_requirement_key: helper_requirement_feature_key.clone(),
                     helper_minimum_kernel,
                     helper_minimum_kernel_source,
                     ty: mir_type_label(&field.ty),
@@ -896,6 +916,7 @@ fn push_helper_call_projection(
         minimum_kernel: None,
         minimum_kernel_source: None,
         helper: Some(helper.name()),
+        helper_requirement_key: helper_requirement_key(helper),
         helper_minimum_kernel: helper.minimum_kernel(),
         helper_minimum_kernel_source: helper.minimum_kernel_source(),
         ty: mir_type_label(&ty),
@@ -1010,6 +1031,7 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "minimum_kernel" => optional_static_str(projection.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(projection.minimum_kernel_source, span),
                     "helper" => optional_static_str(projection.helper, span),
+                    "helper_requirement_key" => optional_string(projection.helper_requirement_key, span),
                     "helper_minimum_kernel" => optional_static_str(projection.helper_minimum_kernel, span),
                     "helper_minimum_kernel_source" => optional_static_str(projection.helper_minimum_kernel_source, span),
                     "type" => Value::string(projection.ty, span),
@@ -1178,6 +1200,7 @@ fn intrinsic_backing_helper_records(
             Value::record(
                 record! {
                     "helper" => Value::string(helper.name(), span),
+                    "helper_requirement_key" => optional_string(helper_requirement_key(helper), span),
                     "minimum_kernel" => optional_static_str(helper.minimum_kernel(), span),
                     "minimum_kernel_source" => optional_static_str(helper.minimum_kernel_source(), span),
                 },
@@ -1200,6 +1223,7 @@ fn intrinsic_variant_record(
             "selector" => Value::string(selector, span),
             "value" => Value::string(value, span),
             "backing_helper" => Value::string(helper.name(), span),
+            "helper_requirement_key" => optional_string(helper_requirement_key(helper), span),
             "minimum_kernel" => optional_static_str(helper.minimum_kernel(), span),
             "minimum_kernel_source" => optional_static_str(helper.minimum_kernel_source(), span),
             "map_kind" => optional_static_str(map_kind.map(|kind| kind.key()), span),
@@ -1346,11 +1370,13 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                 minimum_kernel: surface.minimum_kernel,
                 minimum_kernel_source: surface.minimum_kernel_source,
                 helper: surface.helper.map(BpfHelper::name),
+                helper_requirement_key: surface.helper.and_then(helper_requirement_key),
                 helper_minimum_kernel: surface.helper.and_then(BpfHelper::minimum_kernel),
                 helper_minimum_kernel_source: surface
                     .helper
                     .and_then(BpfHelper::minimum_kernel_source),
                 kfunc: surface.kfunc,
+                kfunc_requirement_key: surface.kfunc.and_then(kfunc_requirement_key),
                 kfunc_minimum_kernel: kfunc_requirement
                     .as_ref()
                     .map(|requirement| requirement.minimum_kernel()),
@@ -1378,9 +1404,11 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),
                     "helper" => optional_static_str(surface.helper, span),
+                    "helper_requirement_key" => optional_string(surface.helper_requirement_key, span),
                     "helper_minimum_kernel" => optional_static_str(surface.helper_minimum_kernel, span),
                     "helper_minimum_kernel_source" => optional_static_str(surface.helper_minimum_kernel_source, span),
                     "kfunc" => optional_static_str(surface.kfunc, span),
+                    "kfunc_requirement_key" => optional_string(surface.kfunc_requirement_key, span),
                     "kfunc_minimum_kernel" => optional_static_str(surface.kfunc_minimum_kernel, span),
                     "kfunc_minimum_kernel_source" => optional_static_str(surface.kfunc_minimum_kernel_source, span),
                     "kfunc_maximum_kernel_exclusive" => optional_static_str(surface.kfunc_maximum_kernel_exclusive, span),
