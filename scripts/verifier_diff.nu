@@ -6711,6 +6711,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-reuseport-select-rich-context"
+        category: "context-surface"
+        tags: [sk-reuseport context packet socket source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  (($ctx.data | get 0) + $ctx.packet_len + $ctx.eth_protocol + $ctx.protocol + $ctx.hash + $ctx.bind_inany + $ctx.socket_cookie) | count'
+            '  ($ctx.sk.family + $ctx.sk.type + $ctx.sk.protocol + $ctx.sk.mark + $ctx.sk.priority + $ctx.sk.rx_queue_mapping) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-reuseport-migrate-context"
         category: "context-surface"
         tags: [sk-reuseport context]
