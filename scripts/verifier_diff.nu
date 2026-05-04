@@ -3546,6 +3546,26 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:state" "ctx:skb" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.file.f_flags | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg0.orig_ax | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
@@ -3880,7 +3900,7 @@ const FIXTURES = [
         target: "lsm_cgroup:socket_bind"
         program: [
             '{|ctx|'
-            '  ($ctx.arg2 + $ctx.pid) | count'
+            '  ($ctx.arg2 + $ctx.arg_count + $ctx.pid) | count'
             '  1'
             '}'
         ]
@@ -10945,6 +10965,14 @@ def context-projection-root? [root: string] {
         "sk"
         "migrating_sk"
         "migrating_socket"
+        "arg"
+        "arg0"
+        "arg1"
+        "arg2"
+        "arg3"
+        "arg4"
+        "arg5"
+        "retval"
         "task"
         "current_task"
         "cgroup"
@@ -10953,6 +10981,24 @@ def context-projection-root? [root: string] {
         "nf_state"
         "skb"
     ]
+}
+
+def target-uses-btf-context-args? [target] {
+    let target_text = ($target | default "")
+
+    [
+        "fentry:"
+        "fentry.s:"
+        "fexit:"
+        "fexit.s:"
+        "fmod_ret:"
+        "fmod_ret.s:"
+        "tp_btf:"
+        "lsm:"
+        "lsm.s:"
+        "lsm_cgroup:"
+        "struct_ops:"
+    ] | any {|prefix| $target_text | str starts-with $prefix }
 }
 
 def context-projection-parts [token: string] {
@@ -11141,6 +11187,14 @@ def trusted-btf-projection-kernel-read? [parts target] {
     }
     if ($target_text | str starts-with "netfilter:") and ($root in ["state" "nf_state" "skb"]) {
         return true
+    }
+    if (target-uses-btf-context-args? $target_text) {
+        if $root == "arg" and ($parts | length) >= 3 {
+            return true
+        }
+        if ($root in ["arg0" "arg1" "arg2" "arg3" "arg4" "arg5" "retval"]) and ($parts | length) >= 2 {
+            return true
+        }
     }
 
     false
