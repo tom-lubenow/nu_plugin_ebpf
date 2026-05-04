@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::MapRef;
+use crate::compiler::ctx_field_schema::{ctx_field_backing_helper, static_ctx_field_type_spec};
 use crate::compiler::mir::StructField;
 
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
@@ -5559,6 +5560,58 @@ fn test_infer_no_arg_scalar_helpers_have_precise_returns() {
             .infer(&func)
             .unwrap_or_else(|_| panic!("expected {name} to infer"));
         assert_eq!(types.get(&dst), Some(&expected));
+    }
+}
+
+#[test]
+fn test_helper_backed_scalar_ctx_fields_match_precise_helper_returns() {
+    for field in [
+        CtxField::PidTgid,
+        CtxField::UidGid,
+        CtxField::Timestamp,
+        CtxField::BootTimestamp,
+        CtxField::CoarseTimestamp,
+        CtxField::TaiTimestamp,
+        CtxField::Jiffies,
+        CtxField::FuncIp,
+        CtxField::AttachCookie,
+        CtxField::Cpu,
+        CtxField::Random,
+        CtxField::CgroupId,
+        CtxField::SocketCookie,
+        CtxField::SocketUid,
+        CtxField::NetnsCookie,
+        CtxField::CgroupClassid,
+        CtxField::RouteRealm,
+        CtxField::HashRecalc,
+        CtxField::SkbCgroupId,
+        CtxField::XdpBuffLen,
+    ] {
+        let helper = ctx_field_backing_helper(&field).unwrap_or_else(|| {
+            panic!(
+                "expected ctx.{} to have a backing helper",
+                field.display_name()
+            )
+        });
+        let helper_ty =
+            TypeInference::precise_helper_return_mir_type(helper).unwrap_or_else(|| {
+                panic!(
+                    "expected precise return type for ctx.{} backing helper {:?}",
+                    field.display_name(),
+                    helper
+                )
+            });
+        let ctx_ty = static_ctx_field_type_spec(&field)
+            .unwrap_or_else(|| panic!("expected static type spec for ctx.{}", field.display_name()))
+            .semantic_ty;
+
+        assert_eq!(
+            helper_ty,
+            ctx_ty,
+            "ctx.{} semantic type must match raw helper-call typing for {:?}",
+            field.display_name(),
+            helper
+        );
     }
 }
 
