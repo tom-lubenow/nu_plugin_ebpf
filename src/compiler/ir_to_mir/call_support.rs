@@ -153,18 +153,19 @@ impl<'a> HirToMirLowering<'a> {
                         helper.name()
                     )));
                 };
-                let (key_ty, mut value_ty) = match self.vreg_type_hints.get(map_vreg) {
+                let (mut key_ty, mut value_ty) = match self.vreg_type_hints.get(map_vreg) {
                     Some(MirType::MapRef { key_ty, val_ty }) => {
                         (key_ty.as_ref().clone(), val_ty.as_ref().clone())
                     }
                     _ => (MirType::Unknown, MirType::Unknown),
                 };
-                if matches!(value_ty, MirType::Unknown)
-                    && let Some(named_value_ty) = self.validated_named_map_value_type(
-                        map_ref,
-                        "helper-call bpf_for_each_map_elem value schema",
-                    )?
-                {
+                if let Some(named_key_ty) = self.named_map_key_type(map_ref).cloned() {
+                    key_ty = named_key_ty;
+                }
+                if let Some(named_value_ty) = self.validated_named_map_value_type(
+                    map_ref,
+                    "helper-call bpf_for_each_map_elem value schema",
+                )? {
                     value_ty = named_value_ty;
                 }
                 Ok(vec![

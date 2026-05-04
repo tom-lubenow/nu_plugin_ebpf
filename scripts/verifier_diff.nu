@@ -10255,7 +10255,11 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb| 0 } "ctx" 0 --kind array'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    $v.seen | count'
+            '    0'
+            '  } "ctx" 0 --kind array'
             '  0'
             '}'
         ]

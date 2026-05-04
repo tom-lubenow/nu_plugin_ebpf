@@ -1133,11 +1133,27 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
     let hir_types = infer_hir_types(&hir_program, &decl_names)
         .expect("for_each_map_elem helper-call should type-check");
 
-    let result = lower_hir_to_mir_with_hints(
+    let map_ref = MapRef {
+        name: "demo_map".to_string(),
+        kind: MapKind::Array,
+    };
+    let map_value_ty = MirType::Struct {
+        name: Some("for_each_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "seen".to_string(),
+            ty: MirType::U64,
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let result = lower_hir_to_mir_with_hints_and_maps(
         &hir_program,
         None,
         &decl_names,
         Some(&hir_types),
+        Some(&HashMap::from([(map_ref.clone(), map_value_ty.clone())])),
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -1148,13 +1164,7 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
     let block = result.program.main.block(entry);
     assert!(block.instructions.iter().any(|inst| matches!(
         inst,
-        MirInst::LoadMapFd {
-            map: MapRef {
-                name,
-                kind: MapKind::Array,
-            },
-            ..
-        } if name == "demo_map"
+        MirInst::LoadMapFd { map, .. } if map == &map_ref
     )));
     assert!(
         block
@@ -1189,9 +1199,9 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
     assert!(matches!(
         callback_hints.get(&VReg(2)),
         Some(MirType::Ptr {
+            pointee,
             address_space: AddressSpace::Map,
-            ..
-        })
+        }) if pointee.as_ref() == &map_value_ty
     ));
     assert!(
         matches!(
