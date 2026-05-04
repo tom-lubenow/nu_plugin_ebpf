@@ -7379,6 +7379,29 @@ const FIXTURES = [
         error_contains: "cannot acquire a second bpf_spin_lock"
     }
     {
+        name: "spin-lock-rejects-unlock-after-mixed-join"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      helper-call "bpf_spin_lock" $entry.lock'
+            '    }'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_spin_lock"
+    }
+    {
         name: "spin-lock-rejects-helper-while-held"
         category: "helper-state"
         tags: [spin-lock map-define reject]
