@@ -5664,6 +5664,20 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-action-skb-rich-metadata-context"
+        category: "context-surface"
+        tags: [tc-action context packet source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pkt_type + $ctx.queue_mapping + $ctx.vlan_present + $ctx.vlan_tci + $ctx.vlan_proto + $ctx.napi_id + $ctx.wire_len + $ctx.gso_segs + $ctx.gso_size + $ctx.tc_index + $ctx.tstamp + $ctx.tstamp_type + $ctx.hwtstamp + $ctx.cb.0) | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-action-skb-context-write"
         category: "context-surface"
         tags: [tc-action context packet writable]
