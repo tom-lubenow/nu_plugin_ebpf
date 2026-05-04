@@ -3264,6 +3264,7 @@ const CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "raw_tracepoint:sys_enter" field: "uid" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_UID_GID }
     { target: "raw_tracepoint:sys_enter" field: "comm" feature: $KERNEL_FEATURE_BPF_GET_CURRENT_COMM }
     { target: "raw_tracepoint:sys_enter" field: "cpu" feature: $KERNEL_FEATURE_BPF_GET_SMP_PROCESSOR_ID }
+    { target: "raw_tracepoint:sys_enter" field: "numa_node" feature: $KERNEL_FEATURE_BPF_GET_NUMA_NODE_ID }
     { target: "raw_tracepoint:sys_enter" field: "random" feature: $KERNEL_FEATURE_BPF_GET_PRANDOM_U32 }
     { target: "tc:lo:ingress" field: "cgroup_classid" feature: $KERNEL_FEATURE_BPF_GET_CGROUP_CLASSID }
     { target: "tc:lo:ingress" field: "route_realm" feature: $KERNEL_FEATURE_BPF_GET_ROUTE_REALM }

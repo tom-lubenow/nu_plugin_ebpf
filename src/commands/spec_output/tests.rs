@@ -377,6 +377,12 @@ fn test_spec_context_fields_label_specialized_helper_backed_fields() {
             "bpf_perf_prog_read_value",
             "4.15",
         ),
+        (
+            "kprobe:ksys_read",
+            "numa_node",
+            "bpf_get_numa_node_id",
+            "4.10",
+        ),
         ("xdp:lo", "xdp_buff_len", "bpf_xdp_get_buff_len", "5.18"),
         ("lwt_xmit:demo-route", "csum_level", "bpf_csum_level", "5.8"),
         (
