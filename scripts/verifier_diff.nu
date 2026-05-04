@@ -6195,6 +6195,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-bound-flow-key-context"
+        category: "context-surface"
+        tags: [flow-dissector context alias source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  let keys = $ctx.flow_keys'
+            '  ($keys.addr_proto + $keys.is_frag + $keys.is_first_frag + $keys.is_encap + $keys.n_proto + $keys.sport + $keys.dport + $keys.ipv4_src + $keys.ipv4_dst + $keys.flags + $keys.flow_label) | count'
+            '  (($keys.ipv6_src | get 0) + ($keys.ipv6_dst | get 3)) | count'
+            '  "fallback"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "flow-dissector-packet-context"
         category: "context-surface"
         tags: [flow-dissector context packet]
