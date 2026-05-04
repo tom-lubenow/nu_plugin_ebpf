@@ -1925,6 +1925,23 @@ fn test_kernel_object_compatibility_requirement_detail_reports_compiled_feature_
 }
 
 #[test]
+fn test_kernel_object_compatibility_requirement_detail_reports_probe_read_kernel_floor() {
+    let mut builder = EbpfBuilder::new();
+    builder
+        .push(EbpfInsn::call(BpfHelper::ProbeReadKernel))
+        .push(EbpfInsn::exit());
+    let object =
+        EbpfProgram::new(EbpfProgramType::Kprobe, "do_sys_openat2", "main", builder).into_object();
+
+    let msg = kernel_object_compatibility_requirement_detail(&object, "5.4.0-test")
+        .expect("kernel 5.4 should be too old for bpf_probe_read_kernel");
+
+    assert!(msg.contains("compiled helpers require kernel>=5.5"));
+    assert!(msg.contains("current kernel is 5.4.0-test"));
+    assert!(msg.contains("bpf_probe_read_kernel helper support"));
+}
+
+#[test]
 fn test_kernel_object_compatibility_requirement_detail_prefers_context_field_floor() {
     let mut builder = EbpfBuilder::new();
     builder
