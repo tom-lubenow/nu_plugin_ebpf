@@ -3556,10 +3556,32 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:state" "ctx:skb" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  let input = $ctx.state.in'
+            '  $input.ifindex | count'
+            '  "accept"'
+            '}'
+        ]
+        feature_keys: ["ctx:state" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "fentry:security_file_open"
         program: [
             '{|ctx|'
             '  $ctx.arg.file.f_flags | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  let file = $ctx.arg.file'
+            '  $file.f_flags | count'
             '  0'
             '}'
         ]
@@ -3881,6 +3903,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.arg.file.f_flags + $ctx.pid + $ctx.arg_count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "fentry-bound-arg-context"
+        category: "tracing"
+        tags: [fentry context alias]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  let file = $ctx.arg.file'
+            '  ($file.f_flags + $ctx.pid) | count'
             '  0'
             '}'
         ]
@@ -5791,6 +5829,21 @@ const FIXTURES = [
             '  let state = ($ctx.nf_state)'
             '  let skb = $ctx.skb'
             '  ($state.in.ifindex + $skb.len) | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-bound-state-hop-context"
+        category: "context-surface"
+        tags: [netfilter context alias]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  let input = $ctx.state.in'
+            '  ($input.ifindex + $ctx.hook) | count'
             '  "accept"'
             '}'
         ]
@@ -10960,6 +11013,21 @@ def normalize-context-field-token [token: string] {
     | str replace --all ";" ""
 }
 
+def normalize-context-path-token [token: string] {
+    $token
+    | str trim
+    | split row " "
+    | first
+    | str replace --all ")" ""
+    | str replace --all "(" ""
+    | str replace --all "," ""
+    | str replace --all "\"" ""
+    | str replace --all "'" ""
+    | str replace --all "}" ""
+    | str replace --all "]" ""
+    | str replace --all ";" ""
+}
+
 def context-field-access-is-assignment-lhs? [raw_access: string field: string] {
     let compact = ($raw_access | str trim | str replace --all " " "")
     let assign_prefix = $"($field)="
@@ -11425,9 +11493,10 @@ def context-root-binding [line: string context_names] {
             continue
         }
 
-        let root = (normalize-context-field-token ($rhs | str substring ($prefix | str length)..))
+        let root_path = (normalize-context-path-token ($rhs | str substring ($prefix | str length)..))
+        let root = ($root_path | split row "." | first)
         if (context-projection-root? $root) {
-            return { name: $assignment.name root: $root }
+            return { name: $assignment.name root: $root_path }
         }
     }
 
