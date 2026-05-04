@@ -3288,6 +3288,14 @@ const CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "raw_tracepoint:sys_enter" field: "kstack" feature: $KERNEL_FEATURE_BPF_GET_STACKID }
 ]
 
+const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [
+    { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.cgroup_id" helper: "bpf_sk_cgroup_id" feature: $KERNEL_FEATURE_BPF_SK_CGROUP_ID }
+    { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.ancestor_cgroup_id.0" helper: "bpf_sk_ancestor_cgroup_id" feature: $KERNEL_FEATURE_BPF_SK_ANCESTOR_CGROUP_ID }
+    { target: "tc:lo:ingress" raw_access: "sk.full" helper: "bpf_sk_fullsock" feature: $KERNEL_FEATURE_BPF_SK_FULLSOCK }
+    { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.tcp" helper: "bpf_tcp_sock" feature: $KERNEL_FEATURE_BPF_TCP_SOCK }
+    { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.listener" helper: "bpf_get_listener_sock" feature: $KERNEL_FEATURE_BPF_GET_LISTENER_SOCK }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -11654,10 +11662,32 @@ def validate-context-field-helper-kernel-feature-expectations [] {
     }
 }
 
+def validate-context-projection-kernel-feature-expectations [] {
+    for expectation in $CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS {
+        let target = $expectation.target
+        let raw_access = $expectation.raw_access
+        let expected = $expectation.feature
+        let actual = (context-projection-kernel-feature $raw_access $target)
+
+        if $actual == null {
+            fail $"context-projection-kernel-feature missing expected metadata for ($target) ctx.($raw_access)"
+        }
+
+        for key in [key min_kernel source max_kernel_exclusive] {
+            let expected_value = ($expected | get -o $key)
+            let actual_value = ($actual | get -o $key)
+            if $expected_value != $actual_value {
+                fail $"context-projection-kernel-feature drifted for ($target) ctx.($raw_access): ($key) expected=($expected_value) actual=($actual_value)"
+            }
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
     validate-context-field-helper-kernel-feature-expectations
+    validate-context-projection-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 

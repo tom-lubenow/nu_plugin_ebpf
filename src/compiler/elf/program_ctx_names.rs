@@ -527,8 +527,8 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::ctx_field_backing_helper;
     use crate::compiler::mir::ContextFieldCompatibilityRequirement;
+    use crate::compiler::{BpfHelper, ctx_field_backing_helper};
     use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
 
@@ -850,6 +850,59 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "context helper features should not have max_kernel_exclusive metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn test_verifier_diff_context_projection_metadata_matches_rust() {
+        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let table_body = verifier_diff_const_body(
+            verifier_diff,
+            "CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS",
+            '[',
+        );
+
+        for line in table_body.lines() {
+            let Some(target) = verifier_diff_quoted_field(line, "target") else {
+                continue;
+            };
+            let raw_access = verifier_diff_quoted_field(line, "raw_access").unwrap_or_else(|| {
+                panic!("expected verifier_diff.nu context projection for {target}")
+            });
+            let helper_name = verifier_diff_quoted_field(line, "helper").unwrap_or_else(|| {
+                panic!("expected verifier_diff.nu projection helper for {target} ctx.{raw_access}")
+            });
+            let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+                panic!("expected verifier_diff.nu projection feature for {target} ctx.{raw_access}")
+            });
+            let helper = BpfHelper::from_name(helper_name).unwrap_or_else(|| {
+                panic!("projection helper {helper_name} should be modeled in Rust")
+            });
+            let requirement = helper.compatibility_requirement().unwrap_or_else(|| {
+                panic!("projection helper {helper_name} should have compatibility metadata")
+            });
+            let (key, min_kernel, source, max_kernel) =
+                verifier_diff_feature_record(verifier_diff, feature_const);
+
+            assert_eq!(
+                key,
+                requirement.key(),
+                "verifier_diff.nu projection helper key drifted for {target} ctx.{raw_access}"
+            );
+            assert_eq!(
+                min_kernel,
+                requirement.minimum_kernel(),
+                "verifier_diff.nu projection helper min_kernel drifted for {target} ctx.{raw_access}"
+            );
+            assert_eq!(
+                source,
+                requirement.minimum_kernel_source(),
+                "verifier_diff.nu projection helper source drifted for {target} ctx.{raw_access}"
+            );
+            assert_eq!(
+                max_kernel, None,
+                "context projection helper features should not have max_kernel_exclusive metadata"
             );
         }
     }
