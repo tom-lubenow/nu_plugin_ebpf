@@ -7596,6 +7596,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-task-file-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:task_file"
+        program: [
+            '{|ctx|'
+            '  if $ctx.file { $ctx.file.f_mode | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-task-vma-context"
         category: "context-surface"
         tags: [iter context]
@@ -7611,6 +7626,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-task-vma-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:task_vma"
+        program: [
+            '{|ctx|'
+            '  if $ctx.vma { $ctx.vma.vm_start | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-cgroup-context"
         category: "context-surface"
         tags: [iter context]
@@ -7618,6 +7648,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  if $ctx.cgroup { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-cgroup-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:cgroup"
+        program: [
+            '{|ctx|'
+            '  if $ctx.cgroup { $ctx.cgroup.level | count }'
             '  0'
             '}'
         ]
