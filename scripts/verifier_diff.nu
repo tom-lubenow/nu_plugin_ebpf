@@ -6373,6 +6373,60 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-percpu-obj-new-drop"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-percpu-obj-new-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-percpu-obj-drop-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $task 0'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects object reference"
+    }
+    {
         name: "source-kfunc-obj-drop-rejects-task-ref"
         category: "helper-state"
         tags: [kfunc object ref-lifetime source reject]
