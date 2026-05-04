@@ -12049,10 +12049,18 @@ fn test_socket_projection_context_path_reports_context_field_compatibility() {
 
 #[test]
 fn test_current_cgroup_context_path_reports_context_field_compatibility() {
-    for field_name in ["cgroup", "current_cgroup"] {
+    for (program_type, target, field_name) in [
+        (EbpfProgramType::Kprobe, "ksys_read", "cgroup"),
+        (EbpfProgramType::Kprobe, "ksys_read", "current_cgroup"),
+        (
+            EbpfProgramType::Tracepoint,
+            "syscalls/sys_enter_openat",
+            "current_cgroup",
+        ),
+    ] {
         let program = compile_ctx_path_discard_program(
-            EbpfProgramType::Kprobe,
-            "ksys_read",
+            program_type,
+            target,
             CellPath {
                 members: vec![string_member(field_name)],
             },
