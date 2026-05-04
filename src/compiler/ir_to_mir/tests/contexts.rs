@@ -5443,6 +5443,51 @@ fn test_lower_tc_ctx_tstamp_assignment() {
 }
 
 #[test]
+fn test_lower_ctx_assignment_records_context_compatibility_fields() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("tstamp")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc ctx.tstamp assignment should lower");
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("tc ctx.tstamp assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::Tstamp));
+
+    let program = compiled.into_program(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let requirements = program.context_field_compatibility_requirements();
+
+    let tstamp = requirements
+        .iter()
+        .find(|requirement| requirement.key() == "ctx:tstamp")
+        .expect("ctx.tstamp assignment should imply ctx.tstamp compatibility metadata");
+    assert_eq!(tstamp.minimum_kernel(), "5.0");
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("5.0")
+    );
+}
+
+#[test]
 fn test_lower_cgroup_skb_egress_ctx_tstamp_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {

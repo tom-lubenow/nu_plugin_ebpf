@@ -1066,9 +1066,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_context_write_surface_tables_are_unique() {
-        for (table_name, surfaces) in [
+    fn all_context_write_surface_tables() -> [(&'static str, &'static [ContextWriteSurfaceSpec]); 11]
+    {
+        [
             (
                 "socket_filter context write surfaces",
                 SOCKET_FILTER_CTX_WRITE_SURFACES,
@@ -1104,7 +1104,41 @@ mod tests {
                 "sk_lookup context write surfaces",
                 SK_LOOKUP_CTX_WRITE_SURFACES,
             ),
-        ] {
+        ]
+    }
+
+    fn representative_ctx_store_targets() -> [CtxStoreTarget; 24] {
+        [
+            CtxStoreTarget::SockOpsReply,
+            CtxStoreTarget::SockOpsReplyLong(0),
+            CtxStoreTarget::SockOpsCbFlags,
+            CtxStoreTarget::SockOpsSkTxhash,
+            CtxStoreTarget::CgroupSockBoundDevIf,
+            CtxStoreTarget::CgroupSockMark,
+            CtxStoreTarget::CgroupSockPriority,
+            CtxStoreTarget::SkbMark,
+            CtxStoreTarget::SkbQueueMapping,
+            CtxStoreTarget::SkbPriority,
+            CtxStoreTarget::SkbTcIndex,
+            CtxStoreTarget::SkbCbWord(0),
+            CtxStoreTarget::SkbTcClassid,
+            CtxStoreTarget::SkbTstamp,
+            CtxStoreTarget::SysctlFilePos,
+            CtxStoreTarget::SockoptLevel,
+            CtxStoreTarget::SockoptOptname,
+            CtxStoreTarget::SockoptOptlen,
+            CtxStoreTarget::SockoptRetval,
+            CtxStoreTarget::CgroupSockAddrUserIp4,
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(0),
+            CtxStoreTarget::CgroupSockAddrUserPort,
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp4,
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(0),
+        ]
+    }
+
+    #[test]
+    fn test_context_write_surface_tables_are_unique() {
+        for (table_name, surfaces) in all_context_write_surface_tables() {
             assert_unique_write_surface_names(table_name, surfaces);
         }
 
@@ -1119,6 +1153,19 @@ mod tests {
                 program_types.insert(surface.program_type),
                 "duplicate program write surface for {:?}",
                 surface.program_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_ctx_store_targets_have_registered_write_surfaces() {
+        for target in representative_ctx_store_targets() {
+            assert!(
+                all_context_write_surface_tables()
+                    .iter()
+                    .flat_map(|(_, surfaces)| surfaces.iter())
+                    .any(|surface| surface.matches_store_target(&target)),
+                "{target:?} must have at least one source-level context write surface"
             );
         }
     }
