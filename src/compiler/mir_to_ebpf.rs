@@ -88,6 +88,8 @@ pub struct MirCompileResult {
     pub subfunction_symbols: Vec<SubfunctionSymbol>,
     /// Context fields referenced by this compiled program
     pub used_ctx_fields: HashSet<CtxField>,
+    /// Kfunc names referenced by this compiled program
+    pub used_kfuncs: HashSet<String>,
     /// Optional schema for structured events
     pub event_schema: Option<EventSchema>,
     /// Optional schema for runtime decoding of `bytes_counters` keys
@@ -120,6 +122,7 @@ impl MirCompileResult {
             relocations,
             subfunction_symbols,
             used_ctx_fields,
+            used_kfuncs,
             event_schema,
             bytes_counter_key_schema,
             generic_map_key_types,
@@ -140,6 +143,7 @@ impl MirCompileResult {
             generic_map_value_types,
             generic_map_value_semantics,
         )
+        .with_used_kfuncs(used_kfuncs)
         .with_used_context_fields(used_ctx_fields)
         .with_generic_map_key_types(generic_map_key_types)
         .with_generic_map_max_entries(generic_map_max_entries)
@@ -206,6 +210,30 @@ fn collect_used_context_fields(lir: &LirProgram) -> HashSet<CtxField> {
         collect_used_context_fields_from_function(subfunction, &mut fields);
     }
     fields
+}
+
+fn collect_used_kfuncs_from_inst(inst: &LirInst, kfuncs: &mut HashSet<String>) {
+    if let LirInst::CallKfunc { kfunc, .. } = inst {
+        kfuncs.insert(kfunc.clone());
+    }
+}
+
+fn collect_used_kfuncs_from_function(function: &LirFunction, kfuncs: &mut HashSet<String>) {
+    for block in &function.blocks {
+        for inst in &block.instructions {
+            collect_used_kfuncs_from_inst(inst, kfuncs);
+        }
+        collect_used_kfuncs_from_inst(&block.terminator, kfuncs);
+    }
+}
+
+fn collect_used_kfuncs(lir: &LirProgram) -> HashSet<String> {
+    let mut kfuncs = HashSet::new();
+    collect_used_kfuncs_from_function(&lir.main, &mut kfuncs);
+    for subfunction in &lir.subfunctions {
+        collect_used_kfuncs_from_function(subfunction, &mut kfuncs);
+    }
+    kfuncs
 }
 
 #[derive(Debug, Clone, Default)]
@@ -541,6 +569,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             relocations: self.relocations,
             subfunction_symbols,
             used_ctx_fields: collect_used_context_fields(self.lir),
+            used_kfuncs: collect_used_kfuncs(self.lir),
             event_schema: self.event_schema,
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,
