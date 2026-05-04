@@ -397,6 +397,9 @@ const PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "kprobe.multi:vfs_*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_KPROBE_MULTI"] }
     { target: "kretprobe.multi:vfs_*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_KPROBE_MULTI"] }
     { target: "uprobe.s:/bin/bash:main" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "section:sleepable-program"] }
+    { target: "uretprobe.s:/lib/libc.so.6:malloc" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "section:sleepable-program"] }
+    { target: "uprobe.multi:/bin/bash:read*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_UPROBE_MULTI"] }
+    { target: "uretprobe.multi:/bin/bash:read*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_UPROBE_MULTI"] }
     { target: "uprobe.multi.s:/bin/bash:read*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_UPROBE_MULTI" "section:sleepable-program"] }
     { target: "uretprobe.multi.s:/bin/bash:read*" feature_keys: ["program:BPF_PROG_TYPE_KPROBE" "attach:BPF_TRACE_UPROBE_MULTI" "section:sleepable-program"] }
     { target: "raw_tracepoint.w:sys_enter" feature_keys: ["program:BPF_PROG_TYPE_RAW_TRACEPOINT" "section:raw_tracepoint.w"] }
@@ -3873,6 +3876,54 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "uprobe-sleepable-context"
+        category: "tracing"
+        tags: [uprobe sleepable context]
+        target: "uprobe.s:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    ($ctx.pid + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "uretprobe-sleepable-context"
+        category: "tracing"
+        tags: [uretprobe sleepable context]
+        target: "uretprobe.s:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.pid + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "uprobe-multi-sleepable-context"
+        category: "tracing"
+        tags: [uprobe-multi sleepable context]
+        target: "uprobe.multi.s:/bin/true:*"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    ($ctx.pid + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "uretprobe-multi-context"
         category: "tracing"
         tags: [uretprobe-multi context]
@@ -3880,6 +3931,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.retval + $ctx.pid + $ctx.func_ip) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "uretprobe-multi-sleepable-context"
+        category: "tracing"
+        tags: [uretprobe-multi sleepable context]
+        target: "uretprobe.multi.s:/bin/true:*"
+        program: [
+            '{|ctx|'
+            '  ($ctx.retval + $ctx.pid + $ctx.func_ip + $ctx.attach_cookie) | count'
             '  0'
             '}'
         ]
