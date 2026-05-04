@@ -4376,19 +4376,18 @@ fn test_kfunc_kernel_compatibility_metadata() {
     ));
 }
 
+fn quoted_kfunc_names(source: &str) -> std::collections::BTreeSet<&str> {
+    source
+        .split('"')
+        .enumerate()
+        .filter_map(|(idx, part)| {
+            (idx % 2 == 1 && (part.starts_with("bpf_") || part.starts_with("scx_"))).then_some(part)
+        })
+        .collect()
+}
+
 #[test]
 fn test_known_kfunc_signatures_have_compatibility_metadata() {
-    fn quoted_kfunc_names(source: &'static str) -> std::collections::BTreeSet<&'static str> {
-        source
-            .split('"')
-            .enumerate()
-            .filter_map(|(idx, part)| {
-                (idx % 2 == 1 && (part.starts_with("bpf_") || part.starts_with("scx_")))
-                    .then_some(part)
-            })
-            .collect()
-    }
-
     let signature_names = quoted_kfunc_names(include_str!("kfunc_signature.rs"));
     let metadata_names = quoted_kfunc_names(include_str!("kfunc_metadata.rs"));
 
@@ -4411,6 +4410,144 @@ fn test_known_kfunc_signatures_have_compatibility_metadata() {
         metadata_without_signature.is_empty(),
         "kfunc compatibility metadata without a modeled signature: {metadata_without_signature:?}"
     );
+}
+
+#[test]
+fn test_verifier_diff_kfunc_metadata_matches_rust() {
+    fn nu_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
+        let marker = format!("const {name} = {delimiter}");
+        let start = source
+            .find(&marker)
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name}"))
+            + marker.len();
+        let end_marker = format!("\n{}", if delimiter == '[' { ']' } else { '}' });
+        let end = source[start..]
+            .find(&end_marker)
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name} to terminate"));
+        &source[start..start + end]
+    }
+
+    fn quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+        let marker = format!("{field}: \"");
+        let start = line.find(&marker)? + marker.len();
+        let rest = &line[start..];
+        let end = rest.find('"')?;
+        Some(&rest[..end])
+    }
+
+    fn dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+        let marker = format!("{field}: $");
+        let start = line.find(&marker)? + marker.len();
+        let rest = &line[start..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '}')
+            .unwrap_or(rest.len());
+        Some(&rest[..end])
+    }
+
+    fn nu_feature_record<'a>(
+        script: &'a str,
+        feature_const: &str,
+    ) -> (&'a str, &'a str, &'a str, Option<&'a str>) {
+        let body = nu_const_body(script, feature_const, '{');
+        let key = quoted_field(body, "key")
+            .unwrap_or_else(|| panic!("expected {feature_const} to declare key"));
+        let min_kernel = quoted_field(body, "min_kernel")
+            .unwrap_or_else(|| panic!("expected {feature_const} to declare min_kernel"));
+        let source = quoted_field(body, "source")
+            .unwrap_or_else(|| panic!("expected {feature_const} to declare source"));
+        let max_kernel = quoted_field(body, "max_kernel_exclusive");
+        (key, min_kernel, source, max_kernel)
+    }
+
+    let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+    let fallback_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
+    let mut fallback = std::collections::BTreeMap::new();
+    for line in fallback_body.lines() {
+        let Some(name) = quoted_field(line, "name") else {
+            continue;
+        };
+        let min_kernel = quoted_field(line, "min_kernel").unwrap_or_else(|| {
+            panic!("expected fallback metadata for {name} to declare min_kernel")
+        });
+        let source = quoted_field(line, "source")
+            .unwrap_or_else(|| panic!("expected fallback metadata for {name} to declare source"));
+        let max_kernel = quoted_field(line, "max_kernel_exclusive");
+        assert!(
+            fallback
+                .insert(name, (min_kernel, source, max_kernel))
+                .is_none(),
+            "duplicate verifier_diff.nu fallback kfunc metadata for {name}"
+        );
+    }
+
+    let signature_names = quoted_kfunc_names(include_str!("kfunc_signature.rs"));
+    let verifier_names = fallback
+        .keys()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let missing_verifier_metadata = signature_names
+        .iter()
+        .filter(|name| !verifier_names.contains(**name))
+        .copied()
+        .collect::<Vec<_>>();
+    assert!(
+        missing_verifier_metadata.is_empty(),
+        "modeled kfunc signatures without verifier_diff.nu metadata: {missing_verifier_metadata:?}"
+    );
+
+    let verifier_metadata_without_signature = verifier_names
+        .iter()
+        .filter(|name| KfuncSignature::for_name(name).is_none())
+        .copied()
+        .collect::<Vec<_>>();
+    assert!(
+        verifier_metadata_without_signature.is_empty(),
+        "verifier_diff.nu kfunc metadata without a modeled signature: {verifier_metadata_without_signature:?}"
+    );
+
+    for name in &signature_names {
+        let requirement = KfuncCompatibilityRequirement::for_name(name)
+            .expect("modeled kfunc signature should have compatibility metadata");
+        let (min_kernel, source, max_kernel) = fallback
+            .get(name)
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu fallback metadata for {name}"));
+        assert_eq!(
+            *min_kernel,
+            requirement.minimum_kernel(),
+            "verifier_diff.nu min_kernel drifted for {name}"
+        );
+        assert_eq!(
+            *source,
+            requirement.minimum_kernel_source(),
+            "verifier_diff.nu source drifted for {name}"
+        );
+        assert_eq!(
+            *max_kernel,
+            requirement.maximum_kernel_exclusive(),
+            "verifier_diff.nu max_kernel_exclusive drifted for {name}"
+        );
+    }
+
+    let explicit_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURES", '[');
+    for line in explicit_body.lines() {
+        let Some(name) = quoted_field(line, "name") else {
+            continue;
+        };
+        let feature_const = dollar_field(line, "feature").unwrap_or_else(|| {
+            panic!("expected explicit verifier_diff.nu kfunc feature for {name}")
+        });
+        let (key, min_kernel, source, max_kernel) = nu_feature_record(verifier_diff, feature_const);
+        assert_eq!(key, format!("kfunc:{name}"));
+        let fallback_metadata = fallback.get(name).unwrap_or_else(|| {
+            panic!("explicit verifier_diff.nu kfunc feature {name} has no fallback metadata")
+        });
+        assert_eq!(
+            (min_kernel, source, max_kernel),
+            *fallback_metadata,
+            "explicit verifier_diff.nu kfunc feature metadata drifted for {name}"
+        );
+    }
 }
 
 #[test]
