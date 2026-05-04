@@ -3622,7 +3622,14 @@ fn test_infer_kfunc_list_front_pointer_return() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(
+        list_head,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_head_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let types = ti
         .infer(&func)
         .expect("expected list_front kfunc type inference");
@@ -3682,7 +3689,14 @@ fn test_infer_kfunc_rbtree_navigation_pointer_returns() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(
+        tree,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_rb_root_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let types = ti
         .infer(&func)
         .expect("expected rbtree navigation kfunc type inference");
