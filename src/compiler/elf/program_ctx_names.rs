@@ -527,6 +527,7 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::mir::ContextFieldCompatibilityRequirement;
     use std::collections::HashSet;
 
     fn assert_unique_ctx_field_entry_names(table_name: &str, entries: &[CtxFieldNameEntry]) {
@@ -548,6 +549,52 @@ mod tests {
             .iter()
             .find(|entry| entry.name == name)
             .map(|entry| entry.field.clone())
+    }
+
+    fn verifier_diff_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
+        let marker = format!("const {name} = {delimiter}");
+        let start = source
+            .find(&marker)
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name}"))
+            + marker.len();
+        let end_marker = format!("\n{}", if delimiter == '[' { ']' } else { '}' });
+        let end = source[start..]
+            .find(&end_marker)
+            .unwrap_or_else(|| panic!("expected verifier_diff.nu constant {name} to terminate"));
+        &source[start..start + end]
+    }
+
+    fn verifier_diff_quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+        let marker = format!("{field}: \"");
+        let start = line.find(&marker)? + marker.len();
+        let rest = &line[start..];
+        let end = rest.find('"')?;
+        Some(&rest[..end])
+    }
+
+    fn verifier_diff_dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+        let marker = format!("{field}: $");
+        let start = line.find(&marker)? + marker.len();
+        let rest = &line[start..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '}')
+            .unwrap_or(rest.len());
+        Some(&rest[..end])
+    }
+
+    fn verifier_diff_feature_record<'a>(
+        script: &'a str,
+        feature_const: &str,
+    ) -> (&'a str, &'a str, &'a str, Option<&'a str>) {
+        let body = verifier_diff_const_body(script, feature_const, '{');
+        let key = verifier_diff_quoted_field(body, "key")
+            .unwrap_or_else(|| panic!("expected {feature_const} to declare key"));
+        let min_kernel = verifier_diff_quoted_field(body, "min_kernel")
+            .unwrap_or_else(|| panic!("expected {feature_const} to declare min_kernel"));
+        let source = verifier_diff_quoted_field(body, "source")
+            .unwrap_or_else(|| panic!("expected {feature_const} to declare source"));
+        let max_kernel = verifier_diff_quoted_field(body, "max_kernel_exclusive");
+        (key, min_kernel, source, max_kernel)
     }
 
     #[test]
@@ -632,6 +679,50 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_verifier_diff_generic_context_field_metadata_matches_rust() {
+        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let table_body =
+            verifier_diff_const_body(verifier_diff, "CONTEXT_FIELD_KERNEL_FEATURES", '[');
+
+        for line in table_body.lines() {
+            let Some(field_name) = verifier_diff_quoted_field(line, "field") else {
+                continue;
+            };
+            let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+                panic!("expected verifier_diff.nu context feature for ctx.{field_name}")
+            });
+            let field = EbpfProgramType::resolve_untyped_ctx_field_name(field_name)
+                .unwrap_or_else(|err| panic!("ctx.{field_name} should resolve in Rust: {err}"));
+            let requirement = ContextFieldCompatibilityRequirement::for_field(&field)
+                .unwrap_or_else(|| {
+                    panic!("ctx.{field_name} should have Rust compatibility metadata")
+                });
+            let (key, min_kernel, source, max_kernel) =
+                verifier_diff_feature_record(verifier_diff, feature_const);
+
+            assert_eq!(
+                key,
+                requirement.key(),
+                "verifier_diff.nu context feature key drifted for ctx.{field_name}"
+            );
+            assert_eq!(
+                min_kernel,
+                requirement.minimum_kernel(),
+                "verifier_diff.nu context min_kernel drifted for ctx.{field_name}"
+            );
+            assert_eq!(
+                source,
+                requirement.minimum_kernel_source(),
+                "verifier_diff.nu context source drifted for ctx.{field_name}"
+            );
+            assert_eq!(
+                max_kernel, None,
+                "context fields should not have max_kernel_exclusive metadata"
+            );
         }
     }
 
