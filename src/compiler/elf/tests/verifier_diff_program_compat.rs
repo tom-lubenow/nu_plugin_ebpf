@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::ProgramCompatibilityRequirement;
+use crate::program_spec::ProgramSpec;
 
 #[derive(Debug, Clone)]
 struct VerifierDiffFeatureRecord {
@@ -116,6 +117,33 @@ fn verifier_diff_kernel_feature_default_lane_keys(source: &str, lane: &str) -> B
     }
 
     panic!("expected kernel-feature-default-test-lane to contain a {lane} key list")
+}
+
+fn verifier_diff_program_target_expectations(source: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let body = verifier_diff_const_body(source, "PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS", '[');
+    let mut expectations = BTreeMap::new();
+
+    for line in body.lines() {
+        let Some(target) = verifier_diff_quoted_field(line, "target") else {
+            continue;
+        };
+        let feature_list = line
+            .split_once("feature_keys: [")
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(list, _)| list)
+            .unwrap_or_else(|| {
+                panic!("PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS target {target} missing feature_keys")
+            });
+        let feature_keys = verifier_diff_quoted_strings(feature_list);
+        assert!(
+            expectations
+                .insert(target.to_string(), feature_keys)
+                .is_none(),
+            "duplicate PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS target {target}"
+        );
+    }
+
+    expectations
 }
 
 fn program_compatibility_verifier_feature_key(
@@ -279,4 +307,30 @@ fn test_verifier_diff_program_feature_metadata_matches_rust() {
         unexpected_verifier_keys.is_empty(),
         "scripts/verifier_diff.nu has program feature metadata without a Rust requirement: {unexpected_verifier_keys:?}"
     );
+}
+
+#[test]
+fn test_verifier_diff_program_target_expectations_match_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let expectations = verifier_diff_program_target_expectations(verifier_diff);
+    assert!(
+        !expectations.is_empty(),
+        "expected verifier_diff.nu program target compatibility expectations"
+    );
+
+    for (target, expected_feature_keys) in expectations {
+        let spec = ProgramSpec::parse(&target)
+            .unwrap_or_else(|err| panic!("verifier_diff.nu target {target} should parse: {err}"));
+        let actual_feature_keys = spec
+            .compatibility_requirements()
+            .iter()
+            .filter_map(|requirement| program_compatibility_verifier_feature_key(*requirement))
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            actual_feature_keys, expected_feature_keys,
+            "verifier_diff.nu program target feature expectation drifted from ProgramSpec for {target}"
+        );
+    }
 }
