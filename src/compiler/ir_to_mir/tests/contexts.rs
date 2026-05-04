@@ -976,6 +976,25 @@ fn test_lower_cgroup_sysctl_ctx_new_value_assignment() {
                 MirValue::Const(1),
             ])
     )));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("cgroup_sysctl ctx.new_value assignment should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::SysctlSetNewValue)
+        .expect("ctx.new_value assignment should report bpf_sysctl_set_new_value metadata");
+    assert_eq!(helper_requirement.minimum_kernel(), "5.2");
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.2"));
+    assert_eq!(program.compatibility_minimum_kernel(), Some("5.2"));
 }
 
 #[test]
