@@ -14,8 +14,8 @@ use super::CompileError;
 use super::elf::{BssGlobal, DataGlobal, ProbeContext, ReadonlyGlobal};
 use super::hindley_milner::HMType;
 use super::hir::{
-    HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
-    lower_ir_to_hir,
+    HirBlockId, HirCallArgs, HirClosureParamSource, HirFunction, HirLiteral, HirProgram, HirStmt,
+    HirTerminator, lower_ir_to_hir,
 };
 use super::hir_type_infer::HirTypeInfo;
 use super::mir::{
@@ -310,6 +310,8 @@ pub struct HirToMirLowering<'a> {
     decl_names: &'a HashMap<DeclId, String>,
     /// Mapping from BlockId to HirFunction for nested closures (where, each, etc.)
     closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
+    /// Source-recovered closure parameter order for nested closures.
+    closure_param_sources: &'a HashMap<nu_protocol::BlockId, HirClosureParamSource>,
     /// Captured closure values to inline
     captures: &'a [(VarId, Value)],
     /// Context parameter variable ID (if any)
@@ -442,6 +444,7 @@ impl<'a> HirToMirLowering<'a> {
         probe_ctx: Option<&'a ProbeContext>,
         decl_names: &'a HashMap<DeclId, String>,
         closure_irs: &'a HashMap<nu_protocol::BlockId, HirFunction>,
+        closure_param_sources: &'a HashMap<nu_protocol::BlockId, HirClosureParamSource>,
         captures: &'a [(VarId, Value)],
         ctx_param: Option<VarId>,
         type_hints: Option<&'a HirMirTypeHints>,
@@ -476,6 +479,7 @@ impl<'a> HirToMirLowering<'a> {
             probe_ctx,
             decl_names,
             closure_irs,
+            closure_param_sources,
             captures,
             ctx_param,
             pipeline_input: None,

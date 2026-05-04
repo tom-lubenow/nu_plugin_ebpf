@@ -2543,6 +2543,7 @@ fn test_lower_fentry_array_element_projection() {
 fn test_compile_fixed_array_iterate_over_struct_elements() {
     let decl_names = HashMap::new();
     let closure_irs = HashMap::new();
+    let closure_param_sources = HashMap::new();
     let captures: Vec<(VarId, Value)> = Vec::new();
     let user_functions = HashMap::new();
     let decl_signatures = HashMap::new();
@@ -2550,6 +2551,7 @@ fn test_compile_fixed_array_iterate_over_struct_elements() {
         None,
         &decl_names,
         &closure_irs,
+        &closure_param_sources,
         &captures,
         None,
         None,

@@ -12,6 +12,7 @@ use crate::EbpfPlugin;
 use crate::compiler::{EbpfObject, ProbeContext, StructOpsObjectSpec, StructOpsValueField};
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 
+mod closure_params;
 mod compilation;
 mod event_stream;
 mod struct_ops;

@@ -14,8 +14,12 @@ impl<'a> HirToMirLowering<'a> {
         let uses_in = Self::uses_in_variable(hir);
         let needs_input = input_reg.is_some() || uses_in;
         let param_vars = Self::infer_param_vars(hir);
+        let source_params = self.closure_param_sources.get(&block_id);
         let param_count = arg_seeds.len().saturating_sub(usize::from(needs_input));
-        let declared_params = param_vars.len() + usize::from(needs_input);
+        let declared_params = source_params
+            .map(|source| source.params.len())
+            .unwrap_or(param_vars.len())
+            + usize::from(needs_input);
         if declared_params > arg_seeds.len() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "callback closure for '{}' declares {} parameters, but the callback ABI supplies {}",
@@ -71,16 +75,28 @@ impl<'a> HirToMirLowering<'a> {
             next_arg_seed += 1;
         }
 
-        for (idx, var_id) in param_vars.iter().enumerate() {
-            let vreg = self.func.alloc_vreg();
-            self.var_mappings.insert(*var_id, vreg);
-            let seed = arg_seeds.get(next_arg_seed + idx);
-            self.seed_subfunction_param(vreg, next_arg_seed + idx, seed, None, Some(*var_id));
-        }
-        for extra_idx in param_vars.len()..param_count {
-            let unused = self.func.alloc_vreg();
-            let seed = arg_seeds.get(next_arg_seed + extra_idx);
-            self.seed_subfunction_param(unused, next_arg_seed + extra_idx, seed, None, None);
+        if let Some(source_params) = source_params {
+            for idx in 0..param_count {
+                let vreg = self.func.alloc_vreg();
+                let var_id = source_params.params.get(idx).and_then(|param| param.var_id);
+                if let Some(var_id) = var_id {
+                    self.var_mappings.insert(var_id, vreg);
+                }
+                let seed = arg_seeds.get(next_arg_seed + idx);
+                self.seed_subfunction_param(vreg, next_arg_seed + idx, seed, None, var_id);
+            }
+        } else {
+            for (idx, var_id) in param_vars.iter().enumerate() {
+                let vreg = self.func.alloc_vreg();
+                self.var_mappings.insert(*var_id, vreg);
+                let seed = arg_seeds.get(next_arg_seed + idx);
+                self.seed_subfunction_param(vreg, next_arg_seed + idx, seed, None, Some(*var_id));
+            }
+            for extra_idx in param_vars.len()..param_count {
+                let unused = self.func.alloc_vreg();
+                let seed = arg_seeds.get(next_arg_seed + extra_idx);
+                self.seed_subfunction_param(unused, next_arg_seed + extra_idx, seed, None, None);
+            }
         }
 
         self.hir_block_map.insert(hir.entry, self.func.entry);

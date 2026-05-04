@@ -13,6 +13,7 @@ use nu_protocol::{
     Spanned, Type, Value,
 };
 
+use super::closure_params::recover_closure_param_sources;
 use super::struct_ops::{
     StructOpsTopLevelFieldKind, apply_struct_ops_value_field, default_struct_ops_object_name,
     sanitize_struct_ops_component, validate_required_struct_ops_callbacks,
@@ -117,6 +118,7 @@ fn fetch_closure_irs(
     engine: &EngineInterface,
     ir_block: &IrBlock,
     closure_irs: &mut HashMap<BlockId, IrBlock>,
+    closure_spans: &mut HashMap<BlockId, Span>,
     decl_names: &mut HashMap<DeclId, String>,
     span: Span,
 ) -> Result<(), LabeledError> {
@@ -129,10 +131,24 @@ fn fetch_closure_irs(
             continue;
         }
 
-        let (nested_ir, nested_decl_names) = fetch_block_ir(engine, block_id, span)?;
+        let FetchedIrBlock {
+            ir_block: nested_ir,
+            decl_names: nested_decl_names,
+            block_span,
+        } = fetch_block_ir(engine, block_id, span)?;
         decl_names.extend(nested_decl_names);
+        if let Some(block_span) = block_span {
+            closure_spans.insert(block_id, block_span);
+        }
 
-        fetch_closure_irs(engine, &nested_ir, closure_irs, decl_names, span)?;
+        fetch_closure_irs(
+            engine,
+            &nested_ir,
+            closure_irs,
+            closure_spans,
+            decl_names,
+            span,
+        )?;
 
         closure_irs.insert(block_id, nested_ir);
     }
@@ -982,10 +998,13 @@ pub(super) fn strip_leading_annotated_mut_initializer_stmts(
     Ok(())
 }
 
-fn parse_view_ir_json(
-    json: &str,
-    span: Span,
-) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
+struct FetchedIrBlock {
+    ir_block: IrBlock,
+    decl_names: HashMap<DeclId, String>,
+    block_span: Option<Span>,
+}
+
+fn parse_view_ir_json(json: &str, span: Span) -> Result<FetchedIrBlock, LabeledError> {
     let value: serde_json::Value = serde_json::from_str(json).map_err(|e| {
         LabeledError::new("Failed to parse 'view ir --json' output").with_label(e.to_string(), span)
     })?;
@@ -1007,17 +1026,24 @@ fn parse_view_ir_json(
         })
         .unwrap_or_default();
 
-    Ok((
+    let block_span = value.get("span").and_then(|span_value| {
+        serde_json::from_value::<Span>(span_value.clone())
+            .ok()
+            .filter(|span| span.start <= span.end)
+    });
+
+    Ok(FetchedIrBlock {
         ir_block,
-        extract_decl_names_from_formatted_instructions(&formatted_instructions),
-    ))
+        decl_names: extract_decl_names_from_formatted_instructions(&formatted_instructions),
+        block_span,
+    })
 }
 
 fn fetch_view_ir_json(
     engine: &EngineInterface,
     eval: EvaluatedCall,
     span: Span,
-) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
+) -> Result<FetchedIrBlock, LabeledError> {
     let view_ir_decl = engine
         .find_decl("view ir")
         .map_err(|e| {
@@ -1051,7 +1077,7 @@ fn fetch_block_ir(
     engine: &EngineInterface,
     block_id: BlockId,
     span: Span,
-) -> Result<(IrBlock, HashMap<DeclId, String>), LabeledError> {
+) -> Result<FetchedIrBlock, LabeledError> {
     let mut eval = EvaluatedCall::new(span);
     eval.add_flag("json".into_spanned(span));
     eval.add_positional(Value::int(block_id.get() as i64, span));
@@ -1067,13 +1093,15 @@ fn fetch_decl_ir(
     eval.add_flag("json".into_spanned(span));
     eval.add_flag("decl-id".into_spanned(span));
     eval.add_positional(Value::int(decl_id.get() as i64, span));
-    fetch_view_ir_json(engine, eval, span)
+    let fetched = fetch_view_ir_json(engine, eval, span)?;
+    Ok((fetched.ir_block, fetched.decl_names))
 }
 
 fn collect_user_function_irs(
     engine: &EngineInterface,
     ir_block: &IrBlock,
     closure_irs: &mut HashMap<BlockId, IrBlock>,
+    closure_spans: &mut HashMap<BlockId, Span>,
     decl_names: &mut HashMap<DeclId, String>,
     span: Span,
 ) -> Result<HashMap<DeclId, IrBlock>, LabeledError> {
@@ -1114,7 +1142,7 @@ fn collect_user_function_irs(
         decl_names.extend(fetched_decl_names);
         scan_block(&ir, decl_names, &mut seen, &mut pending);
 
-        fetch_closure_irs(engine, &ir, closure_irs, decl_names, span)?;
+        fetch_closure_irs(engine, &ir, closure_irs, closure_spans, decl_names, span)?;
         for (block_id, closure_ir) in closure_irs.iter() {
             if scanned_closures.insert(*block_id) {
                 scan_block(closure_ir, decl_names, &mut seen, &mut pending);
@@ -1372,8 +1400,11 @@ pub(super) fn compile_closure_with_context(
 ) -> Result<CompiledClosureArtifacts, LabeledError> {
     use crate::loader::{LoadError, get_state};
 
-    let (ir_block, mut ir_decl_names) =
-        fetch_block_ir(engine, closure.item.block_id, closure.span)?;
+    let FetchedIrBlock {
+        ir_block,
+        decl_names: mut ir_decl_names,
+        ..
+    } = fetch_block_ir(engine, closure.item.block_id, closure.span)?;
     let closure_source = fetch_view_source(engine, closure)?;
     let annotated_mut_globals =
         map_leading_annotated_mut_globals(&closure_source, &ir_block, closure.span)?;
@@ -1382,10 +1413,12 @@ pub(super) fn compile_closure_with_context(
     decl_names.extend(ir_decl_names.drain());
 
     let mut closure_irs = HashMap::new();
+    let mut closure_spans = HashMap::new();
     fetch_closure_irs(
         engine,
         &ir_block,
         &mut closure_irs,
+        &mut closure_spans,
         &mut decl_names,
         call_head,
     )?;
@@ -1394,12 +1427,15 @@ pub(super) fn compile_closure_with_context(
         engine,
         &ir_block,
         &mut closure_irs,
+        &mut closure_spans,
         &mut decl_names,
         call_head,
     )?;
 
     let captures = lower_capture_literals(closure)?;
     let ctx_param = infer_ctx_param(&ir_block);
+    let closure_param_sources =
+        recover_closure_param_sources(&closure_source, closure.span, &closure_spans, &closure_irs);
 
     let mut hir_program =
         lower_ir_to_hir(ir_block, closure_irs, captures, ctx_param).map_err(|e| {
@@ -1407,6 +1443,7 @@ pub(super) fn compile_closure_with_context(
                 .with_label(e.to_string(), call_head)
                 .with_help("The closure may use unsupported operations")
         })?;
+    hir_program.closure_param_sources = closure_param_sources;
     hir_program.annotated_mut_globals = annotated_mut_globals;
     strip_leading_annotated_mut_initializer_stmts(&mut hir_program, closure.span)?;
 

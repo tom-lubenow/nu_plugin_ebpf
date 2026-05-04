@@ -8028,6 +8028,46 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "timer-callback-uses-trailing-value-param"
+        category: "helper-state"
+        tags: [timer callback accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val|'
+            '      if $val { $val.cookie | count }'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "timer-callback-rejects-extra-declared-param"
+        category: "helper-state"
+        tags: [timer callback reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val extra| 0}'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "declares 4 parameters, but the callback ABI supplies 3"
+    }
+    {
         name: "timer-init-rejects-invalid-clock-flags"
         category: "helper-state"
         tags: [timer helper-call flags reject]

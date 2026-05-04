@@ -382,6 +382,7 @@ pub fn lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
         probe_ctx,
         decl_names,
         &hir.closures,
+        &hir.closure_param_sources,
         &hir.captures,
         hir.ctx_param,
         hir_type_hints.as_ref(),

@@ -21,11 +21,25 @@ pub use lowering::lower_ir_to_hir;
 pub struct HirProgram {
     pub main: HirFunction,
     pub closures: HashMap<NuBlockId, HirFunction>,
+    /// Source-recovered parameter order for nested closures whose compiled IR
+    /// only contains variables that are actually used.
+    pub closure_param_sources: HashMap<NuBlockId, HirClosureParamSource>,
     pub captures: Vec<(VarId, Value)>,
     pub ctx_param: Option<VarId>,
     /// Leading annotated `mut` bindings in the attached closure that should be
     /// lowered as compiler-managed mutable globals instead of per-invocation locals.
     pub annotated_mut_globals: Vec<AnnotatedMutGlobal>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HirClosureParamSource {
+    pub params: Vec<HirClosureParam>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HirClosureParam {
+    pub name: String,
+    pub var_id: Option<VarId>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +59,7 @@ impl HirProgram {
         Self {
             main,
             closures,
+            closure_param_sources: HashMap::new(),
             captures,
             ctx_param,
             annotated_mut_globals: Vec::new(),
