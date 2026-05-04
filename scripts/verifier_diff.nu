@@ -7668,6 +7668,48 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "redirect-map-xdp-devmap-hash"
+        category: "language-surface"
+        tags: [redirect-map xdp map devmap-hash]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  redirect-map tx_ports 0 --kind devmap-hash'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-map-xdp-cpumap"
+        category: "language-surface"
+        tags: [redirect-map xdp map cpumap]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  redirect-map cpu_targets 0 --kind cpumap'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-map-xdp-xskmap"
+        category: "language-surface"
+        tags: [redirect-map xdp map xskmap]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  redirect-map xsks 0 --kind xskmap'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tail-call-prog-array"
         category: "language-surface"
         tags: [tail-call prog-array]
