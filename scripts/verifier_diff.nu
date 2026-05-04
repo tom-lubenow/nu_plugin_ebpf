@@ -3632,6 +3632,26 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: []
     }
     {
+        target: "lirc_mode2:/dev/lirc0"
+        program: [
+            '{|ctx|'
+            '  ($ctx.cpu + $ctx.ktime + $ctx.cgroup_id) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:cpu" "ctx:timestamp" "ctx:cgroup_id" "helper:bpf_get_smp_processor_id" "helper:bpf_ktime_get_ns" "helper:bpf_get_current_cgroup_id"]
+    }
+    {
+        target: "cgroup_device:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.cpu + $ctx.ktime + $ctx.cgroup_id) | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:cpu" "ctx:timestamp" "ctx:cgroup_id" "helper:bpf_get_smp_processor_id" "helper:bpf_ktime_get_ns" "helper:bpf_get_current_cgroup_id"]
+    }
+    {
         target: "lsm_cgroup:socket_bind"
         program: [
             '{|ctx|'
@@ -6091,6 +6111,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-device-current-context"
+        category: "context-surface"
+        tags: [cgroup-device context current]
+        requires: [cgroup-v2]
+        target: "cgroup_device:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.cpu + $ctx.ktime + $ctx.cgroup_id) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sysctl-new-value-write"
         category: "context-surface"
         tags: [cgroup-sysctl context writable]
@@ -6666,6 +6701,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.sample + $ctx.value + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lirc-mode2-current-context"
+        category: "context-surface"
+        tags: [lirc context current]
+        requires: [lirc-device]
+        target: "lirc_mode2:/dev/lirc0"
+        program: [
+            '{|ctx|'
+            '  ($ctx.cpu + $ctx.ktime + $ctx.cgroup_id) | count'
             '  0'
             '}'
         ]
