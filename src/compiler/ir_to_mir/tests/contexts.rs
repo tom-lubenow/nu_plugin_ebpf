@@ -1278,6 +1278,43 @@ fn test_lower_tc_ctx_socket_family_field() {
 }
 
 #[test]
+fn test_tc_ctx_socket_projection_reports_kernel_read_compatibility() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("sk"), string_member("family")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc ctx.sk.family should lower");
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("tc ctx.sk.family should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
+        .expect("ctx.sk.family should report probe_read_kernel compatibility");
+    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.5"));
+    assert_eq!(program.compatibility_minimum_kernel(), Some("5.5"));
+}
+
+#[test]
 fn test_lower_tc_ctx_tstamp_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("tstamp")],

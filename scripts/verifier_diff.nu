@@ -3324,6 +3324,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:rx_queue_mapping" "ctx:sk"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
