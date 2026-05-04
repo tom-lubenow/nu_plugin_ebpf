@@ -146,6 +146,34 @@ fn verifier_diff_program_target_expectations(source: &str) -> BTreeMap<String, B
     expectations
 }
 
+#[test]
+fn test_verifier_diff_fixture_summary_exposes_target() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let summary_body = verifier_diff
+        .split_once("def fixture-summary [fixture compat_kernel] {")
+        .expect("expected fixture-summary function")
+        .1
+        .split_once("\ndef fixture-status-count")
+        .expect("expected fixture-status-count after fixture-summary")
+        .0;
+    assert!(
+        summary_body.contains("target: (optional $fixture target \"\")"),
+        "fixture-summary should expose the raw fixture target in --list --json output"
+    );
+
+    let list_body = verifier_diff
+        .split_once("if $list {")
+        .expect("expected list output branch")
+        .1
+        .split_once("\n    if $matrix {")
+        .expect("expected matrix branch after list output branch")
+        .0;
+    assert!(
+        list_body.contains("target=($summary.target)"),
+        "human --list output should include the raw fixture target"
+    );
+}
+
 fn program_compatibility_verifier_feature_key(
     requirement: ProgramCompatibilityRequirement,
 ) -> Option<&'static str> {
