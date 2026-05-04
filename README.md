@@ -54,6 +54,10 @@ bound when the upstream kfunc spelling is source-verified as transitional.
 also reports source-backed
 minimum-kernel/source fields on individual context-field records when direct
 UAPI fields or backing helpers have known introduction points.
+Kind-sensitive intrinsic variants such as `redirect-map --kind devmap-hash`
+and `redirect-socket --kind sockhash` also report their selected map kind,
+map requirement key, and source-backed map minimum kernel separately from the
+backing helper floor.
 Writable context surface records report direct write-surface floors when known
 and whether an assignment lowers through a helper or kfunc, including separate
 source-backed minimum-kernel/source fields for ABI-backed writes such as

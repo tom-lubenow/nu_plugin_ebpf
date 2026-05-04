@@ -2632,6 +2632,7 @@ pub(crate) struct ProgramIntrinsicVariant {
     selector: &'static str,
     value: &'static str,
     helper: BpfHelper,
+    map_kind: Option<MapKind>,
 }
 
 impl ProgramIntrinsicVariant {
@@ -2644,7 +2645,13 @@ impl ProgramIntrinsicVariant {
             selector,
             value,
             helper,
+            map_kind: None,
         }
+    }
+
+    pub(crate) const fn with_map_kind(mut self, map_kind: MapKind) -> Self {
+        self.map_kind = Some(map_kind);
+        self
     }
 
     pub(crate) fn selector(self) -> &'static str {
@@ -2657,6 +2664,10 @@ impl ProgramIntrinsicVariant {
 
     pub(crate) fn helper(self) -> BpfHelper {
         self.helper
+    }
+
+    pub(crate) fn map_kind(self) -> Option<MapKind> {
+        self.map_kind
     }
 }
 

@@ -121,6 +121,31 @@ fn intrinsic_variant_entries(spec_text: &str, command: &str) -> Vec<(String, Str
         .collect()
 }
 
+fn intrinsic_variant_record_by(
+    spec_text: &str,
+    command: &str,
+    selector: &str,
+    value: &str,
+) -> nu_protocol::Record {
+    intrinsic_record(spec_text, command)
+        .as_record()
+        .expect("intrinsic should be a record")
+        .get("variants")
+        .expect("intrinsic variants should be present")
+        .as_list()
+        .expect("intrinsic variants should be a list")
+        .iter()
+        .find_map(|variant| {
+            let record = variant.as_record().ok()?;
+            let candidate_selector = record.get("selector")?.as_str().ok()?;
+            let candidate_value = record.get("value")?.as_str().ok()?;
+            (candidate_selector == selector && candidate_value == value).then(|| record.clone())
+        })
+        .unwrap_or_else(|| {
+            panic!("expected {command} variant {selector}={value} in {spec_text} spec")
+        })
+}
+
 fn intrinsic_backing_helper_kernel_floor(
     spec_text: &str,
     command: &str,
@@ -1072,6 +1097,61 @@ fn test_spec_record_intrinsics_include_mode_and_kind_variants() {
         )]
     );
 
+    let xdp_redirect_map = intrinsic_variant_entries("xdp:lo", "redirect-map");
+    assert!(xdp_redirect_map.contains(&(
+        "kind".to_string(),
+        "devmap".to_string(),
+        "bpf_redirect_map".to_string()
+    )));
+    assert!(xdp_redirect_map.contains(&(
+        "kind".to_string(),
+        "devmap-hash".to_string(),
+        "bpf_redirect_map".to_string()
+    )));
+    assert!(xdp_redirect_map.contains(&(
+        "kind".to_string(),
+        "cpumap".to_string(),
+        "bpf_redirect_map".to_string()
+    )));
+    assert!(xdp_redirect_map.contains(&(
+        "kind".to_string(),
+        "xskmap".to_string(),
+        "bpf_redirect_map".to_string()
+    )));
+    let devmap_hash = intrinsic_variant_record_by("xdp:lo", "redirect-map", "kind", "devmap-hash");
+    assert_eq!(
+        devmap_hash
+            .get("map_kind")
+            .expect("map kind should be present")
+            .as_str()
+            .expect("map kind should be a string"),
+        "devmap-hash"
+    );
+    assert_eq!(
+        devmap_hash
+            .get("map_requirement_key")
+            .expect("map requirement key should be present")
+            .as_str()
+            .expect("map requirement key should be a string"),
+        "map:BPF_MAP_TYPE_DEVMAP_HASH"
+    );
+    assert_eq!(
+        devmap_hash
+            .get("map_minimum_kernel")
+            .expect("map minimum kernel should be present")
+            .as_str()
+            .expect("map minimum kernel should be a string"),
+        "5.4"
+    );
+    assert!(
+        devmap_hash
+            .get("map_minimum_kernel_source")
+            .expect("map minimum kernel source should be present")
+            .as_str()
+            .expect("map minimum kernel source should be a string")
+            .contains("/v5.4/")
+    );
+
     assert_eq!(
         intrinsic_variant_entries("sk_msg:/sys/fs/bpf/demo_sockmap", "adjust-message"),
         vec![
@@ -1134,6 +1214,20 @@ fn test_spec_record_intrinsics_include_mode_and_kind_variants() {
                 "bpf_sk_redirect_hash".to_string(),
             ),
         ]
+    );
+    let sockhash = intrinsic_variant_record_by(
+        "sk_skb:/sys/fs/bpf/demo_sockmap",
+        "redirect-socket",
+        "kind",
+        "sockhash",
+    );
+    assert_eq!(
+        sockhash
+            .get("map_minimum_kernel")
+            .expect("socket map variant minimum kernel should be present")
+            .as_str()
+            .expect("socket map variant minimum kernel should be a string"),
+        "4.18"
     );
     assert_eq!(
         intrinsic_variant_entries("sk_reuseport:select", "redirect-socket"),

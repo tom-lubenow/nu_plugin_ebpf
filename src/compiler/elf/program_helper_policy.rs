@@ -1530,9 +1530,14 @@ impl ProgramSpec {
         selector: &'static str,
         value: &'static str,
         helper: BpfHelper,
+        map_kind: Option<MapKind>,
     ) {
         if self.helper_call_error(helper).is_none() {
-            variants.push(ProgramIntrinsicVariant::new(selector, value, helper));
+            let variant = ProgramIntrinsicVariant::new(selector, value, helper);
+            variants.push(match map_kind {
+                Some(map_kind) => variant.with_map_kind(map_kind),
+                None => variant,
+            });
         }
     }
 
@@ -1556,6 +1561,7 @@ impl ProgramSpec {
                             "flag",
                             mode.flag_name(),
                             helper,
+                            None,
                         );
                     }
                 }
@@ -1574,6 +1580,7 @@ impl ProgramSpec {
                             "flag",
                             mode.flag_name(),
                             helper,
+                            None,
                         );
                     }
                 }
@@ -1590,7 +1597,7 @@ impl ProgramSpec {
                         } else {
                             "flag"
                         };
-                        self.push_intrinsic_variant(&mut variants, selector, value, helper);
+                        self.push_intrinsic_variant(&mut variants, selector, value, helper, None);
                     }
                 }
             }
@@ -1601,7 +1608,13 @@ impl ProgramSpec {
                     MapKind::ReuseportSockArray,
                 ] {
                     if let Some(helper) = self.program_type().socket_redirect_helper(map_kind) {
-                        self.push_intrinsic_variant(&mut variants, "kind", map_kind.key(), helper);
+                        self.push_intrinsic_variant(
+                            &mut variants,
+                            "kind",
+                            map_kind.key(),
+                            helper,
+                            Some(map_kind),
+                        );
                     }
                 }
             }
@@ -1617,6 +1630,7 @@ impl ProgramSpec {
                         "kind",
                         map_kind.key(),
                         BpfHelper::RedirectMap,
+                        Some(map_kind),
                     );
                 }
             }
@@ -1826,8 +1840,10 @@ mod tests {
         assert_eq!(
             sk_msg.intrinsic_variants(ProgramIntrinsic::RedirectSocket),
             vec![
-                ProgramIntrinsicVariant::new("kind", "sockmap", BpfHelper::MsgRedirectMap),
-                ProgramIntrinsicVariant::new("kind", "sockhash", BpfHelper::MsgRedirectHash),
+                ProgramIntrinsicVariant::new("kind", "sockmap", BpfHelper::MsgRedirectMap)
+                    .with_map_kind(MapKind::SockMap),
+                ProgramIntrinsicVariant::new("kind", "sockhash", BpfHelper::MsgRedirectHash)
+                    .with_map_kind(MapKind::SockHash),
             ]
         );
     }

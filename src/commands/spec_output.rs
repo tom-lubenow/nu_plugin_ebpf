@@ -5,7 +5,7 @@ use nu_protocol::{Span, Value, record};
 use crate::compiler::mir::{AddressSpace, CtxField, MirType};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
-    KfuncCompatibilityRequirement, PacketContextKind, ProbeContext,
+    KfuncCompatibilityRequirement, MapKind, PacketContextKind, ProbeContext,
     ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
     ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type,
     synthetic_bpf_tcp_sock_type,
@@ -1124,6 +1124,7 @@ fn intrinsic_variant_record(
     selector: &'static str,
     value: &'static str,
     helper: BpfHelper,
+    map_kind: Option<MapKind>,
     span: Span,
 ) -> Value {
     Value::record(
@@ -1133,6 +1134,10 @@ fn intrinsic_variant_record(
             "backing_helper" => Value::string(helper.name(), span),
             "minimum_kernel" => optional_static_str(helper.minimum_kernel(), span),
             "minimum_kernel_source" => optional_static_str(helper.minimum_kernel_source(), span),
+            "map_kind" => optional_static_str(map_kind.map(|kind| kind.key()), span),
+            "map_requirement_key" => optional_static_str(map_kind.map(|kind| kind.compatibility_feature_key()), span),
+            "map_minimum_kernel" => optional_static_str(map_kind.map(|kind| kind.minimum_kernel()), span),
+            "map_minimum_kernel_source" => optional_static_str(map_kind.map(|kind| kind.minimum_kernel_source()), span),
         },
         span,
     )
@@ -1147,7 +1152,13 @@ fn intrinsic_variant_records(
     spec.intrinsic_variants(intrinsic)
         .into_iter()
         .map(|variant| {
-            intrinsic_variant_record(variant.selector(), variant.value(), variant.helper(), span)
+            intrinsic_variant_record(
+                variant.selector(),
+                variant.value(),
+                variant.helper(),
+                variant.map_kind(),
+                span,
+            )
         })
         .collect()
 }
