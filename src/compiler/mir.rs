@@ -481,6 +481,11 @@ pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
 const BPF_KPTR_SLOT_STRUCT_PREFIX: &str = "__nu_bpf_kptr_";
 const BPF_GRAPH_ROOT_STRUCT_PREFIX: &str = "__nu_bpf_graph_root:";
+const BPF_TIMER_FALLBACK_SIZE: usize = 16;
+const BPF_SPIN_LOCK_FALLBACK_SIZE: usize = 4;
+const BPF_WQ_FALLBACK_SIZE: usize = 16;
+const BPF_REFCOUNT_FALLBACK_SIZE: usize = 4;
+const BPF_DYNPTR_FALLBACK_SIZE: usize = 16;
 const BPF_LIST_HEAD_FALLBACK_SIZE: usize = 16;
 const BPF_LIST_NODE_FALLBACK_SIZE: usize = 16;
 const BPF_RB_ROOT_FALLBACK_SIZE: usize = 16;
@@ -690,23 +695,38 @@ impl MirType {
     }
 
     pub fn bpf_timer_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_timer", 16)
+        Self::opaque_named_struct_with_size(
+            "bpf_timer",
+            kernel_btf_struct_size_or("bpf_timer", BPF_TIMER_FALLBACK_SIZE),
+        )
     }
 
     pub fn bpf_spin_lock_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_spin_lock", 4)
+        Self::opaque_named_struct_with_size(
+            "bpf_spin_lock",
+            kernel_btf_struct_size_or("bpf_spin_lock", BPF_SPIN_LOCK_FALLBACK_SIZE),
+        )
     }
 
     pub fn bpf_wq_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_wq", 16)
+        Self::opaque_named_struct_with_size(
+            "bpf_wq",
+            kernel_btf_struct_size_or("bpf_wq", BPF_WQ_FALLBACK_SIZE),
+        )
     }
 
     pub fn bpf_refcount_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_refcount", 4)
+        Self::opaque_named_struct_with_size(
+            "bpf_refcount",
+            kernel_btf_struct_size_or("bpf_refcount", BPF_REFCOUNT_FALLBACK_SIZE),
+        )
     }
 
     pub fn bpf_dynptr_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_dynptr", 16)
+        Self::opaque_named_struct_with_size(
+            "bpf_dynptr",
+            kernel_btf_struct_size_or("bpf_dynptr", BPF_DYNPTR_FALLBACK_SIZE),
+        )
     }
 
     pub fn bpf_list_head_struct() -> Self {
