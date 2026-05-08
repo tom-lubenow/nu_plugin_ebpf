@@ -79,6 +79,37 @@ fn test_callback_map_arg_requires_bpf_map_pointer() {
 }
 
 #[test]
+fn test_kfunc_rbtree_add_callback_requires_rb_node_pointers() {
+    use crate::compiler::mir::AddressSpace;
+
+    let node_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::bpf_rb_node_struct()),
+        address_space: AddressSpace::Kernel,
+    };
+    let unknown_kernel_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Kernel,
+    };
+
+    let bad = MirType::Subprogram {
+        args: vec![node_ptr.clone(), unknown_kernel_ptr],
+        ret: Box::new(MirType::I64),
+    };
+    let err = KfuncSignature::callback_subprogram_type_error("bpf_rbtree_add_impl", 2, &bad)
+        .expect("opaque kernel pointer should not satisfy rbtree comparator arg");
+    assert!(err.contains("fn(bpf_rb_node*, bpf_rb_node*) -> scalar"));
+
+    let good = MirType::Subprogram {
+        args: vec![node_ptr.clone(), node_ptr],
+        ret: Box::new(MirType::I64),
+    };
+    assert_eq!(
+        KfuncSignature::callback_subprogram_type_error("bpf_rbtree_add_impl", 2, &good),
+        None
+    );
+}
+
+#[test]
 fn test_bpf_helper_name_roundtrip() {
     assert_eq!(
         BpfHelper::GetCurrentPidTgid.name(),

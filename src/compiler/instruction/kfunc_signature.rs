@@ -964,6 +964,51 @@ impl KfuncSignature {
         self.arg_kinds[idx]
     }
 
+    pub fn callback_subprogram_signature_message(
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Option<&'static str> {
+        match (kfunc, arg_idx) {
+            ("bpf_rbtree_add_impl", 2) => Some(
+                "kfunc 'bpf_rbtree_add_impl' callback must have signature fn(bpf_rb_node*, bpf_rb_node*) -> scalar",
+            ),
+            _ => None,
+        }
+    }
+
+    pub fn callback_subprogram_type_error(
+        kfunc: &str,
+        arg_idx: usize,
+        arg_ty: &MirType,
+    ) -> Option<String> {
+        let MirType::Subprogram { args, ret } = arg_ty else {
+            return Some(format!(
+                "kfunc '{}' arg{} expects callback subprogram, got {:?}",
+                kfunc, arg_idx, arg_ty
+            ));
+        };
+
+        let valid = match (kfunc, arg_idx) {
+            ("bpf_rbtree_add_impl", 2) => {
+                args.len() == 2
+                    && args.first().is_some_and(MirType::is_bpf_rb_node_ptr)
+                    && args.get(1).is_some_and(MirType::is_bpf_rb_node_ptr)
+                    && ret.is_scalar_like()
+            }
+            _ => true,
+        };
+
+        if valid {
+            None
+        } else {
+            Some(
+                Self::callback_subprogram_signature_message(kfunc, arg_idx)
+                    .unwrap_or("kfunc callback subprogram has unsupported signature")
+                    .to_string(),
+            )
+        }
+    }
+
     pub fn for_name_or_kernel_btf(name: &str) -> Option<Self> {
         if let Some(sig) = Self::for_name(name) {
             return Some(sig);

@@ -850,6 +850,10 @@ impl<'a> TypeInference<'a> {
                                     "kfunc '{}' arg{} expects callback subprogram, got {:?}",
                                     kfunc, idx, arg_ty
                                 )));
+                            } else if let Some(message) =
+                                KfuncSignature::callback_subprogram_type_error(kfunc, idx, &arg_ty)
+                            {
+                                errors.push(TypeError::new(message));
                             }
                         }
                         KfuncArgKind::Pointer => match arg_ty {

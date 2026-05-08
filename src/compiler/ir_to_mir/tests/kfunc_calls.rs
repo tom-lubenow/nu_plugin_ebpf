@@ -112,6 +112,153 @@ fn test_kfunc_call_lowers_with_explicit_btf_id() {
 }
 
 #[test]
+fn test_kfunc_rbtree_add_callback_closure_lowers_to_rb_node_params() {
+    let closure_block_id = nu_protocol::BlockId::new(7);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_rbtree_add_impl".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                            RegId::new(6),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let mut hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![
+                HirClosureParam {
+                    name: "a".to_string(),
+                    var_id: Some(VarId::new(10)),
+                },
+                HirClosureParam {
+                    name: "b".to_string(),
+                    var_id: Some(VarId::new(11)),
+                },
+            ],
+        },
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_rbtree_add_impl kfunc-call with closure should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    let callback = &result.program.subfunctions[0];
+    assert_eq!(callback.param_count, 2);
+    assert!(callback.param_non_null.contains(&0));
+    assert!(callback.param_non_null.contains(&1));
+
+    let callback_hints = &result.type_hints.subfunctions[0];
+    assert!(
+        callback_hints
+            .get(&VReg(0))
+            .is_some_and(MirType::is_bpf_rb_node_ptr),
+        "unexpected callback arg0 hint: {:?}",
+        callback_hints.get(&VReg(0))
+    );
+    assert!(
+        callback_hints
+            .get(&VReg(1))
+            .is_some_and(MirType::is_bpf_rb_node_ptr),
+        "unexpected callback arg1 hint: {:?}",
+        callback_hints.get(&VReg(1))
+    );
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadSubprogram { .. }))
+    );
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallKfunc {
+            kfunc,
+            args,
+            ..
+        } if kfunc == "bpf_rbtree_add_impl" && args.len() == 5
+    )));
+}
+
+#[test]
 fn test_kfunc_pointer_return_overrides_reused_hir_register_hint() {
     let task_var = VarId::new(9);
     let func = HirFunction {

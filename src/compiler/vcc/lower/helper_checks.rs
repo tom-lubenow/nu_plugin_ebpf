@@ -129,13 +129,21 @@ impl<'a> VccLowerer<'a> {
             match sig.arg_kind(idx) {
                 KfuncArgKind::Scalar => self.assert_scalar_reg(*arg, out),
                 KfuncArgKind::Subprogram => {
-                    if !matches!(self.types.get(arg), Some(MirType::Subprogram { .. })) {
+                    let Some(arg_ty @ MirType::Subprogram { .. }) = self.types.get(arg) else {
                         return Err(VccError::new(
                             VccErrorKind::TypeMismatch {
                                 expected: VccTypeClass::Scalar,
                                 actual: VccTypeClass::Unknown,
                             },
                             format!("kfunc '{}' arg{} expects callback subprogram", kfunc, idx),
+                        ));
+                    };
+                    if let Some(message) =
+                        KfuncSignature::callback_subprogram_type_error(kfunc, idx, arg_ty)
+                    {
+                        return Err(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            message,
                         ));
                     }
                 }

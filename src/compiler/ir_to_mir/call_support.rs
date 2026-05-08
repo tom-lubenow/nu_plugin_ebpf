@@ -372,23 +372,17 @@ impl<'a> HirToMirLowering<'a> {
         match (kfunc, arg_idx) {
             ("bpf_rbtree_add_impl", 2) => Ok(vec![
                 SubfunctionArgSeed {
-                    type_hint: Some(MirType::Ptr {
-                        pointee: Box::new(MirType::Unknown),
-                        address_space: AddressSpace::Kernel,
-                    }),
+                    type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_rb_node")),
                     metadata: None,
                     synthetic_stack_slot: None,
-                    non_null: false,
+                    non_null: true,
                     trusted_btf: false,
                 },
                 SubfunctionArgSeed {
-                    type_hint: Some(MirType::Ptr {
-                        pointee: Box::new(MirType::Unknown),
-                        address_space: AddressSpace::Kernel,
-                    }),
+                    type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_rb_node")),
                     metadata: None,
                     synthetic_stack_slot: None,
-                    non_null: false,
+                    non_null: true,
                     trusted_btf: false,
                 },
             ]),

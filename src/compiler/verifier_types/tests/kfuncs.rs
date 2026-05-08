@@ -10452,11 +10452,11 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
         MirType::Subprogram {
             args: vec![
                 MirType::Ptr {
-                    pointee: Box::new(MirType::Unknown),
+                    pointee: Box::new(MirType::bpf_rb_node_struct()),
                     address_space: AddressSpace::Kernel,
                 },
                 MirType::Ptr {
-                    pointee: Box::new(MirType::Unknown),
+                    pointee: Box::new(MirType::bpf_rb_node_struct()),
                     address_space: AddressSpace::Kernel,
                 },
             ],
@@ -10562,11 +10562,11 @@ fn test_kfunc_rbtree_add_rejects_task_reference_on_arg1() {
         MirType::Subprogram {
             args: vec![
                 MirType::Ptr {
-                    pointee: Box::new(MirType::Unknown),
+                    pointee: Box::new(MirType::bpf_rb_node_struct()),
                     address_space: AddressSpace::Kernel,
                 },
                 MirType::Ptr {
-                    pointee: Box::new(MirType::Unknown),
+                    pointee: Box::new(MirType::bpf_rb_node_struct()),
                     address_space: AddressSpace::Kernel,
                 },
             ],

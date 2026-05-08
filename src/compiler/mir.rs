@@ -909,6 +909,16 @@ impl MirType {
         self.is_named_kernel_struct_ptr(&["bpf_map"])
     }
 
+    pub fn is_bpf_rb_node_ptr(&self) -> bool {
+        matches!(
+            self,
+            MirType::Ptr {
+                address_space: AddressSpace::Kernel,
+                pointee,
+            } if pointee.is_bpf_rb_node_struct()
+        )
+    }
+
     pub fn is_file_ptr(&self) -> bool {
         self.is_named_kernel_struct_ptr(&["file"])
     }

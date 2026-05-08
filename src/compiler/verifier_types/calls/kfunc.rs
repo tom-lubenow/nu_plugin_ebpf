@@ -20,11 +20,17 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
             }
         }
         KfuncArgKind::Subprogram => {
-            if !matches!(types.get(&arg), Some(MirType::Subprogram { .. })) {
+            let Some(arg_ty @ MirType::Subprogram { .. }) = types.get(&arg) else {
                 errors.push(VerifierTypeError::new(format!(
                     "kfunc '{}' arg{} expects callback subprogram",
                     kfunc, arg_idx
                 )));
+                return;
+            };
+            if let Some(message) =
+                KfuncSignature::callback_subprogram_type_error(kfunc, arg_idx, arg_ty)
+            {
+                errors.push(VerifierTypeError::new(message));
             }
         }
         KfuncArgKind::Pointer => {
