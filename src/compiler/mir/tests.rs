@@ -361,6 +361,27 @@ fn test_bpf_graph_root_wrappers_parse_contains_metadata() {
 }
 
 #[test]
+fn test_bpf_graph_node_sizes_follow_kernel_btf_when_available() {
+    use crate::kernel_btf::KernelBtf;
+
+    let list_node_size = MirType::bpf_list_node_struct().size();
+    let rb_node_size = MirType::bpf_rb_node_struct().size();
+    assert_eq!(BpfGraphRootKind::ListHead.node_size(), list_node_size);
+    assert_eq!(BpfGraphRootKind::RbRoot.node_size(), rb_node_size);
+
+    if let Ok(size) = KernelBtf::get().kernel_named_type_size_bytes("bpf_list_node") {
+        assert_eq!(list_node_size, size);
+    } else {
+        assert_eq!(list_node_size, 16);
+    }
+    if let Ok(size) = KernelBtf::get().kernel_named_type_size_bytes("bpf_rb_node") {
+        assert_eq!(rb_node_size, size);
+    } else {
+        assert_eq!(rb_node_size, 24);
+    }
+}
+
+#[test]
 fn test_context_field_compatibility_requirements_are_source_backed() {
     let expected = [
         (CtxField::Pid, "pid", "4.2"),

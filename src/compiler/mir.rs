@@ -9,6 +9,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+use crate::kernel_btf::KernelBtf;
+
 mod ctx_field_compat;
 mod function_impl;
 mod inst_impl;
@@ -479,6 +481,18 @@ pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
 const BPF_KPTR_SLOT_STRUCT_PREFIX: &str = "__nu_bpf_kptr_";
 const BPF_GRAPH_ROOT_STRUCT_PREFIX: &str = "__nu_bpf_graph_root:";
+const BPF_LIST_HEAD_FALLBACK_SIZE: usize = 16;
+const BPF_LIST_NODE_FALLBACK_SIZE: usize = 16;
+const BPF_RB_ROOT_FALLBACK_SIZE: usize = 16;
+const BPF_RB_NODE_FALLBACK_SIZE: usize = 24;
+
+fn kernel_btf_struct_size_or(type_name: &str, fallback: usize) -> usize {
+    KernelBtf::get()
+        .kernel_named_type_size_bytes(type_name)
+        .ok()
+        .filter(|size| *size > 0)
+        .unwrap_or(fallback)
+}
 
 /// Verifier-managed graph root kind embedded in a BPF map value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -503,14 +517,23 @@ impl BpfGraphRootKind {
     }
 
     pub fn root_size(self) -> usize {
-        16
+        kernel_btf_struct_size_or(
+            self.root_struct_name(),
+            match self {
+                Self::ListHead => BPF_LIST_HEAD_FALLBACK_SIZE,
+                Self::RbRoot => BPF_RB_ROOT_FALLBACK_SIZE,
+            },
+        )
     }
 
     pub fn node_size(self) -> usize {
-        match self {
-            Self::ListHead => 16,
-            Self::RbRoot => 24,
-        }
+        kernel_btf_struct_size_or(
+            self.node_struct_name(),
+            match self {
+                Self::ListHead => BPF_LIST_NODE_FALLBACK_SIZE,
+                Self::RbRoot => BPF_RB_NODE_FALLBACK_SIZE,
+            },
+        )
     }
 
     fn key(self) -> &'static str {
@@ -687,19 +710,19 @@ impl MirType {
     }
 
     pub fn bpf_list_head_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_list_head", 16)
+        Self::opaque_named_struct_with_size("bpf_list_head", BpfGraphRootKind::ListHead.root_size())
     }
 
     pub fn bpf_list_node_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_list_node", 16)
+        Self::opaque_named_struct_with_size("bpf_list_node", BpfGraphRootKind::ListHead.node_size())
     }
 
     pub fn bpf_rb_root_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_rb_root", 16)
+        Self::opaque_named_struct_with_size("bpf_rb_root", BpfGraphRootKind::RbRoot.root_size())
     }
 
     pub fn bpf_rb_node_struct() -> Self {
-        Self::opaque_named_struct_with_size("bpf_rb_node", 24)
+        Self::opaque_named_struct_with_size("bpf_rb_node", BpfGraphRootKind::RbRoot.node_size())
     }
 
     pub fn bpf_list_head_root_struct(value_type: &str, node_field: &str) -> Self {

@@ -10455,6 +10455,15 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
         name: "work_items".to_string(),
         kind: MapKind::Array,
     };
+    let align_to = |offset: usize, align: usize| offset.div_ceil(align) * align;
+    let list_head_ty = MirType::bpf_list_head_struct();
+    let list_node_ty = MirType::bpf_list_node_struct();
+    let rb_root_ty = MirType::bpf_rb_root_struct();
+    let rb_node_ty = MirType::bpf_rb_node_struct();
+    let list_head_offset = 56;
+    let list_node_offset = align_to(list_head_offset + list_head_ty.size(), list_node_ty.align());
+    let rb_root_offset = align_to(list_node_offset + list_node_ty.size(), rb_root_ty.align());
+    let rb_node_offset = align_to(rb_root_offset + rb_root_ty.size(), rb_node_ty.align());
     let value_ty = MirType::Struct {
         name: None,
         kernel_btf_type_id: None,
@@ -10496,29 +10505,29 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
             },
             StructField {
                 name: "list_head".to_string(),
-                ty: MirType::bpf_list_head_struct(),
-                offset: 56,
+                ty: list_head_ty,
+                offset: list_head_offset,
                 synthetic: false,
                 bitfield: None,
             },
             StructField {
                 name: "list_node".to_string(),
-                ty: MirType::bpf_list_node_struct(),
-                offset: 72,
+                ty: list_node_ty,
+                offset: list_node_offset,
                 synthetic: false,
                 bitfield: None,
             },
             StructField {
                 name: "rb_root".to_string(),
-                ty: MirType::bpf_rb_root_struct(),
-                offset: 88,
+                ty: rb_root_ty,
+                offset: rb_root_offset,
                 synthetic: false,
                 bitfield: None,
             },
             StructField {
                 name: "rb_node".to_string(),
-                ty: MirType::bpf_rb_node_struct(),
-                offset: 104,
+                ty: rb_node_ty,
+                offset: rb_node_offset,
                 synthetic: false,
                 bitfield: None,
             },

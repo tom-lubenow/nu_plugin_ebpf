@@ -1958,16 +1958,36 @@ impl EbpfObject {
             return btf.add_ptr(tagged_type);
         }
         if ty.is_bpf_list_head_struct() {
-            return Self::emit_opaque_local_btf_struct(btf, "bpf_list_head", 16, array_index_type);
+            return Self::emit_opaque_local_btf_struct(
+                btf,
+                "bpf_list_head",
+                ty.size(),
+                array_index_type,
+            );
         }
         if ty.is_bpf_list_node_struct() {
-            return Self::emit_opaque_local_btf_struct(btf, "bpf_list_node", 16, array_index_type);
+            return Self::emit_opaque_local_btf_struct(
+                btf,
+                "bpf_list_node",
+                ty.size(),
+                array_index_type,
+            );
         }
         if ty.is_bpf_rb_root_struct() {
-            return Self::emit_opaque_local_btf_struct(btf, "bpf_rb_root", 16, array_index_type);
+            return Self::emit_opaque_local_btf_struct(
+                btf,
+                "bpf_rb_root",
+                ty.size(),
+                array_index_type,
+            );
         }
         if ty.is_bpf_rb_node_struct() {
-            return Self::emit_opaque_local_btf_struct(btf, "bpf_rb_node", 24, array_index_type);
+            return Self::emit_opaque_local_btf_struct(
+                btf,
+                "bpf_rb_node",
+                ty.size(),
+                array_index_type,
+            );
         }
 
         match ty {
