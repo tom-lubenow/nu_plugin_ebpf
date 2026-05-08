@@ -539,14 +539,19 @@ fn test_helper_call_timer_set_callback_closure_lowers_to_callback_subprogram() {
         } if *helper == BpfHelper::TimerSetCallback as u32 && args.len() == 2
     )));
 
+    let callback = &result.program.subfunctions[0];
+    assert!(callback.param_non_null.contains(&0));
+    assert!(callback.param_non_null.contains(&1));
+    assert!(callback.param_non_null.contains(&2));
+    assert!(callback.param_trusted_btf.contains(&0));
+
     let callback_hints = &result.type_hints.subfunctions[0];
-    assert!(matches!(
-        callback_hints.get(&VReg(0)),
-        Some(MirType::Ptr {
-            address_space: AddressSpace::Kernel,
-            ..
-        })
-    ));
+    assert_eq!(
+        callback_hints
+            .get(&VReg(0))
+            .and_then(MirType::kernel_struct_ptr_pointee_name),
+        Some("bpf_map")
+    );
     assert!(matches!(
         callback_hints.get(&VReg(1)),
         Some(MirType::Ptr {
@@ -1181,14 +1186,19 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
         } if *helper == BpfHelper::ForEachMapElem as u32 && args.len() == 4
     )));
 
+    let callback = &result.program.subfunctions[0];
+    assert!(callback.param_non_null.contains(&0));
+    assert!(callback.param_non_null.contains(&1));
+    assert!(callback.param_non_null.contains(&2));
+    assert!(callback.param_trusted_btf.contains(&0));
+
     let callback_hints = &result.type_hints.subfunctions[0];
-    assert!(matches!(
-        callback_hints.get(&VReg(0)),
-        Some(MirType::Ptr {
-            address_space: AddressSpace::Kernel,
-            ..
-        })
-    ));
+    assert_eq!(
+        callback_hints
+            .get(&VReg(0))
+            .and_then(MirType::kernel_struct_ptr_pointee_name),
+        Some("bpf_map")
+    );
     assert!(matches!(
         callback_hints.get(&VReg(1)),
         Some(MirType::Ptr {

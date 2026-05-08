@@ -176,14 +176,11 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Ok(vec![
                     SubfunctionArgSeed {
-                        type_hint: Some(MirType::Ptr {
-                            pointee: Box::new(MirType::Unknown),
-                            address_space: AddressSpace::Kernel,
-                        }),
+                        type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_map")),
                         metadata: None,
                         synthetic_stack_slot: None,
-                        non_null: false,
-                        trusted_btf: false,
+                        non_null: true,
+                        trusted_btf: true,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {
@@ -253,14 +250,11 @@ impl<'a> HirToMirLowering<'a> {
                 let origin = self.timer_arg_origin(helper, 0, *timer_reg)?;
                 Ok(vec![
                     SubfunctionArgSeed {
-                        type_hint: Some(MirType::Ptr {
-                            pointee: Box::new(MirType::Unknown),
-                            address_space: AddressSpace::Kernel,
-                        }),
+                        type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_map")),
                         metadata: None,
                         synthetic_stack_slot: None,
-                        non_null: false,
-                        trusted_btf: false,
+                        non_null: true,
+                        trusted_btf: true,
                     },
                     SubfunctionArgSeed {
                         type_hint: Some(MirType::Ptr {

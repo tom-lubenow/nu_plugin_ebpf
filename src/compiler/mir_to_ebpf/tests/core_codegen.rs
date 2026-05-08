@@ -569,6 +569,40 @@ fn test_parallel_move_stack_to_stack() {
 }
 
 #[test]
+fn test_param_moves_ignore_dead_callback_params_with_shared_allocations() {
+    let mut func = LirFunction::with_name("callback");
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 4;
+    func.vreg_count = 5;
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: VReg(4),
+        src: MirValue::VReg(VReg(0)),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(VReg(4))),
+    };
+
+    let program = LirProgram::new(func.clone());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler.parallel_move_cycle_offset = Some(-8);
+    compiler.vreg_to_phys.insert(VReg(0), EbpfReg::R2);
+    compiler.vreg_to_phys.insert(VReg(1), EbpfReg::R3);
+    compiler.vreg_to_phys.insert(VReg(2), EbpfReg::R2);
+    compiler.vreg_to_phys.insert(VReg(3), EbpfReg::R3);
+
+    compiler
+        .emit_param_moves(&func)
+        .expect("dead callback params should not participate in entry shuffles");
+
+    assert_eq!(compiler.instructions.len(), 1);
+    let mov = compiler.instructions[0];
+    assert_eq!(mov.opcode, opcode::MOV64_REG);
+    assert_eq!(mov.dst_reg, EbpfReg::R2.as_u8());
+    assert_eq!(mov.src_reg, EbpfReg::R1.as_u8());
+}
+
+#[test]
 fn test_ensure_reg_rematerializes_spilled_const() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

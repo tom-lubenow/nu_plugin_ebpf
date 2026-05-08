@@ -275,11 +275,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                 "Parameter move lowering requires a temp stack slot".into(),
             )
         })?;
+        let cfg = AnalysisCfg::build(func);
+        let liveness = BlockLiveness::compute(func, &cfg);
+        let live_in = liveness
+            .live_in
+            .get(&func.entry)
+            .cloned()
+            .unwrap_or_default();
 
         let mut reg_moves: HashMap<EbpfReg, EbpfReg> = HashMap::new();
 
         for i in 0..func.param_count {
             let vreg = VReg(i as u32);
+            if !live_in.contains(&vreg) {
+                continue;
+            }
             let src = arg_regs[i];
             if let Some(&dst) = self.vreg_to_phys.get(&vreg) {
                 if dst != src {

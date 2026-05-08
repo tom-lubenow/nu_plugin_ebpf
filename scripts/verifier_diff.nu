@@ -8244,6 +8244,28 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "timer-callback-map-btf-field"
+        category: "helper-state"
+        tags: [timer callback btf kernel-btf]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val|'
+            '      $timer.id | count'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "timer-callback-rejects-extra-declared-param"
         category: "helper-state"
         tags: [timer callback reject]
@@ -10460,6 +10482,25 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "callback-for-each-map-elem-map-btf-field"
+        category: "callbacks"
+        tags: [helper-call callback map btf kernel-btf]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    $m.id | count'
+            '    0'
+            '  } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
     {
         name: "callback-find-vma-btf-field"

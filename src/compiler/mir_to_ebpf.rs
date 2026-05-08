@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::compiler::CompileError;
-use crate::compiler::cfg::CFG;
+use crate::compiler::cfg::{AnalysisCfg, BlockLiveness, CFG};
 use crate::compiler::elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema, DataGlobal,
     EbpfMap, EbpfProgram, EbpfProgramType, EventSchema, PacketContextKind, ProbeContext,
