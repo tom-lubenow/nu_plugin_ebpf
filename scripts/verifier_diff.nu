@@ -7895,6 +7895,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-dmabuf-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:dmabuf"
+        program: [
+            '{|ctx|'
+            '  if $ctx.dmabuf { $ctx.dmabuf.size | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-ipv6-route-context"
         category: "context-surface"
         tags: [iter context]
@@ -7903,6 +7918,21 @@ const FIXTURES = [
             '{|ctx|'
             '  if $ctx.rt { 1 | count }'
             '  if $ctx.ipv6_route { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-ipv6-route-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:ipv6_route"
+        program: [
+            '{|ctx|'
+            '  if $ctx.rt { $ctx.rt.fib6_metric | count }'
             '  0'
             '}'
         ]
@@ -7924,6 +7954,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-kmem-cache-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:kmem_cache"
+        program: [
+            '{|ctx|'
+            '  if $ctx.kmem_cache { $ctx.kmem_cache.size | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-ksym-context"
         category: "context-surface"
         tags: [iter context]
@@ -7931,6 +7976,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  if $ctx.ksym { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-ksym-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:ksym"
+        program: [
+            '{|ctx|'
+            '  if $ctx.ksym { $ctx.ksym.value | count }'
             '  0'
             '}'
         ]
