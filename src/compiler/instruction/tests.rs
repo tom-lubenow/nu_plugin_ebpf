@@ -33,6 +33,52 @@ fn test_call_helper() {
 }
 
 #[test]
+fn test_callback_map_arg_requires_bpf_map_pointer() {
+    use crate::compiler::mir::AddressSpace;
+
+    let map_ptr = |ty| MirType::Ptr {
+        pointee: Box::new(ty),
+        address_space: AddressSpace::Map,
+    };
+    let stack_ptr = |ty| MirType::Ptr {
+        pointee: Box::new(ty),
+        address_space: AddressSpace::Stack,
+    };
+    let unknown_kernel_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Kernel,
+    };
+
+    let bad = MirType::Subprogram {
+        args: vec![
+            unknown_kernel_ptr,
+            map_ptr(MirType::U32),
+            map_ptr(MirType::U64),
+            stack_ptr(MirType::U8),
+        ],
+        ret: Box::new(MirType::I64),
+    };
+    let err = BpfHelper::ForEachMapElem
+        .callback_subprogram_type_error(1, &bad)
+        .expect("opaque kernel pointer should not satisfy bpf_map callback arg");
+    assert!(err.contains("fn(bpf_map*, *map, *map, *stack) -> scalar"));
+
+    let good = MirType::Subprogram {
+        args: vec![
+            MirType::named_kernel_struct_ptr("bpf_map"),
+            map_ptr(MirType::U32),
+            map_ptr(MirType::U64),
+            stack_ptr(MirType::U8),
+        ],
+        ret: Box::new(MirType::I64),
+    };
+    assert_eq!(
+        BpfHelper::ForEachMapElem.callback_subprogram_type_error(1, &good),
+        None
+    );
+}
+
+#[test]
 fn test_bpf_helper_name_roundtrip() {
     assert_eq!(
         BpfHelper::GetCurrentPidTgid.name(),

@@ -468,13 +468,7 @@ fn test_infer_timer_set_callback_callback_subprogram_type() {
         ],
     };
     let hints = vec![HashMap::from([
-        (
-            VReg(0),
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Kernel,
-            },
-        ),
+        (VReg(0), MirType::named_kernel_struct_ptr("bpf_map")),
         (
             VReg(1),
             MirType::Ptr {
@@ -522,13 +516,7 @@ fn test_infer_timer_set_callback_callback_subprogram_type() {
     match types.get(&callback_fn) {
         Some(MirType::Subprogram { args, ret }) => {
             assert_eq!(args.len(), 3);
-            assert!(matches!(
-                args.first(),
-                Some(MirType::Ptr {
-                    address_space: AddressSpace::Kernel,
-                    ..
-                })
-            ));
+            assert!(args.first().is_some_and(MirType::is_bpf_map_ptr));
             assert!(matches!(
                 args.get(1),
                 Some(MirType::Ptr {
@@ -588,7 +576,7 @@ fn test_type_error_timer_set_callback_rejects_wrong_callback_signature() {
         .expect_err("expected bpf_timer_set_callback callback signature error");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar",
+            "helper 'bpf_timer_set_callback' callback must have signature fn(bpf_map*, *map, *map) -> scalar",
         )
     }));
 }
@@ -719,13 +707,7 @@ fn test_infer_for_each_map_elem_callback_subprogram_type() {
     };
 
     let hints = vec![HashMap::from([
-        (
-            VReg(0),
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Kernel,
-            },
-        ),
+        (VReg(0), MirType::named_kernel_struct_ptr("bpf_map")),
         (
             VReg(1),
             MirType::Ptr {
@@ -790,13 +772,7 @@ fn test_infer_for_each_map_elem_callback_subprogram_type() {
     match types.get(&callback_fn) {
         Some(MirType::Subprogram { args, ret }) => {
             assert_eq!(args.len(), 4);
-            assert!(matches!(
-                args.first(),
-                Some(MirType::Ptr {
-                    address_space: AddressSpace::Kernel,
-                    ..
-                })
-            ));
+            assert!(args.first().is_some_and(MirType::is_bpf_map_ptr));
             assert!(matches!(
                 args.get(1),
                 Some(MirType::Ptr {
@@ -873,7 +849,7 @@ fn test_type_error_for_each_map_elem_rejects_wrong_callback_signature() {
         .expect_err("expected bpf_for_each_map_elem callback signature error");
     assert!(errs.iter().any(|e| {
         e.message.contains(
-            "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar",
+            "helper 'bpf_for_each_map_elem' callback must have signature fn(bpf_map*, *map, *map, *stack) -> scalar",
         )
     }));
 }

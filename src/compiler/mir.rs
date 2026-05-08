@@ -905,6 +905,10 @@ impl MirType {
         self.is_named_kernel_struct_ptr(&["vm_area_struct"])
     }
 
+    pub fn is_bpf_map_ptr(&self) -> bool {
+        self.is_named_kernel_struct_ptr(&["bpf_map"])
+    }
+
     pub fn is_file_ptr(&self) -> bool {
         self.is_named_kernel_struct_ptr(&["file"])
     }

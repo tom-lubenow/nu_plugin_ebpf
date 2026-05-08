@@ -138,10 +138,7 @@ fn test_verify_mir_timer_set_callback_accepts_modeled_callback_subprogram() {
         callback_fn,
         MirType::Subprogram {
             args: vec![
-                MirType::Ptr {
-                    pointee: Box::new(MirType::Unknown),
-                    address_space: AddressSpace::Kernel,
-                },
+                MirType::named_kernel_struct_ptr("bpf_map"),
                 MirType::Ptr {
                     pointee: Box::new(MirType::U32),
                     address_space: AddressSpace::Map,
@@ -200,7 +197,7 @@ fn test_verify_mir_timer_set_callback_rejects_wrong_callback_signature() {
         .expect_err("expected bpf_timer_set_callback callback signature error");
     assert!(
         err.iter().any(|e| e.message.contains(
-            "helper 'bpf_timer_set_callback' callback must have signature fn(*kernel, *map, *map) -> scalar"
+            "helper 'bpf_timer_set_callback' callback must have signature fn(bpf_map*, *map, *map) -> scalar"
         )),
         "unexpected errors: {:?}",
         err
@@ -416,10 +413,7 @@ fn test_verify_mir_for_each_map_elem_accepts_modeled_callback_subprogram() {
         callback_fn,
         MirType::Subprogram {
             args: vec![
-                MirType::Ptr {
-                    pointee: Box::new(MirType::Unknown),
-                    address_space: AddressSpace::Kernel,
-                },
+                MirType::named_kernel_struct_ptr("bpf_map"),
                 MirType::Ptr {
                     pointee: Box::new(MirType::U32),
                     address_space: AddressSpace::Map,
@@ -499,7 +493,7 @@ fn test_verify_mir_for_each_map_elem_rejects_wrong_callback_signature() {
         .expect_err("expected bpf_for_each_map_elem callback signature error");
     assert!(
         err.iter().any(|e| e.message.contains(
-            "helper 'bpf_for_each_map_elem' callback must have signature fn(*kernel, *map, *map, *stack) -> scalar"
+            "helper 'bpf_for_each_map_elem' callback must have signature fn(bpf_map*, *map, *map, *stack) -> scalar"
         )),
         "unexpected errors: {:?}",
         err
