@@ -8889,6 +8889,50 @@ fn bpf_link_id_projection_available() -> bool {
     )
 }
 
+fn sock_common_skc_family_projection_available() -> bool {
+    let path = [TrampolineFieldSelector::Field("skc_family".to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("sock_common", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn sock_skc_family_projection_available() -> bool {
+    let path = [
+        TrampolineFieldSelector::Field("__sk_common".to_string()),
+        TrampolineFieldSelector::Field("skc_family".to_string()),
+    ];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("sock", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn udp_sock_skc_family_projection_available() -> bool {
+    let path = [
+        TrampolineFieldSelector::Field("inet".to_string()),
+        TrampolineFieldSelector::Field("sk".to_string()),
+        TrampolineFieldSelector::Field("__sk_common".to_string()),
+        TrampolineFieldSelector::Field("skc_family".to_string()),
+    ];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("udp_sock", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+fn unix_sock_skc_family_projection_available() -> bool {
+    let path = [
+        TrampolineFieldSelector::Field("sk".to_string()),
+        TrampolineFieldSelector::Field("__sk_common".to_string()),
+        TrampolineFieldSelector::Field("skc_family".to_string()),
+    ];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection("unix_sock", &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
 fn ctx_task_pid_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("pid")],
@@ -8934,6 +8978,45 @@ fn ctx_bpf_prog_len_path(root: &str) -> CellPath {
 fn ctx_bpf_link_id_path(root: &str) -> CellPath {
     CellPath {
         members: vec![string_member(root), string_member("id")],
+    }
+}
+
+fn ctx_sock_common_skc_family_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![string_member(root), string_member("skc_family")],
+    }
+}
+
+fn ctx_sock_skc_family_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![
+            string_member(root),
+            string_member("__sk_common"),
+            string_member("skc_family"),
+        ],
+    }
+}
+
+fn ctx_udp_sock_skc_family_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![
+            string_member(root),
+            string_member("inet"),
+            string_member("sk"),
+            string_member("__sk_common"),
+            string_member("skc_family"),
+        ],
+    }
+}
+
+fn ctx_unix_sock_skc_family_path(root: &str) -> CellPath {
+    CellPath {
+        members: vec![
+            string_member(root),
+            string_member("sk"),
+            string_member("__sk_common"),
+            string_member("skc_family"),
+        ],
     }
 }
 
@@ -9151,6 +9234,62 @@ fn test_compile_iter_bpf_link_ctx_link_id_counter_program() {
 }
 
 #[test]
+fn test_compile_iter_bpf_sk_storage_map_ctx_map_id_counter_program() {
+    if !bpf_map_id_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "bpf_sk_storage_map",
+        ctx_bpf_map_id_path("map"),
+        "iter:bpf_sk_storage_map ctx.map.id count",
+    );
+}
+
+#[test]
+fn test_compile_iter_sockmap_ctx_map_id_counter_program() {
+    if !bpf_map_id_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "sockmap",
+        ctx_bpf_map_id_path("map"),
+        "iter:sockmap ctx.map.id count",
+    );
+}
+
+#[test]
+fn test_compile_iter_bpf_sk_storage_map_ctx_sk_skc_family_counter_program() {
+    if !sock_skc_family_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "bpf_sk_storage_map",
+        ctx_sock_skc_family_path("sk"),
+        "iter:bpf_sk_storage_map ctx.sk.__sk_common.skc_family count",
+    );
+}
+
+#[test]
+fn test_compile_iter_sockmap_ctx_sk_skc_family_counter_program() {
+    if !sock_skc_family_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "sockmap",
+        ctx_sock_skc_family_path("sk"),
+        "iter:sockmap ctx.sk.__sk_common.skc_family count",
+    );
+}
+
+#[test]
 fn test_compile_iter_tcp_ctx_uid_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Iter,
@@ -9159,6 +9298,20 @@ fn test_compile_iter_tcp_ctx_uid_counter_program() {
             members: vec![string_member("uid")],
         },
         "iter:tcp ctx.uid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_tcp_ctx_sk_common_skc_family_counter_program() {
+    if !sock_common_skc_family_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "tcp",
+        ctx_sock_common_skc_family_path("sk_common"),
+        "iter:tcp ctx.sk_common.skc_family count",
     );
 }
 
@@ -9175,6 +9328,20 @@ fn test_compile_iter_udp_ctx_bucket_counter_program() {
 }
 
 #[test]
+fn test_compile_iter_udp_ctx_udp_sk_skc_family_counter_program() {
+    if !udp_sock_skc_family_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "udp",
+        ctx_udp_sock_skc_family_path("udp_sk"),
+        "iter:udp ctx.udp_sk.inet.sk.__sk_common.skc_family count",
+    );
+}
+
+#[test]
 fn test_compile_iter_unix_ctx_uid_counter_program() {
     assert_ctx_path_count_program_compiles(
         EbpfProgramType::Iter,
@@ -9183,6 +9350,20 @@ fn test_compile_iter_unix_ctx_uid_counter_program() {
             members: vec![string_member("uid")],
         },
         "iter:unix ctx.uid count",
+    );
+}
+
+#[test]
+fn test_compile_iter_unix_ctx_unix_sk_skc_family_counter_program() {
+    if !unix_sock_skc_family_projection_available() {
+        return;
+    }
+
+    assert_ctx_path_count_program_compiles(
+        EbpfProgramType::Iter,
+        "unix",
+        ctx_unix_sock_skc_family_path("unix_sk"),
+        "iter:unix ctx.unix_sk.sk.__sk_common.skc_family count",
     );
 }
 

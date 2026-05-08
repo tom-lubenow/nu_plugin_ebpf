@@ -29,9 +29,9 @@ The closure receives a context parameter with these fields:
 | `sk` / `sock` / `iter_sock` | Nullable iterated `sock *` pointer from socket-storage-map and sockmap iterator contexts. | `iter:bpf_sk_storage_map`, `iter:sockmap` |
 | `prog` / `iter_prog` | Nullable iterated `bpf_prog *` pointer from `struct bpf_iter__bpf_prog`; BTF-backed fields such as `prog.len` can be projected when kernel BTF is available. | `iter:bpf_prog` |
 | `link` / `iter_link` | Nullable iterated `bpf_link *` pointer from `struct bpf_iter__bpf_link`; BTF-backed fields such as `link.id` can be projected when kernel BTF is available. | `iter:bpf_link` |
-| `sk_common` / `sock_common` / `iter_sk_common` | Nullable iterated `sock_common *` pointer from `struct bpf_iter__tcp`. | `iter:tcp` |
-| `udp_sk` / `iter_udp_sk` | Nullable iterated `udp_sock *` pointer from `struct bpf_iter__udp`. | `iter:udp` |
-| `unix_sk` / `iter_unix_sk` | Nullable iterated `unix_sock *` pointer from `struct bpf_iter__unix`. | `iter:unix` |
+| `sk_common` / `sock_common` / `iter_sk_common` | Nullable iterated `sock_common *` pointer from `struct bpf_iter__tcp`; BTF-backed fields such as `sk_common.skc_family` can be projected when kernel BTF is available. | `iter:tcp` |
+| `udp_sk` / `iter_udp_sk` | Nullable iterated `udp_sock *` pointer from `struct bpf_iter__udp`; BTF-backed fields such as `udp_sk.inet.sk.__sk_common.skc_family` can be projected when kernel BTF is available. | `iter:udp` |
+| `unix_sk` / `iter_unix_sk` | Nullable iterated `unix_sock *` pointer from `struct bpf_iter__unix`; BTF-backed fields such as `unix_sk.sk.__sk_common.skc_family` can be projected when kernel BTF is available. | `iter:unix` |
 | `uid` / `iter_uid` | Socket owner uid emitted by TCP, UDP, and UNIX socket iterators. | `iter:tcp`, `iter:udp`, `iter:unix` |
 | `bucket` / `iter_bucket` | UDP iterator hash bucket. | `iter:udp` |
 | `dmabuf` / `iter_dmabuf` | Nullable iterated `dma_buf *` pointer from `struct bpf_iter__dmabuf`. | `iter:dmabuf` |
@@ -277,7 +277,8 @@ iterators expose their natural roots too: `$ctx.map` on `iter:bpf_map`,
 exist; `$ctx.prog` on `iter:bpf_prog`; and `$ctx.link` on `iter:bpf_link`.
 Network iterators expose `$ctx.sk_common` plus `$ctx.uid` on `iter:tcp`,
 `$ctx.udp_sk` / `$ctx.uid` / `$ctx.bucket` on `iter:udp`, and
-`$ctx.unix_sk` / `$ctx.uid` on `iter:unix`.
+`$ctx.unix_sk` / `$ctx.uid` on `iter:unix`; these socket roots are BTF-backed
+when kernel BTF is available.
 Socket map iterators expose `$ctx.sk` / `$ctx.iter_sock` for their `sock *`
 payload. Other simple single-pointer iterator contexts expose their
 kernel-native roots: `$ctx.dmabuf`, `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`,

@@ -7580,6 +7580,36 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-task-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  if $ctx.task { $ctx.task.pid | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-meta-btf-field"
+        category: "context-surface"
+        tags: [iter context btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  $ctx.meta.seq_num | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-task-file-context"
         category: "context-surface"
         tags: [iter context]
@@ -7715,6 +7745,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-bpf-map-elem-map-btf-field"
+        category: "context-surface"
+        tags: [iter context map btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:bpf_map_elem"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map { $ctx.map.id | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-bpf-sk-storage-map-context"
         category: "context-surface"
         tags: [iter context map socket]
@@ -7731,6 +7776,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "iter-bpf-sk-storage-map-btf-fields"
+        category: "context-surface"
+        tags: [iter context map socket btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:bpf_sk_storage_map"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map { $ctx.map.id | count }'
+            '  if $ctx.sk { $ctx.sk.__sk_common.skc_family | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "iter-sockmap-context"
         category: "context-surface"
         tags: [iter context map socket]
@@ -7740,6 +7801,22 @@ const FIXTURES = [
             '  if $ctx.map { 1 | count }'
             '  if $ctx.key { 1 | count }'
             '  if $ctx.sk { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-sockmap-btf-fields"
+        category: "context-surface"
+        tags: [iter context map socket btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:sockmap"
+        program: [
+            '{|ctx|'
+            '  if $ctx.map { $ctx.map.id | count }'
+            '  if $ctx.sk { $ctx.sk.__sk_common.skc_family | count }'
             '  0'
             '}'
         ]
@@ -7844,6 +7921,21 @@ const FIXTURES = [
             '{|ctx|'
             '  ($ctx.uid + $ctx.bucket) | count'
             '  if $ctx.udp_sk { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-udp-btf-field"
+        category: "context-surface"
+        tags: [iter context socket btf kernel-btf]
+        requires: [kernel-btf]
+        target: "iter:udp"
+        program: [
+            '{|ctx|'
+            '  if $ctx.udp_sk { $ctx.udp_sk.inet.sk.__sk_common.skc_family | count }'
             '  0'
             '}'
         ]
