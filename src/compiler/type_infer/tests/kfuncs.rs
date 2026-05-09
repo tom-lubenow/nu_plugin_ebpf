@@ -915,7 +915,7 @@ fn test_type_error_kfunc_pointer_argument_requires_kernel_space() {
 
 #[test]
 fn test_type_error_btf_fallback_kfunc_pointer_argument_pointee_mismatch() {
-    const KFUNC: &str = "bpf_xdp_get_xfrm_state";
+    const KFUNC: &str = "bpf_cgroup_read_xattr";
     if KfuncSignature::for_name(KFUNC).is_some() {
         return;
     }
@@ -928,16 +928,17 @@ fn test_type_error_btf_fallback_kfunc_pointer_argument_pointee_mismatch() {
     let crate::kernel_btf::TypeInfo::Struct { name, .. } = target.as_ref() else {
         return;
     };
-    if name != "xdp_md" {
+    if name != "cgroup" {
         return;
     }
 
     let mut func = make_test_function();
     let task = func.alloc_vreg();
-    let opts = func.alloc_vreg();
-    let size = func.alloc_vreg();
+    let name = func.alloc_vreg();
+    let value = func.alloc_vreg();
     let dst = func.alloc_vreg();
-    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::RecordField);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let value_slot = func.alloc_stack_slot(16, 8, StackSlotKind::RecordField);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::CallHelper {
         dst: task,
@@ -945,18 +946,18 @@ fn test_type_error_btf_fallback_kfunc_pointer_argument_pointee_mismatch() {
         args: vec![],
     });
     block.instructions.push(MirInst::Copy {
-        dst: opts,
-        src: MirValue::StackSlot(slot),
+        dst: name,
+        src: MirValue::StackSlot(name_slot),
     });
     block.instructions.push(MirInst::Copy {
-        dst: size,
-        src: MirValue::Const(16),
+        dst: value,
+        src: MirValue::StackSlot(value_slot),
     });
     block.instructions.push(MirInst::CallKfunc {
         dst,
         kfunc: KFUNC.to_string(),
         btf_id: None,
-        args: vec![task, opts, size],
+        args: vec![task, name, value],
     });
     block.terminator = MirInst::Return { val: None };
 
@@ -966,7 +967,7 @@ fn test_type_error_btf_fallback_kfunc_pointer_argument_pointee_mismatch() {
         .expect_err("expected BTF fallback kfunc pointee mismatch");
     assert!(
         errs.iter()
-            .any(|e| e.message.contains("arg0 expects xdp_md pointer")),
+            .any(|e| e.message.contains("arg0 expects cgroup pointer")),
         "unexpected errors: {:?}",
         errs
     );

@@ -5470,7 +5470,7 @@ fn test_kfunc_signature_for_name_or_kernel_btf_uses_exact_btf_pointer_return() {
 
 #[test]
 fn test_kfunc_arg_pointee_mismatch_uses_kernel_btf_fallback_pointer_arg() {
-    const KFUNC: &str = "bpf_xdp_get_xfrm_state";
+    const KFUNC: &str = "bpf_cgroup_read_xattr";
     if KfuncSignature::for_name(KFUNC).is_some() {
         return;
     }
@@ -5483,16 +5483,16 @@ fn test_kfunc_arg_pointee_mismatch_uses_kernel_btf_fallback_pointer_arg() {
     let crate::kernel_btf::TypeInfo::Struct { name, .. } = target.as_ref() else {
         return;
     };
-    if name != "xdp_md" {
+    if name != "cgroup" {
         return;
     }
 
     assert_eq!(
         kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("task_struct")),
-        Some("xdp_md".to_string())
+        Some("cgroup".to_string())
     );
     assert_eq!(
-        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("xdp_md")),
+        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("cgroup")),
         None
     );
 }
