@@ -21,6 +21,7 @@ use crate::compiler::instruction::{
     KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
     KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
     helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_allowed_while_lock_held,
+    kfunc_bpf_spin_lock_protected_graph_root_arg,
     kfunc_iter_lifecycle as kfunc_iter_lifecycle_shared,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
@@ -33,7 +34,6 @@ use crate::compiler::instruction::{
     kfunc_pointer_arg_requires_user as kfunc_pointer_arg_requires_user_shared,
     kfunc_pointer_arg_size_from_scalar as kfunc_pointer_arg_size_from_scalar_shared,
     kfunc_ref_kind_from_bpf_type_name, kfunc_release_ref_arg_index, kfunc_release_ref_kind,
-    kfunc_requires_bpf_spin_lock_held,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
     kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
     kfunc_scalar_arg_requires_zero as kfunc_scalar_arg_requires_zero_shared, kfunc_semantics,
@@ -376,6 +376,7 @@ pub enum VccInst {
         call: String,
     },
     BpfSpinLockRequireHeld {
+        root: VccReg,
         message: String,
     },
     ResSpinLockIrqsaveAcquire {

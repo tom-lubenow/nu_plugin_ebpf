@@ -78,6 +78,14 @@ pub fn kfunc_requires_bpf_spin_lock_held(kfunc: &str) -> bool {
     )
 }
 
+pub fn kfunc_bpf_spin_lock_protected_graph_root_arg(kfunc: &str) -> Option<usize> {
+    if kfunc_requires_bpf_spin_lock_held(kfunc) {
+        Some(0)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct KfuncAllowedPtrSpaces {
     pub allow_stack: bool,

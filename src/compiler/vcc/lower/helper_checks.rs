@@ -1783,10 +1783,13 @@ impl<'a> VccLowerer<'a> {
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
-        if kfunc_requires_bpf_spin_lock_held(kfunc) {
+        if let Some(root_arg_idx) = kfunc_bpf_spin_lock_protected_graph_root_arg(kfunc)
+            && let Some(root) = args.get(root_arg_idx)
+        {
             out.push(VccInst::BpfSpinLockRequireHeld {
+                root: VccReg(root.0),
                 message: format!(
-                    "kfunc '{}' requires bpf_spin_lock to be held for graph root",
+                    "kfunc '{}' requires bpf_spin_lock from the same map value to be held for graph root",
                     kfunc
                 ),
             });

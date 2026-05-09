@@ -746,13 +746,7 @@ impl VccState {
     }
 
     fn bpf_spin_lock_identity(&self, reg: VccReg) -> BpfSpinLockIdentity {
-        if let Ok(VccValueType::Ptr(VccPointerInfo {
-            space: VccAddrSpace::MapValue,
-            bounds: Some(bounds),
-            map_root: Some(root),
-            ..
-        })) = self.reg_type(reg)
-        {
+        if let Some((root, bounds)) = self.map_value_root_and_bounds(reg) {
             return BpfSpinLockIdentity::MapBounds {
                 root,
                 min: bounds.min,
@@ -761,6 +755,34 @@ impl VccState {
             };
         }
         BpfSpinLockIdentity::Reg(reg)
+    }
+
+    fn map_value_root_and_bounds(&self, reg: VccReg) -> Option<(VccReg, VccBounds)> {
+        match self.reg_type(reg) {
+            Ok(VccValueType::Ptr(VccPointerInfo {
+                space: VccAddrSpace::MapValue,
+                bounds: Some(bounds),
+                map_root: Some(root),
+                ..
+            })) => Some((root, bounds)),
+            _ => None,
+        }
+    }
+
+    fn has_bpf_spin_lock_for_map_root(&self, reg: VccReg) -> bool {
+        if !self.has_live_bpf_spin_lock() {
+            return false;
+        }
+        let Some((root, _)) = self.map_value_root_and_bounds(reg) else {
+            return true;
+        };
+        match &self.bpf_spin_lock_identity {
+            Some(BpfSpinLockIdentity::MapBounds {
+                root: lock_root, ..
+            }) => *lock_root == root,
+            Some(BpfSpinLockIdentity::Reg(_)) => true,
+            None => false,
+        }
     }
 
     fn acquire_bpf_spin_lock(&mut self, identity: BpfSpinLockIdentity) -> bool {

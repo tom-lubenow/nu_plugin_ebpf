@@ -305,11 +305,16 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if kfunc_requires_bpf_spin_lock_held(kfunc) && !state.has_live_bpf_spin_lock() {
-        errors.push(VerifierTypeError::new(format!(
-            "kfunc '{}' requires bpf_spin_lock to be held for graph root",
-            kfunc
-        )));
+    if let Some(root_arg_idx) = kfunc_bpf_spin_lock_protected_graph_root_arg(kfunc) {
+        let protected = args
+            .get(root_arg_idx)
+            .is_some_and(|arg| state.has_bpf_spin_lock_for_map_root(*arg));
+        if !protected {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' requires bpf_spin_lock from the same map value to be held for graph root",
+                kfunc
+            )));
+        }
     }
 
     let semantics = kfunc_semantics(kfunc);

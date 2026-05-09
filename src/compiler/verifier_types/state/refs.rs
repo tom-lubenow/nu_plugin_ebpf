@@ -769,13 +769,7 @@ impl VerifierState {
         &self,
         reg: VReg,
     ) -> BpfSpinLockIdentity {
-        if let VerifierType::Ptr {
-            space: AddressSpace::Map,
-            bounds: Some(bounds),
-            ..
-        } = self.get(reg)
-            && let PtrOrigin::Map(root) = bounds.origin()
-        {
+        if let Some((root, bounds)) = self.map_value_root_and_bounds(reg) {
             return BpfSpinLockIdentity::MapBounds {
                 root,
                 min: bounds.min(),
@@ -784,6 +778,39 @@ impl VerifierState {
             };
         }
         BpfSpinLockIdentity::Reg(reg)
+    }
+
+    fn map_value_root_and_bounds(&self, reg: VReg) -> Option<(VReg, PtrBounds)> {
+        match self.get(reg) {
+            VerifierType::Ptr {
+                space: AddressSpace::Map,
+                bounds: Some(bounds),
+                ..
+            } => match bounds.origin() {
+                PtrOrigin::Map(root) => Some((root, bounds)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub(in crate::compiler::verifier_types) fn has_bpf_spin_lock_for_map_root(
+        &self,
+        reg: VReg,
+    ) -> bool {
+        if !self.has_live_bpf_spin_lock() {
+            return false;
+        }
+        let Some((root, _)) = self.map_value_root_and_bounds(reg) else {
+            return true;
+        };
+        match &self.bpf_spin_lock_identity {
+            Some(BpfSpinLockIdentity::MapBounds {
+                root: lock_root, ..
+            }) => *lock_root == root,
+            Some(BpfSpinLockIdentity::Reg(_)) => true,
+            None => false,
+        }
     }
 
     pub(in crate::compiler::verifier_types) fn acquire_bpf_spin_lock(

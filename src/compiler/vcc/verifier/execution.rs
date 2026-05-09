@@ -1322,8 +1322,8 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::BpfSpinLockRequireHeld { message } => {
-                if !state.has_live_bpf_spin_lock() {
+            VccInst::BpfSpinLockRequireHeld { root, message } => {
+                if !state.has_bpf_spin_lock_for_map_root(*root) {
                     self.errors
                         .push(VccError::new(VccErrorKind::PointerBounds, message.clone()));
                 }
