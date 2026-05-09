@@ -1657,6 +1657,102 @@ fn test_verify_mir_bpf_spin_lock_rejects_calls_while_held() {
 }
 
 #[test]
+fn test_verify_mir_bpf_spin_lock_allows_iter_num_kfuncs_while_held() {
+    let mut iter = VReg(0);
+    let mut start = VReg(0);
+    let mut end = VReg(0);
+    let mut lock_ret = VReg(0);
+    let mut new_ret = VReg(0);
+    let mut next_ret = VReg(0);
+    let mut destroy_ret = VReg(0);
+    let mut unlock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        iter = func.alloc_vreg();
+        start = func.alloc_vreg();
+        end = func.alloc_vreg();
+        lock_ret = func.alloc_vreg();
+        new_ret = func.alloc_vreg();
+        next_ret = func.alloc_vreg();
+        destroy_ret = func.alloc_vreg();
+        unlock_ret = func.alloc_vreg();
+        let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        func.block_mut(block).instructions.push(MirInst::Copy {
+            dst: iter,
+            src: MirValue::StackSlot(iter_slot),
+        });
+        func.block_mut(block).instructions.push(MirInst::Copy {
+            dst: start,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(block).instructions.push(MirInst::Copy {
+            dst: end,
+            src: MirValue::Const(2),
+        });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).instructions.push(MirInst::CallKfunc {
+            dst: new_ret,
+            kfunc: "bpf_iter_num_new".to_string(),
+            btf_id: None,
+            args: vec![iter, start, end],
+        });
+        func.block_mut(block).instructions.push(MirInst::CallKfunc {
+            dst: next_ret,
+            kfunc: "bpf_iter_num_next".to_string(),
+            btf_id: None,
+            args: vec![iter],
+        });
+        func.block_mut(block).instructions.push(MirInst::CallKfunc {
+            dst: destroy_ret,
+            kfunc: "bpf_iter_num_destroy".to_string(),
+            btf_id: None,
+            args: vec![iter],
+        });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: unlock_ret,
+                helper: BpfHelper::SpinUnlock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let mut types = bpf_spin_lock_types(
+        lock,
+        &[
+            (start, MirType::I64),
+            (end, MirType::I64),
+            (lock_ret, MirType::I64),
+            (new_ret, MirType::I64),
+            (destroy_ret, MirType::I64),
+            (unlock_ret, MirType::I64),
+        ],
+    );
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    verify_mir(&func, &types)
+        .expect("expected bpf_iter_num kfuncs to be allowed while bpf_spin_lock is held");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_syscall_helpers_accept_syscall_program() {
     let (mut func, entry) = new_mir_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

@@ -6032,6 +6032,49 @@ fn test_kfunc_rbtree_navigation_node_pointer_contracts() {
 }
 
 #[test]
+fn test_kfunc_allowed_while_lock_held_matches_kernel_allowlist() {
+    for kfunc in [
+        "bpf_list_push_front_impl",
+        "bpf_list_push_back_impl",
+        "bpf_list_pop_front",
+        "bpf_list_pop_back",
+        "bpf_rbtree_add_impl",
+        "bpf_rbtree_remove",
+        "bpf_rbtree_first",
+        "bpf_refcount_acquire_impl",
+        "bpf_iter_num_new",
+        "bpf_iter_num_next",
+        "bpf_iter_num_destroy",
+        "bpf_res_spin_lock",
+        "bpf_res_spin_unlock",
+        "bpf_res_spin_lock_irqsave",
+        "bpf_res_spin_unlock_irqrestore",
+    ] {
+        assert!(
+            kfunc_allowed_while_lock_held(kfunc),
+            "{kfunc} should be callable while a kernel lock is held"
+        );
+    }
+
+    for kfunc in [
+        "bpf_list_front",
+        "bpf_list_back",
+        "bpf_rbtree_root",
+        "bpf_rbtree_left",
+        "bpf_rbtree_right",
+        "bpf_obj_new_impl",
+        "bpf_obj_drop_impl",
+        "bpf_preempt_disable",
+        "bpf_throw",
+    ] {
+        assert!(
+            !kfunc_allowed_while_lock_held(kfunc),
+            "{kfunc} should not be callable while a kernel lock is held"
+        );
+    }
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_kernel_mappings() {
     assert!(kfunc_pointer_arg_requires_kernel("bpf_task_release", 0));
     assert!(kfunc_pointer_arg_requires_kernel("bpf_put_file", 0));
