@@ -3232,6 +3232,9 @@ const KFUNC_KERNEL_FEATURE_FALLBACKS = [
     { name: "bpf_task_under_cgroup", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
     { name: "bpf_throw", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
     { name: "bpf_xdp_get_xfrm_state", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/net/xfrm/xfrm_state_bpf.c" }
+    { name: "bpf_xdp_metadata_rx_hash", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/net/core/xdp.c" }
+    { name: "bpf_xdp_metadata_rx_timestamp", min_kernel: "6.3", source: "https://github.com/torvalds/linux/blob/v6.3/net/core/xdp.c" }
+    { name: "bpf_xdp_metadata_rx_vlan_tag", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/net/core/xdp.c" }
     { name: "bpf_xdp_xfrm_state_release", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/net/xfrm/xfrm_state_bpf.c" }
     { name: "scx_bpf_cpu_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
     { name: "scx_bpf_cpu_rq", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
@@ -8714,6 +8717,87 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rx-timestamp"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let timestamp = "01234567"'
+            '  let rc = (kfunc-call "bpf_xdp_metadata_rx_timestamp" $ctx $timestamp)'
+            '  $rc | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rx-hash"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let hash = "0123"'
+            '  let rss_type = "4567"'
+            '  let rc = (kfunc-call "bpf_xdp_metadata_rx_hash" $ctx $hash $rss_type)'
+            '  $rc | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rx-vlan-tag"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let vlan_proto = "01"'
+            '  let vlan_tci = "23"'
+            '  let rc = (kfunc-call "bpf_xdp_metadata_rx_vlan_tag" $ctx $vlan_proto $vlan_tci)'
+            '  $rc | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rejects-non-xdp"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let timestamp = "01234567"'
+            '  kfunc-call "bpf_xdp_metadata_rx_timestamp" $ctx $timestamp'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_xdp_metadata_rx_timestamp' is only valid in xdp programs"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rejects-packet-output-buffer"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: '{|ctx| kfunc-call "bpf_xdp_metadata_rx_timestamp" $ctx $ctx.data; "pass" }'
+        local: "reject"
+        kernel: "skip"
+        error_contains: "got Packet"
     }
     {
         name: "source-kfunc-xdp-xfrm-state-release"

@@ -124,6 +124,45 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         fixed_size: Some(1),
         size_from_arg: None,
     }];
+    const XDP_METADATA_TIMESTAMP_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 1,
+        op: "kfunc bpf_xdp_metadata_rx_timestamp timestamp",
+        allowed: STACK_MAP,
+        fixed_size: Some(8),
+        size_from_arg: None,
+    }];
+    const XDP_METADATA_HASH_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc bpf_xdp_metadata_rx_hash hash",
+            allowed: STACK_MAP,
+            fixed_size: Some(4),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_xdp_metadata_rx_hash rss_type",
+            allowed: STACK_MAP,
+            fixed_size: Some(4),
+            size_from_arg: None,
+        },
+    ];
+    const XDP_METADATA_VLAN_TAG_RULES: &[KfuncPtrArgRule] = &[
+        KfuncPtrArgRule {
+            arg_idx: 1,
+            op: "kfunc bpf_xdp_metadata_rx_vlan_tag vlan_proto",
+            allowed: STACK_MAP,
+            fixed_size: Some(2),
+            size_from_arg: None,
+        },
+        KfuncPtrArgRule {
+            arg_idx: 2,
+            op: "kfunc bpf_xdp_metadata_rx_vlan_tag vlan_tci",
+            allowed: STACK_MAP,
+            fixed_size: Some(2),
+            size_from_arg: None,
+        },
+    ];
     const COPY_FROM_USER_STR_RULES: &[KfuncPtrArgRule] = &[
         KfuncPtrArgRule {
             arg_idx: 0,
@@ -420,6 +459,18 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         },
         "scx_bpf_select_cpu_dfl" => KfuncSemantics {
             ptr_arg_rules: SCX_SELECT_CPU_DFL_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_xdp_metadata_rx_timestamp" => KfuncSemantics {
+            ptr_arg_rules: XDP_METADATA_TIMESTAMP_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_xdp_metadata_rx_hash" => KfuncSemantics {
+            ptr_arg_rules: XDP_METADATA_HASH_RULES,
+            positive_size_args: &[],
+        },
+        "bpf_xdp_metadata_rx_vlan_tag" => KfuncSemantics {
+            ptr_arg_rules: XDP_METADATA_VLAN_TAG_RULES,
             positive_size_args: &[],
         },
         _ => NONE,

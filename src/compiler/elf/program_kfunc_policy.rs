@@ -18,6 +18,11 @@ const SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS: &[&str] = &[
     "scx_bpf_dsq_insert___v2",
     "scx_bpf_dsq_insert_vtime",
 ];
+const XDP_ONLY_KFUNCS: &[&str] = &[
+    "bpf_xdp_metadata_rx_hash",
+    "bpf_xdp_metadata_rx_timestamp",
+    "bpf_xdp_metadata_rx_vlan_tag",
+];
 
 #[derive(Debug, Clone, Copy)]
 struct ProgramSpecificKfuncPolicy {
@@ -105,6 +110,9 @@ impl ProgramSpec {
             }
             return None;
         }
+        if XDP_ONLY_KFUNCS.contains(&kfunc) && self.program_type() != EbpfProgramType::Xdp {
+            return Some(format!("kfunc '{}' is only valid in xdp programs", kfunc));
+        }
 
         let Some((StructOpsFamily::SchedExt, sleepable)) =
             self.attach_shape().struct_ops_callback()
@@ -175,6 +183,14 @@ mod tests {
             }
         }
 
+        assert_unique_kfunc_names("xdp-only kfuncs", XDP_ONLY_KFUNCS);
+        for kfunc in XDP_ONLY_KFUNCS {
+            assert!(
+                !modeled_kfuncs.contains(kfunc),
+                "kfunc '{kfunc}' appears in both xdp-only and program-specific policies"
+            );
+        }
+
         let mut sched_ext_kfuncs = HashSet::new();
         for (table_name, kfuncs) in [
             (
@@ -196,6 +212,10 @@ mod tests {
         ] {
             assert_unique_kfunc_names(table_name, kfuncs);
             for kfunc in kfuncs {
+                assert!(
+                    !XDP_ONLY_KFUNCS.contains(kfunc),
+                    "kfunc '{kfunc}' appears in both sched_ext and xdp-only policies"
+                );
                 assert!(
                     sched_ext_kfuncs.insert(*kfunc),
                     "sched_ext kfunc '{kfunc}' appears in multiple callback policy tables"
@@ -334,5 +354,19 @@ mod tests {
             Some(&["bpf_sock_ops_enable_tx_tstamp"][..])
         );
         assert!(program_specific_kfunc_policy(EbpfProgramType::Xdp).is_none());
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_policy_limits_xdp_metadata_to_xdp() {
+        let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
+            .expect("expected xdp spec");
+        assert_eq!(xdp.kfunc_call_error("bpf_xdp_metadata_rx_hash"), None);
+
+        let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
+            .expect("expected tc spec");
+        assert_eq!(
+            tc.kfunc_call_error("bpf_xdp_metadata_rx_hash"),
+            Some("kfunc 'bpf_xdp_metadata_rx_hash' is only valid in xdp programs".to_string())
+        );
     }
 }

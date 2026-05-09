@@ -198,6 +198,9 @@ fn kfunc_allows_exact_btf_pointee_check(kfunc: &str) -> bool {
         kfunc,
         "bpf_dynptr_from_skb"
             | "bpf_dynptr_from_xdp"
+            | "bpf_xdp_metadata_rx_hash"
+            | "bpf_xdp_metadata_rx_timestamp"
+            | "bpf_xdp_metadata_rx_vlan_tag"
             | "bpf_xdp_get_xfrm_state"
             | "bpf_xdp_xfrm_state_release"
     )

@@ -5445,6 +5445,27 @@ fn test_kfunc_signature_dynptr_core_kfuncs() {
 }
 
 #[test]
+fn test_kfunc_signature_xdp_metadata_kfuncs() {
+    let timestamp = KfuncSignature::for_name("bpf_xdp_metadata_rx_timestamp")
+        .expect("expected bpf_xdp_metadata_rx_timestamp sig");
+    assert_eq!(timestamp.min_args, 2);
+    assert_eq!(timestamp.max_args, 2);
+    assert_eq!(timestamp.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(timestamp.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(timestamp.ret_kind, KfuncRetKind::Scalar);
+
+    for name in ["bpf_xdp_metadata_rx_hash", "bpf_xdp_metadata_rx_vlan_tag"] {
+        let sig = KfuncSignature::for_name(name).expect("expected XDP metadata sig");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+    }
+}
+
+#[test]
 fn test_unknown_kfunc_signature_message_for_missing_symbol() {
     let msg = unknown_kfunc_signature_message("__nu_plugin_ebpf_missing_kfunc_for_test__");
     assert!(msg.contains("unknown kfunc '__nu_plugin_ebpf_missing_kfunc_for_test__'"));
@@ -7010,6 +7031,34 @@ fn test_kfunc_semantics_scx_select_cpu_dfl_is_idle_rule() {
     assert!(!rule.allowed.allow_user);
     assert_eq!(rule.fixed_size, Some(1));
     assert_eq!(rule.size_from_arg, None);
+}
+
+#[test]
+fn test_kfunc_semantics_xdp_metadata_rules() {
+    let timestamp = kfunc_semantics("bpf_xdp_metadata_rx_timestamp");
+    assert_eq!(timestamp.ptr_arg_rules.len(), 1);
+    assert_eq!(timestamp.ptr_arg_rules[0].arg_idx, 1);
+    assert_eq!(
+        timestamp.ptr_arg_rules[0].op,
+        "kfunc bpf_xdp_metadata_rx_timestamp timestamp"
+    );
+    assert_eq!(timestamp.ptr_arg_rules[0].fixed_size, Some(8));
+    assert!(timestamp.ptr_arg_rules[0].allowed.allow_stack);
+    assert!(timestamp.ptr_arg_rules[0].allowed.allow_map);
+
+    let hash = kfunc_semantics("bpf_xdp_metadata_rx_hash");
+    assert_eq!(hash.ptr_arg_rules.len(), 2);
+    assert_eq!(hash.ptr_arg_rules[0].arg_idx, 1);
+    assert_eq!(hash.ptr_arg_rules[0].fixed_size, Some(4));
+    assert_eq!(hash.ptr_arg_rules[1].arg_idx, 2);
+    assert_eq!(hash.ptr_arg_rules[1].fixed_size, Some(4));
+
+    let vlan = kfunc_semantics("bpf_xdp_metadata_rx_vlan_tag");
+    assert_eq!(vlan.ptr_arg_rules.len(), 2);
+    assert_eq!(vlan.ptr_arg_rules[0].arg_idx, 1);
+    assert_eq!(vlan.ptr_arg_rules[0].fixed_size, Some(2));
+    assert_eq!(vlan.ptr_arg_rules[1].arg_idx, 2);
+    assert_eq!(vlan.ptr_arg_rules[1].fixed_size, Some(2));
 }
 
 #[test]
