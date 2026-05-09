@@ -914,6 +914,65 @@ fn test_type_error_kfunc_pointer_argument_requires_kernel_space() {
 }
 
 #[test]
+fn test_type_error_btf_fallback_kfunc_pointer_argument_pointee_mismatch() {
+    const KFUNC: &str = "bpf_xdp_get_xfrm_state";
+    if KfuncSignature::for_name(KFUNC).is_some() {
+        return;
+    }
+
+    let Ok(Some(crate::kernel_btf::TypeInfo::Ptr { target, .. })) =
+        crate::kernel_btf::KernelBtf::get().function_trampoline_arg_type_info(KFUNC, 0)
+    else {
+        return;
+    };
+    let crate::kernel_btf::TypeInfo::Struct { name, .. } = target.as_ref() else {
+        return;
+    };
+    if name != "xdp_md" {
+        return;
+    }
+
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let opts = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::RecordField);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: task,
+        helper: BpfHelper::GetCurrentTaskBtf as u32,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: opts,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(16),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: KFUNC.to_string(),
+        btf_id: None,
+        args: vec![task, opts, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected BTF fallback kfunc pointee mismatch");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects xdp_md pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_scx_dsq_move_set_slice_requires_stack_iterator_pointer() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();
