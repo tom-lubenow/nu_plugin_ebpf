@@ -40,6 +40,27 @@ pub fn kfunc_ref_kind_from_bpf_type_name(type_name: &str) -> Option<KfuncRefKind
     }
 }
 
+pub fn kfunc_allowed_while_lock_held(kfunc: &str) -> bool {
+    matches!(
+        kfunc,
+        "bpf_list_push_front_impl"
+            | "bpf_list_push_back_impl"
+            | "bpf_list_pop_front"
+            | "bpf_list_pop_back"
+            | "bpf_rbtree_add_impl"
+            | "bpf_rbtree_remove"
+            | "bpf_rbtree_first"
+            | "bpf_refcount_acquire_impl"
+            | "bpf_iter_num_new"
+            | "bpf_iter_num_next"
+            | "bpf_iter_num_destroy"
+            | "bpf_res_spin_lock"
+            | "bpf_res_spin_unlock"
+            | "bpf_res_spin_lock_irqsave"
+            | "bpf_res_spin_unlock_irqrestore"
+    )
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct KfuncAllowedPtrSpaces {
     pub allow_stack: bool,

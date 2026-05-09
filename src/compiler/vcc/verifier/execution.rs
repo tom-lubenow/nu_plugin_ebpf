@@ -1314,11 +1314,11 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::BpfSpinLockRejectIfHeld { message } => {
-                if state.has_live_bpf_spin_lock() {
+            VccInst::KernelLockRejectIfHeld { call } => {
+                if let Some(lock) = state.live_kernel_lock_description() {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
-                        message.clone(),
+                        format!("{} cannot be called while {} is held", call, lock),
                     ));
                 }
             }

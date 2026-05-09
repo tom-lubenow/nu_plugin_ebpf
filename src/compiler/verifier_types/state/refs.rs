@@ -819,6 +819,20 @@ impl VerifierState {
         self.bpf_spin_lock_max_depth > 0
     }
 
+    pub(in crate::compiler::verifier_types) fn live_kernel_lock_description(
+        &self,
+    ) -> Option<&'static str> {
+        if self.has_live_bpf_spin_lock() {
+            Some("bpf_spin_lock")
+        } else if self.has_live_res_spin_lock() {
+            Some("resource spin lock")
+        } else if self.has_live_res_spin_lock_irqsave() {
+            Some("resource spin lock irqsave")
+        } else {
+            None
+        }
+    }
+
     pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave(
         &mut self,
         identity: ResSpinLockIdentity,

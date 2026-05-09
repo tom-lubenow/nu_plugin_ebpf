@@ -20,7 +20,7 @@ use crate::compiler::instruction::{
     KfuncUnknownDynptrArg, KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy,
     KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
     KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
-    helper_release_ref_kind, kfunc_acquire_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_allowed_while_lock_held,
     kfunc_iter_lifecycle as kfunc_iter_lifecycle_shared,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
@@ -371,8 +371,8 @@ pub enum VccInst {
     BpfSpinLockRelease {
         lock: VccReg,
     },
-    BpfSpinLockRejectIfHeld {
-        message: String,
+    KernelLockRejectIfHeld {
+        call: String,
     },
     ResSpinLockIrqsaveAcquire {
         lock: VccReg,

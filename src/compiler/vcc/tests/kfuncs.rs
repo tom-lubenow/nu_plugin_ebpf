@@ -11583,6 +11583,92 @@ fn test_verify_mir_kfunc_res_spin_lock_rejects_same_lock_twice() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_res_spin_lock_rejects_calls_while_held() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let throw_code = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let kfunc_ret = func.alloc_vreg();
+    let subfn_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: throw_code,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::KtimeGetNs as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: kfunc_ret,
+        kfunc: "bpf_throw".to_string(),
+        btf_id: None,
+        args: vec![throw_code],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: subfn_ret,
+        subfn: crate::compiler::mir::SubfunctionId(0),
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(throw_code, MirType::I64);
+    for ret in [lock_ret, helper_ret, kfunc_ret, subfn_ret, unlock_ret] {
+        types.insert(ret, MirType::I64);
+    }
+
+    let err = verify_mir(&func, &types).expect_err("expected call-in-res-spin-lock errors");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_ktime_get_ns' cannot be called while resource spin lock is held"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_throw' cannot be called while resource spin lock is held")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("subfunction 'subfn0' cannot be called while resource spin lock is held")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_res_spin_unlock_rejects_out_of_order_lock() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 2;
@@ -11767,6 +11853,72 @@ fn test_verify_mir_kfunc_res_spin_unlock_rejected_after_mixed_join() {
         err.iter()
             .any(|e| e.message.contains("requires a matching bpf_res_spin_lock")),
         "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_res_spin_lock_irqsave_rejects_helper_while_held() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let flags_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(flags_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock_irqsave".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::KtimeGetNs as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock_irqrestore".to_string(),
+        btf_id: None,
+        args: vec![lock, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        flags,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    for ret in [lock_ret, helper_ret, unlock_ret] {
+        types.insert(ret, MirType::I64);
+    }
+
+    let err = verify_mir(&func, &types).expect_err("expected helper-in-res-spin-irqsave error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_ktime_get_ns' cannot be called while resource spin lock irqsave is held"
+        )),
+        "unexpected errors: {:?}",
         err
     );
 }

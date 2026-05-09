@@ -1,7 +1,22 @@
 use super::*;
-use crate::compiler::instruction::unknown_kfunc_signature_message;
+use crate::compiler::instruction::{
+    kfunc_allowed_while_lock_held, unknown_kfunc_signature_message,
+};
 use crate::compiler::mir::SubfunctionId;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
+
+fn reject_call_if_kernel_lock_held(
+    state: &VerifierState,
+    call: String,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if let Some(lock) = state.live_kernel_lock_description() {
+        errors.push(VerifierTypeError::new(format!(
+            "{} cannot be called while {} is held",
+            call, lock
+        )));
+    }
+}
 
 pub(super) fn apply_call_helper_inst(
     dst: VReg,
@@ -15,17 +30,18 @@ pub(super) fn apply_call_helper_inst(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let helper_kind = BpfHelper::from_u32(helper);
-    if state.has_live_bpf_spin_lock() {
+    if !matches!(helper_kind, Some(BpfHelper::SpinUnlock)) {
         match helper_kind {
-            Some(BpfHelper::SpinLock | BpfHelper::SpinUnlock) => {}
-            Some(helper) => errors.push(VerifierTypeError::new(format!(
-                "helper '{}' cannot be called while bpf_spin_lock is held",
-                helper.name()
-            ))),
-            None => errors.push(VerifierTypeError::new(format!(
-                "helper {} cannot be called while bpf_spin_lock is held",
-                helper
-            ))),
+            Some(helper) => {
+                reject_call_if_kernel_lock_held(
+                    state,
+                    format!("helper '{}'", helper.name()),
+                    errors,
+                );
+            }
+            None => {
+                reject_call_if_kernel_lock_held(state, format!("helper {}", helper), errors);
+            }
         }
     }
 
@@ -215,11 +231,8 @@ pub(super) fn apply_call_kfunc_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if state.has_live_bpf_spin_lock() {
-        errors.push(VerifierTypeError::new(format!(
-            "kfunc '{}' cannot be called while bpf_spin_lock is held",
-            kfunc
-        )));
+    if !kfunc_allowed_while_lock_held(kfunc) {
+        reject_call_if_kernel_lock_held(state, format!("kfunc '{}'", kfunc), errors);
     }
 
     if let Some(message) = probe_ctx.and_then(|ctx| ctx.kfunc_call_error(kfunc)) {
@@ -294,12 +307,7 @@ pub(super) fn apply_call_subfn_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
-    if state.has_live_bpf_spin_lock() {
-        errors.push(VerifierTypeError::new(format!(
-            "subfunction '{}' cannot be called while bpf_spin_lock is held",
-            subfn
-        )));
-    }
+    reject_call_if_kernel_lock_held(state, format!("subfunction '{}'", subfn), errors);
 
     if args.len() > 5 {
         errors.push(VerifierTypeError::new(format!(

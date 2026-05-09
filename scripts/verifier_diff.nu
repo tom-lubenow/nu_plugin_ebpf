@@ -9928,6 +9928,23 @@ const FIXTURES = [
         error_contains: "cannot acquire an already-held resource spin lock"
     }
     {
+        name: "source-kfunc-res-spin-lock-rejects-helper-while-held"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '  helper-call "bpf_get_prandom_u32"'
+            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "while resource spin lock is held"
+    }
+    {
         name: "source-kfunc-res-spin-unlock-rejects-out-of-order-lock"
         category: "helper-state"
         tags: [kfunc res-spin-lock cgroup source reject]
@@ -10033,6 +10050,24 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "cannot acquire an already-held resource spin lock"
+    }
+    {
+        name: "source-kfunc-res-spin-irqsave-rejects-helper-while-held"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
+            '  helper-call "bpf_get_prandom_u32"'
+            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "while resource spin lock irqsave is held"
     }
     {
         name: "source-kfunc-res-spin-irqsave-rejects-leak"
@@ -10254,7 +10289,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "cannot acquire a second bpf_spin_lock"
+        error_contains: "cannot be called while bpf_spin_lock is held"
     }
     {
         name: "spin-lock-rejects-unlock-of-different-map-entry"
