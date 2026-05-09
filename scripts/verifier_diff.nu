@@ -3229,6 +3229,8 @@ const KFUNC_KERNEL_FEATURE_FALLBACKS = [
     { name: "bpf_task_release", min_kernel: "6.2", source: "https://github.com/torvalds/linux/blob/v6.2/kernel/bpf/helpers.c" }
     { name: "bpf_task_under_cgroup", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
     { name: "bpf_throw", min_kernel: "6.7", source: "https://github.com/torvalds/linux/blob/v6.7/kernel/bpf/helpers.c" }
+    { name: "bpf_xdp_get_xfrm_state", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/net/xfrm/xfrm_state_bpf.c" }
+    { name: "bpf_xdp_xfrm_state_release", min_kernel: "6.8", source: "https://github.com/torvalds/linux/blob/v6.8/net/xfrm/xfrm_state_bpf.c" }
     { name: "scx_bpf_cpu_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
     { name: "scx_bpf_cpu_rq", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
     { name: "scx_bpf_cpuperf_cap", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
@@ -8622,6 +8624,22 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-btf-fallback-rejects-wrong-pointer-pointee"
+        category: "helper-state"
+        tags: [kfunc btf source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_xdp_get_xfrm_state" $ctx.current_task 0 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer"
     }
     {
         name: "source-kfunc-obj-new-drop"
