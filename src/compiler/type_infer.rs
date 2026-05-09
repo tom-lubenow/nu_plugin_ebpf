@@ -45,9 +45,10 @@ use super::instruction::{
 use super::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, COUNTER_MAP_NAME, CtxField,
     HISTOGRAM_MAP_NAME, MapKind, MapOpKind, MirFunction, MirInst, MirType, MirValue,
-    STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, SubfunctionId,
-    TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
+    STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, StructField,
+    SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
 };
+use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 mod constraints;
 mod helper_semantics;
@@ -286,7 +287,65 @@ impl<'a> TypeInference<'a> {
                 pointee: Box::new(MirType::bpf_rb_root_struct()),
                 address_space: AddressSpace::Kernel,
             }),
-            _ => None,
+            _ => Self::kernel_btf_kfunc_return_mir_type(kfunc),
+        }
+    }
+
+    fn kernel_btf_kfunc_return_mir_type(kfunc: &str) -> Option<MirType> {
+        let type_info = KernelBtf::get()
+            .function_trampoline_ret_type_info(kfunc)
+            .ok()
+            .flatten()?;
+        Self::mir_type_from_kernel_type_info(&type_info)
+    }
+
+    fn mir_type_from_kernel_type_info(type_info: &TypeInfo) -> Option<MirType> {
+        match type_info {
+            TypeInfo::Int { size, signed } => Some(match (*size, *signed) {
+                (1, false) => MirType::U8,
+                (1, true) => MirType::I8,
+                (2, false) => MirType::U16,
+                (2, true) => MirType::I16,
+                (4, false) => MirType::U32,
+                (4, true) => MirType::I32,
+                (8, false) => MirType::U64,
+                (8, true) => MirType::I64,
+                _ => return None,
+            }),
+            TypeInfo::Ptr { target, is_user } => Some(MirType::Ptr {
+                pointee: Box::new(
+                    Self::mir_type_from_kernel_type_info(target).unwrap_or(MirType::Unknown),
+                ),
+                address_space: if *is_user {
+                    AddressSpace::User
+                } else {
+                    AddressSpace::Kernel
+                },
+            }),
+            TypeInfo::Struct {
+                name,
+                btf_type_id,
+                size,
+                ..
+            } => Some(MirType::Struct {
+                name: Some(name.clone()),
+                kernel_btf_type_id: *btf_type_id,
+                fields: vec![StructField {
+                    name: "__opaque".to_string(),
+                    ty: MirType::Array {
+                        elem: Box::new(MirType::U8),
+                        len: (*size).max(1),
+                    },
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                }],
+            }),
+            TypeInfo::Array { element, len } => Some(MirType::Array {
+                elem: Box::new(Self::mir_type_from_kernel_type_info(element)?),
+                len: *len,
+            }),
+            TypeInfo::Void | TypeInfo::Unknown => None,
         }
     }
 

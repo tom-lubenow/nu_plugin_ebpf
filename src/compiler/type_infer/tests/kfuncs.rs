@@ -2502,6 +2502,54 @@ fn test_infer_kfunc_get_task_exe_file_pointer_return() {
 }
 
 #[test]
+fn test_infer_kernel_btf_fallback_kfunc_pointer_return() {
+    if crate::kernel_btf::KernelBtf::get()
+        .resolve_kfunc_btf_id("bpf_lookup_system_key")
+        .is_err()
+    {
+        return;
+    }
+
+    let mut func = make_test_function();
+    let id = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: id,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_lookup_system_key".to_string(),
+        btf_id: None,
+        args: vec![id],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected BTF fallback kfunc type inference");
+    match types.get(&dst) {
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            pointee,
+        }) => match pointee.as_ref() {
+            MirType::Struct {
+                name,
+                kernel_btf_type_id,
+                ..
+            } => {
+                assert_eq!(name.as_deref(), Some("bpf_key"));
+                assert!(kernel_btf_type_id.is_some());
+            }
+            other => panic!("expected bpf_key pointee, got {:?}", other),
+        },
+        other => panic!("expected kernel pointer return, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_infer_kfunc_iter_task_vma_next_pointer_return() {
     let mut func = make_test_function();
     let it = func.alloc_vreg();

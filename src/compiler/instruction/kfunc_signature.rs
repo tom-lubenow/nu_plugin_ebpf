@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel_btf::{KernelBtf, KfuncArgShape, KfuncRetShape};
+use crate::kernel_btf::{KernelBtf, KfuncArgShape, KfuncRetShape, TypeInfo};
 
 impl KfuncSignature {
     pub fn for_name(name: &str) -> Option<Self> {
@@ -1021,16 +1021,35 @@ impl KfuncSignature {
                 KfuncArgShape::Pointer => KfuncArgKind::Pointer,
             };
         }
+        let ret_type_info = KernelBtf::get()
+            .function_trampoline_ret_type_info(name)
+            .ok()
+            .flatten();
         Some(Self {
             min_args: hint.min_args,
             max_args: hint.max_args,
             arg_kinds,
-            ret_kind: match hint.ret_shape {
-                KfuncRetShape::Void => KfuncRetKind::Void,
-                KfuncRetShape::Scalar => KfuncRetKind::Scalar,
-                KfuncRetShape::PointerMaybeNull => KfuncRetKind::PointerMaybeNull,
-            },
+            ret_kind: ret_type_info
+                .as_ref()
+                .map(kfunc_ret_kind_from_type_info)
+                .unwrap_or_else(|| kfunc_ret_kind_from_shape(hint.ret_shape)),
         })
+    }
+}
+
+fn kfunc_ret_kind_from_shape(shape: KfuncRetShape) -> KfuncRetKind {
+    match shape {
+        KfuncRetShape::Void => KfuncRetKind::Void,
+        KfuncRetShape::Scalar => KfuncRetKind::Scalar,
+        KfuncRetShape::PointerMaybeNull => KfuncRetKind::PointerMaybeNull,
+    }
+}
+
+fn kfunc_ret_kind_from_type_info(type_info: &TypeInfo) -> KfuncRetKind {
+    match type_info {
+        TypeInfo::Void => KfuncRetKind::Void,
+        TypeInfo::Ptr { .. } => KfuncRetKind::PointerMaybeNull,
+        _ => KfuncRetKind::Scalar,
     }
 }
 

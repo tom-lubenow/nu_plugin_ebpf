@@ -5452,6 +5452,23 @@ fn test_kfunc_signature_for_name_or_kernel_btf_prefers_builtin() {
 }
 
 #[test]
+fn test_kfunc_signature_for_name_or_kernel_btf_uses_exact_btf_pointer_return() {
+    if crate::kernel_btf::KernelBtf::get()
+        .resolve_kfunc_btf_id("bpf_lookup_system_key")
+        .is_err()
+    {
+        return;
+    }
+
+    let sig = KfuncSignature::for_name_or_kernel_btf("bpf_lookup_system_key")
+        .expect("expected bpf_lookup_system_key BTF fallback signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
+    assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
+}
+
+#[test]
 fn test_kfunc_signature_for_name_or_kernel_btf_missing_symbol() {
     assert!(
         KfuncSignature::for_name_or_kernel_btf("__nu_plugin_ebpf_missing_kfunc_for_test__")
