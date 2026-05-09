@@ -6098,6 +6098,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "helper-current-task-bound-projection"
+        category: "context-surface"
+        tags: [context task helper-call source metadata accept]
+        requires: [kernel-btf]
+        target: "kprobe:sys_clone"
+        program: [
+            '{|ctx|'
+            '  let task = (helper-call "bpf_get_current_task_btf")'
+            '  $task.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "current-cgroup-bound-context"
         category: "context-surface"
         tags: [context cgroup btf source metadata accept]
