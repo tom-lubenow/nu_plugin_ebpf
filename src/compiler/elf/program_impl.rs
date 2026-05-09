@@ -283,12 +283,9 @@ fn helper_compatibility_requirements_for_programs(
 fn kfunc_compatibility_requirements_for_names(
     used_kfuncs: &HashSet<String>,
 ) -> Vec<KfuncCompatibilityRequirement> {
-    let mut names = used_kfuncs.iter().map(String::as_str).collect::<Vec<_>>();
-    names.sort_unstable();
-    names.dedup();
-
-    names
-        .into_iter()
+    sorted_kfunc_names(used_kfuncs)
+        .iter()
+        .map(String::as_str)
         .filter_map(KfuncCompatibilityRequirement::for_name)
         .collect()
 }
@@ -301,6 +298,21 @@ fn kfunc_compatibility_requirements_for_programs(
         used_kfuncs.extend(program.used_kfuncs.iter().cloned());
     }
     kfunc_compatibility_requirements_for_names(&used_kfuncs)
+}
+
+fn sorted_kfunc_names(used_kfuncs: &HashSet<String>) -> Vec<String> {
+    let mut names = used_kfuncs.iter().cloned().collect::<Vec<_>>();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
+fn used_kfuncs_for_programs(programs: &[EbpfProgramSection]) -> Vec<String> {
+    let mut used_kfuncs = HashSet::new();
+    for program in programs {
+        used_kfuncs.extend(program.used_kfuncs.iter().cloned());
+    }
+    sorted_kfunc_names(&used_kfuncs)
 }
 
 fn sorted_context_fields(used_ctx_fields: &HashSet<CtxField>) -> Vec<CtxField> {
@@ -1031,6 +1043,10 @@ impl EbpfProgramSection {
         kfunc_compatibility_requirements_for_names(&self.used_kfuncs)
     }
 
+    pub fn used_kfuncs(&self) -> Vec<String> {
+        sorted_kfunc_names(&self.used_kfuncs)
+    }
+
     pub fn kfunc_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         KfuncCompatibilityRequirement::effective_minimum_kernel(
             &self.kfunc_compatibility_requirements(),
@@ -1726,6 +1742,10 @@ impl EbpfObject {
         kfunc_compatibility_requirements_for_programs(&self.programs)
     }
 
+    pub fn used_kfuncs(&self) -> Vec<String> {
+        used_kfuncs_for_programs(&self.programs)
+    }
+
     pub fn kfunc_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         KfuncCompatibilityRequirement::effective_minimum_kernel(
             &self.kfunc_compatibility_requirements(),
@@ -2315,6 +2335,10 @@ impl EbpfProgram {
 
     pub fn kfunc_compatibility_requirements(&self) -> Vec<KfuncCompatibilityRequirement> {
         kfunc_compatibility_requirements_for_names(&self.used_kfuncs)
+    }
+
+    pub fn used_kfuncs(&self) -> Vec<String> {
+        sorted_kfunc_names(&self.used_kfuncs)
     }
 
     pub fn kfunc_compatibility_minimum_kernel(&self) -> Option<&'static str> {

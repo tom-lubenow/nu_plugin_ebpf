@@ -10681,6 +10681,14 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
     ]);
 
     let requirements = program.kfunc_compatibility_requirements();
+    assert_eq!(
+        program.used_kfuncs(),
+        vec![
+            "bpf_get_task_exe_file".to_string(),
+            "bpf_task_acquire".to_string(),
+            "unknown_kernel_kfunc".to_string(),
+        ]
+    );
     assert_eq!(requirements.len(), 2);
     assert_eq!(requirements[0].name(), "bpf_get_task_exe_file");
     assert_eq!(requirements[0].key(), "kfunc:bpf_get_task_exe_file");
@@ -10688,13 +10696,10 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
     assert_eq!(requirements[1].key(), "kfunc:bpf_task_acquire");
     assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
     assert_eq!(program.kfunc_compatibility_maximum_kernel_exclusive(), None);
-    assert_eq!(
-        program
-            .clone()
-            .into_object()
-            .kfunc_compatibility_minimum_kernel(),
-        Some("6.12")
-    );
+    let object = program.clone().into_object();
+    assert_eq!(object.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(object.used_kfuncs(), program.used_kfuncs());
+    assert_eq!(object.programs[0].used_kfuncs(), program.used_kfuncs());
 
     let bounded = EbpfProgram::new(
         EbpfProgramType::Kprobe,

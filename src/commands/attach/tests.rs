@@ -10751,6 +10751,104 @@ fn test_compile_xdp_ctx_data_meta_byte_counter_program() {
 }
 
 #[test]
+fn test_compile_xdp_metadata_kfunc_reports_kfunc_compatibility() {
+    let ctx_var = VarId::new(0);
+    let kfunc_decl = DeclId::new(42);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"bpf_xdp_metadata_rx_timestamp".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"01234567".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: kfunc_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            ..Default::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 5],
+            ast: vec![None; 5],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let decl_names = HashMap::from([(kfunc_decl, "kfunc-call".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("XDP metadata kfunc should lower");
+    let used_kfuncs = collect_mir_kfunc_names(&lowering.program);
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let result = compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    )
+    .expect("XDP metadata kfunc should compile");
+
+    let program = result
+        .into_program(
+            EbpfProgramType::Xdp,
+            "lo",
+            "main",
+            HashMap::new(),
+            HashMap::new(),
+        )
+        .with_used_kfuncs(used_kfuncs);
+    assert_eq!(
+        program.used_kfuncs(),
+        vec!["bpf_xdp_metadata_rx_timestamp".to_string()]
+    );
+    assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.3"));
+    let requirement = program
+        .kfunc_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.name() == "bpf_xdp_metadata_rx_timestamp")
+        .expect("XDP metadata timestamp should report kfunc compatibility");
+    assert_eq!(requirement.key(), "kfunc:bpf_xdp_metadata_rx_timestamp");
+}
+
+#[test]
 fn test_compile_xdp_random_int_counter_program() {
     let random_decl_id = DeclId::new(42);
     let count_decl_id = DeclId::new(43);
