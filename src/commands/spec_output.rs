@@ -2,6 +2,7 @@
 
 use nu_protocol::{Span, Value, record};
 
+use crate::compiler::instruction::{KfuncArgKind, KfuncRetKind, KfuncSignature, kfunc_semantics};
 use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
@@ -62,10 +63,29 @@ struct SpecKfuncCall {
     kfunc: &'static str,
     policy: &'static str,
     note: &'static str,
+    min_args: Option<usize>,
+    max_args: Option<usize>,
+    arg_kinds: Vec<&'static str>,
+    return_kind: Option<&'static str>,
     requirement_key: Option<String>,
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     maximum_kernel_exclusive: Option<&'static str>,
+    pointer_arg_rules: Vec<SpecKfuncPtrArgRule>,
+    positive_size_args: Vec<usize>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecKfuncPtrArgRule {
+    arg_idx: usize,
+    op: &'static str,
+    allow_stack: bool,
+    allow_map: bool,
+    allow_kernel: bool,
+    allow_user: bool,
+    fixed_size: Option<usize>,
+    size_from_arg: Option<usize>,
 }
 
 #[cfg(target_os = "linux")]
@@ -299,6 +319,24 @@ fn optional_u32(value: Option<u32>, span: Span) -> Value {
 #[cfg(target_os = "linux")]
 fn helper_requirement_key(helper: BpfHelper) -> Option<String> {
     HelperCompatibilityRequirement::for_helper(helper).map(HelperCompatibilityRequirement::key)
+}
+
+#[cfg(target_os = "linux")]
+fn kfunc_arg_kind_label(kind: KfuncArgKind) -> &'static str {
+    match kind {
+        KfuncArgKind::Scalar => "scalar",
+        KfuncArgKind::Pointer => "pointer",
+        KfuncArgKind::Subprogram => "subprogram",
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn kfunc_ret_kind_label(kind: KfuncRetKind) -> &'static str {
+    match kind {
+        KfuncRetKind::Scalar => "scalar",
+        KfuncRetKind::PointerMaybeNull => "pointer-maybe-null",
+        KfuncRetKind::Void => "void",
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -1478,10 +1516,25 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
         .into_iter()
         .map(|surface| {
             let requirement = KfuncCompatibilityRequirement::for_name(surface.kfunc);
+            let signature = KfuncSignature::for_name(surface.kfunc);
+            let semantics = kfunc_semantics(surface.kfunc);
             SpecKfuncCall {
                 kfunc: surface.kfunc,
                 policy: surface.policy,
                 note: surface.note,
+                min_args: signature.as_ref().map(|signature| signature.min_args),
+                max_args: signature.as_ref().map(|signature| signature.max_args),
+                arg_kinds: signature
+                    .as_ref()
+                    .map(|signature| {
+                        (0..signature.max_args)
+                            .map(|idx| kfunc_arg_kind_label(signature.arg_kind(idx)))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                return_kind: signature
+                    .as_ref()
+                    .map(|signature| kfunc_ret_kind_label(signature.ret_kind)),
                 requirement_key: kfunc_requirement_key(surface.kfunc),
                 minimum_kernel: requirement
                     .as_ref()
@@ -1492,7 +1545,61 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
                 maximum_kernel_exclusive: requirement
                     .as_ref()
                     .and_then(|requirement| requirement.maximum_kernel_exclusive()),
+                pointer_arg_rules: semantics
+                    .ptr_arg_rules
+                    .iter()
+                    .map(|rule| SpecKfuncPtrArgRule {
+                        arg_idx: rule.arg_idx,
+                        op: rule.op,
+                        allow_stack: rule.allowed.allow_stack,
+                        allow_map: rule.allowed.allow_map,
+                        allow_kernel: rule.allowed.allow_kernel,
+                        allow_user: rule.allowed.allow_user,
+                        fixed_size: rule.fixed_size,
+                        size_from_arg: rule.size_from_arg,
+                    })
+                    .collect(),
+                positive_size_args: semantics.positive_size_args.to_vec(),
             }
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn usize_list(values: Vec<usize>, span: Span) -> Vec<Value> {
+    values
+        .into_iter()
+        .filter_map(|value| i64::try_from(value).ok())
+        .map(|value| Value::int(value, span))
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn static_str_list(values: Vec<&'static str>, span: Span) -> Vec<Value> {
+    values
+        .into_iter()
+        .map(|value| Value::string(value, span))
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn kfunc_ptr_arg_rule_records(rules: Vec<SpecKfuncPtrArgRule>, span: Span) -> Vec<Value> {
+    rules
+        .into_iter()
+        .map(|rule| {
+            Value::record(
+                record! {
+                    "arg_idx" => optional_usize(Some(rule.arg_idx), span),
+                    "op" => Value::string(rule.op, span),
+                    "allow_stack" => Value::bool(rule.allow_stack, span),
+                    "allow_map" => Value::bool(rule.allow_map, span),
+                    "allow_kernel" => Value::bool(rule.allow_kernel, span),
+                    "allow_user" => Value::bool(rule.allow_user, span),
+                    "fixed_size" => optional_usize(rule.fixed_size, span),
+                    "size_from_arg" => optional_usize(rule.size_from_arg, span),
+                },
+                span,
+            )
         })
         .collect()
 }
@@ -1502,15 +1609,24 @@ fn kfunc_call_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Ve
     spec_kfunc_calls(spec)
         .into_iter()
         .map(|surface| {
+            let arg_kinds = static_str_list(surface.arg_kinds, span);
+            let pointer_arg_rules = kfunc_ptr_arg_rule_records(surface.pointer_arg_rules, span);
+            let positive_size_args = usize_list(surface.positive_size_args, span);
             Value::record(
                 record! {
                     "kfunc" => Value::string(surface.kfunc, span),
                     "policy" => Value::string(surface.policy, span),
                     "note" => Value::string(surface.note, span),
+                    "min_args" => optional_usize(surface.min_args, span),
+                    "max_args" => optional_usize(surface.max_args, span),
+                    "arg_kinds" => Value::list(arg_kinds, span),
+                    "return_kind" => optional_static_str(surface.return_kind, span),
                     "requirement_key" => optional_string(surface.requirement_key, span),
                     "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),
                     "maximum_kernel_exclusive" => optional_static_str(surface.maximum_kernel_exclusive, span),
+                    "pointer_arg_rules" => Value::list(pointer_arg_rules, span),
+                    "positive_size_args" => Value::list(positive_size_args, span),
                 },
                 span,
             )

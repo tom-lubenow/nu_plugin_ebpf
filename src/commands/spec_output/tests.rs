@@ -1174,6 +1174,16 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
         timestamp.requirement_key.as_deref(),
         Some("kfunc:bpf_xdp_metadata_rx_timestamp")
     );
+    assert_eq!(timestamp.min_args, Some(2));
+    assert_eq!(timestamp.max_args, Some(2));
+    assert_eq!(timestamp.arg_kinds, vec!["pointer", "pointer"]);
+    assert_eq!(timestamp.return_kind, Some("scalar"));
+    assert_eq!(timestamp.pointer_arg_rules.len(), 1);
+    assert_eq!(timestamp.pointer_arg_rules[0].arg_idx, 1);
+    assert_eq!(timestamp.pointer_arg_rules[0].fixed_size, Some(8));
+    assert!(timestamp.pointer_arg_rules[0].allow_stack);
+    assert!(timestamp.pointer_arg_rules[0].allow_map);
+    assert!(!timestamp.pointer_arg_rules[0].allow_kernel);
     assert_eq!(timestamp.minimum_kernel, Some("6.3"));
     assert!(
         timestamp
@@ -1203,6 +1213,44 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
             .and_then(|value| value.as_str().ok())
             .is_some_and(|name| name == "bpf_xdp_metadata_rx_hash")
     }));
+    let timestamp_record = record_kfuncs
+        .iter()
+        .find_map(|value| {
+            let record = value.as_record().ok()?;
+            (record
+                .get("kfunc")?
+                .as_str()
+                .ok()
+                .is_some_and(|name| name == "bpf_xdp_metadata_rx_timestamp"))
+            .then_some(record)
+        })
+        .expect("timestamp kfunc record should be present");
+    assert_eq!(
+        timestamp_record
+            .get("return_kind")
+            .expect("return kind should be present")
+            .as_str()
+            .expect("return kind should be a string"),
+        "scalar"
+    );
+    let pointer_arg_rules = timestamp_record
+        .get("pointer_arg_rules")
+        .expect("pointer arg rules should be present")
+        .as_list()
+        .expect("pointer arg rules should be a list");
+    let timestamp_rule = pointer_arg_rules
+        .first()
+        .expect("timestamp kfunc should report a pointer arg rule")
+        .as_record()
+        .expect("pointer arg rule should be a record");
+    assert_eq!(
+        timestamp_rule
+            .get("fixed_size")
+            .expect("fixed size should be present")
+            .as_int()
+            .expect("fixed size should be an int"),
+        8
+    );
 
     let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
     assert!(spec_kfunc_calls(&tc).is_empty());
