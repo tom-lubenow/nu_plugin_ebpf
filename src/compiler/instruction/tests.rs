@@ -5469,6 +5469,35 @@ fn test_kfunc_signature_for_name_or_kernel_btf_uses_exact_btf_pointer_return() {
 }
 
 #[test]
+fn test_kfunc_arg_pointee_mismatch_uses_kernel_btf_fallback_pointer_arg() {
+    const KFUNC: &str = "bpf_xdp_get_xfrm_state";
+    if KfuncSignature::for_name(KFUNC).is_some() {
+        return;
+    }
+
+    let Ok(Some(crate::kernel_btf::TypeInfo::Ptr { target, .. })) =
+        crate::kernel_btf::KernelBtf::get().function_trampoline_arg_type_info(KFUNC, 0)
+    else {
+        return;
+    };
+    let crate::kernel_btf::TypeInfo::Struct { name, .. } = target.as_ref() else {
+        return;
+    };
+    if name != "xdp_md" {
+        return;
+    }
+
+    assert_eq!(
+        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("task_struct")),
+        Some("xdp_md".to_string())
+    );
+    assert_eq!(
+        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("xdp_md")),
+        None
+    );
+}
+
+#[test]
 fn test_kfunc_signature_for_name_or_kernel_btf_missing_symbol() {
     assert!(
         KfuncSignature::for_name_or_kernel_btf("__nu_plugin_ebpf_missing_kfunc_for_test__")

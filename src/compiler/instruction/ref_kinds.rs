@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel_btf::{KernelBtf, KfuncPointerRefFamily};
+use crate::kernel_btf::{KernelBtf, KfuncPointerRefFamily, TypeInfo};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[path = "ref_kinds/semantics.rs"]
@@ -129,13 +129,13 @@ pub fn kfunc_arg_pointee_mismatch(
     kfunc: &str,
     arg_idx: usize,
     pointee: &MirType,
-) -> Option<&'static str> {
+) -> Option<String> {
     if matches!(pointee, MirType::Unknown) {
         return None;
     }
 
     let offset_zero_field = || pointee.field_type_at_offset(0);
-    let matches_expected = match (kfunc, arg_idx) {
+    if let Some((matches_expected, expected)) = match (kfunc, arg_idx) {
         (
             "bpf_list_push_front_impl"
             | "bpf_list_push_back_impl"
@@ -144,17 +144,19 @@ pub fn kfunc_arg_pointee_mismatch(
             | "bpf_list_front"
             | "bpf_list_back",
             0,
-        ) => {
+        ) => Some((
             pointee.is_bpf_list_head_struct()
-                || offset_zero_field().is_some_and(MirType::is_bpf_list_head_struct)
-        }
-        ("bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first", 0) => {
+                || offset_zero_field().is_some_and(MirType::is_bpf_list_head_struct),
+            "bpf_list_head",
+        )),
+        ("bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first", 0) => Some((
             pointee.is_bpf_rb_root_struct()
-                || offset_zero_field().is_some_and(MirType::is_bpf_rb_root_struct)
-        }
+                || offset_zero_field().is_some_and(MirType::is_bpf_rb_root_struct),
+            "bpf_rb_root",
+        )),
         ("bpf_rbtree_remove", 1)
         | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => {
-            pointee.is_bpf_rb_node_struct()
+            Some((pointee.is_bpf_rb_node_struct(), "bpf_rb_node"))
         }
         (
             "bpf_res_spin_lock"
@@ -162,39 +164,56 @@ pub fn kfunc_arg_pointee_mismatch(
             | "bpf_res_spin_lock_irqsave"
             | "bpf_res_spin_unlock_irqrestore",
             0,
-        ) => {
+        ) => Some((
             pointee.is_bpf_res_spin_lock_struct()
-                || offset_zero_field().is_some_and(MirType::is_bpf_res_spin_lock_struct)
-        }
-        _ => return None,
-    };
-
-    if matches_expected {
-        None
-    } else {
-        Some(match (kfunc, arg_idx) {
-            (
-                "bpf_list_push_front_impl"
-                | "bpf_list_push_back_impl"
-                | "bpf_list_pop_front"
-                | "bpf_list_pop_back"
-                | "bpf_list_front"
-                | "bpf_list_back",
-                0,
-            ) => "bpf_list_head",
-            ("bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first", 0) => "bpf_rb_root",
-            ("bpf_rbtree_remove", 1)
-            | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => "bpf_rb_node",
-            (
-                "bpf_res_spin_lock"
-                | "bpf_res_spin_unlock"
-                | "bpf_res_spin_lock_irqsave"
-                | "bpf_res_spin_unlock_irqrestore",
-                0,
-            ) => "bpf_res_spin_lock",
-            _ => unreachable!(),
-        })
+                || offset_zero_field().is_some_and(MirType::is_bpf_res_spin_lock_struct),
+            "bpf_res_spin_lock",
+        )),
+        _ => None,
+    } {
+        return (!matches_expected).then(|| expected.to_string());
     }
+
+    kfunc_btf_arg_pointee_mismatch(kfunc, arg_idx, pointee)
+}
+
+fn kfunc_btf_arg_pointee_mismatch(
+    kfunc: &str,
+    arg_idx: usize,
+    pointee: &MirType,
+) -> Option<String> {
+    if KfuncSignature::for_name(kfunc).is_some() {
+        return None;
+    }
+
+    let expected = kfunc_btf_arg_struct_pointee_name(kfunc, arg_idx)?;
+    let actual = mir_struct_name(pointee)?;
+    (actual != expected).then_some(expected)
+}
+
+fn kfunc_btf_arg_struct_pointee_name(kfunc: &str, arg_idx: usize) -> Option<String> {
+    let type_info = KernelBtf::get()
+        .function_trampoline_arg_type_info(kfunc, arg_idx)
+        .ok()
+        .flatten()?;
+    let TypeInfo::Ptr { target, .. } = type_info else {
+        return None;
+    };
+    let TypeInfo::Struct { name, .. } = target.as_ref() else {
+        return None;
+    };
+    let name = name.strip_prefix("struct ").unwrap_or(name);
+    (!name.is_empty() && name != "<anonymous>").then(|| name.to_string())
+}
+
+fn mir_struct_name(ty: &MirType) -> Option<&str> {
+    let MirType::Struct {
+        name: Some(name), ..
+    } = ty
+    else {
+        return None;
+    };
+    Some(name.strip_prefix("struct ").unwrap_or(name))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

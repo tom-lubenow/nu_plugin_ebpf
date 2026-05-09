@@ -226,6 +226,9 @@ pub struct KernelBtf {
     raw_pointer_target_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
     /// Cached per-function trampoline layouts for BTF-backed tracing programs.
     trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
+    /// Cached exact kernel-BTF argument type info by function name and argument index.
+    function_arg_type_info_cache:
+        RwLock<HashMap<(String, usize), Result<Option<TypeInfo>, BtfError>>>,
     /// Cached exact kernel-BTF return type info by function name.
     function_ret_type_info_cache: RwLock<HashMap<String, Result<Option<TypeInfo>, BtfError>>>,
     /// Cached per-callback trampoline layouts for struct_ops callbacks.
@@ -355,6 +358,7 @@ impl KernelBtf {
                 raw_type_size_cache: RwLock::new(None),
                 raw_pointer_target_cache: RwLock::new(None),
                 trampoline_layout_cache: RwLock::new(HashMap::new()),
+                function_arg_type_info_cache: RwLock::new(HashMap::new()),
                 function_ret_type_info_cache: RwLock::new(HashMap::new()),
                 struct_ops_layout_cache: RwLock::new(HashMap::new()),
                 kfunc_nullable_arg_cache: RwLock::new(None),
@@ -582,6 +586,25 @@ impl KernelBtf {
     ///
     /// Returns `Ok(None)` when the function exists but does not have that argument.
     pub fn function_trampoline_arg_type_info(
+        &self,
+        function_name: &str,
+        arg_idx: usize,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        let key = (function_name.to_string(), arg_idx);
+        {
+            let cache = self.function_arg_type_info_cache.read().unwrap();
+            if let Some(cached) = cache.get(&key) {
+                return cached.clone();
+            }
+        }
+
+        let resolved = self.function_trampoline_arg_type_info_uncached(function_name, arg_idx);
+        let mut cache = self.function_arg_type_info_cache.write().unwrap();
+        cache.insert(key, resolved.clone());
+        resolved
+    }
+
+    fn function_trampoline_arg_type_info_uncached(
         &self,
         function_name: &str,
         arg_idx: usize,

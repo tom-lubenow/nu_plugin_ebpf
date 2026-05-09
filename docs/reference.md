@@ -729,9 +729,10 @@ through locals, and their fields can be projected when kernel BTF is available;
 for example, a null-checked `bpf_task_acquire` result can read `$task.pid`
 before releasing the reference. For kfuncs not yet present in the compiler's
 static table, kernel BTF can provide the fallback arity, pointer/scalar
-argument classes, and exact return type; pointer returns from that path can use
-the same BTF-backed field projection during local compilation, with live
-availability still left to the kernel verifier.
+argument classes, exact pointer-argument pointee checks for named struct
+targets, and exact return type; pointer returns from that path can use the same
+BTF-backed field projection during local compilation, with live availability
+still left to the kernel verifier.
 For raw object and graph kfuncs, operands that map to verifier-rewritten
 `__ign` metadata parameters must be known zero in source; the kernel replaces
 them during load with the appropriate BTF metadata when the call is valid.

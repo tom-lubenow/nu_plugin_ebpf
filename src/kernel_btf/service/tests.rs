@@ -10,6 +10,7 @@ fn make_test_service() -> KernelBtf {
         raw_type_size_cache: RwLock::new(None),
         raw_pointer_target_cache: RwLock::new(None),
         trampoline_layout_cache: RwLock::new(HashMap::new()),
+        function_arg_type_info_cache: RwLock::new(HashMap::new()),
         function_ret_type_info_cache: RwLock::new(HashMap::new()),
         struct_ops_layout_cache: RwLock::new(HashMap::new()),
         kfunc_nullable_arg_cache: RwLock::new(None),
