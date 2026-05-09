@@ -10022,6 +10022,45 @@ fn test_compile_bound_socket_helper_ctx_projection_program() {
 }
 
 #[test]
+fn test_compile_bound_socket_helper_pointer_field_projection_programs() {
+    let cases = [
+        (
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+            vec![string_member("sk"), string_member("tcp")],
+            vec![string_member("snd_cwnd")],
+            "bound cgroup_sockopt:get ctx.sk.tcp.snd_cwnd",
+        ),
+        (
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            vec![string_member("sk"), string_member("full")],
+            vec![string_member("family")],
+            "bound tc ctx.sk.full.family",
+        ),
+        (
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:egress",
+            vec![string_member("sk"), string_member("listener")],
+            vec![string_member("family")],
+            "bound cgroup_skb ctx.sk.listener.family",
+        ),
+    ];
+
+    for (program_type, target, binding_members, access_members, context) in cases {
+        let hir = make_bound_ctx_path_program(
+            CellPath {
+                members: binding_members,
+            },
+            CellPath {
+                members: access_members,
+            },
+        );
+        assert_attach_program_compiles(&hir, program_type, target, &HashMap::new(), context);
+    }
+}
+
+#[test]
 fn test_compile_sk_lookup_ctx_scalar_counter_programs() {
     for (field, context) in [
         ("family", "sk_lookup ctx.family count"),

@@ -3525,6 +3525,28 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let full = $ctx.sk.full'
+            '  if $full { $full.family | count }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_sk_fullsock" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  let listener = $ctx.sk.listener'
+            '  if $listener { $listener.family | count }'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_get_listener_sock" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "kprobe:sys_clone"
         program: [
             '{|ctx|'
@@ -6884,6 +6906,41 @@ const FIXTURES = [
             '    $tcp.snd_cwnd | count'
             '  }'
             '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-bound-full-helper-pointer"
+        category: "context-surface"
+        tags: [tc context alias source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let full = $ctx.sk.full'
+            '  if $full {'
+            '    $full.family | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-skb-bound-listener-helper-pointer"
+        category: "context-surface"
+        tags: [cgroup-skb context alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  let listener = $ctx.sk.listener'
+            '  if $listener {'
+            '    $listener.family | count'
+            '  }'
+            '  "pass"'
             '}'
         ]
         local: "accept"

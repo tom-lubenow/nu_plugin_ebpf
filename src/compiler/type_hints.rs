@@ -6,6 +6,7 @@ use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirType,
     MirTypeHints, MirValue, StackSlotId, StructField, VReg,
 };
+use crate::compiler::type_infer::TypeInference;
 use crate::kernel_btf::TypeInfo;
 
 fn pointer_hint(address_space: AddressSpace) -> MirType {
@@ -488,7 +489,12 @@ pub(crate) fn infer_instruction_def_type(
                 .then_some((*dst, first, false))
         }
         MirInst::CallHelper { dst, helper, args } => {
-            storage_get_helper_return_type(*helper, args, hints).map(|ty| (*dst, ty, true))
+            storage_get_helper_return_type(*helper, args, hints)
+                .or_else(|| {
+                    BpfHelper::from_u32(*helper)
+                        .and_then(TypeInference::precise_helper_return_mir_type)
+                })
+                .map(|ty| (*dst, ty, true))
         }
         _ => None,
     }
@@ -820,6 +826,58 @@ mod tests {
         };
         assert_eq!(hints.get(&v0), Some(&expected));
         assert_eq!(hints.get(&v1), Some(&expected));
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_recovers_precise_helper_return_copy() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let helper_dst = func.alloc_vreg();
+        let merged_ptr = func.alloc_vreg();
+        let field_ptr = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::CallHelper {
+            dst: helper_dst,
+            helper: BpfHelper::SkFullsock as u32,
+            args: vec![MirValue::VReg(VReg(99))],
+        });
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: merged_ptr,
+            src: MirValue::VReg(helper_dst),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: field_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(merged_ptr),
+            rhs: MirValue::Const(4),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(field_ptr)),
+        };
+
+        let field_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U32),
+            address_space: AddressSpace::Kernel,
+        };
+        let mut hints = HashMap::from([(field_ptr, field_ty.clone())]);
+
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        let sock_ty = MirType::Ptr {
+            pointee: Box::new(crate::compiler::ctx_field_schema::synthetic_bpf_sock_type()),
+            address_space: AddressSpace::Kernel,
+        };
+        assert_eq!(hints.get(&helper_dst), Some(&sock_ty));
+        assert_eq!(hints.get(&merged_ptr), Some(&sock_ty));
+        assert_eq!(hints.get(&field_ptr), Some(&field_ty));
     }
 
     #[test]

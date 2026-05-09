@@ -486,13 +486,12 @@ impl<'a> HirToMirLowering<'a> {
         let src_ptr_vreg = if read_offset_bytes == 0 {
             ptr_vreg
         } else {
-            let ptr_ty = self
-                .vreg_type_hints
-                .get(&ptr_vreg)
-                .cloned()
-                .unwrap_or_else(|| Self::trampoline_pointer_type(address_space));
+            let ptr_ty = MirType::Ptr {
+                pointee: Box::new(slot_ty.clone()),
+                address_space,
+            };
             let field_ptr_vreg = self.func.alloc_vreg();
-            self.vreg_type_hints.insert(field_ptr_vreg, ptr_ty.clone());
+            self.vreg_type_hints.insert(field_ptr_vreg, ptr_ty);
             let field_offset = i64::from(Self::trampoline_projection_offset_i32(
                 read_offset_bytes,
                 path_desc,

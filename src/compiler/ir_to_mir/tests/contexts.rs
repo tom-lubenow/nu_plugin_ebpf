@@ -825,6 +825,100 @@ fn test_lower_bound_ctx_sk_tcp_pointer_allows_field_projection() {
 }
 
 #[test]
+fn test_lower_bound_ctx_sk_full_pointer_allows_field_projection() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("sk"), string_member("full")],
+        },
+        CellPath {
+            members: vec![string_member("family")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound bare ctx.sk.full pointer field projection should lower");
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("bound bare ctx.sk.full pointer field projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirements = program.helper_compatibility_requirements();
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SkFullsock),
+        "bound bare ctx.sk.full pointer should report bpf_sk_fullsock compatibility"
+    );
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "bound bare ctx.sk.full field read should report probe_read_kernel compatibility"
+    );
+}
+
+#[test]
+fn test_lower_bound_ctx_sk_listener_pointer_allows_field_projection() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("sk"), string_member("listener")],
+        },
+        CellPath {
+            members: vec![string_member("family")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound bare ctx.sk.listener pointer field projection should lower");
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("bound bare ctx.sk.listener pointer field projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSkb,
+        "/sys/fs/cgroup:egress",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirements = program.helper_compatibility_requirements();
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::GetListenerSock),
+        "bound bare ctx.sk.listener pointer should report bpf_get_listener_sock compatibility"
+    );
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "bound bare ctx.sk.listener field read should report probe_read_kernel compatibility"
+    );
+}
+
+#[test]
 fn test_lower_sk_lookup_ctx_sk_tcp_projection_rejected() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![
