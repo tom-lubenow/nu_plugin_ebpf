@@ -284,6 +284,9 @@ payload. Other simple single-pointer iterator contexts expose their
 kernel-native roots: `$ctx.dmabuf`, `$ctx.rt`, `$ctx.kmem_cache`, `$ctx.ksym`,
 and `$ctx.netlink_sk` for `iter:dmabuf`, `iter:ipv6_route`,
 `iter:kmem_cache`, `iter:ksym`, and `iter:netlink`, respectively.
+BTF-backed iterator roots can be bound to locals before projection, for example
+`let meta = $ctx.iter_meta; $meta.seq_num` or
+`if $ctx.iter_task { $ctx.iter_task.pid | count }`.
 `$ctx.current_task` and `$ctx.current_cgroup` remain reserved for helper-backed
 current-task semantics on task-aware tracing families. Iterator seq-file output
 helpers are modeled for explicit escape-hatch use: `helper-call "bpf_seq_write"

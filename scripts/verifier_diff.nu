@@ -3724,6 +3724,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["ctx:pkt_type" "ctx:queue_mapping" "ctx:vlan_present" "ctx:vlan_tci" "ctx:vlan_proto" "ctx:hash_recalc" "ctx:csum_level" "ctx:cgroup_classid" "ctx:route_realm" "ctx:cb" "helper:bpf_get_hash_recalc" "helper:bpf_csum_level" "helper:bpf_get_cgroup_classid" "helper:bpf_get_route_realm"]
     }
+    {
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let meta = $ctx.iter_meta'
+            '  $meta.seq_num | count'
+            '  if $ctx.iter_task { $ctx.iter_task.pid | count }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:iter_meta" "ctx:iter_task" "helper:bpf_probe_read_kernel"]
+    }
 ]
 
 const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
@@ -7603,6 +7615,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.meta.seq_num | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "iter-task-alias-btf-fields"
+        category: "context-surface"
+        tags: [iter context alias btf kernel-btf source metadata]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let meta = $ctx.iter_meta'
+            '  $meta.seq_num | count'
+            '  if $ctx.iter_task { $ctx.iter_task.pid | count }'
             '  0'
             '}'
         ]
@@ -12552,7 +12581,55 @@ def line-assigns-context-field? [line: string context_names fields] {
     false
 }
 
+def iter-btf-context-projection-root? [root: string] {
+    $root in [
+        "meta"
+        "iter_meta"
+        "task"
+        "iter_task"
+        "file"
+        "iter_file"
+        "vma"
+        "iter_vma"
+        "cgroup"
+        "iter_cgroup"
+        "map"
+        "iter_map"
+        "prog"
+        "iter_prog"
+        "link"
+        "iter_link"
+        "sk_common"
+        "sock_common"
+        "iter_sk_common"
+        "udp_sk"
+        "iter_udp_sk"
+        "unix_sk"
+        "iter_unix_sk"
+        "rt"
+        "route"
+        "ipv6_route"
+        "iter_ipv6_route"
+        "cache"
+        "kmem_cache"
+        "iter_kmem_cache"
+        "ksym"
+        "iter_ksym"
+        "netlink_sk"
+        "iter_netlink_sk"
+        "dmabuf"
+        "iter_dmabuf"
+        "sk"
+        "sock"
+        "iter_sock"
+    ]
+}
+
 def context-projection-root? [root: string] {
+    if (iter-btf-context-projection-root? $root) {
+        return true
+    }
+
     $root in [
         "sk"
         "migrating_sk"
@@ -12662,15 +12739,6 @@ def tracepoint-built-in-context-field? [field: string] {
     ]
 }
 
-def normalize-context-projection-token [token: string] {
-    let parts = (context-projection-parts $token)
-    if ($parts | length) < 2 {
-        return null
-    }
-
-    $parts | get 1
-}
-
 def bpf-sock-projection-context-field [member: string] {
     if $member == "bound_dev_if" {
         return "bound_dev_if"
@@ -12719,25 +12787,35 @@ def bpf-sock-projection-context-field [member: string] {
 }
 
 def context-projection-kernel-feature [raw_access: string target] {
-    let member = (normalize-context-projection-token $raw_access)
-    if $member == null {
+    let parts = (context-projection-parts $raw_access)
+    if ($parts | length) < 2 {
         return null
     }
+    let root = ($parts | first)
+    let member = ($parts | get 1)
+    let target_text = ($target | default "")
+    let socket_projection_root = (
+        ($root in ["sk" "migrating_sk" "migrating_socket"])
+        and not ($target_text | str starts-with "iter:")
+    )
 
-    if $member == "cgroup_id" {
+    if $socket_projection_root and $member == "cgroup_id" {
         return $KERNEL_FEATURE_BPF_SK_CGROUP_ID
     }
-    if $member == "ancestor_cgroup_id" {
+    if $socket_projection_root and $member == "ancestor_cgroup_id" {
         return $KERNEL_FEATURE_BPF_SK_ANCESTOR_CGROUP_ID
     }
-    if ($member in ["tcp" "tcp_sock"]) {
+    if $socket_projection_root and ($member in ["tcp" "tcp_sock"]) {
         return $KERNEL_FEATURE_BPF_TCP_SOCK
     }
-    if ($member in ["full" "fullsock" "full_sock"]) {
+    if $socket_projection_root and ($member in ["full" "fullsock" "full_sock"]) {
         return $KERNEL_FEATURE_BPF_SK_FULLSOCK
     }
-    if $member == "listener" {
+    if $socket_projection_root and $member == "listener" {
         return $KERNEL_FEATURE_BPF_GET_LISTENER_SOCK
+    }
+    if not $socket_projection_root {
+        return null
     }
 
     let field = (bpf-sock-projection-context-field $member)
@@ -12765,6 +12843,9 @@ def trusted-btf-projection-kernel-read? [parts target] {
     let root = ($parts | first)
     let first_member = ($parts | get 1)
 
+    if ($target_text | str starts-with "iter:") and (iter-btf-context-projection-root? $root) {
+        return true
+    }
     if $root in ["current_task" "current_cgroup"] {
         return true
     }
