@@ -226,6 +226,8 @@ pub struct KernelBtf {
     raw_pointer_target_cache: RwLock<Option<Result<HashMap<u32, u32>, BtfError>>>,
     /// Cached per-function trampoline layouts for BTF-backed tracing programs.
     trampoline_layout_cache: RwLock<HashMap<String, Result<TrampolineFunctionLayout, BtfError>>>,
+    /// Cached exact kernel-BTF return type info by function name.
+    function_ret_type_info_cache: RwLock<HashMap<String, Result<Option<TypeInfo>, BtfError>>>,
     /// Cached per-callback trampoline layouts for struct_ops callbacks.
     struct_ops_layout_cache:
         RwLock<HashMap<(String, String), Result<TrampolineFunctionLayout, BtfError>>>,
@@ -353,6 +355,7 @@ impl KernelBtf {
                 raw_type_size_cache: RwLock::new(None),
                 raw_pointer_target_cache: RwLock::new(None),
                 trampoline_layout_cache: RwLock::new(HashMap::new()),
+                function_ret_type_info_cache: RwLock::new(HashMap::new()),
                 struct_ops_layout_cache: RwLock::new(HashMap::new()),
                 kfunc_nullable_arg_cache: RwLock::new(None),
                 kfunc_const_pointer_arg_cache: RwLock::new(None),
@@ -947,6 +950,23 @@ impl KernelBtf {
     ///
     /// Returns `Ok(None)` when the function returns `void`.
     pub fn function_trampoline_ret_type_info(
+        &self,
+        function_name: &str,
+    ) -> Result<Option<TypeInfo>, BtfError> {
+        {
+            let cache = self.function_ret_type_info_cache.read().unwrap();
+            if let Some(cached) = cache.get(function_name) {
+                return cached.clone();
+            }
+        }
+
+        let resolved = self.function_trampoline_ret_type_info_uncached(function_name);
+        let mut cache = self.function_ret_type_info_cache.write().unwrap();
+        cache.insert(function_name.to_string(), resolved.clone());
+        resolved
+    }
+
+    fn function_trampoline_ret_type_info_uncached(
         &self,
         function_name: &str,
     ) -> Result<Option<TypeInfo>, BtfError> {
