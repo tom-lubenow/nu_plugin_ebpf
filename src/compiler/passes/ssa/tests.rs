@@ -1,5 +1,7 @@
 use super::*;
-use crate::compiler::mir::{AddressSpace, BinOpKind, MirType, MirValue, StackSlotKind};
+use crate::compiler::mir::{
+    AddressSpace, BinOpKind, MapKind, MapRef, MirType, MirValue, StackSlotKind, StructField,
+};
 
 fn make_diamond_function() -> MirFunction {
     // bb0: v0 = 1; branch v0 -> bb1, bb2
@@ -252,6 +254,82 @@ fn test_construct_ssa_with_type_hints_preserves_per_definition_types() {
     assert_eq!(ssa_hints.get(&first_copy_dst), Some(&expected_ptr));
     assert_eq!(ssa_hints.get(&copied_use_dst), Some(&expected_ptr));
     assert_eq!(ssa_hints.get(&load_slot_dst), Some(&MirType::U32));
+}
+
+#[test]
+fn test_construct_ssa_with_type_hints_recovers_struct_field_pointer_math() {
+    let mut func = MirFunction::new();
+    let bb0 = func.alloc_block();
+    func.entry = bb0;
+
+    let reused = func.alloc_vreg();
+    let map_ref = MapRef {
+        name: "graph_items".to_string(),
+        kind: MapKind::Hash,
+    };
+    let value_ty = MirType::Struct {
+        name: Some("graph_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "root".to_string(),
+                ty: MirType::bpf_list_head_root_struct("node_data", "node"),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "lock".to_string(),
+                ty: MirType::bpf_spin_lock_struct(),
+                offset: 16,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+
+    func.block_mut(bb0).instructions.push(MirInst::MapLookup {
+        dst: reused,
+        map: map_ref.clone(),
+        key: VReg(99),
+    });
+    func.block_mut(bb0).instructions.push(MirInst::BinOp {
+        dst: reused,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(reused),
+        rhs: MirValue::Const(16),
+    });
+    func.block_mut(bb0).instructions.push(MirInst::Copy {
+        dst: reused,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(bb0).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(reused)),
+    };
+
+    let cfg = CFG::build(&func);
+    let (changed, ssa_hints) = construct_ssa_with_type_hints(
+        &mut func,
+        &cfg,
+        None,
+        &HashMap::from([(reused, MirType::I64)]),
+        &HashMap::new(),
+        &HashMap::from([(map_ref, value_ty)]),
+    );
+
+    assert!(changed);
+
+    let field_ptr = match &func.block(bb0).instructions[1] {
+        MirInst::BinOp { dst, .. } => *dst,
+        inst => panic!("expected field pointer binop, got {inst:?}"),
+    };
+    assert_eq!(
+        ssa_hints.get(&field_ptr),
+        Some(&MirType::Ptr {
+            pointee: Box::new(MirType::bpf_spin_lock_struct()),
+            address_space: AddressSpace::Map,
+        })
+    );
 }
 
 #[test]

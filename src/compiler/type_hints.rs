@@ -198,7 +198,7 @@ fn recover_ctx_field_hint(
     }
 }
 
-fn recover_pointer_arith_result_hint(ty: &MirType) -> MirType {
+fn recover_pointer_arith_result_hint(ty: &MirType, offset: Option<i64>) -> MirType {
     match ty {
         MirType::Ptr {
             pointee,
@@ -208,6 +208,18 @@ fn recover_pointer_arith_result_hint(ty: &MirType) -> MirType {
                 pointee: Box::new(elem.as_ref().clone()),
                 address_space: *address_space,
             },
+            MirType::Struct { fields, .. } => offset
+                .and_then(|offset| usize::try_from(offset).ok())
+                .and_then(|offset| {
+                    fields
+                        .iter()
+                        .find(|field| !field.synthetic && field.offset == offset)
+                        .map(|field| MirType::Ptr {
+                            pointee: Box::new(field.ty.clone()),
+                            address_space: *address_space,
+                        })
+                })
+                .unwrap_or_else(|| ty.clone()),
             _ => ty.clone(),
         },
         _ => ty.clone(),
@@ -443,12 +455,25 @@ pub(crate) fn infer_instruction_def_type(
             };
             lhs_ptr
                 .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                .map(recover_pointer_arith_result_hint)
+                .map(|ty| {
+                    let offset = match (op, rhs) {
+                        (BinOpKind::Add, MirValue::Const(offset)) => Some(*offset),
+                        (BinOpKind::Sub, MirValue::Const(offset)) => offset.checked_neg(),
+                        _ => None,
+                    };
+                    recover_pointer_arith_result_hint(ty, offset)
+                })
                 .or_else(|| {
                     if matches!(op, BinOpKind::Add) {
                         rhs_ptr
                             .filter(|ty| matches!(ty, MirType::Ptr { .. }))
-                            .map(recover_pointer_arith_result_hint)
+                            .map(|ty| {
+                                let offset = match lhs {
+                                    MirValue::Const(offset) => Some(*offset),
+                                    _ => None,
+                                };
+                                recover_pointer_arith_result_hint(ty, offset)
+                            })
                     } else {
                         None
                     }
@@ -980,6 +1005,78 @@ mod tests {
             Some(&MirType::Ptr {
                 pointee: Box::new(MirType::I64),
                 address_space: AddressSpace::Stack,
+            })
+        );
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_for_struct_field_pointer_math() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let base_ptr = func.alloc_vreg();
+        let field_ptr = func.alloc_vreg();
+        let value_ty = MirType::Struct {
+            name: Some("graph_value".to_string()),
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "root".to_string(),
+                    ty: MirType::bpf_list_head_root_struct("node_data", "node"),
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "lock".to_string(),
+                    ty: MirType::bpf_spin_lock_struct(),
+                    offset: 16,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        };
+
+        func.block_mut(bb0).instructions.push(MirInst::MapLookup {
+            dst: base_ptr,
+            map: MapRef {
+                name: "graph_items".to_string(),
+                kind: MapKind::Hash,
+            },
+            key: VReg(99),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: field_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(base_ptr),
+            rhs: MirValue::Const(16),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(field_ptr)),
+        };
+
+        let mut hints = HashMap::new();
+        let map_value_types = HashMap::from([(
+            MapRef {
+                name: "graph_items".to_string(),
+                kind: MapKind::Hash,
+            },
+            value_ty,
+        )]);
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &map_value_types,
+        );
+
+        assert_eq!(
+            hints.get(&field_ptr),
+            Some(&MirType::Ptr {
+                pointee: Box::new(MirType::bpf_spin_lock_struct()),
+                address_space: AddressSpace::Map,
             })
         );
     }
