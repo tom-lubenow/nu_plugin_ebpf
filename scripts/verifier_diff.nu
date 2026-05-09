@@ -3514,6 +3514,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let tcp = $ctx.sk.tcp'
+            '  if $tcp { $tcp.snd_cwnd | count }'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "kprobe:sys_clone"
         program: [
             '{|ctx|'
@@ -6854,6 +6865,24 @@ const FIXTURES = [
             '{|ctx|'
             '  let sk = ($ctx.sk)'
             '  $sk.tcp.snd_cwnd | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-bound-tcp-helper-pointer"
+        category: "context-surface"
+        tags: [cgroup-sockopt context alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let tcp = $ctx.sk.tcp'
+            '  if $tcp {'
+            '    $tcp.snd_cwnd | count'
+            '  }'
             '  "allow"'
             '}'
         ]

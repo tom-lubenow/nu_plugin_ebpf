@@ -721,13 +721,13 @@ fn test_lower_kprobe_ctx_task_pt_regs_arg_projection_calls_helper() {
 }
 
 #[test]
-fn test_lower_ctx_sk_tcp_projection_rejects_missing_metric() {
+fn test_lower_ctx_sk_tcp_projection_returns_nullable_helper_pointer() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("tcp")],
     });
     let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &HashMap::new(),
@@ -735,11 +735,92 @@ fn test_lower_ctx_sk_tcp_projection_rejects_missing_metric() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bare ctx.sk.tcp should be rejected");
+    .expect("bare ctx.sk.tcp should lower to a nullable bpf_tcp_sock pointer");
 
     assert!(
-        err.to_string()
-            .contains("requires a socket field after ctx.sk.tcp")
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::TcpSock as u32 && args.len() == 1
+            ))),
+        "bare socket helper projection should call bpf_tcp_sock"
+    );
+    let return_vreg = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => Some(vreg),
+            _ => None,
+        })
+        .expect("bare socket helper projection should return a vreg");
+    assert!(
+        matches!(
+            result.type_hints.main.get(&return_vreg),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            }) if matches!(pointee.as_ref(), MirType::Struct { name: Some(name), .. } if name == "bpf_tcp_sock")
+        ),
+        "bare socket helper projection should preserve the helper-returned pointer type"
+    );
+}
+
+#[test]
+fn test_lower_bound_ctx_sk_tcp_pointer_allows_field_projection() {
+    let hir = make_bound_ctx_path_program(
+        CellPath {
+            members: vec![string_member("sk"), string_member("tcp")],
+        },
+        CellPath {
+            members: vec![string_member("snd_cwnd")],
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound bare ctx.sk.tcp pointer field projection should lower");
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("bound bare ctx.sk.tcp pointer field projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSockopt,
+        "/sys/fs/cgroup:get",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirements = program.helper_compatibility_requirements();
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::TcpSock),
+        "bound bare ctx.sk.tcp pointer should report bpf_tcp_sock compatibility"
+    );
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "bound bare ctx.sk.tcp field read should report probe_read_kernel compatibility"
     );
 }
 

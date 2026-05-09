@@ -152,7 +152,6 @@ impl<'a> HirToMirLowering<'a> {
                     if val == "tcp" || val == "tcp_sock" =>
                 {
                     Some((
-                        "ctx.sk.tcp",
                         BpfHelper::TcpSock,
                         MirType::Ptr {
                             pointee: Box::new(synthetic_bpf_tcp_sock_type()),
@@ -165,7 +164,6 @@ impl<'a> HirToMirLowering<'a> {
                     if val == "full" || val == "fullsock" || val == "full_sock" =>
                 {
                     Some((
-                        "ctx.sk.full",
                         BpfHelper::SkFullsock,
                         MirType::Ptr {
                             pointee: Box::new(synthetic_bpf_sock_type()),
@@ -175,7 +173,6 @@ impl<'a> HirToMirLowering<'a> {
                     ))
                 }
                 [PathMember::String { val, .. }, rest @ ..] if val == "listener" => Some((
-                    "ctx.sk.listener",
                     BpfHelper::GetListenerSock,
                     MirType::Ptr {
                         pointee: Box::new(synthetic_bpf_sock_type()),
@@ -189,18 +186,10 @@ impl<'a> HirToMirLowering<'a> {
             None
         };
 
-        let Some((projection_name, helper, helper_ret_ty, field_members)) =
-            socket_helper_projection
-        else {
+        let Some((helper, helper_ret_ty, field_members)) = socket_helper_projection else {
             return Ok(None);
         };
 
-        if field_members.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "typed field path '{}' requires a socket field after {}, e.g. {}.family",
-                path_desc, projection_name, projection_name
-            )));
-        }
         if let Some(message) = self.probe_ctx.and_then(|ctx| ctx.helper_call_error(helper)) {
             return Err(CompileError::UnsupportedInstruction(message));
         }
@@ -225,6 +214,18 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = helper_block;
+        if field_members.is_empty() {
+            self.vreg_type_hints.insert(dst_vreg, helper_ret_ty.clone());
+            self.emit(MirInst::CallHelper {
+                dst: dst_vreg,
+                helper: helper as u32,
+                args: vec![MirValue::VReg(base_vreg)],
+            });
+            self.terminate(MirInst::Jump { target: join_block });
+            self.current_block = join_block;
+            return Ok(Some(helper_ret_ty));
+        }
+
         let helper_ret_vreg = self.func.alloc_vreg();
         self.vreg_type_hints
             .insert(helper_ret_vreg, helper_ret_ty.clone());

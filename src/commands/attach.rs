@@ -585,7 +585,8 @@ Context parameter syntax (recommended):
     After `adjust-message --pull`, reload `ctx.data` and `ctx.data_end`
     before reading packet bytes again. Socket helper-backed projections are
     available through ordinary `ctx.sk.full.<field>`, `ctx.sk.listener.<field>`,
-    and `ctx.sk.tcp.<field>` paths when the corresponding helper is valid.
+    and `ctx.sk.tcp.<field>` paths when the corresponding helper is valid; the
+    helper-returned pointer can also be bound and used for truthiness.
 
   sk_skb fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID
