@@ -47,6 +47,8 @@ pub fn kfunc_allowed_while_lock_held(kfunc: &str) -> bool {
             | "bpf_list_push_back_impl"
             | "bpf_list_pop_front"
             | "bpf_list_pop_back"
+            | "bpf_list_front"
+            | "bpf_list_back"
             | "bpf_rbtree_add_impl"
             | "bpf_rbtree_remove"
             | "bpf_rbtree_first"
@@ -58,6 +60,21 @@ pub fn kfunc_allowed_while_lock_held(kfunc: &str) -> bool {
             | "bpf_res_spin_unlock"
             | "bpf_res_spin_lock_irqsave"
             | "bpf_res_spin_unlock_irqrestore"
+    )
+}
+
+pub fn kfunc_requires_bpf_spin_lock_held(kfunc: &str) -> bool {
+    matches!(
+        kfunc,
+        "bpf_list_push_front_impl"
+            | "bpf_list_push_back_impl"
+            | "bpf_list_pop_front"
+            | "bpf_list_pop_back"
+            | "bpf_list_front"
+            | "bpf_list_back"
+            | "bpf_rbtree_add_impl"
+            | "bpf_rbtree_remove"
+            | "bpf_rbtree_first"
     )
 }
 

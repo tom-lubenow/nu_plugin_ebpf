@@ -1,6 +1,43 @@
 use super::*;
 use crate::compiler::ProbeContext;
 
+fn push_bpf_spin_lock_call(func: &mut MirFunction, block: BlockId, dst: VReg, lock: VReg) {
+    func.block_mut(block)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SpinLock as u32,
+            args: vec![MirValue::VReg(lock)],
+        });
+}
+
+fn push_bpf_spin_unlock_call(func: &mut MirFunction, block: BlockId, dst: VReg, lock: VReg) {
+    func.block_mut(block)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SpinUnlock as u32,
+            args: vec![MirValue::VReg(lock)],
+        });
+}
+
+fn insert_bpf_spin_lock_types(
+    types: &mut HashMap<VReg, MirType>,
+    lock: VReg,
+    lock_ret: VReg,
+    unlock_ret: VReg,
+) {
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_spin_lock_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_sched_ext_dispatch_only_kfunc_rejected_in_select_cpu() {
     let mut func = MirFunction::new();
@@ -587,6 +624,49 @@ fn test_kfunc_list_push_front_requires_graph_root_space() {
         err.iter().any(|e| e
             .message
             .contains("kfunc bpf_list root expects pointer in [Map, Kernel]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_list_front_requires_bpf_spin_lock_held() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let root = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_list_front".to_string(),
+        btf_id: None,
+        args: vec![root],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        root,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_head_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        dst,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected missing bpf_spin_lock error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires bpf_spin_lock to be held for graph root")),
         "unexpected errors: {:?}",
         err
     );
@@ -9883,15 +9963,19 @@ fn test_kfunc_list_push_front_consumes_object_reference() {
     let push = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
-    func.param_count = 1;
+    func.param_count = 2;
 
     let list = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
     let off = func.alloc_vreg();
     let type_id = func.alloc_vreg();
     let obj = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
     let push_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: meta,
@@ -9923,12 +10007,14 @@ fn test_kfunc_list_push_front_consumes_object_reference() {
         if_false: done,
     };
 
+    push_bpf_spin_lock_call(&mut func, push, lock_ret, lock);
     func.block_mut(push).instructions.push(MirInst::CallKfunc {
         dst: push_ret,
         kfunc: "bpf_list_push_front_impl".to_string(),
         btf_id: None,
         args: vec![list, obj, meta, off],
     });
+    push_bpf_spin_unlock_call(&mut func, push, unlock_ret, lock);
     func.block_mut(push).terminator = MirInst::Return { val: None };
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -9952,6 +10038,7 @@ fn test_kfunc_list_push_front_consumes_object_reference() {
     );
     types.insert(cond, MirType::Bool);
     types.insert(push_ret, MirType::I64);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
 
     verify_mir(&func, &types).expect("expected list_push_front to consume object reference");
 }
@@ -10062,24 +10149,30 @@ fn test_kfunc_list_pop_front_acquires_object_reference() {
     let release = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
-    func.param_count = 1;
+    func.param_count = 2;
 
     let list = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
     let popped = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
     let release_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: meta,
         src: MirValue::Const(0),
     });
+    push_bpf_spin_lock_call(&mut func, entry, lock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: popped,
         kfunc: "bpf_list_pop_front".to_string(),
         btf_id: None,
         args: vec![list],
     });
+    push_bpf_spin_unlock_call(&mut func, entry, unlock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: cond,
         op: BinOpKind::Ne,
@@ -10120,6 +10213,7 @@ fn test_kfunc_list_pop_front_acquires_object_reference() {
         },
     );
     types.insert(cond, MirType::Bool);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
     types.insert(release_ret, MirType::I64);
 
     verify_mir(&func, &types).expect("expected list_pop_front object release to verify");
@@ -10132,15 +10226,19 @@ fn test_kfunc_list_push_back_consumes_object_reference() {
     let push = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
-    func.param_count = 1;
+    func.param_count = 2;
 
     let list = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
     let off = func.alloc_vreg();
     let type_id = func.alloc_vreg();
     let obj = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
     let push_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: meta,
@@ -10172,12 +10270,14 @@ fn test_kfunc_list_push_back_consumes_object_reference() {
         if_false: done,
     };
 
+    push_bpf_spin_lock_call(&mut func, push, lock_ret, lock);
     func.block_mut(push).instructions.push(MirInst::CallKfunc {
         dst: push_ret,
         kfunc: "bpf_list_push_back_impl".to_string(),
         btf_id: None,
         args: vec![list, obj, meta, off],
     });
+    push_bpf_spin_unlock_call(&mut func, push, unlock_ret, lock);
     func.block_mut(push).terminator = MirInst::Return { val: None };
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -10201,6 +10301,7 @@ fn test_kfunc_list_push_back_consumes_object_reference() {
     );
     types.insert(cond, MirType::Bool);
     types.insert(push_ret, MirType::I64);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
 
     verify_mir(&func, &types).expect("expected list_push_back to consume object reference");
 }
@@ -10311,24 +10412,30 @@ fn test_kfunc_list_pop_back_acquires_object_reference() {
     let release = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
-    func.param_count = 1;
+    func.param_count = 2;
 
     let list = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
     let popped = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
     let release_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: meta,
         src: MirValue::Const(0),
     });
+    push_bpf_spin_lock_call(&mut func, entry, lock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: popped,
         kfunc: "bpf_list_pop_back".to_string(),
         btf_id: None,
         args: vec![list],
     });
+    push_bpf_spin_unlock_call(&mut func, entry, unlock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: cond,
         op: BinOpKind::Ne,
@@ -10369,6 +10476,7 @@ fn test_kfunc_list_pop_back_acquires_object_reference() {
         },
     );
     types.insert(cond, MirType::Bool);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
     types.insert(release_ret, MirType::I64);
 
     verify_mir(&func, &types).expect("expected list_pop_back object release to verify");
@@ -10381,16 +10489,20 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
     let add = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
-    func.param_count = 1;
+    func.param_count = 2;
 
     let tree = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
     let off = func.alloc_vreg();
     let less = func.alloc_vreg();
     let type_id = func.alloc_vreg();
     let obj = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
     let add_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: meta,
@@ -10428,12 +10540,14 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
         if_false: done,
     };
 
+    push_bpf_spin_lock_call(&mut func, add, lock_ret, lock);
     func.block_mut(add).instructions.push(MirInst::CallKfunc {
         dst: add_ret,
         kfunc: "bpf_rbtree_add_impl".to_string(),
         btf_id: None,
         args: vec![tree, obj, less, meta, off],
     });
+    push_bpf_spin_unlock_call(&mut func, add, unlock_ret, lock);
     func.block_mut(add).terminator = MirInst::Return { val: None };
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
@@ -10473,6 +10587,7 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
     );
     types.insert(cond, MirType::Bool);
     types.insert(add_ret, MirType::I64);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
 
     verify_mir(&func, &types).expect("expected rbtree_add to consume object reference");
 }
@@ -10606,25 +10721,31 @@ fn test_kfunc_rbtree_remove_acquires_object_reference() {
     let release = func.alloc_block();
     let done = func.alloc_block();
     func.entry = entry;
-    func.param_count = 2;
+    func.param_count = 3;
 
     let tree = func.alloc_vreg();
     let node = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
     let removed = func.alloc_vreg();
     let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
     let release_ret = func.alloc_vreg();
 
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: meta,
         src: MirValue::Const(0),
     });
+    push_bpf_spin_lock_call(&mut func, entry, lock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: removed,
         kfunc: "bpf_rbtree_remove".to_string(),
         btf_id: None,
         args: vec![tree, node],
     });
+    push_bpf_spin_unlock_call(&mut func, entry, unlock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: cond,
         op: BinOpKind::Ne,
@@ -10672,6 +10793,7 @@ fn test_kfunc_rbtree_remove_acquires_object_reference() {
         },
     );
     types.insert(cond, MirType::Bool);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
     types.insert(release_ret, MirType::I64);
 
     verify_mir(&func, &types).expect("expected rbtree_remove object release to verify");
@@ -11567,16 +11689,22 @@ fn test_kfunc_list_front_accepts_offset_zero_enclosing_root_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
-    func.param_count = 1;
+    func.param_count = 2;
 
     let root = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
+    let lock_ret = func.alloc_vreg();
     let dst = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    push_bpf_spin_lock_call(&mut func, entry, lock_ret, lock);
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst,
         kfunc: "bpf_list_front".to_string(),
         btf_id: None,
         args: vec![root],
     });
+    push_bpf_spin_unlock_call(&mut func, entry, unlock_ret, lock);
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let enclosing_root = MirType::Struct {
@@ -11615,6 +11743,7 @@ fn test_kfunc_list_front_accepts_offset_zero_enclosing_root_pointer() {
             address_space: AddressSpace::Kernel,
         },
     );
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
 
     verify_mir(&func, &types).expect("expected offset-zero list root pointer to verify");
 }

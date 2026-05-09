@@ -33,6 +33,7 @@ use crate::compiler::instruction::{
     kfunc_pointer_arg_requires_user as kfunc_pointer_arg_requires_user_shared,
     kfunc_pointer_arg_size_from_scalar as kfunc_pointer_arg_size_from_scalar_shared,
     kfunc_ref_kind_from_bpf_type_name, kfunc_release_ref_arg_index, kfunc_release_ref_kind,
+    kfunc_requires_bpf_spin_lock_held,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
     kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
     kfunc_scalar_arg_requires_zero as kfunc_scalar_arg_requires_zero_shared, kfunc_semantics,
@@ -373,6 +374,9 @@ pub enum VccInst {
     },
     KernelLockRejectIfHeld {
         call: String,
+    },
+    BpfSpinLockRequireHeld {
+        message: String,
     },
     ResSpinLockIrqsaveAcquire {
         lock: VccReg,

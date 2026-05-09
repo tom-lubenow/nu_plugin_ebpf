@@ -6038,6 +6038,8 @@ fn test_kfunc_allowed_while_lock_held_matches_kernel_allowlist() {
         "bpf_list_push_back_impl",
         "bpf_list_pop_front",
         "bpf_list_pop_back",
+        "bpf_list_front",
+        "bpf_list_back",
         "bpf_rbtree_add_impl",
         "bpf_rbtree_remove",
         "bpf_rbtree_first",
@@ -6057,8 +6059,6 @@ fn test_kfunc_allowed_while_lock_held_matches_kernel_allowlist() {
     }
 
     for kfunc in [
-        "bpf_list_front",
-        "bpf_list_back",
         "bpf_rbtree_root",
         "bpf_rbtree_left",
         "bpf_rbtree_right",
@@ -6070,6 +6070,41 @@ fn test_kfunc_allowed_while_lock_held_matches_kernel_allowlist() {
         assert!(
             !kfunc_allowed_while_lock_held(kfunc),
             "{kfunc} should not be callable while a kernel lock is held"
+        );
+    }
+}
+
+#[test]
+fn test_kfunc_requires_bpf_spin_lock_held_for_graph_roots() {
+    for kfunc in [
+        "bpf_list_push_front_impl",
+        "bpf_list_push_back_impl",
+        "bpf_list_pop_front",
+        "bpf_list_pop_back",
+        "bpf_list_front",
+        "bpf_list_back",
+        "bpf_rbtree_add_impl",
+        "bpf_rbtree_remove",
+        "bpf_rbtree_first",
+    ] {
+        assert!(
+            kfunc_requires_bpf_spin_lock_held(kfunc),
+            "{kfunc} should require bpf_spin_lock protection"
+        );
+    }
+
+    for kfunc in [
+        "bpf_rbtree_root",
+        "bpf_rbtree_left",
+        "bpf_rbtree_right",
+        "bpf_refcount_acquire_impl",
+        "bpf_iter_num_new",
+        "bpf_res_spin_lock",
+        "bpf_throw",
+    ] {
+        assert!(
+            !kfunc_requires_bpf_spin_lock_held(kfunc),
+            "{kfunc} should not require graph-root bpf_spin_lock protection"
         );
     }
 }

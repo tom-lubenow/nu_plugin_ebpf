@@ -305,6 +305,13 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if kfunc_requires_bpf_spin_lock_held(kfunc) && !state.has_live_bpf_spin_lock() {
+        errors.push(VerifierTypeError::new(format!(
+            "kfunc '{}' requires bpf_spin_lock to be held for graph root",
+            kfunc
+        )));
+    }
+
     let semantics = kfunc_semantics(kfunc);
     let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
     for (arg_idx, value) in args.iter().enumerate() {

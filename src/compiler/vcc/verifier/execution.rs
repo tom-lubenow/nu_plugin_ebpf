@@ -1322,6 +1322,12 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::BpfSpinLockRequireHeld { message } => {
+                if !state.has_live_bpf_spin_lock() {
+                    self.errors
+                        .push(VccError::new(VccErrorKind::PointerBounds, message.clone()));
+                }
+            }
             VccInst::ResSpinLockIrqsaveAcquire { lock, flags } => {
                 let Some(slot) = self.stack_slot_from_reg(
                     state,

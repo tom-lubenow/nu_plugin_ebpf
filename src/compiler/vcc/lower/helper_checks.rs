@@ -1783,6 +1783,15 @@ impl<'a> VccLowerer<'a> {
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if kfunc_requires_bpf_spin_lock_held(kfunc) {
+            out.push(VccInst::BpfSpinLockRequireHeld {
+                message: format!(
+                    "kfunc '{}' requires bpf_spin_lock to be held for graph root",
+                    kfunc
+                ),
+            });
+        }
+
         let semantics = kfunc_semantics(kfunc);
         let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
         for (arg_idx, arg) in args.iter().enumerate() {
