@@ -407,6 +407,10 @@ fn test_infer_pointer_ref_family_from_type_name() {
         KernelBtf::infer_pointer_ref_family("bpf_crypto_ctx"),
         Some(KfuncPointerRefFamily::CryptoCtx)
     );
+    assert_eq!(
+        KernelBtf::infer_pointer_ref_family("xfrm_state"),
+        Some(KfuncPointerRefFamily::XfrmState)
+    );
     assert_eq!(KernelBtf::infer_pointer_ref_family("u8"), None);
 }
 

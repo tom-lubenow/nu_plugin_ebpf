@@ -24,6 +24,8 @@ const LINUX_HELPERS_C_V6_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/helpers.c";
 const LINUX_CPUMASK_C_V6_8_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.8/kernel/bpf/cpumask.c";
+const LINUX_XFRM_STATE_BPF_C_V6_8_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.8/net/xfrm/xfrm_state_bpf.c";
 const LINUX_HELPERS_C_V6_10_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.10/kernel/bpf/helpers.c";
 const LINUX_BPF_CRYPTO_C_V6_10_SOURCE: &str =
@@ -302,6 +304,8 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_rcu_read_lock" => "bpf_rcu_read_lock",
         "bpf_rcu_read_unlock" => "bpf_rcu_read_unlock",
         "bpf_throw" => "bpf_throw",
+        "bpf_xdp_get_xfrm_state" => "bpf_xdp_get_xfrm_state",
+        "bpf_xdp_xfrm_state_release" => "bpf_xdp_xfrm_state_release",
         "bpf_path_d_path" => "bpf_path_d_path",
         "bpf_iter_scx_dsq_destroy" => "bpf_iter_scx_dsq_destroy",
         "bpf_iter_scx_dsq_new" => "bpf_iter_scx_dsq_new",
@@ -428,7 +432,7 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_percpu_obj_drop_impl"
         | "bpf_percpu_obj_new_impl"
         | "bpf_throw" => "6.7",
-        "bpf_task_get_cgroup1" => "6.8",
+        "bpf_task_get_cgroup1" | "bpf_xdp_get_xfrm_state" | "bpf_xdp_xfrm_state_release" => "6.8",
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => "6.8",
         "bpf_preempt_disable"
         | "bpf_preempt_enable"
@@ -595,6 +599,9 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_percpu_obj_new_impl"
         | "bpf_throw" => LINUX_HELPERS_C_V6_7_SOURCE,
         "bpf_task_get_cgroup1" => LINUX_HELPERS_C_V6_8_SOURCE,
+        "bpf_xdp_get_xfrm_state" | "bpf_xdp_xfrm_state_release" => {
+            LINUX_XFRM_STATE_BPF_C_V6_8_SOURCE
+        }
         "bpf_cpumask_release_dtor" | "bpf_cpumask_weight" => LINUX_CPUMASK_C_V6_8_SOURCE,
         "bpf_preempt_disable" | "bpf_preempt_enable" => LINUX_HELPERS_C_V6_10_SOURCE,
         "bpf_crypto_ctx_acquire"

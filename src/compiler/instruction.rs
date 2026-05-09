@@ -1659,6 +1659,7 @@ pub enum KfuncRefKind {
     Object,
     File,
     Socket,
+    XfrmState,
 }
 
 impl KfuncRefKind {
@@ -1672,6 +1673,7 @@ impl KfuncRefKind {
             KfuncRefKind::Object => "object",
             KfuncRefKind::File => "file",
             KfuncRefKind::Socket => "socket",
+            KfuncRefKind::XfrmState => "xfrm_state",
         }
     }
 }

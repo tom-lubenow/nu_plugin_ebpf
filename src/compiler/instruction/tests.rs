@@ -5752,6 +5752,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Cpumask)
     );
     assert_eq!(
+        kfunc_ref_kind_from_bpf_type_name("struct xfrm_state"),
+        Some(KfuncRefKind::XfrmState)
+    );
+    assert_eq!(
         kfunc_acquire_ref_kind("bpf_task_from_pid"),
         Some(KfuncRefKind::Task)
     );
@@ -5790,6 +5794,10 @@ fn test_kfunc_ref_kind_mappings() {
     assert_eq!(
         kfunc_acquire_ref_kind("bpf_rbtree_remove"),
         Some(KfuncRefKind::Object)
+    );
+    assert_eq!(
+        kfunc_acquire_ref_kind("bpf_xdp_get_xfrm_state"),
+        Some(KfuncRefKind::XfrmState)
     );
     assert_eq!(
         kfunc_acquire_ref_kind("scx_bpf_task_cgroup"),
@@ -5836,6 +5844,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(KfuncRefKind::Object)
     );
     assert_eq!(
+        kfunc_release_ref_kind("bpf_xdp_xfrm_state_release"),
+        Some(KfuncRefKind::XfrmState)
+    );
+    assert_eq!(
         kfunc_release_ref_kind("bpf_cpumask_release"),
         Some(KfuncRefKind::Cpumask)
     );
@@ -5866,6 +5878,10 @@ fn test_kfunc_ref_kind_mappings() {
         Some(1)
     );
     assert_eq!(kfunc_release_ref_arg_index("bpf_rbtree_add_impl"), Some(1));
+    assert_eq!(
+        kfunc_release_ref_arg_index("bpf_xdp_xfrm_state_release"),
+        Some(0)
+    );
     assert_eq!(
         kfunc_release_ref_arg_index("__nu_plugin_ebpf_missing_kfunc__"),
         None

@@ -22,6 +22,7 @@ fn ref_kind_from_btf_family(family: KfuncPointerRefFamily) -> KfuncRefKind {
         KfuncPointerRefFamily::CryptoCtx => KfuncRefKind::CryptoCtx,
         KfuncPointerRefFamily::File => KfuncRefKind::File,
         KfuncPointerRefFamily::Socket => KfuncRefKind::Socket,
+        KfuncPointerRefFamily::XfrmState => KfuncRefKind::XfrmState,
     }
 }
 
@@ -36,6 +37,7 @@ pub fn kfunc_ref_kind_from_bpf_type_name(type_name: &str) -> Option<KfuncRefKind
         "file" => Some(KfuncRefKind::File),
         "sock" | "socket" | "tcp_sock" | "inet_sock" | "udp_sock" | "unix_sock"
         | "request_sock" | "inet_timewait_sock" => Some(KfuncRefKind::Socket),
+        "xfrm_state" => Some(KfuncRefKind::XfrmState),
         _ => None,
     }
 }
@@ -182,13 +184,20 @@ fn kfunc_btf_arg_pointee_mismatch(
     arg_idx: usize,
     pointee: &MirType,
 ) -> Option<String> {
-    if KfuncSignature::for_name(kfunc).is_some() {
+    if KfuncSignature::for_name(kfunc).is_some() && !kfunc_allows_exact_btf_pointee_check(kfunc) {
         return None;
     }
 
     let expected = kfunc_btf_arg_struct_pointee_name(kfunc, arg_idx)?;
     let actual = mir_struct_name(pointee)?;
     (actual != expected).then_some(expected)
+}
+
+fn kfunc_allows_exact_btf_pointee_check(kfunc: &str) -> bool {
+    matches!(
+        kfunc,
+        "bpf_xdp_get_xfrm_state" | "bpf_xdp_xfrm_state_release"
+    )
 }
 
 fn kfunc_btf_arg_struct_pointee_name(kfunc: &str, arg_idx: usize) -> Option<String> {
@@ -422,6 +431,7 @@ pub fn kfunc_acquire_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         | "bpf_list_pop_front"
         | "bpf_list_pop_back"
         | "bpf_rbtree_remove" => Some(KfuncRefKind::Object),
+        "bpf_xdp_get_xfrm_state" => Some(KfuncRefKind::XfrmState),
         "scx_bpf_task_cgroup" => Some(KfuncRefKind::Cgroup),
         "scx_bpf_get_online_cpumask"
         | "scx_bpf_get_possible_cpumask"
@@ -494,6 +504,7 @@ pub fn kfunc_release_ref_kind(kfunc: &str) -> Option<KfuncRefKind> {
         | "bpf_list_push_front_impl"
         | "bpf_list_push_back_impl"
         | "bpf_rbtree_add_impl" => Some(KfuncRefKind::Object),
+        "bpf_xdp_xfrm_state_release" => Some(KfuncRefKind::XfrmState),
         "bpf_cpumask_release"
         | "bpf_cpumask_release_dtor"
         | "scx_bpf_put_cpumask"
@@ -591,6 +602,7 @@ fn infer_release_kind_from_name_hints(
         KfuncRefKind::CryptoCtx,
         lower.contains("crypto_ctx") || lower.contains("crypto"),
     );
+    push_if_matches(KfuncRefKind::XfrmState, lower.contains("xfrm_state"));
 
     if hinted_kinds.len() == 1 {
         return hinted_kinds.first().copied();
@@ -985,6 +997,9 @@ pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRe
     }
     if matches!((kfunc, arg_idx), ("bpf_put_file", 0)) {
         return Some(KfuncRefKind::File);
+    }
+    if matches!((kfunc, arg_idx), ("bpf_xdp_xfrm_state_release", 0)) {
+        return Some(KfuncRefKind::XfrmState);
     }
     if matches!(
         (kfunc, arg_idx),

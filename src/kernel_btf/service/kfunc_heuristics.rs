@@ -45,6 +45,9 @@ impl KernelBtf {
         if lower.contains("crypto_ctx") {
             return Some(KfuncPointerRefFamily::CryptoCtx);
         }
+        if lower == "xfrm_state" || lower.ends_with("_xfrm_state") {
+            return Some(KfuncPointerRefFamily::XfrmState);
+        }
         None
     }
 

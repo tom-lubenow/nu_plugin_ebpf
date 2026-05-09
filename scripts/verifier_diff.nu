@@ -8626,7 +8626,7 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
-        name: "source-kfunc-btf-fallback-rejects-wrong-pointer-pointee"
+        name: "source-kfunc-xdp-xfrm-state-rejects-wrong-pointer-pointee"
         category: "helper-state"
         tags: [kfunc btf source reject]
         requires: [kernel-btf]
@@ -8640,6 +8640,42 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer"
+    }
+    {
+        name: "source-kfunc-xdp-xfrm-state-release"
+        category: "helper-state"
+        tags: [kfunc btf xdp ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let opts = { error: 0, netns_id: -1, mark: 0, daddr: [0 0 0 0], spi: 0, proto: 50, family: 2 }'
+            '  let state = (kfunc-call "bpf_xdp_get_xfrm_state" $ctx $opts 32)'
+            '  if $state {'
+            '    kfunc-call "bpf_xdp_xfrm_state_release" $state'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-xdp-xfrm-state-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc btf xdp ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let opts = { error: 0, netns_id: -1, mark: 0, daddr: [0 0 0 0], spi: 0, proto: 50, family: 2 }'
+            '  let state = (kfunc-call "bpf_xdp_get_xfrm_state" $ctx $opts 32)'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
     }
     {
         name: "source-kfunc-obj-new-drop"

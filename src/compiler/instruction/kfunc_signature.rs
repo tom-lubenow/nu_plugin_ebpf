@@ -122,6 +122,18 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_xdp_get_xfrm_state" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::PointerMaybeNull,
+            }),
+            "bpf_xdp_xfrm_state_release" => Some(Self {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Void,
+            }),
             "bpf_copy_from_user_str" => Some(Self {
                 min_args: 4,
                 max_args: 4,

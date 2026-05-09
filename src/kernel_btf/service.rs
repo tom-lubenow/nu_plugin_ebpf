@@ -114,6 +114,7 @@ pub enum KfuncPointerRefFamily {
     CryptoCtx,
     File,
     Socket,
+    XfrmState,
 }
 
 /// Best-effort kfunc signature inferred from kernel BTF.
