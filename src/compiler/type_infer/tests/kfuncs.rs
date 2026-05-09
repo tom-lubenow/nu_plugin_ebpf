@@ -3480,12 +3480,6 @@ fn test_infer_kfunc_res_spin_lock_signatures() {
     let unlock_irqrestore_ret = func.alloc_vreg();
     let stack_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::CallKfunc {
-        dst: lock,
-        kfunc: "bpf_cpumask_create".to_string(),
-        btf_id: None,
-        args: vec![],
-    });
     block.instructions.push(MirInst::Copy {
         dst: flags,
         src: MirValue::StackSlot(stack_slot),
@@ -3516,7 +3510,14 @@ fn test_infer_kfunc_res_spin_lock_signatures() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_res_spin_lock_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let types = ti
         .infer(&func)
         .expect("expected res_spin lock/unlock kfunc type inference");
@@ -3530,10 +3531,10 @@ fn test_infer_kfunc_res_spin_lock_signatures() {
 }
 
 #[test]
-fn test_type_error_kfunc_res_spin_lock_irqsave_requires_stack_flags() {
+fn test_type_error_kfunc_res_spin_lock_requires_res_spin_lock_pointee() {
     let mut func = make_test_function();
     let lock = func.alloc_vreg();
-    let lock_irqsave_ret = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::CallKfunc {
         dst: lock,
@@ -3542,6 +3543,32 @@ fn test_type_error_kfunc_res_spin_lock_irqsave_requires_stack_flags() {
         args: vec![],
     });
     block.instructions.push(MirInst::CallKfunc {
+        dst: lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected res_spin_lock pointee type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("arg0 expects bpf_res_spin_lock pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_res_spin_lock_irqsave_requires_stack_flags() {
+    let mut func = make_test_function();
+    let lock = func.alloc_vreg();
+    let lock_irqsave_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
         dst: lock_irqsave_ret,
         kfunc: "bpf_res_spin_lock_irqsave".to_string(),
         btf_id: None,
@@ -3549,7 +3576,14 @@ fn test_type_error_kfunc_res_spin_lock_irqsave_requires_stack_flags() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_res_spin_lock_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let errs = ti
         .infer(&func)
         .expect_err("expected res_spin_lock_irqsave stack-pointer flags type error");
@@ -3763,14 +3797,21 @@ fn test_type_error_kfunc_rejects_mismatched_graph_node_kind() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
+    let hints = HashMap::from([(
+        list_head,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_head_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
     let errs = ti
         .infer(&func)
         .expect_err("expected graph node kind mismatch");
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("kfunc bpf_rbtree node expects bpf_rb_node pointer")),
+            .contains("kfunc 'bpf_rbtree_left' arg0 expects bpf_rb_node pointer")),
         "unexpected errors: {:?}",
         errs
     );

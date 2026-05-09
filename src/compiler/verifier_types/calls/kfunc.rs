@@ -123,6 +123,14 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                             kfunc, arg_idx, space
                         )));
                     }
+                    if let Some(MirType::Ptr { pointee, .. }) = types.get(&arg)
+                        && let Some(expected) = kfunc_arg_pointee_mismatch(kfunc, arg_idx, pointee)
+                    {
+                        errors.push(VerifierTypeError::new(format!(
+                            "kfunc '{}' arg{} expects {} pointer, got {:?}",
+                            kfunc, arg_idx, expected, pointee
+                        )));
+                    }
                     if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx)
                     {
                         if let Some(ref_id) = kfunc_ref {
@@ -301,7 +309,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
 pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
     kfunc: &str,
     args: &[VReg],
-    types: &HashMap<VReg, MirType>,
+    _types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -365,14 +373,6 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             state,
             errors,
         );
-        if let Some(MirType::Ptr { pointee, .. }) = types.get(arg)
-            && let Some(expected) = kfunc_graph_pointee_mismatch(kfunc, rule.arg_idx, pointee)
-        {
-            errors.push(VerifierTypeError::new(format!(
-                "{} expects {} pointer, got {:?}",
-                rule.op, expected, pointee
-            )));
-        }
     }
 
     for (ptr_arg_idx, arg) in args.iter().enumerate() {
@@ -670,6 +670,7 @@ fn apply_iter_lifecycle_op(
 pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
     kfunc: &str,
     args: &[VReg],
+    types: &HashMap<VReg, MirType>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -724,6 +725,9 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         let Some(lock) = args.first().copied() else {
             return;
         };
+        if !res_spin_lock_arg_can_transition(kfunc, lock, types, state) {
+            return;
+        }
         let identity = state.res_spin_lock_identity(lock);
         if !state.acquire_res_spin_lock(identity) {
             errors.push(VerifierTypeError::new(
@@ -733,11 +737,14 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         return;
     }
     if kfunc == "bpf_res_spin_unlock" {
-        let released = args
-            .first()
-            .copied()
-            .map(|lock| state.res_spin_lock_identity(lock))
-            .is_some_and(|identity| state.release_res_spin_lock(identity));
+        let Some(lock) = args.first().copied() else {
+            return;
+        };
+        if !res_spin_lock_arg_can_transition(kfunc, lock, types, state) {
+            return;
+        }
+        let identity = state.res_spin_lock_identity(lock);
+        let released = state.release_res_spin_lock(identity);
         if !released {
             errors.push(VerifierTypeError::new(
                 "kfunc 'bpf_res_spin_unlock' requires a matching bpf_res_spin_lock",
@@ -752,6 +759,9 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 .copied()
                 .and_then(|arg| stack_slot_from_arg(state, arg)),
         ) {
+            if !res_spin_lock_arg_can_transition(kfunc, lock, types, state) {
+                return;
+            }
             let identity = state.res_spin_lock_identity(lock);
             if !state.acquire_res_spin_lock_irqsave(identity, flags) {
                 errors.push(VerifierTypeError::new(
@@ -769,6 +779,9 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                 .and_then(|arg| stack_slot_from_arg(state, arg)),
         ) {
             (Some(lock), Some(flags)) => {
+                if !res_spin_lock_arg_can_transition(kfunc, lock, types, state) {
+                    return;
+                }
                 let identity = state.res_spin_lock_identity(lock);
                 state.release_res_spin_lock_irqsave(identity, flags)
             }
@@ -1057,4 +1070,25 @@ fn stack_slot_from_arg(state: &VerifierState, arg: VReg) -> Option<StackSlotId> 
         },
         _ => None,
     }
+}
+
+fn res_spin_lock_arg_can_transition(
+    kfunc: &str,
+    arg: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+) -> bool {
+    if !matches!(
+        state.get(arg),
+        VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            ..
+        }
+    ) {
+        return false;
+    }
+    let Some(MirType::Ptr { pointee, .. }) = types.get(&arg) else {
+        return true;
+    };
+    kfunc_arg_pointee_mismatch(kfunc, 0, pointee).is_none()
 }

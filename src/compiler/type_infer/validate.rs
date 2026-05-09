@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::instruction::unknown_kfunc_signature_message;
+use crate::compiler::instruction::{kfunc_arg_pointee_mismatch, unknown_kfunc_signature_message};
 
 impl<'a> TypeInference<'a> {
     fn validate_helper_program_context(
@@ -857,7 +857,10 @@ impl<'a> TypeInference<'a> {
                             }
                         }
                         KfuncArgKind::Pointer => match arg_ty {
-                            MirType::Ptr { address_space, .. } => {
+                            MirType::Ptr {
+                                address_space,
+                                pointee,
+                            } => {
                                 let requires_stack =
                                     Self::kfunc_pointer_arg_requires_stack(kfunc, idx);
                                 if requires_stack && address_space != AddressSpace::Stack {
@@ -906,6 +909,14 @@ impl<'a> TypeInference<'a> {
                                             kfunc, idx
                                         )));
                                     }
+                                }
+                                if let Some(expected) =
+                                    kfunc_arg_pointee_mismatch(kfunc, idx, &pointee)
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{}' arg{} expects {} pointer, got {:?}",
+                                        kfunc, idx, expected, pointee
+                                    )));
                                 }
                             }
                             _ => {

@@ -9970,93 +9970,7 @@ const FIXTURES = [
         error_contains: "requires a matching bpf_local_irq_save"
     }
     {
-        name: "source-kfunc-res-spin-lock-unlock"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock source accept]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
-            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
-            '  0'
-            '}'
-        ]
-        local: "accept"
-        kernel: "skip"
-    }
-    {
-        name: "source-kfunc-res-spin-unlock-rejects-unmatched"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "requires a matching bpf_res_spin_lock"
-    }
-    {
-        name: "source-kfunc-res-spin-lock-rejects-same-lock-twice"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
-            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "cannot acquire an already-held resource spin lock"
-    }
-    {
-        name: "source-kfunc-res-spin-lock-rejects-helper-while-held"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
-            '  helper-call "bpf_get_prandom_u32"'
-            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "while resource spin lock is held"
-    }
-    {
-        name: "source-kfunc-res-spin-unlock-rejects-out-of-order-lock"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock cgroup source reject]
-        requires: [kernel-btf]
-        target: "kprobe:do_exit"
-        program: [
-            '{|ctx|'
-            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
-            '  if $cgrp {'
-            '    kfunc-call "bpf_res_spin_lock" $ctx.current_task'
-            '    kfunc-call "bpf_res_spin_lock" $cgrp'
-            '    kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
-            '    kfunc-call "bpf_res_spin_unlock" $cgrp'
-            '    $cgrp | kfunc-call "bpf_cgroup_release"'
-            '  }'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "requires a matching bpf_res_spin_lock"
-    }
-    {
-        name: "source-kfunc-res-spin-lock-rejects-leak"
+        name: "source-kfunc-res-spin-rejects-non-lock-kernel-pointer"
         category: "helper-state"
         tags: [kfunc res-spin-lock source reject]
         target: "raw_tracepoint:sys_enter"
@@ -10068,97 +9982,10 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "unreleased res spin lock"
+        error_contains: "expects bpf_res_spin_lock pointer"
     }
     {
-        name: "source-kfunc-res-spin-unlock-rejects-mixed-join"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let selector = (helper-call "bpf_get_prandom_u32")'
-            '  if $selector == 0 {'
-            '    kfunc-call "bpf_res_spin_lock" $ctx.current_task'
-            '  }'
-            '  kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "requires a matching bpf_res_spin_lock"
-    }
-    {
-        name: "source-kfunc-res-spin-irqsave-unlock-irqrestore"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock irq source accept]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let flags = "00000000"'
-            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
-            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
-            '  0'
-            '}'
-        ]
-        local: "accept"
-        kernel: "skip"
-    }
-    {
-        name: "source-kfunc-res-spin-irqrestore-rejects-unmatched"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock irq source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let flags = "00000000"'
-            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "requires a matching bpf_res_spin_lock_irqsave"
-    }
-    {
-        name: "source-kfunc-res-spin-irqsave-rejects-same-lock-twice"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock irq source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let first_flags = "00000000"'
-            '  let second_flags = "11111111"'
-            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $first_flags'
-            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $second_flags'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "cannot acquire an already-held resource spin lock"
-    }
-    {
-        name: "source-kfunc-res-spin-irqsave-rejects-helper-while-held"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock irq source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let flags = "00000000"'
-            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
-            '  helper-call "bpf_get_prandom_u32"'
-            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "while resource spin lock irqsave is held"
-    }
-    {
-        name: "source-kfunc-res-spin-irqsave-rejects-leak"
+        name: "source-kfunc-res-spin-irqsave-rejects-non-lock-kernel-pointer"
         category: "helper-state"
         tags: [kfunc res-spin-lock irq source reject]
         target: "raw_tracepoint:sys_enter"
@@ -10171,45 +9998,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "unreleased res spin lock irqsave"
-    }
-    {
-        name: "source-kfunc-res-spin-irqrestore-rejects-slot-mismatch"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock irq source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let saved_flags = "00000000"'
-            '  let other_flags = "11111111"'
-            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $saved_flags'
-            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $other_flags'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "requires a matching bpf_res_spin_lock_irqsave"
-    }
-    {
-        name: "source-kfunc-res-spin-irqrestore-rejects-mixed-join"
-        category: "helper-state"
-        tags: [kfunc res-spin-lock irq source reject]
-        target: "raw_tracepoint:sys_enter"
-        program: [
-            '{|ctx|'
-            '  let flags = "00000000"'
-            '  let selector = (helper-call "bpf_get_prandom_u32")'
-            '  if $selector == 0 {'
-            '    kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $flags'
-            '  }'
-            '  kfunc-call "bpf_res_spin_unlock_irqrestore" $ctx.current_task $flags'
-            '  0'
-            '}'
-        ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "requires a matching bpf_res_spin_lock_irqsave"
+        error_contains: "expects bpf_res_spin_lock pointer"
     }
     {
         name: "source-kfunc-sched-ext-node-min-kernel"

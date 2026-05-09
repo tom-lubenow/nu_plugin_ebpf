@@ -367,6 +367,7 @@ fn test_verifier_managed_struct_sizes_follow_kernel_btf_when_available() {
     for (name, ty, fallback) in [
         ("bpf_timer", MirType::bpf_timer_struct(), 16),
         ("bpf_spin_lock", MirType::bpf_spin_lock_struct(), 4),
+        ("bpf_res_spin_lock", MirType::bpf_res_spin_lock_struct(), 4),
         ("bpf_wq", MirType::bpf_wq_struct(), 16),
         ("bpf_refcount", MirType::bpf_refcount_struct(), 4),
         ("bpf_dynptr", MirType::bpf_dynptr_struct(), 16),

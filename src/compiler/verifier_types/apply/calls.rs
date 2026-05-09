@@ -269,7 +269,7 @@ pub(super) fn apply_call_kfunc_inst(
         check_kfunc_arg(kfunc, idx, *arg, sig.arg_kind(idx), types, state, errors);
     }
     check_kfunc_semantics(kfunc, args, types, state, errors);
-    apply_kfunc_semantics(kfunc, args, state, errors);
+    apply_kfunc_semantics(kfunc, args, types, state, errors);
 
     let ty = match sig.ret_kind {
         KfuncRetKind::Scalar | KfuncRetKind::Void => types

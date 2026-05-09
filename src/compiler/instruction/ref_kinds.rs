@@ -125,7 +125,7 @@ pub struct KfuncSemantics {
     pub positive_size_args: &'static [usize],
 }
 
-pub fn kfunc_graph_pointee_mismatch(
+pub fn kfunc_arg_pointee_mismatch(
     kfunc: &str,
     arg_idx: usize,
     pointee: &MirType,
@@ -156,6 +156,16 @@ pub fn kfunc_graph_pointee_mismatch(
         | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => {
             pointee.is_bpf_rb_node_struct()
         }
+        (
+            "bpf_res_spin_lock"
+            | "bpf_res_spin_unlock"
+            | "bpf_res_spin_lock_irqsave"
+            | "bpf_res_spin_unlock_irqrestore",
+            0,
+        ) => {
+            pointee.is_bpf_res_spin_lock_struct()
+                || offset_zero_field().is_some_and(MirType::is_bpf_res_spin_lock_struct)
+        }
         _ => return None,
     };
 
@@ -175,6 +185,13 @@ pub fn kfunc_graph_pointee_mismatch(
             ("bpf_rbtree_add_impl" | "bpf_rbtree_remove" | "bpf_rbtree_first", 0) => "bpf_rb_root",
             ("bpf_rbtree_remove", 1)
             | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => "bpf_rb_node",
+            (
+                "bpf_res_spin_lock"
+                | "bpf_res_spin_unlock"
+                | "bpf_res_spin_lock_irqsave"
+                | "bpf_res_spin_unlock_irqrestore",
+                0,
+            ) => "bpf_res_spin_lock",
             _ => unreachable!(),
         })
     }

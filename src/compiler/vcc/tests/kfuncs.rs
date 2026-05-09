@@ -39,6 +39,13 @@ fn insert_bpf_spin_lock_types(
     types.insert(unlock_ret, MirType::I64);
 }
 
+fn res_spin_lock_kernel_ptr_ty() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::bpf_res_spin_lock_struct()),
+        address_space: AddressSpace::Kernel,
+    }
+}
+
 fn graph_value_with_lock_and_root_ty() -> MirType {
     MirType::Struct {
         name: Some("graph_value".to_string()),
@@ -581,6 +588,34 @@ fn test_verify_mir_kfunc_res_spin_lock_requires_kernel_pointer() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("arg0 expects pointer in [Kernel]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_res_spin_lock_requires_res_spin_lock_pointee() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected res_spin_lock pointee error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("arg0 expects bpf_res_spin_lock pointer")),
         "unexpected error messages: {:?}",
         err
     );
@@ -11849,13 +11884,7 @@ fn test_verify_mir_kfunc_res_spin_lock_unlock_balanced() {
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        lock,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(lock, res_spin_lock_kernel_ptr_ty());
     types.insert(lock_ret, MirType::I64);
     types.insert(unlock_ret, MirType::I64);
 

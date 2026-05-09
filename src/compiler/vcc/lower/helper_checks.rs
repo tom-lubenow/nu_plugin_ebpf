@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    KfuncRefKind, kfunc_graph_pointee_mismatch, scalar_range_contains_only_bitmask,
+    KfuncRefKind, kfunc_arg_pointee_mismatch, scalar_range_contains_only_bitmask,
     unknown_kfunc_signature_message,
 };
 
@@ -163,7 +163,7 @@ impl<'a> VccLowerer<'a> {
                     }
                     self.require_pointer_reg(*arg)?;
                     self.verify_kfunc_ptr_arg_space(kfunc, idx, *arg)?;
-                    self.verify_kfunc_graph_pointee_arg(kfunc, idx, *arg)?;
+                    self.verify_kfunc_arg_pointee(kfunc, idx, *arg)?;
                     if Self::kfunc_pointer_arg_requires_stack(kfunc, idx) {
                         out.push(VccInst::AssertStackSlotBase {
                             ptr: VccReg(arg.0),
@@ -189,7 +189,7 @@ impl<'a> VccLowerer<'a> {
         Ok(())
     }
 
-    fn verify_kfunc_graph_pointee_arg(
+    fn verify_kfunc_arg_pointee(
         &self,
         kfunc: &str,
         arg_idx: usize,
@@ -198,7 +198,7 @@ impl<'a> VccLowerer<'a> {
         let Some(MirType::Ptr { pointee, .. }) = self.types.get(&arg) else {
             return Ok(());
         };
-        let Some(expected) = kfunc_graph_pointee_mismatch(kfunc, arg_idx, pointee) else {
+        let Some(expected) = kfunc_arg_pointee_mismatch(kfunc, arg_idx, pointee) else {
             return Ok(());
         };
 

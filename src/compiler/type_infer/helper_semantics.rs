@@ -1,8 +1,8 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    KfuncRefKind, helper_pointer_arg_ref_kind, kfunc_graph_pointee_mismatch,
-    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
+    KfuncRefKind, helper_pointer_arg_ref_kind, scalar_range_contains_only_allowed_values,
+    scalar_range_contains_only_bitmask,
 };
 use crate::kernel_btf::KernelBtf;
 
@@ -853,14 +853,6 @@ impl<'a> TypeInference<'a> {
                                 kfunc, rule.arg_idx
                             )));
                         }
-                    }
-                    if let Some(expected) =
-                        kfunc_graph_pointee_mismatch(kfunc, rule.arg_idx, &pointee)
-                    {
-                        errors.push(TypeError::new(format!(
-                            "{} expects {} pointer, got {:?}",
-                            rule.op, expected, pointee
-                        )));
                     }
                     if let Some(size_arg) = size_from_arg
                         && access_size.is_none()

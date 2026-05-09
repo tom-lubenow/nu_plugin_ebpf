@@ -483,6 +483,7 @@ const BPF_KPTR_SLOT_STRUCT_PREFIX: &str = "__nu_bpf_kptr_";
 const BPF_GRAPH_ROOT_STRUCT_PREFIX: &str = "__nu_bpf_graph_root:";
 const BPF_TIMER_FALLBACK_SIZE: usize = 16;
 const BPF_SPIN_LOCK_FALLBACK_SIZE: usize = 4;
+const BPF_RES_SPIN_LOCK_FALLBACK_SIZE: usize = 4;
 const BPF_WQ_FALLBACK_SIZE: usize = 16;
 const BPF_REFCOUNT_FALLBACK_SIZE: usize = 4;
 const BPF_DYNPTR_FALLBACK_SIZE: usize = 16;
@@ -708,6 +709,13 @@ impl MirType {
         )
     }
 
+    pub fn bpf_res_spin_lock_struct() -> Self {
+        Self::opaque_named_struct_with_size(
+            "bpf_res_spin_lock",
+            kernel_btf_struct_size_or("bpf_res_spin_lock", BPF_RES_SPIN_LOCK_FALLBACK_SIZE),
+        )
+    }
+
     pub fn bpf_wq_struct() -> Self {
         Self::opaque_named_struct_with_size(
             "bpf_wq",
@@ -776,6 +784,10 @@ impl MirType {
 
     pub fn is_bpf_spin_lock_struct(&self) -> bool {
         self.has_struct_name(&["bpf_spin_lock"])
+    }
+
+    pub fn is_bpf_res_spin_lock_struct(&self) -> bool {
+        self.has_struct_name(&["bpf_res_spin_lock"])
     }
 
     pub fn is_bpf_wq_struct(&self) -> bool {
@@ -1151,6 +1163,9 @@ impl MirType {
             return 8;
         }
         if self.is_bpf_spin_lock_struct() {
+            return 4;
+        }
+        if self.is_bpf_res_spin_lock_struct() {
             return 4;
         }
         if self.is_bpf_wq_struct() {
