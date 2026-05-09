@@ -1161,6 +1161,54 @@ fn test_spec_record_includes_intrinsic_command_metadata() {
 }
 
 #[test]
+fn test_spec_record_includes_kfunc_call_surface_metadata() {
+    let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let kfuncs = spec_kfunc_calls(&xdp);
+    let timestamp = kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_xdp_metadata_rx_timestamp")
+        .expect("XDP metadata timestamp kfunc should be advertised");
+    assert_eq!(timestamp.policy, "xdp-only");
+    assert_eq!(timestamp.note, "xdp");
+    assert_eq!(
+        timestamp.requirement_key.as_deref(),
+        Some("kfunc:bpf_xdp_metadata_rx_timestamp")
+    );
+    assert_eq!(timestamp.minimum_kernel, Some("6.3"));
+    assert!(
+        timestamp
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v6.3/net/core/xdp.c"))
+    );
+
+    let vlan = kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_xdp_metadata_rx_vlan_tag")
+        .expect("XDP metadata VLAN kfunc should be advertised");
+    assert_eq!(vlan.minimum_kernel, Some("6.8"));
+
+    let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    let record_kfuncs = record
+        .get("kfunc_calls")
+        .expect("kfunc_calls should be present")
+        .as_list()
+        .expect("kfunc_calls should be a list");
+    assert!(record_kfuncs.iter().any(|value| {
+        value
+            .as_record()
+            .ok()
+            .and_then(|record| record.get("kfunc"))
+            .and_then(|value| value.as_str().ok())
+            .is_some_and(|name| name == "bpf_xdp_metadata_rx_hash")
+    }));
+
+    let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
+    assert!(spec_kfunc_calls(&tc).is_empty());
+}
+
+#[test]
 fn test_spec_record_intrinsics_follow_program_specific_helper_surfaces() {
     let sk_msg = intrinsic_commands("sk_msg:/sys/fs/bpf/demo_sockmap");
     assert!(sk_msg.contains(&"adjust-message".to_string()));

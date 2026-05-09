@@ -117,7 +117,8 @@ context surfaces with backing helper/kfunc metadata where applicable, return ali
 target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
 supported first-class intrinsic commands with helper-backed mode/kind variants,
-intrinsic context-field requirements, live-attach/default safety, and
+intrinsic context-field requirements, modeled program-specific `kfunc-call`
+surfaces with source-backed compatibility metadata, live-attach/default safety, and
 compatibility requirement labels before you attempt to compile or attach a
 closure.
 The `context_projections` table lists projections that are valid for that

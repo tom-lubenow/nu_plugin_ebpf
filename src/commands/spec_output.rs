@@ -58,6 +58,18 @@ struct SpecContextWrite {
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecKfuncCall {
+    kfunc: &'static str,
+    policy: &'static str,
+    note: &'static str,
+    requirement_key: Option<String>,
+    minimum_kernel: Option<&'static str>,
+    minimum_kernel_source: Option<&'static str>,
+    maximum_kernel_exclusive: Option<&'static str>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SpecContextProjection {
     root: String,
     name: String,
@@ -1461,6 +1473,52 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
 }
 
 #[cfg(target_os = "linux")]
+fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCall> {
+    spec.kfunc_call_surfaces_for_spec()
+        .into_iter()
+        .map(|surface| {
+            let requirement = KfuncCompatibilityRequirement::for_name(surface.kfunc);
+            SpecKfuncCall {
+                kfunc: surface.kfunc,
+                policy: surface.policy,
+                note: surface.note,
+                requirement_key: kfunc_requirement_key(surface.kfunc),
+                minimum_kernel: requirement
+                    .as_ref()
+                    .map(|requirement| requirement.minimum_kernel()),
+                minimum_kernel_source: requirement
+                    .as_ref()
+                    .map(|requirement| requirement.minimum_kernel_source()),
+                maximum_kernel_exclusive: requirement
+                    .as_ref()
+                    .and_then(|requirement| requirement.maximum_kernel_exclusive()),
+            }
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn kfunc_call_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
+    spec_kfunc_calls(spec)
+        .into_iter()
+        .map(|surface| {
+            Value::record(
+                record! {
+                    "kfunc" => Value::string(surface.kfunc, span),
+                    "policy" => Value::string(surface.policy, span),
+                    "note" => Value::string(surface.note, span),
+                    "requirement_key" => optional_string(surface.requirement_key, span),
+                    "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
+                    "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),
+                    "maximum_kernel_exclusive" => optional_static_str(surface.maximum_kernel_exclusive, span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 pub(super) fn spec_record(
     probe: String,
     spec: crate::program_spec::ProgramSpec,
@@ -1484,6 +1542,7 @@ pub(super) fn spec_record(
     let (context_retval, context_retval_error) = spec_context_retval(&spec, resolve_dynamic_args);
     let context_retval = context_retval_record(context_retval, span);
     let context_writes = context_write_records(&spec, span);
+    let kfunc_calls = kfunc_call_records(&spec, span);
     let context_projections = context_projection_records(&spec, span);
     let capabilities = program_type
         .supported_capabilities()
@@ -1597,6 +1656,7 @@ pub(super) fn spec_record(
             "context_retval" => context_retval,
             "context_retval_error" => optional_string(context_retval_error, span),
             "context_writes" => Value::list(context_writes, span),
+            "kfunc_calls" => Value::list(kfunc_calls, span),
             "context_projections" => Value::list(context_projections, span),
             "capabilities" => Value::list(capabilities, span),
             "intrinsics" => Value::list(intrinsics, span),

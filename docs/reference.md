@@ -223,6 +223,10 @@ as `assign-socket` reporting `ctx:sk` for supported tc and sk_lookup targets.
 Mode- or kind-sensitive intrinsic rows also expose `variants` records that map
 the accepted flag/kind to the exact helper floor and, for map-family choices,
 the map-kind compatibility floor for the parsed target.
+The `kfunc_calls` list reports modeled kfunc-call surfaces whose availability
+is constrained by the parsed program or callback, such as XDP metadata kfuncs
+or sched_ext callback kfuncs, including source-checked kfunc compatibility
+metadata when available.
 Individual
 context-field and context-write records also carry nullable `minimum_kernel`
 and `minimum_kernel_source` fields when direct UAPI fields, write-only

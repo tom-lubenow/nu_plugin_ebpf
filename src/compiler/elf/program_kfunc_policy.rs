@@ -23,6 +23,24 @@ const XDP_ONLY_KFUNCS: &[&str] = &[
     "bpf_xdp_metadata_rx_timestamp",
     "bpf_xdp_metadata_rx_vlan_tag",
 ];
+const SCHED_EXT_SLEEPABLE_ONLY_KFUNCS: &[&str] = &["scx_bpf_create_dsq"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProgramKfuncCallSurface {
+    pub(crate) kfunc: &'static str,
+    pub(crate) policy: &'static str,
+    pub(crate) note: &'static str,
+}
+
+impl ProgramKfuncCallSurface {
+    const fn new(kfunc: &'static str, policy: &'static str, note: &'static str) -> Self {
+        Self {
+            kfunc,
+            policy,
+            note,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct ProgramSpecificKfuncPolicy {
@@ -90,7 +108,76 @@ fn sched_ext_kfunc_allowed_callbacks(kfunc: &str) -> Option<&'static [&'static s
     }
 }
 
+fn push_program_kfunc_surfaces(
+    surfaces: &mut Vec<ProgramKfuncCallSurface>,
+    kfuncs: &'static [&'static str],
+    policy: &'static str,
+    note: &'static str,
+) {
+    surfaces.extend(
+        kfuncs
+            .iter()
+            .map(|kfunc| ProgramKfuncCallSurface::new(kfunc, policy, note)),
+    );
+}
+
 impl ProgramSpec {
+    pub(crate) fn kfunc_call_surfaces_for_spec(&self) -> Vec<ProgramKfuncCallSurface> {
+        let mut surfaces = Vec::new();
+
+        if let Some(policy) = program_specific_kfunc_policy(self.program_type()) {
+            push_program_kfunc_surfaces(
+                &mut surfaces,
+                policy.modeled_kfuncs,
+                "program-specific",
+                policy.label,
+            );
+        }
+
+        if self.program_type() == EbpfProgramType::Xdp {
+            push_program_kfunc_surfaces(&mut surfaces, XDP_ONLY_KFUNCS, "xdp-only", "xdp");
+        }
+
+        let Some((StructOpsFamily::SchedExt, sleepable)) =
+            self.attach_shape().struct_ops_callback()
+        else {
+            return surfaces;
+        };
+        let Some(callback_name) = self.struct_ops_callback_name() else {
+            return surfaces;
+        };
+
+        if sleepable {
+            push_program_kfunc_surfaces(
+                &mut surfaces,
+                SCHED_EXT_SLEEPABLE_ONLY_KFUNCS,
+                "sched-ext-sleepable-callback",
+                "sleepable sched_ext_ops callback",
+            );
+        }
+
+        for kfuncs in [
+            SCHED_EXT_DISPATCH_ONLY_KFUNCS,
+            SCHED_EXT_CPU_RELEASE_ONLY_KFUNCS,
+            SCHED_EXT_SELECT_CPU_OR_ENQUEUE_KFUNCS,
+            SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS,
+        ] {
+            for kfunc in kfuncs {
+                if sched_ext_kfunc_allowed_callbacks(kfunc)
+                    .is_some_and(|callbacks| callbacks.contains(&callback_name))
+                {
+                    surfaces.push(ProgramKfuncCallSurface::new(
+                        kfunc,
+                        "sched-ext-callback",
+                        "current sched_ext_ops callback",
+                    ));
+                }
+            }
+        }
+
+        surfaces
+    }
+
     pub(crate) fn kfunc_call_error(&self, kfunc: &str) -> Option<String> {
         let program_policy = program_specific_kfunc_policy(self.program_type());
         if let Some(policy) = modeled_kfunc_policy(kfunc) {
@@ -156,6 +243,13 @@ mod tests {
                 "duplicate kfunc '{kfunc}' in {table_name}"
             );
         }
+    }
+
+    fn kfunc_surface_names(spec: &ProgramSpec) -> Vec<&'static str> {
+        spec.kfunc_call_surfaces_for_spec()
+            .into_iter()
+            .map(|surface| surface.kfunc)
+            .collect()
     }
 
     #[test]
@@ -354,6 +448,60 @@ mod tests {
             Some(&["bpf_sock_ops_enable_tx_tstamp"][..])
         );
         assert!(program_specific_kfunc_policy(EbpfProgramType::Xdp).is_none());
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_call_surfaces_are_program_aware() {
+        let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
+            .expect("expected xdp spec");
+        let xdp_kfuncs = kfunc_surface_names(&xdp);
+        assert_eq!(
+            xdp_kfuncs,
+            vec![
+                "bpf_xdp_metadata_rx_hash",
+                "bpf_xdp_metadata_rx_timestamp",
+                "bpf_xdp_metadata_rx_vlan_tag",
+            ]
+        );
+
+        let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
+            .expect("expected tc spec");
+        assert!(kfunc_surface_names(&tc).is_empty());
+
+        let sock_ops =
+            ProgramSpec::from_program_type_target(EbpfProgramType::SockOps, "/sys/fs/cgroup")
+                .expect("expected sock_ops spec");
+        assert_eq!(
+            kfunc_surface_names(&sock_ops),
+            vec!["bpf_sock_ops_enable_tx_tstamp"]
+        );
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_call_surfaces_follow_sched_ext_callbacks() {
+        let dispatch = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "dispatch".to_string(),
+        };
+        let dispatch_kfuncs = kfunc_surface_names(&dispatch);
+        assert!(dispatch_kfuncs.contains(&"scx_bpf_dispatch_nr_slots"));
+        assert!(dispatch_kfuncs.contains(&"scx_bpf_dsq_insert"));
+        assert!(!dispatch_kfuncs.contains(&"scx_bpf_create_dsq"));
+
+        let init = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "init".to_string(),
+        };
+        assert_eq!(kfunc_surface_names(&init), vec!["scx_bpf_create_dsq"]);
+
+        let select_cpu = ProgramSpec::StructOpsCallback {
+            value_type_name: "sched_ext_ops".to_string(),
+            callback_name: "select_cpu".to_string(),
+        };
+        let select_cpu_kfuncs = kfunc_surface_names(&select_cpu);
+        assert!(select_cpu_kfuncs.contains(&"scx_bpf_select_cpu_dfl"));
+        assert!(select_cpu_kfuncs.contains(&"scx_bpf_dsq_insert"));
+        assert!(!select_cpu_kfuncs.contains(&"scx_bpf_dispatch_nr_slots"));
     }
 
     #[test]
