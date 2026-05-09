@@ -1002,21 +1002,31 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
                 if kfunc == "bpf_res_spin_lock" {
-                    out.push(VccInst::ResSpinLockAcquire);
+                    if let Some(lock) = args.first() {
+                        out.push(VccInst::ResSpinLockAcquire {
+                            lock: VccReg(lock.0),
+                        });
+                    }
                 }
                 if kfunc == "bpf_res_spin_unlock" {
-                    out.push(VccInst::ResSpinLockRelease);
+                    if let Some(lock) = args.first() {
+                        out.push(VccInst::ResSpinLockRelease {
+                            lock: VccReg(lock.0),
+                        });
+                    }
                 }
                 if kfunc == "bpf_res_spin_lock_irqsave" {
-                    if let Some(flags) = args.get(1) {
+                    if let (Some(lock), Some(flags)) = (args.first(), args.get(1)) {
                         out.push(VccInst::ResSpinLockIrqsaveAcquire {
+                            lock: VccReg(lock.0),
                             flags: VccReg(flags.0),
                         });
                     }
                 }
                 if kfunc == "bpf_res_spin_unlock_irqrestore" {
-                    if let Some(flags) = args.get(1) {
+                    if let (Some(lock), Some(flags)) = (args.first(), args.get(1)) {
                         out.push(VccInst::ResSpinLockIrqsaveRelease {
+                            lock: VccReg(lock.0),
                             flags: VccReg(flags.0),
                         });
                     }

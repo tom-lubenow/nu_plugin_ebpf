@@ -1276,11 +1276,18 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::ResSpinLockAcquire => {
-                state.acquire_res_spin_lock();
+            VccInst::ResSpinLockAcquire { lock } => {
+                let identity = state.res_spin_lock_identity(*lock);
+                if !state.acquire_res_spin_lock(identity) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_res_spin_lock' cannot acquire an already-held resource spin lock",
+                    ));
+                }
             }
-            VccInst::ResSpinLockRelease => {
-                if !state.release_res_spin_lock() {
+            VccInst::ResSpinLockRelease { lock } => {
+                let identity = state.res_spin_lock_identity(*lock);
+                if !state.release_res_spin_lock(identity) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "kfunc 'bpf_res_spin_unlock' requires a matching bpf_res_spin_lock",
@@ -1311,7 +1318,7 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::ResSpinLockIrqsaveAcquire { flags } => {
+            VccInst::ResSpinLockIrqsaveAcquire { lock, flags } => {
                 let Some(slot) = self.stack_slot_from_reg(
                     state,
                     *flags,
@@ -1319,9 +1326,15 @@ impl VccVerifier {
                 ) else {
                     return;
                 };
-                state.acquire_res_spin_lock_irqsave_slot(slot);
+                let identity = state.res_spin_lock_identity(*lock);
+                if !state.acquire_res_spin_lock_irqsave(identity, slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "kfunc 'bpf_res_spin_lock_irqsave' cannot acquire an already-held resource spin lock",
+                    ));
+                }
             }
-            VccInst::ResSpinLockIrqsaveRelease { flags } => {
+            VccInst::ResSpinLockIrqsaveRelease { lock, flags } => {
                 let Some(slot) = self.stack_slot_from_reg(
                     state,
                     *flags,
@@ -1329,7 +1342,8 @@ impl VccVerifier {
                 ) else {
                     return;
                 };
-                if !state.release_res_spin_lock_irqsave_slot(slot) {
+                let identity = state.res_spin_lock_identity(*lock);
+                if !state.release_res_spin_lock_irqsave(identity, slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "kfunc 'bpf_res_spin_unlock_irqrestore' requires a matching bpf_res_spin_lock_irqsave",

@@ -9912,6 +9912,45 @@ const FIXTURES = [
         error_contains: "requires a matching bpf_res_spin_lock"
     }
     {
+        name: "source-kfunc-res-spin-lock-rejects-same-lock-twice"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '  kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot acquire an already-held resource spin lock"
+    }
+    {
+        name: "source-kfunc-res-spin-unlock-rejects-out-of-order-lock"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock cgroup source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_res_spin_lock" $ctx.current_task'
+            '    kfunc-call "bpf_res_spin_lock" $cgrp'
+            '    kfunc-call "bpf_res_spin_unlock" $ctx.current_task'
+            '    kfunc-call "bpf_res_spin_unlock" $cgrp'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_res_spin_lock"
+    }
+    {
         name: "source-kfunc-res-spin-lock-rejects-leak"
         category: "helper-state"
         tags: [kfunc res-spin-lock source reject]
@@ -9976,6 +10015,24 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "requires a matching bpf_res_spin_lock_irqsave"
+    }
+    {
+        name: "source-kfunc-res-spin-irqsave-rejects-same-lock-twice"
+        category: "helper-state"
+        tags: [kfunc res-spin-lock irq source reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let first_flags = "00000000"'
+            '  let second_flags = "11111111"'
+            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $first_flags'
+            '  kfunc-call "bpf_res_spin_lock_irqsave" $ctx.current_task $second_flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot acquire an already-held resource spin lock"
     }
     {
         name: "source-kfunc-res-spin-irqsave-rejects-leak"

@@ -6,6 +6,18 @@ mod refs;
 
 type UnknownStackObjectTypeKey = (String, Option<u32>);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ResSpinLockIdentity {
+    Reg(VReg),
+    CtxField(CtxField),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResSpinLockFrame {
+    identity: ResSpinLockIdentity,
+    irqsave_slot: Option<StackSlotId>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Nullability {
     NonNull,
@@ -187,6 +199,7 @@ pub(super) struct VerifierState {
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
+    res_spin_lock_stack: Option<Vec<ResSpinLockFrame>>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
     ringbuf_dynptr_slots: HashMap<StackSlotId, (u32, u32)>,
     ringbuf_dynptr_alias_roots: HashMap<StackSlotId, StackSlotId>,
@@ -251,6 +264,7 @@ impl VerifierState {
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
+            res_spin_lock_stack: Some(Vec::new()),
             dynptr_initialized_slots: HashSet::new(),
             ringbuf_dynptr_slots: HashMap::new(),
             ringbuf_dynptr_alias_roots: HashMap::new(),

@@ -710,17 +710,54 @@ impl VerifierState {
         self.iter_kmem_cache_max_depth > 0
     }
 
-    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock(&mut self) {
-        self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
-        self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
+    pub(in crate::compiler::verifier_types) fn res_spin_lock_identity(
+        &self,
+        reg: VReg,
+    ) -> ResSpinLockIdentity {
+        self.ctx_field_source(reg)
+            .cloned()
+            .map(ResSpinLockIdentity::CtxField)
+            .unwrap_or(ResSpinLockIdentity::Reg(reg))
     }
 
-    pub(in crate::compiler::verifier_types) fn release_res_spin_lock(&mut self) -> bool {
+    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock(
+        &mut self,
+        identity: ResSpinLockIdentity,
+    ) -> bool {
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        if stack.iter().any(|frame| frame.identity == identity) {
+            return false;
+        }
+        self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
+        self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
+        stack.push(ResSpinLockFrame {
+            identity,
+            irqsave_slot: None,
+        });
+        true
+    }
+
+    pub(in crate::compiler::verifier_types) fn release_res_spin_lock(
+        &mut self,
+        identity: ResSpinLockIdentity,
+    ) -> bool {
         if self.res_spin_lock_min_depth == 0 {
+            return false;
+        }
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        let Some(frame) = stack.last() else {
+            return false;
+        };
+        if frame.identity != identity || frame.irqsave_slot.is_some() {
             return false;
         }
         self.res_spin_lock_min_depth -= 1;
         self.res_spin_lock_max_depth -= 1;
+        stack.pop();
         true
     }
 
@@ -750,41 +787,53 @@ impl VerifierState {
         self.bpf_spin_lock_max_depth > 0
     }
 
-    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave(&mut self) {
+    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave(
+        &mut self,
+        identity: ResSpinLockIdentity,
+        slot: StackSlotId,
+    ) -> bool {
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        if stack.iter().any(|frame| frame.identity == identity) {
+            return false;
+        }
         self.res_spin_lock_irqsave_min_depth =
             self.res_spin_lock_irqsave_min_depth.saturating_add(1);
         self.res_spin_lock_irqsave_max_depth =
             self.res_spin_lock_irqsave_max_depth.saturating_add(1);
-    }
-
-    pub(in crate::compiler::verifier_types) fn acquire_res_spin_lock_irqsave_slot(
-        &mut self,
-        slot: StackSlotId,
-    ) {
-        self.acquire_res_spin_lock_irqsave();
         increment_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot);
-    }
-
-    pub(in crate::compiler::verifier_types) fn release_res_spin_lock_irqsave(&mut self) -> bool {
-        if self.res_spin_lock_irqsave_min_depth == 0 {
-            return false;
-        }
-        self.res_spin_lock_irqsave_min_depth -= 1;
-        self.res_spin_lock_irqsave_max_depth -= 1;
+        stack.push(ResSpinLockFrame {
+            identity,
+            irqsave_slot: Some(slot),
+        });
         true
     }
 
-    pub(in crate::compiler::verifier_types) fn release_res_spin_lock_irqsave_slot(
+    pub(in crate::compiler::verifier_types) fn release_res_spin_lock_irqsave(
         &mut self,
+        identity: ResSpinLockIdentity,
         slot: StackSlotId,
     ) -> bool {
         if self.res_spin_lock_irqsave_min_depth == 0 {
             return false;
         }
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        let Some(frame) = stack.last() else {
+            return false;
+        };
+        if frame.identity != identity || frame.irqsave_slot != Some(slot) {
+            return false;
+        }
         if !decrement_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot) {
             return false;
         }
-        self.release_res_spin_lock_irqsave()
+        self.res_spin_lock_irqsave_min_depth -= 1;
+        self.res_spin_lock_irqsave_max_depth -= 1;
+        stack.pop();
+        true
     }
 
     pub(in crate::compiler::verifier_types) fn has_live_res_spin_lock_irqsave(&self) -> bool {

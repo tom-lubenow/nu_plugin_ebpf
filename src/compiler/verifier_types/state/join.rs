@@ -52,6 +52,7 @@ impl VerifierState {
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
             && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
+            && self.res_spin_lock_stack == other.res_spin_lock_stack
             && self.dynptr_initialized_slots == other.dynptr_initialized_slots
             && self.ringbuf_dynptr_slots == other.ringbuf_dynptr_slots
             && self.ringbuf_dynptr_alias_roots == other.ringbuf_dynptr_alias_roots
@@ -285,6 +286,15 @@ impl VerifierState {
                 &self.res_spin_lock_irqsave_slots,
                 &other.res_spin_lock_irqsave_slots,
             ),
+            res_spin_lock_stack: join_res_spin_lock_stacks(
+                &self.res_spin_lock_stack,
+                &other.res_spin_lock_stack,
+                self.res_spin_lock_max_depth
+                    .max(other.res_spin_lock_max_depth)
+                    + self
+                        .res_spin_lock_irqsave_max_depth
+                        .max(other.res_spin_lock_irqsave_max_depth),
+            ),
             dynptr_initialized_slots,
             ringbuf_dynptr_slots,
             ringbuf_dynptr_alias_roots,
@@ -294,6 +304,20 @@ impl VerifierState {
             guards,
         }
     }
+}
+
+fn join_res_spin_lock_stacks(
+    lhs: &Option<Vec<ResSpinLockFrame>>,
+    rhs: &Option<Vec<ResSpinLockFrame>>,
+    max_depth: u32,
+) -> Option<Vec<ResSpinLockFrame>> {
+    if lhs == rhs {
+        return lhs.clone();
+    }
+    if max_depth == 0 {
+        return Some(Vec::new());
+    }
+    None
 }
 
 fn join_slot_depths(

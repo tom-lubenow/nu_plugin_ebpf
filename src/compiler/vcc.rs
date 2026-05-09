@@ -358,17 +358,23 @@ pub enum VccInst {
     LocalIrqDisableRelease {
         flags: VccReg,
     },
-    ResSpinLockAcquire,
-    ResSpinLockRelease,
+    ResSpinLockAcquire {
+        lock: VccReg,
+    },
+    ResSpinLockRelease {
+        lock: VccReg,
+    },
     BpfSpinLockAcquire,
     BpfSpinLockRelease,
     BpfSpinLockRejectIfHeld {
         message: String,
     },
     ResSpinLockIrqsaveAcquire {
+        lock: VccReg,
         flags: VccReg,
     },
     ResSpinLockIrqsaveRelease {
+        lock: VccReg,
         flags: VccReg,
     },
     IterTaskVmaNew {

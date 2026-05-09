@@ -709,11 +709,24 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         return;
     }
     if kfunc == "bpf_res_spin_lock" {
-        state.acquire_res_spin_lock();
+        let Some(lock) = args.first().copied() else {
+            return;
+        };
+        let identity = state.res_spin_lock_identity(lock);
+        if !state.acquire_res_spin_lock(identity) {
+            errors.push(VerifierTypeError::new(
+                "kfunc 'bpf_res_spin_lock' cannot acquire an already-held resource spin lock",
+            ));
+        }
         return;
     }
     if kfunc == "bpf_res_spin_unlock" {
-        if !state.release_res_spin_lock() {
+        let released = args
+            .first()
+            .copied()
+            .map(|lock| state.res_spin_lock_identity(lock))
+            .is_some_and(|identity| state.release_res_spin_lock(identity));
+        if !released {
             errors.push(VerifierTypeError::new(
                 "kfunc 'bpf_res_spin_unlock' requires a matching bpf_res_spin_lock",
             ));
@@ -721,21 +734,34 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
         return;
     }
     if kfunc == "bpf_res_spin_lock_irqsave" {
-        if let Some(flags) = args
-            .get(1)
-            .copied()
-            .and_then(|arg| stack_slot_from_arg(state, arg))
-        {
-            state.acquire_res_spin_lock_irqsave_slot(flags);
+        if let (Some(lock), Some(flags)) = (
+            args.first().copied(),
+            args.get(1)
+                .copied()
+                .and_then(|arg| stack_slot_from_arg(state, arg)),
+        ) {
+            let identity = state.res_spin_lock_identity(lock);
+            if !state.acquire_res_spin_lock_irqsave(identity, flags) {
+                errors.push(VerifierTypeError::new(
+                    "kfunc 'bpf_res_spin_lock_irqsave' cannot acquire an already-held resource spin lock",
+                ));
+            }
         }
         return;
     }
     if kfunc == "bpf_res_spin_unlock_irqrestore" {
-        let released = args
-            .get(1)
-            .copied()
-            .and_then(|arg| stack_slot_from_arg(state, arg))
-            .is_some_and(|flags| state.release_res_spin_lock_irqsave_slot(flags));
+        let released = match (
+            args.first().copied(),
+            args.get(1)
+                .copied()
+                .and_then(|arg| stack_slot_from_arg(state, arg)),
+        ) {
+            (Some(lock), Some(flags)) => {
+                let identity = state.res_spin_lock_identity(lock);
+                state.release_res_spin_lock_irqsave(identity, flags)
+            }
+            _ => false,
+        };
         if !released {
             errors.push(VerifierTypeError::new(
                 "kfunc 'bpf_res_spin_unlock_irqrestore' requires a matching bpf_res_spin_lock_irqsave",

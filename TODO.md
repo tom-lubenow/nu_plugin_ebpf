@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-05-04.
+Last updated: 2026-05-08.
 
 This file tracks remaining scope. Detailed historical progress belongs in git
 history and release notes, not here.
@@ -56,6 +56,7 @@ history and release notes, not here.
 
 - [~] Expand typed helper/kfunc semantics where it materially improves safety.
   - Prioritize helpers/kfuncs that affect ownership, lifetime, mutable kernel state, pointer invalidation, by-reference stack objects, or map-value object state.
+  - Resource spin-lock lifetime now tracks same-lock duplicate acquire and ordered unlocks for normal and irqsave kfunc variants; richer validation that the pointer actually targets a `bpf_res_spin_lock` field still depends on fuller object/map-value schemas.
   - Continue using kernel BTF metadata for unknown kfunc fallback signatures, pointer-space inference, nullable parameters, constant-size parameters, and ref-family heuristics.
   - Keep explicit compiler-side metadata for common helpers/kfuncs where kernel BTF is insufficient or too kernel-version-specific.
 

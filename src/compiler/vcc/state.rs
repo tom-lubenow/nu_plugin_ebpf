@@ -1,5 +1,17 @@
 type UnknownStackObjectTypeKey = (String, Option<u32>);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResSpinLockIdentity {
+    Reg(VccReg),
+    CtxField(CtxField),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResSpinLockFrame {
+    identity: ResSpinLockIdentity,
+    irqsave_slot: Option<StackSlotId>,
+}
+
 fn unknown_stack_object_type_key(
     type_name: &str,
     type_id: Option<u32>,
@@ -55,6 +67,7 @@ struct VccState {
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
+    res_spin_lock_stack: Option<Vec<ResSpinLockFrame>>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
     ringbuf_dynptr_slots: HashMap<StackSlotId, (u32, u32)>,
     ringbuf_dynptr_alias_roots: HashMap<StackSlotId, StackSlotId>,
@@ -143,6 +156,7 @@ impl VccState {
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
+            res_spin_lock_stack: Some(Vec::new()),
             dynptr_initialized_slots: HashSet::new(),
             ringbuf_dynptr_slots: HashMap::new(),
             ringbuf_dynptr_alias_roots: HashMap::new(),
@@ -672,17 +686,45 @@ impl VccState {
         self.iter_kmem_cache_max_depth > 0
     }
 
-    fn acquire_res_spin_lock(&mut self) {
-        self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
-        self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
+    fn res_spin_lock_identity(&self, reg: VccReg) -> ResSpinLockIdentity {
+        self.ctx_field_source(reg)
+            .cloned()
+            .map(ResSpinLockIdentity::CtxField)
+            .unwrap_or(ResSpinLockIdentity::Reg(reg))
     }
 
-    fn release_res_spin_lock(&mut self) -> bool {
+    fn acquire_res_spin_lock(&mut self, identity: ResSpinLockIdentity) -> bool {
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        if stack.iter().any(|frame| frame.identity == identity) {
+            return false;
+        }
+        self.res_spin_lock_min_depth = self.res_spin_lock_min_depth.saturating_add(1);
+        self.res_spin_lock_max_depth = self.res_spin_lock_max_depth.saturating_add(1);
+        stack.push(ResSpinLockFrame {
+            identity,
+            irqsave_slot: None,
+        });
+        true
+    }
+
+    fn release_res_spin_lock(&mut self, identity: ResSpinLockIdentity) -> bool {
         if self.res_spin_lock_min_depth == 0 {
+            return false;
+        }
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        let Some(frame) = stack.last() else {
+            return false;
+        };
+        if frame.identity != identity || frame.irqsave_slot.is_some() {
             return false;
         }
         self.res_spin_lock_min_depth -= 1;
         self.res_spin_lock_max_depth -= 1;
+        stack.pop();
         true
     }
 
@@ -712,35 +754,53 @@ impl VccState {
         self.bpf_spin_lock_max_depth > 0
     }
 
-    fn acquire_res_spin_lock_irqsave(&mut self) {
+    fn acquire_res_spin_lock_irqsave(
+        &mut self,
+        identity: ResSpinLockIdentity,
+        slot: StackSlotId,
+    ) -> bool {
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        if stack.iter().any(|frame| frame.identity == identity) {
+            return false;
+        }
         self.res_spin_lock_irqsave_min_depth =
             self.res_spin_lock_irqsave_min_depth.saturating_add(1);
         self.res_spin_lock_irqsave_max_depth =
             self.res_spin_lock_irqsave_max_depth.saturating_add(1);
-    }
-
-    fn acquire_res_spin_lock_irqsave_slot(&mut self, slot: StackSlotId) {
-        self.acquire_res_spin_lock_irqsave();
         increment_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot);
-    }
-
-    fn release_res_spin_lock_irqsave(&mut self) -> bool {
-        if self.res_spin_lock_irqsave_min_depth == 0 {
-            return false;
-        }
-        self.res_spin_lock_irqsave_min_depth -= 1;
-        self.res_spin_lock_irqsave_max_depth -= 1;
+        stack.push(ResSpinLockFrame {
+            identity,
+            irqsave_slot: Some(slot),
+        });
         true
     }
 
-    fn release_res_spin_lock_irqsave_slot(&mut self, slot: StackSlotId) -> bool {
+    fn release_res_spin_lock_irqsave(
+        &mut self,
+        identity: ResSpinLockIdentity,
+        slot: StackSlotId,
+    ) -> bool {
         if self.res_spin_lock_irqsave_min_depth == 0 {
+            return false;
+        }
+        let Some(stack) = &mut self.res_spin_lock_stack else {
+            return false;
+        };
+        let Some(frame) = stack.last() else {
+            return false;
+        };
+        if frame.identity != identity || frame.irqsave_slot != Some(slot) {
             return false;
         }
         if !decrement_slot_depth(&mut self.res_spin_lock_irqsave_slots, slot) {
             return false;
         }
-        self.release_res_spin_lock_irqsave()
+        self.res_spin_lock_irqsave_min_depth -= 1;
+        self.res_spin_lock_irqsave_max_depth -= 1;
+        stack.pop();
+        true
     }
 
     fn has_live_res_spin_lock_irqsave(&self) -> bool {
@@ -1143,6 +1203,14 @@ impl VccState {
                 &self.res_spin_lock_irqsave_slots,
                 &other.res_spin_lock_irqsave_slots,
             ),
+            res_spin_lock_stack: merge_res_spin_lock_stacks(
+                &self.res_spin_lock_stack,
+                &other.res_spin_lock_stack,
+                self.res_spin_lock_max_depth.max(other.res_spin_lock_max_depth)
+                    + self
+                        .res_spin_lock_irqsave_max_depth
+                        .max(other.res_spin_lock_irqsave_max_depth),
+            ),
             dynptr_initialized_slots,
             ringbuf_dynptr_slots,
             ringbuf_dynptr_alias_roots,
@@ -1225,6 +1293,7 @@ impl VccState {
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
+            res_spin_lock_stack: self.res_spin_lock_stack.clone(),
             dynptr_initialized_slots: self.dynptr_initialized_slots.clone(),
             ringbuf_dynptr_slots: self.ringbuf_dynptr_slots.clone(),
             ringbuf_dynptr_alias_roots: self.ringbuf_dynptr_alias_roots.clone(),
@@ -1647,6 +1716,20 @@ fn merge_slot_depths(
         }
     }
     merged
+}
+
+fn merge_res_spin_lock_stacks(
+    lhs: &Option<Vec<ResSpinLockFrame>>,
+    rhs: &Option<Vec<ResSpinLockFrame>>,
+    max_depth: u32,
+) -> Option<Vec<ResSpinLockFrame>> {
+    if lhs == rhs {
+        return lhs.clone();
+    }
+    if max_depth == 0 {
+        return Some(Vec::new());
+    }
+    None
 }
 
 fn merge_ringbuf_dynptr_alias_roots(

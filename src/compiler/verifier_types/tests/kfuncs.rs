@@ -12099,6 +12099,108 @@ fn test_kfunc_res_spin_lock_unlock_balanced() {
 }
 
 #[test]
+fn test_kfunc_res_spin_lock_rejects_same_lock_twice() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let lock = func.alloc_vreg();
+    let first_ret = func.alloc_vreg();
+    let second_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: first_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: second_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(first_ret, MirType::I64);
+    types.insert(second_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected duplicate res spin lock error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("cannot acquire an already-held resource spin lock")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_res_spin_unlock_rejects_out_of_order_lock() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let first_lock = func.alloc_vreg();
+    let second_lock = func.alloc_vreg();
+    let first_lock_ret = func.alloc_vreg();
+    let second_lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: first_lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![first_lock],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: second_lock_ret,
+        kfunc: "bpf_res_spin_lock".to_string(),
+        btf_id: None,
+        args: vec![second_lock],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: unlock_ret,
+        kfunc: "bpf_res_spin_unlock".to_string(),
+        btf_id: None,
+        args: vec![first_lock],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    for lock in [first_lock, second_lock] {
+        types.insert(
+            lock,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+    }
+    types.insert(first_lock_ret, MirType::I64);
+    types.insert(second_lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected out-of-order res spin unlock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_res_spin_lock")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_res_spin_unlock_requires_matching_lock() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
