@@ -23,6 +23,12 @@ enum BpfSpinLockIdentity {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VccMapLookupSource {
+    map: MapRef,
+    key: VccReg,
+}
+
 fn unknown_stack_object_type_key(
     type_name: &str,
     type_id: Option<u32>,
@@ -34,6 +40,7 @@ fn unknown_stack_object_type_key(
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
     ctx_field_sources: HashMap<VccReg, CtxField>,
+    map_lookup_sources: HashMap<VccReg, VccMapLookupSource>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
@@ -124,6 +131,7 @@ impl VccState {
         Self {
             reg_types: seed,
             ctx_field_sources: HashMap::new(),
+            map_lookup_sources: HashMap::new(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             live_kfunc_refs: HashMap::new(),
@@ -191,6 +199,7 @@ impl VccState {
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
         self.ctx_field_sources.remove(&reg);
+        self.map_lookup_sources.remove(&reg);
         self.not_equal_consts.remove(&reg);
         self.cond_refinements.remove(&reg);
     }
@@ -205,6 +214,49 @@ impl VccState {
 
     fn ctx_field_source(&self, reg: VccReg) -> Option<&CtxField> {
         self.ctx_field_sources.get(&reg)
+    }
+
+    fn set_map_lookup_source(&mut self, root: VccReg, map: MapRef, key: VccReg) {
+        self.map_lookup_sources
+            .insert(root, VccMapLookupSource { map, key });
+    }
+
+    fn map_lookup_source(&self, root: VccReg) -> Option<&VccMapLookupSource> {
+        self.map_lookup_sources.get(&root)
+    }
+
+    fn map_roots_may_alias_same_lookup(&self, lhs: VccReg, rhs: VccReg) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        let (Some(lhs), Some(rhs)) = (self.map_lookup_source(lhs), self.map_lookup_source(rhs))
+        else {
+            return false;
+        };
+        lhs.map == rhs.map && self.map_lookup_keys_may_alias(lhs.key, rhs.key)
+    }
+
+    fn map_lookup_keys_may_alias(&self, lhs: VccReg, rhs: VccReg) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        matches!(
+            (self.reg_type(lhs), self.reg_type(rhs)),
+            (
+                Ok(VccValueType::Scalar {
+                    range: Some(VccRange {
+                        min: lhs_min,
+                        max: lhs_max,
+                    }),
+                }),
+                Ok(VccValueType::Scalar {
+                    range: Some(VccRange {
+                        min: rhs_min,
+                        max: rhs_max,
+                    }),
+                }),
+            ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
+        )
     }
 
     fn proves_ctx_field_value_range<F>(&self, field: &CtxField, predicate: F) -> bool
@@ -779,7 +831,7 @@ impl VccState {
         match &self.bpf_spin_lock_identity {
             Some(BpfSpinLockIdentity::MapBounds {
                 root: lock_root, ..
-            }) => *lock_root == root,
+            }) => self.map_roots_may_alias_same_lookup(*lock_root, root),
             Some(BpfSpinLockIdentity::Reg(_)) => true,
             None => false,
         }
@@ -799,7 +851,7 @@ impl VccState {
         if self.bpf_spin_lock_min_depth == 0 {
             return false;
         }
-        if self.bpf_spin_lock_identity.as_ref() != Some(&identity) {
+        if !self.bpf_spin_lock_identity_matches(&identity) {
             return false;
         }
         self.bpf_spin_lock_min_depth = 0;
@@ -810,6 +862,32 @@ impl VccState {
 
     fn has_live_bpf_spin_lock(&self) -> bool {
         self.bpf_spin_lock_max_depth > 0
+    }
+
+    fn bpf_spin_lock_identity_matches(&self, unlock: &BpfSpinLockIdentity) -> bool {
+        match (self.bpf_spin_lock_identity.as_ref(), unlock) {
+            (Some(lhs), rhs) if lhs == rhs => true,
+            (
+                Some(BpfSpinLockIdentity::MapBounds {
+                    root: lhs_root,
+                    min: lhs_min,
+                    max: lhs_max,
+                    limit: lhs_limit,
+                }),
+                BpfSpinLockIdentity::MapBounds {
+                    root: rhs_root,
+                    min: rhs_min,
+                    max: rhs_max,
+                    limit: rhs_limit,
+                },
+            ) => {
+                lhs_min == rhs_min
+                    && lhs_max == rhs_max
+                    && lhs_limit == rhs_limit
+                    && self.map_roots_may_alias_same_lookup(*lhs_root, *rhs_root)
+            }
+            _ => false,
+        }
     }
 
     fn live_kernel_lock_description(&self) -> Option<&'static str> {
@@ -1118,6 +1196,14 @@ impl VccState {
                 ctx_field_sources.insert(*reg, left.clone());
             }
         }
+        let mut map_lookup_sources = HashMap::new();
+        for (reg, left) in &self.map_lookup_sources {
+            if let Some(right) = other.map_lookup_sources.get(reg)
+                && left == right
+            {
+                map_lookup_sources.insert(*reg, left.clone());
+            }
+        }
         let mut live_ringbuf_refs = self.live_ringbuf_refs.clone();
         for (id, live) in &other.live_ringbuf_refs {
             let current = live_ringbuf_refs.get(id).copied().unwrap_or(false);
@@ -1186,6 +1272,7 @@ impl VccState {
         VccState {
             reg_types: merged,
             ctx_field_sources,
+            map_lookup_sources,
             not_equal_consts,
             live_ringbuf_refs,
             live_kfunc_refs,
@@ -1326,6 +1413,7 @@ impl VccState {
         VccState {
             reg_types: widened,
             ctx_field_sources: self.ctx_field_sources.clone(),
+            map_lookup_sources: self.map_lookup_sources.clone(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),

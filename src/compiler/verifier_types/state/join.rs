@@ -7,6 +7,7 @@ impl VerifierState {
             && self.non_zero == other.non_zero
             && self.not_equal == other.not_equal
             && self.ctx_field_sources == other.ctx_field_sources
+            && self.map_lookup_sources == other.map_lookup_sources
             && self.live_ringbuf_refs == other.live_ringbuf_refs
             && self.released_ringbuf_record_regs == other.released_ringbuf_record_regs
             && self.live_kfunc_refs == other.live_kfunc_refs
@@ -111,6 +112,14 @@ impl VerifierState {
             };
             ctx_field_sources.push(merged);
         }
+        let mut map_lookup_sources = Vec::with_capacity(self.map_lookup_sources.len());
+        for i in 0..self.map_lookup_sources.len() {
+            let merged = match (&self.map_lookup_sources[i], &other.map_lookup_sources[i]) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                _ => None,
+            };
+            map_lookup_sources.push(merged);
+        }
         let mut live_ringbuf_refs = Vec::with_capacity(self.live_ringbuf_refs.len());
         for i in 0..self.live_ringbuf_refs.len() {
             live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
@@ -184,6 +193,7 @@ impl VerifierState {
             non_zero,
             not_equal,
             ctx_field_sources,
+            map_lookup_sources,
             live_ringbuf_refs,
             released_ringbuf_record_regs,
             live_kfunc_refs,

@@ -230,6 +230,146 @@ fn graph_lock_root_function(same_map_value: bool) -> (MirFunction, HashMap<VReg,
     (func, types)
 }
 
+fn graph_lock_root_repeated_lookup_function(
+    same_key: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let lock_ready = func.alloc_block();
+    let use_root = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let root_key = if same_key { key } else { func.alloc_vreg() };
+    let lock_value = func.alloc_vreg();
+    let lock_value_non_null = func.alloc_vreg();
+    let root_value = func.alloc_vreg();
+    let root_value_non_null = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    let root = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+    let graph_items = MapRef {
+        name: "graph_items".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    if !same_key {
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: root_key,
+            src: MirValue::Const(1),
+        });
+    }
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: lock_value,
+        map: graph_items.clone(),
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: lock_value_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(lock_value),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: lock_value_non_null,
+        if_true: lock_ready,
+        if_false: done,
+    };
+
+    func.block_mut(lock_ready)
+        .instructions
+        .push(MirInst::MapLookup {
+            dst: root_value,
+            map: graph_items,
+            key: root_key,
+        });
+    func.block_mut(lock_ready)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: root_value_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(root_value),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(lock_ready).terminator = MirInst::Branch {
+        cond: root_value_non_null,
+        if_true: use_root,
+        if_false: done,
+    };
+
+    func.block_mut(use_root).instructions.push(MirInst::Copy {
+        dst: lock,
+        src: MirValue::VReg(lock_value),
+    });
+    func.block_mut(use_root).instructions.push(MirInst::BinOp {
+        dst: root,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(root_value),
+        rhs: MirValue::Const(8),
+    });
+    push_bpf_spin_lock_call(&mut func, use_root, lock_ret, lock);
+    func.block_mut(use_root)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: node,
+            kfunc: "bpf_list_front".to_string(),
+            btf_id: None,
+            args: vec![root],
+        });
+    push_bpf_spin_unlock_call(&mut func, use_root, unlock_ret, lock);
+    func.block_mut(use_root).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    for i in 0..func.vreg_count {
+        types.insert(VReg(i), MirType::I64);
+    }
+    let graph_value = graph_value_with_lock_and_root_ty();
+    for value in [lock_value, root_value] {
+        types.insert(
+            value,
+            MirType::Ptr {
+                pointee: Box::new(graph_value.clone()),
+                address_space: AddressSpace::Map,
+            },
+        );
+    }
+    types.insert(
+        lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_spin_lock_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        root,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_head_root_struct("node_data", "node")),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        node,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_list_node_struct()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(lock_value_non_null, MirType::Bool);
+    types.insert(root_value_non_null, MirType::Bool);
+    types.insert(lock_ret, MirType::I64);
+    types.insert(unlock_ret, MirType::I64);
+
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_sched_ext_dispatch_only_kfunc_rejected_in_select_cpu() {
     let mut func = MirFunction::new();
@@ -902,10 +1042,31 @@ fn test_kfunc_list_front_accepts_same_map_value_bpf_spin_lock() {
 }
 
 #[test]
+fn test_kfunc_list_front_accepts_same_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_function(true);
+
+    verify_mir(&func, &types).expect("same map/key graph lock/root should verify");
+}
+
+#[test]
 fn test_kfunc_list_front_rejects_different_map_value_bpf_spin_lock() {
     let (func, types) = graph_lock_root_function(false);
 
     let err = verify_mir(&func, &types).expect_err("expected mismatched graph lock/root error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires bpf_spin_lock from the same map value")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_list_front_rejects_different_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_function(false);
+
+    let err = verify_mir(&func, &types).expect_err("expected different-key graph lock/root error");
     assert!(
         err.iter().any(|e| e
             .message

@@ -119,6 +119,7 @@ impl VccVerifier {
             VccNullability::Null
         };
         let ctx_field_source = state.ctx_field_source(ptr_reg).cloned();
+        let map_lookup_source = state.map_lookup_source(ptr_reg).cloned();
         if !non_null {
             if let Some(ref_id) = ringbuf_ref {
                 state.set_live_ringbuf_ref(ref_id, false);
@@ -129,6 +130,9 @@ impl VccVerifier {
         }
         state.set_reg(ptr_reg, VccValueType::Ptr(ptr));
         state.set_ctx_field_source(ptr_reg, ctx_field_source);
+        if let Some(source) = map_lookup_source {
+            state.set_map_lookup_source(ptr_reg, source.map, source.key);
+        }
     }
 
     pub(super) fn refine_packet_end_compare(

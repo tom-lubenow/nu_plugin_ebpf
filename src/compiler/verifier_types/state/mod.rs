@@ -29,6 +29,12 @@ pub(super) enum BpfSpinLockIdentity {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct MapLookupSource {
+    pub map: MapRef,
+    pub key: VReg,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Nullability {
     NonNull,
@@ -165,6 +171,7 @@ pub(super) struct VerifierState {
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
     ctx_field_sources: Vec<Option<CtxField>>,
+    map_lookup_sources: Vec<Option<MapLookupSource>>,
     live_ringbuf_refs: Vec<bool>,
     released_ringbuf_record_regs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
@@ -231,6 +238,7 @@ impl VerifierState {
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
             ctx_field_sources: vec![None; total_vregs],
+            map_lookup_sources: vec![None; total_vregs],
             live_ringbuf_refs: vec![false; total_vregs],
             released_ringbuf_record_regs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
@@ -353,6 +361,9 @@ impl VerifierState {
         if let Some(slot) = self.ctx_field_sources.get_mut(vreg.0 as usize) {
             *slot = None;
         }
+        if let Some(slot) = self.map_lookup_sources.get_mut(vreg.0 as usize) {
+            *slot = None;
+        }
         if let Some(slot) = self.released_ringbuf_record_regs.get_mut(vreg.0 as usize) {
             *slot = false;
         }
@@ -369,6 +380,43 @@ impl VerifierState {
         self.ctx_field_sources
             .get(vreg.0 as usize)
             .and_then(|source| source.as_ref())
+    }
+
+    pub(super) fn set_map_lookup_source(&mut self, root: VReg, map: &MapRef, key: VReg) {
+        if let Some(slot) = self.map_lookup_sources.get_mut(root.0 as usize) {
+            *slot = Some(MapLookupSource {
+                map: map.clone(),
+                key,
+            });
+        }
+    }
+
+    pub(super) fn map_lookup_source(&self, root: VReg) -> Option<&MapLookupSource> {
+        self.map_lookup_sources
+            .get(root.0 as usize)
+            .and_then(|source| source.as_ref())
+    }
+
+    pub(super) fn map_roots_may_alias_same_lookup(&self, lhs: VReg, rhs: VReg) -> bool {
+        if lhs == rhs {
+            return true;
+        }
+        let (Some(lhs), Some(rhs)) = (self.map_lookup_source(lhs), self.map_lookup_source(rhs))
+        else {
+            return false;
+        };
+        lhs.map == rhs.map && self.map_lookup_keys_may_alias(lhs.key, rhs.key)
+    }
+
+    fn map_lookup_keys_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
+        lhs == rhs
+            || matches!(
+                (self.get_range(lhs), self.get_range(rhs)),
+                (
+                    ValueRange::Known { min: lhs_min, max: lhs_max },
+                    ValueRange::Known { min: rhs_min, max: rhs_max },
+                ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
+            )
     }
 
     pub(super) fn find_ctx_field_type(&self, field: &CtxField) -> Option<VerifierType> {

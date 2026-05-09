@@ -615,6 +615,11 @@ impl<'a> VccLowerer<'a> {
                     ty,
                     ctx_field_source: None,
                 });
+                out.push(VccInst::MapLookupSource {
+                    root: VccReg(dst.0),
+                    map: map.clone(),
+                    key: VccReg(key.0),
+                });
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);
                 }

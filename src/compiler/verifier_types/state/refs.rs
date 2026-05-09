@@ -807,7 +807,7 @@ impl VerifierState {
         match &self.bpf_spin_lock_identity {
             Some(BpfSpinLockIdentity::MapBounds {
                 root: lock_root, ..
-            }) => *lock_root == root,
+            }) => self.map_roots_may_alias_same_lookup(*lock_root, root),
             Some(BpfSpinLockIdentity::Reg(_)) => true,
             None => false,
         }
@@ -833,7 +833,7 @@ impl VerifierState {
         if self.bpf_spin_lock_min_depth == 0 {
             return false;
         }
-        if self.bpf_spin_lock_identity.as_ref() != Some(&identity) {
+        if !self.bpf_spin_lock_identity_matches(&identity) {
             return false;
         }
         self.bpf_spin_lock_min_depth = 0;
@@ -844,6 +844,32 @@ impl VerifierState {
 
     pub(in crate::compiler::verifier_types) fn has_live_bpf_spin_lock(&self) -> bool {
         self.bpf_spin_lock_max_depth > 0
+    }
+
+    fn bpf_spin_lock_identity_matches(&self, unlock: &BpfSpinLockIdentity) -> bool {
+        match (self.bpf_spin_lock_identity.as_ref(), unlock) {
+            (Some(lhs), rhs) if lhs == rhs => true,
+            (
+                Some(BpfSpinLockIdentity::MapBounds {
+                    root: lhs_root,
+                    min: lhs_min,
+                    max: lhs_max,
+                    limit: lhs_limit,
+                }),
+                BpfSpinLockIdentity::MapBounds {
+                    root: rhs_root,
+                    min: rhs_min,
+                    max: rhs_max,
+                    limit: rhs_limit,
+                },
+            ) => {
+                lhs_min == rhs_min
+                    && lhs_max == rhs_max
+                    && lhs_limit == rhs_limit
+                    && self.map_roots_may_alias_same_lookup(*lhs_root, *rhs_root)
+            }
+            _ => false,
+        }
     }
 
     pub(in crate::compiler::verifier_types) fn live_kernel_lock_description(

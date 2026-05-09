@@ -82,6 +82,9 @@ impl VccVerifier {
                 state.set_reg(*dst, *ty);
                 state.set_ctx_field_source(*dst, ctx_field_source.clone());
             }
+            VccInst::MapLookupSource { root, map, key } => {
+                state.set_map_lookup_source(*root, map.clone(), *key);
+            }
             VccInst::AssertScalar { value } => match state.value_type(*value) {
                 Ok(ty) => {
                     if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {

@@ -29,6 +29,7 @@ pub(super) fn apply_map_lookup_inst(
             kfunc_ref: None,
         },
     );
+    state.set_map_lookup_source(dst, map, key);
 }
 
 pub(super) fn apply_global_load_inst(dst: VReg, ty: &MirType, state: &mut VerifierState) {

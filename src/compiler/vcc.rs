@@ -240,6 +240,11 @@ pub enum VccInst {
         ty: VccValueType,
         ctx_field_source: Option<CtxField>,
     },
+    MapLookupSource {
+        root: VccReg,
+        map: MapRef,
+        key: VccReg,
+    },
     AssertScalar {
         value: VccValue,
     },

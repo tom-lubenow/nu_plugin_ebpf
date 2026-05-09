@@ -38,6 +38,7 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                     } else {
                         Nullability::Null
                     };
+                    let map_lookup_source = next.map_lookup_source(ptr).cloned();
                     if !wants_non_null {
                         if let Some(ref_id) = ringbuf_ref {
                             next.set_live_ringbuf_ref(ref_id, false);
@@ -57,6 +58,9 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                         },
                     );
                     next.set_ctx_field_source(ptr, ctx_field_source.clone());
+                    if let Some(source) = map_lookup_source {
+                        next.set_map_lookup_source(ptr, &source.map, source.key);
+                    }
                     if let Some(field) = ctx_field_source {
                         next.refine_ctx_field_nullability(&field, nullability);
                     }
