@@ -5383,6 +5383,16 @@ fn test_kfunc_signature_dynptr_core_kfuncs() {
     assert_eq!(sig.arg_kind(4), KfuncArgKind::Scalar);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 
+    for name in ["bpf_dynptr_from_skb", "bpf_dynptr_from_xdp"] {
+        let sig = KfuncSignature::for_name(name).expect("expected packet dynptr constructor sig");
+        assert_eq!(sig.min_args, 3);
+        assert_eq!(sig.max_args, 3);
+        assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+        assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
+        assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+    }
+
     let sig =
         KfuncSignature::for_name("bpf_dynptr_size").expect("expected bpf_dynptr_size signature");
     assert_eq!(sig.min_args, 1);

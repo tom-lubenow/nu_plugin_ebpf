@@ -10,6 +10,8 @@ const LINUX_CPUMASK_C_V6_3_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.3/kernel/bpf/cpumask.c";
 const LINUX_HELPERS_C_V6_4_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.4/kernel/bpf/helpers.c";
+const LINUX_NET_CORE_FILTER_C_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/net/core/filter.c";
 const LINUX_HELPERS_C_V6_5_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c";
 const LINUX_CPUMASK_C_V6_5_SOURCE: &str =
@@ -200,6 +202,8 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_dynptr_adjust" => "bpf_dynptr_adjust",
         "bpf_dynptr_is_null" => "bpf_dynptr_is_null",
         "bpf_dynptr_is_rdonly" => "bpf_dynptr_is_rdonly",
+        "bpf_dynptr_from_skb" => "bpf_dynptr_from_skb",
+        "bpf_dynptr_from_xdp" => "bpf_dynptr_from_xdp",
         "bpf_copy_from_user_dynptr" => "bpf_copy_from_user_dynptr",
         "bpf_copy_from_user_str" => "bpf_copy_from_user_str",
         "bpf_copy_from_user_task_dynptr" => "bpf_copy_from_user_task_dynptr",
@@ -398,6 +402,8 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         "bpf_rbtree_first" | "bpf_rbtree_remove" => "6.3",
         "bpf_dynptr_slice"
         | "bpf_dynptr_slice_rdwr"
+        | "bpf_dynptr_from_skb"
+        | "bpf_dynptr_from_xdp"
         | "bpf_cgroup_from_id"
         | "bpf_iter_num_destroy"
         | "bpf_iter_num_new"
@@ -572,6 +578,7 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_list_push_front_impl"
         | "bpf_rbtree_add_impl"
         | "bpf_refcount_acquire_impl" => LINUX_HELPERS_C_V6_4_SOURCE,
+        "bpf_dynptr_from_skb" | "bpf_dynptr_from_xdp" => LINUX_NET_CORE_FILTER_C_V6_4_SOURCE,
         "bpf_cpumask_any_and_distribute"
         | "bpf_cpumask_any_distribute"
         | "bpf_cpumask_first_and" => LINUX_CPUMASK_C_V6_5_SOURCE,

@@ -3156,6 +3156,8 @@ const KFUNC_KERNEL_FEATURE_FALLBACKS = [
     { name: "bpf_dynptr_adjust", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
     { name: "bpf_dynptr_clone", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
     { name: "bpf_dynptr_copy", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/bpf/helpers.c" }
+    { name: "bpf_dynptr_from_skb", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/net/core/filter.c" }
+    { name: "bpf_dynptr_from_xdp", min_kernel: "6.4", source: "https://github.com/torvalds/linux/blob/v6.4/net/core/filter.c" }
     { name: "bpf_dynptr_is_null", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
     { name: "bpf_dynptr_is_rdonly", min_kernel: "6.5", source: "https://github.com/torvalds/linux/blob/v6.5/kernel/bpf/helpers.c" }
     { name: "bpf_dynptr_memset", min_kernel: "6.17", source: "https://github.com/torvalds/linux/blob/v6.17/kernel/bpf/helpers.c" }
@@ -5681,6 +5683,78 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-from-xdp-initializes-dynptr"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-from-xdp-rejects-reinitialize"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx 0 $d'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_xdp' arg2 requires uninitialized dynptr stack object slot"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-initializes-dynptr"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc accept]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-rejects-reinitialize"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' arg2 requires uninitialized dynptr stack object slot"
     }
     {
         name: "dynptr-kfunc-size-initialized-ringbuf"

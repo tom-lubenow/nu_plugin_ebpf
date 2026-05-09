@@ -1800,6 +1800,20 @@ fn test_known_dynptr_kfunc_args_are_modeled() {
         }]
     );
     assert_eq!(
+        kfunc_unknown_dynptr_args("bpf_dynptr_from_xdp"),
+        vec![KfuncUnknownDynptrArg {
+            arg_idx: 2,
+            role: KfuncUnknownDynptrArgRole::Out,
+        }]
+    );
+    assert_eq!(
+        kfunc_unknown_dynptr_args("bpf_dynptr_from_skb"),
+        vec![KfuncUnknownDynptrArg {
+            arg_idx: 2,
+            role: KfuncUnknownDynptrArgRole::Out,
+        }]
+    );
+    assert_eq!(
         kfunc_unknown_dynptr_copy("bpf_dynptr_clone"),
         vec![KfuncUnknownDynptrCopy {
             src_arg_idx: 0,

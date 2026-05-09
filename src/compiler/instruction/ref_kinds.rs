@@ -196,7 +196,10 @@ fn kfunc_btf_arg_pointee_mismatch(
 fn kfunc_allows_exact_btf_pointee_check(kfunc: &str) -> bool {
     matches!(
         kfunc,
-        "bpf_xdp_get_xfrm_state" | "bpf_xdp_xfrm_state_release"
+        "bpf_dynptr_from_skb"
+            | "bpf_dynptr_from_xdp"
+            | "bpf_xdp_get_xfrm_state"
+            | "bpf_xdp_xfrm_state_release"
     )
 }
 

@@ -114,6 +114,10 @@ fn known_dynptr_args(kfunc: &str) -> Option<&'static [KfuncUnknownDynptrArg]> {
         arg_idx: 0,
         role: Out,
     }];
+    const ARG2_OUT: &[KfuncUnknownDynptrArg] = &[KfuncUnknownDynptrArg {
+        arg_idx: 2,
+        role: Out,
+    }];
     const DYNPTR_CLONE: &[KfuncUnknownDynptrArg] = &[
         KfuncUnknownDynptrArg {
             arg_idx: 0,
@@ -139,6 +143,7 @@ fn known_dynptr_args(kfunc: &str) -> Option<&'static [KfuncUnknownDynptrArg]> {
         "bpf_copy_from_user_dynptr"
         | "bpf_copy_from_user_task_dynptr"
         | "bpf_copy_from_user_task_str_dynptr" => ARG0_OUT,
+        "bpf_dynptr_from_skb" | "bpf_dynptr_from_xdp" => ARG2_OUT,
         "bpf_dynptr_adjust"
         | "bpf_dynptr_size"
         | "bpf_dynptr_is_null"
