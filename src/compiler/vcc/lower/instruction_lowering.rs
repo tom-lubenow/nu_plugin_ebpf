@@ -168,6 +168,7 @@ impl<'a> VccLowerer<'a> {
                                 packet_root_field: None,
                                 packet_ctx_field: None,
                                 packet_end: false,
+                                map_root: None,
                                 context_buffer_root: None,
                                 context_buffer_end: false,
                                 ringbuf_ref: None,
@@ -425,6 +426,7 @@ impl<'a> VccLowerer<'a> {
                             packet_root_field: None,
                             packet_ctx_field: None,
                             packet_end: false,
+                            map_root: None,
                             context_buffer_root: None,
                             context_buffer_end: false,
                             ringbuf_ref: None,
@@ -594,6 +596,7 @@ impl<'a> VccLowerer<'a> {
                         packet_root_field: None,
                         packet_ctx_field: None,
                         packet_end: false,
+                        map_root: Some(VccReg(dst.0)),
                         context_buffer_root: None,
                         context_buffer_end: false,
                         ringbuf_ref: None,
@@ -602,6 +605,7 @@ impl<'a> VccLowerer<'a> {
                 };
                 info.space = VccAddrSpace::MapValue;
                 info.nullability = VccNullability::MaybeNull;
+                info.map_root = Some(VccReg(dst.0));
                 if info.bounds.is_none() {
                     info.bounds = bounds;
                 }
@@ -633,6 +637,7 @@ impl<'a> VccLowerer<'a> {
                     packet_root_field: None,
                     packet_ctx_field: None,
                     packet_end: false,
+                    map_root: Some(VccReg(dst.0)),
                     context_buffer_root: None,
                     context_buffer_end: false,
                     ringbuf_ref: None,
@@ -824,8 +829,20 @@ impl<'a> VccLowerer<'a> {
                 self.verify_helper_call(*helper, args, out)?;
                 let helper_kind = BpfHelper::from_u32(*helper);
                 match helper_kind {
-                    Some(BpfHelper::SpinLock) => out.push(VccInst::BpfSpinLockAcquire),
-                    Some(BpfHelper::SpinUnlock) => out.push(VccInst::BpfSpinLockRelease),
+                    Some(BpfHelper::SpinLock) => {
+                        if let Some(MirValue::VReg(lock)) = args.first() {
+                            out.push(VccInst::BpfSpinLockAcquire {
+                                lock: VccReg(lock.0),
+                            });
+                        }
+                    }
+                    Some(BpfHelper::SpinUnlock) => {
+                        if let Some(MirValue::VReg(lock)) = args.first() {
+                            out.push(VccInst::BpfSpinLockRelease {
+                                lock: VccReg(lock.0),
+                            });
+                        }
+                    }
                     Some(helper) => out.push(VccInst::BpfSpinLockRejectIfHeld {
                         message: format!(
                             "helper '{}' cannot be called while bpf_spin_lock is held",

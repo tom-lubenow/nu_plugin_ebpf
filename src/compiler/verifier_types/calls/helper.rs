@@ -838,14 +838,28 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
 
     match helper {
         BpfHelper::SpinLock => {
-            if !state.acquire_bpf_spin_lock() {
+            let acquired = args
+                .first()
+                .and_then(|arg| match arg {
+                    MirValue::VReg(reg) => Some(state.bpf_spin_lock_identity(*reg)),
+                    _ => None,
+                })
+                .is_some_and(|identity| state.acquire_bpf_spin_lock(identity));
+            if !acquired {
                 errors.push(VerifierTypeError::new(
                     "helper 'bpf_spin_lock' cannot acquire a second bpf_spin_lock",
                 ));
             }
         }
         BpfHelper::SpinUnlock => {
-            if !state.release_bpf_spin_lock() {
+            let released = args
+                .first()
+                .and_then(|arg| match arg {
+                    MirValue::VReg(reg) => Some(state.bpf_spin_lock_identity(*reg)),
+                    _ => None,
+                })
+                .is_some_and(|identity| state.release_bpf_spin_lock(identity));
+            if !released {
                 errors.push(VerifierTypeError::new(
                     "helper 'bpf_spin_unlock' requires a matching bpf_spin_lock",
                 ));

@@ -100,7 +100,7 @@ pub(super) fn apply_call_helper_inst(
                     space: AddressSpace::Map,
                     nullability: Nullability::NonNull,
                     bounds: map_value_limit_from_dst_type(types.get(&dst))
-                        .map(|limit| PtrBounds::new(PtrOrigin::Map, 0, 0, limit)),
+                        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit)),
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 },
@@ -179,7 +179,7 @@ pub(super) fn apply_call_helper_inst(
                 },
                 _ => {
                     let bounds = map_value_limit_from_dst_type(types.get(&dst))
-                        .map(|limit| PtrBounds::new(PtrOrigin::Map, 0, 0, limit));
+                        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
                     VerifierType::Ptr {
                         space: AddressSpace::Map,
                         nullability: Nullability::MaybeNull,

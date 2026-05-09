@@ -172,6 +172,7 @@ pub struct VccPointerInfo {
     pub packet_root_field: Option<VccPacketCtxField>,
     pub packet_ctx_field: Option<VccPacketCtxField>,
     pub packet_end: bool,
+    pub map_root: Option<VccReg>,
     pub context_buffer_root: Option<VccReg>,
     pub context_buffer_end: bool,
     pub ringbuf_ref: Option<VccReg>,
@@ -364,8 +365,12 @@ pub enum VccInst {
     ResSpinLockRelease {
         lock: VccReg,
     },
-    BpfSpinLockAcquire,
-    BpfSpinLockRelease,
+    BpfSpinLockAcquire {
+        lock: VccReg,
+    },
+    BpfSpinLockRelease {
+        lock: VccReg,
+    },
     BpfSpinLockRejectIfHeld {
         message: String,
     },
@@ -876,6 +881,7 @@ fn vcc_type_from_mir(ty: &MirType) -> VccValueType {
                 packet_root_field: None,
                 packet_ctx_field: None,
                 packet_end: false,
+                map_root: None,
                 context_buffer_root: None,
                 context_buffer_end: false,
                 ringbuf_ref: None,

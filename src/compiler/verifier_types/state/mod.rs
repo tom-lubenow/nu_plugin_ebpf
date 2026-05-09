@@ -18,6 +18,17 @@ struct ResSpinLockFrame {
     irqsave_slot: Option<StackSlotId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum BpfSpinLockIdentity {
+    Reg(VReg),
+    MapBounds {
+        root: VReg,
+        min: i64,
+        max: i64,
+        limit: i64,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Nullability {
     NonNull,
@@ -34,7 +45,7 @@ pub(super) enum ValueRange {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PtrOrigin {
     Stack(StackSlotId),
-    Map,
+    Map(VReg),
     Packet(VReg),
     ContextBuffer(VReg),
     KernelBtf(VReg),
@@ -196,6 +207,7 @@ pub(super) struct VerifierState {
     res_spin_lock_max_depth: u32,
     bpf_spin_lock_min_depth: u32,
     bpf_spin_lock_max_depth: u32,
+    bpf_spin_lock_identity: Option<BpfSpinLockIdentity>,
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
@@ -261,6 +273,7 @@ impl VerifierState {
             res_spin_lock_max_depth: 0,
             bpf_spin_lock_min_depth: 0,
             bpf_spin_lock_max_depth: 0,
+            bpf_spin_lock_identity: None,
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),

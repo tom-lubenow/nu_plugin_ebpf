@@ -765,21 +765,53 @@ impl VerifierState {
         self.res_spin_lock_max_depth > 0
     }
 
-    pub(in crate::compiler::verifier_types) fn acquire_bpf_spin_lock(&mut self) -> bool {
+    pub(in crate::compiler::verifier_types) fn bpf_spin_lock_identity(
+        &self,
+        reg: VReg,
+    ) -> BpfSpinLockIdentity {
+        if let VerifierType::Ptr {
+            space: AddressSpace::Map,
+            bounds: Some(bounds),
+            ..
+        } = self.get(reg)
+            && let PtrOrigin::Map(root) = bounds.origin()
+        {
+            return BpfSpinLockIdentity::MapBounds {
+                root,
+                min: bounds.min(),
+                max: bounds.max(),
+                limit: bounds.limit(),
+            };
+        }
+        BpfSpinLockIdentity::Reg(reg)
+    }
+
+    pub(in crate::compiler::verifier_types) fn acquire_bpf_spin_lock(
+        &mut self,
+        identity: BpfSpinLockIdentity,
+    ) -> bool {
         if self.bpf_spin_lock_max_depth > 0 {
             return false;
         }
         self.bpf_spin_lock_min_depth = 1;
         self.bpf_spin_lock_max_depth = 1;
+        self.bpf_spin_lock_identity = Some(identity);
         true
     }
 
-    pub(in crate::compiler::verifier_types) fn release_bpf_spin_lock(&mut self) -> bool {
+    pub(in crate::compiler::verifier_types) fn release_bpf_spin_lock(
+        &mut self,
+        identity: BpfSpinLockIdentity,
+    ) -> bool {
         if self.bpf_spin_lock_min_depth == 0 {
+            return false;
+        }
+        if self.bpf_spin_lock_identity.as_ref() != Some(&identity) {
             return false;
         }
         self.bpf_spin_lock_min_depth = 0;
         self.bpf_spin_lock_max_depth = 0;
+        self.bpf_spin_lock_identity = None;
         true
     }
 

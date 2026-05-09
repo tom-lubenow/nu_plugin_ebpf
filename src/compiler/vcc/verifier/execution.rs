@@ -532,6 +532,7 @@ impl VccVerifier {
                         packet_root_field: None,
                         packet_ctx_field: None,
                         packet_end: false,
+                        map_root: None,
                         context_buffer_root: None,
                         context_buffer_end: false,
                         ringbuf_ref: None,
@@ -881,6 +882,7 @@ impl VccVerifier {
                         packet_root_field: base_ptr.packet_root_field,
                         packet_ctx_field: None,
                         packet_end: false,
+                        map_root: base_ptr.map_root,
                         context_buffer_root: base_ptr.context_buffer_root,
                         context_buffer_end: false,
                         ringbuf_ref: base_ptr.ringbuf_ref,
@@ -1294,16 +1296,18 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::BpfSpinLockAcquire => {
-                if !state.acquire_bpf_spin_lock() {
+            VccInst::BpfSpinLockAcquire { lock } => {
+                let identity = state.bpf_spin_lock_identity(*lock);
+                if !state.acquire_bpf_spin_lock(identity) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "helper 'bpf_spin_lock' cannot acquire a second bpf_spin_lock",
                     ));
                 }
             }
-            VccInst::BpfSpinLockRelease => {
-                if !state.release_bpf_spin_lock() {
+            VccInst::BpfSpinLockRelease { lock } => {
+                let identity = state.bpf_spin_lock_identity(*lock);
+                if !state.release_bpf_spin_lock(identity) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "helper 'bpf_spin_unlock' requires a matching bpf_spin_lock",
@@ -2413,6 +2417,7 @@ fn typed_null_copy_type(ty: VccValueType) -> Option<VccValueType> {
             packet_root_field: None,
             packet_ctx_field: None,
             packet_end: false,
+            map_root: None,
             context_buffer_root: None,
             context_buffer_end: false,
             ringbuf_ref: None,

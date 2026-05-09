@@ -10257,6 +10257,29 @@ const FIXTURES = [
         error_contains: "cannot acquire a second bpf_spin_lock"
     }
     {
+        name: "spin-lock-rejects-unlock-of-different-map-entry"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let first = (0 | map-get locks --kind hash)'
+            '  let second = (1 | map-get locks --kind hash)'
+            '  if $first {'
+            '    if $second {'
+            '      helper-call "bpf_spin_lock" $first.lock'
+            '      helper-call "bpf_spin_unlock" $second.lock'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a matching bpf_spin_lock"
+    }
+    {
         name: "spin-lock-rejects-unlock-after-mixed-join"
         category: "helper-state"
         tags: [spin-lock map-define reject]

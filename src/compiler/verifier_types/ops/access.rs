@@ -92,7 +92,7 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
 
     match (space, bounds.origin()) {
         (AddressSpace::Stack, PtrOrigin::Stack(_))
-        | (AddressSpace::Map, PtrOrigin::Map)
+        | (AddressSpace::Map, PtrOrigin::Map(_))
         | (AddressSpace::Packet, PtrOrigin::Packet(_))
         | (AddressSpace::Kernel, PtrOrigin::ContextBuffer(_))
         | (AddressSpace::Kernel, PtrOrigin::KernelBtf(_)) => {}
@@ -127,7 +127,7 @@ pub(in crate::compiler::verifier_types) fn check_ptr_bounds(
     if start < 0 || end > bounds.limit() {
         let origin = match bounds.origin() {
             PtrOrigin::Stack(slot) => format!("stack slot {}", slot.0),
-            PtrOrigin::Map => "map value".to_string(),
+            PtrOrigin::Map(root) => format!("map value root v{}", root.0),
             PtrOrigin::Packet(root) => format!("packet root v{}", root.0),
             PtrOrigin::ContextBuffer(root) => format!("context buffer root v{}", root.0),
             PtrOrigin::KernelBtf(root) => format!("trusted kernel BTF root v{}", root.0),

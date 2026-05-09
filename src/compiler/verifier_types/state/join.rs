@@ -49,6 +49,7 @@ impl VerifierState {
             && self.res_spin_lock_max_depth == other.res_spin_lock_max_depth
             && self.bpf_spin_lock_min_depth == other.bpf_spin_lock_min_depth
             && self.bpf_spin_lock_max_depth == other.bpf_spin_lock_max_depth
+            && self.bpf_spin_lock_identity == other.bpf_spin_lock_identity
             && self.res_spin_lock_irqsave_min_depth == other.res_spin_lock_irqsave_min_depth
             && self.res_spin_lock_irqsave_max_depth == other.res_spin_lock_irqsave_max_depth
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
@@ -276,6 +277,12 @@ impl VerifierState {
             bpf_spin_lock_max_depth: self
                 .bpf_spin_lock_max_depth
                 .max(other.bpf_spin_lock_max_depth),
+            bpf_spin_lock_identity: join_bpf_spin_lock_identity(
+                &self.bpf_spin_lock_identity,
+                &other.bpf_spin_lock_identity,
+                self.bpf_spin_lock_max_depth
+                    .max(other.bpf_spin_lock_max_depth),
+            ),
             res_spin_lock_irqsave_min_depth: self
                 .res_spin_lock_irqsave_min_depth
                 .min(other.res_spin_lock_irqsave_min_depth),
@@ -304,6 +311,20 @@ impl VerifierState {
             guards,
         }
     }
+}
+
+fn join_bpf_spin_lock_identity(
+    lhs: &Option<BpfSpinLockIdentity>,
+    rhs: &Option<BpfSpinLockIdentity>,
+    max_depth: u32,
+) -> Option<BpfSpinLockIdentity> {
+    if lhs == rhs {
+        return lhs.clone();
+    }
+    if max_depth == 0 {
+        return None;
+    }
+    None
 }
 
 fn join_res_spin_lock_stacks(

@@ -1472,6 +1472,89 @@ fn test_verify_mir_bpf_spin_unlock_requires_matching_lock() {
 }
 
 #[test]
+fn test_verify_mir_bpf_spin_unlock_rejects_different_lock() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let first_checked = func.alloc_block();
+    let second_checked = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let first_lock = func.alloc_vreg();
+    let second_lock = func.alloc_vreg();
+    let first_non_null = func.alloc_vreg();
+    let second_non_null = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: first_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(first_lock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: first_non_null,
+        if_true: first_checked,
+        if_false: done,
+    };
+
+    func.block_mut(first_checked)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: second_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(second_lock),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(first_checked).terminator = MirInst::Branch {
+        cond: second_non_null,
+        if_true: second_checked,
+        if_false: done,
+    };
+
+    func.block_mut(second_checked)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: lock_ret,
+            helper: BpfHelper::SpinLock as u32,
+            args: vec![MirValue::VReg(first_lock)],
+        });
+    func.block_mut(second_checked)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: unlock_ret,
+            helper: BpfHelper::SpinUnlock as u32,
+            args: vec![MirValue::VReg(second_lock)],
+        });
+    func.block_mut(second_checked).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = bpf_spin_lock_types(
+        first_lock,
+        &[(lock_ret, MirType::I64), (unlock_ret, MirType::I64)],
+    );
+    types.insert(
+        second_lock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_spin_lock_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(first_non_null, MirType::Bool);
+    types.insert(second_non_null, MirType::Bool);
+
+    let err = verify_mir(&func, &types).expect_err("expected different bpf_spin_unlock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_spin_lock")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_bpf_spin_lock_must_be_released_at_exit() {
     let mut lock_ret = VReg(0);
     let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {

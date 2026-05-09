@@ -18,7 +18,7 @@ pub(super) fn apply_map_lookup_inst(
 
     let bounds = map_value_limit(map)
         .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
-        .map(|limit| PtrBounds::new(PtrOrigin::Map, 0, 0, limit));
+        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
     state.set(
         dst,
         VerifierType::Ptr {
@@ -36,7 +36,7 @@ pub(super) fn apply_global_load_inst(dst: VReg, ty: &MirType, state: &mut Verifi
         None
     } else {
         Some(PtrBounds::new(
-            PtrOrigin::Map,
+            PtrOrigin::Map(dst),
             0,
             0,
             ty.size().saturating_sub(1) as i64,

@@ -12,6 +12,17 @@ struct ResSpinLockFrame {
     irqsave_slot: Option<StackSlotId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BpfSpinLockIdentity {
+    Reg(VccReg),
+    MapBounds {
+        root: VccReg,
+        min: i64,
+        max: i64,
+        limit: i64,
+    },
+}
+
 fn unknown_stack_object_type_key(
     type_name: &str,
     type_id: Option<u32>,
@@ -64,6 +75,7 @@ struct VccState {
     res_spin_lock_max_depth: u32,
     bpf_spin_lock_min_depth: u32,
     bpf_spin_lock_max_depth: u32,
+    bpf_spin_lock_identity: Option<BpfSpinLockIdentity>,
     res_spin_lock_irqsave_min_depth: u32,
     res_spin_lock_irqsave_max_depth: u32,
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
@@ -153,6 +165,7 @@ impl VccState {
             res_spin_lock_max_depth: 0,
             bpf_spin_lock_min_depth: 0,
             bpf_spin_lock_max_depth: 0,
+            bpf_spin_lock_identity: None,
             res_spin_lock_irqsave_min_depth: 0,
             res_spin_lock_irqsave_max_depth: 0,
             res_spin_lock_irqsave_slots: HashMap::new(),
@@ -732,21 +745,44 @@ impl VccState {
         self.res_spin_lock_max_depth > 0
     }
 
-    fn acquire_bpf_spin_lock(&mut self) -> bool {
+    fn bpf_spin_lock_identity(&self, reg: VccReg) -> BpfSpinLockIdentity {
+        if let Ok(VccValueType::Ptr(VccPointerInfo {
+            space: VccAddrSpace::MapValue,
+            bounds: Some(bounds),
+            map_root: Some(root),
+            ..
+        })) = self.reg_type(reg)
+        {
+            return BpfSpinLockIdentity::MapBounds {
+                root,
+                min: bounds.min,
+                max: bounds.max,
+                limit: bounds.limit,
+            };
+        }
+        BpfSpinLockIdentity::Reg(reg)
+    }
+
+    fn acquire_bpf_spin_lock(&mut self, identity: BpfSpinLockIdentity) -> bool {
         if self.bpf_spin_lock_max_depth > 0 {
             return false;
         }
         self.bpf_spin_lock_min_depth = 1;
         self.bpf_spin_lock_max_depth = 1;
+        self.bpf_spin_lock_identity = Some(identity);
         true
     }
 
-    fn release_bpf_spin_lock(&mut self) -> bool {
+    fn release_bpf_spin_lock(&mut self, identity: BpfSpinLockIdentity) -> bool {
         if self.bpf_spin_lock_min_depth == 0 {
+            return false;
+        }
+        if self.bpf_spin_lock_identity.as_ref() != Some(&identity) {
             return false;
         }
         self.bpf_spin_lock_min_depth = 0;
         self.bpf_spin_lock_max_depth = 0;
+        self.bpf_spin_lock_identity = None;
         true
     }
 
@@ -1193,6 +1229,12 @@ impl VccState {
             bpf_spin_lock_max_depth: self
                 .bpf_spin_lock_max_depth
                 .max(other.bpf_spin_lock_max_depth),
+            bpf_spin_lock_identity: merge_bpf_spin_lock_identity(
+                &self.bpf_spin_lock_identity,
+                &other.bpf_spin_lock_identity,
+                self.bpf_spin_lock_max_depth
+                    .max(other.bpf_spin_lock_max_depth),
+            ),
             res_spin_lock_irqsave_min_depth: self
                 .res_spin_lock_irqsave_min_depth
                 .min(other.res_spin_lock_irqsave_min_depth),
@@ -1234,6 +1276,7 @@ impl VccState {
                     packet_root_field: ptr.packet_root_field,
                     packet_ctx_field: ptr.packet_ctx_field,
                     packet_end: ptr.packet_end,
+                    map_root: ptr.map_root,
                     context_buffer_root: ptr.context_buffer_root,
                     context_buffer_end: ptr.context_buffer_end,
                     ringbuf_ref: None,
@@ -1290,6 +1333,7 @@ impl VccState {
             res_spin_lock_max_depth: self.res_spin_lock_max_depth,
             bpf_spin_lock_min_depth: self.bpf_spin_lock_min_depth,
             bpf_spin_lock_max_depth: self.bpf_spin_lock_max_depth,
+            bpf_spin_lock_identity: self.bpf_spin_lock_identity.clone(),
             res_spin_lock_irqsave_min_depth: self.res_spin_lock_irqsave_min_depth,
             res_spin_lock_irqsave_max_depth: self.res_spin_lock_irqsave_max_depth,
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
@@ -1633,6 +1677,11 @@ impl VccState {
                 None
             },
             packet_end: lhs.packet_end && rhs.packet_end,
+            map_root: if lhs.map_root == rhs.map_root {
+                lhs.map_root
+            } else {
+                None
+            },
             context_buffer_root: if lhs.context_buffer_root == rhs.context_buffer_root {
                 lhs.context_buffer_root
             } else {
@@ -1665,6 +1714,7 @@ impl VccState {
             packet_root_field: concrete.packet_root_field,
             packet_ctx_field: concrete.packet_ctx_field,
             packet_end: concrete.packet_end,
+            map_root: concrete.map_root,
             context_buffer_root: concrete.context_buffer_root,
             context_buffer_end: concrete.context_buffer_end,
             ringbuf_ref,
@@ -1716,6 +1766,20 @@ fn merge_slot_depths(
         }
     }
     merged
+}
+
+fn merge_bpf_spin_lock_identity(
+    lhs: &Option<BpfSpinLockIdentity>,
+    rhs: &Option<BpfSpinLockIdentity>,
+    max_depth: u32,
+) -> Option<BpfSpinLockIdentity> {
+    if lhs == rhs {
+        return lhs.clone();
+    }
+    if max_depth == 0 {
+        return None;
+    }
+    None
 }
 
 fn merge_res_spin_lock_stacks(
