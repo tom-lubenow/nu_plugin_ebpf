@@ -3856,6 +3856,50 @@ const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
+const PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val|'
+            '      $timer.id | count'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    $m.id | count'
+            '    0'
+            '  } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb|'
+            '    $vma.vm_start | count'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_probe_read_kernel"]
+    }
+]
+
 const FIXTURES = [
     {
         name: "raw-tracepoint-count"
@@ -13343,6 +13387,109 @@ def program-kfunc-kernel-features [source: string target] {
     $features
 }
 
+def callback-trusted-btf-param-indexes [helper_name: string] {
+    if $helper_name in ["bpf_timer_set_callback" "bpf_for_each_map_elem"] {
+        return [0]
+    }
+    if $helper_name == "bpf_find_vma" {
+        return [0 1]
+    }
+
+    []
+}
+
+def helper-call-name-from-line [line: string] {
+    let parts = ($line | split row "helper-call ")
+    if ($parts | length) <= 1 {
+        return null
+    }
+
+    normalize-helper-name-token (($parts | skip 1 | first | str trim | split row " " | first))
+}
+
+def closure-param-names-from-line [line: string] {
+    let closure_parts = ($line | split row "{|")
+    if ($closure_parts | length) <= 1 {
+        return []
+    }
+
+    let raw_closure = ($closure_parts | skip 1 | first)
+    let param_parts = ($raw_closure | split row "|")
+    if ($param_parts | length) == 0 {
+        return []
+    }
+
+    $param_parts
+    | first
+    | str replace --all "," " "
+    | split row " "
+    | each {|param| $param | str trim }
+    | where {|param| $param != "" }
+}
+
+def helper-call-trusted-btf-callback-roots [line: string] {
+    let helper_name = (helper-call-name-from-line $line)
+    if $helper_name == null {
+        return []
+    }
+
+    let trusted_indexes = (callback-trusted-btf-param-indexes $helper_name)
+    if ($trusted_indexes | is-empty) {
+        return []
+    }
+
+    let params = (closure-param-names-from-line $line)
+    if ($params | is-empty) {
+        return []
+    }
+
+    mut roots = []
+    for idx in $trusted_indexes {
+        if $idx < ($params | length) {
+            let param = ($params | get $idx)
+            if $param not-in $roots {
+                $roots = ($roots | append $param)
+            }
+        }
+    }
+
+    $roots
+}
+
+def program-callback-btf-kernel-features [source: string] {
+    mut features = []
+    mut trusted_roots = []
+
+    for line in ($source | lines) {
+        let callback_roots = (helper-call-trusted-btf-callback-roots $line)
+        if not ($callback_roots | is-empty) {
+            $trusted_roots = $callback_roots
+        }
+
+        for root in $trusted_roots {
+            let prefix = $"$($root)."
+            let parts = ($line | split row $prefix)
+            if ($parts | length) <= 1 {
+                continue
+            }
+
+            for raw_tail in ($parts | skip 1) {
+                let field = (normalize-context-field-token $raw_tail)
+                if $field != "" {
+                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_KERNEL])
+                }
+            }
+        }
+
+        let trimmed = ($line | str trim)
+        if not ($trusted_roots | is-empty) and ($trimmed | str starts-with "}") {
+            $trusted_roots = []
+        }
+    }
+
+    $features
+}
+
 def program-context-field-kernel-features [source: string target] {
     mut features = []
     let context_names = (program-context-variable-names $source)
@@ -13820,6 +13967,7 @@ def fixture-kernel-features [fixture] {
     $features = (append-missing-kernel-features $features (program-global-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-helper-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-kfunc-kernel-features $program ($fixture | get -o target)))
+    $features = (append-missing-kernel-features $features (program-callback-btf-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-context-field-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-surface-kernel-features $program ($fixture | get -o target)))
     $features = (append-missing-kernel-features $features (program-struct-ops-kernel-features $program ($fixture | get -o target)))
@@ -14459,6 +14607,23 @@ def validate-program-kfunc-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-callback-btf-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let expected_keys = ($expectation.feature_keys | sort)
+        let actual_keys = (
+            program-callback-btf-kernel-features $program
+            | each {|feature| $feature.key }
+            | sort
+        )
+        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+
+        if ($missing | length) > 0 {
+            fail $"program-callback-btf-kernel-features drifted: missing=($missing | str join ',') actual=($actual_keys | str join ',')"
+        }
+    }
+}
+
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
@@ -14469,6 +14634,7 @@ def validate-fixture-metadata [fixtures] {
     validate-program-surface-kernel-feature-expectations
     validate-program-helper-kernel-feature-expectations
     validate-program-kfunc-kernel-feature-expectations
+    validate-program-callback-btf-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 
