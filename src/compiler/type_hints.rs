@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::compiler::elf::ProbeContext;
-use crate::compiler::instruction::BpfHelper;
+use crate::compiler::instruction::{BpfHelper, KfuncRetKind, KfuncSignature};
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, CtxField, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirType,
     MirTypeHints, MirValue, StackSlotId, StructField, VReg,
@@ -199,31 +199,32 @@ fn recover_ctx_field_hint(
     }
 }
 
-fn recover_pointer_arith_result_hint(ty: &MirType, offset: Option<i64>) -> MirType {
+fn recover_pointer_arith_result_hint(ty: &MirType, offset: Option<i64>) -> Option<MirType> {
     match ty {
         MirType::Ptr {
             pointee,
             address_space,
         } => match pointee.as_ref() {
-            MirType::Array { elem, .. } => MirType::Ptr {
+            MirType::Array { elem, .. } => Some(MirType::Ptr {
                 pointee: Box::new(elem.as_ref().clone()),
                 address_space: *address_space,
-            },
-            MirType::Struct { fields, .. } => offset
-                .and_then(|offset| usize::try_from(offset).ok())
-                .and_then(|offset| {
-                    fields
-                        .iter()
-                        .find(|field| !field.synthetic && field.offset == offset)
-                        .map(|field| MirType::Ptr {
-                            pointee: Box::new(field.ty.clone()),
-                            address_space: *address_space,
-                        })
-                })
-                .unwrap_or_else(|| ty.clone()),
-            _ => ty.clone(),
+            }),
+            MirType::Struct { fields, .. } => {
+                let offset = offset.and_then(|offset| usize::try_from(offset).ok())?;
+                if offset == 0 {
+                    return Some(ty.clone());
+                }
+                fields
+                    .iter()
+                    .find(|field| !field.synthetic && field.offset == offset)
+                    .map(|field| MirType::Ptr {
+                        pointee: Box::new(field.ty.clone()),
+                        address_space: *address_space,
+                    })
+            }
+            _ => Some(ty.clone()),
         },
-        _ => ty.clone(),
+        _ => None,
     }
 }
 
@@ -464,6 +465,7 @@ pub(crate) fn infer_instruction_def_type(
                     };
                     recover_pointer_arith_result_hint(ty, offset)
                 })
+                .flatten()
                 .or_else(|| {
                     if matches!(op, BinOpKind::Add) {
                         rhs_ptr
@@ -475,6 +477,7 @@ pub(crate) fn infer_instruction_def_type(
                                 };
                                 recover_pointer_arith_result_hint(ty, offset)
                             })
+                            .flatten()
                     } else {
                         None
                     }
@@ -495,6 +498,19 @@ pub(crate) fn infer_instruction_def_type(
                         .and_then(TypeInference::precise_helper_return_mir_type)
                 })
                 .map(|ty| (*dst, ty, true))
+        }
+        MirInst::CallKfunc { dst, kfunc, .. } => {
+            let sig = KfuncSignature::for_name_or_kernel_btf(kfunc)?;
+            let ty = match sig.ret_kind {
+                KfuncRetKind::Scalar | KfuncRetKind::Void => MirType::I64,
+                KfuncRetKind::PointerMaybeNull => {
+                    TypeInference::precise_kfunc_return_mir_type(kfunc).unwrap_or(MirType::Ptr {
+                        pointee: Box::new(MirType::Unknown),
+                        address_space: AddressSpace::Kernel,
+                    })
+                }
+            };
+            Some((*dst, ty, true))
         }
         _ => None,
     }
@@ -877,6 +893,56 @@ mod tests {
         };
         assert_eq!(hints.get(&helper_dst), Some(&sock_ty));
         assert_eq!(hints.get(&merged_ptr), Some(&sock_ty));
+        assert_eq!(hints.get(&field_ptr), Some(&field_ty));
+    }
+
+    #[test]
+    fn test_recover_optimized_function_type_hints_recovers_precise_kfunc_return_copy() {
+        let mut func = MirFunction::new();
+        let bb0 = func.alloc_block();
+        func.entry = bb0;
+
+        let kfunc_dst = func.alloc_vreg();
+        let copied_ptr = func.alloc_vreg();
+        let field_ptr = func.alloc_vreg();
+
+        func.block_mut(bb0).instructions.push(MirInst::CallKfunc {
+            dst: kfunc_dst,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![VReg(99)],
+        });
+        func.block_mut(bb0).instructions.push(MirInst::Copy {
+            dst: copied_ptr,
+            src: MirValue::VReg(kfunc_dst),
+        });
+        func.block_mut(bb0).instructions.push(MirInst::BinOp {
+            dst: field_ptr,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(copied_ptr),
+            rhs: MirValue::Const(4),
+        });
+        func.block_mut(bb0).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(field_ptr)),
+        };
+
+        let field_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U32),
+            address_space: AddressSpace::Kernel,
+        };
+        let mut hints = HashMap::from([(field_ptr, field_ty.clone())]);
+
+        recover_optimized_function_type_hints(
+            &func,
+            None,
+            &mut hints,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        let task_ty = MirType::named_kernel_struct_ptr("task_struct");
+        assert_eq!(hints.get(&kfunc_dst), Some(&task_ty));
+        assert_eq!(hints.get(&copied_ptr), Some(&task_ty));
         assert_eq!(hints.get(&field_ptr), Some(&field_ty));
     }
 

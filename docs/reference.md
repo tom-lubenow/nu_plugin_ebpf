@@ -724,6 +724,10 @@ minimum kernel alongside its `bpf_sk_assign` helper floor.
 pointer/ref semantics, and the program-specific kfunc surfaces it knows about,
 but exact kfunc availability is still kernel-version and program-type specific;
 the kernel verifier remains the final authority for unmodeled kfunc allowlists.
+Known kfuncs that return named kernel pointers preserve those pointer types
+through locals, and their fields can be projected when kernel BTF is available;
+for example, a null-checked `bpf_task_acquire` result can read `$task.pid`
+before releasing the reference.
 For raw object and graph kfuncs, operands that map to verifier-rewritten
 `__ign` metadata parameters must be known zero in source; the kernel replaces
 them during load with the appropriate BTF metadata when the call is valid.

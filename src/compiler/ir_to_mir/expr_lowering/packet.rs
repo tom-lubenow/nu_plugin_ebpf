@@ -473,6 +473,47 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn resolve_named_kernel_btf_struct_field_step(
+        type_name: &str,
+        field_name: &str,
+        path_desc: &str,
+    ) -> Result<TypedProjectionStep, CompileError> {
+        let projection = KernelBtf::get()
+            .kernel_named_type_field_projection(
+                type_name,
+                &[TrampolineFieldSelector::Field(field_name.to_string())],
+            )
+            .map_err(|e| {
+                CompileError::UnsupportedInstruction(format!(
+                    "failed to resolve typed field path '{}' from kernel BTF type '{}': {}",
+                    path_desc, type_name, e
+                ))
+            })?;
+        let offset = projection
+            .path
+            .first()
+            .map(|segment| segment.offset_bytes)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "failed to resolve typed field path '{}' from kernel BTF type '{}'",
+                    path_desc, type_name
+                ))
+            })?;
+        let projected_ty = Self::projected_trampoline_field_type(&projection.type_info)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' resolved to unsupported kernel type {:?}",
+                    path_desc, projection.type_info
+                ))
+            })?;
+        Ok(TypedProjectionStep {
+            offset,
+            ty: projected_ty,
+            bitfield: projection.path[0].bitfield,
+            packet_big_endian: false,
+        })
+    }
+
     fn packet_struct_field(
         name: &str,
         ty: MirType,
@@ -800,6 +841,13 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if let Some(type_id) = *kernel_btf_type_id {
                     return Self::resolve_kernel_btf_struct_field_step(type_id, val, path_desc);
+                }
+                let is_opaque_named_struct =
+                    fields.len() == 1 && fields[0].name == "__opaque" && fields[0].offset == 0;
+                if is_opaque_named_struct && let Some(type_name) = name {
+                    return Self::resolve_named_kernel_btf_struct_field_step(
+                        type_name, field_name, path_desc,
+                    );
                 }
                 Err(CompileError::UnsupportedInstruction(format!(
                     "typed field path '{}' has no field '{}'",

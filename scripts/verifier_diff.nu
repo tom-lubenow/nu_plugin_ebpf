@@ -9477,6 +9477,25 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-task-acquire-project-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source metadata accept]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    $task.pid | count'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-task-acquire-rejects-leak"
         category: "helper-state"
         tags: [kfunc ref-lifetime source reject]
@@ -9502,6 +9521,25 @@ const FIXTURES = [
             '{|ctx|'
             '  let file = (kfunc-call "bpf_get_task_exe_file" $ctx.current_task)'
             '  if $file {'
+            '    $file | kfunc-call "bpf_put_file"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-file-ref-project-release"
+        category: "helper-state"
+        tags: [kfunc file ref-lifetime source metadata accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let file = (kfunc-call "bpf_get_task_exe_file" $ctx.current_task)'
+            '  if $file {'
+            '    $file.f_mode | count'
             '    $file | kfunc-call "bpf_put_file"'
             '  }'
             '  0'
