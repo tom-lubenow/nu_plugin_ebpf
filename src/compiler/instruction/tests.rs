@@ -5529,6 +5529,37 @@ fn test_kfunc_arg_pointee_mismatch_uses_kernel_btf_fallback_pointer_arg() {
 }
 
 #[test]
+fn test_kfunc_arg_pointee_mismatch_allows_skb_dynptr_skb_projection_aliases() {
+    const KFUNC: &str = "bpf_dynptr_from_skb";
+
+    let Ok(Some(crate::kernel_btf::TypeInfo::Ptr { target, .. })) =
+        crate::kernel_btf::KernelBtf::get().function_trampoline_arg_type_info(KFUNC, 0)
+    else {
+        return;
+    };
+    let crate::kernel_btf::TypeInfo::Struct { name, .. } = target.as_ref() else {
+        return;
+    };
+    let name = name.strip_prefix("struct ").unwrap_or(name);
+    if !matches!(name, "__sk_buff" | "sk_buff") {
+        return;
+    }
+
+    assert_eq!(
+        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("__sk_buff")),
+        None
+    );
+    assert_eq!(
+        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("sk_buff")),
+        None
+    );
+    assert_eq!(
+        kfunc_arg_pointee_mismatch(KFUNC, 0, &MirType::opaque_named_struct("task_struct")),
+        Some(name.to_string())
+    );
+}
+
+#[test]
 fn test_kfunc_signature_for_name_or_kernel_btf_missing_symbol() {
     assert!(
         KfuncSignature::for_name_or_kernel_btf("__nu_plugin_ebpf_missing_kfunc_for_test__")

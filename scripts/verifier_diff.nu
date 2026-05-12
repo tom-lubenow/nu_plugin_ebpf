@@ -5776,6 +5776,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "dynptr-kfunc-from-skb-accepts-netfilter-skb-pointer"
+        category: "helper-state"
+        tags: [kfunc dynptr skb netfilter accept]
+        requires: [kernel-btf]
+        target: "netfilter:ipv4:pre_routing"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx.skb 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "dynptr-kfunc-from-skb-rejects-reinitialize"
         category: "helper-state"
         tags: [kfunc dynptr skb tc reject]

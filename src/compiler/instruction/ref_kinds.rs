@@ -190,6 +190,9 @@ fn kfunc_btf_arg_pointee_mismatch(
 
     let expected = kfunc_btf_arg_struct_pointee_name(kfunc, arg_idx)?;
     let actual = mir_struct_name(pointee)?;
+    if kfunc_arg_accepts_btf_pointee_alias(kfunc, arg_idx, &expected, actual) {
+        return None;
+    }
     (actual != expected).then_some(expected)
 }
 
@@ -218,7 +221,11 @@ fn kfunc_btf_arg_struct_pointee_name(kfunc: &str, arg_idx: usize) -> Option<Stri
         return None;
     };
     let name = name.strip_prefix("struct ").unwrap_or(name);
-    (!name.is_empty() && name != "<anonymous>").then(|| name.to_string())
+    if name.is_empty() || name == "<anonymous>" {
+        return None;
+    }
+
+    Some(name.to_string())
 }
 
 fn mir_struct_name(ty: &MirType) -> Option<&str> {
@@ -229,6 +236,19 @@ fn mir_struct_name(ty: &MirType) -> Option<&str> {
         return None;
     };
     Some(name.strip_prefix("struct ").unwrap_or(name))
+}
+
+fn kfunc_arg_accepts_btf_pointee_alias(
+    kfunc: &str,
+    arg_idx: usize,
+    expected: &str,
+    actual: &str,
+) -> bool {
+    matches!(
+        (kfunc, arg_idx, expected, actual),
+        ("bpf_dynptr_from_skb", 0, "__sk_buff", "sk_buff")
+            | ("bpf_dynptr_from_skb", 0, "sk_buff", "__sk_buff")
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
