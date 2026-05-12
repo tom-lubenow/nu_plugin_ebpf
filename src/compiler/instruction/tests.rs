@@ -7062,6 +7062,23 @@ fn test_kfunc_semantics_xdp_metadata_rules() {
 }
 
 #[test]
+fn test_kfunc_semantics_xdp_xfrm_state_opts_rule() {
+    let semantics = kfunc_semantics("bpf_xdp_get_xfrm_state");
+    assert_eq!(semantics.positive_size_args, &[2]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+
+    let opts = semantics.ptr_arg_rules[0];
+    assert_eq!(opts.arg_idx, 1);
+    assert_eq!(opts.op, "kfunc bpf_xdp_get_xfrm_state opts");
+    assert!(opts.allowed.allow_stack);
+    assert!(opts.allowed.allow_map);
+    assert!(!opts.allowed.allow_kernel);
+    assert!(!opts.allowed.allow_user);
+    assert_eq!(opts.fixed_size, None);
+    assert_eq!(opts.size_from_arg, Some(2));
+}
+
+#[test]
 fn test_kfunc_semantics_default_empty() {
     let semantics = kfunc_semantics("bpf_task_release");
     assert!(semantics.ptr_arg_rules.is_empty());

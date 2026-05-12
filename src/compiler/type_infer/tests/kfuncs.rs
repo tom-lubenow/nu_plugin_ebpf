@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::EbpfProgramType;
 
 fn infer_in_sched_ext_callback(
     func: &MirFunction,
@@ -4932,6 +4933,85 @@ fn test_type_error_kfunc_dynptr_slice_requires_constant_size_arg() {
         errs.iter().any(|e| e
             .message
             .contains("kfunc 'bpf_dynptr_slice' arg3 must be known constant")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+fn make_xdp_get_xfrm_state_type_call(size: i64, buffer_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let opts = func.alloc_vreg();
+    let opts_size = func.alloc_vreg();
+    let state = func.alloc_vreg();
+    let opts_slot = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: opts,
+        src: MirValue::StackSlot(opts_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: opts_size,
+        src: MirValue::Const(size),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: state,
+        kfunc: "bpf_xdp_get_xfrm_state".to_string(),
+        btf_id: None,
+        args: vec![ctx, opts, opts_size],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, state)
+}
+
+#[test]
+fn test_infer_xdp_get_xfrm_state_accepts_xdp_opts_buffer() {
+    let (func, state) = make_xdp_get_xfrm_state_type_call(32, 32);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_xdp_get_xfrm_state to infer in xdp");
+
+    match types.get(&state) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected xfrm_state kernel pointer, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_type_error_xdp_get_xfrm_state_rejects_non_xdp_program() {
+    let (func, _) = make_xdp_get_xfrm_state_type_call(32, 32);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_xdp_get_xfrm_state to be rejected outside xdp");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' is only valid in xdp programs")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_xdp_get_xfrm_state_rejects_small_opts_buffer() {
+    let (func, _) = make_xdp_get_xfrm_state_type_call(32, 16);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_xdp_get_xfrm_state opts bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_xdp_get_xfrm_state opts requires 32 bytes")),
         "unexpected errors: {:?}",
         errs
     );

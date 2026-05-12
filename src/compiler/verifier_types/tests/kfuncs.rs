@@ -1,6 +1,6 @@
 use super::*;
-use crate::compiler::ProbeContext;
 use crate::compiler::mir::StructField;
+use crate::compiler::{EbpfProgramType, ProbeContext};
 
 fn push_bpf_spin_lock_call(func: &mut MirFunction, block: BlockId, dst: VReg, lock: VReg) {
     func.block_mut(block)
@@ -14424,6 +14424,140 @@ fn test_kfunc_dynptr_slice_requires_constant_size_arg() {
         err.iter().any(|e| e
             .message
             .contains("kfunc 'bpf_dynptr_slice' arg3 must be known constant")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+fn make_xdp_get_xfrm_state_verify_function(
+    opts_size: i64,
+    buffer_size: usize,
+    release_state: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let opts = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let state = func.alloc_vreg();
+    let state_non_null = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let opts_slot = func.alloc_stack_slot(buffer_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: opts,
+        src: MirValue::StackSlot(opts_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(opts_size),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: state,
+        kfunc: "bpf_xdp_get_xfrm_state".to_string(),
+        btf_id: None,
+        args: vec![ctx, opts, size],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: state_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(state),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: state_non_null,
+        if_true: release,
+        if_false: done,
+    };
+
+    if release_state {
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_xdp_xfrm_state_release".to_string(),
+                btf_id: None,
+                args: vec![state],
+            });
+    }
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        opts,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(
+        state,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(state_non_null, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_xdp_get_xfrm_state_release_accepts_xdp() {
+    let (func, types) = make_xdp_get_xfrm_state_verify_function(32, 32, true);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected bpf_xdp_get_xfrm_state reference to be released");
+}
+
+#[test]
+fn test_xdp_get_xfrm_state_requires_release() {
+    let (func, types) = make_xdp_get_xfrm_state_verify_function(32, 32, false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected unreleased bpf_xdp_get_xfrm_state reference");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased kfunc reference")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_xdp_get_xfrm_state_rejects_small_opts_buffer() {
+    let (func, types) = make_xdp_get_xfrm_state_verify_function(32, 16, true);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_xdp_get_xfrm_state opts bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc bpf_xdp_get_xfrm_state opts out of bounds")),
         "unexpected errors: {:?}",
         err
     );

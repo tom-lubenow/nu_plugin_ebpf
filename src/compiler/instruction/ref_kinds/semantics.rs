@@ -163,6 +163,13 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
             size_from_arg: None,
         },
     ];
+    const XDP_XFRM_GET_STATE_RULES: &[KfuncPtrArgRule] = &[KfuncPtrArgRule {
+        arg_idx: 1,
+        op: "kfunc bpf_xdp_get_xfrm_state opts",
+        allowed: STACK_MAP,
+        fixed_size: None,
+        size_from_arg: Some(2),
+    }];
     const COPY_FROM_USER_STR_RULES: &[KfuncPtrArgRule] = &[
         KfuncPtrArgRule {
             arg_idx: 0,
@@ -472,6 +479,10 @@ pub fn kfunc_semantics(kfunc: &str) -> KfuncSemantics {
         "bpf_xdp_metadata_rx_vlan_tag" => KfuncSemantics {
             ptr_arg_rules: XDP_METADATA_VLAN_TAG_RULES,
             positive_size_args: &[],
+        },
+        "bpf_xdp_get_xfrm_state" => KfuncSemantics {
+            ptr_arg_rules: XDP_XFRM_GET_STATE_RULES,
+            positive_size_args: &[2],
         },
         _ => NONE,
     }
