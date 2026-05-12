@@ -303,6 +303,7 @@ fn helper_compatibility_requirements_for_programs(
         }
     }
 
+    requirements.sort_by_key(|requirement| requirement.key());
     requirements
 }
 
