@@ -10648,6 +10648,14 @@ fn test_ebpf_program_reports_helper_compatibility_requirements() {
     let program = EbpfProgram::new(EbpfProgramType::Kprobe, "do_sys_openat2", "main", builder);
 
     let requirements = program.helper_compatibility_requirements();
+    assert_eq!(
+        program.used_helpers(),
+        vec![
+            "bpf_ringbuf_reserve",
+            "bpf_trace_printk",
+            "bpf_user_ringbuf_drain",
+        ]
+    );
     assert_eq!(requirements.len(), 3);
     assert_eq!(requirements[0].helper(), BpfHelper::RingbufReserve);
     assert_eq!(requirements[0].key(), "helper:bpf_ringbuf_reserve");
@@ -10656,13 +10664,10 @@ fn test_ebpf_program_reports_helper_compatibility_requirements() {
     assert_eq!(requirements[2].helper(), BpfHelper::UserRingbufDrain);
     assert_eq!(requirements[2].key(), "helper:bpf_user_ringbuf_drain");
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
-    assert_eq!(
-        program
-            .clone()
-            .into_object()
-            .helper_compatibility_minimum_kernel(),
-        Some("6.1")
-    );
+    let object = program.clone().into_object();
+    assert_eq!(object.used_helpers(), program.used_helpers());
+    assert_eq!(object.programs[0].used_helpers(), program.used_helpers());
+    assert_eq!(object.helper_compatibility_minimum_kernel(), Some("6.1"));
 }
 
 #[test]

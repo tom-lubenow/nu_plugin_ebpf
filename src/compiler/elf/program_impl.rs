@@ -225,11 +225,9 @@ fn map_value_compatibility_requirements_for_programs(
     )
 }
 
-fn helper_compatibility_requirements_for_bytecode(
-    bytecode: &[u8],
-) -> Vec<HelperCompatibilityRequirement> {
+fn helpers_for_bytecode(bytecode: &[u8]) -> Vec<BpfHelper> {
     let mut seen = HashSet::new();
-    let mut requirements = Vec::new();
+    let mut helpers = Vec::new();
 
     for instruction in bytecode.chunks_exact(8) {
         if instruction[0] != opcode::CALL {
@@ -252,15 +250,43 @@ fn helper_compatibility_requirements_for_bytecode(
         let Some(helper) = BpfHelper::from_u32(helper_id as u32) else {
             continue;
         };
-        let Some(requirement) = helper.compatibility_requirement() else {
-            continue;
-        };
         if seen.insert(helper) {
-            requirements.push(requirement);
+            helpers.push(helper);
         }
     }
 
+    helpers.sort_by_key(|helper| helper.name());
+    helpers
+}
+
+fn used_helper_names_for_bytecode(bytecode: &[u8]) -> Vec<&'static str> {
+    helpers_for_bytecode(bytecode)
+        .into_iter()
+        .map(BpfHelper::name)
+        .collect()
+}
+
+fn helper_compatibility_requirements_for_bytecode(
+    bytecode: &[u8],
+) -> Vec<HelperCompatibilityRequirement> {
+    let mut requirements = helpers_for_bytecode(bytecode)
+        .into_iter()
+        .filter_map(BpfHelper::compatibility_requirement)
+        .collect::<Vec<_>>();
+
+    requirements.sort_by_key(|requirement| requirement.key());
     requirements
+}
+
+fn used_helper_names_for_programs(programs: &[EbpfProgramSection]) -> Vec<&'static str> {
+    let mut helpers = HashSet::new();
+    for program in programs {
+        helpers.extend(helpers_for_bytecode(&program.bytecode));
+    }
+
+    let mut names = helpers.into_iter().map(BpfHelper::name).collect::<Vec<_>>();
+    names.sort_unstable();
+    names
 }
 
 fn helper_compatibility_requirements_for_programs(
@@ -1033,6 +1059,10 @@ impl EbpfProgramSection {
         helper_compatibility_requirements_for_bytecode(&self.bytecode)
     }
 
+    pub fn used_helpers(&self) -> Vec<&'static str> {
+        used_helper_names_for_bytecode(&self.bytecode)
+    }
+
     pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         HelperCompatibilityRequirement::effective_minimum_kernel(
             &self.helper_compatibility_requirements(),
@@ -1732,6 +1762,10 @@ impl EbpfObject {
         helper_compatibility_requirements_for_programs(&self.programs)
     }
 
+    pub fn used_helpers(&self) -> Vec<&'static str> {
+        used_helper_names_for_programs(&self.programs)
+    }
+
     pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         HelperCompatibilityRequirement::effective_minimum_kernel(
             &self.helper_compatibility_requirements(),
@@ -2325,6 +2359,10 @@ impl EbpfProgram {
 
     pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
         helper_compatibility_requirements_for_bytecode(&self.bytecode)
+    }
+
+    pub fn used_helpers(&self) -> Vec<&'static str> {
+        used_helper_names_for_bytecode(&self.bytecode)
     }
 
     pub fn helper_compatibility_minimum_kernel(&self) -> Option<&'static str> {

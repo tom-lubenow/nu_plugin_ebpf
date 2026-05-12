@@ -46,8 +46,8 @@ restrictive default lane across those requirements. Live-load preflight also
 checks source-verified map-kind, global data-section, typed map-value field,
 all modeled helper, source-preserved known-kfunc, and source-preserved
 context-field floors from the compiled object, and the compiled program/object
-model exposes an aggregate `compatibility_minimum_kernel` summary across those
-source-verified categories.
+model exposes aggregate `compatibility_minimum_kernel` metadata plus the
+derived `used_helpers` / `used_kfuncs` call surfaces behind those summaries.
 Known kfunc compatibility windows can also carry a maximum-exclusive kernel
 bound when the upstream kfunc spelling is source-verified as transitional.
 `ebpf spec`
