@@ -1226,6 +1226,13 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
         }]
     );
 
+    let xdp_dynptr = kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_dynptr_from_xdp")
+        .expect("XDP dynptr kfunc should be advertised");
+    assert_eq!(xdp_dynptr.policy, "xdp-only");
+    assert_eq!(xdp_dynptr.note, "xdp");
+
     let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
         .into_record()
         .expect("spec output should be a record");
@@ -1336,7 +1343,13 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
     );
 
     let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
-    assert!(spec_kfunc_calls(&tc).is_empty());
+    let tc_kfuncs = spec_kfunc_calls(&tc);
+    let skb_dynptr = tc_kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_dynptr_from_skb")
+        .expect("TC skb dynptr kfunc should be advertised");
+    assert_eq!(skb_dynptr.policy, "skb-packet-dynptr");
+    assert_eq!(skb_dynptr.note, "skb-backed program");
 }
 
 #[test]

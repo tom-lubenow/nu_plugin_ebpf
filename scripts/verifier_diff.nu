@@ -5741,6 +5741,23 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_from_xdp' arg1 must be known zero"
     }
     {
+        name: "dynptr-kfunc-from-xdp-rejects-non-xdp-program"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp program-policy reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_xdp' is only valid in xdp programs"
+    }
+    {
         name: "dynptr-kfunc-from-skb-initializes-dynptr"
         category: "helper-state"
         tags: [kfunc dynptr skb tc accept]
@@ -5792,6 +5809,23 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_dynptr_from_skb' arg1 must be known zero"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-rejects-non-skb-program"
+        category: "helper-state"
+        tags: [kfunc dynptr skb program-policy reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' is only valid in socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser, and netfilter programs"
     }
     {
         name: "dynptr-kfunc-size-initialized-ringbuf"

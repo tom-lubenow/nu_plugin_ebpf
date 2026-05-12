@@ -19,12 +19,30 @@ const SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS: &[&str] = &[
     "scx_bpf_dsq_insert_vtime",
 ];
 const XDP_ONLY_KFUNCS: &[&str] = &[
+    "bpf_dynptr_from_xdp",
     "bpf_xdp_get_xfrm_state",
     "bpf_xdp_metadata_rx_hash",
     "bpf_xdp_metadata_rx_timestamp",
     "bpf_xdp_metadata_rx_vlan_tag",
     "bpf_xdp_xfrm_state_release",
 ];
+const SKB_PACKET_DYNPTR_KFUNCS: &[&str] = &["bpf_dynptr_from_skb"];
+const SKB_PACKET_DYNPTR_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::Netfilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
+    EbpfProgramType::Netkit,
+    EbpfProgramType::TcAction,
+    EbpfProgramType::CgroupSkb,
+];
+const SKB_PACKET_DYNPTR_PROGRAM_LABEL: &str = "socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser, and netfilter";
 const SCHED_EXT_SLEEPABLE_ONLY_KFUNCS: &[&str] = &["scx_bpf_create_dsq"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +96,10 @@ fn modeled_kfunc_policy(kfunc: &str) -> Option<ProgramSpecificKfuncPolicy> {
         .iter()
         .copied()
         .find(|policy| policy.modeled_kfuncs.contains(&kfunc))
+}
+
+fn skb_packet_dynptr_kfunc_allowed(program_type: EbpfProgramType) -> bool {
+    SKB_PACKET_DYNPTR_PROGRAMS.contains(&program_type)
 }
 
 fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
@@ -138,6 +160,15 @@ impl ProgramSpec {
 
         if self.program_type() == EbpfProgramType::Xdp {
             push_program_kfunc_surfaces(&mut surfaces, XDP_ONLY_KFUNCS, "xdp-only", "xdp");
+        }
+
+        if skb_packet_dynptr_kfunc_allowed(self.program_type()) {
+            push_program_kfunc_surfaces(
+                &mut surfaces,
+                SKB_PACKET_DYNPTR_KFUNCS,
+                "skb-packet-dynptr",
+                "skb-backed program",
+            );
         }
 
         let Some((StructOpsFamily::SchedExt, sleepable)) =
@@ -201,6 +232,14 @@ impl ProgramSpec {
         }
         if XDP_ONLY_KFUNCS.contains(&kfunc) && self.program_type() != EbpfProgramType::Xdp {
             return Some(format!("kfunc '{}' is only valid in xdp programs", kfunc));
+        }
+        if SKB_PACKET_DYNPTR_KFUNCS.contains(&kfunc)
+            && !skb_packet_dynptr_kfunc_allowed(self.program_type())
+        {
+            return Some(format!(
+                "kfunc '{}' is only valid in {} programs",
+                kfunc, SKB_PACKET_DYNPTR_PROGRAM_LABEL
+            ));
         }
 
         let Some((StructOpsFamily::SchedExt, sleepable)) =
@@ -287,6 +326,26 @@ mod tests {
                 "kfunc '{kfunc}' appears in both xdp-only and program-specific policies"
             );
         }
+        assert_unique_kfunc_names("skb packet dynptr kfuncs", SKB_PACKET_DYNPTR_KFUNCS);
+        for kfunc in SKB_PACKET_DYNPTR_KFUNCS {
+            assert!(
+                !modeled_kfuncs.contains(kfunc),
+                "kfunc '{kfunc}' appears in both skb packet dynptr and program-specific policies"
+            );
+            assert!(
+                !XDP_ONLY_KFUNCS.contains(kfunc),
+                "kfunc '{kfunc}' appears in both skb packet dynptr and xdp-only policies"
+            );
+        }
+        assert!(!SKB_PACKET_DYNPTR_PROGRAMS.is_empty());
+        let mut skb_dynptr_programs = HashSet::new();
+        for program_type in SKB_PACKET_DYNPTR_PROGRAMS {
+            assert!(
+                skb_dynptr_programs.insert(*program_type),
+                "duplicate skb packet dynptr program type {:?}",
+                program_type
+            );
+        }
 
         let mut sched_ext_kfuncs = HashSet::new();
         for (table_name, kfuncs) in [
@@ -318,6 +377,10 @@ mod tests {
                     "kfunc '{kfunc}' appears in both sched_ext and xdp-only policies"
                 );
                 assert!(
+                    !SKB_PACKET_DYNPTR_KFUNCS.contains(kfunc),
+                    "kfunc '{kfunc}' appears in both sched_ext and skb packet dynptr policies"
+                );
+                assert!(
                     sched_ext_kfuncs.insert(*kfunc),
                     "sched_ext kfunc '{kfunc}' appears in multiple callback policy tables"
                 );
@@ -343,6 +406,10 @@ mod tests {
                 "kfunc '{kfunc}' appears in both sched_ext and xdp-only policies"
             );
             assert!(
+                !SKB_PACKET_DYNPTR_KFUNCS.contains(kfunc),
+                "kfunc '{kfunc}' appears in both sched_ext and skb packet dynptr policies"
+            );
+            assert!(
                 sched_ext_kfuncs.insert(*kfunc),
                 "sched_ext kfunc '{kfunc}' appears in multiple callback policy tables"
             );
@@ -361,6 +428,7 @@ mod tests {
                 &["bpf_sock_addr_set_sun_path"][..],
             ),
             ("xdp-only kfuncs", XDP_ONLY_KFUNCS),
+            ("skb packet dynptr kfuncs", SKB_PACKET_DYNPTR_KFUNCS),
             (
                 "sched_ext dispatch-only kfuncs",
                 SCHED_EXT_DISPATCH_ONLY_KFUNCS,
@@ -530,6 +598,7 @@ mod tests {
         assert_eq!(
             xdp_kfuncs,
             vec![
+                "bpf_dynptr_from_xdp",
                 "bpf_xdp_get_xfrm_state",
                 "bpf_xdp_metadata_rx_hash",
                 "bpf_xdp_metadata_rx_timestamp",
@@ -540,7 +609,7 @@ mod tests {
 
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("expected tc spec");
-        assert!(kfunc_surface_names(&tc).is_empty());
+        assert_eq!(kfunc_surface_names(&tc), vec!["bpf_dynptr_from_skb"]);
 
         let sock_ops =
             ProgramSpec::from_program_type_target(EbpfProgramType::SockOps, "/sys/fs/cgroup")
@@ -582,6 +651,7 @@ mod tests {
     fn test_program_spec_kfunc_policy_limits_xdp_kfuncs_to_xdp() {
         let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
             .expect("expected xdp spec");
+        assert_eq!(xdp.kfunc_call_error("bpf_dynptr_from_xdp"), None);
         assert_eq!(xdp.kfunc_call_error("bpf_xdp_metadata_rx_hash"), None);
         assert_eq!(xdp.kfunc_call_error("bpf_xdp_get_xfrm_state"), None);
 
@@ -595,5 +665,58 @@ mod tests {
             tc.kfunc_call_error("bpf_xdp_get_xfrm_state"),
             Some("kfunc 'bpf_xdp_get_xfrm_state' is only valid in xdp programs".to_string())
         );
+        assert_eq!(
+            tc.kfunc_call_error("bpf_dynptr_from_xdp"),
+            Some("kfunc 'bpf_dynptr_from_xdp' is only valid in xdp programs".to_string())
+        );
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_policy_limits_skb_dynptr_to_skb_programs() {
+        for (program_type, target) in [
+            (EbpfProgramType::SocketFilter, "tcp4:127.0.0.1:8080"),
+            (
+                EbpfProgramType::Netfilter,
+                "ipv4:pre_routing:priority=-100:defrag",
+            ),
+            (EbpfProgramType::LwtIn, "demo-route"),
+            (EbpfProgramType::LwtOut, "demo-route"),
+            (EbpfProgramType::LwtXmit, "demo-route"),
+            (EbpfProgramType::LwtSeg6Local, "demo-route"),
+            (EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+            (EbpfProgramType::SkSkbParser, "/sys/fs/bpf/demo_sockmap"),
+            (EbpfProgramType::Tc, "lo:ingress"),
+            (EbpfProgramType::Tcx, "lo:ingress"),
+            (EbpfProgramType::Netkit, "nk0:primary"),
+            (EbpfProgramType::TcAction, "demo-action"),
+            (EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress"),
+        ] {
+            let spec = ProgramSpec::from_program_type_target(program_type, target)
+                .unwrap_or_else(|err| panic!("expected {program_type:?} spec: {err}"));
+            assert_eq!(spec.kfunc_call_error("bpf_dynptr_from_skb"), None);
+            assert!(
+                kfunc_surface_names(&spec).contains(&"bpf_dynptr_from_skb"),
+                "{program_type:?} should advertise bpf_dynptr_from_skb"
+            );
+        }
+
+        for (program_type, target) in [
+            (EbpfProgramType::Xdp, "lo"),
+            (EbpfProgramType::RawTracepoint, "sys_enter"),
+        ] {
+            let spec = ProgramSpec::from_program_type_target(program_type, target)
+                .unwrap_or_else(|err| panic!("expected {program_type:?} spec: {err}"));
+            assert_eq!(
+                spec.kfunc_call_error("bpf_dynptr_from_skb"),
+                Some(format!(
+                    "kfunc 'bpf_dynptr_from_skb' is only valid in {} programs",
+                    SKB_PACKET_DYNPTR_PROGRAM_LABEL
+                ))
+            );
+            assert!(
+                !kfunc_surface_names(&spec).contains(&"bpf_dynptr_from_skb"),
+                "{program_type:?} should not advertise bpf_dynptr_from_skb"
+            );
+        }
     }
 }
