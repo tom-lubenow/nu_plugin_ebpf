@@ -5573,7 +5573,10 @@ fn test_kfunc_scalar_arg_requires_zero_static_mapping() {
     ));
     assert!(kfunc_scalar_arg_requires_zero("bpf_list_push_back_impl", 2));
     assert!(kfunc_scalar_arg_requires_zero("bpf_rbtree_add_impl", 3));
+    assert!(kfunc_scalar_arg_requires_zero("bpf_dynptr_from_skb", 1));
+    assert!(kfunc_scalar_arg_requires_zero("bpf_dynptr_from_xdp", 1));
     assert!(!kfunc_scalar_arg_requires_zero("bpf_rbtree_add_impl", 4));
+    assert!(!kfunc_scalar_arg_requires_zero("bpf_dynptr_from_xdp", 2));
 }
 
 #[test]

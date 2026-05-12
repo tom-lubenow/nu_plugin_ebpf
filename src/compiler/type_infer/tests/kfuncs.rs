@@ -1830,6 +1830,55 @@ fn test_type_error_kfunc_copy_from_user_task_dynptr_requires_kernel_task_arg() {
     );
 }
 
+fn make_packet_dynptr_kfunc_type_call(kfunc: &str, flags_value: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dptr = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(flags_value),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: kfunc.to_string(),
+        btf_id: None,
+        args: vec![ctx, flags, dptr],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_packet_dynptr_kfuncs_require_zero_flags() {
+    for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
+        let func = make_packet_dynptr_kfunc_type_call(kfunc, 1);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected packet dynptr kfunc flags error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            errs
+        );
+    }
+}
+
 #[test]
 fn test_type_error_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
     let mut func = make_test_function();

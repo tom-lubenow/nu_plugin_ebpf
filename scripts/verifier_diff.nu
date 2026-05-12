@@ -5724,6 +5724,23 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_from_xdp' arg2 requires uninitialized dynptr stack object slot"
     }
     {
+        name: "dynptr-kfunc-from-xdp-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp flags reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx 1 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_xdp' arg1 must be known zero"
+    }
+    {
         name: "dynptr-kfunc-from-skb-initializes-dynptr"
         category: "helper-state"
         tags: [kfunc dynptr skb tc accept]
@@ -5758,6 +5775,23 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_dynptr_from_skb' arg2 requires uninitialized dynptr stack object slot"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc flags reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 1 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' arg1 must be known zero"
     }
     {
         name: "dynptr-kfunc-size-initialized-ringbuf"

@@ -1317,6 +1317,8 @@ pub fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_list_push_front_impl", 2)
             | ("bpf_list_push_back_impl", 2)
             | ("bpf_rbtree_add_impl", 3)
+            | ("bpf_dynptr_from_skb", 1)
+            | ("bpf_dynptr_from_xdp", 1)
     )
 }
 
