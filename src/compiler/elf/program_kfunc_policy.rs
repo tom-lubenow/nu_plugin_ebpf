@@ -231,6 +231,7 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler::instruction::{KfuncCompatibilityRequirement, KfuncSignature};
     use std::collections::HashSet;
 
     fn assert_unique_kfunc_names(table_name: &str, kfuncs: &[&'static str]) {
@@ -307,6 +308,10 @@ mod tests {
             assert_unique_kfunc_names(table_name, kfuncs);
             for kfunc in kfuncs {
                 assert!(
+                    !modeled_kfuncs.contains(kfunc),
+                    "kfunc '{kfunc}' appears in both sched_ext and program-specific policies"
+                );
+                assert!(
                     !XDP_ONLY_KFUNCS.contains(kfunc),
                     "kfunc '{kfunc}' appears in both sched_ext and xdp-only policies"
                 );
@@ -318,6 +323,71 @@ mod tests {
                     sched_ext_kfunc_allowed_callbacks(kfunc)
                         .is_some_and(|callbacks| !callbacks.is_empty()),
                     "sched_ext kfunc '{kfunc}' must resolve to at least one allowed callback"
+                );
+            }
+        }
+
+        assert_unique_kfunc_names(
+            "sched_ext sleepable-only kfuncs",
+            SCHED_EXT_SLEEPABLE_ONLY_KFUNCS,
+        );
+        for kfunc in SCHED_EXT_SLEEPABLE_ONLY_KFUNCS {
+            assert!(
+                !modeled_kfuncs.contains(kfunc),
+                "kfunc '{kfunc}' appears in both sched_ext and program-specific policies"
+            );
+            assert!(
+                !XDP_ONLY_KFUNCS.contains(kfunc),
+                "kfunc '{kfunc}' appears in both sched_ext and xdp-only policies"
+            );
+            assert!(
+                sched_ext_kfuncs.insert(*kfunc),
+                "sched_ext kfunc '{kfunc}' appears in multiple callback policy tables"
+            );
+        }
+    }
+
+    #[test]
+    fn test_advertised_kfunc_call_surfaces_have_static_metadata() {
+        for (table_name, kfuncs) in [
+            (
+                "program-specific sock_ops kfuncs",
+                &["bpf_sock_ops_enable_tx_tstamp"][..],
+            ),
+            (
+                "program-specific cgroup_sock_addr kfuncs",
+                &["bpf_sock_addr_set_sun_path"][..],
+            ),
+            ("xdp-only kfuncs", XDP_ONLY_KFUNCS),
+            (
+                "sched_ext dispatch-only kfuncs",
+                SCHED_EXT_DISPATCH_ONLY_KFUNCS,
+            ),
+            (
+                "sched_ext cpu-release-only kfuncs",
+                SCHED_EXT_CPU_RELEASE_ONLY_KFUNCS,
+            ),
+            (
+                "sched_ext select-cpu-or-enqueue kfuncs",
+                SCHED_EXT_SELECT_CPU_OR_ENQUEUE_KFUNCS,
+            ),
+            (
+                "sched_ext dispatch/select-cpu/enqueue kfuncs",
+                SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS,
+            ),
+            (
+                "sched_ext sleepable-only kfuncs",
+                SCHED_EXT_SLEEPABLE_ONLY_KFUNCS,
+            ),
+        ] {
+            for kfunc in kfuncs {
+                assert!(
+                    KfuncSignature::for_name(kfunc).is_some(),
+                    "{table_name} kfunc '{kfunc}' must have a static signature before it is advertised by ebpf spec"
+                );
+                assert!(
+                    KfuncCompatibilityRequirement::for_name(kfunc).is_some(),
+                    "{table_name} kfunc '{kfunc}' must have source-backed compatibility metadata before it is advertised by ebpf spec"
                 );
             }
         }
