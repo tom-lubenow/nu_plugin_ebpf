@@ -6436,6 +6436,73 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-skb-get-xfrm-state-helper"
+        category: "helper-state"
+        tags: [tc helper xfrm accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let state = "0123456789abcdef"'
+            '  helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
+        category: "helper-state"
+        tags: [helper xfrm reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let state = "0123456789abcdef"'
+            '  helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_get_xfrm_state' is only valid in tc_action, tc, tcx, and netkit programs"
+    }
+    {
+        name: "tc-skb-get-xfrm-state-helper-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [tc helper xfrm flags reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let state = "0123456789abcdef"'
+            '  helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_get_xfrm_state' requires arg4 = 0"
+    }
+    {
+        name: "tc-skb-get-xfrm-state-helper-rejects-small-buffer"
+        category: "helper-state"
+        tags: [tc helper xfrm bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define xfrm_states --kind array --value-type "bytes:8" --max-entries 1'
+            '  let state = (0 | map-get xfrm_states --kind array)'
+            '  if $state { helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper skb_get_xfrm_state xfrm_state requires 16 bytes"
+    }
+    {
         name: "tc-egress-helper-backed-context"
         category: "context-surface"
         tags: [tc context helper-backed egress]
