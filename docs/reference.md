@@ -731,6 +731,9 @@ minimum kernel alongside its `bpf_sk_assign` helper floor.
 pointer/ref semantics, and the program-specific kfunc surfaces it knows about,
 but exact kfunc availability is still kernel-version and program-type specific;
 the kernel verifier remains the final authority for unmodeled kfunc allowlists.
+`ebpf spec` reports modeled kfunc call surfaces with argument kinds,
+pointer-argument rules, ref acquire/release families, release argument indexes,
+and source-backed kernel-version metadata when those facts are known.
 Compiled program and object metadata exposes the derived helper and kfunc names
 actually present in bytecode/source lowering so compatibility summaries can be
 audited without treating helper wrappers as language surface.

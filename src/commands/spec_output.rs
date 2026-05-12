@@ -2,7 +2,10 @@
 
 use nu_protocol::{Span, Value, record};
 
-use crate::compiler::instruction::{KfuncArgKind, KfuncRetKind, KfuncSignature, kfunc_semantics};
+use crate::compiler::instruction::{
+    KfuncArgKind, KfuncRetKind, KfuncSignature, kfunc_acquire_ref_kind, kfunc_pointer_arg_ref_kind,
+    kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_semantics,
+};
 use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
@@ -71,8 +74,19 @@ struct SpecKfuncCall {
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     maximum_kernel_exclusive: Option<&'static str>,
+    acquire_ref_kind: Option<&'static str>,
+    release_ref_kind: Option<&'static str>,
+    release_arg_idx: Option<usize>,
+    pointer_arg_ref_kinds: Vec<SpecKfuncArgRefKind>,
     pointer_arg_rules: Vec<SpecKfuncPtrArgRule>,
     positive_size_args: Vec<usize>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SpecKfuncArgRefKind {
+    arg_idx: usize,
+    ref_kind: &'static str,
 }
 
 #[cfg(target_os = "linux")]
@@ -1518,6 +1532,8 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
             let requirement = KfuncCompatibilityRequirement::for_name(surface.kfunc);
             let signature = KfuncSignature::for_name(surface.kfunc);
             let semantics = kfunc_semantics(surface.kfunc);
+            let pointer_arg_ref_kinds =
+                kfunc_pointer_arg_ref_kinds(surface.kfunc, signature.as_ref());
             SpecKfuncCall {
                 kfunc: surface.kfunc,
                 policy: surface.policy,
@@ -1545,6 +1561,10 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
                 maximum_kernel_exclusive: requirement
                     .as_ref()
                     .and_then(|requirement| requirement.maximum_kernel_exclusive()),
+                acquire_ref_kind: kfunc_acquire_ref_kind(surface.kfunc).map(|kind| kind.label()),
+                release_ref_kind: kfunc_release_ref_kind(surface.kfunc).map(|kind| kind.label()),
+                release_arg_idx: kfunc_release_ref_arg_index(surface.kfunc),
+                pointer_arg_ref_kinds,
                 pointer_arg_rules: semantics
                     .ptr_arg_rules
                     .iter()
@@ -1566,6 +1586,25 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
 }
 
 #[cfg(target_os = "linux")]
+fn kfunc_pointer_arg_ref_kinds(
+    kfunc: &'static str,
+    signature: Option<&KfuncSignature>,
+) -> Vec<SpecKfuncArgRefKind> {
+    let Some(signature) = signature else {
+        return Vec::new();
+    };
+
+    (0..signature.max_args)
+        .filter_map(|arg_idx| {
+            kfunc_pointer_arg_ref_kind(kfunc, arg_idx).map(|kind| SpecKfuncArgRefKind {
+                arg_idx,
+                ref_kind: kind.label(),
+            })
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn usize_list(values: Vec<usize>, span: Span) -> Vec<Value> {
     values
         .into_iter()
@@ -1579,6 +1618,22 @@ fn static_str_list(values: Vec<&'static str>, span: Span) -> Vec<Value> {
     values
         .into_iter()
         .map(|value| Value::string(value, span))
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn kfunc_arg_ref_kind_records(ref_kinds: Vec<SpecKfuncArgRefKind>, span: Span) -> Vec<Value> {
+    ref_kinds
+        .into_iter()
+        .map(|ref_kind| {
+            Value::record(
+                record! {
+                    "arg_idx" => optional_usize(Some(ref_kind.arg_idx), span),
+                    "ref_kind" => Value::string(ref_kind.ref_kind, span),
+                },
+                span,
+            )
+        })
         .collect()
 }
 
@@ -1610,6 +1665,8 @@ fn kfunc_call_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Ve
         .into_iter()
         .map(|surface| {
             let arg_kinds = static_str_list(surface.arg_kinds, span);
+            let pointer_arg_ref_kinds =
+                kfunc_arg_ref_kind_records(surface.pointer_arg_ref_kinds, span);
             let pointer_arg_rules = kfunc_ptr_arg_rule_records(surface.pointer_arg_rules, span);
             let positive_size_args = usize_list(surface.positive_size_args, span);
             Value::record(
@@ -1625,6 +1682,10 @@ fn kfunc_call_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Ve
                     "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),
                     "maximum_kernel_exclusive" => optional_static_str(surface.maximum_kernel_exclusive, span),
+                    "acquire_ref_kind" => optional_static_str(surface.acquire_ref_kind, span),
+                    "release_ref_kind" => optional_static_str(surface.release_ref_kind, span),
+                    "release_arg_idx" => optional_usize(surface.release_arg_idx, span),
+                    "pointer_arg_ref_kinds" => Value::list(pointer_arg_ref_kinds, span),
                     "pointer_arg_rules" => Value::list(pointer_arg_rules, span),
                     "positive_size_args" => Value::list(positive_size_args, span),
                 },

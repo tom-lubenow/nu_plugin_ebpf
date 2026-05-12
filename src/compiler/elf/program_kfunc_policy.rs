@@ -19,9 +19,11 @@ const SCHED_EXT_DISPATCH_SELECT_CPU_ENQUEUE_KFUNCS: &[&str] = &[
     "scx_bpf_dsq_insert_vtime",
 ];
 const XDP_ONLY_KFUNCS: &[&str] = &[
+    "bpf_xdp_get_xfrm_state",
     "bpf_xdp_metadata_rx_hash",
     "bpf_xdp_metadata_rx_timestamp",
     "bpf_xdp_metadata_rx_vlan_tag",
+    "bpf_xdp_xfrm_state_release",
 ];
 const SCHED_EXT_SLEEPABLE_ONLY_KFUNCS: &[&str] = &["scx_bpf_create_dsq"];
 
@@ -528,9 +530,11 @@ mod tests {
         assert_eq!(
             xdp_kfuncs,
             vec![
+                "bpf_xdp_get_xfrm_state",
                 "bpf_xdp_metadata_rx_hash",
                 "bpf_xdp_metadata_rx_timestamp",
                 "bpf_xdp_metadata_rx_vlan_tag",
+                "bpf_xdp_xfrm_state_release",
             ]
         );
 
@@ -575,16 +579,21 @@ mod tests {
     }
 
     #[test]
-    fn test_program_spec_kfunc_policy_limits_xdp_metadata_to_xdp() {
+    fn test_program_spec_kfunc_policy_limits_xdp_kfuncs_to_xdp() {
         let xdp = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
             .expect("expected xdp spec");
         assert_eq!(xdp.kfunc_call_error("bpf_xdp_metadata_rx_hash"), None);
+        assert_eq!(xdp.kfunc_call_error("bpf_xdp_get_xfrm_state"), None);
 
         let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
             .expect("expected tc spec");
         assert_eq!(
             tc.kfunc_call_error("bpf_xdp_metadata_rx_hash"),
             Some("kfunc 'bpf_xdp_metadata_rx_hash' is only valid in xdp programs".to_string())
+        );
+        assert_eq!(
+            tc.kfunc_call_error("bpf_xdp_get_xfrm_state"),
+            Some("kfunc 'bpf_xdp_get_xfrm_state' is only valid in xdp programs".to_string())
         );
     }
 }

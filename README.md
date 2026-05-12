@@ -118,8 +118,8 @@ target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation, capability labels,
 supported first-class intrinsic commands with helper-backed mode/kind variants,
 intrinsic context-field requirements, modeled program-specific `kfunc-call`
-surfaces with signature, pointer-argument, and source-backed compatibility
-metadata, live-attach/default safety, and
+surfaces with signature, pointer-argument, ref-lifetime, and source-backed
+compatibility metadata, live-attach/default safety, and
 compatibility requirement labels before you attempt to compile or attach a
 closure.
 The `context_projections` table lists projections that are valid for that

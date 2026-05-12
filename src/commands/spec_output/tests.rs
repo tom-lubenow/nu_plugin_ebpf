@@ -1197,6 +1197,35 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
         .expect("XDP metadata VLAN kfunc should be advertised");
     assert_eq!(vlan.minimum_kernel, Some("6.8"));
 
+    let xfrm_get = kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_xdp_get_xfrm_state")
+        .expect("XDP XFRM acquire kfunc should be advertised");
+    assert_eq!(xfrm_get.policy, "xdp-only");
+    assert_eq!(xfrm_get.minimum_kernel, Some("6.8"));
+    assert!(
+        xfrm_get
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v6.8/net/xfrm/xfrm_state_bpf.c"))
+    );
+    assert_eq!(xfrm_get.acquire_ref_kind, Some("xfrm_state"));
+    assert_eq!(xfrm_get.release_ref_kind, None);
+    assert_eq!(xfrm_get.release_arg_idx, None);
+
+    let xfrm_release = kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_xdp_xfrm_state_release")
+        .expect("XDP XFRM release kfunc should be advertised");
+    assert_eq!(xfrm_release.release_ref_kind, Some("xfrm_state"));
+    assert_eq!(xfrm_release.release_arg_idx, Some(0));
+    assert_eq!(
+        xfrm_release.pointer_arg_ref_kinds,
+        vec![SpecKfuncArgRefKind {
+            arg_idx: 0,
+            ref_kind: "xfrm_state",
+        }]
+    );
+
     let record = spec_record("xdp:lo".to_string(), xdp, Span::test_data(), false)
         .into_record()
         .expect("spec output should be a record");
@@ -1250,6 +1279,60 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
             .as_int()
             .expect("fixed size should be an int"),
         8
+    );
+    let xfrm_release_record = record_kfuncs
+        .iter()
+        .find_map(|value| {
+            let record = value.as_record().ok()?;
+            (record
+                .get("kfunc")?
+                .as_str()
+                .ok()
+                .is_some_and(|name| name == "bpf_xdp_xfrm_state_release"))
+            .then_some(record)
+        })
+        .expect("xfrm release kfunc record should be present");
+    assert_eq!(
+        xfrm_release_record
+            .get("release_ref_kind")
+            .expect("release ref kind should be present")
+            .as_str()
+            .expect("release ref kind should be a string"),
+        "xfrm_state"
+    );
+    assert_eq!(
+        xfrm_release_record
+            .get("release_arg_idx")
+            .expect("release arg index should be present")
+            .as_int()
+            .expect("release arg index should be an int"),
+        0
+    );
+    let release_arg_ref_kinds = xfrm_release_record
+        .get("pointer_arg_ref_kinds")
+        .expect("pointer arg ref kinds should be present")
+        .as_list()
+        .expect("pointer arg ref kinds should be a list");
+    let release_ref_kind = release_arg_ref_kinds
+        .first()
+        .expect("xfrm release should report one pointer arg ref kind")
+        .as_record()
+        .expect("pointer arg ref kind should be a record");
+    assert_eq!(
+        release_ref_kind
+            .get("ref_kind")
+            .expect("ref kind should be present")
+            .as_str()
+            .expect("ref kind should be a string"),
+        "xfrm_state"
+    );
+    assert_eq!(
+        release_ref_kind
+            .get("arg_idx")
+            .expect("arg index should be present")
+            .as_int()
+            .expect("arg index should be an int"),
+        0
     );
 
     let tc = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
