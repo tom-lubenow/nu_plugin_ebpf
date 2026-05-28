@@ -11661,6 +11661,24 @@ fn test_ebpf_program_reports_context_field_compatibility_requirements() {
         object.context_field_compatibility_minimum_kernel(),
         Some("5.12")
     );
+
+    let iter_sockmap_program = EbpfProgram::new(
+        EbpfProgramType::Iter,
+        "ignored-after-program-spec",
+        "iter_main",
+        EbpfBuilder::new(),
+    )
+    .with_program_spec(ProgramSpec::parse("iter:sockmap").expect("iter:sockmap should parse"))
+    .with_used_context_fields([CtxField::IterSock]);
+    let requirements = iter_sockmap_program.context_field_compatibility_requirements();
+    assert_eq!(requirements.len(), 1);
+    assert_eq!(requirements[0].key(), "ctx:iter_sock");
+    assert_eq!(requirements[0].minimum_kernel(), "5.10");
+    assert!(
+        requirements[0]
+            .minimum_kernel_source()
+            .contains("/v5.10/net/core/sock_map.c")
+    );
 }
 
 #[test]

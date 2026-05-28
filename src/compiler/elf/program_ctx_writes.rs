@@ -510,14 +510,9 @@ impl ContextWriteSurfaceSpec {
         &self,
         spec: &ProgramSpec,
     ) -> Option<ContextFieldCompatibilityRequirement> {
-        let target = spec.target_string();
         let field = self.context_field()?;
 
-        ContextFieldCompatibilityRequirement::for_field_on_program_target(
-            &field,
-            Some(spec.program_type()),
-            Some(target.as_str()),
-        )
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(&field, spec)
     }
 
     fn context_field(&self) -> Option<CtxField> {

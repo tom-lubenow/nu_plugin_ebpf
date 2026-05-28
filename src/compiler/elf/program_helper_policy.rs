@@ -1582,11 +1582,9 @@ impl ProgramSpec {
 
         match intrinsic {
             ProgramIntrinsic::AssignSocket => {
-                let target = self.target_string();
-                ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                ContextFieldCompatibilityRequirement::for_field_on_program_spec(
                     &CtxField::Socket,
-                    Some(self.program_type()),
-                    Some(target.as_str()),
+                    self,
                 )
                 .into_iter()
                 .collect()

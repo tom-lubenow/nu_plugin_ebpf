@@ -380,13 +380,20 @@ fn context_field_compatibility_requirements_for_fields(
     used_ctx_fields: &HashSet<CtxField>,
     prog_type: Option<EbpfProgramType>,
     target: Option<&str>,
+    program_spec: Option<&ProgramSpec>,
 ) -> Vec<ContextFieldCompatibilityRequirement> {
     let mut requirements = used_ctx_fields
         .iter()
         .filter_map(|field| {
-            ContextFieldCompatibilityRequirement::for_field_on_program_target(
-                field, prog_type, target,
-            )
+            program_spec
+                .and_then(|spec| {
+                    ContextFieldCompatibilityRequirement::for_field_on_program_spec(field, spec)
+                })
+                .or_else(|| {
+                    ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                        field, prog_type, target,
+                    )
+                })
         })
         .collect::<Vec<_>>();
     requirements.sort_by_key(ContextFieldCompatibilityRequirement::key);
@@ -403,6 +410,7 @@ fn context_field_compatibility_requirements_for_programs(
             &program.used_ctx_fields,
             Some(program.prog_type),
             Some(program.target.as_str()),
+            program.program_spec.as_ref(),
         ) {
             let key = requirement.key();
             let should_replace = match requirements_by_key.get(&key) {
@@ -1197,6 +1205,7 @@ impl EbpfProgramSection {
             &self.used_ctx_fields,
             Some(self.prog_type),
             Some(self.target.as_str()),
+            self.program_spec.as_ref(),
         )
     }
 
@@ -2587,6 +2596,7 @@ impl EbpfProgram {
             &self.used_ctx_fields,
             Some(self.prog_type),
             Some(self.target.as_str()),
+            self.program_spec.as_ref(),
         )
     }
 

@@ -629,7 +629,6 @@ fn spec_context_fields(
     resolve_dynamic_fields: bool,
 ) -> Vec<SpecContextField> {
     let mut fields: Vec<(crate::compiler::mir::CtxField, SpecContextField)> = Vec::new();
-    let target = spec.target_string();
 
     for entry in spec.program_type().ctx_field_name_entries() {
         if spec.ctx_field_access_error(&entry.field).is_some() {
@@ -645,11 +644,7 @@ fn spec_context_fields(
             let load_guard = spec.ctx_field_load_guard(&entry.field);
             let backing_helper = ctx_field_backing_helper(&entry.field);
             let compatibility_requirement =
-                ContextFieldCompatibilityRequirement::for_field_on_program_target(
-                    &entry.field,
-                    Some(spec.program_type()),
-                    Some(target.as_str()),
-                );
+                ContextFieldCompatibilityRequirement::for_field_on_program_spec(&entry.field, spec);
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
@@ -743,7 +738,6 @@ fn context_field_records(
 fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextProjection> {
     let mut projections = Vec::new();
     let mut seen_roots = Vec::new();
-    let target = spec.target_string();
 
     for entry in spec.program_type().ctx_field_name_entries() {
         if spec.ctx_field_access_error(&entry.field).is_some() || seen_roots.contains(&entry.field)
@@ -771,12 +765,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
             if unsupported_reason.is_some() {
                 continue;
             }
-            let compatibility_requirement = context_projection_compatibility_requirement(
-                spec,
-                &target,
-                &entry.field,
-                &field.name,
-            );
+            let compatibility_requirement =
+                context_projection_compatibility_requirement(spec, &entry.field, &field.name);
             push_context_field_projection(
                 &mut projections,
                 &root,
@@ -795,12 +785,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                     if unsupported_reason.is_some() {
                         continue;
                     }
-                    let compatibility_requirement = context_projection_compatibility_requirement(
-                        spec,
-                        &target,
-                        &entry.field,
-                        alias,
-                    );
+                    let compatibility_requirement =
+                        context_projection_compatibility_requirement(spec, &entry.field, alias);
                     push_context_field_projection(
                         &mut projections,
                         &root,
@@ -826,23 +812,18 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
 #[cfg(target_os = "linux")]
 fn context_projection_compatibility_requirement(
     spec: &crate::program_spec::ProgramSpec,
-    target: &str,
     root_field: &CtxField,
     member: &str,
 ) -> Option<ContextFieldCompatibilityRequirement> {
-    let mut effective = ContextFieldCompatibilityRequirement::for_field_on_program_target(
-        root_field,
-        Some(spec.program_type()),
-        Some(target),
-    );
+    let mut effective =
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(root_field, spec);
 
     if matches!(root_field, CtxField::Socket | CtxField::MigratingSocket) {
         if let Some(member_field) = ctx_field_for_bpf_sock_projection_member(member) {
             let member_requirement =
-                ContextFieldCompatibilityRequirement::for_field_on_program_target(
+                ContextFieldCompatibilityRequirement::for_field_on_program_spec(
                     &member_field,
-                    Some(spec.program_type()),
-                    Some(target),
+                    spec,
                 );
             if let Some(member_requirement) = member_requirement {
                 let should_replace = match effective.as_ref() {

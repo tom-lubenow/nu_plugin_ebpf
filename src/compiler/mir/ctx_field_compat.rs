@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::compiler::{EbpfProgramType, ctx_field_backing_helper};
-use crate::program_spec::IterTargetKind;
+use crate::program_spec::{IterTargetKind, ProgramSpec};
 
 use super::CtxField;
 
@@ -125,8 +125,29 @@ impl ContextFieldCompatibilityRequirement {
         prog_type: Option<EbpfProgramType>,
         target: Option<&str>,
     ) -> Option<Self> {
+        let iter_target_kind = if prog_type == Some(EbpfProgramType::Iter) {
+            target.and_then(IterTargetKind::from_name)
+        } else {
+            None
+        };
+        Self::for_field_on_program_iter_target(field, prog_type, iter_target_kind)
+    }
+
+    pub(crate) fn for_field_on_program_spec(field: &CtxField, spec: &ProgramSpec) -> Option<Self> {
+        Self::for_field_on_program_iter_target(
+            field,
+            Some(spec.program_type()),
+            spec.attach_shape().iter_target_kind(),
+        )
+    }
+
+    fn for_field_on_program_iter_target(
+        field: &CtxField,
+        prog_type: Option<EbpfProgramType>,
+        iter_target_kind: Option<IterTargetKind>,
+    ) -> Option<Self> {
         let (minimum_kernel, minimum_kernel_source) =
-            context_field_kernel_floor(field, prog_type, target)?;
+            context_field_kernel_floor(field, prog_type, iter_target_kind)?;
         Some(Self {
             field: field.clone(),
             minimum_kernel,
@@ -529,13 +550,13 @@ fn direct_context_field_kernel_floor(
 fn target_context_field_kernel_floor(
     field: &CtxField,
     prog_type: Option<EbpfProgramType>,
-    target: Option<&str>,
+    iter_target_kind: Option<IterTargetKind>,
 ) -> Option<(&'static str, &'static str)> {
     if prog_type != Some(EbpfProgramType::Iter) {
         return None;
     }
 
-    let target = IterTargetKind::from_name(target?)?;
+    let target = iter_target_kind?;
 
     Some(match (field, target) {
         (CtxField::IterTask, IterTargetKind::TaskVma) => ("5.12", LINUX_TASK_ITER_V5_12_SOURCE),
@@ -558,9 +579,9 @@ fn target_context_field_kernel_floor(
 fn context_field_kernel_floor(
     field: &CtxField,
     prog_type: Option<EbpfProgramType>,
-    target: Option<&str>,
+    iter_target_kind: Option<IterTargetKind>,
 ) -> Option<(&'static str, &'static str)> {
-    target_context_field_kernel_floor(field, prog_type, target)
+    target_context_field_kernel_floor(field, prog_type, iter_target_kind)
         .or_else(|| direct_context_field_kernel_floor(field, prog_type))
         .or_else(|| {
             let helper = ctx_field_backing_helper(field)?;
