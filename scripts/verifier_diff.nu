@@ -5281,6 +5281,70 @@ const FIXTURES = [
         error_contains: "helper 'bpf_cgrp_storage_get' arg1 expects cgroup pointer"
     }
     {
+        name: "task-storage-delete-rejects-cgroup-owner"
+        category: "maps"
+        tags: [maps local-storage task-storage map-delete source reject]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_cgroup | map-delete task_state --kind task-storage'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_task_storage_delete' arg1 expects task pointer"
+    }
+    {
+        name: "sk-storage-delete-rejects-task-owner"
+        category: "maps"
+        tags: [maps local-storage sk-storage map-delete source reject]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-delete sock_state --kind sk-storage'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_storage_delete' arg1 expects socket pointer"
+    }
+    {
+        name: "inode-storage-delete-rejects-file-owner"
+        category: "maps"
+        tags: [maps local-storage inode-storage map-delete source reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.file | map-delete inode_state --kind inode-storage'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_inode_storage_delete' arg1 expects inode pointer"
+    }
+    {
+        name: "cgrp-storage-delete-rejects-task-owner"
+        category: "maps"
+        tags: [maps local-storage cgrp-storage map-delete source reject]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-delete cgrp_state --kind cgrp-storage'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_cgrp_storage_delete' arg1 expects cgroup pointer"
+    }
+    {
         name: "typed-map-to-map-copy"
         category: "maps"
         tags: [maps records map-put map-get accept]
