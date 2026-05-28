@@ -2464,8 +2464,14 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
     let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
 
     for (kind, expected) in [
-        ("array-of-maps", "use map-define --inner-map"),
-        ("hash-of-maps", "use map-define --inner-map"),
+        (
+            "array-of-maps",
+            "first-class map-in-map operations are not modeled yet",
+        ),
+        (
+            "hash-of-maps",
+            "first-class map-in-map operations are not modeled yet",
+        ),
         ("struct-ops", "reserved for struct_ops objects"),
         ("user-ringbuf", "reserved for user-ringbuf helper surfaces"),
         ("arena", "arena map_extra/mmap support is not modeled yet"),

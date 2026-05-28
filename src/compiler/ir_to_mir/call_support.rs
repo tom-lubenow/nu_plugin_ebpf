@@ -692,7 +692,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind_arg} is reserved for sk_reuseport socket selection; use redirect-socket with --kind reuseport-sockarray instead of generic map commands"
             ),
             MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
-                "{context} --kind {kind_arg} names a map-in-map family; use map-define --inner-map to declare the inner template before map operations are supported"
+                "{context} --kind {kind_arg} names a map-in-map family; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet"
             ),
             MapKind::StructOps => format!(
                 "{context} --kind {kind_arg} is reserved for struct_ops objects; use struct_ops attach syntax instead of generic map commands"
