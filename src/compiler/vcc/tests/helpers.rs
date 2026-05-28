@@ -15128,6 +15128,223 @@ fn test_verify_mir_helper_sk_lookup_release_socket_reference() {
 }
 
 #[test]
+fn test_verify_mir_helper_sk_release_rejects_double_release() {
+    let (mut func, entry) = new_mir_function();
+    let lookup = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let ctx = func.alloc_vreg();
+    let ctx_non_null = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let sock = func.alloc_vreg();
+    let sock_non_null = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let double_release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: ctx_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: ctx_non_null,
+        if_true: lookup,
+        if_false: done,
+    };
+
+    func.block_mut(lookup)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(lookup).instructions.push(MirInst::BinOp {
+        dst: sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(lookup).terminator = MirInst::Branch {
+        cond: sock_non_null,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: release_ret,
+            helper: BpfHelper::SkRelease as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: double_release_ret,
+            helper: BpfHelper::SkRelease as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(ctx_non_null, MirType::Bool);
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sock_non_null, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+    types.insert(double_release_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected sk_release double-release error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("kfunc arg0 reference already released")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_sk_release_rejects_use_after_release_projection() {
+    let (mut func, entry) = new_mir_function();
+    let lookup = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let ctx = func.alloc_vreg();
+    let ctx_non_null = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let read_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+    let sock = func.alloc_vreg();
+    let sock_non_null = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let field_ptr = func.alloc_vreg();
+    let read_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: ctx_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: ctx_non_null,
+        if_true: lookup,
+        if_false: done,
+    };
+
+    func.block_mut(lookup)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sock,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(lookup).instructions.push(MirInst::BinOp {
+        dst: sock_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(lookup).terminator = MirInst::Branch {
+        cond: sock_non_null,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: release_ret,
+            helper: BpfHelper::SkRelease as u32,
+            args: vec![MirValue::VReg(sock)],
+        });
+    func.block_mut(release).instructions.push(MirInst::BinOp {
+        dst: field_ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(sock),
+        rhs: MirValue::Const(4),
+    });
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: read_ret,
+            helper: BpfHelper::ProbeReadKernel as u32,
+            args: vec![
+                MirValue::StackSlot(read_slot),
+                MirValue::Const(4),
+                MirValue::VReg(field_ptr),
+            ],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(ctx_non_null, MirType::Bool);
+    types.insert(
+        sock,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(sock_non_null, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+    types.insert(
+        field_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(read_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected sk_release use-after-release error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("uses released reference")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_sk_release_rejects_non_socket_reference() {
     let (mut func, entry) = new_mir_function();
     let release = func.alloc_block();

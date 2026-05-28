@@ -63,7 +63,12 @@ impl VccVerifier {
                         VccValue::Reg(src_reg) => state.ctx_field_source(*src_reg).cloned(),
                         _ => None,
                     };
+                    let src_released_kfunc_ref = matches!(src, VccValue::Reg(src_reg) if state.is_released_kfunc_ref(*src_reg));
                     state.set_reg(*dst, ty);
+                    if src_released_kfunc_ref {
+                        state.mark_released_kfunc_ref(*dst);
+                        return;
+                    }
                     state.set_ctx_field_source(*dst, src_ctx_field);
                     if let Some(refinement) = copied_refinement {
                         state.set_cond_refinement(*dst, refinement);
@@ -348,6 +353,13 @@ impl VccVerifier {
                 }
             }
             VccInst::AssertPtrAccess { ptr, size, op } => {
+                if state.is_released_kfunc_ref(*ptr) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::InvalidLoadStore,
+                        format!("{op} uses released reference v{}", ptr.0),
+                    ));
+                    return;
+                }
                 let ptr_ty = match state.reg_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -411,8 +423,10 @@ impl VccVerifier {
                             ));
                         }
                     }
-                } else if matches!(ptr_info.space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue)
-                {
+                } else if matches!(
+                    ptr_info.space,
+                    VccAddrSpace::Stack(_) | VccAddrSpace::MapValue
+                ) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!("{op} size must have bounded upper range"),
@@ -420,6 +434,13 @@ impl VccVerifier {
                 }
             }
             VccInst::AssertPtrAccessOrZero { ptr, size, op } => {
+                if state.is_released_kfunc_ref(*ptr) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::InvalidLoadStore,
+                        format!("{op} uses released reference v{}", ptr.0),
+                    ));
+                    return;
+                }
                 let ptr_ty = match state.reg_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -486,8 +507,10 @@ impl VccVerifier {
                             ));
                         }
                     }
-                } else if matches!(ptr_info.space, VccAddrSpace::Stack(_) | VccAddrSpace::MapValue)
-                {
+                } else if matches!(
+                    ptr_info.space,
+                    VccAddrSpace::Stack(_) | VccAddrSpace::MapValue
+                ) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!("{op} size must have bounded upper range"),
@@ -509,10 +532,8 @@ impl VccVerifier {
                     return;
                 };
                 if lhs_slot == rhs_slot {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        message.clone(),
-                    ));
+                    self.errors
+                        .push(VccError::new(VccErrorKind::PointerBounds, message.clone()));
                 }
             }
             VccInst::StackAddr { dst, slot, size } => {
@@ -564,9 +585,8 @@ impl VccVerifier {
                         let ptr_cmp = self.ptr_null_comparison(*lhs, lhs_ty, *rhs, rhs_ty);
                         let ptr_cond_cmp =
                             self.ptr_cond_comparison(*op, *lhs, lhs_ty, *rhs, rhs_ty, state);
-                        let cond_result_cmp = self.condition_result_comparison(
-                            *op, *lhs, lhs_ty, *rhs, rhs_ty, state,
-                        );
+                        let cond_result_cmp = self
+                            .condition_result_comparison(*op, *lhs, lhs_ty, *rhs, rhs_ty, state);
                         let scalar_cmp =
                             self.scalar_const_comparison(*lhs, lhs_ty, *rhs, rhs_ty, *op);
                         let scalar_reg_cmp =
@@ -712,9 +732,13 @@ impl VccVerifier {
                                     if lp.space == VccAddrSpace::Packet
                                         && rp.space == VccAddrSpace::Packet => {}
                                 (VccValueType::Ptr(lp), VccValueType::Ptr(rp))
-                                    if matches!(lp.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
-                                        && matches!(rp.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
-                                        && context_buffer_end_cmp.is_some() => {}
+                                    if matches!(
+                                        lp.space,
+                                        VccAddrSpace::Kernel | VccAddrSpace::KernelBtf
+                                    ) && matches!(
+                                        rp.space,
+                                        VccAddrSpace::Kernel | VccAddrSpace::KernelBtf
+                                    ) && context_buffer_end_cmp.is_some() => {}
                                 _ => {
                                     self.errors.push(VccError::new(
                                         VccErrorKind::TypeMismatch {
@@ -818,6 +842,10 @@ impl VccVerifier {
                 }
             }
             VccInst::PtrAdd { dst, base, offset } => {
+                if state.is_released_kfunc_ref(*base) {
+                    state.mark_released_kfunc_ref(*dst);
+                    return;
+                }
                 let base_ty = state.reg_type(*base);
                 let base_ptr = match base_ty {
                     Ok(VccValueType::Ptr(ptr)) => ptr,
@@ -899,6 +927,13 @@ impl VccVerifier {
                 offset,
                 size,
             } => {
+                if state.is_released_kfunc_ref(*ptr) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::InvalidLoadStore,
+                        format!("load uses released reference v{}", ptr.0),
+                    ));
+                    return;
+                }
                 let ptr_ty = match state.reg_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -971,8 +1006,7 @@ impl VccVerifier {
                         }
                     }
                     VccValueType::StalePacketPtr => {
-                        self.errors
-                            .push(Self::stale_packet_pointer_error("load"));
+                        self.errors.push(Self::stale_packet_pointer_error("load"));
                         return;
                     }
                     other => {
@@ -991,6 +1025,13 @@ impl VccVerifier {
                 src,
                 size,
             } => {
+                if state.is_released_kfunc_ref(*ptr) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::InvalidLoadStore,
+                        format!("store uses released reference v{}", ptr.0),
+                    ));
+                    return;
+                }
                 let ptr_ty = match state.reg_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -1057,8 +1098,7 @@ impl VccVerifier {
                         }
                     }
                     VccValueType::StalePacketPtr => {
-                        self.errors
-                            .push(Self::stale_packet_pointer_error("store"));
+                        self.errors.push(Self::stale_packet_pointer_error("store"));
                         return;
                     }
                     other => {
@@ -1088,7 +1128,14 @@ impl VccVerifier {
                     }
                 }
                 let ty = merged.unwrap_or(VccValueType::Unknown);
+                let released_kfunc_ref = args
+                    .iter()
+                    .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
                 state.set_reg(*dst, ty);
+                if released_kfunc_ref {
+                    state.mark_released_kfunc_ref(*dst);
+                    return;
+                }
                 let mut merged_ctx_field: Option<Option<CtxField>> = None;
                 for (_, reg) in args {
                     let next = state.ctx_field_source(*reg).cloned();
@@ -1177,6 +1224,15 @@ impl VccVerifier {
                 state.set_live_kfunc_ref(*id, true, Some(*kind));
             }
             VccInst::KfuncRelease { ptr, kind, arg_idx } => {
+                if let VccValue::Reg(reg) = ptr
+                    && state.is_released_kfunc_ref(*reg)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!("kfunc arg{} reference already released", arg_idx),
+                    ));
+                    return;
+                }
                 let ty = match state.value_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -1265,13 +1321,17 @@ impl VccVerifier {
                 }
             }
             VccInst::LocalIrqDisableAcquire { flags } => {
-                let Some(slot) = self.stack_slot_from_reg(state, *flags, "kfunc 'bpf_local_irq_save' arg0") else {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *flags, "kfunc 'bpf_local_irq_save' arg0")
+                else {
                     return;
                 };
                 state.acquire_local_irq_disable_slot(slot);
             }
             VccInst::LocalIrqDisableRelease { flags } => {
-                let Some(slot) = self.stack_slot_from_reg(state, *flags, "kfunc 'bpf_local_irq_restore' arg0") else {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *flags, "kfunc 'bpf_local_irq_restore' arg0")
+                else {
                     return;
                 };
                 if !state.release_local_irq_disable_slot(slot) {
@@ -1455,11 +1515,9 @@ impl VccVerifier {
                 }
             }
             VccInst::IterScxDsqDestroy { iter } => {
-                let Some(slot) = self.stack_slot_from_reg(
-                    state,
-                    *iter,
-                    "kfunc 'bpf_iter_scx_dsq_destroy' arg0",
-                ) else {
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_destroy' arg0")
+                else {
                     return;
                 };
                 if !state.release_iter_scx_dsq_slot(slot) {
@@ -1483,9 +1541,11 @@ impl VccVerifier {
                 }
             }
             VccInst::IterScxDsqMoveSetSlice { iter } => {
-                let Some(slot) = self
-                    .stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move_set_slice' arg0")
-                else {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *iter,
+                    "kfunc 'scx_bpf_dsq_move_set_slice' arg0",
+                ) else {
                     return;
                 };
                 if !state.use_iter_scx_dsq_slot(slot) {
@@ -1496,9 +1556,11 @@ impl VccVerifier {
                 }
             }
             VccInst::IterScxDsqMoveSetVtime { iter } => {
-                let Some(slot) = self
-                    .stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move_set_vtime' arg0")
-                else {
+                let Some(slot) = self.stack_slot_from_reg(
+                    state,
+                    *iter,
+                    "kfunc 'scx_bpf_dsq_move_set_vtime' arg0",
+                ) else {
                     return;
                 };
                 if !state.use_iter_scx_dsq_slot(slot) {
@@ -1509,8 +1571,8 @@ impl VccVerifier {
                 }
             }
             VccInst::IterScxDsqMoveVtime { iter } => {
-                let Some(slot) = self
-                    .stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move_vtime' arg0")
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move_vtime' arg0")
                 else {
                     return;
                 };
@@ -1694,16 +1756,16 @@ impl VccVerifier {
                 }
             }
             VccInst::IterKmemCacheNew { iter } => {
-                let Some(slot) = self
-                    .stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_new' arg0")
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_new' arg0")
                 else {
                     return;
                 };
                 state.acquire_iter_kmem_cache_slot(slot);
             }
             VccInst::IterKmemCacheNext { iter } => {
-                let Some(slot) = self
-                    .stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_next' arg0")
+                let Some(slot) =
+                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_next' arg0")
                 else {
                     return;
                 };
@@ -1766,7 +1828,7 @@ impl VccVerifier {
                             "kfunc '{}' arg{} requires initialized dynptr stack object",
                             kfunc, arg_idx
                         ),
-                        ));
+                    ));
                 }
             }
             VccInst::HelperDynptrMarkInitialized {
@@ -1816,7 +1878,7 @@ impl VccVerifier {
                             "helper '{}' arg{} requires initialized dynptr stack object",
                             helper, arg_idx
                         ),
-                        ));
+                    ));
                 }
             }
             VccInst::HelperRingbufDynptrAcquire {
@@ -1828,7 +1890,8 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
-                if state.is_dynptr_slot_initialized(slot) || state.has_live_ringbuf_dynptr_slot(slot)
+                if state.is_dynptr_slot_initialized(slot)
+                    || state.has_live_ringbuf_dynptr_slot(slot)
                 {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
@@ -2108,6 +2171,18 @@ impl VccVerifier {
                 kind,
                 helper_id,
             } => {
+                if let VccValue::Reg(reg) = ptr
+                    && state.is_released_kfunc_ref(*reg)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "helper {} arg{} reference already released",
+                            helper_id, arg_idx
+                        ),
+                    ));
+                    return;
+                }
                 let ty = match state.value_type(*ptr) {
                     Ok(ty) => ty,
                     Err(err) => {
@@ -2152,6 +2227,15 @@ impl VccVerifier {
                 src,
                 dst_slot_kind,
             } => {
+                if let VccValue::Reg(src_reg) = src
+                    && state.is_released_kfunc_ref(*src_reg)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        "helper 194 arg1 reference already released",
+                    ));
+                    return;
+                }
                 let mut returned_ref_kind = *dst_slot_kind;
                 let mut tracks_returned_ref = dst_slot_kind.is_some();
                 let ty = match state.value_type(*src) {
@@ -2235,7 +2319,10 @@ impl VccVerifier {
                 space => {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
-                        format!("{op} expects pointer in [Stack], got {}", Self::space_name(space)),
+                        format!(
+                            "{op} expects pointer in [Stack], got {}",
+                            Self::space_name(space)
+                        ),
                     ));
                     None
                 }

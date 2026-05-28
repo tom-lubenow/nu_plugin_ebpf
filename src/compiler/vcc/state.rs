@@ -44,6 +44,7 @@ struct VccState {
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
+    released_kfunc_ref_regs: HashSet<VccReg>,
     rcu_read_lock_min_depth: u32,
     rcu_read_lock_max_depth: u32,
     preempt_disable_min_depth: u32,
@@ -135,6 +136,7 @@ impl VccState {
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             live_kfunc_refs: HashMap::new(),
+            released_kfunc_ref_regs: HashSet::new(),
             rcu_read_lock_min_depth: 0,
             rcu_read_lock_max_depth: 0,
             preempt_disable_min_depth: 0,
@@ -201,6 +203,7 @@ impl VccState {
         self.ctx_field_sources.remove(&reg);
         self.map_lookup_sources.remove(&reg);
         self.not_equal_consts.remove(&reg);
+        self.released_kfunc_ref_regs.remove(&reg);
         self.cond_refinements.remove(&reg);
     }
 
@@ -317,6 +320,7 @@ impl VccState {
     fn set_live_kfunc_ref(&mut self, id: VccReg, live: bool, kind: Option<KfuncRefKind>) {
         if live {
             self.live_kfunc_refs.insert(id, kind);
+            self.released_kfunc_ref_regs.remove(&id);
         } else {
             self.live_kfunc_refs.remove(&id);
         }
@@ -1127,6 +1131,15 @@ impl VccState {
         self.live_kfunc_refs.get(&id).copied().flatten()
     }
 
+    fn is_released_kfunc_ref(&self, reg: VccReg) -> bool {
+        self.released_kfunc_ref_regs.contains(&reg)
+    }
+
+    fn mark_released_kfunc_ref(&mut self, reg: VccReg) {
+        self.set_reg(reg, VccValueType::Unknown);
+        self.released_kfunc_ref_regs.insert(reg);
+    }
+
     fn invalidate_ringbuf_ref(&mut self, id: VccReg) {
         self.set_live_ringbuf_ref(id, false);
         for (reg, ty) in self.reg_types.iter_mut() {
@@ -1153,7 +1166,8 @@ impl VccState {
 
     fn invalidate_kfunc_ref(&mut self, id: VccReg) {
         self.set_live_kfunc_ref(id, false, None);
-        for (reg, ty) in self.reg_types.iter_mut() {
+        let mut released = Vec::new();
+        for (reg, ty) in self.reg_types.iter() {
             let matches_ref = matches!(
                 ty,
                 VccValueType::Ptr(VccPointerInfo {
@@ -1162,9 +1176,11 @@ impl VccState {
                 }) if *ref_id == id
             );
             if matches_ref {
-                *ty = VccValueType::Unknown;
-                self.not_equal_consts.remove(reg);
+                released.push(*reg);
             }
+        }
+        for reg in released {
+            self.mark_released_kfunc_ref(reg);
         }
         self.cond_refinements.retain(|_, info| match info {
             VccCondRefinement::PtrNull { kfunc_ref, .. } => *kfunc_ref != Some(id),
@@ -1226,6 +1242,11 @@ impl VccState {
             };
             live_kfunc_refs.insert(*id, merged_kind);
         }
+        let released_kfunc_ref_regs = self
+            .released_kfunc_ref_regs
+            .union(&other.released_kfunc_ref_regs)
+            .copied()
+            .collect();
         let mut cond_refinements = HashMap::new();
         for (reg, left) in &self.cond_refinements {
             if let Some(right) = other.cond_refinements.get(reg) {
@@ -1281,6 +1302,7 @@ impl VccState {
             not_equal_consts,
             live_ringbuf_refs,
             live_kfunc_refs,
+            released_kfunc_ref_regs,
             rcu_read_lock_min_depth: self
                 .rcu_read_lock_min_depth
                 .min(other.rcu_read_lock_min_depth),
@@ -1303,15 +1325,29 @@ impl VccState {
                 &self.local_irq_disable_slots,
                 &other.local_irq_disable_slots,
             ),
-            iter_task_vma_min_depth: self.iter_task_vma_min_depth.min(other.iter_task_vma_min_depth),
-            iter_task_vma_max_depth: self.iter_task_vma_max_depth.max(other.iter_task_vma_max_depth),
-            iter_task_vma_slots: merge_slot_depths(&self.iter_task_vma_slots, &other.iter_task_vma_slots),
+            iter_task_vma_min_depth: self
+                .iter_task_vma_min_depth
+                .min(other.iter_task_vma_min_depth),
+            iter_task_vma_max_depth: self
+                .iter_task_vma_max_depth
+                .max(other.iter_task_vma_max_depth),
+            iter_task_vma_slots: merge_slot_depths(
+                &self.iter_task_vma_slots,
+                &other.iter_task_vma_slots,
+            ),
             iter_task_min_depth: self.iter_task_min_depth.min(other.iter_task_min_depth),
             iter_task_max_depth: self.iter_task_max_depth.max(other.iter_task_max_depth),
             iter_task_slots: merge_slot_depths(&self.iter_task_slots, &other.iter_task_slots),
-            iter_scx_dsq_min_depth: self.iter_scx_dsq_min_depth.min(other.iter_scx_dsq_min_depth),
-            iter_scx_dsq_max_depth: self.iter_scx_dsq_max_depth.max(other.iter_scx_dsq_max_depth),
-            iter_scx_dsq_slots: merge_slot_depths(&self.iter_scx_dsq_slots, &other.iter_scx_dsq_slots),
+            iter_scx_dsq_min_depth: self
+                .iter_scx_dsq_min_depth
+                .min(other.iter_scx_dsq_min_depth),
+            iter_scx_dsq_max_depth: self
+                .iter_scx_dsq_max_depth
+                .max(other.iter_scx_dsq_max_depth),
+            iter_scx_dsq_slots: merge_slot_depths(
+                &self.iter_scx_dsq_slots,
+                &other.iter_scx_dsq_slots,
+            ),
             iter_num_min_depth: self.iter_num_min_depth.min(other.iter_num_min_depth),
             iter_num_max_depth: self.iter_num_max_depth.max(other.iter_num_max_depth),
             iter_num_slots: merge_slot_depths(&self.iter_num_slots, &other.iter_num_slots),
@@ -1321,18 +1357,19 @@ impl VccState {
             iter_css_min_depth: self.iter_css_min_depth.min(other.iter_css_min_depth),
             iter_css_max_depth: self.iter_css_max_depth.max(other.iter_css_max_depth),
             iter_css_slots: merge_slot_depths(&self.iter_css_slots, &other.iter_css_slots),
-            iter_css_task_min_depth: self.iter_css_task_min_depth.min(other.iter_css_task_min_depth),
-            iter_css_task_max_depth: self.iter_css_task_max_depth.max(other.iter_css_task_max_depth),
+            iter_css_task_min_depth: self
+                .iter_css_task_min_depth
+                .min(other.iter_css_task_min_depth),
+            iter_css_task_max_depth: self
+                .iter_css_task_max_depth
+                .max(other.iter_css_task_max_depth),
             iter_css_task_slots: merge_slot_depths(
                 &self.iter_css_task_slots,
                 &other.iter_css_task_slots,
             ),
             iter_dmabuf_min_depth: self.iter_dmabuf_min_depth.min(other.iter_dmabuf_min_depth),
             iter_dmabuf_max_depth: self.iter_dmabuf_max_depth.max(other.iter_dmabuf_max_depth),
-            iter_dmabuf_slots: merge_slot_depths(
-                &self.iter_dmabuf_slots,
-                &other.iter_dmabuf_slots,
-            ),
+            iter_dmabuf_slots: merge_slot_depths(&self.iter_dmabuf_slots, &other.iter_dmabuf_slots),
             iter_kmem_cache_min_depth: self
                 .iter_kmem_cache_min_depth
                 .min(other.iter_kmem_cache_min_depth),
@@ -1374,7 +1411,8 @@ impl VccState {
             res_spin_lock_stack: merge_res_spin_lock_stacks(
                 &self.res_spin_lock_stack,
                 &other.res_spin_lock_stack,
-                self.res_spin_lock_max_depth.max(other.res_spin_lock_max_depth)
+                self.res_spin_lock_max_depth
+                    .max(other.res_spin_lock_max_depth)
                     + self
                         .res_spin_lock_irqsave_max_depth
                         .max(other.res_spin_lock_irqsave_max_depth),
@@ -1422,6 +1460,7 @@ impl VccState {
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),
+            released_kfunc_ref_regs: self.released_kfunc_ref_regs.clone(),
             rcu_read_lock_min_depth: self.rcu_read_lock_min_depth,
             rcu_read_lock_max_depth: self.rcu_read_lock_max_depth,
             preempt_disable_min_depth: self.preempt_disable_min_depth,
