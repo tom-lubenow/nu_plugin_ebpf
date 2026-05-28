@@ -5397,6 +5397,23 @@ const FIXTURES = [
         error_contains: "cannot use itself as its inner map template"
     }
     {
+        name: "map-define-map-in-map-rejects-nested-inner-template"
+        category: "maps"
+        tags: [maps map-define map-in-map reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define leaf_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define inner_outer --kind array-of-maps --inner-map leaf_seen --max-entries 4'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_outer --max-entries 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "must name a previously declared inner map with --value-type"
+    }
+    {
         name: "map-define-map-in-map-rejects-outer-value-type"
         category: "maps"
         tags: [maps map-define map-in-map reject]
