@@ -10958,6 +10958,26 @@ const FIXTURES = [
         error_contains: "arg1 must be known zero"
     }
     {
+        name: "source-kfunc-obj-drop-rejects-double-drop"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_obj_drop_impl' arg0 reference already released"
+    }
+    {
         name: "source-kfunc-refcount-acquire-rejects-map-field"
         category: "helper-state"
         tags: [kfunc object bpf_refcount ref-lifetime source reject]
@@ -11112,6 +11132,26 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "expects object reference"
+    }
+    {
+        name: "source-kfunc-percpu-obj-drop-rejects-double-drop"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_percpu_obj_drop_impl' arg0 reference already released"
     }
     {
         name: "source-kfunc-list-push-front-map-root"
