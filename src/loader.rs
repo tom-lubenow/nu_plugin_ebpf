@@ -158,6 +158,8 @@ pub struct ActiveProbe {
     generic_map_key_types: HashMap<MapRef, MirType>,
     /// Generic map capacity declarations established for this pinned program set
     generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Map-in-map inner-template declarations established for this pinned program set
+    generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// Typed generic map value schemas established for this pinned program set
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// Logical semantics for typed generic map values with richer layouts
@@ -200,6 +202,10 @@ impl std::fmt::Debug for ActiveProbe {
             .field(
                 "generic_map_max_entries",
                 &self.generic_map_max_entries.len(),
+            )
+            .field(
+                "generic_map_inner_templates",
+                &self.generic_map_inner_templates.len(),
             )
             .field(
                 "generic_map_value_types",
@@ -398,6 +404,33 @@ impl EbpfState {
         merged
     }
 
+    fn merge_generic_map_inner_templates<'a>(
+        schemas: impl Iterator<Item = &'a HashMap<MapRef, MapRef>>,
+    ) -> HashMap<MapRef, MapRef> {
+        let mut merged = HashMap::new();
+        let mut conflicts = HashSet::new();
+
+        for schema_set in schemas {
+            for (outer, inner) in schema_set {
+                if conflicts.contains(outer) {
+                    continue;
+                }
+                match merged.get(outer) {
+                    Some(existing) if existing != inner => {
+                        merged.remove(outer);
+                        conflicts.insert(outer.clone());
+                    }
+                    Some(_) => {}
+                    None => {
+                        merged.insert(outer.clone(), inner.clone());
+                    }
+                }
+            }
+        }
+
+        merged
+    }
+
     fn merge_generic_map_value_semantics<'a>(
         schemas: impl Iterator<
             Item = &'a HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
@@ -528,6 +561,23 @@ impl EbpfState {
                 .values()
                 .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
                 .map(|probe| &probe.generic_map_max_entries),
+        ))
+    }
+
+    /// Collect map-in-map inner-template declarations from active probes in a pin group.
+    ///
+    /// Conflicting templates for the same pinned outer map are dropped so callers
+    /// only see unambiguous resource metadata.
+    pub fn pinned_generic_map_inner_templates(
+        &self,
+        pin_group: &str,
+    ) -> Result<HashMap<MapRef, MapRef>, LoadError> {
+        let probes = self.probes.lock().map_err(|_| LoadError::LockPoisoned)?;
+        Ok(Self::merge_generic_map_inner_templates(
+            probes
+                .values()
+                .filter(|probe| probe.pin_group.as_deref() == Some(pin_group))
+                .map(|probe| &probe.generic_map_inner_templates),
         ))
     }
 

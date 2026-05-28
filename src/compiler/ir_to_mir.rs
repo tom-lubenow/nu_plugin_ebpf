@@ -393,6 +393,8 @@ pub struct HirToMirLowering<'a> {
     externally_seeded_map_key_types: HashSet<MapRef>,
     /// Map max-entry counts seeded from already-attached pinned programs
     externally_seeded_map_max_entries: HashSet<MapRef>,
+    /// Map-in-map inner templates seeded from already-attached pinned programs
+    externally_seeded_map_inner_templates: HashSet<MapRef>,
     /// Map schemas seeded from already-attached pinned programs
     externally_seeded_map_value_types: HashSet<MapRef>,
     /// Map semantics seeded from already-attached pinned programs
@@ -465,6 +467,7 @@ impl<'a> HirToMirLowering<'a> {
         type_hints: Option<&'a HirMirTypeHints>,
         external_map_key_types: Option<&'a HashMap<MapRef, MirType>>,
         external_map_max_entries: Option<&'a HashMap<MapRef, u32>>,
+        external_map_inner_templates: Option<&'a HashMap<MapRef, MapRef>>,
         external_map_value_types: Option<&'a HashMap<MapRef, MirType>>,
         external_map_value_semantics: Option<&'a HashMap<MapRef, AnnotatedValueSemantics>>,
         user_functions: &'a HashMap<DeclId, HirFunction>,
@@ -482,6 +485,8 @@ impl<'a> HirToMirLowering<'a> {
         let externally_seeded_map_key_types = map_key_types.keys().cloned().collect();
         let map_max_entries = external_map_max_entries.cloned().unwrap_or_default();
         let externally_seeded_map_max_entries = map_max_entries.keys().cloned().collect();
+        let map_inner_templates = external_map_inner_templates.cloned().unwrap_or_default();
+        let externally_seeded_map_inner_templates = map_inner_templates.keys().cloned().collect();
         let map_value_types = external_map_value_types.cloned().unwrap_or_default();
         let externally_seeded_map_value_types = map_value_types.keys().cloned().collect();
         let map_value_semantics = external_map_value_semantics.cloned().unwrap_or_default();
@@ -519,7 +524,7 @@ impl<'a> HirToMirLowering<'a> {
             implied_ctx_fields: HashSet::new(),
             map_key_types,
             map_max_entries,
-            map_inner_templates: HashMap::new(),
+            map_inner_templates,
             map_value_types,
             declared_map_value_types: HashSet::new(),
             map_value_semantics,
@@ -529,6 +534,7 @@ impl<'a> HirToMirLowering<'a> {
             conflicting_map_value_semantics: HashSet::new(),
             externally_seeded_map_key_types,
             externally_seeded_map_max_entries,
+            externally_seeded_map_inner_templates,
             externally_seeded_map_value_types,
             externally_seeded_map_value_semantics,
             user_functions,

@@ -2601,6 +2601,7 @@ fn test_compile_fixed_array_iterate_over_struct_elements() {
         None,
         None,
         None,
+        None,
         &user_functions,
         &decl_signatures,
     );

@@ -1464,6 +1464,41 @@ fn test_merge_generic_map_max_entries_drops_conflicts() {
 }
 
 #[test]
+fn test_merge_generic_map_inner_templates_drops_conflicts() {
+    let shared_outer = MapRef {
+        name: "shared_outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let unique_outer = MapRef {
+        name: "other_outer".to_string(),
+        kind: MapKind::HashOfMaps,
+    };
+    let inner_a = MapRef {
+        name: "inner_a".to_string(),
+        kind: MapKind::Hash,
+    };
+    let inner_b = MapRef {
+        name: "inner_b".to_string(),
+        kind: MapKind::Array,
+    };
+
+    let merged = EbpfState::merge_generic_map_inner_templates(
+        [
+            HashMap::from([
+                (shared_outer.clone(), inner_a.clone()),
+                (unique_outer.clone(), inner_b.clone()),
+            ]),
+            HashMap::from([(shared_outer.clone(), inner_a)]),
+            HashMap::from([(shared_outer.clone(), inner_b.clone())]),
+        ]
+        .iter(),
+    );
+
+    assert_eq!(merged.get(&unique_outer), Some(&inner_b));
+    assert!(!merged.contains_key(&shared_outer));
+}
+
+#[test]
 fn test_merge_generic_map_value_semantics_drops_conflicts() {
     let shared = MapRef {
         name: "shared_state".to_string(),

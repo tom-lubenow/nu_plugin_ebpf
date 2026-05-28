@@ -1184,8 +1184,13 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         match self.map_inner_templates.get(outer) {
             Some(existing) if existing != inner => {
+                let schema_source = if self.externally_seeded_map_inner_templates.contains(outer) {
+                    "pinned map schema"
+                } else {
+                    "earlier declaration"
+                };
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} inner map template for '{}' conflicts with earlier declaration",
+                    "{context} inner map template for '{}' conflicts with {schema_source}",
                     outer.name
                 )))
             }

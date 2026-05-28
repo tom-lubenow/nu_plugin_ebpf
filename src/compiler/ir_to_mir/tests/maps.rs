@@ -2941,6 +2941,7 @@ fn test_map_define_max_entries_registers_capacity() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -2994,6 +2995,81 @@ fn test_map_define_array_of_maps_accepts_declared_inner_template_contract() {
     assert!(
         !result.generic_map_value_types.contains_key(&outer_ref),
         "map-in-map outer value layout is defined by --inner-map, not --value-type"
+    );
+}
+
+#[test]
+fn test_external_map_in_map_inner_template_is_preserved() {
+    let (hir, decl_names) = map_define_with_value_type_hir("inner", "hash", "u64");
+    let inner_ref = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    let outer_ref = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let external_inner_templates = HashMap::from([(outer_ref.clone(), inner_ref.clone())]);
+
+    let result = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        Some(&external_inner_templates),
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pinned map-in-map template metadata should seed lowering");
+
+    assert_eq!(
+        result.generic_map_inner_templates.get(&outer_ref),
+        Some(&inner_ref)
+    );
+    assert_eq!(
+        result
+            .type_hints
+            .generic_map_inner_templates
+            .get(&outer_ref),
+        Some(&inner_ref)
+    );
+}
+
+#[test]
+fn test_map_define_map_in_map_rejects_conflicting_external_inner_template() {
+    let (hir, decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
+    let outer_ref = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let pinned_inner_ref = MapRef {
+        name: "pinned_inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    let external_inner_templates = HashMap::from([(outer_ref, pinned_inner_ref)]);
+
+    let err = lower_hir_to_mir_with_hints_key_value_maps_and_semantics(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        None,
+        None,
+        Some(&external_inner_templates),
+        None,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("conflicting pinned map-in-map template should fail");
+
+    assert!(
+        err.to_string().contains("conflicts with pinned map schema"),
+        "{err}"
     );
 }
 
@@ -3082,6 +3158,7 @@ fn test_map_define_graph_root_schema_registers_value_type() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -3121,6 +3198,7 @@ fn test_map_define_rejects_zero_max_entries() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -3145,6 +3223,7 @@ fn test_map_define_rejects_conflicting_external_max_entries() {
         None,
         None,
         Some(&external_max_entries),
+        None,
         None,
         None,
         &HashMap::new(),
@@ -3190,6 +3269,7 @@ fn test_map_define_rejects_conflicting_declared_max_entries() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -3209,6 +3289,7 @@ fn test_map_define_rejects_local_storage_max_entries() {
         &hir,
         None,
         &decl_names,
+        None,
         None,
         None,
         None,
@@ -3310,6 +3391,7 @@ fn test_external_key_schema_materializes_record_key() {
         None,
         None,
         None,
+        None,
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -3397,6 +3479,7 @@ fn test_map_define_rejects_conflicting_external_key_schema() {
         &decl_names,
         None,
         Some(&external_key_schema),
+        None,
         None,
         None,
         None,
