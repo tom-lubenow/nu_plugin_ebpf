@@ -1,6 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::compiler::{MapKind, MapValueCompatibilityRequirement, ProgramCompatibilityRequirement};
+use crate::compiler::mir::CtxField;
+use crate::compiler::{
+    ContextFieldCompatibilityRequirement, EbpfProgramType, MapKind,
+    MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
+};
 use crate::program_spec::ProgramSpec;
 
 #[derive(Debug, Clone)]
@@ -110,6 +114,46 @@ fn verifier_diff_feature_table_records(
             records.insert(table_key.to_string(), record).is_none(),
             "duplicate scripts/verifier_diff.nu {const_name} entry for {table_key}"
         );
+    }
+
+    records
+}
+
+#[derive(Debug, Clone)]
+struct VerifierDiffTargetContextFeatureRecord {
+    target: String,
+    field: String,
+    feature: VerifierDiffFeatureRecord,
+}
+
+fn verifier_diff_target_context_field_feature_records(
+    source: &str,
+) -> Vec<VerifierDiffTargetContextFeatureRecord> {
+    let body = verifier_diff_const_body(
+        source,
+        "TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS",
+        '[',
+    );
+    let mut records = Vec::new();
+
+    for line in body.lines() {
+        let Some(target) = verifier_diff_quoted_field(line, "target") else {
+            continue;
+        };
+        let field = verifier_diff_quoted_field(line, "field").unwrap_or_else(|| {
+            panic!("TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS target {target} missing field")
+        });
+        let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+            panic!(
+                "TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS target {target} field {field} should reference a feature const"
+            )
+        });
+
+        records.push(VerifierDiffTargetContextFeatureRecord {
+            target: target.to_string(),
+            field: field.to_string(),
+            feature: verifier_diff_feature_record(source, feature_const),
+        });
     }
 
     records
@@ -398,6 +442,32 @@ fn assert_verifier_feature_record_matches_map_value(
     );
 }
 
+fn assert_verifier_feature_record_matches_context_requirement(
+    label: &str,
+    requirement: &ContextFieldCompatibilityRequirement,
+    record: &VerifierDiffFeatureRecord,
+) {
+    assert_eq!(
+        record.key,
+        requirement.key(),
+        "scripts/verifier_diff.nu context-field feature key drifted for {label}"
+    );
+    assert_eq!(
+        record.min_kernel,
+        requirement.minimum_kernel(),
+        "scripts/verifier_diff.nu context-field min_kernel drifted for {label}"
+    );
+    assert_eq!(
+        record.source,
+        requirement.minimum_kernel_source(),
+        "scripts/verifier_diff.nu context-field source drifted for {label}"
+    );
+    assert_eq!(
+        record.max_kernel_exclusive, None,
+        "context-field compatibility features should not use max_kernel_exclusive"
+    );
+}
+
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
@@ -425,6 +495,96 @@ fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     assert!(
         unexpected_tokens.is_empty(),
         "scripts/verifier_diff.nu has map-value feature metadata without a Rust requirement: {unexpected_tokens:?}"
+    );
+}
+
+#[test]
+fn test_verifier_diff_context_field_feature_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let records = verifier_diff_feature_table_records(
+        verifier_diff,
+        "CONTEXT_FIELD_KERNEL_FEATURES",
+        "field",
+    );
+
+    for (field_name, record) in &records {
+        let field =
+            EbpfProgramType::resolve_untyped_ctx_field_name(field_name).unwrap_or_else(|err| {
+                panic!("scripts/verifier_diff.nu context field {field_name} should resolve: {err}")
+            });
+        assert!(
+            !matches!(field, CtxField::TracepointField(_)),
+            "scripts/verifier_diff.nu context field {field_name} resolved as an unversioned tracepoint payload field"
+        );
+        let requirement = ContextFieldCompatibilityRequirement::for_field(&field).unwrap_or_else(|| {
+            panic!(
+                "scripts/verifier_diff.nu context field {field_name} ({}) has no Rust compatibility requirement",
+                field.display_name()
+            )
+        });
+
+        assert_verifier_feature_record_matches_context_requirement(
+            field_name,
+            &requirement,
+            record,
+        );
+    }
+
+    assert!(
+        !records.is_empty(),
+        "expected verifier_diff.nu context-field feature metadata"
+    );
+}
+
+#[test]
+fn test_verifier_diff_target_context_field_feature_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let records = verifier_diff_target_context_field_feature_records(verifier_diff);
+
+    for record in &records {
+        let spec = ProgramSpec::parse(&record.target).unwrap_or_else(|err| {
+            panic!(
+                "verifier_diff.nu target context expectation target {} should parse: {err}",
+                record.target
+            )
+        });
+        let field = spec
+            .resolve_ctx_field_name(&record.field)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "verifier_diff.nu target context expectation {} ctx.{} should resolve: {err}",
+                    record.target, record.field
+                )
+            });
+        let target = if spec.program_type() == EbpfProgramType::Iter {
+            record.target.strip_prefix("iter:")
+        } else {
+            None
+        };
+        let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_target(
+            &field,
+            Some(spec.program_type()),
+            target,
+        )
+        .unwrap_or_else(|| {
+            panic!(
+                "verifier_diff.nu target context expectation {} ctx.{} ({}) has no Rust compatibility requirement",
+                record.target,
+                record.field,
+                field.display_name()
+            )
+        });
+
+        assert_verifier_feature_record_matches_context_requirement(
+            &format!("{} ctx.{}", record.target, record.field),
+            &requirement,
+            &record.feature,
+        );
+    }
+
+    assert!(
+        !records.is_empty(),
+        "expected verifier_diff.nu target-aware context-field feature metadata"
     );
 }
 
