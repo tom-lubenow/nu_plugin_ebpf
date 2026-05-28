@@ -3510,7 +3510,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  1'
             '}'
         ]
-        feature_keys: ["ctx:rx_queue_mapping" "ctx:sk"]
+        feature_keys: ["ctx:rx_queue_mapping" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
@@ -3531,7 +3531,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["ctx:sk" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
@@ -17093,38 +17093,38 @@ def validate-kernel-feature-metadata [fixture] {
     }
 }
 
+def validate-kernel-feature-key-expectation [label: string expected_keys actual_keys] {
+    let expected_keys = ($expected_keys | sort)
+    let actual_keys = ($actual_keys | sort)
+    let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
+    let unexpected = ($actual_keys | where {|key| $key not-in $expected_keys })
+
+    if (($missing | length) > 0) or (($unexpected | length) > 0) {
+        fail $"($label) drifted: missing=($missing | str join ',') unexpected=($unexpected | str join ',') actual=($actual_keys | str join ',')"
+    }
+}
+
 def validate-program-target-kernel-feature-expectations [] {
     for expectation in $PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             target-kernel-features $target
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
-        let unexpected = ($actual_keys | where {|key| $key not-in $expected_keys })
 
-        if (($missing | length) > 0) or (($unexpected | length) > 0) {
-            fail $"target-kernel-features drifted for ($target): missing=($missing | str join ',') unexpected=($unexpected | str join ',')"
-        }
+        validate-kernel-feature-key-expectation $"target-kernel-features for ($target)" $expectation.feature_keys $actual_keys
     }
 }
 
 def validate-program-map-kernel-feature-expectations [] {
     for expectation in $PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS {
         let program = ($expectation.program | str join "\n")
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             program-map-kernel-features $program
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
-        if ($missing | length) > 0 {
-            fail $"program-map-kernel-features drifted: missing=($missing | str join ',') actual=($actual_keys | str join ',')"
-        }
+        validate-kernel-feature-key-expectation "program-map-kernel-features" $expectation.feature_keys $actual_keys
     }
 }
 
@@ -17195,17 +17195,12 @@ def validate-program-context-field-kernel-feature-expectations [] {
     for expectation in $PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
         let program = ($expectation.program | str join "\n")
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             program-context-field-kernel-features $program $target
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
-        if ($missing | length) > 0 {
-            fail $"program-context-field-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
-        }
+        validate-kernel-feature-key-expectation $"program-context-field-kernel-features for ($target)" $expectation.feature_keys $actual_keys
     }
 }
 
@@ -17213,34 +17208,24 @@ def validate-program-surface-kernel-feature-expectations [] {
     for expectation in $PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
         let program = ($expectation.program | str join "\n")
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             program-surface-kernel-features $program $target
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
-        if ($missing | length) > 0 {
-            fail $"program-surface-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
-        }
+        validate-kernel-feature-key-expectation $"program-surface-kernel-features for ($target)" $expectation.feature_keys $actual_keys
     }
 }
 
 def validate-program-helper-kernel-feature-expectations [] {
     for expectation in $PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS {
         let program = ($expectation.program | str join "\n")
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             program-helper-kernel-features $program
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
-        if ($missing | length) > 0 {
-            fail $"program-helper-kernel-features drifted: missing=($missing | str join ',') actual=($actual_keys | str join ',')"
-        }
+        validate-kernel-feature-key-expectation "program-helper-kernel-features" $expectation.feature_keys $actual_keys
     }
 }
 
@@ -17248,34 +17233,24 @@ def validate-program-kfunc-kernel-feature-expectations [] {
     for expectation in $PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
         let program = ($expectation.program | str join "\n")
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             program-kfunc-kernel-features $program $target
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
-        if ($missing | length) > 0 {
-            fail $"program-kfunc-kernel-features drifted for ($target): missing=($missing | str join ',') actual=($actual_keys | str join ',')"
-        }
+        validate-kernel-feature-key-expectation $"program-kfunc-kernel-features for ($target)" $expectation.feature_keys $actual_keys
     }
 }
 
 def validate-program-callback-btf-kernel-feature-expectations [] {
     for expectation in $PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS {
         let program = ($expectation.program | str join "\n")
-        let expected_keys = ($expectation.feature_keys | sort)
         let actual_keys = (
             program-callback-btf-kernel-features $program
             | each {|feature| $feature.key }
-            | sort
         )
-        let missing = ($expected_keys | where {|key| $key not-in $actual_keys })
 
-        if ($missing | length) > 0 {
-            fail $"program-callback-btf-kernel-features drifted: missing=($missing | str join ',') actual=($actual_keys | str join ',')"
-        }
+        validate-kernel-feature-key-expectation "program-callback-btf-kernel-features" $expectation.feature_keys $actual_keys
     }
 }
 
