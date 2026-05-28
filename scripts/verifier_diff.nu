@@ -7782,6 +7782,39 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-helper-bind-cgroup-sock-addr-connect4"
+        category: "helper-state"
+        tags: [helper-call cgroup-sock-addr socket-option source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
+        program: [
+            '{|ctx|'
+            '  let addr = "0123456789abcdef"'
+            '  helper-call "bpf_bind" $ctx $addr 16'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-bind-rejects-non-connect-hook"
+        category: "helper-state"
+        tags: [helper-call cgroup-sock-addr socket-option source reject]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getpeername4"
+        program: [
+            '{|ctx|'
+            '  let addr = "0123456789abcdef"'
+            '  helper-call "bpf_bind" $ctx $addr 16'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_bind' is only valid on cgroup_sock_addr connect4/connect6 hooks"
+    }
+    {
         name: "flow-dissector-flow-key-context"
         category: "context-surface"
         tags: [flow-dissector context]
@@ -8085,6 +8118,54 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "source-helper-getsockopt-cgroup-sockopt"
+        category: "helper-state"
+        tags: [helper-call cgroup-sockopt socket-option source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let optval = "01234567"'
+            '  helper-call "bpf_getsockopt" $ctx 1 2 $optval 8'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-setsockopt-cgroup-sockopt"
+        category: "helper-state"
+        tags: [helper-call cgroup-sockopt socket-option source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:set"
+        program: [
+            '{|ctx|'
+            '  let optval = "01234567"'
+            '  helper-call "bpf_setsockopt" $ctx 1 2 $optval 8'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-getsockopt-rejects-non-socket-option-context"
+        category: "helper-state"
+        tags: [helper-call cgroup-sockopt socket-option source reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let optval = "01234567"'
+            '  helper-call "bpf_getsockopt" $ctx 1 2 $optval 8'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs"
     }
     {
         name: "cgroup-sockopt-get-context-fields"
