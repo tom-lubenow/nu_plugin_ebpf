@@ -4413,10 +4413,9 @@ mod tests {
             Some(ProgramLiveAttachUnsupportedReason::RawTracepointWritable)
         );
         assert_eq!(raw_policy.opt_in_reason, None);
-        assert!(
-            raw_policy
-                .note
-                .is_some_and(|note| note.contains("writable raw-tracepoint"))
+        assert_eq!(
+            raw_policy.note,
+            Some(ProgramLiveAttachUnsupportedReason::RawTracepointWritable.note())
         );
 
         let cgroup_sock_addr_unix =
@@ -4435,10 +4434,9 @@ mod tests {
             Some(ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix)
         );
         assert_eq!(cgroup_unix_policy.opt_in_reason, None);
-        assert!(
-            cgroup_unix_policy
-                .note
-                .is_some_and(|note| note.contains("BPF_CGROUP_UNIX"))
+        assert_eq!(
+            cgroup_unix_policy.note,
+            Some(ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix.note())
         );
 
         let xdp_devmap = ProgramSpec::parse("xdp:devmap").expect("xdp devmap spec should parse");
@@ -4455,10 +4453,9 @@ mod tests {
             Some(ProgramLiveAttachUnsupportedReason::XdpMapProgram)
         );
         assert_eq!(xdp_devmap_policy.opt_in_reason, None);
-        assert!(
-            xdp_devmap_policy
-                .note
-                .is_some_and(|note| note.contains("map entries"))
+        assert_eq!(
+            xdp_devmap_policy.note,
+            Some(ProgramLiveAttachUnsupportedReason::XdpMapProgram.note())
         );
 
         let sched_ext =
@@ -4476,10 +4473,9 @@ mod tests {
             sched_ext_policy.opt_in_reason,
             Some(ProgramLiveAttachOptInReason::SchedExt)
         );
-        assert!(
-            sched_ext_policy
-                .note
-                .is_some_and(|note| note.contains("sched_ext"))
+        assert_eq!(
+            sched_ext_policy.note,
+            Some(ProgramLiveAttachOptInReason::SchedExt.note())
         );
 
         let generic_struct_ops = ProgramSpec::parse("struct_ops:demo_ops")
@@ -4497,10 +4493,9 @@ mod tests {
             generic_policy.opt_in_reason,
             Some(ProgramLiveAttachOptInReason::UnclassifiedStructOps)
         );
-        assert!(
-            generic_policy
-                .note
-                .is_some_and(|note| note.contains("unclassified struct_ops"))
+        assert_eq!(
+            generic_policy.note,
+            Some(ProgramLiveAttachOptInReason::UnclassifiedStructOps.note())
         );
 
         let tcp_congestion = ProgramSpec::parse("struct_ops:tcp_congestion_ops")
@@ -4532,10 +4527,9 @@ mod tests {
             Some(ProgramLiveAttachUnsupportedReason::StructOpsCallback)
         );
         assert_eq!(callback_policy.opt_in_reason, None);
-        assert!(
-            callback_policy
-                .note
-                .is_some_and(|note| note.contains("not directly attachable"))
+        assert_eq!(
+            callback_policy.note,
+            Some(ProgramLiveAttachUnsupportedReason::StructOpsCallback.note())
         );
     }
 

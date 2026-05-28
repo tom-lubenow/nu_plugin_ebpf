@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
-use crate::program_spec::ProgramSpec;
+use crate::program_spec::{
+    ProgramLiveAttachOptInReason, ProgramLiveAttachUnsupportedReason, ProgramSpec,
+};
 
 fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContextField {
     fields
@@ -824,13 +826,13 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_opt_in_reason_description should be present")
             .is_nothing()
     );
-    assert!(
+    assert_eq!(
         record
             .get("live_attach_note")
             .expect("live_attach_note should be present")
             .as_str()
-            .expect("live_attach_note should be a string")
-            .contains("BPF_CGROUP_UNIX")
+            .expect("live_attach_note should be a string"),
+        ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix.note()
     );
 
     let generic_struct_ops =
@@ -900,13 +902,13 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_opt_in_reason_description should be a string")
             .contains("Unclassified struct_ops")
     );
-    assert!(
+    assert_eq!(
         record
             .get("live_attach_note")
             .expect("live_attach_note should be present")
             .as_str()
-            .expect("live_attach_note should be a string")
-            .contains("unclassified struct_ops")
+            .expect("live_attach_note should be a string"),
+        ProgramLiveAttachOptInReason::UnclassifiedStructOps.note()
     );
 }
 
@@ -3448,13 +3450,13 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("live_attach_unsupported_reason should be a string"),
         "struct-ops-callback-target"
     );
-    assert!(
+    assert_eq!(
         record
             .get("live_attach_note")
             .expect("live_attach_note should be present")
             .as_str()
-            .expect("live_attach_note should be a string")
-            .contains("not directly attachable")
+            .expect("live_attach_note should be a string"),
+        ProgramLiveAttachUnsupportedReason::StructOpsCallback.note()
     );
 }
 
