@@ -5229,6 +5229,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-map-in-map-inner-template-object"
+        category: "maps"
+        tags: [maps map-define map-in-map accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_seen --max-entries 4'
+            '  map-define outer_hash --kind hash-of-maps --key-type u32 --inner-map inner_seen --max-entries 4'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "queue-map-push-peek-record"
         category: "maps"
         tags: [maps queue map-push map-peek records accept]
