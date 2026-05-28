@@ -557,6 +557,51 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["map:BPF_MAP_TYPE_CGRP_STORAGE"]
     }
 ]
+
+const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  map-define resources --kind hash --value-type "record{lock:bpf_spin_lock,timer:bpf_timer,task:kptr:task_struct,work:bpf_wq,refs:bpf_refcount}"'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map-value:bpf_spin_lock"
+            "map-value:bpf_timer"
+            "map-value:kptr"
+            "map-value:bpf_wq"
+            "map-value:bpf_refcount"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define list_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node}"'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map-value:bpf_spin_lock"
+            "map-value:bpf_list_head"
+            "map-value:bpf_list_node"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:node_data:node}"'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map-value:bpf_spin_lock"
+            "map-value:bpf_rb_root"
+            "map-value:bpf_rb_node"
+        ]
+    }
+]
+
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
@@ -17763,6 +17808,18 @@ def validate-program-map-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-map-value-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let actual_keys = (
+            program-map-value-kernel-features $program
+            | each {|feature| $feature.key }
+        )
+
+        validate-kernel-feature-key-expectation "program-map-value-kernel-features" $expectation.feature_keys $actual_keys
+    }
+}
+
 def validate-target-context-field-kernel-feature-expectations [] {
     for expectation in $TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
@@ -17892,6 +17949,7 @@ def validate-program-callback-btf-kernel-feature-expectations [] {
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
+    validate-program-map-value-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
     validate-context-field-helper-kernel-feature-expectations
     validate-context-projection-kernel-feature-expectations
