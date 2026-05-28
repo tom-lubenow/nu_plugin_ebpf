@@ -2624,7 +2624,19 @@ fn test_spec_context_fields_include_iterator_minimum_kernel_metadata() {
             "5.15",
             "/v5.15/net/unix/af_unix.c",
         ),
+        (
+            "iter:ipv6_route",
+            "iter_ipv6_route",
+            "5.8",
+            "/v5.8/net/ipv6/route.c",
+        ),
         ("iter:ksym", "iter_ksym", "6.0", "/v6.0/kernel/kallsyms.c"),
+        (
+            "iter:netlink",
+            "iter_netlink_sk",
+            "5.8",
+            "/v5.8/net/netlink/af_netlink.c",
+        ),
         (
             "iter:kmem_cache",
             "iter_kmem_cache",
