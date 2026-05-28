@@ -5331,6 +5331,42 @@ const FIXTURES = [
         error_contains: "first-class map-in-map operations are not modeled yet"
     }
     {
+        name: "map-define-hash-of-maps-operation-rejects"
+        category: "maps"
+        tags: [maps map-define map-in-map reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_hash --kind hash-of-maps --key-type u32 --inner-map inner_seen --max-entries 4'
+            '  let entry = (0 | map-get outer_hash --kind hash-of-maps)'
+            '  if $entry { 1 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "first-class map-in-map operations are not modeled yet"
+    }
+    {
+        name: "map-define-hash-of-maps-inferred-operation-rejects"
+        category: "maps"
+        tags: [maps map-define map-in-map kind-inference reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_hash --kind hash-of-maps --key-type u32 --inner-map inner_seen --max-entries 4'
+            '  let entry = (0 | map-get outer_hash)'
+            '  if $entry { 1 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "first-class map-in-map operations are not modeled yet"
+    }
+    {
         name: "map-define-map-in-map-rejects-missing-inner-map"
         category: "maps"
         tags: [maps map-define map-in-map reject]
