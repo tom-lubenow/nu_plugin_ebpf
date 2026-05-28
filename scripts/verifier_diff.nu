@@ -8410,6 +8410,40 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-rejects-flow-key-root-write"
+        category: "context-surface"
+        tags: [flow-dissector reject context writable]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.flow_keys = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a scalar field, not the root context pointer"
+    }
+    {
+        name: "flow-dissector-rejects-flow-key-aggregate-write"
+        category: "context-surface"
+        tags: [flow-dissector reject context writable]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.flow_keys.ipv6_dst = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a scalar field, not Array"
+    }
+    {
         name: "flow-dissector-packet-context"
         category: "context-surface"
         tags: [flow-dissector context packet]
