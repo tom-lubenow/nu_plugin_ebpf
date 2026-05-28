@@ -7756,6 +7756,39 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-get-context-fields"
+        category: "context-surface"
+        tags: [cgroup-sockopt context source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  ($ctx.level + $ctx.optname + $ctx.optlen + $ctx.retval + $ctx.netns_cookie) | count'
+            '  if $ctx.optval { 1 | count }'
+            '  if $ctx.optval_end { 1 | count }'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-get-optlen-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.optlen = 4'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sockopt-get-rejects-level-write"
         category: "context-policy"
         tags: [cgroup-sockopt reject context writable]
@@ -7771,6 +7804,23 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "ctx.level is only writable on cgroup_sockopt:set hooks"
+    }
+    {
+        name: "cgroup-sockopt-get-rejects-optname-write"
+        category: "context-policy"
+        tags: [cgroup-sockopt reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.optname = 2'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.optname is only writable on cgroup_sockopt:set hooks"
     }
     {
         name: "cgroup-sockopt-rejects-optval-write-without-index"
@@ -7805,6 +7855,38 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "cgroup_sockopt:get"
+    }
+    {
+        name: "cgroup-sockopt-set-rejects-retval-read"
+        category: "context-policy"
+        tags: [cgroup-sockopt reject context]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:set"
+        program: [
+            '{|ctx|'
+            '  $ctx.retval | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cgroup_sockopt:get"
+    }
+    {
+        name: "cgroup-sockopt-rejects-optval-write-on-packet-context"
+        category: "context-policy"
+        tags: [cgroup-sockopt reject context writable]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.optval.0 = 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.optval is only available on cgroup_sockopt programs"
     }
     {
         name: "cgroup-sockopt-bound-tcp-socket-projection"
