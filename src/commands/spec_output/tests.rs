@@ -25,6 +25,31 @@ fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a Sp
         .unwrap_or_else(|| panic!("expected writable ctx.{field_name} in spec context writes"))
 }
 
+fn assert_context_store_write_metadata(
+    writes: &[SpecContextWrite],
+    field_name: &str,
+    requirement_key: &str,
+    minimum_kernel: &str,
+    source_fragment: &str,
+    indexed: bool,
+) {
+    let write = context_write(writes, field_name);
+    assert_eq!(write.kind, "store");
+    assert_eq!(write.indexed, indexed);
+    assert_eq!(
+        write.context_field_requirement_key.as_deref(),
+        Some(requirement_key)
+    );
+    assert_eq!(write.minimum_kernel, Some(minimum_kernel));
+    assert!(
+        write
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains(source_fragment))
+    );
+    assert!(write.helper.is_none());
+    assert!(write.kfunc.is_none());
+}
+
 fn intrinsic_commands(spec_text: &str) -> Vec<String> {
     let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
     let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
@@ -4270,6 +4295,89 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(flow_keys.minimum_kernel, Some("4.20"));
     assert!(flow_keys.helper.is_none());
     assert!(flow_keys.kfunc.is_none());
+}
+
+#[test]
+fn test_context_write_records_include_packet_field_metadata() {
+    let tc_action =
+        ProgramSpec::parse("tc_action:diff-action").expect("tc_action spec should parse");
+    let tc_action_writes = spec_context_writes(&tc_action);
+
+    assert_context_store_write_metadata(
+        &tc_action_writes,
+        "mark",
+        "ctx:mark",
+        "4.1",
+        "/v4.1/include/uapi/linux/bpf.h",
+        false,
+    );
+    assert_context_store_write_metadata(
+        &tc_action_writes,
+        "queue_mapping",
+        "ctx:queue_mapping",
+        "4.1",
+        "/v4.1/include/uapi/linux/bpf.h",
+        false,
+    );
+    assert_context_store_write_metadata(
+        &tc_action_writes,
+        "tc_index",
+        "ctx:tc_index",
+        "4.7",
+        "/v4.7/include/uapi/linux/bpf.h",
+        false,
+    );
+    assert_context_store_write_metadata(
+        &tc_action_writes,
+        "cb",
+        "ctx:cb",
+        "4.7",
+        "/v4.7/include/uapi/linux/bpf.h",
+        true,
+    );
+    assert_context_store_write_metadata(
+        &tc_action_writes,
+        "tc_classid",
+        "ctx:tc_classid",
+        "4.7",
+        "/v4.7/include/uapi/linux/bpf.h",
+        false,
+    );
+    assert_context_store_write_metadata(
+        &tc_action_writes,
+        "tstamp",
+        "ctx:tstamp",
+        "5.0",
+        "/v5.0/include/uapi/linux/bpf.h",
+        false,
+    );
+
+    let lwt_xmit = ProgramSpec::parse("lwt_xmit:eth0").expect("lwt_xmit spec should parse");
+    let lwt_xmit_writes = spec_context_writes(&lwt_xmit);
+    assert_context_store_write_metadata(
+        &lwt_xmit_writes,
+        "mark",
+        "ctx:mark",
+        "4.1",
+        "/v4.1/include/uapi/linux/bpf.h",
+        false,
+    );
+    assert_context_store_write_metadata(
+        &lwt_xmit_writes,
+        "priority",
+        "ctx:priority",
+        "4.1",
+        "/v4.1/include/uapi/linux/bpf.h",
+        false,
+    );
+    assert_context_store_write_metadata(
+        &lwt_xmit_writes,
+        "cb",
+        "ctx:cb",
+        "4.7",
+        "/v4.7/include/uapi/linux/bpf.h",
+        true,
+    );
 }
 
 #[test]
