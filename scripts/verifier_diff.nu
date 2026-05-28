@@ -12905,6 +12905,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-cpumask-ref-release-dtor"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    $mask | kfunc-call "bpf_cpumask_release_dtor"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-cpumask-ref-rejects-leak"
         category: "helper-state"
         tags: [kfunc cpumask ref-lifetime source reject]
@@ -12931,6 +12949,26 @@ const FIXTURES = [
             '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
             '  if $task {'
             '    kfunc-call "bpf_cpumask_release" $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects cpumask reference, got task reference"
+    }
+    {
+        name: "source-kfunc-cpumask-release-dtor-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_cpumask_release_dtor" $task'
             '    $task | kfunc-call "bpf_task_release"'
             '  }'
             '  0'
