@@ -12793,6 +12793,70 @@ const FIXTURES = [
         error_contains: "expects file reference, got task reference"
     }
     {
+        name: "source-kfunc-crypto-ctx-release-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc crypto ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_crypto_ctx_release" $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects crypto_ctx reference, got task reference"
+    }
+    {
+        name: "source-kfunc-crypto-encrypt-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc crypto ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  let src = "abcdefghijklmnop"'
+            '  let dst = "ABCDEFGHIJKLMNOP"'
+            '  let siv = "0000000000000000"'
+            '  if $task {'
+            '    kfunc-call "bpf_crypto_encrypt" $task $src $dst $siv'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 expects crypto_ctx reference, got task reference"
+    }
+    {
+        name: "source-kfunc-crypto-ctx-create-rejects-kernel-params"
+        category: "helper-state"
+        tags: [kfunc crypto source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  let err = "00000000"'
+            '  if $task {'
+            '    kfunc-call "bpf_crypto_ctx_create" $task 408 $err'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc bpf_crypto_ctx_create params expects pointer in [Stack, Map], got Kernel"
+    }
+    {
         name: "source-kfunc-cgroup-acquire-release"
         category: "helper-state"
         tags: [kfunc cgroup ref-lifetime source accept]
