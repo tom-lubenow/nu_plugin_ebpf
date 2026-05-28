@@ -43,6 +43,10 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::ldxb(dst, EbpfReg::R9, load.offset));
             }
+            ContextFieldDirectLoadWidth::U16 => {
+                self.instructions
+                    .push(EbpfInsn::ldxh(dst, EbpfReg::R9, load.offset));
+            }
             ContextFieldDirectLoadWidth::U32 => {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, load.offset));
@@ -711,18 +715,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::EthProtocol => {
-                let protocol_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().0,
-                    PacketContextKind::SkReuseport => Self::sk_reuseport_md_offsets().3,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.eth_protocol is only available on skb-backed packet and sk_reuseport programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxh(dst, EbpfReg::R9, protocol_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
                 self.instructions.push(EbpfInsn::end16_to_be(dst));
             }
             CtxField::VlanPresent => {
@@ -734,17 +728,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::VlanProto => {
-                let vlan_proto_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().3,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.vlan_proto is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxh(dst, EbpfReg::R9, vlan_proto_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
                 self.instructions.push(EbpfInsn::end16_to_be(dst));
             }
             CtxField::SkbCb => {
@@ -857,36 +842,23 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Protocol => {
-                match self
+                let layout = self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.protocol_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => {
-                        let offset = Self::bpf_sock_offsets().3;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-                    }
-                    Some(SocketContextLayout::SkLookup) => {
-                        let offset = Self::bpf_sk_lookup_offsets().2;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-                    }
-                    Some(SocketContextLayout::SockAddr) => {
-                        let offset = Self::bpf_sock_addr_offsets().6;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-                    }
-                    Some(SocketContextLayout::SkBuff) => {
-                        let offset = Self::sk_buff_vlan_offsets().0;
-                        self.instructions
-                            .push(EbpfInsn::ldxh(dst, EbpfReg::R9, offset));
-                        self.instructions.push(EbpfInsn::end16_to_be(dst));
-                    }
-                    Some(SocketContextLayout::SkReuseport) => {
-                        let offset = Self::sk_reuseport_md_offsets().4;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                    .and_then(|ctx| ctx.protocol_context_layout());
+                match layout {
+                    Some(
+                        layout @ (SocketContextLayout::CgroupSock
+                        | SocketContextLayout::SockAddr
+                        | SocketContextLayout::SkLookup
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SkReuseport),
+                    ) => {
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
+                        if matches!(layout, SocketContextLayout::SkBuff) {
+                            self.instructions.push(EbpfInsn::end16_to_be(dst));
+                        }
                     }
                     Some(
                         SocketContextLayout::CgroupSockopt

@@ -108,17 +108,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         (4, 12)
     }
 
-    pub(super) fn sk_buff_vlan_offsets() -> (i16, i16, i16, i16) {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 protocol;      // stored in network byte order
-        //     __u32 vlan_present;
-        //     __u32 vlan_tci;
-        //     __u32 vlan_proto;    // stored in network byte order
-        // };
-        (16, 20, 24, 28)
-    }
-
     pub(crate) fn sk_buff_cb_offset() -> i16 {
         // struct __sk_buff {
         //     ...
@@ -188,21 +177,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 size;
         // };
         (0, 8, 16, 20, 24, 28, 44, 60, 64, 68)
-    }
-
-    pub(super) fn sk_reuseport_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct sk_reuseport_md {
-        //     __bpf_md_ptr(void *, data);
-        //     __bpf_md_ptr(void *, data_end);
-        //     __u32 len;
-        //     __u32 eth_protocol;  // network byte order
-        //     __u32 ip_protocol;
-        //     __u32 bind_inany;
-        //     __u32 hash;
-        //     struct bpf_sock *sk;
-        //     struct bpf_sock *migrating_sk;
-        // };
-        (0, 8, 16, 20, 24, 28, 32, 40, 48)
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()

@@ -350,8 +350,10 @@ impl PacketContextKind {
             (Self::SkBuff, CtxField::PacketLen) => Some(ContextFieldDirectLoad::u32(0)),
             (Self::SkBuff, CtxField::PktType) => Some(ContextFieldDirectLoad::u32(4)),
             (Self::SkBuff, CtxField::QueueMapping) => Some(ContextFieldDirectLoad::u32(12)),
+            (Self::SkBuff, CtxField::EthProtocol) => Some(ContextFieldDirectLoad::u16(16)),
             (Self::SkBuff, CtxField::VlanPresent) => Some(ContextFieldDirectLoad::u32(20)),
             (Self::SkBuff, CtxField::VlanTci) => Some(ContextFieldDirectLoad::u32(24)),
+            (Self::SkBuff, CtxField::VlanProto) => Some(ContextFieldDirectLoad::u16(28)),
             (Self::SkBuff, CtxField::IngressIfindex) => Some(ContextFieldDirectLoad::u32(36)),
             (Self::SkBuff, CtxField::Ifindex) => Some(ContextFieldDirectLoad::u32(40)),
             (Self::SkBuff, CtxField::TcIndex) => Some(ContextFieldDirectLoad::u32(44)),
@@ -376,6 +378,7 @@ impl PacketContextKind {
             (Self::SkReuseport, CtxField::Data) => Some(ContextFieldDirectLoad::u64(0)),
             (Self::SkReuseport, CtxField::DataEnd) => Some(ContextFieldDirectLoad::u64(8)),
             (Self::SkReuseport, CtxField::PacketLen) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::SkReuseport, CtxField::EthProtocol) => Some(ContextFieldDirectLoad::u16(20)),
             (Self::SkReuseport, CtxField::SkbHash) => Some(ContextFieldDirectLoad::u32(32)),
             _ => None,
         }
@@ -388,6 +391,7 @@ impl SocketContextLayout {
             (Self::CgroupSock, CtxField::BoundDevIf) => Some(ContextFieldDirectLoad::u32(0)),
             (Self::CgroupSock, CtxField::Family) => Some(ContextFieldDirectLoad::u32(4)),
             (Self::CgroupSock, CtxField::SockType) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::CgroupSock, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(12)),
             (Self::CgroupSock, CtxField::SockMark) => Some(ContextFieldDirectLoad::u32(16)),
             (Self::CgroupSock, CtxField::SockPriority) => Some(ContextFieldDirectLoad::u32(20)),
             (Self::CgroupSock, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(72)),
@@ -396,21 +400,25 @@ impl SocketContextLayout {
             }
             (Self::SockAddr, CtxField::Family) => Some(ContextFieldDirectLoad::u32(28)),
             (Self::SockAddr, CtxField::SockType) => Some(ContextFieldDirectLoad::u32(32)),
+            (Self::SockAddr, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(36)),
             (Self::SockAddr, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(64)),
             (Self::CgroupSockopt, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(0)),
             (Self::SkLookup, CtxField::Socket | CtxField::LookupCookie) => {
                 Some(ContextFieldDirectLoad::u64(0))
             }
             (Self::SkLookup, CtxField::Family) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::SkLookup, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(12)),
             (Self::SkMsg, CtxField::Family) => Some(ContextFieldDirectLoad::u32(16)),
             (Self::SkMsg, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(72)),
             (Self::SkBuff, CtxField::Family) => Some(ContextFieldDirectLoad::u32(88)),
+            (Self::SkBuff, CtxField::Protocol) => Some(ContextFieldDirectLoad::u16(16)),
             (Self::SkBuff, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(168)),
             (Self::SkBuff, CtxField::SockMark) => Some(ContextFieldDirectLoad::u32(8)),
             (Self::SkBuff, CtxField::SockPriority) => Some(ContextFieldDirectLoad::u32(32)),
             (Self::SockOps, CtxField::Family) => Some(ContextFieldDirectLoad::u32(20)),
             (Self::SockOps, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(184)),
             (Self::SockOps, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(88)),
+            (Self::SkReuseport, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(24)),
             (Self::SkReuseport, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(40)),
             _ => None,
         }
@@ -551,6 +559,7 @@ impl EbpfProgramType {
         let layout = match field {
             CtxField::Family => self.socket_family_context_layout(),
             CtxField::SockType => self.sock_type_context_layout(),
+            CtxField::Protocol => self.protocol_context_layout(),
             CtxField::Socket => self.socket_ref_context_layout(),
             CtxField::SockMark | CtxField::SockPriority => self.sock_mark_priority_context_layout(),
             CtxField::SockState => self.sock_state_context_layout(),
@@ -962,6 +971,11 @@ mod tests {
             ),
             (
                 "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::Protocol,
+                Some(ContextFieldDirectLoad::u32(12)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
                 CtxField::Socket,
                 None,
             ),
@@ -1022,6 +1036,11 @@ mod tests {
                 Some(ContextFieldDirectLoad::u64(168)),
             ),
             (
+                "socket_filter:tcp4:127.0.0.1:80",
+                CtxField::Protocol,
+                Some(ContextFieldDirectLoad::u16(16)),
+            ),
+            (
                 "cgroup_skb:/sys/fs/cgroup:ingress",
                 CtxField::SockMark,
                 Some(ContextFieldDirectLoad::u32(8)),
@@ -1030,6 +1049,11 @@ mod tests {
                 "sk_reuseport:select",
                 CtxField::Socket,
                 Some(ContextFieldDirectLoad::u64(40)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::Protocol,
+                Some(ContextFieldDirectLoad::u32(24)),
             ),
         ] {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");
@@ -1177,8 +1201,18 @@ mod tests {
             ),
             (
                 "tc:lo:ingress",
+                CtxField::EthProtocol,
+                Some(ContextFieldDirectLoad::u16(16)),
+            ),
+            (
+                "tc:lo:ingress",
                 CtxField::DataMeta,
                 Some(ContextFieldDirectLoad::u32(140)),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::VlanProto,
+                Some(ContextFieldDirectLoad::u16(28)),
             ),
             (
                 "tc:lo:ingress",
@@ -1224,6 +1258,11 @@ mod tests {
                 "sk_reuseport:select",
                 CtxField::DataEnd,
                 Some(ContextFieldDirectLoad::u64(8)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::EthProtocol,
+                Some(ContextFieldDirectLoad::u16(20)),
             ),
             (
                 "sk_reuseport:select",

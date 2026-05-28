@@ -2615,6 +2615,7 @@ pub(crate) enum CtxWriteTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ContextFieldDirectLoadWidth {
     U8,
+    U16,
     U32,
     U64,
 }
@@ -2629,6 +2630,13 @@ impl ContextFieldDirectLoad {
     pub(crate) const fn u8(offset: i16) -> Self {
         Self {
             width: ContextFieldDirectLoadWidth::U8,
+            offset,
+        }
+    }
+
+    pub(crate) const fn u16(offset: i16) -> Self {
+        Self {
+            width: ContextFieldDirectLoadWidth::U16,
             offset,
         }
     }
