@@ -431,13 +431,23 @@ impl<'a> HirToMirLowering<'a> {
         source_reg: Option<RegId>,
     ) -> SubfunctionArgSeed {
         let metadata = source_reg.and_then(|reg| self.get_metadata(reg).cloned());
-        let type_hint = self.vreg_type_hints.get(&vreg).cloned().or_else(|| {
-            metadata.as_ref().and_then(|meta| {
-                meta.field_type
-                    .clone()
-                    .or_else(|| Self::metadata_record_layout(meta))
-            })
+        let metadata_type_hint = metadata.as_ref().and_then(|meta| {
+            meta.field_type
+                .clone()
+                .or_else(|| Self::metadata_record_layout(meta))
         });
+        let metadata_is_aggregate = matches!(
+            metadata_type_hint,
+            Some(MirType::Array { .. } | MirType::Struct { .. })
+        );
+        let type_hint = if metadata_is_aggregate {
+            metadata_type_hint
+        } else {
+            self.vreg_type_hints
+                .get(&vreg)
+                .cloned()
+                .or(metadata_type_hint)
+        };
         SubfunctionArgSeed {
             type_hint,
             trusted_btf: metadata.as_ref().is_some_and(|meta| meta.trusted_btf),

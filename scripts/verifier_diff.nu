@@ -16271,6 +16271,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "callback-bpf-loop-record-context"
+        category: "callbacks"
+        tags: [helper-call callback bpf-loop record]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i cb| $cb.count } { count: 9 } 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "callback-for-each-map-elem"
         category: "callbacks"
         tags: [helper-call callback map array]

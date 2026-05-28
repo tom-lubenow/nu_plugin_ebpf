@@ -663,6 +663,7 @@ impl<'a> HirToMirLowering<'a> {
             );
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
+            meta.record_fields.clear();
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = root_ctx_field;
             meta.map_value_origin = map_value_origin.filter(|_| preserves_map_value_origin);

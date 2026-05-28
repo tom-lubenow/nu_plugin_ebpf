@@ -18,6 +18,26 @@ fn source_slice_for_span(source: &str, root_span: Span, span: Span) -> Option<&s
     source.get(start..end)
 }
 
+fn closure_source_slice_for_span(source: &str, root_span: Span, span: Span) -> Option<&str> {
+    if span.start < root_span.start || span.end > root_span.end {
+        return None;
+    }
+    let mut start = span.start - root_span.start;
+    let end = span.end - root_span.start;
+
+    // Nushell can report nested closure block spans that start at the parameter
+    // pipe (`|x|`) rather than the opening brace. Re-include the brace so the
+    // slice can be reparsed as a standalone closure literal.
+    if start > 0
+        && source.as_bytes().get(start) == Some(&b'|')
+        && source.as_bytes().get(start - 1) == Some(&b'{')
+    {
+        start -= 1;
+    }
+
+    source.get(start..end)
+}
+
 fn signature_param_names(sig: &Signature) -> Vec<String> {
     let mut names = Vec::new();
     names.extend(
@@ -111,7 +131,8 @@ pub(super) fn recover_closure_param_sources(
         let Some(block_span) = closure_spans.get(block_id).copied() else {
             continue;
         };
-        let Some(block_source) = source_slice_for_span(source, root_span, block_span) else {
+        let Some(block_source) = closure_source_slice_for_span(source, root_span, block_span)
+        else {
             continue;
         };
         let Some(names) = parse_closure_param_names(block_source) else {
@@ -196,6 +217,44 @@ mod tests {
         assert_eq!(params[1].var_id, None);
         assert_eq!(params[2].name, "val");
         assert_eq!(params[2].var_id, Some(VarId::new(77)));
+    }
+
+    #[test]
+    fn test_recover_expands_nested_closure_span_that_starts_at_param_pipe() {
+        let source = "{|ctx| helper-call \"bpf_loop\" 4 {|i cb| $cb.count } { count: 9 } 0; 0 }";
+        let block_id = BlockId::new(9);
+        let root = source_span(source);
+        let pipe_start = source
+            .find("|i cb|")
+            .expect("nested callback parameter pipe should exist");
+        let block_end = source[pipe_start..]
+            .find('}')
+            .map(|offset| pipe_start + offset + 1)
+            .expect("nested callback end should exist");
+        let block_span = Span {
+            start: root.start + pipe_start,
+            end: root.start + block_end,
+        };
+        let ir = ir_block(
+            vec![Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(75),
+            }],
+            vec![source_var_span(source, "$cb")],
+        );
+        let sources = recover_closure_param_sources(
+            source,
+            root,
+            &HashMap::from([(block_id, block_span)]),
+            &HashMap::from([(block_id, ir)]),
+        );
+
+        let params = &sources.get(&block_id).expect("source params").params;
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name, "i");
+        assert_eq!(params[0].var_id, None);
+        assert_eq!(params[1].name, "cb");
+        assert_eq!(params[1].var_id, Some(VarId::new(75)));
     }
 
     #[test]

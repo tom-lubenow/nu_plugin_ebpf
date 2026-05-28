@@ -975,6 +975,14 @@ impl<'a> HirToMirLowering<'a> {
                             input
                         };
                         let helper_arg_idx = args.len();
+                        let arg_vreg =
+                            if matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Pointer)
+                                && let Some(input_reg) = self.pipeline_input_reg
+                            {
+                                self.materialized_metadata_aggregate_vreg(input_reg, arg_vreg)?
+                            } else {
+                                arg_vreg
+                            };
                         let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
                             helper,
                             helper_arg_idx,
@@ -994,6 +1002,12 @@ impl<'a> HirToMirLowering<'a> {
                         dst_vreg
                     };
                     let helper_arg_idx = args.len();
+                    let arg_vreg = if matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Pointer)
+                    {
+                        self.materialized_metadata_aggregate_vreg(src_dst, arg_vreg)?
+                    } else {
+                        arg_vreg
+                    };
                     let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
                         helper,
                         helper_arg_idx,
@@ -1032,6 +1046,12 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         arg_vreg
                     };
+                    let helper_arg_vreg =
+                        if matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Pointer) {
+                            self.materialized_metadata_aggregate_vreg(arg_reg, helper_arg_vreg)?
+                        } else {
+                            helper_arg_vreg
+                        };
                     let helper_arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
                         helper,
                         helper_arg_idx,
