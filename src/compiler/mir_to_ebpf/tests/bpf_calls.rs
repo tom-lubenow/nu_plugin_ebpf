@@ -120,6 +120,7 @@ fn test_bpf_loop_callback_load_emits_text_relocation() {
         subfunction_stack_slots: vec![std::collections::HashMap::new()],
         used_ctx_fields: std::collections::HashSet::new(),
         generic_map_key_types: std::collections::HashMap::new(),
+        declared_generic_maps: std::collections::HashSet::new(),
         generic_map_value_types: std::collections::HashMap::new(),
         generic_map_max_entries: std::collections::HashMap::new(),
         generic_map_inner_templates: std::collections::HashMap::new(),

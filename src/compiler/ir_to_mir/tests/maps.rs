@@ -3189,6 +3189,8 @@ fn test_map_define_array_of_maps_accepts_declared_inner_template_contract() {
             .get(&outer_ref),
         Some(&inner_ref)
     );
+    assert!(result.type_hints.declared_generic_maps.contains(&inner_ref));
+    assert!(result.type_hints.declared_generic_maps.contains(&outer_ref));
     assert!(
         !result.generic_map_value_types.contains_key(&outer_ref),
         "map-in-map outer value layout is defined by --inner-map, not --value-type"
@@ -3233,6 +3235,10 @@ fn test_external_map_in_map_inner_template_is_preserved() {
             .generic_map_inner_templates
             .get(&outer_ref),
         Some(&inner_ref)
+    );
+    assert!(
+        !result.type_hints.declared_generic_maps.contains(&outer_ref),
+        "externally seeded map-in-map metadata should not emit a source-declared runtime map"
     );
 }
 

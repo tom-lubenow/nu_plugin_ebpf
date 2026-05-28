@@ -379,6 +379,8 @@ pub struct HirToMirLowering<'a> {
     map_inner_templates: HashMap<MapRef, MapRef>,
     /// Generic map value schemas declared explicitly with `map-define`
     declared_map_value_types: HashSet<MapRef>,
+    /// Map-in-map outers declared explicitly with `map-define --inner-map`
+    declared_map_inner_templates: HashSet<MapRef>,
     /// Logical semantics for generic map values with richer runtime layouts.
     map_value_semantics: HashMap<MapRef, AnnotatedValueSemantics>,
     /// Generic maps whose observed value schemas conflict
@@ -527,6 +529,7 @@ impl<'a> HirToMirLowering<'a> {
             map_inner_templates,
             map_value_types,
             declared_map_value_types: HashSet::new(),
+            declared_map_inner_templates: HashSet::new(),
             map_value_semantics,
             conflicting_map_value_types: HashSet::new(),
             conflicting_map_key_types: HashSet::new(),
@@ -586,6 +589,15 @@ impl<'a> HirToMirLowering<'a> {
     ) {
         let mut program = MirProgram::new(self.func);
         program.subfunctions = self.subfunctions;
+        let mut declared_generic_maps = self.declared_map_value_types.clone();
+        declared_generic_maps.extend(self.declared_map_inner_templates.iter().cloned());
+        declared_generic_maps.retain(|map| {
+            !self.conflicting_map_key_types.contains(map)
+                && !self.conflicting_map_value_types.contains(map)
+                && !self.conflicting_map_max_entries.contains(map)
+                && !self.conflicting_map_value_semantics.contains(map)
+        });
+
         let mut hints = MirTypeHints {
             main: self.vreg_type_hints,
             subfunctions: self.subfunction_hints,
@@ -598,6 +610,7 @@ impl<'a> HirToMirLowering<'a> {
                 .filter(|(map, _)| !self.conflicting_map_key_types.contains(*map))
                 .map(|(map, ty)| (map.clone(), ty.clone()))
                 .collect(),
+            declared_generic_maps,
             generic_map_value_types: self
                 .map_value_types
                 .iter()

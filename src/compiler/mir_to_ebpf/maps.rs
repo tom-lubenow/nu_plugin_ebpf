@@ -614,7 +614,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         if self.register_reserved_runtime_map_reference(map)? {
             return Ok(());
         }
-        if !map.kind.supports_map_fd_materialization() {
+        if !map.kind.supports_map_fd_materialization() && !map.kind.is_map_in_map() {
             return Err(CompileError::UnsupportedInstruction(
                 map.kind.map_fd_materialization_error(&map.name),
             ));
@@ -688,6 +688,44 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    pub(super) fn register_declared_generic_maps(&mut self) -> Result<(), CompileError> {
+        let mut declared = self
+            .declared_generic_maps
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        declared.sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then_with(|| left.kind.key().cmp(right.kind.key()))
+        });
+
+        for map in declared {
+            let key_size = self
+                .generic_map_key_types
+                .get(&map)
+                .map(|ty| ty.size().max(1))
+                .unwrap_or(8);
+            let value_size = if map.kind.is_map_in_map() {
+                if !self.generic_map_inner_templates.contains_key(&map) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define map-in-map '{}' ({}) requires --inner-map metadata",
+                        map.name, map.kind
+                    )));
+                }
+                Some(4)
+            } else {
+                self.generic_map_value_types
+                    .get(&map)
+                    .map(|ty| ty.size().max(1))
+            };
+
+            self.register_generic_map_spec(&map, key_size, value_size)?;
+        }
+
+        Ok(())
+    }
+
     pub(super) fn build_generic_map_def(
         &self,
         spec: MapLayoutSpec,
@@ -728,9 +766,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapKind::TaskStorage => BpfMapDef::task_storage(spec.value_size),
             MapKind::CgrpStorage => BpfMapDef::cgrp_storage(spec.value_size),
             MapKind::ProgArray => BpfMapDef::prog_array(1024),
-            MapKind::ArrayOfMaps
-            | MapKind::HashOfMaps
-            | MapKind::DeprecatedCgroupStorage
+            MapKind::ArrayOfMaps => BpfMapDef::array_of_maps(spec.max_entries),
+            MapKind::HashOfMaps => BpfMapDef::hash_of_maps(spec.key_size, spec.max_entries),
+            MapKind::DeprecatedCgroupStorage
             | MapKind::DeprecatedPerCpuCgroupStorage
             | MapKind::StructOps
             | MapKind::Arena => {

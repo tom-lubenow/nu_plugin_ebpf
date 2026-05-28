@@ -323,6 +323,8 @@ pub struct MirToEbpfCompiler<'a> {
     generic_map_specs: BTreeMap<String, MapLayoutSpec>,
     /// Generic map key layouts recovered during HIR/MIR lowering
     generic_map_key_types: HashMap<MapRef, MirType>,
+    /// Generic maps explicitly declared through `map-define`
+    declared_generic_maps: HashSet<MapRef>,
     /// Generic map value layouts recovered during HIR/MIR lowering
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// Generic map capacity declarations recovered during HIR/MIR lowering
@@ -363,6 +365,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             probe_ctx,
             program_types,
             HashMap::new(),
+            HashSet::new(),
             HashMap::new(),
             HashMap::new(),
             HashMap::new(),
@@ -374,6 +377,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         probe_ctx: Option<&'a ProbeContext>,
         program_types: ProgramVregTypes,
         generic_map_key_types: HashMap<MapRef, MirType>,
+        declared_generic_maps: HashSet<MapRef>,
         generic_map_max_entries: HashMap<MapRef, u32>,
         generic_map_inner_templates: HashMap<MapRef, MapRef>,
         generic_map_value_types: HashMap<MapRef, MirType>,
@@ -403,6 +407,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             tail_call_maps: BTreeSet::new(),
             generic_map_specs: BTreeMap::new(),
             generic_map_key_types,
+            declared_generic_maps,
             generic_map_value_types,
             generic_map_max_entries,
             generic_map_inner_templates,
@@ -457,6 +462,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         // Fix up subfunction call offsets
         self.fixup_subfn_calls()?;
+        self.register_declared_generic_maps()?;
 
         let subfunction_symbols = if self.subfn_offsets.is_empty() {
             Vec::new()
@@ -654,6 +660,10 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         .as_ref()
         .map(|hints| hints.generic_map_key_types.clone())
         .unwrap_or_default();
+    let declared_generic_maps = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.declared_generic_maps.clone())
+        .unwrap_or_default();
     let generic_map_max_entries = normalized_type_hints
         .as_ref()
         .map(|hints| hints.generic_map_max_entries.clone())
@@ -674,6 +684,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         probe_ctx,
         program_types,
         generic_map_key_types,
+        declared_generic_maps,
         generic_map_max_entries,
         generic_map_inner_templates,
         generic_map_value_types,

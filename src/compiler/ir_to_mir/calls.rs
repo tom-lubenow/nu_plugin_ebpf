@@ -1331,6 +1331,7 @@ impl<'a> HirToMirLowering<'a> {
                         inner_map_ref,
                         "map-define --inner-map",
                     )?;
+                    self.declared_map_inner_templates.insert(map_ref.clone());
                 } else {
                     let (_, type_reg) =
                         self.named_args.get("value-type").copied().ok_or_else(|| {

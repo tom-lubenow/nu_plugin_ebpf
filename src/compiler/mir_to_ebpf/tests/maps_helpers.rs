@@ -1288,6 +1288,65 @@ fn test_generic_map_max_entries_hint_sets_map_capacity() {
 }
 
 #[test]
+fn test_declared_map_define_maps_emit_without_operations() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let inner_ref = MapRef {
+        name: "inner_seen".to_string(),
+        kind: MapKind::Hash,
+    };
+    let outer_ref = MapRef {
+        name: "outer_array".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let type_hints = MirTypeHints {
+        declared_generic_maps: HashSet::from([inner_ref.clone(), outer_ref.clone()]),
+        generic_map_key_types: HashMap::from([(inner_ref.clone(), MirType::U32)]),
+        generic_map_value_types: HashMap::from([(inner_ref.clone(), MirType::U64)]),
+        generic_map_max_entries: HashMap::from([(inner_ref.clone(), 16), (outer_ref.clone(), 4)]),
+        generic_map_inner_templates: HashMap::from([(outer_ref.clone(), inner_ref.clone())]),
+        ..MirTypeHints::default()
+    };
+
+    let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
+        .expect("declared map-define maps should emit even without map operations");
+    let inner = result
+        .maps
+        .iter()
+        .find(|map| map.name == "inner_seen")
+        .expect("expected declared inner map");
+    let outer = result
+        .maps
+        .iter()
+        .find(|map| map.name == "outer_array")
+        .expect("expected declared outer map");
+
+    assert_eq!(inner.def.map_kind(), Some(MapKind::Hash));
+    assert_eq!(inner.def.key_size, 4);
+    assert_eq!(inner.def.value_size, 8);
+    assert_eq!(inner.def.max_entries, 16);
+    assert_eq!(outer.def.map_kind(), Some(MapKind::ArrayOfMaps));
+    assert_eq!(outer.def.key_size, 4);
+    assert_eq!(outer.def.value_size, 4);
+    assert_eq!(outer.def.max_entries, 4);
+    assert_eq!(
+        result.generic_map_inner_templates.get(&outer_ref),
+        Some(&inner_ref)
+    );
+}
+
+#[test]
 fn test_lru_hash_lookup_compiles_and_emits_generic_map() {
     use crate::compiler::mir::*;
 
