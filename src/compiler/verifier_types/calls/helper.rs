@@ -496,6 +496,8 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         );
     }
 
+    validate_helper_raw_context_arg_shape(helper, args, state, program, probe_ctx, errors);
+
     let arg_is_known_zero = |arg_idx| {
         args.get(arg_idx).is_some_and(|value| {
             matches!(
@@ -951,9 +953,11 @@ fn validate_get_socket_cookie_arg_shape(
         return;
     }
     let matches_policy = match policy {
-        GetSocketCookieArgPolicy::Context => helper_arg_is_raw_context_pointer(arg, state),
+        GetSocketCookieArgPolicy::Context => {
+            helper_arg_is_raw_context_pointer(arg, state, program, probe_ctx)
+        }
         GetSocketCookieArgPolicy::ContextOrSocket => {
-            helper_arg_is_raw_context_pointer(arg, state)
+            helper_arg_is_raw_context_pointer(arg, state, program, probe_ctx)
                 || helper_arg_is_socket_cookie_socket_pointer(arg, types)
         }
         GetSocketCookieArgPolicy::Socket => helper_arg_is_socket_cookie_socket_pointer(arg, types),
@@ -965,11 +969,70 @@ fn validate_get_socket_cookie_arg_shape(
     }
 }
 
-fn helper_arg_is_raw_context_pointer(arg: &MirValue, state: &VerifierState) -> bool {
+fn validate_helper_raw_context_arg_shape(
+    helper: BpfHelper,
+    args: &[MirValue],
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for (arg_idx, arg) in args.iter().enumerate() {
+        let Some(expected) = helper.pointer_arg_requires_raw_context(arg_idx) else {
+            continue;
+        };
+        if helper_arg_is_known_non_raw_context_pointer(arg, state, program, probe_ctx) {
+            errors.push(VerifierTypeError::new(format!(
+                "helper '{}' arg{} expects {} pointer",
+                helper.name(),
+                arg_idx,
+                expected
+            )));
+        }
+    }
+}
+
+fn helper_arg_is_known_non_raw_context_pointer(
+    arg: &MirValue,
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> bool {
     match arg {
-        MirValue::VReg(vreg) => state.ctx_field_source(*vreg) == Some(&CtxField::Context),
+        MirValue::VReg(vreg) => state.ctx_field_source(*vreg).is_some_and(|field| {
+            !ctx_field_is_raw_context_pointer(field, program, probe_ctx)
+        }),
         MirValue::Const(_) | MirValue::StackSlot(_) => false,
     }
+}
+
+fn helper_arg_is_raw_context_pointer(
+    arg: &MirValue,
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> bool {
+    match arg {
+        MirValue::VReg(vreg) => state
+            .ctx_field_source(*vreg)
+            .is_some_and(|field| ctx_field_is_raw_context_pointer(field, program, probe_ctx)),
+        MirValue::Const(_) | MirValue::StackSlot(_) => false,
+    }
+}
+
+fn ctx_field_is_raw_context_pointer(
+    field: &CtxField,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> bool {
+    probe_ctx.map_or_else(
+        || {
+            program.map_or(matches!(field, CtxField::Context), |program| {
+                program.program_type.ctx_field_is_raw_context_pointer(field)
+            })
+        },
+        |ctx| ctx.ctx_field_is_raw_context_pointer(field),
+    )
 }
 
 fn helper_allows_maybe_null_arg(

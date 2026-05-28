@@ -7537,6 +7537,42 @@ const FIXTURES = [
         error_contains: "void helper 'bpf_set_hash_invalid' return value cannot be used"
     }
     {
+        name: "tc-skb-pull-data-rejects-socket-ctx-arg"
+        category: "helper-state"
+        tags: [tc helper raw-context reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk { helper-call "bpf_skb_pull_data" $sk 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_pull_data' arg0 expects raw context pointer"
+    }
+    {
+        name: "tc-fib-lookup-rejects-socket-ctx-arg"
+        category: "helper-state"
+        tags: [tc helper fib raw-context reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define scratch --kind array --value-type bytes:4 --max-entries 1'
+            '  let params = (0 | map-get scratch --kind array)'
+            '  let sk = $ctx.sk'
+            '  if $sk { if $params { helper-call "bpf_fib_lookup" $sk $params 4 0 } }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_fib_lookup' arg0 expects raw context pointer"
+    }
+    {
         name: "xdp-load-bytes-helper"
         category: "helper-state"
         tags: [xdp helper bytes accept source metadata]

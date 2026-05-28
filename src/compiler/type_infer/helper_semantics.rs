@@ -662,6 +662,12 @@ impl<'a> TypeInference<'a> {
                 errors,
             );
         }
+        self.validate_helper_raw_context_arg_shape(
+            helper,
+            args,
+            direct_ctx_field_sources,
+            errors,
+        );
         for arg_idx in 0..args.len() {
             let Some((predicate, expected)) = helper_expected_named_arg_shape(helper, arg_idx)
             else {
@@ -670,6 +676,44 @@ impl<'a> TypeInference<'a> {
             self.validate_named_helper_arg_shape(
                 helper, args, arg_idx, types, predicate, expected, errors,
             );
+        }
+    }
+
+    fn validate_helper_raw_context_arg_shape(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        for (arg_idx, arg) in args.iter().enumerate() {
+            let Some(expected) = helper.pointer_arg_requires_raw_context(arg_idx) else {
+                continue;
+            };
+            if self.helper_arg_is_known_non_raw_context_pointer(arg, direct_ctx_field_sources) {
+                errors.push(TypeError::new(format!(
+                    "helper '{}' arg{} expects {} pointer",
+                    helper.name(),
+                    arg_idx,
+                    expected
+                )));
+            }
+        }
+    }
+
+    fn helper_arg_is_known_non_raw_context_pointer(
+        &self,
+        arg: &MirValue,
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
+    ) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => direct_ctx_field_sources.get(vreg).is_some_and(|field| {
+                !ProbeContext::resolve_ctx_field_is_raw_context_pointer(
+                    self.probe_ctx.as_ref(),
+                    field,
+                )
+            }),
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
     }
 

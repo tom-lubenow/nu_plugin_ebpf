@@ -1216,6 +1216,7 @@ impl<'a> VccLowerer<'a> {
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.verify_get_socket_cookie_arg_shape(args)?;
         }
+        self.verify_helper_raw_context_arg_shape(helper, args)?;
 
         for rule in semantics.ptr_arg_rules {
             let Some(arg) = args.get(rule.arg_idx) else {
@@ -1389,6 +1390,30 @@ impl<'a> VccLowerer<'a> {
             self.verify_named_helper_arg_shape(helper, args, arg_idx, predicate, expected)?;
         }
 
+        Ok(())
+    }
+
+    fn verify_helper_raw_context_arg_shape(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+    ) -> Result<(), VccError> {
+        for (arg_idx, arg) in args.iter().enumerate() {
+            let Some(expected) = helper.pointer_arg_requires_raw_context(arg_idx) else {
+                continue;
+            };
+            if self.helper_arg_is_non_raw_context_pointer(arg) {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!(
+                        "helper '{}' arg{} expects {} pointer",
+                        helper.name(),
+                        arg_idx,
+                        expected
+                    ),
+                ));
+            }
+        }
         Ok(())
     }
 

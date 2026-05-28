@@ -6403,6 +6403,31 @@ fn test_kfunc_pointer_arg_requires_raw_context_mappings() {
 }
 
 #[test]
+fn test_helper_pointer_arg_requires_raw_context_mappings() {
+    for helper in [
+        BpfHelper::SkbPullData,
+        BpfHelper::SkbLoadBytes,
+        BpfHelper::FibLookup,
+        BpfHelper::XdpLoadBytes,
+        BpfHelper::TailCall,
+    ] {
+        assert_eq!(
+            helper.pointer_arg_requires_raw_context(0),
+            Some("raw context")
+        );
+        assert_eq!(helper.pointer_arg_requires_raw_context(1), None);
+    }
+    assert_eq!(
+        BpfHelper::GetSocketCookie.pointer_arg_requires_raw_context(0),
+        None
+    );
+    assert_eq!(
+        BpfHelper::MapLookupElem.pointer_arg_requires_raw_context(0),
+        None
+    );
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_user_mappings() {
     assert!(kfunc_pointer_arg_requires_user("bpf_copy_from_user_str", 2));
     assert!(kfunc_pointer_arg_requires_user(

@@ -329,6 +329,35 @@ fn test_infer_helper_ctx_argument_from_context_pointer_copy() {
 }
 
 #[test]
+fn test_type_error_helper_raw_context_arg_rejects_socket_field_alias() {
+    let mut func = make_test_function();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: sk,
+        field: CtxField::Socket,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbPullData as u32,
+        args: vec![MirValue::VReg(sk), MirValue::Const(0)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb helper to reject non-raw context alias");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_pull_data' arg0 expects raw context pointer")
+    }));
+}
+
+#[test]
 fn test_infer_syscall_helpers_in_syscall_program() {
     let mut func = make_test_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

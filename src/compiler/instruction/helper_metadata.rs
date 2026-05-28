@@ -244,6 +244,90 @@ impl BpfHelper {
         helper_kernel_floor(self).map(|(_, source)| source)
     }
 
+    pub const fn pointer_arg_requires_raw_context(self, arg_idx: usize) -> Option<&'static str> {
+        if arg_idx != 0 {
+            return None;
+        }
+        match self {
+            BpfHelper::Bind
+            | BpfHelper::CheckMtu
+            | BpfHelper::CloneRedirect
+            | BpfHelper::CsumLevel
+            | BpfHelper::CsumUpdate
+            | BpfHelper::FibLookup
+            | BpfHelper::GetAttachCookie
+            | BpfHelper::GetCgroupClassid
+            | BpfHelper::GetFuncArg
+            | BpfHelper::GetFuncArgCnt
+            | BpfHelper::GetFuncIp
+            | BpfHelper::GetFuncRet
+            | BpfHelper::GetRouteRealm
+            | BpfHelper::GetStack
+            | BpfHelper::GetStackId
+            | BpfHelper::GetHashRecalc
+            | BpfHelper::GetSocketUid
+            | BpfHelper::L3CsumReplace
+            | BpfHelper::L4CsumReplace
+            | BpfHelper::LoadHdrOpt
+            | BpfHelper::LwtPushEncap
+            | BpfHelper::LwtSeg6Action
+            | BpfHelper::LwtSeg6AdjustSrh
+            | BpfHelper::LwtSeg6StoreBytes
+            | BpfHelper::MsgApplyBytes
+            | BpfHelper::MsgCorkBytes
+            | BpfHelper::MsgPopData
+            | BpfHelper::MsgPullData
+            | BpfHelper::MsgPushData
+            | BpfHelper::OverrideReturn
+            | BpfHelper::PerfEventOutput
+            | BpfHelper::PerfProgReadValue
+            | BpfHelper::RcKeydown
+            | BpfHelper::RcPointerRel
+            | BpfHelper::RcRepeat
+            | BpfHelper::ReserveHdrOpt
+            | BpfHelper::SkbAdjustRoom
+            | BpfHelper::SkbAncestorCgroupId
+            | BpfHelper::SkbCgroupClassid
+            | BpfHelper::SkbCgroupId
+            | BpfHelper::SkbChangeHead
+            | BpfHelper::SkbChangeProto
+            | BpfHelper::SkbChangeTail
+            | BpfHelper::SkbChangeType
+            | BpfHelper::SkbEcnSetCe
+            | BpfHelper::SkbGetTunnelKey
+            | BpfHelper::SkbGetTunnelOpt
+            | BpfHelper::SkbGetXfrmState
+            | BpfHelper::SkbLoadBytes
+            | BpfHelper::SkbLoadBytesRelative
+            | BpfHelper::SkbOutput
+            | BpfHelper::SkbPullData
+            | BpfHelper::SkbSetTunnelKey
+            | BpfHelper::SkbSetTunnelOpt
+            | BpfHelper::SkbSetTstamp
+            | BpfHelper::SkbStoreBytes
+            | BpfHelper::SkbUnderCgroup
+            | BpfHelper::SkbVlanPop
+            | BpfHelper::SkbVlanPush
+            | BpfHelper::SkLookupTcp
+            | BpfHelper::SkLookupUdp
+            | BpfHelper::SkcLookupTcp
+            | BpfHelper::SockOpsCbFlagsSet
+            | BpfHelper::StoreHdrOpt
+            | BpfHelper::SetHash
+            | BpfHelper::SetHashInvalid
+            | BpfHelper::TailCall
+            | BpfHelper::XdpAdjustHead
+            | BpfHelper::XdpAdjustMeta
+            | BpfHelper::XdpAdjustTail
+            | BpfHelper::XdpGetBuffLen
+            | BpfHelper::XdpLoadBytes
+            | BpfHelper::XdpOutput
+            | BpfHelper::XdpStoreBytes => Some("raw context"),
+            BpfHelper::GetSocketCookie => None,
+            _ => None,
+        }
+    }
+
     pub const fn from_u32(helper_id: u32) -> Option<Self> {
         match helper_id {
             1 => Some(Self::MapLookupElem),

@@ -3479,6 +3479,47 @@ fn test_verify_mir_for_probe_context_get_socket_uid_accepts_tc() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_helper_rejects_socket_field_alias() {
+    let (mut func, entry) = new_mir_function();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sk,
+            field: CtxField::Socket,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbPullData as u32,
+            args: vec![MirValue::VReg(sk), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb helper to reject non-raw context alias");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_skb_pull_data' arg0 expects raw context pointer")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_netns_cookie_accepts_cgroup_sockopt() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
