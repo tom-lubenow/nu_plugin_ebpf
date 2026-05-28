@@ -8769,6 +8769,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-skb-bound-socket-projection-context"
+        category: "context-surface"
+        tags: [sk-skb context socket source metadata]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  ($sk.local_port + $sk.remote_port + $sk.priority) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-skb-data-context-write"
         category: "context-surface"
         tags: [sk-skb context packet writable]
@@ -8784,6 +8799,82 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "sk-skb-metadata-context-write"
+        category: "context-surface"
+        tags: [sk-skb context writable]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.priority = 3'
+            '  $ctx.tc_index = 5'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-skb-rejects-mark-context"
+        category: "context-policy"
+        tags: [sk-skb reject context]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  $ctx.mark | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.mark is only available on cgroup_sock, socket_filter, lwt_*, tc_action, tc, tcx, netkit, and cgroup_skb programs"
+    }
+    {
+        name: "sk-skb-rejects-tstamp-context"
+        category: "context-policy"
+        tags: [sk-skb reject context]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  $ctx.tstamp | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.tstamp is only available on tc_action, tc, tcx, netkit, and cgroup_skb programs"
+    }
+    {
+        name: "sk-skb-rejects-sk-assignment"
+        category: "context-policy"
+        tags: [sk-skb reject context writable]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.sk is read-only"
+    }
+    {
+        name: "sk-skb-rejects-reuseport-redirect"
+        category: "language-surface"
+        tags: [redirect-socket sk-skb reject]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  redirect-socket sockets 0 --kind reuseport-sockarray'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "redirect-socket --kind reuseport-sockarray is only valid in sk_reuseport programs"
     }
     {
         name: "sk-skb-parser-basic-context"
