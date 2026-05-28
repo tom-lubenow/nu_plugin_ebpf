@@ -11,6 +11,7 @@ impl VerifierState {
             && self.live_ringbuf_refs == other.live_ringbuf_refs
             && self.released_ringbuf_record_regs == other.released_ringbuf_record_regs
             && self.live_kfunc_refs == other.live_kfunc_refs
+            && self.released_kfunc_ref_regs == other.released_kfunc_ref_regs
             && self.kfunc_ref_kinds == other.kfunc_ref_kinds
             && self.rcu_read_lock_min_depth == other.rcu_read_lock_min_depth
             && self.rcu_read_lock_max_depth == other.rcu_read_lock_max_depth
@@ -132,12 +133,15 @@ impl VerifierState {
             );
         }
         let mut live_kfunc_refs = Vec::with_capacity(self.live_kfunc_refs.len());
+        let mut released_kfunc_ref_regs = Vec::with_capacity(self.released_kfunc_ref_regs.len());
         let mut kfunc_ref_kinds = Vec::with_capacity(self.kfunc_ref_kinds.len());
         for i in 0..self.live_kfunc_refs.len() {
             let left_live = self.live_kfunc_refs[i];
             let right_live = other.live_kfunc_refs[i];
             let live = left_live || right_live;
             live_kfunc_refs.push(live);
+            released_kfunc_ref_regs
+                .push(self.released_kfunc_ref_regs[i] || other.released_kfunc_ref_regs[i]);
 
             let left_kind = if left_live {
                 self.kfunc_ref_kinds[i]
@@ -197,6 +201,7 @@ impl VerifierState {
             live_ringbuf_refs,
             released_ringbuf_record_regs,
             live_kfunc_refs,
+            released_kfunc_ref_regs,
             kfunc_ref_kinds,
             rcu_read_lock_min_depth: self
                 .rcu_read_lock_min_depth

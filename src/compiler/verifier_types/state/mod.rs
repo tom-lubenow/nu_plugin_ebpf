@@ -175,6 +175,7 @@ pub(super) struct VerifierState {
     live_ringbuf_refs: Vec<bool>,
     released_ringbuf_record_regs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
+    released_kfunc_ref_regs: Vec<bool>,
     kfunc_ref_kinds: Vec<Option<KfuncRefKind>>,
     rcu_read_lock_min_depth: u32,
     rcu_read_lock_max_depth: u32,
@@ -242,6 +243,7 @@ impl VerifierState {
             live_ringbuf_refs: vec![false; total_vregs],
             released_ringbuf_record_regs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
+            released_kfunc_ref_regs: vec![false; total_vregs],
             kfunc_ref_kinds: vec![None; total_vregs],
             rcu_read_lock_min_depth: 0,
             rcu_read_lock_max_depth: 0,
@@ -365,6 +367,9 @@ impl VerifierState {
             *slot = None;
         }
         if let Some(slot) = self.released_ringbuf_record_regs.get_mut(vreg.0 as usize) {
+            *slot = false;
+        }
+        if let Some(slot) = self.released_kfunc_ref_regs.get_mut(vreg.0 as usize) {
             *slot = false;
         }
         self.guards.remove(&vreg);

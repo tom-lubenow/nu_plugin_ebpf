@@ -11664,6 +11664,27 @@ const FIXTURES = [
         error_contains: "helper sk_release sock may dereference null pointer"
     }
     {
+        name: "source-helper-sk-release-rejects-double-release"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  if $sk {'
+            '    helper-call "bpf_sk_release" $sk'
+            '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "reference already released"
+    }
+    {
         name: "source-kfunc-file-ref-release"
         category: "helper-state"
         tags: [kfunc file ref-lifetime source accept]

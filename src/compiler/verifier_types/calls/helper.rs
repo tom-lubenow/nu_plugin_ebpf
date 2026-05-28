@@ -36,6 +36,15 @@ pub(in crate::compiler::verifier_types) fn check_helper_arg(
                 errors.push(VerifierTypeError::new("ringbuf record already released"));
                 return;
             }
+            if let MirValue::VReg(vreg) = arg
+                && state.is_released_kfunc_ref(*vreg)
+            {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper {} arg{} reference already released",
+                    helper_id, arg_idx
+                )));
+                return;
+            }
             if helper_pointer_arg_allows_const_zero(
                 helper_id, arg_idx, arg, state, program, probe_ctx,
             ) {
@@ -653,6 +662,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         let expected = expected_kind.label();
         if let Some(ptr) = args.first() {
             match ptr {
+                MirValue::VReg(vreg) if state.is_released_kfunc_ref(*vreg) => {}
                 MirValue::VReg(vreg) => match state.get(*vreg) {
                     VerifierType::Ptr {
                         space: AddressSpace::Kernel,

@@ -34,6 +34,13 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
             }
         }
         KfuncArgKind::Pointer => {
+            if state.is_released_kfunc_ref(arg) {
+                errors.push(VerifierTypeError::new(format!(
+                    "kfunc '{}' arg{} reference already released",
+                    kfunc, arg_idx
+                )));
+                return;
+            }
             if kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx)
                 && matches!(ty, VerifierType::Scalar | VerifierType::Bool)
                 && matches!(
@@ -975,6 +982,9 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
     let Some(ptr) = args.get(release_arg_idx) else {
         return;
     };
+    if state.is_released_kfunc_ref(*ptr) {
+        return;
+    }
 
     match state.get(*ptr) {
         VerifierType::Ptr {

@@ -226,6 +226,9 @@ impl VerifierState {
         if let Some(slot) = self.live_kfunc_refs.get_mut(id.0 as usize) {
             *slot = live;
         }
+        if live && let Some(slot) = self.released_kfunc_ref_regs.get_mut(id.0 as usize) {
+            *slot = false;
+        }
         if let Some(slot) = self.kfunc_ref_kinds.get_mut(id.0 as usize) {
             *slot = if live { kind } else { None };
         }
@@ -269,6 +272,7 @@ impl VerifierState {
                 self.ranges[idx] = ValueRange::Unknown;
                 self.non_zero[idx] = false;
                 self.not_equal[idx].clear();
+                self.released_kfunc_ref_regs[idx] = true;
                 self.guards.remove(&reg);
             }
         }
@@ -308,6 +312,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn is_live_kfunc_ref(&self, id: VReg) -> bool {
         self.live_kfunc_refs
             .get(id.0 as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    pub(in crate::compiler::verifier_types) fn is_released_kfunc_ref(&self, vreg: VReg) -> bool {
+        self.released_kfunc_ref_regs
+            .get(vreg.0 as usize)
             .copied()
             .unwrap_or(false)
     }
