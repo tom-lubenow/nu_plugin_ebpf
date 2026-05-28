@@ -3755,7 +3755,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["ctx:cgroup" "helper:bpf_get_current_task_btf" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:cgroup" "helper:bpf_get_current_task_btf"]
     }
     {
         target: "tracepoint:syscalls/sys_enter_openat"
@@ -3765,7 +3765,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf"]
     }
     {
         target: "tracepoint:syscalls/sys_enter_openat"
@@ -3817,7 +3817,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  "accept"'
             '}'
         ]
-        feature_keys: ["ctx:state" "ctx:skb" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:state" "ctx:skb"]
     }
     {
         target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
@@ -3829,7 +3829,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  "accept"'
             '}'
         ]
-        feature_keys: ["ctx:state" "ctx:skb" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:state" "ctx:skb"]
     }
     {
         target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
@@ -3840,7 +3840,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  "accept"'
             '}'
         ]
-        feature_keys: ["ctx:state" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:state"]
     }
     {
         target: "fentry:security_file_open"
@@ -3850,7 +3850,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         target: "fentry:security_file_open"
@@ -3861,7 +3861,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         target: "tp_btf:sys_enter"
@@ -3871,7 +3871,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         target: "tp_btf:sys_enter"
@@ -3882,7 +3882,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         target: "perf_event:software:cpu-clock:period=100000"
@@ -3922,7 +3922,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  1'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         target: "cgroup_sysctl:/sys/fs/cgroup"
@@ -3988,7 +3988,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["ctx:iter_meta" "ctx:iter_task" "helper:bpf_probe_read_kernel"]
+        feature_keys: ["ctx:iter_meta" "ctx:iter_task"]
     }
 ]
 
@@ -4228,7 +4228,7 @@ const PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         program: [
@@ -4241,7 +4241,7 @@ const PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
     {
         program: [
@@ -4253,7 +4253,7 @@ const PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["helper:bpf_probe_read_kernel"]
+        feature_keys: []
     }
 ]
 
@@ -18131,7 +18131,9 @@ def context-projection-kernel-read-feature [raw_access: string target] {
         return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
     if (trusted-btf-projection-kernel-read? $parts $target) {
-        return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
+        # Trusted kernel-BTF scalar projections lower as direct loads. Aggregate
+        # projections that still need a helper should declare that explicitly.
+        return null
     }
 
     null
@@ -18672,7 +18674,9 @@ def program-callback-btf-kernel-features [source: string] {
             for raw_tail in ($parts | skip 1) {
                 let field = (normalize-context-field-token $raw_tail)
                 if $field != "" {
-                    $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_KERNEL])
+                    # Trusted-BTF callback scalar projections lower as direct
+                    # loads, not probe_read_kernel helper calls.
+                    continue
                 }
             }
         }
