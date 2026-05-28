@@ -6638,12 +6638,34 @@ const FIXTURES = [
             '  mut ctx = $ctx'
             '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
             '  $ctx.mark = 7'
+            '  $ctx.queue_mapping = 1'
             '  $ctx.priority = 3'
+            '  $ctx.tc_index = 2'
+            '  $ctx.cb.3 = 9'
+            '  $ctx.tc_classid = 42'
+            '  $ctx.tstamp = 123'
             '  0'
             '}'
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "tc-egress-rejects-context-socket-write"
+        category: "context-policy"
+        tags: [tc context writable socket reject egress-only]
+        requires: [loopback-interface]
+        target: "tc:lo:egress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_assign' is only valid in tc/tcx ingress programs"
     }
     {
         name: "tc-skb-get-xfrm-state-helper"
@@ -6908,7 +6930,28 @@ const FIXTURES = [
             '  mut ctx = $ctx'
             '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
             '  $ctx.mark = 7'
+            '  $ctx.queue_mapping = 1'
             '  $ctx.priority = 3'
+            '  $ctx.tc_index = 2'
+            '  $ctx.cb.3 = 9'
+            '  $ctx.tc_classid = 42'
+            '  $ctx.tstamp = 123'
+            '  "next"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tcx-ingress-context-socket-write"
+        category: "context-surface"
+        tags: [tcx context writable socket]
+        requires: [loopback-interface]
+        target: "tcx:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
             '  "next"'
             '}'
         ]
@@ -6947,6 +6990,23 @@ const FIXTURES = [
         error_contains: "ctx.skb_cgroup_id is only available on tc/tcx egress programs"
     }
     {
+        name: "tcx-egress-rejects-context-socket-write"
+        category: "context-policy"
+        tags: [tcx context writable socket reject egress-only]
+        requires: [loopback-interface]
+        target: "tcx:lo:egress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_assign' is only valid in tc/tcx ingress programs"
+    }
+    {
         name: "netkit-primary-skb-context-write"
         category: "context-surface"
         tags: [netkit context packet writable]
@@ -6957,12 +7017,34 @@ const FIXTURES = [
             '  mut ctx = $ctx'
             '  ($ctx.packet_len + $ctx.ifindex + $ctx.protocol + $ctx.mark + $ctx.priority + $ctx.tc_classid + $ctx.hash + $ctx.netns_cookie + $ctx.sk.family) | count'
             '  $ctx.mark = 7'
+            '  $ctx.queue_mapping = 1'
             '  $ctx.priority = 3'
+            '  $ctx.tc_index = 2'
+            '  $ctx.cb.3 = 9'
+            '  $ctx.tc_classid = 42'
+            '  $ctx.tstamp = 123'
             '  "pass"'
             '}'
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "netkit-rejects-context-socket-write"
+        category: "context-policy"
+        tags: [netkit context writable socket reject]
+        requires: [loopback-interface]
+        target: "netkit:lo:primary"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_assign' is only valid in tc_action, tc, tcx, and sk_lookup programs"
     }
     {
         name: "netkit-peer-skb-context"
