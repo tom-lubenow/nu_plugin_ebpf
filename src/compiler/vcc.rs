@@ -353,6 +353,7 @@ pub enum VccInst {
         kind: KfuncRefKind,
     },
     KfuncRelease {
+        call: String,
         ptr: VccValue,
         kind: KfuncRefKind,
         arg_idx: usize,

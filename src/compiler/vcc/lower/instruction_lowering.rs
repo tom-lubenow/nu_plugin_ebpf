@@ -1098,7 +1098,11 @@ impl<'a> VccLowerer<'a> {
                     && let Some(arg0) = args.first()
                 {
                     let release_ptr = self.lower_value(arg0, out);
+                    let call = helper_kind
+                        .map(|helper| format!("helper '{}'", helper.name()))
+                        .unwrap_or_else(|| format!("helper {}", helper));
                     out.push(VccInst::KfuncRelease {
+                        call,
                         ptr: release_ptr,
                         kind,
                         arg_idx: 0,
@@ -1134,6 +1138,7 @@ impl<'a> VccLowerer<'a> {
                         && let Some(arg) = args.get(release_arg_idx)
                     {
                         out.push(VccInst::KfuncRelease {
+                            call: format!("kfunc '{}'", kfunc),
                             ptr: VccValue::Reg(VccReg(arg.0)),
                             kind,
                             arg_idx: release_arg_idx,

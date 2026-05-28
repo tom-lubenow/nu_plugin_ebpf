@@ -15308,8 +15308,9 @@ fn test_verify_mir_helper_sk_release_rejects_double_release() {
 
     let err = verify_mir(&func, &types).expect_err("expected sk_release double-release error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("kfunc arg0 reference already released")),
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_sk_release' arg0 reference already released")),
         "unexpected error messages: {:?}",
         err
     );
@@ -15501,10 +15502,9 @@ fn test_verify_mir_helper_sk_release_rejects_non_socket_reference() {
     let err = verify_mir(&func, &types).expect_err("expected sk_release ref-kind mismatch");
     assert!(
         err.iter().any(|e| {
-            e.message
-                .contains("kfunc arg0 expects socket reference, got task reference")
-                || e.message
-                    .contains("kfunc release expects socket reference, got task reference")
+            e.message.contains(
+                "helper 'bpf_sk_release' arg0 expects socket reference, got task reference",
+            )
         }),
         "unexpected error messages: {:?}",
         err

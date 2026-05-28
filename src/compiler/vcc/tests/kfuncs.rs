@@ -11346,9 +11346,86 @@ fn test_verify_mir_kfunc_task_release_requires_tracked_reference() {
     let err = verify_mir(&func, &types).expect_err("expected tracked-reference error");
     assert!(
         err.iter().any(|e| {
-            e.message.contains("kfunc arg0 pointer is not tracked")
+            e.message
+                .contains("kfunc 'bpf_task_release' arg0 pointer is not tracked")
                 || e.message.contains("expects acquired task reference")
         }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_task_release_rejects_double_release() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let double_release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(123),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: double_release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+    types.insert(double_release_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected task double-release rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_task_release' arg0 reference already released")),
         "unexpected error messages: {:?}",
         err
     );

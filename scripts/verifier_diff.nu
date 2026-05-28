@@ -14523,6 +14523,26 @@ const FIXTURES = [
         error_contains: "reference already released"
     }
     {
+        name: "source-kfunc-task-release-rejects-double-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_task_release" $task'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "reference already released"
+    }
+    {
         name: "source-kfunc-task-release-rejects-cgroup-ref"
         category: "helper-state"
         tags: [kfunc ref-lifetime source reject]
