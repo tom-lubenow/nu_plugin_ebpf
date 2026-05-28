@@ -556,6 +556,21 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["map:BPF_MAP_TYPE_CGRP_STORAGE"]
     }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_seen --max-entries 4'
+            '  map-define outer_hash --kind hash-of-maps --key-type u32 --inner-map inner_seen --max-entries 4'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_HASH"
+            "map:BPF_MAP_TYPE_ARRAY_OF_MAPS"
+            "map:BPF_MAP_TYPE_HASH_OF_MAPS"
+        ]
+    }
 ]
 
 const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [

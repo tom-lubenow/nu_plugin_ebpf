@@ -10789,6 +10789,14 @@ fn test_ebpf_program_reports_map_compatibility_requirements() {
                 name: "other_events".to_string(),
                 def: BpfMapDef::ring_buffer(256 * 1024),
             },
+            EbpfMap {
+                name: "outer_array".to_string(),
+                def: BpfMapDef::array_of_maps(4),
+            },
+            EbpfMap {
+                name: "outer_hash".to_string(),
+                def: BpfMapDef::hash_of_maps(4, 4),
+            },
         ],
         vec![],
         vec![],
@@ -10799,11 +10807,39 @@ fn test_ebpf_program_reports_map_compatibility_requirements() {
     );
 
     let requirements = program.map_compatibility_requirements();
-    assert_eq!(requirements.len(), 2);
-    assert_eq!(requirements[0].kind(), MapKind::Hash);
-    assert_eq!(requirements[0].key(), "map:BPF_MAP_TYPE_HASH");
-    assert_eq!(requirements[1].kind(), MapKind::RingBuf);
-    assert_eq!(requirements[1].key(), "map:BPF_MAP_TYPE_RINGBUF");
+    let requirement_by_kind = requirements
+        .iter()
+        .map(|requirement| (requirement.kind(), *requirement))
+        .collect::<HashMap<_, _>>();
+    assert_eq!(requirements.len(), 4);
+    assert_eq!(
+        requirement_by_kind
+            .get(&MapKind::Hash)
+            .expect("hash map should report compatibility")
+            .key(),
+        "map:BPF_MAP_TYPE_HASH"
+    );
+    assert_eq!(
+        requirement_by_kind
+            .get(&MapKind::RingBuf)
+            .expect("ringbuf map should report compatibility")
+            .key(),
+        "map:BPF_MAP_TYPE_RINGBUF"
+    );
+    assert_eq!(
+        requirement_by_kind
+            .get(&MapKind::ArrayOfMaps)
+            .expect("array-of-maps should report compatibility")
+            .key(),
+        "map:BPF_MAP_TYPE_ARRAY_OF_MAPS"
+    );
+    assert_eq!(
+        requirement_by_kind
+            .get(&MapKind::HashOfMaps)
+            .expect("hash-of-maps should report compatibility")
+            .key(),
+        "map:BPF_MAP_TYPE_HASH_OF_MAPS"
+    );
     assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
     assert_eq!(
         program
