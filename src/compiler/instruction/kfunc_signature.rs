@@ -467,43 +467,43 @@ impl KfuncSignature {
             "bpf_obj_drop_impl" => Some(Self {
                 min_args: 2,
                 max_args: 2,
-                arg_kinds: [P, S, S, S, S],
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
             "bpf_obj_new_impl" => Some(Self {
                 min_args: 2,
                 max_args: 2,
-                arg_kinds: [S, S, S, S, S],
+                arg_kinds: [S, P, S, S, S],
                 ret_kind: KfuncRetKind::PointerMaybeNull,
             }),
             "bpf_refcount_acquire_impl" => Some(Self {
                 min_args: 2,
                 max_args: 2,
-                arg_kinds: [P, S, S, S, S],
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::PointerMaybeNull,
             }),
             "bpf_percpu_obj_new_impl" => Some(Self {
                 min_args: 2,
                 max_args: 2,
-                arg_kinds: [S, S, S, S, S],
+                arg_kinds: [S, P, S, S, S],
                 ret_kind: KfuncRetKind::PointerMaybeNull,
             }),
             "bpf_percpu_obj_drop_impl" => Some(Self {
                 min_args: 2,
                 max_args: 2,
-                arg_kinds: [P, S, S, S, S],
+                arg_kinds: [P, P, S, S, S],
                 ret_kind: KfuncRetKind::Void,
             }),
             "bpf_list_push_front_impl" => Some(Self {
                 min_args: 4,
                 max_args: 4,
-                arg_kinds: [P, P, S, S, S],
+                arg_kinds: [P, P, P, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "bpf_list_push_back_impl" => Some(Self {
                 min_args: 4,
                 max_args: 4,
-                arg_kinds: [P, P, S, S, S],
+                arg_kinds: [P, P, P, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "bpf_list_pop_front" => Some(Self {
@@ -539,7 +539,7 @@ impl KfuncSignature {
             "bpf_rbtree_add_impl" => Some(Self {
                 min_args: 5,
                 max_args: 5,
-                arg_kinds: [P, P, F, S, S],
+                arg_kinds: [P, P, F, P, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "bpf_rbtree_first" => Some(Self {

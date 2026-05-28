@@ -1337,6 +1337,14 @@ pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool 
             | ("bpf_dynptr_slice", 2)
             | ("bpf_dynptr_slice_rdwr", 2)
             | ("bpf_wq_set_callback_impl", 3)
+            | ("bpf_obj_new_impl", 1)
+            | ("bpf_obj_drop_impl", 1)
+            | ("bpf_refcount_acquire_impl", 1)
+            | ("bpf_percpu_obj_new_impl", 1)
+            | ("bpf_percpu_obj_drop_impl", 1)
+            | ("bpf_list_push_front_impl", 2)
+            | ("bpf_list_push_back_impl", 2)
+            | ("bpf_rbtree_add_impl", 3)
     ) || KernelBtf::get().kfunc_pointer_arg_is_nullable(kfunc, arg_idx)
 }
 

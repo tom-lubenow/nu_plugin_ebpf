@@ -12558,7 +12558,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "arg1 must be known zero"
+        error_contains: "kfunc 'bpf_obj_new_impl' arg1 expects null (0) or pointer"
     }
     {
         name: "source-kfunc-obj-drop-rejects-nonzero-meta"
@@ -12577,7 +12577,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "arg1 must be known zero"
+        error_contains: "kfunc 'bpf_obj_drop_impl' arg1 expects null (0) or pointer"
     }
     {
         name: "source-kfunc-obj-drop-rejects-double-drop"
@@ -12736,7 +12736,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "arg1 must be known zero"
+        error_contains: "kfunc 'bpf_percpu_obj_drop_impl' arg1 expects null (0) or pointer"
     }
     {
         name: "source-kfunc-percpu-obj-drop-rejects-task-ref"
@@ -12896,7 +12896,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "arg2 must be known zero"
+        error_contains: "kfunc 'bpf_list_push_front_impl' arg2 expects null (0) or pointer"
     }
     {
         name: "source-kfunc-list-push-back-map-root"
@@ -13355,7 +13355,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "arg3 must be known zero"
+        error_contains: "kfunc 'bpf_rbtree_add_impl' arg3 expects null (0) or pointer"
     }
     {
         name: "source-kfunc-rbtree-add-callback-uses-node-args"

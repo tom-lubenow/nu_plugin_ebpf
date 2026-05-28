@@ -4309,7 +4309,7 @@ fn test_kfunc_signature_object_impls() {
     assert_eq!(sig.min_args, 2);
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
-    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
 
     let sig = KfuncSignature::for_name("bpf_obj_drop_impl")
@@ -4317,7 +4317,7 @@ fn test_kfunc_signature_object_impls() {
     assert_eq!(sig.min_args, 2);
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
-    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Void);
 
     let sig = KfuncSignature::for_name("bpf_refcount_acquire_impl")
@@ -4325,7 +4325,7 @@ fn test_kfunc_signature_object_impls() {
     assert_eq!(sig.min_args, 2);
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
-    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
 }
 
@@ -4942,7 +4942,7 @@ fn test_kfunc_signature_kptr_container_impls() {
     assert_eq!(sig.min_args, 2);
     assert_eq!(sig.max_args, 2);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Scalar);
-    assert_eq!(sig.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::PointerMaybeNull);
 
     let sig = KfuncSignature::for_name("bpf_list_push_back_impl")
@@ -4951,7 +4951,7 @@ fn test_kfunc_signature_kptr_container_impls() {
     assert_eq!(sig.max_args, 4);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
-    assert_eq!(sig.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(2), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 
@@ -4969,7 +4969,7 @@ fn test_kfunc_signature_kptr_container_impls() {
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(2), KfuncArgKind::Subprogram);
-    assert_eq!(sig.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), KfuncArgKind::Pointer);
     assert_eq!(sig.arg_kind(4), KfuncArgKind::Scalar);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
 
@@ -6899,6 +6899,22 @@ fn test_kfunc_pointer_arg_allows_const_zero_mappings() {
         "bpf_dynptr_slice_rdwr",
         2
     ));
+    for (kfunc, arg_idx) in [
+        ("bpf_obj_new_impl", 1),
+        ("bpf_obj_drop_impl", 1),
+        ("bpf_refcount_acquire_impl", 1),
+        ("bpf_percpu_obj_new_impl", 1),
+        ("bpf_percpu_obj_drop_impl", 1),
+        ("bpf_list_push_front_impl", 2),
+        ("bpf_list_push_back_impl", 2),
+        ("bpf_rbtree_add_impl", 3),
+        ("bpf_wq_set_callback_impl", 3),
+    ] {
+        assert!(
+            kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx),
+            "{kfunc} arg{arg_idx} should accept literal zero"
+        );
+    }
     assert!(!kfunc_pointer_arg_allows_const_zero(
         "bpf_crypto_encrypt",
         2
