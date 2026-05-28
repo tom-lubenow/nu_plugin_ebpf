@@ -2657,6 +2657,17 @@ impl ContextFieldDirectLoad {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ContextFieldDirectStore {
+    pub(crate) offset: i16,
+}
+
+impl ContextFieldDirectStore {
+    pub(crate) const fn new(offset: i16) -> Self {
+        Self { offset }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SocketContextLayout {
     SockAddr,
     CgroupSock,

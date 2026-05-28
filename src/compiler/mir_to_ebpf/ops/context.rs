@@ -60,76 +60,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
-    pub(crate) fn sk_buff_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
-        // struct __sk_buff {
-        //     __u32 len;
-        //     ...
-        //     __u32 ingress_ifindex;
-        //     __u32 ifindex;
-        //     __u32 tc_index;
-        //     ...
-        //     __u32 hash;
-        //     ...
-        //     __u32 data;
-        //     __u32 data_end;
-        // };
-        (0, 76, 80, 36, 40, 44, 68)
-    }
-
-    pub(crate) fn sk_buff_tstamp_offset() -> i16 {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 data_meta;
-        //     struct bpf_flow_keys *flow_keys;
-        //     __u64 tstamp;
-        // };
-        152
-    }
-
-    pub(crate) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
-        // struct __sk_buff {
-        //     __u32 len;
-        //     __u32 pkt_type;
-        //     __u32 mark;
-        //     __u32 queue_mapping;
-        // };
-        (4, 12)
-    }
-
     pub(crate) fn sk_buff_cb_offset() -> i16 {
         // struct __sk_buff {
         //     ...
         //     __u32 cb[5];
         // };
         48
-    }
-
-    pub(crate) fn sk_buff_extended_meta_offsets() -> (i16, i16, i16, i16, i16, i16) {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 tc_classid;
-        //     ...
-        //     __u32 napi_id;
-        //     ...
-        //     __u32 wire_len;
-        //     __u32 gso_segs;
-        //     ...
-        //     __u32 gso_size;
-        //     ...
-        //     __u64 hwtstamp;
-        // };
-        (72, 84, 160, 164, 176, 184)
-    }
-
-    pub(crate) fn sk_buff_mark_priority_offsets() -> (i16, i16) {
-        // struct __sk_buff {
-        //     __u32 len;
-        //     __u32 pkt_type;
-        //     __u32 mark;
-        //     ...
-        //     __u32 priority;
-        // };
-        (8, 32)
     }
 
     pub(super) fn sk_buff_socket_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16) {
@@ -182,28 +118,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     struct bpf_sock *sk;
         // };
         (0, 4, 8, 24, 28, 32, 36, 40, 44, 64)
-    }
-
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sysctl_offsets() -> (i16, i16) {
-        // struct bpf_sysctl {
-        //     __u32 write;
-        //     __u32 file_pos;
-        // };
-        (0, 4)
-    }
-
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sockopt_offsets()
-    -> (i16, i16, i16, i16, i16, i16, i16) {
-        // struct bpf_sockopt {
-        //     __u64 sk;
-        //     __u64 optval;
-        //     __u64 optval_end;
-        //     __s32 level;
-        //     __s32 optname;
-        //     __s32 optlen;
-        //     __s32 retval;
-        // };
-        (0, 8, 16, 24, 28, 32, 36)
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_offsets() -> (
@@ -283,26 +197,6 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_args_offset() -> i16 {
         4
-    }
-
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_extra_metric_offsets()
-    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct bpf_sock_ops {
-        //     ...
-        //     __u32 mss_cache;
-        //     __u32 ecn_flags;
-        //     __u32 rate_delivered;
-        //     __u32 rate_interval_us;
-        //     ...
-        //     __u32 segs_in;
-        //     __u32 data_segs_in;
-        //     __u32 segs_out;
-        //     __u32 data_segs_out;
-        //     __u32 lost_out;
-        //     __u32 sacked_out;
-        //     __u32 sk_txhash;
-        // };
-        (112, 116, 120, 124, 140, 144, 148, 152, 156, 160, 164)
     }
 
     pub(super) fn bpf_nf_ctx_offsets() -> (i16, i16) {

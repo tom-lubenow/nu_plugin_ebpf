@@ -93,8 +93,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 .push(EbpfInsn::call(BpfHelper::SockOpsCbFlagsSet));
             return Ok(());
         }
+        if let Some(store) = target.ctx_field_direct_store() {
+            self.emit_store(EbpfReg::R9, store.offset, val_reg, size)?;
+            return Ok(());
+        }
         let (offset, store_reg) = match target {
-            CtxStoreTarget::SockOpsReply => (Self::bpf_sock_ops_args_offset(), val_reg),
             CtxStoreTarget::SockOpsReplyLong(index) => (
                 Self::bpf_sock_ops_args_offset()
                     + i16::from(*index).checked_mul(4).ok_or_else(|| {
@@ -105,16 +108,6 @@ impl<'a> MirToEbpfCompiler<'a> {
                 val_reg,
             ),
             CtxStoreTarget::SockOpsCbFlags => unreachable!("helper-backed store handled above"),
-            CtxStoreTarget::SockOpsSkTxhash => {
-                (Self::bpf_sock_ops_extra_metric_offsets().10, val_reg)
-            }
-            CtxStoreTarget::CgroupSockBoundDevIf => (Self::bpf_sock_offsets().0, val_reg),
-            CtxStoreTarget::CgroupSockMark => (Self::bpf_sock_offsets().4, val_reg),
-            CtxStoreTarget::CgroupSockPriority => (Self::bpf_sock_offsets().5, val_reg),
-            CtxStoreTarget::SkbMark => (Self::sk_buff_mark_priority_offsets().0, val_reg),
-            CtxStoreTarget::SkbQueueMapping => (Self::sk_buff_packet_meta_offsets().1, val_reg),
-            CtxStoreTarget::SkbPriority => (Self::sk_buff_mark_priority_offsets().1, val_reg),
-            CtxStoreTarget::SkbTcIndex => (Self::sk_buff_offsets().5, val_reg),
             CtxStoreTarget::SkbCbWord(index) => (
                 Self::sk_buff_cb_offset()
                     + i16::from(*index).checked_mul(4).ok_or_else(|| {
@@ -122,13 +115,6 @@ impl<'a> MirToEbpfCompiler<'a> {
                     })?,
                 val_reg,
             ),
-            CtxStoreTarget::SkbTcClassid => (Self::sk_buff_extended_meta_offsets().0, val_reg),
-            CtxStoreTarget::SkbTstamp => (Self::sk_buff_tstamp_offset(), val_reg),
-            CtxStoreTarget::SysctlFilePos => (Self::bpf_sysctl_offsets().1, val_reg),
-            CtxStoreTarget::SockoptLevel => (Self::bpf_sockopt_offsets().3, val_reg),
-            CtxStoreTarget::SockoptOptname => (Self::bpf_sockopt_offsets().4, val_reg),
-            CtxStoreTarget::SockoptOptlen => (Self::bpf_sockopt_offsets().5, val_reg),
-            CtxStoreTarget::SockoptRetval => (Self::bpf_sockopt_offsets().6, val_reg),
             CtxStoreTarget::CgroupSockAddrUserIp4 => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
@@ -165,6 +151,24 @@ impl<'a> MirToEbpfCompiler<'a> {
                     Self::bpf_sock_addr_offsets().8 + i16::from(*index) * 4,
                     EbpfReg::R0,
                 )
+            }
+            CtxStoreTarget::SockOpsReply
+            | CtxStoreTarget::SockOpsSkTxhash
+            | CtxStoreTarget::CgroupSockBoundDevIf
+            | CtxStoreTarget::CgroupSockMark
+            | CtxStoreTarget::CgroupSockPriority
+            | CtxStoreTarget::SkbMark
+            | CtxStoreTarget::SkbQueueMapping
+            | CtxStoreTarget::SkbPriority
+            | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbTcClassid
+            | CtxStoreTarget::SkbTstamp
+            | CtxStoreTarget::SysctlFilePos
+            | CtxStoreTarget::SockoptLevel
+            | CtxStoreTarget::SockoptOptname
+            | CtxStoreTarget::SockoptOptlen
+            | CtxStoreTarget::SockoptRetval => {
+                unreachable!("fixed-offset store handled by metadata")
             }
         };
         self.emit_store(EbpfReg::R9, offset, store_reg, size)?;

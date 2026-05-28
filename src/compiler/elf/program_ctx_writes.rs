@@ -1,5 +1,6 @@
 use super::{
-    CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement, ProgramContextFamily,
+    ContextFieldDirectStore, CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement,
+    ProgramContextFamily,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, CtxStoreTarget};
@@ -966,6 +967,35 @@ impl CtxStoreTarget {
         }
     }
 
+    pub(crate) fn ctx_field_direct_store(&self) -> Option<ContextFieldDirectStore> {
+        match self {
+            CtxStoreTarget::SockOpsReply => Some(ContextFieldDirectStore::new(4)),
+            CtxStoreTarget::SockOpsSkTxhash => Some(ContextFieldDirectStore::new(164)),
+            CtxStoreTarget::CgroupSockBoundDevIf => Some(ContextFieldDirectStore::new(0)),
+            CtxStoreTarget::CgroupSockMark => Some(ContextFieldDirectStore::new(16)),
+            CtxStoreTarget::CgroupSockPriority => Some(ContextFieldDirectStore::new(20)),
+            CtxStoreTarget::SkbMark => Some(ContextFieldDirectStore::new(8)),
+            CtxStoreTarget::SkbQueueMapping => Some(ContextFieldDirectStore::new(12)),
+            CtxStoreTarget::SkbPriority => Some(ContextFieldDirectStore::new(32)),
+            CtxStoreTarget::SkbTcIndex => Some(ContextFieldDirectStore::new(44)),
+            CtxStoreTarget::SkbTcClassid => Some(ContextFieldDirectStore::new(72)),
+            CtxStoreTarget::SkbTstamp => Some(ContextFieldDirectStore::new(152)),
+            CtxStoreTarget::SysctlFilePos => Some(ContextFieldDirectStore::new(4)),
+            CtxStoreTarget::SockoptLevel => Some(ContextFieldDirectStore::new(24)),
+            CtxStoreTarget::SockoptOptname => Some(ContextFieldDirectStore::new(28)),
+            CtxStoreTarget::SockoptOptlen => Some(ContextFieldDirectStore::new(32)),
+            CtxStoreTarget::SockoptRetval => Some(ContextFieldDirectStore::new(36)),
+            CtxStoreTarget::SockOpsReplyLong(_)
+            | CtxStoreTarget::SockOpsCbFlags
+            | CtxStoreTarget::SkbCbWord(_)
+            | CtxStoreTarget::CgroupSockAddrUserIp4
+            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
+            | CtxStoreTarget::CgroupSockAddrUserPort
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => None,
+        }
+    }
+
     fn required_context_family(&self) -> Option<ProgramContextFamily> {
         match self {
             CtxStoreTarget::SockOpsReply
@@ -1291,6 +1321,86 @@ mod tests {
                     .any(|surface| surface.matches_store_target(&target)),
                 "{target:?} must have at least one source-level context write surface"
             );
+        }
+    }
+
+    #[test]
+    fn test_ctx_store_targets_direct_store_metadata_tracks_fixed_offsets() {
+        for (target, expected) in [
+            (
+                CtxStoreTarget::SockOpsReply,
+                Some(ContextFieldDirectStore::new(4)),
+            ),
+            (
+                CtxStoreTarget::SockOpsSkTxhash,
+                Some(ContextFieldDirectStore::new(164)),
+            ),
+            (
+                CtxStoreTarget::CgroupSockBoundDevIf,
+                Some(ContextFieldDirectStore::new(0)),
+            ),
+            (
+                CtxStoreTarget::CgroupSockMark,
+                Some(ContextFieldDirectStore::new(16)),
+            ),
+            (
+                CtxStoreTarget::CgroupSockPriority,
+                Some(ContextFieldDirectStore::new(20)),
+            ),
+            (
+                CtxStoreTarget::SkbMark,
+                Some(ContextFieldDirectStore::new(8)),
+            ),
+            (
+                CtxStoreTarget::SkbQueueMapping,
+                Some(ContextFieldDirectStore::new(12)),
+            ),
+            (
+                CtxStoreTarget::SkbPriority,
+                Some(ContextFieldDirectStore::new(32)),
+            ),
+            (
+                CtxStoreTarget::SkbTcIndex,
+                Some(ContextFieldDirectStore::new(44)),
+            ),
+            (
+                CtxStoreTarget::SkbTcClassid,
+                Some(ContextFieldDirectStore::new(72)),
+            ),
+            (
+                CtxStoreTarget::SkbTstamp,
+                Some(ContextFieldDirectStore::new(152)),
+            ),
+            (
+                CtxStoreTarget::SysctlFilePos,
+                Some(ContextFieldDirectStore::new(4)),
+            ),
+            (
+                CtxStoreTarget::SockoptLevel,
+                Some(ContextFieldDirectStore::new(24)),
+            ),
+            (
+                CtxStoreTarget::SockoptOptname,
+                Some(ContextFieldDirectStore::new(28)),
+            ),
+            (
+                CtxStoreTarget::SockoptOptlen,
+                Some(ContextFieldDirectStore::new(32)),
+            ),
+            (
+                CtxStoreTarget::SockoptRetval,
+                Some(ContextFieldDirectStore::new(36)),
+            ),
+            (CtxStoreTarget::SockOpsReplyLong(0), None),
+            (CtxStoreTarget::SockOpsCbFlags, None),
+            (CtxStoreTarget::SkbCbWord(0), None),
+            (CtxStoreTarget::CgroupSockAddrUserIp4, None),
+            (CtxStoreTarget::CgroupSockAddrUserIp6Word(0), None),
+            (CtxStoreTarget::CgroupSockAddrUserPort, None),
+            (CtxStoreTarget::CgroupSockAddrMsgSrcIp4, None),
+            (CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(0), None),
+        ] {
+            assert_eq!(target.ctx_field_direct_store(), expected);
         }
     }
 
