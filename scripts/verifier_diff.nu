@@ -13386,6 +13386,39 @@ const FIXTURES = [
         error_contains: "expects file reference, got task reference"
     }
     {
+        name: "source-helper-d-path-accepts-file-path"
+        category: "helper-state"
+        tags: [helper-call file path source accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+            '  helper-call "bpf_d_path" $ctx.arg0.f_path $buf 64'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-d-path-rejects-stack-path"
+        category: "helper-state"
+        tags: [helper-call file path source reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+            '  helper-call "bpf_d_path" $buf $buf 64'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper d_path path expects pointer in [Kernel]"
+    }
+    {
         name: "source-kfunc-path-d-path-accepts-file-path"
         category: "helper-state"
         tags: [kfunc file path source accept]

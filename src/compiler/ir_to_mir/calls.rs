@@ -939,8 +939,15 @@ impl<'a> HirToMirLowering<'a> {
                         } else {
                             input
                         };
+                        let helper_arg_idx = args.len();
+                        let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
+                            helper,
+                            helper_arg_idx,
+                            arg_vreg,
+                            self.pipeline_input_reg,
+                        );
                         if let Some(input_reg) = self.pipeline_input_reg {
-                            helper_arg_regs.push((args.len(), input_reg));
+                            helper_arg_regs.push((helper_arg_idx, input_reg));
                         }
                         args.push(MirValue::VReg(arg_vreg));
                     }
@@ -951,7 +958,14 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         dst_vreg
                     };
-                    helper_arg_regs.push((args.len(), src_dst));
+                    let helper_arg_idx = args.len();
+                    let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
+                        helper,
+                        helper_arg_idx,
+                        arg_vreg,
+                        Some(src_dst),
+                    );
+                    helper_arg_regs.push((helper_arg_idx, src_dst));
                     args.push(MirValue::VReg(arg_vreg));
                 }
                 for (pos_idx, (arg_vreg, arg_reg)) in positional_args.iter().copied().enumerate() {
@@ -983,6 +997,12 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         arg_vreg
                     };
+                    let helper_arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
+                        helper,
+                        helper_arg_idx,
+                        helper_arg_vreg,
+                        Some(arg_reg),
+                    );
                     helper_arg_regs.push((helper_arg_idx, arg_reg));
                     args.push(MirValue::VReg(helper_arg_vreg));
                 }

@@ -1406,6 +1406,41 @@ impl<'a> HirToMirLowering<'a> {
         addr.ptr_vreg
     }
 
+    pub(super) fn materialize_kernel_btf_field_addr_helper_arg(
+        &mut self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        arg_vreg: VReg,
+        arg_reg: Option<RegId>,
+    ) -> VReg {
+        let expects_kernel_only = helper.semantics().ptr_arg_rules.iter().any(|rule| {
+            rule.arg_idx == arg_idx
+                && rule.allowed.allow_kernel
+                && !rule.allowed.allow_stack
+                && !rule.allowed.allow_map
+                && !rule.allowed.allow_user
+        });
+        if !expects_kernel_only {
+            return arg_vreg;
+        }
+
+        let Some(addr) = arg_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|meta| meta.kernel_btf_field_addr.clone())
+        else {
+            return arg_vreg;
+        };
+
+        self.vreg_type_hints.insert(
+            addr.ptr_vreg,
+            MirType::Ptr {
+                pointee: Box::new(addr.pointee_ty),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        addr.ptr_vreg
+    }
+
     pub(super) fn materialize_scalar_kfunc_out_arg(
         &mut self,
         kfunc: &str,
