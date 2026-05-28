@@ -35,6 +35,7 @@ enum ContextWriteTargetSpec {
     SockoptOptvalByte,
     AssignSocket,
     CgroupSockAddrSunPath,
+    ContextPointerScalarField(CtxField),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +235,7 @@ impl ContextWriteTargetSpec {
             Self::SockoptOptvalByte => "sockopt-optval-byte",
             Self::AssignSocket => "assign-socket",
             Self::CgroupSockAddrSunPath => "sun-path",
+            Self::ContextPointerScalarField(_) => "context-pointer-scalar-field",
         }
     }
 
@@ -241,7 +243,10 @@ impl ContextWriteTargetSpec {
         match self {
             Self::Store(target) => target.requires_indexed_assignment(),
             Self::SockoptOptvalByte => true,
-            Self::SysctlNewValue | Self::AssignSocket | Self::CgroupSockAddrSunPath => false,
+            Self::SysctlNewValue
+            | Self::AssignSocket
+            | Self::CgroupSockAddrSunPath
+            | Self::ContextPointerScalarField(_) => false,
         }
     }
 
@@ -283,6 +288,12 @@ impl ContextWriteTargetSpec {
                     .kfunc_call_error("bpf_sock_addr_set_sun_path")
                     .map_or(Ok(CtxWriteTarget::CgroupSockAddrSunPath), Err),
             },
+            Self::ContextPointerScalarField(field) => match index {
+                Some(_) => Err(format!(
+                    "ctx.{field_name} root does not support indexed assignment"
+                )),
+                None => Ok(CtxWriteTarget::ContextPointerScalarField(field.clone())),
+            },
         }
     }
 
@@ -293,6 +304,7 @@ impl ContextWriteTargetSpec {
             Self::SockoptOptvalByte => false,
             Self::AssignSocket => false,
             Self::CgroupSockAddrSunPath => false,
+            Self::ContextPointerScalarField(_) => false,
         }
     }
 
@@ -301,7 +313,9 @@ impl ContextWriteTargetSpec {
             Self::Store(spec) => spec.backing_helper(),
             Self::SysctlNewValue => Some(BpfHelper::SysctlSetNewValue),
             Self::AssignSocket => Some(BpfHelper::SkAssign),
-            Self::SockoptOptvalByte | Self::CgroupSockAddrSunPath => None,
+            Self::SockoptOptvalByte
+            | Self::CgroupSockAddrSunPath
+            | Self::ContextPointerScalarField(_) => None,
         }
     }
 
@@ -311,7 +325,8 @@ impl ContextWriteTargetSpec {
             Self::Store(_)
             | Self::SysctlNewValue
             | Self::SockoptOptvalByte
-            | Self::AssignSocket => None,
+            | Self::AssignSocket
+            | Self::ContextPointerScalarField(_) => None,
         }
     }
 
@@ -321,7 +336,8 @@ impl ContextWriteTargetSpec {
             Self::SysctlNewValue
             | Self::SockoptOptvalByte
             | Self::AssignSocket
-            | Self::CgroupSockAddrSunPath => None,
+            | Self::CgroupSockAddrSunPath
+            | Self::ContextPointerScalarField(_) => None,
         }
     }
 
@@ -330,6 +346,7 @@ impl ContextWriteTargetSpec {
             Self::Store(target) => target.context_field(),
             Self::SysctlNewValue | Self::SockoptOptvalByte | Self::AssignSocket => None,
             Self::CgroupSockAddrSunPath => None,
+            Self::ContextPointerScalarField(field) => Some(field.clone()),
         }
     }
 }
@@ -459,12 +476,14 @@ impl ContextWriteSurfaceSpec {
                     CtxWriteTarget::SockoptOptvalByte(_) => unreachable!(),
                     CtxWriteTarget::AssignSocket => unreachable!(),
                     CtxWriteTarget::CgroupSockAddrSunPath => unreachable!(),
+                    CtxWriteTarget::ContextPointerScalarField(_) => unreachable!(),
                 },
             )),
             ContextWriteTargetSpec::SysctlNewValue => None,
             ContextWriteTargetSpec::SockoptOptvalByte => None,
             ContextWriteTargetSpec::AssignSocket => None,
             ContextWriteTargetSpec::CgroupSockAddrSunPath => None,
+            ContextWriteTargetSpec::ContextPointerScalarField(_) => None,
         }
     }
 
@@ -819,6 +838,13 @@ const SK_LOOKUP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
         ContextWriteTargetSpec::AssignSocket,
     )];
 
+const FLOW_DISSECTOR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
+    &[ContextWriteSurfaceSpec::special_write_field(
+        "flow_keys",
+        CtxField::FlowKeys,
+        ContextWriteTargetSpec::ContextPointerScalarField(CtxField::FlowKeys),
+    )];
+
 const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::SocketFilter,
@@ -879,6 +905,10 @@ const PROGRAM_CTX_WRITE_SURFACES: &[ProgramContextWriteSurfaceSpec] = &[
     ProgramContextWriteSurfaceSpec {
         program_type: EbpfProgramType::SkLookup,
         surfaces: SK_LOOKUP_CTX_WRITE_SURFACES,
+    },
+    ProgramContextWriteSurfaceSpec {
+        program_type: EbpfProgramType::FlowDissector,
+        surfaces: FLOW_DISSECTOR_CTX_WRITE_SURFACES,
     },
 ];
 
@@ -1161,7 +1191,7 @@ mod tests {
         }
     }
 
-    fn all_context_write_surface_tables() -> [(&'static str, &'static [ContextWriteSurfaceSpec]); 11]
+    fn all_context_write_surface_tables() -> [(&'static str, &'static [ContextWriteSurfaceSpec]); 12]
     {
         [
             (
@@ -1198,6 +1228,10 @@ mod tests {
             (
                 "sk_lookup context write surfaces",
                 SK_LOOKUP_CTX_WRITE_SURFACES,
+            ),
+            (
+                "flow_dissector context write surfaces",
+                FLOW_DISSECTOR_CTX_WRITE_SURFACES,
             ),
         ]
     }
@@ -1325,6 +1359,7 @@ mod tests {
             "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
             "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
             "sk_lookup:/proc/self/ns/net",
+            "flow_dissector:/proc/self/ns/net",
         ] {
             assert_reported_write_surfaces_match_table(spec_source);
         }
@@ -1359,6 +1394,7 @@ mod tests {
             "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
             "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
             "sk_lookup:/proc/self/ns/net",
+            "flow_dissector:/proc/self/ns/net",
         ] {
             assert_available_write_surfaces_have_context_requirements(spec_source);
         }

@@ -589,6 +589,13 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_cgroup_sock_addr_sun_path_update(src_dst, new_value, &path_desc)?;
                 return Ok(());
             }
+            CtxWriteTarget::ContextPointerScalarField(field) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "ctx.{} assignment requires a writable scalar subfield, e.g. $ctx.{}.FIELD = ...",
+                    field.display_name(),
+                    field.display_name()
+                )));
+            }
         }
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = true;

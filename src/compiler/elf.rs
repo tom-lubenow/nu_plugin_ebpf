@@ -2575,6 +2575,7 @@ pub(crate) enum CtxWriteTarget {
     SockoptOptvalByte(usize),
     AssignSocket,
     CgroupSockAddrSunPath,
+    ContextPointerScalarField(CtxField),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

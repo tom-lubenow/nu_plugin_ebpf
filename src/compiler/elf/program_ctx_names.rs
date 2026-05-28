@@ -883,13 +883,24 @@ mod tests {
                     .unwrap_or_else(|err| panic!("{target} should parse in Rust: {err}"));
                 let program_type = spec.program_type();
                 let target_string = spec.target_string();
-                let member = raw_access
-                    .strip_prefix("sk.")
-                    .and_then(|suffix| suffix.split('.').next())
-                    .unwrap_or_else(|| panic!("{target} ctx.{raw_access} should start with sk."));
-                let field = ctx_field_for_bpf_sock_projection_member(member).unwrap_or_else(|| {
-                    panic!("{target} ctx.{raw_access} should map to a bpf_sock ctx field")
+                let mut parts = raw_access.split('.');
+                let root = parts
+                    .next()
+                    .unwrap_or_else(|| panic!("{target} ctx.{raw_access} should have a root"));
+                let member = parts.next().unwrap_or_else(|| {
+                    panic!("{target} ctx.{raw_access} should have a projected member")
                 });
+                let field = if root == "sk" {
+                    ctx_field_for_bpf_sock_projection_member(member).unwrap_or_else(|| {
+                        panic!("{target} ctx.{raw_access} should map to a bpf_sock ctx field")
+                    })
+                } else {
+                    spec.resolve_ctx_field_name(root).unwrap_or_else(|err| {
+                        panic!(
+                            "{target} ctx.{raw_access} should resolve projection root {root}: {err}"
+                        )
+                    })
+                };
                 let requirement =
                     ContextFieldCompatibilityRequirement::for_field_on_program_target(
                         &field,

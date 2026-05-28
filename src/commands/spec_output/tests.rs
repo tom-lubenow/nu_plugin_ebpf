@@ -4072,6 +4072,20 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
     assert_eq!(sun_path.kfunc_maximum_kernel_exclusive, None);
     assert!(sun_path.helper.is_none());
+
+    let flow_dissector = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
+        .expect("flow_dissector spec should parse");
+    let flow_dissector_writes = spec_context_writes(&flow_dissector);
+    let flow_keys = context_write(&flow_dissector_writes, "flow_keys");
+    assert_eq!(flow_keys.kind, "context-pointer-scalar-field");
+    assert!(!flow_keys.indexed);
+    assert_eq!(
+        flow_keys.context_field_requirement_key.as_deref(),
+        Some("ctx:flow_keys")
+    );
+    assert_eq!(flow_keys.minimum_kernel, Some("4.20"));
+    assert!(flow_keys.helper.is_none());
+    assert!(flow_keys.kfunc.is_none());
 }
 
 #[test]
