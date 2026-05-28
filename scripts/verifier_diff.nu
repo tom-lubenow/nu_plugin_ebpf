@@ -7169,6 +7169,37 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "socket-filter-cb-context-write"
+        category: "context-surface"
+        tags: [socket-filter context writable]
+        target: "socket_filter:udp4:127.0.0.1:31337"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.cb.1 = 7'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "socket-filter-rejects-mark-context-write"
+        category: "context-policy"
+        tags: [socket-filter context writable reject]
+        target: "socket_filter:udp4:127.0.0.1:31337"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.mark = 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.mark is read-only"
+    }
+    {
         name: "cgroup-skb-egress-context"
         category: "context-surface"
         tags: [cgroup-skb context]
@@ -7645,6 +7676,23 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "flow-dissector-rejects-packet-data-write"
+        category: "context-policy"
+        tags: [flow-dissector reject context packet writable]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.data.0 = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "direct packet writes are not supported on flow_dissector programs"
     }
     {
         name: "flow-dissector-rejects-skb-packet-len-context"
