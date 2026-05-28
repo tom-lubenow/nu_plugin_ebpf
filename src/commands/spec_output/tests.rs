@@ -780,6 +780,34 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .as_bool()
             .expect("live_attach_requires_opt_in should be a bool")
     );
+    assert_eq!(
+        record
+            .get("live_attach_status")
+            .expect("live_attach_status should be present")
+            .as_str()
+            .expect("live_attach_status should be a string"),
+        "unsupported"
+    );
+    assert!(
+        record
+            .get("live_attach_status_description")
+            .expect("live_attach_status_description should be present")
+            .as_str()
+            .expect("live_attach_status_description should be a string")
+            .contains("not implemented")
+    );
+    assert!(
+        record
+            .get("live_attach_opt_in_reason")
+            .expect("live_attach_opt_in_reason should be present")
+            .is_nothing()
+    );
+    assert!(
+        record
+            .get("live_attach_opt_in_reason_description")
+            .expect("live_attach_opt_in_reason_description should be present")
+            .is_nothing()
+    );
     assert!(
         record
             .get("live_attach_note")
@@ -819,6 +847,30 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_requires_opt_in should be present")
             .as_bool()
             .expect("live_attach_requires_opt_in should be a bool")
+    );
+    assert_eq!(
+        record
+            .get("live_attach_status")
+            .expect("live_attach_status should be present")
+            .as_str()
+            .expect("live_attach_status should be a string"),
+        "requires-opt-in"
+    );
+    assert_eq!(
+        record
+            .get("live_attach_opt_in_reason")
+            .expect("live_attach_opt_in_reason should be present")
+            .as_str()
+            .expect("live_attach_opt_in_reason should be a string"),
+        "unclassified-struct-ops"
+    );
+    assert!(
+        record
+            .get("live_attach_opt_in_reason_description")
+            .expect("live_attach_opt_in_reason_description should be present")
+            .as_str()
+            .expect("live_attach_opt_in_reason_description should be a string")
+            .contains("Unclassified struct_ops")
     );
     assert!(
         record

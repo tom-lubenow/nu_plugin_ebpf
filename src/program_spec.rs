@@ -193,20 +193,12 @@ impl StructOpsFamily {
         }
     }
 
-    pub(crate) fn live_attach_risk(self) -> Option<&'static str> {
+    pub(crate) fn live_attach_opt_in_reason(self) -> Option<ProgramLiveAttachOptInReason> {
         match self {
-            Self::Generic => Some(
-                "live registration for an unclassified struct_ops family can change kernel behavior; prefer --dry-run on the host and require an intentional --unsafe-struct-ops opt-in for real loads",
-            ),
-            Self::SchedExt => Some(
-                "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads",
-            ),
-            Self::HidBpf => Some(
-                "live hid_bpf_ops registration can alter HID input and report handling; prefer --dry-run on the host and use an isolated device or disposable environment for real loads",
-            ),
-            Self::Qdisc => Some(
-                "live Qdisc_ops registration can affect packet scheduling; prefer --dry-run on the host and use an isolated network namespace or VM for real loads",
-            ),
+            Self::Generic => Some(ProgramLiveAttachOptInReason::UnclassifiedStructOps),
+            Self::SchedExt => Some(ProgramLiveAttachOptInReason::SchedExt),
+            Self::HidBpf => Some(ProgramLiveAttachOptInReason::HidBpf),
+            Self::Qdisc => Some(ProgramLiveAttachOptInReason::Qdisc),
             Self::TcpCongestion => None,
         }
     }
@@ -236,10 +228,87 @@ pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_n
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramLiveAttachStatus {
+    DefaultAllowed,
+    RequiresOptIn,
+    Unsupported,
+}
+
+impl ProgramLiveAttachStatus {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::DefaultAllowed => "default-allowed",
+            Self::RequiresOptIn => "requires-opt-in",
+            Self::Unsupported => "unsupported",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::DefaultAllowed => "Live attach is implemented and allowed by default.",
+            Self::RequiresOptIn => {
+                "Live attach is implemented but requires an explicit unsafe opt-in."
+            }
+            Self::Unsupported => "Live attach is not implemented by this loader.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramLiveAttachOptInReason {
+    UnclassifiedStructOps,
+    SchedExt,
+    HidBpf,
+    Qdisc,
+}
+
+impl ProgramLiveAttachOptInReason {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::UnclassifiedStructOps => "unclassified-struct-ops",
+            Self::SchedExt => "sched-ext",
+            Self::HidBpf => "hid-bpf",
+            Self::Qdisc => "qdisc",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::UnclassifiedStructOps => {
+                "Unclassified struct_ops families can change kernel behavior in family-specific ways."
+            }
+            Self::SchedExt => "sched_ext live registration can disrupt host scheduling.",
+            Self::HidBpf => {
+                "hid_bpf_ops live registration can alter HID input and report handling."
+            }
+            Self::Qdisc => "Qdisc_ops live registration can affect packet scheduling.",
+        }
+    }
+
+    pub fn note(self) -> &'static str {
+        match self {
+            Self::UnclassifiedStructOps => {
+                "live registration for an unclassified struct_ops family can change kernel behavior; prefer --dry-run on the host and require an intentional --unsafe-struct-ops opt-in for real loads"
+            }
+            Self::SchedExt => {
+                "live sched_ext registration can disrupt host scheduling; prefer --dry-run on the host and use a VM or disposable environment for real loads"
+            }
+            Self::HidBpf => {
+                "live hid_bpf_ops registration can alter HID input and report handling; prefer --dry-run on the host and use an isolated device or disposable environment for real loads"
+            }
+            Self::Qdisc => {
+                "live Qdisc_ops registration can affect packet scheduling; prefer --dry-run on the host and use an isolated network namespace or VM for real loads"
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProgramLiveAttachPolicy {
     pub loader_supported: bool,
     pub default_allowed: bool,
     pub requires_opt_in: bool,
+    pub opt_in_reason: Option<ProgramLiveAttachOptInReason>,
     pub note: Option<&'static str>,
 }
 
@@ -255,22 +324,34 @@ impl ProgramLiveAttachPolicy {
             loader_supported: false,
             default_allowed: false,
             requires_opt_in: false,
+            opt_in_reason: None,
             note: Some(note),
         }
     }
 
-    fn from_attach_kind_and_risk(
+    fn from_attach_kind_and_opt_in_reason(
         attach_kind: ProgramAttachKind,
-        risk: Option<&'static str>,
+        opt_in_reason: Option<ProgramLiveAttachOptInReason>,
     ) -> Self {
         let unsupported = attach_kind.unsupported_live_attach_detail();
         let loader_supported = unsupported.is_none();
-        let requires_opt_in = loader_supported && risk.is_some();
+        let requires_opt_in = loader_supported && opt_in_reason.is_some();
         Self {
             loader_supported,
             default_allowed: loader_supported && !requires_opt_in,
             requires_opt_in,
-            note: unsupported.or(risk),
+            opt_in_reason: opt_in_reason.filter(|_| loader_supported),
+            note: unsupported.or_else(|| opt_in_reason.map(ProgramLiveAttachOptInReason::note)),
+        }
+    }
+
+    pub fn status(self) -> ProgramLiveAttachStatus {
+        if !self.loader_supported {
+            ProgramLiveAttachStatus::Unsupported
+        } else if self.requires_opt_in {
+            ProgramLiveAttachStatus::RequiresOptIn
+        } else {
+            ProgramLiveAttachStatus::DefaultAllowed
         }
     }
 }
@@ -3048,12 +3129,15 @@ impl ProgramSpec {
             );
         }
 
-        let risk = self
+        let opt_in_reason = self
             .struct_ops_value_type_name()
             .and_then(|value_type_name| {
-                StructOpsFamily::from_value_type_name(value_type_name).live_attach_risk()
+                StructOpsFamily::from_value_type_name(value_type_name).live_attach_opt_in_reason()
             });
-        ProgramLiveAttachPolicy::from_attach_kind_and_risk(self.program_type().attach_kind(), risk)
+        ProgramLiveAttachPolicy::from_attach_kind_and_opt_in_reason(
+            self.program_type().attach_kind(),
+            opt_in_reason,
+        )
     }
 
     pub fn target_string(&self) -> String {
@@ -4195,6 +4279,7 @@ mod tests {
                 loader_supported: true,
                 default_allowed: true,
                 requires_opt_in: false,
+                opt_in_reason: None,
                 note: None,
             }
         );
@@ -4205,6 +4290,8 @@ mod tests {
         assert!(!raw_policy.loader_supported);
         assert!(!raw_policy.default_allowed);
         assert!(!raw_policy.requires_opt_in);
+        assert_eq!(raw_policy.status(), ProgramLiveAttachStatus::Unsupported);
+        assert_eq!(raw_policy.opt_in_reason, None);
         assert!(
             raw_policy
                 .note
@@ -4218,6 +4305,11 @@ mod tests {
         assert!(!cgroup_unix_policy.loader_supported);
         assert!(!cgroup_unix_policy.default_allowed);
         assert!(!cgroup_unix_policy.requires_opt_in);
+        assert_eq!(
+            cgroup_unix_policy.status(),
+            ProgramLiveAttachStatus::Unsupported
+        );
+        assert_eq!(cgroup_unix_policy.opt_in_reason, None);
         assert!(
             cgroup_unix_policy
                 .note
@@ -4229,6 +4321,11 @@ mod tests {
         assert!(!xdp_devmap_policy.loader_supported);
         assert!(!xdp_devmap_policy.default_allowed);
         assert!(!xdp_devmap_policy.requires_opt_in);
+        assert_eq!(
+            xdp_devmap_policy.status(),
+            ProgramLiveAttachStatus::Unsupported
+        );
+        assert_eq!(xdp_devmap_policy.opt_in_reason, None);
         assert!(
             xdp_devmap_policy
                 .note
@@ -4241,6 +4338,14 @@ mod tests {
         assert!(sched_ext_policy.loader_supported);
         assert!(!sched_ext_policy.default_allowed);
         assert!(sched_ext_policy.requires_opt_in);
+        assert_eq!(
+            sched_ext_policy.status(),
+            ProgramLiveAttachStatus::RequiresOptIn
+        );
+        assert_eq!(
+            sched_ext_policy.opt_in_reason,
+            Some(ProgramLiveAttachOptInReason::SchedExt)
+        );
         assert!(
             sched_ext_policy
                 .note
@@ -4253,6 +4358,14 @@ mod tests {
         assert!(generic_policy.loader_supported);
         assert!(!generic_policy.default_allowed);
         assert!(generic_policy.requires_opt_in);
+        assert_eq!(
+            generic_policy.status(),
+            ProgramLiveAttachStatus::RequiresOptIn
+        );
+        assert_eq!(
+            generic_policy.opt_in_reason,
+            Some(ProgramLiveAttachOptInReason::UnclassifiedStructOps)
+        );
         assert!(
             generic_policy
                 .note
@@ -4267,6 +4380,7 @@ mod tests {
                 loader_supported: true,
                 default_allowed: true,
                 requires_opt_in: false,
+                opt_in_reason: None,
                 note: None,
             }
         );
@@ -4277,6 +4391,11 @@ mod tests {
         assert!(!callback_policy.loader_supported);
         assert!(!callback_policy.default_allowed);
         assert!(!callback_policy.requires_opt_in);
+        assert_eq!(
+            callback_policy.status(),
+            ProgramLiveAttachStatus::Unsupported
+        );
+        assert_eq!(callback_policy.opt_in_reason, None);
         assert!(
             callback_policy
                 .note
@@ -4636,6 +4755,7 @@ mod tests {
                 loader_supported: true,
                 default_allowed: true,
                 requires_opt_in: false,
+                opt_in_reason: None,
                 note: None,
             }
         );

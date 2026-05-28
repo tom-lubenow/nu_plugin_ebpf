@@ -120,7 +120,8 @@ validation help, capability labels,
 supported first-class intrinsic commands with helper-backed mode/kind variants,
 intrinsic context-field requirements, modeled program-specific `kfunc-call`
 surfaces with signature, pointer-argument, ref-lifetime, and source-backed
-compatibility metadata, live-attach/default safety, and
+compatibility metadata, live-attach status/default/opt-in safety including
+structured opt-in reasons for risky struct_ops families, and
 compatibility requirement labels before you attempt to compile or attach a
 closure.
 The `context_projections` table lists projections that are valid for that
