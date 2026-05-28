@@ -1336,6 +1336,7 @@ pub fn kfunc_pointer_arg_allows_const_zero(kfunc: &str, arg_idx: usize) -> bool 
             | ("bpf_iter_task_new", 1)
             | ("bpf_dynptr_slice", 2)
             | ("bpf_dynptr_slice_rdwr", 2)
+            | ("bpf_wq_set_callback_impl", 3)
     ) || KernelBtf::get().kfunc_pointer_arg_is_nullable(kfunc, arg_idx)
 }
 

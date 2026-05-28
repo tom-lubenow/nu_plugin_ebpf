@@ -11442,6 +11442,26 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "bpf-wq-kfunc-set-callback"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_init" $entry.work work_items 0'
+            '    kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key work| 0} 0 0'
+            '    kfunc-call "bpf_wq_start" $entry.work 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "bpf-wq-init-rejects-mismatched-map"
         category: "helper-state"
         tags: [bpf_wq kfunc-call reject]
@@ -11478,6 +11498,25 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_wq_start' arg1 must be known zero"
+    }
+    {
+        name: "bpf-wq-set-callback-rejects-nonzero-aux"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key work| 0} 0 1'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_wq_set_callback_impl' arg3 expects null (0) or pointer"
     }
     {
         name: "map-define-bpf-refcount-slot"

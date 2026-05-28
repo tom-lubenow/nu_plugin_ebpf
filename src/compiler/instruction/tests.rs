@@ -110,6 +110,41 @@ fn test_kfunc_rbtree_add_callback_requires_rb_node_pointers() {
 }
 
 #[test]
+fn test_kfunc_bpf_wq_set_callback_requires_wq_callback_signature() {
+    use crate::compiler::mir::AddressSpace;
+
+    let map_ptr = |ty| MirType::Ptr {
+        pointee: Box::new(ty),
+        address_space: AddressSpace::Map,
+    };
+    let wq_ptr = map_ptr(MirType::bpf_wq_struct());
+    let bad = MirType::Subprogram {
+        args: vec![
+            MirType::named_kernel_struct_ptr("bpf_map"),
+            map_ptr(MirType::U32),
+            map_ptr(MirType::U64),
+        ],
+        ret: Box::new(MirType::I64),
+    };
+    let err = KfuncSignature::callback_subprogram_type_error("bpf_wq_set_callback_impl", 1, &bad)
+        .expect("map value pointer should not satisfy bpf_wq callback arg");
+    assert!(err.contains("fn(bpf_map*, *map, bpf_wq*) -> scalar"));
+
+    let good = MirType::Subprogram {
+        args: vec![
+            MirType::named_kernel_struct_ptr("bpf_map"),
+            map_ptr(MirType::U32),
+            wq_ptr,
+        ],
+        ret: Box::new(MirType::I64),
+    };
+    assert_eq!(
+        KfuncSignature::callback_subprogram_type_error("bpf_wq_set_callback_impl", 1, &good),
+        None
+    );
+}
+
+#[test]
 fn test_bpf_helper_name_roundtrip() {
     assert_eq!(
         BpfHelper::GetCurrentPidTgid.name(),
@@ -5339,7 +5374,7 @@ fn test_kfunc_signature_bpf_wq() {
     assert_eq!(set_callback.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(set_callback.arg_kind(1), KfuncArgKind::Subprogram);
     assert_eq!(set_callback.arg_kind(2), KfuncArgKind::Scalar);
-    assert_eq!(set_callback.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(set_callback.arg_kind(3), KfuncArgKind::Pointer);
     assert_eq!(set_callback.ret_kind, KfuncRetKind::Scalar);
 }
 

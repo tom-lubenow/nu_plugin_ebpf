@@ -826,7 +826,7 @@ impl<'a> HirToMirLowering<'a> {
                             ))
                         })?;
                         let MirValue::VReg(call_arg_vreg) =
-                            self.lower_kfunc_callback_subprogram_arg(&kfunc, idx, arg_reg)?
+                            self.lower_kfunc_callback_subprogram_arg(&kfunc, idx, arg_reg, &args)?
                         else {
                             unreachable!("callback lowering always returns a vreg")
                         };

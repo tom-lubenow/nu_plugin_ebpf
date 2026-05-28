@@ -1580,6 +1580,206 @@ fn test_kfunc_call_bpf_wq_init_materializes_owning_map_fd() {
 }
 
 #[test]
+fn test_kfunc_call_bpf_wq_set_callback_lowers_callback_subprogram() {
+    use nu_protocol::ast::CellPath;
+
+    let closure_block_id = nu_protocol::BlockId::new(7);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(3),
+                lit: HirLiteral::Int(0),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"work_items".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"array".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![nu_protocol::ast::PathMember::test_string(
+                            "work".to_string(),
+                            false,
+                            nu_protocol::casing::Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String(b"bpf_wq_set_callback_impl".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(43),
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(5),
+                            RegId::new(0),
+                            RegId::new(6),
+                            RegId::new(7),
+                            RegId::new(8),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(9) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 10,
+        file_count: 0,
+    };
+
+    let map_ref = MapRef {
+        name: "work_items".to_string(),
+        kind: MapKind::Array,
+    };
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let mut hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![
+                HirClosureParam {
+                    name: "map".to_string(),
+                    var_id: Some(VarId::new(10)),
+                },
+                HirClosureParam {
+                    name: "key".to_string(),
+                    var_id: Some(VarId::new(11)),
+                },
+                HirClosureParam {
+                    name: "work".to_string(),
+                    var_id: Some(VarId::new(12)),
+                },
+            ],
+        },
+    );
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "kfunc-call".to_string()),
+    ]);
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        Some(&HashMap::from([(map_ref, value_ty)])),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_wq_set_callback_impl kfunc-call with closure should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    let callback = &result.program.subfunctions[0];
+    assert_eq!(callback.param_count, 3);
+    assert!(callback.param_non_null.contains(&0));
+    assert!(callback.param_non_null.contains(&1));
+    assert!(callback.param_non_null.contains(&2));
+    assert!(callback.param_trusted_btf.contains(&0));
+
+    let callback_hints = &result.type_hints.subfunctions[0];
+    assert!(
+        callback_hints
+            .get(&VReg(0))
+            .is_some_and(MirType::is_bpf_map_ptr)
+    );
+    assert!(
+        callback_hints
+            .get(&VReg(1))
+            .is_some_and(MirType::is_map_ptr)
+    );
+    assert!(
+        callback_hints
+            .get(&VReg(2))
+            .is_some_and(MirType::is_bpf_wq_map_ptr),
+        "unexpected callback arg2 hint: {:?}",
+        callback_hints.get(&VReg(2))
+    );
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadSubprogram { .. }))
+    );
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallKfunc {
+            kfunc,
+            args,
+            ..
+        } if kfunc == "bpf_wq_set_callback_impl" && args.len() == 4
+    )));
+}
+
+#[test]
 fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
     let closure_block_id = nu_protocol::BlockId::new(7);
     let closure = HirFunction {

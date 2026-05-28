@@ -380,6 +380,7 @@ impl<'a> HirToMirLowering<'a> {
         kfunc: &str,
         arg_idx: usize,
         arg_reg: RegId,
+        args: &[(VReg, Option<RegId>)],
     ) -> Result<MirValue, CompileError> {
         let block_id = self
             .get_metadata(arg_reg)
@@ -390,7 +391,7 @@ impl<'a> HirToMirLowering<'a> {
                     kfunc, arg_idx
                 ))
             })?;
-        let arg_seeds = self.kfunc_callback_subfunction_arg_seeds(kfunc, arg_idx)?;
+        let arg_seeds = self.kfunc_callback_subfunction_arg_seeds(kfunc, arg_idx, args)?;
         let subfn = self.lower_helper_callback_subfunction(
             block_id,
             &format!("{}_callback_{}", kfunc, block_id.get()),
@@ -408,6 +409,7 @@ impl<'a> HirToMirLowering<'a> {
         &self,
         kfunc: &str,
         arg_idx: usize,
+        args: &[(VReg, Option<RegId>)],
     ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
         match (kfunc, arg_idx) {
             ("bpf_rbtree_add_impl", 2) => Ok(vec![
@@ -426,6 +428,43 @@ impl<'a> HirToMirLowering<'a> {
                     trusted_btf: false,
                 },
             ]),
+            ("bpf_wq_set_callback_impl", 1) => {
+                let wq_reg = args.first().and_then(|(_, reg)| *reg).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "kfunc-call 'bpf_wq_set_callback_impl' requires arg0 bpf_wq field".into(),
+                    )
+                })?;
+                let origin = self.bpf_wq_arg_origin(kfunc, 0, wq_reg)?;
+                Ok(vec![
+                    SubfunctionArgSeed {
+                        type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_map")),
+                        metadata: None,
+                        synthetic_stack_slot: None,
+                        non_null: true,
+                        trusted_btf: true,
+                    },
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(origin.key_ty),
+                            address_space: AddressSpace::Map,
+                        }),
+                        metadata: None,
+                        synthetic_stack_slot: None,
+                        non_null: true,
+                        trusted_btf: false,
+                    },
+                    SubfunctionArgSeed {
+                        type_hint: Some(MirType::Ptr {
+                            pointee: Box::new(MirType::bpf_wq_struct()),
+                            address_space: AddressSpace::Map,
+                        }),
+                        metadata: None,
+                        synthetic_stack_slot: None,
+                        non_null: true,
+                        trusted_btf: false,
+                    },
+                ])
+            }
             _ => Err(CompileError::UnsupportedInstruction(format!(
                 "kfunc-call '{}' arg{} callback lowering is not modeled yet",
                 kfunc, arg_idx

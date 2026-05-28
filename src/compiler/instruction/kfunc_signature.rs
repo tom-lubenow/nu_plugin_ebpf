@@ -233,7 +233,7 @@ impl KfuncSignature {
             "bpf_wq_set_callback_impl" => Some(Self {
                 min_args: 4,
                 max_args: 4,
-                arg_kinds: [P, F, S, S, S],
+                arg_kinds: [P, F, S, P, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
             "bpf_preempt_disable" => Some(Self {
@@ -1020,9 +1020,9 @@ impl KfuncSignature {
             ("bpf_rbtree_add_impl", 2) => Some(
                 "kfunc 'bpf_rbtree_add_impl' callback must have signature fn(bpf_rb_node*, bpf_rb_node*) -> scalar",
             ),
-            ("bpf_wq_set_callback_impl", 1) => {
-                Some("kfunc 'bpf_wq_set_callback_impl' callback lowering is not modeled yet")
-            }
+            ("bpf_wq_set_callback_impl", 1) => Some(
+                "kfunc 'bpf_wq_set_callback_impl' callback must have signature fn(bpf_map*, *map, bpf_wq*) -> scalar",
+            ),
             _ => None,
         }
     }
@@ -1044,6 +1044,13 @@ impl KfuncSignature {
                 args.len() == 2
                     && args.first().is_some_and(MirType::is_bpf_rb_node_ptr)
                     && args.get(1).is_some_and(MirType::is_bpf_rb_node_ptr)
+                    && ret.is_scalar_like()
+            }
+            ("bpf_wq_set_callback_impl", 1) => {
+                args.len() == 3
+                    && args.first().is_some_and(MirType::is_bpf_map_ptr)
+                    && args.get(1).is_some_and(MirType::is_map_ptr)
+                    && args.get(2).is_some_and(MirType::is_bpf_wq_map_ptr)
                     && ret.is_scalar_like()
             }
             _ => true,
