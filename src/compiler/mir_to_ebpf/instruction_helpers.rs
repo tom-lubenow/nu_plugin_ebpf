@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::elf::ContextFieldStoreTransform;
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::CtxStoreTarget;
 
@@ -109,27 +110,25 @@ impl<'a> MirToEbpfCompiler<'a> {
             self.emit_store(EbpfReg::R9, store.offset, store_reg, size)?;
             return Ok(());
         }
-        let (offset, store_reg) = match target {
+        if let Some(store) = target.ctx_field_transformed_store() {
+            match store.transform {
+                ContextFieldStoreTransform::HostU32ToBigEndian => {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                    self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                }
+                ContextFieldStoreTransform::HostPortToBigEndianU32 => {
+                    self.instructions
+                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                    self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 16));
+                    self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                }
+            }
+            self.emit_store(EbpfReg::R9, store.offset, EbpfReg::R0, size)?;
+            return Ok(());
+        }
+        match target {
             CtxStoreTarget::SockOpsCbFlags => unreachable!("helper-backed store handled above"),
-            CtxStoreTarget::CgroupSockAddrUserIp4 => {
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
-                (Self::bpf_sock_addr_offsets().1, EbpfReg::R0)
-            }
-            CtxStoreTarget::CgroupSockAddrUserPort => {
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 16));
-                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
-                (Self::bpf_sock_addr_offsets().3, EbpfReg::R0)
-            }
-            CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => {
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
-                (Self::bpf_sock_addr_offsets().7, EbpfReg::R0)
-            }
             CtxStoreTarget::SockOpsReply
             | CtxStoreTarget::SockOpsReplyLong(_)
             | CtxStoreTarget::SockOpsSkTxhash
@@ -148,13 +147,14 @@ impl<'a> MirToEbpfCompiler<'a> {
             | CtxStoreTarget::SockoptOptname
             | CtxStoreTarget::SockoptOptlen
             | CtxStoreTarget::SockoptRetval
+            | CtxStoreTarget::CgroupSockAddrUserIp4
             | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
+            | CtxStoreTarget::CgroupSockAddrUserPort
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4
             | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
                 unreachable!("metadata-backed store handled above")
             }
-        };
-        self.emit_store(EbpfReg::R9, offset, store_reg, size)?;
-        Ok(())
+        }
     }
 
     pub(super) fn compile_emit_event_inst(

@@ -2711,6 +2711,34 @@ impl ContextFieldIndexedStore {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ContextFieldStoreTransform {
+    HostU32ToBigEndian,
+    HostPortToBigEndianU32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ContextFieldTransformedStore {
+    pub(crate) offset: i16,
+    pub(crate) transform: ContextFieldStoreTransform,
+}
+
+impl ContextFieldTransformedStore {
+    pub(crate) const fn host_u32_to_big_endian(offset: i16) -> Self {
+        Self {
+            offset,
+            transform: ContextFieldStoreTransform::HostU32ToBigEndian,
+        }
+    }
+
+    pub(crate) const fn host_port_to_big_endian_u32(offset: i16) -> Self {
+        Self {
+            offset,
+            transform: ContextFieldStoreTransform::HostPortToBigEndianU32,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SocketContextLayout {
     SockAddr,
     CgroupSock,

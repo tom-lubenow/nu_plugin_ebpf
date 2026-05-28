@@ -60,23 +60,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()
-    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct bpf_sock_addr {
-        //     __u32 user_family;
-        //     __u32 user_ip4;
-        //     __u32 user_ip6[4];
-        //     __u32 user_port;
-        //     __u32 family;
-        //     __u32 type;
-        //     __u32 protocol;
-        //     __u32 msg_src_ip4;
-        //     __u32 msg_src_ip6[4];
-        //     struct bpf_sock *sk;
-        // };
-        (0, 4, 8, 24, 28, 32, 36, 40, 44, 64)
-    }
-
     pub(super) fn bpf_nf_ctx_offsets() -> (i16, i16) {
         // struct bpf_nf_ctx {
         //     const struct nf_hook_state *state;
