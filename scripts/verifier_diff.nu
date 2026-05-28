@@ -11434,6 +11434,390 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_iter_task_new' arg1 expects null (0) or pointer"
     }
     {
+        name: "source-kfunc-iter-task-vma-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_task_vma_new" $iter $ctx.current_task 0'
+            '  let vma = (kfunc-call "bpf_iter_task_vma_next" $iter)'
+            '  if $vma { 0 }'
+            '  kfunc-call "bpf_iter_task_vma_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-task-vma-rejects-next-without-new"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_task_vma_next" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_task_vma_next' requires a matching bpf_iter_task_vma_new"
+    }
+    {
+        name: "source-kfunc-iter-task-vma-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_task_vma_new" $iter $ctx.current_task 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased iter_task_vma iterator"
+    }
+    {
+        name: "source-kfunc-iter-task-vma-rejects-double-destroy"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_task_vma_new" $iter $ctx.current_task 0'
+            '  kfunc-call "bpf_iter_task_vma_destroy" $iter'
+            '  kfunc-call "bpf_iter_task_vma_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_task_vma_destroy' requires a matching bpf_iter_task_vma_new"
+    }
+    {
+        name: "source-kfunc-iter-css-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_iter_css_new" $iter $cgrp 0'
+            '    let css = (kfunc-call "bpf_iter_css_next" $iter)'
+            '    if $css { 0 }'
+            '    kfunc-call "bpf_iter_css_destroy" $iter'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-css-rejects-next-without-new"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_css_next" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_css_next' requires a matching bpf_iter_css_new"
+    }
+    {
+        name: "source-kfunc-iter-css-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_iter_css_new" $iter $cgrp 0'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased iter_css iterator"
+    }
+    {
+        name: "source-kfunc-iter-css-rejects-double-destroy"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_iter_css_new" $iter $cgrp 0'
+            '    kfunc-call "bpf_iter_css_destroy" $iter'
+            '    kfunc-call "bpf_iter_css_destroy" $iter'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_css_destroy' requires a matching bpf_iter_css_new"
+    }
+    {
+        name: "source-kfunc-iter-css-task-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_iter_css_task_new" $iter $cgrp 0'
+            '    let task = (kfunc-call "bpf_iter_css_task_next" $iter)'
+            '    if $task { 0 }'
+            '    kfunc-call "bpf_iter_css_task_destroy" $iter'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-css-task-rejects-next-without-new"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_css_task_next" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_css_task_next' requires a matching bpf_iter_css_task_new"
+    }
+    {
+        name: "source-kfunc-iter-css-task-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_iter_css_task_new" $iter $cgrp 0'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased iter_css_task iterator"
+    }
+    {
+        name: "source-kfunc-iter-css-task-rejects-double-destroy"
+        category: "helper-state"
+        tags: [kfunc iter cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_iter_css_task_new" $iter $cgrp 0'
+            '    kfunc-call "bpf_iter_css_task_destroy" $iter'
+            '    kfunc-call "bpf_iter_css_task_destroy" $iter'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_css_task_destroy' requires a matching bpf_iter_css_task_new"
+    }
+    {
+        name: "source-kfunc-iter-dmabuf-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_dmabuf_new" $iter'
+            '  let buf = (kfunc-call "bpf_iter_dmabuf_next" $iter)'
+            '  if $buf { 0 }'
+            '  kfunc-call "bpf_iter_dmabuf_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-dmabuf-rejects-next-without-new"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_dmabuf_next" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_dmabuf_next' requires a matching bpf_iter_dmabuf_new"
+    }
+    {
+        name: "source-kfunc-iter-dmabuf-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_dmabuf_new" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased iter_dmabuf iterator"
+    }
+    {
+        name: "source-kfunc-iter-dmabuf-rejects-double-destroy"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_dmabuf_new" $iter'
+            '  kfunc-call "bpf_iter_dmabuf_destroy" $iter'
+            '  kfunc-call "bpf_iter_dmabuf_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_dmabuf_destroy' requires a matching bpf_iter_dmabuf_new"
+    }
+    {
+        name: "source-kfunc-iter-kmem-cache-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '  let cache = (kfunc-call "bpf_iter_kmem_cache_next" $iter)'
+            '  if $cache { 0 }'
+            '  kfunc-call "bpf_iter_kmem_cache_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-kmem-cache-rejects-next-without-new"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_kmem_cache_next" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_kmem_cache_next' requires a matching bpf_iter_kmem_cache_new"
+    }
+    {
+        name: "source-kfunc-iter-kmem-cache-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased iter_kmem_cache iterator"
+    }
+    {
+        name: "source-kfunc-iter-kmem-cache-rejects-double-destroy"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '  kfunc-call "bpf_iter_kmem_cache_destroy" $iter'
+            '  kfunc-call "bpf_iter_kmem_cache_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_kmem_cache_destroy' requires a matching bpf_iter_kmem_cache_new"
+    }
+    {
         name: "source-kfunc-task-ref-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]
