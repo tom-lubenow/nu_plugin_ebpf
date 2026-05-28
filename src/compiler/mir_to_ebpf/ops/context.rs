@@ -108,15 +108,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         152
     }
 
-    pub(super) fn sk_buff_flow_keys_offset() -> i16 {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 data_meta;
-        //     struct bpf_flow_keys *flow_keys;
-        // };
-        144
-    }
-
     pub(super) fn sk_buff_tstamp_type_offset() -> i16 {
         // struct __sk_buff {
         //     ...
@@ -262,15 +253,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 4)
     }
 
-    pub(super) fn bpf_cgroup_dev_ctx_offsets() -> (i16, i16, i16) {
-        // struct bpf_cgroup_dev_ctx {
-        //     __u32 access_type;
-        //     __u32 major;
-        //     __u32 minor;
-        // };
-        (0, 4, 8)
-    }
-
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sockopt_offsets()
     -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sockopt {
@@ -362,35 +344,6 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_args_offset() -> i16 {
         4
-    }
-
-    pub(super) fn bpf_sock_ops_tcp_field_offsets() -> (i16, i16, i16, i16) {
-        // struct bpf_sock_ops {
-        //     ...
-        //     __u32 snd_cwnd;
-        //     __u32 srtt_us;
-        //     ...
-        //     __u32 rtt_min;
-        //     __u32 snd_ssthresh;
-        // };
-        (76, 80, 92, 96)
-    }
-
-    pub(super) fn bpf_sock_ops_progress_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct bpf_sock_ops {
-        //     ...
-        //     __u32 rcv_nxt;
-        //     __u32 snd_nxt;
-        //     __u32 snd_una;
-        //     ...
-        //     __u32 packets_out;
-        //     __u32 retrans_out;
-        //     __u32 total_retrans;
-        //     ...
-        //     __u64 bytes_received;
-        //     __u64 bytes_acked;
-        // };
-        (100, 104, 108, 128, 132, 136, 168, 176)
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_extra_metric_offsets()

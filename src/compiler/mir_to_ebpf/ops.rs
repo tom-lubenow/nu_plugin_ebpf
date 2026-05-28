@@ -27,11 +27,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             .as_ref()
             .and_then(|ctx| {
                 ctx.parsed_program_spec()
-                    .and_then(|spec| {
-                        spec.iter_ctx_field_direct_load(field)
-                            .or_else(|| spec.socket_ctx_field_direct_load(field))
-                    })
-                    .or_else(|| ctx.program_type().socket_ctx_field_direct_load(field))
+                    .and_then(|spec| spec.ctx_field_direct_load(field))
+                    .or_else(|| ctx.program_type().ctx_field_direct_load(field))
             })
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
@@ -1156,19 +1153,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::FlowKeys => {
-                let offset = Self::sk_buff_flow_keys_offset();
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::NetfilterState | CtxField::NetfilterSkb => {
-                let (state_offset, skb_offset) = Self::bpf_nf_ctx_offsets();
-                let offset = match field {
-                    CtxField::NetfilterState => state_offset,
-                    CtxField::NetfilterSkb => skb_offset,
-                    _ => unreachable!("matched netfilter context pointer field"),
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::NetfilterHook | CtxField::NetfilterProtocolFamily => {
                 let state_offset = Self::bpf_nf_ctx_offsets().0;
@@ -1183,14 +1173,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxb(dst, EbpfReg::R0, field_offset));
             }
             CtxField::BindInany => {
-                let offset = Self::sk_reuseport_md_offsets().5;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::MigratingSocket => {
-                let offset = Self::sk_reuseport_md_offsets().8;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::BoundDevIf => {
                 let load = self.ctx_field_direct_load(field)?;
@@ -1417,82 +1405,74 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::LircSample => {
-                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::LircValue => {
-                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
                 self.instructions
                     .push(EbpfInsn::and32_imm(dst, 0x00ff_ffff));
             }
             CtxField::LircMode => {
-                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
                 self.instructions
                     .push(EbpfInsn::and32_imm(dst, 0xff00_0000u32 as i32));
             }
             CtxField::DeviceAccessType => {
-                let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::DeviceAccess => {
-                let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
                 self.instructions.push(EbpfInsn::rsh64_imm(dst, 16));
             }
             CtxField::DeviceType => {
-                let offset = Self::bpf_cgroup_dev_ctx_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
                 self.instructions.push(EbpfInsn::and64_imm(dst, 0xffff));
             }
             CtxField::DeviceMajor => {
-                let offset = Self::bpf_cgroup_dev_ctx_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::DeviceMinor => {
-                let offset = Self::bpf_cgroup_dev_ctx_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOp => {
-                let offset = Self::bpf_sock_ops_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsArgs => {
                 let offset = Self::bpf_sock_ops_args_offset();
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.args", false)?;
             }
             CtxField::SockOpsReply => {
-                let offset = Self::bpf_sock_ops_args_offset();
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsReplyLong => {
                 let offset = Self::bpf_sock_ops_args_offset();
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.replylong", false)?;
             }
             CtxField::IsFullsock => {
-                let offset = Self::bpf_sock_ops_offsets().8;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSndCwnd => {
-                let offset = Self::bpf_sock_ops_tcp_field_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSrttUs => {
-                let offset = Self::bpf_sock_ops_tcp_field_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsCbFlags => {
-                let offset = Self::bpf_sock_ops_offsets().9;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockState => {
                 let load = self.ctx_field_direct_load(field)?;
@@ -1503,134 +1483,108 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsRttMin => {
-                let offset = Self::bpf_sock_ops_tcp_field_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSndSsthresh => {
-                let offset = Self::bpf_sock_ops_tcp_field_offsets().3;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsRcvNxt => {
-                let offset = Self::bpf_sock_ops_progress_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSndNxt => {
-                let offset = Self::bpf_sock_ops_progress_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSndUna => {
-                let offset = Self::bpf_sock_ops_progress_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsMssCache => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsEcnFlags => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsRateDelivered => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsRateIntervalUs => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().3;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsPacketsOut => {
-                let offset = Self::bpf_sock_ops_progress_offsets().3;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsRetransOut => {
-                let offset = Self::bpf_sock_ops_progress_offsets().4;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsTotalRetrans => {
-                let offset = Self::bpf_sock_ops_progress_offsets().5;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSegsIn => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().4;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsDataSegsIn => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().5;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSegsOut => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().6;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsDataSegsOut => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().7;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsLostOut => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().8;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSackedOut => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().9;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSkTxhash => {
-                let offset = Self::bpf_sock_ops_extra_metric_offsets().10;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsBytesReceived => {
-                let offset = Self::bpf_sock_ops_progress_offsets().6;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsBytesAcked => {
-                let offset = Self::bpf_sock_ops_progress_offsets().7;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSkbLen => {
-                let offset = Self::bpf_sock_ops_skb_field_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSkbTcpFlags => {
-                let offset = Self::bpf_sock_ops_skb_field_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsSkbHwtstamp => {
-                let offset = Self::bpf_sock_ops_skb_field_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SysctlWrite => {
-                let offset = Self::bpf_sysctl_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SysctlFilePos => {
-                let offset = Self::bpf_sysctl_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SysctlName
             | CtxField::SysctlBaseName
@@ -1689,34 +1643,28 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::add64_imm(dst, buf_offset as i32));
             }
             CtxField::SockoptLevel => {
-                let offset = Self::bpf_sockopt_offsets().3;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockoptOptname => {
-                let offset = Self::bpf_sockopt_offsets().4;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockoptOptlen => {
-                let offset = Self::bpf_sockopt_offsets().5;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockoptOptval => {
-                let offset = Self::bpf_sockopt_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockoptOptvalEnd => {
-                let offset = Self::bpf_sockopt_offsets().2;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockoptRetval => {
-                let offset = Self::bpf_sockopt_offsets().6;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Comm => {
                 let comm_offset = if let Some(slot) = slot {

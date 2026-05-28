@@ -521,6 +521,80 @@ impl EbpfProgramType {
 
         layout.ctx_field_direct_load(field)
     }
+
+    pub(crate) fn ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
+        if let Some(load) = self.socket_ctx_field_direct_load(field) {
+            return Some(load);
+        }
+
+        match (self, field) {
+            (Self::FlowDissector, CtxField::FlowKeys) => Some(ContextFieldDirectLoad::u64(144)),
+            (Self::Netfilter, CtxField::NetfilterState) => Some(ContextFieldDirectLoad::u64(0)),
+            (Self::Netfilter, CtxField::NetfilterSkb) => Some(ContextFieldDirectLoad::u64(8)),
+            (Self::SkReuseport, CtxField::BindInany) => Some(ContextFieldDirectLoad::u32(28)),
+            (Self::SkReuseport, CtxField::MigratingSocket) => Some(ContextFieldDirectLoad::u64(48)),
+            (Self::LircMode2, CtxField::LircSample | CtxField::LircValue | CtxField::LircMode) => {
+                Some(ContextFieldDirectLoad::u32(0))
+            }
+            (
+                Self::CgroupDevice,
+                CtxField::DeviceAccessType | CtxField::DeviceAccess | CtxField::DeviceType,
+            ) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::CgroupDevice, CtxField::DeviceMajor) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::CgroupDevice, CtxField::DeviceMinor) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::SockOps, CtxField::SockOp) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::SockOps, CtxField::SockOpsReply) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::SockOps, CtxField::IsFullsock) => Some(ContextFieldDirectLoad::u32(72)),
+            (Self::SockOps, CtxField::SockOpsSndCwnd) => Some(ContextFieldDirectLoad::u32(76)),
+            (Self::SockOps, CtxField::SockOpsSrttUs) => Some(ContextFieldDirectLoad::u32(80)),
+            (Self::SockOps, CtxField::SockOpsCbFlags) => Some(ContextFieldDirectLoad::u32(84)),
+            (Self::SockOps, CtxField::SockOpsRttMin) => Some(ContextFieldDirectLoad::u32(92)),
+            (Self::SockOps, CtxField::SockOpsSndSsthresh) => Some(ContextFieldDirectLoad::u32(96)),
+            (Self::SockOps, CtxField::SockOpsRcvNxt) => Some(ContextFieldDirectLoad::u32(100)),
+            (Self::SockOps, CtxField::SockOpsSndNxt) => Some(ContextFieldDirectLoad::u32(104)),
+            (Self::SockOps, CtxField::SockOpsSndUna) => Some(ContextFieldDirectLoad::u32(108)),
+            (Self::SockOps, CtxField::SockOpsMssCache) => Some(ContextFieldDirectLoad::u32(112)),
+            (Self::SockOps, CtxField::SockOpsEcnFlags) => Some(ContextFieldDirectLoad::u32(116)),
+            (Self::SockOps, CtxField::SockOpsRateDelivered) => {
+                Some(ContextFieldDirectLoad::u32(120))
+            }
+            (Self::SockOps, CtxField::SockOpsRateIntervalUs) => {
+                Some(ContextFieldDirectLoad::u32(124))
+            }
+            (Self::SockOps, CtxField::SockOpsPacketsOut) => Some(ContextFieldDirectLoad::u32(128)),
+            (Self::SockOps, CtxField::SockOpsRetransOut) => Some(ContextFieldDirectLoad::u32(132)),
+            (Self::SockOps, CtxField::SockOpsTotalRetrans) => {
+                Some(ContextFieldDirectLoad::u32(136))
+            }
+            (Self::SockOps, CtxField::SockOpsSegsIn) => Some(ContextFieldDirectLoad::u32(140)),
+            (Self::SockOps, CtxField::SockOpsDataSegsIn) => Some(ContextFieldDirectLoad::u32(144)),
+            (Self::SockOps, CtxField::SockOpsSegsOut) => Some(ContextFieldDirectLoad::u32(148)),
+            (Self::SockOps, CtxField::SockOpsDataSegsOut) => Some(ContextFieldDirectLoad::u32(152)),
+            (Self::SockOps, CtxField::SockOpsLostOut) => Some(ContextFieldDirectLoad::u32(156)),
+            (Self::SockOps, CtxField::SockOpsSackedOut) => Some(ContextFieldDirectLoad::u32(160)),
+            (Self::SockOps, CtxField::SockOpsSkTxhash) => Some(ContextFieldDirectLoad::u32(164)),
+            (Self::SockOps, CtxField::SockOpsBytesReceived) => {
+                Some(ContextFieldDirectLoad::u64(168))
+            }
+            (Self::SockOps, CtxField::SockOpsBytesAcked) => Some(ContextFieldDirectLoad::u64(176)),
+            (Self::SockOps, CtxField::SockOpsSkbLen) => Some(ContextFieldDirectLoad::u32(208)),
+            (Self::SockOps, CtxField::SockOpsSkbTcpFlags) => Some(ContextFieldDirectLoad::u32(212)),
+            (Self::SockOps, CtxField::SockOpsSkbHwtstamp) => Some(ContextFieldDirectLoad::u64(216)),
+            (Self::CgroupSysctl, CtxField::SysctlWrite) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::CgroupSysctl, CtxField::SysctlFilePos) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::CgroupSockopt, CtxField::SockoptLevel) => Some(ContextFieldDirectLoad::u32(24)),
+            (Self::CgroupSockopt, CtxField::SockoptOptname) => {
+                Some(ContextFieldDirectLoad::u32(28))
+            }
+            (Self::CgroupSockopt, CtxField::SockoptOptlen) => Some(ContextFieldDirectLoad::u32(32)),
+            (Self::CgroupSockopt, CtxField::SockoptOptval) => Some(ContextFieldDirectLoad::u64(8)),
+            (Self::CgroupSockopt, CtxField::SockoptOptvalEnd) => {
+                Some(ContextFieldDirectLoad::u64(16))
+            }
+            (Self::CgroupSockopt, CtxField::SockoptRetval) => Some(ContextFieldDirectLoad::u32(36)),
+            _ => None,
+        }
+    }
 }
 
 impl ProgramSpec {
@@ -592,15 +666,13 @@ impl ProgramSpec {
             .flatten()
     }
 
-    pub(crate) fn socket_ctx_field_direct_load(
-        &self,
-        field: &CtxField,
-    ) -> Option<ContextFieldDirectLoad> {
+    pub(crate) fn ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         if self.ctx_field_access_error(field).is_some() {
             return None;
         }
 
-        self.program_type().socket_ctx_field_direct_load(field)
+        self.iter_ctx_field_direct_load(field)
+            .or_else(|| self.program_type().ctx_field_direct_load(field))
     }
 }
 
@@ -906,7 +978,111 @@ mod tests {
             ),
         ] {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");
-            assert_eq!(spec.socket_ctx_field_direct_load(&field), expected);
+            assert_eq!(spec.ctx_field_direct_load(&field), expected);
+        }
+    }
+
+    #[test]
+    fn test_simple_context_direct_load_metadata_tracks_program_layouts() {
+        for (spec, field, expected) in [
+            (
+                "flow_dissector:/proc/self/ns/net",
+                CtxField::FlowKeys,
+                Some(ContextFieldDirectLoad::u64(144)),
+            ),
+            (
+                "netfilter:ipv4:pre_routing:priority=-100:defrag",
+                CtxField::NetfilterState,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            (
+                "netfilter:ipv4:pre_routing:priority=-100:defrag",
+                CtxField::NetfilterSkb,
+                Some(ContextFieldDirectLoad::u64(8)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::BindInany,
+                Some(ContextFieldDirectLoad::u32(28)),
+            ),
+            (
+                "sk_reuseport:migrate",
+                CtxField::MigratingSocket,
+                Some(ContextFieldDirectLoad::u64(48)),
+            ),
+            (
+                "lirc_mode2:/dev/lirc0",
+                CtxField::LircValue,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "cgroup_device:/sys/fs/cgroup",
+                CtxField::DeviceAccess,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "cgroup_device:/sys/fs/cgroup",
+                CtxField::DeviceMajor,
+                Some(ContextFieldDirectLoad::u32(4)),
+            ),
+            (
+                "cgroup_device:/sys/fs/cgroup",
+                CtxField::DeviceMinor,
+                Some(ContextFieldDirectLoad::u32(8)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockOp,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockOpsSndCwnd,
+                Some(ContextFieldDirectLoad::u32(76)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockOpsBytesReceived,
+                Some(ContextFieldDirectLoad::u64(168)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockOpsSkbHwtstamp,
+                Some(ContextFieldDirectLoad::u64(216)),
+            ),
+            (
+                "cgroup_sysctl:/sys/fs/cgroup",
+                CtxField::SysctlWrite,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "cgroup_sysctl:/sys/fs/cgroup",
+                CtxField::SysctlFilePos,
+                Some(ContextFieldDirectLoad::u32(4)),
+            ),
+            (
+                "cgroup_sockopt:/sys/fs/cgroup:get",
+                CtxField::SockoptLevel,
+                Some(ContextFieldDirectLoad::u32(24)),
+            ),
+            (
+                "cgroup_sockopt:/sys/fs/cgroup:get",
+                CtxField::SockoptOptval,
+                Some(ContextFieldDirectLoad::u64(8)),
+            ),
+            (
+                "cgroup_sockopt:/sys/fs/cgroup:get",
+                CtxField::SockoptRetval,
+                Some(ContextFieldDirectLoad::u32(36)),
+            ),
+            (
+                "cgroup_sockopt:/sys/fs/cgroup:set",
+                CtxField::SockoptRetval,
+                None,
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            assert_eq!(spec.ctx_field_direct_load(&field), expected);
         }
     }
 }
