@@ -855,15 +855,34 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     dst_vreg
                 };
+                let call_arg_types = args
+                    .iter()
+                    .zip(call_args.iter())
+                    .map(|((source_vreg, source_reg), call_vreg)| {
+                        self.vreg_type_hints
+                            .get(call_vreg)
+                            .cloned()
+                            .or_else(|| {
+                                source_reg.and_then(|reg| {
+                                    self.typed_value_runtime_type(reg, *source_vreg)
+                                })
+                            })
+                            .or_else(|| self.vreg_type_hints.get(source_vreg).cloned())
+                            .unwrap_or(MirType::Unknown)
+                    })
+                    .collect::<Vec<_>>();
                 let ret_hint = kfunc_signature.map(|sig| match sig.ret_kind {
                     KfuncRetKind::Scalar | KfuncRetKind::Void => MirType::I64,
-                    KfuncRetKind::PointerMaybeNull => TypeInference::precise_kfunc_return_mir_type(
-                        &kfunc,
-                    )
-                    .unwrap_or(MirType::Ptr {
-                        pointee: Box::new(MirType::Unknown),
-                        address_space: AddressSpace::Kernel,
-                    }),
+                    KfuncRetKind::PointerMaybeNull => {
+                        TypeInference::precise_kfunc_return_mir_type_for_args(
+                            &kfunc,
+                            &call_arg_types,
+                        )
+                        .unwrap_or(MirType::Ptr {
+                            pointee: Box::new(MirType::Unknown),
+                            address_space: AddressSpace::Kernel,
+                        })
+                    }
                 });
 
                 self.emit(MirInst::CallKfunc {
@@ -873,7 +892,17 @@ impl<'a> HirToMirLowering<'a> {
                     args: call_args,
                 });
                 if let Some(ret_hint) = ret_hint {
-                    self.vreg_type_hints.insert(call_dst_vreg, ret_hint);
+                    self.vreg_type_hints.insert(call_dst_vreg, ret_hint.clone());
+                    self.reset_call_result_metadata(src_dst);
+                    let meta = self.get_or_create_metadata(src_dst);
+                    meta.field_type = Some(ret_hint.clone());
+                    meta.trusted_btf = matches!(
+                        ret_hint,
+                        MirType::Ptr {
+                            address_space: AddressSpace::Kernel,
+                            ..
+                        }
+                    );
                 }
                 self.write_back_scalar_kfunc_out_args(writebacks)?;
             }

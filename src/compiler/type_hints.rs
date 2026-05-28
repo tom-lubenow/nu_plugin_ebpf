@@ -499,15 +499,22 @@ pub(crate) fn infer_instruction_def_type(
                 })
                 .map(|ty| (*dst, ty, true))
         }
-        MirInst::CallKfunc { dst, kfunc, .. } => {
+        MirInst::CallKfunc {
+            dst, kfunc, args, ..
+        } => {
             let sig = KfuncSignature::for_name_or_kernel_btf(kfunc)?;
             let ty = match sig.ret_kind {
                 KfuncRetKind::Scalar | KfuncRetKind::Void => MirType::I64,
                 KfuncRetKind::PointerMaybeNull => {
-                    TypeInference::precise_kfunc_return_mir_type(kfunc).unwrap_or(MirType::Ptr {
-                        pointee: Box::new(MirType::Unknown),
-                        address_space: AddressSpace::Kernel,
-                    })
+                    let arg_types = args
+                        .iter()
+                        .map(|arg| hints.get(arg).cloned().unwrap_or(MirType::Unknown))
+                        .collect::<Vec<_>>();
+                    TypeInference::precise_kfunc_return_mir_type_for_args(kfunc, &arg_types)
+                        .unwrap_or(MirType::Ptr {
+                            pointee: Box::new(MirType::Unknown),
+                            address_space: AddressSpace::Kernel,
+                        })
                 }
             };
             Some((*dst, ty, true))

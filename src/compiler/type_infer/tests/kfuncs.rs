@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::mir::BpfGraphRootKind;
 
 fn infer_in_sched_ext_callback(
     func: &MirFunction,
@@ -3980,6 +3981,126 @@ fn test_infer_kfunc_list_front_pointer_return() {
             assert!(pointee.is_bpf_list_node_struct());
         }
         other => panic!("expected kernel pointer return, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_infer_kfunc_graph_object_reference_return_preserves_payload_schema() {
+    let node_size = BpfGraphRootKind::ListHead.node_size();
+    let cookie_offset = (node_size + MirType::bpf_refcount_struct().size()).div_ceil(8) * 8;
+    let object_ty = MirType::Struct {
+        name: Some("node_data".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "node".to_string(),
+                ty: MirType::bpf_list_node_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "refs".to_string(),
+                ty: MirType::bpf_refcount_struct(),
+                offset: node_size,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: cookie_offset,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let root_ty =
+        MirType::bpf_list_head_root_struct_with_object("node_data", "node", object_ty.clone());
+    let root_ptr_ty = MirType::Ptr {
+        pointee: Box::new(root_ty),
+        address_space: AddressSpace::Map,
+    };
+    let object_ptr_ty = MirType::Ptr {
+        pointee: Box::new(object_ty.clone()),
+        address_space: AddressSpace::Kernel,
+    };
+    assert_eq!(
+        TypeInference::precise_kfunc_return_mir_type_for_args(
+            "bpf_list_pop_front",
+            &[root_ptr_ty.clone()],
+        ),
+        Some(object_ptr_ty.clone())
+    );
+    assert_eq!(
+        TypeInference::precise_kfunc_return_mir_type_for_args(
+            "bpf_refcount_acquire_impl",
+            std::slice::from_ref(&object_ptr_ty),
+        ),
+        Some(object_ptr_ty.clone())
+    );
+
+    let mut func = make_test_function();
+    let root = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let popped = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: popped,
+        kfunc: "bpf_list_pop_front".to_string(),
+        btf_id: None,
+        args: vec![root],
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: acquired,
+        kfunc: "bpf_refcount_acquire_impl".to_string(),
+        btf_id: None,
+        args: vec![popped, meta],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(root, root_ptr_ty), (popped, object_ptr_ty)]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let types = ti
+        .infer(&func)
+        .expect("expected graph object reference return type inference");
+
+    for vreg in [popped, acquired] {
+        match types.get(&vreg) {
+            Some(MirType::Ptr {
+                address_space,
+                pointee,
+            }) => {
+                assert_eq!(*address_space, AddressSpace::Kernel);
+                let MirType::Struct {
+                    name: Some(name),
+                    fields,
+                    ..
+                } = pointee.as_ref()
+                else {
+                    panic!("expected node_data object struct, got {:?}", pointee);
+                };
+                assert_eq!(name, "node_data");
+                assert_eq!(
+                    fields
+                        .iter()
+                        .filter(|field| !field.synthetic)
+                        .map(|field| (field.name.as_str(), &field.ty))
+                        .collect::<Vec<_>>(),
+                    vec![
+                        ("node", &MirType::bpf_list_node_struct()),
+                        ("refs", &MirType::bpf_refcount_struct()),
+                        ("cookie", &MirType::U64),
+                    ]
+                );
+            }
+            other => panic!("expected node_data object pointer return, got {:?}", other),
+        }
     }
 }
 

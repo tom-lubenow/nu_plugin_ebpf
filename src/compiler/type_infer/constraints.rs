@@ -206,7 +206,9 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::CallKfunc { dst, kfunc, .. } => {
+            MirInst::CallKfunc {
+                dst, kfunc, args, ..
+            } => {
                 let dst_ty = self.vreg_type(*dst);
                 let sig = KfuncSignature::for_name_or_kernel_btf(kfunc)
                     .ok_or_else(|| TypeError::new(unknown_kfunc_signature_message(kfunc)))?;
@@ -215,12 +217,21 @@ impl<'a> TypeInference<'a> {
                         self.constrain(dst_ty, HMType::I64, "kfunc_call");
                     }
                     KfuncRetKind::PointerMaybeNull => {
-                        let ptr_ty = Self::precise_kfunc_return_mir_type(kfunc)
-                            .map(|ty| HMType::from_mir_type(&ty))
-                            .unwrap_or_else(|| HMType::Ptr {
-                                pointee: Box::new(HMType::Var(self.tvar_gen.fresh())),
-                                address_space: AddressSpace::Kernel,
-                            });
+                        let arg_types = self
+                            .type_hints
+                            .map(|hints| {
+                                args.iter()
+                                    .map(|arg| hints.get(arg).cloned().unwrap_or(MirType::Unknown))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        let ptr_ty =
+                            Self::precise_kfunc_return_mir_type_for_args(kfunc, &arg_types)
+                                .map(|ty| HMType::from_mir_type(&ty))
+                                .unwrap_or_else(|| HMType::Ptr {
+                                    pointee: Box::new(HMType::Var(self.tvar_gen.fresh())),
+                                    address_space: AddressSpace::Kernel,
+                                });
                         self.constrain(dst_ty, ptr_ty, "kfunc_call_ptr_ret");
                     }
                 }

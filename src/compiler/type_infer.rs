@@ -293,6 +293,46 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    pub(super) fn precise_kfunc_return_mir_type_for_args(
+        kfunc: &str,
+        arg_types: &[MirType],
+    ) -> Option<MirType> {
+        let graph_root_object_ptr = |arg_idx: usize| {
+            let MirType::Ptr { pointee, .. } = arg_types.get(arg_idx)? else {
+                return None;
+            };
+            let object_ty = pointee.bpf_graph_root_info()?.object_type?.clone();
+            Some(MirType::Ptr {
+                pointee: Box::new(object_ty),
+                address_space: AddressSpace::Kernel,
+            })
+        };
+        let refcounted_object_ptr = |arg_idx: usize| {
+            let MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            } = arg_types.get(arg_idx)?
+            else {
+                return None;
+            };
+            pointee
+                .contains_bpf_refcount_struct()
+                .then(|| MirType::Ptr {
+                    pointee: pointee.clone(),
+                    address_space: AddressSpace::Kernel,
+                })
+        };
+
+        match kfunc {
+            "bpf_list_pop_front" | "bpf_list_pop_back" | "bpf_rbtree_remove" => {
+                graph_root_object_ptr(0)
+            }
+            "bpf_refcount_acquire_impl" => refcounted_object_ptr(0),
+            _ => None,
+        }
+        .or_else(|| Self::precise_kfunc_return_mir_type(kfunc))
+    }
+
     fn kernel_btf_kfunc_return_mir_type(kfunc: &str) -> Option<MirType> {
         let type_info = KernelBtf::get()
             .function_trampoline_ret_type_info(kfunc)

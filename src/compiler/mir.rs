@@ -855,6 +855,19 @@ impl MirType {
         self.has_struct_name(&["bpf_refcount"])
     }
 
+    pub fn contains_bpf_refcount_struct(&self) -> bool {
+        if self.is_bpf_refcount_struct() {
+            return true;
+        }
+        match self {
+            MirType::Array { elem, .. } => elem.contains_bpf_refcount_struct(),
+            MirType::Struct { fields, .. } => fields
+                .iter()
+                .any(|field| field.ty.contains_bpf_refcount_struct()),
+            _ => false,
+        }
+    }
+
     pub fn is_bpf_dynptr_struct(&self) -> bool {
         self.has_struct_name(&["bpf_dynptr", "bpf_dynptr_kern"])
     }
