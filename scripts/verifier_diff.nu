@@ -18589,11 +18589,17 @@ def context-field-access-is-assignment-lhs? [raw_access: string field: string] {
     if not ($compact | str contains "=") {
         return false
     }
-    if ($compact | str contains "==") {
+    let parts = ($compact | split row "=")
+    if ($parts | length) < 2 {
         return false
     }
 
-    let lhs = ($compact | split row "=" | first)
+    let rhs_after_first_equals = ($parts | skip 1 | first)
+    if $rhs_after_first_equals == "" {
+        return false
+    }
+
+    let lhs = ($parts | first)
 
     ($lhs == $field) or ($lhs | str starts-with $"($field).")
 }
