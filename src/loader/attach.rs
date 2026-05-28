@@ -51,13 +51,38 @@ fn unsupported_struct_ops_program_object_error(value_type_name: &str) -> LoadErr
     ))
 }
 
+fn map_in_map_inner_template_detail(object: &EbpfObject, outer: &MapRef) -> String {
+    let mut inner_templates = object
+        .programs
+        .iter()
+        .filter_map(|program| program.generic_map_inner_templates.get(outer))
+        .map(|inner| format!("'{}' ({})", inner.name, inner.kind))
+        .collect::<Vec<_>>();
+    inner_templates.sort();
+    inner_templates.dedup();
+
+    match inner_templates.as_slice() {
+        [inner] => format!("; declared inner template is {inner}"),
+        [] => "; no compiled inner-template metadata was found".to_string(),
+        templates => format!(
+            "; compiled inner-template metadata is ambiguous: {}",
+            templates.join(", ")
+        ),
+    }
+}
+
 fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
         kind.is_map_in_map().then(|| {
+            let map_ref = MapRef {
+                name: map.name.clone(),
+                kind,
+            };
+            let inner_detail = map_in_map_inner_template_detail(object, &map_ref);
             LoadError::Load(format!(
-                "live loading map-in-map runtime map '{}' ({}) is not supported by this loader yet; inner_map_fd materialization is pending; use --dry-run to compile",
-                map.name, kind
+                "live loading map-in-map runtime map '{}' ({}) is not supported by this loader yet{}; Aya's map creation path does not materialize inner_map_fd from BTF values metadata; use --dry-run to compile",
+                map.name, kind, inner_detail
             ))
         })
     })

@@ -1599,7 +1599,9 @@ fn test_attach_rejects_live_map_in_map_before_aya_load() {
             err,
             LoadError::Load(ref msg)
                 if msg.contains("live loading map-in-map runtime map 'outer'")
-                    && msg.contains("inner_map_fd materialization is pending")
+                    && msg.contains("declared inner template is 'inner' (hash)")
+                    && msg.contains("Aya's map creation path")
+                    && msg.contains("inner_map_fd")
                     && msg.contains("--dry-run")
         ),
         "unexpected map-in-map live attach error: {err:?}"
