@@ -31,6 +31,7 @@ use super::instruction::{
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
     kfunc_pointer_arg_min_access_size as kfunc_pointer_arg_min_access_size_shared,
     kfunc_pointer_arg_requires_kernel as kfunc_pointer_arg_requires_kernel_shared,
+    kfunc_pointer_arg_requires_raw_context as kfunc_pointer_arg_requires_raw_context_shared,
     kfunc_pointer_arg_requires_stack as kfunc_pointer_arg_requires_stack_shared,
     kfunc_pointer_arg_requires_stack_or_map as kfunc_pointer_arg_requires_stack_or_map_shared,
     kfunc_pointer_arg_requires_stack_slot_base as kfunc_pointer_arg_requires_stack_slot_base_shared,

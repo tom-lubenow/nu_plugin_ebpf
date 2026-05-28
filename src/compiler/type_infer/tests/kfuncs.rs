@@ -4988,6 +4988,14 @@ fn test_type_error_kfunc_dynptr_slice_requires_constant_size_arg() {
 }
 
 fn make_xdp_get_xfrm_state_type_call(size: i64, buffer_size: usize) -> (MirFunction, VReg) {
+    make_xdp_get_xfrm_state_type_call_with_arg0(CtxField::Context, size, buffer_size)
+}
+
+fn make_xdp_get_xfrm_state_type_call_with_arg0(
+    arg0_field: CtxField,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let opts = func.alloc_vreg();
@@ -4997,7 +5005,7 @@ fn make_xdp_get_xfrm_state_type_call(size: i64, buffer_size: usize) -> (MirFunct
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        field: CtxField::Context,
+        field: arg0_field,
         slot: None,
     });
     block.instructions.push(MirInst::Copy {
@@ -5061,6 +5069,22 @@ fn test_type_error_xdp_get_xfrm_state_rejects_small_opts_buffer() {
         errs.iter().any(|e| e
             .message
             .contains("kfunc bpf_xdp_get_xfrm_state opts requires 32 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_xdp_get_xfrm_state_rejects_packet_pointer_arg0() {
+    let (func, _) = make_xdp_get_xfrm_state_type_call_with_arg0(CtxField::Data, 32, 32);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_xdp_get_xfrm_state arg0 context pointer error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer")),
         "unexpected errors: {:?}",
         errs
     );

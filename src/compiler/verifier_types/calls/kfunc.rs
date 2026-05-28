@@ -382,6 +382,18 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
         );
     }
 
+    for (idx, arg) in args.iter().enumerate() {
+        let Some(expected) = kfunc_pointer_arg_requires_raw_context(kfunc, idx) else {
+            continue;
+        };
+        if state.ctx_field_source(*arg) != Some(&CtxField::Context) {
+            errors.push(VerifierTypeError::new(format!(
+                "kfunc '{}' arg{} expects {} pointer",
+                kfunc, idx, expected
+            )));
+        }
+    }
+
     for (ptr_arg_idx, arg) in args.iter().enumerate() {
         if semantics
             .ptr_arg_rules
@@ -474,6 +486,13 @@ pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_kernel(
     arg_idx: usize,
 ) -> bool {
     kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
+}
+
+pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_raw_context(
+    kfunc: &str,
+    arg_idx: usize,
+) -> Option<&'static str> {
+    kfunc_pointer_arg_requires_raw_context_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_requires_stack(

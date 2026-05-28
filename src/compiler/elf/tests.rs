@@ -2341,6 +2341,10 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         Some("helper 'bpf_xdp_load_bytes' is only valid in xdp programs".to_string())
     );
     assert_eq!(
+        EbpfProgramType::Kprobe.helper_call_error(BpfHelper::XdpStoreBytes),
+        Some("helper 'bpf_xdp_store_bytes' is only valid in xdp programs".to_string())
+    );
+    assert_eq!(
         EbpfProgramType::Kprobe.helper_call_error(BpfHelper::SkbPullData),
         Some(
             "helper 'bpf_skb_pull_data' is only valid in lwt_*, tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs"

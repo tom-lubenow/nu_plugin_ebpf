@@ -6819,6 +6819,12 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs
             "lo:ingress",
             "helper 'bpf_xdp_load_bytes' is only valid in xdp programs",
         ),
+        (
+            BpfHelper::XdpStoreBytes,
+            EbpfProgramType::Tc,
+            "lo:ingress",
+            "helper 'bpf_xdp_store_bytes' is only valid in xdp programs",
+        ),
     ] {
         let (mut func, entry) = new_mir_function();
         let ctx = func.alloc_vreg();
@@ -6902,6 +6908,8 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_allowed_programs
             "demo-route",
             4,
         ),
+        (BpfHelper::XdpLoadBytes, EbpfProgramType::Xdp, "lo", 4),
+        (BpfHelper::XdpStoreBytes, EbpfProgramType::Xdp, "lo", 4),
     ] {
         let (mut func, entry) = new_mir_function();
         let ctx = func.alloc_vreg();

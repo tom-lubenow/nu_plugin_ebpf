@@ -74,6 +74,13 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_raw_context(
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Option<&'static str> {
+        kfunc_pointer_arg_requires_raw_context_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_user_shared(kfunc, arg_idx)
     }
@@ -781,6 +788,7 @@ impl<'a> TypeInference<'a> {
         args: &[VReg],
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         stack_bounds: &HashMap<VReg, StackBounds>,
         errors: &mut Vec<TypeError>,
     ) {
@@ -896,6 +904,23 @@ impl<'a> TypeInference<'a> {
                     "kfunc '{}' arg{} expects pointer value, got {:?}",
                     kfunc, rule.arg_idx, other
                 ))),
+            }
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            let Some(expected) = Self::kfunc_pointer_arg_requires_raw_context(kfunc, idx) else {
+                continue;
+            };
+            if !direct_ctx_field_sources.get(arg).is_some_and(|field| {
+                ProbeContext::resolve_ctx_field_is_raw_context_pointer(
+                    self.probe_ctx.as_ref(),
+                    field,
+                )
+            }) {
+                errors.push(TypeError::new(format!(
+                    "kfunc '{}' arg{} expects {} pointer",
+                    kfunc, idx, expected
+                )));
             }
         }
 

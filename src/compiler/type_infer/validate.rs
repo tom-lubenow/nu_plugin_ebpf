@@ -1017,6 +1017,7 @@ impl<'a> TypeInference<'a> {
                     args,
                     types,
                     value_ranges,
+                    direct_ctx_field_sources,
                     stack_bounds,
                     errors,
                 );

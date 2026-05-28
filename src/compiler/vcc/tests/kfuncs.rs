@@ -13977,6 +13977,25 @@ fn make_xdp_get_xfrm_state_vcc_function(
     buffer_size: usize,
     release_state: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_xdp_get_xfrm_state_vcc_function_with_arg0(
+        CtxField::Context,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+        opts_size,
+        buffer_size,
+        release_state,
+    )
+}
+
+fn make_xdp_get_xfrm_state_vcc_function_with_arg0(
+    arg0_field: CtxField,
+    arg0_type: MirType,
+    opts_size: i64,
+    buffer_size: usize,
+    release_state: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let release = func.alloc_block();
     let done = func.alloc_block();
@@ -13993,7 +14012,7 @@ fn make_xdp_get_xfrm_state_vcc_function(
         .instructions
         .push(MirInst::LoadCtxField {
             dst: ctx,
-            field: CtxField::Context,
+            field: arg0_field,
             slot: None,
         });
     func.block_mut(entry).instructions.push(MirInst::Copy {
@@ -14036,13 +14055,7 @@ fn make_xdp_get_xfrm_state_vcc_function(
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        ctx,
-        MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(ctx, arg0_type);
     types.insert(
         opts,
         MirType::Ptr {
@@ -14099,6 +14112,31 @@ fn test_verify_mir_xdp_get_xfrm_state_rejects_small_opts_buffer() {
         err.iter().any(|e| e
             .message
             .contains("kfunc bpf_xdp_get_xfrm_state opts out of bounds")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_xdp_get_xfrm_state_rejects_packet_pointer_arg0() {
+    let (func, types) = make_xdp_get_xfrm_state_vcc_function_with_arg0(
+        CtxField::Data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+        32,
+        32,
+        true,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_xdp_get_xfrm_state arg0 context pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer")),
         "unexpected error messages: {:?}",
         err
     );

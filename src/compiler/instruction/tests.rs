@@ -6383,6 +6383,26 @@ fn test_kfunc_pointer_arg_requires_kernel_mappings() {
 }
 
 #[test]
+fn test_kfunc_pointer_arg_requires_raw_context_mappings() {
+    for kfunc in [
+        "bpf_xdp_get_xfrm_state",
+        "bpf_xdp_metadata_rx_hash",
+        "bpf_xdp_metadata_rx_timestamp",
+        "bpf_xdp_metadata_rx_vlan_tag",
+    ] {
+        assert_eq!(
+            kfunc_pointer_arg_requires_raw_context(kfunc, 0),
+            Some("xdp_md")
+        );
+        assert_eq!(kfunc_pointer_arg_requires_raw_context(kfunc, 1), None);
+    }
+    assert_eq!(
+        kfunc_pointer_arg_requires_raw_context("bpf_task_release", 0),
+        None
+    );
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_user_mappings() {
     assert!(kfunc_pointer_arg_requires_user("bpf_copy_from_user_str", 2));
     assert!(kfunc_pointer_arg_requires_user(

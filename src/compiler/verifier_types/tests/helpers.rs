@@ -6327,6 +6327,11 @@ fn test_verify_mir_for_program_packet_byte_helpers_reject_invalid_programs() {
             EbpfProgramType::Tc.info(),
             "helper 'bpf_xdp_load_bytes' is only valid in xdp programs",
         ),
+        (
+            BpfHelper::XdpStoreBytes,
+            EbpfProgramType::Tc.info(),
+            "helper 'bpf_xdp_store_bytes' is only valid in xdp programs",
+        ),
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();
@@ -6397,6 +6402,8 @@ fn test_verify_mir_for_program_packet_byte_helpers_accept_allowed_programs() {
             5,
         ),
         (BpfHelper::SkbLoadBytes, EbpfProgramType::LwtOut.info(), 4),
+        (BpfHelper::XdpLoadBytes, EbpfProgramType::Xdp.info(), 4),
+        (BpfHelper::XdpStoreBytes, EbpfProgramType::Xdp.info(), 4),
     ] {
         let mut func = MirFunction::new();
         let entry = func.alloc_block();

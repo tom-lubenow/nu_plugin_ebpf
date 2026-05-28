@@ -7537,6 +7537,59 @@ const FIXTURES = [
         error_contains: "void helper 'bpf_set_hash_invalid' return value cannot be used"
     }
     {
+        name: "xdp-load-bytes-helper"
+        category: "helper-state"
+        tags: [xdp helper bytes accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define scratch --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get scratch --kind array)'
+            '  if $dst { helper-call "bpf_xdp_load_bytes" $ctx 0 $dst 8 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "xdp-store-bytes-preserves-packet-data"
+        category: "helper-state"
+        tags: [xdp helper bytes packet-bounds accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  let bytes = "x"'
+            '  helper-call "bpf_xdp_store_bytes" $ctx 0 $bytes 1'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "xdp-store-bytes-rejects-small-source-buffer"
+        category: "helper-state"
+        tags: [xdp helper bytes bounds reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define scratch --kind array --value-type bytes:1 --max-entries 1'
+            '  let bytes = (0 | map-get scratch --kind array)'
+            '  if $bytes { helper-call "bpf_xdp_store_bytes" $ctx 0 $bytes 8 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper xdp_bytes buf requires 8 bytes"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]
@@ -12128,11 +12181,16 @@ const FIXTURES = [
         category: "helper-state"
         tags: [kfunc btf source reject]
         requires: [kernel-btf]
-        target: "raw_tracepoint:sys_enter"
+        target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  kfunc-call "bpf_xdp_get_xfrm_state" $ctx.current_task 0 0'
-            '  0'
+            '  map-define opts --kind array --value-type bytes:32 --max-entries 1'
+            '  let opts = (0 | map-get opts --kind array)'
+            '  let data = $ctx.data'
+            '  if $opts {'
+            '    kfunc-call "bpf_xdp_get_xfrm_state" $data $opts 32'
+            '  }'
+            '  "pass"'
             '}'
         ]
         local: "reject"

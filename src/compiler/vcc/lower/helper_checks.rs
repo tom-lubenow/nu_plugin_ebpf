@@ -337,6 +337,13 @@ impl<'a> VccLowerer<'a> {
         kfunc_pointer_arg_requires_kernel_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_pointer_arg_requires_raw_context(
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Option<&'static str> {
+        kfunc_pointer_arg_requires_raw_context_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_pointer_arg_requires_stack(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_stack_shared(kfunc, arg_idx)
     }
@@ -1830,6 +1837,22 @@ impl<'a> VccLowerer<'a> {
                 dynamic_size,
                 out,
             )?;
+        }
+
+        for (idx, arg) in args.iter().enumerate() {
+            let Some(expected) = Self::kfunc_pointer_arg_requires_raw_context(kfunc, idx) else {
+                continue;
+            };
+            if !self
+                .direct_ctx_field_regs
+                .get(&VccReg(arg.0))
+                .is_some_and(|field| self.ctx_field_is_raw_context_pointer(field))
+            {
+                return Err(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!("kfunc '{}' arg{} expects {} pointer", kfunc, idx, expected),
+                ));
+            }
         }
 
         for (ptr_arg_idx, arg) in args.iter().enumerate() {
