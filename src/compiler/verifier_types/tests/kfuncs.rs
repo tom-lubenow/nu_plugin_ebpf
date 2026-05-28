@@ -238,7 +238,11 @@ fn graph_lock_root_repeated_lookup_function(
     same_key: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     graph_lock_root_repeated_lookup_for_kfunc(
-        same_key,
+        if same_key {
+            RepeatedLookupKeyMode::SameConst
+        } else {
+            RepeatedLookupKeyMode::DifferentConst
+        },
         "bpf_list_front",
         MirType::bpf_list_head_root_struct("node_data", "node"),
         MirType::bpf_list_node_struct(),
@@ -249,15 +253,35 @@ fn graph_rbtree_lock_root_repeated_lookup_function(
     same_key: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     graph_lock_root_repeated_lookup_for_kfunc(
-        same_key,
+        if same_key {
+            RepeatedLookupKeyMode::SameConst
+        } else {
+            RepeatedLookupKeyMode::DifferentConst
+        },
         "bpf_rbtree_first",
         MirType::bpf_rb_root_struct_with_contains("rb_item", "rb"),
         MirType::bpf_rb_node_struct(),
     )
 }
 
+fn graph_lock_root_repeated_lookup_copied_key_function() -> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::CopiedDynamic,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RepeatedLookupKeyMode {
+    SameConst,
+    CopiedDynamic,
+    DifferentConst,
+}
+
 fn graph_lock_root_repeated_lookup_for_kfunc(
-    same_key: bool,
+    key_mode: RepeatedLookupKeyMode,
     kfunc: &str,
     root_ty: MirType,
     node_ty: MirType,
@@ -270,7 +294,11 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
     func.entry = entry;
 
     let key = func.alloc_vreg();
-    let root_key = if same_key { key } else { func.alloc_vreg() };
+    let root_key = if key_mode == RepeatedLookupKeyMode::SameConst {
+        key
+    } else {
+        func.alloc_vreg()
+    };
     let lock_value = func.alloc_vreg();
     let lock_value_non_null = func.alloc_vreg();
     let root_value = func.alloc_vreg();
@@ -285,15 +313,23 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
         kind: MapKind::Hash,
     };
 
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: key,
-        src: MirValue::Const(0),
-    });
-    if !same_key {
+    if key_mode == RepeatedLookupKeyMode::CopiedDynamic {
+        func.param_count = 1;
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: root_key,
-            src: MirValue::Const(1),
+            src: MirValue::VReg(key),
         });
+    } else {
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: key,
+            src: MirValue::Const(0),
+        });
+        if key_mode == RepeatedLookupKeyMode::DifferentConst {
+            func.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: root_key,
+                src: MirValue::Const(1),
+            });
+        }
     }
     func.block_mut(entry).instructions.push(MirInst::MapLookup {
         dst: lock_value,
@@ -1075,6 +1111,13 @@ fn test_kfunc_list_front_accepts_same_key_repeated_map_lookup_bpf_spin_lock() {
     let (func, types) = graph_lock_root_repeated_lookup_function(true);
 
     verify_mir(&func, &types).expect("same map/key graph lock/root should verify");
+}
+
+#[test]
+fn test_kfunc_list_front_accepts_copied_dynamic_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_copied_key_function();
+
+    verify_mir(&func, &types).expect("copied dynamic map key graph lock/root should verify");
 }
 
 #[test]

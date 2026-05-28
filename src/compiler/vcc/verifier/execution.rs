@@ -64,7 +64,18 @@ impl VccVerifier {
                         _ => None,
                     };
                     let src_released_kfunc_ref = matches!(src, VccValue::Reg(src_reg) if state.is_released_kfunc_ref(*src_reg));
+                    let src_scalar_alias = match src {
+                        VccValue::Reg(src_reg)
+                            if matches!(ty, VccValueType::Scalar { .. } | VccValueType::Bool) =>
+                        {
+                            Some(*src_reg)
+                        }
+                        _ => None,
+                    };
                     state.set_reg(*dst, ty);
+                    if let Some(src_reg) = src_scalar_alias {
+                        state.set_scalar_alias(*dst, src_reg);
+                    }
                     if src_released_kfunc_ref {
                         state.mark_released_kfunc_ref(*dst);
                         return;

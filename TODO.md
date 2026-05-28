@@ -56,7 +56,7 @@ history and release notes, not here.
 
 - [~] Expand typed helper/kfunc semantics where it materially improves safety.
   - Prioritize helpers/kfuncs that affect ownership, lifetime, mutable kernel state, pointer invalidation, by-reference stack objects, or map-value object state.
-  - Map-value `bpf_spin_lock` unlock identity, graph-root kfunc same-map-root and repeated same-map/same-key lookup lock checks, resource spin-lock same-lock duplicate acquire / ordered unlocks, active-lock call restrictions, and typed `bpf_res_spin_lock` pointee validation are now tracked when provenance/type information is available; richer validation that non-constant equivalent key expressions refer to the same concrete entry remains future work.
+  - Map-value `bpf_spin_lock` unlock identity, graph-root kfunc same-map-root and repeated same-map/same-key lookup lock checks, copied scalar key aliases, resource spin-lock same-lock duplicate acquire / ordered unlocks, active-lock call restrictions, and typed `bpf_res_spin_lock` pointee validation are now tracked when provenance/type information is available; richer validation that algebraically equivalent key expressions refer to the same concrete entry remains future work.
   - Continue using kernel BTF metadata for unknown kfunc fallback signatures, exact pointer-return typing, exact pointer-argument pointee validation when BTF exposes a named struct target, pointer-space inference, nullable parameters, constant-size parameters, returned named-pointer projection, and ref-family heuristics.
   - Keep explicit compiler-side metadata for common helpers/kfuncs where kernel BTF is insufficient or too kernel-version-specific.
 

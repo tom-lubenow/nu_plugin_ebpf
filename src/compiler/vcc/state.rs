@@ -39,6 +39,7 @@ fn unknown_stack_object_type_key(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
+    scalar_alias_roots: HashMap<VccReg, VccReg>,
     ctx_field_sources: HashMap<VccReg, CtxField>,
     map_lookup_sources: HashMap<VccReg, VccMapLookupSource>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
@@ -131,6 +132,7 @@ impl VccState {
     fn with_seed(seed: HashMap<VccReg, VccValueType>) -> Self {
         Self {
             reg_types: seed,
+            scalar_alias_roots: HashMap::new(),
             ctx_field_sources: HashMap::new(),
             map_lookup_sources: HashMap::new(),
             not_equal_consts: HashMap::new(),
@@ -200,6 +202,7 @@ impl VccState {
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
+        self.scalar_alias_roots.remove(&reg);
         self.ctx_field_sources.remove(&reg);
         self.map_lookup_sources.remove(&reg);
         self.not_equal_consts.remove(&reg);
@@ -217,6 +220,15 @@ impl VccState {
 
     fn ctx_field_source(&self, reg: VccReg) -> Option<&CtxField> {
         self.ctx_field_sources.get(&reg)
+    }
+
+    fn scalar_alias_root(&self, reg: VccReg) -> VccReg {
+        self.scalar_alias_roots.get(&reg).copied().unwrap_or(reg)
+    }
+
+    fn set_scalar_alias(&mut self, dst: VccReg, src: VccReg) {
+        let root = self.scalar_alias_root(src);
+        self.scalar_alias_roots.insert(dst, root);
     }
 
     fn set_map_lookup_source(&mut self, root: VccReg, map: MapRef, key: VccReg) {
@@ -240,7 +252,7 @@ impl VccState {
     }
 
     fn map_lookup_keys_may_alias(&self, lhs: VccReg, rhs: VccReg) -> bool {
-        if lhs == rhs {
+        if lhs == rhs || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs) {
             return true;
         }
         matches!(
@@ -1209,6 +1221,14 @@ impl VccState {
                 }
             }
         }
+        let mut scalar_alias_roots = HashMap::new();
+        for (reg, left) in &self.scalar_alias_roots {
+            if let Some(right) = other.scalar_alias_roots.get(reg)
+                && left == right
+            {
+                scalar_alias_roots.insert(*reg, *left);
+            }
+        }
         let mut ctx_field_sources = HashMap::new();
         for (reg, left) in &self.ctx_field_sources {
             if let Some(right) = other.ctx_field_sources.get(reg)
@@ -1297,6 +1317,7 @@ impl VccState {
             .collect();
         VccState {
             reg_types: merged,
+            scalar_alias_roots,
             ctx_field_sources,
             map_lookup_sources,
             not_equal_consts,
@@ -1455,6 +1476,7 @@ impl VccState {
         }
         VccState {
             reg_types: widened,
+            scalar_alias_roots: self.scalar_alias_roots.clone(),
             ctx_field_sources: self.ctx_field_sources.clone(),
             map_lookup_sources: self.map_lookup_sources.clone(),
             not_equal_consts: HashMap::new(),

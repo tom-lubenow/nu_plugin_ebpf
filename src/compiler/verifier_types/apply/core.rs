@@ -34,7 +34,16 @@ pub(super) fn apply_copy_inst(
     };
     let src_released_kfunc_ref =
         matches!(src, MirValue::VReg(vreg) if state.is_released_kfunc_ref(*vreg));
+    let src_scalar_alias = match src {
+        MirValue::VReg(vreg) if matches!(ty, VerifierType::Scalar | VerifierType::Bool) => {
+            Some(*vreg)
+        }
+        _ => None,
+    };
     state.set_with_range(dst, ty, range);
+    if let Some(src_vreg) = src_scalar_alias {
+        state.set_scalar_alias(dst, src_vreg);
+    }
     if src_released_kfunc_ref {
         state.mark_released_kfunc_ref(dst);
         return;

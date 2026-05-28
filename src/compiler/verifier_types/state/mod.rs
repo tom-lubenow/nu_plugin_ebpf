@@ -168,6 +168,7 @@ pub(super) enum Guard {
 pub(super) struct VerifierState {
     regs: Vec<VerifierType>,
     ranges: Vec<ValueRange>,
+    scalar_alias_roots: Vec<Option<VReg>>,
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
     ctx_field_sources: Vec<Option<CtxField>>,
@@ -236,6 +237,7 @@ impl VerifierState {
         Self {
             regs: vec![VerifierType::Uninit; total_vregs],
             ranges: vec![ValueRange::Unknown; total_vregs],
+            scalar_alias_roots: vec![None; total_vregs],
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
             ctx_field_sources: vec![None; total_vregs],
@@ -312,6 +314,20 @@ impl VerifierState {
             .unwrap_or(ValueRange::Unknown)
     }
 
+    pub(super) fn scalar_alias_root(&self, vreg: VReg) -> VReg {
+        self.scalar_alias_roots
+            .get(vreg.0 as usize)
+            .and_then(|root| *root)
+            .unwrap_or(vreg)
+    }
+
+    pub(super) fn set_scalar_alias(&mut self, dst: VReg, src: VReg) {
+        let root = self.scalar_alias_root(src);
+        if let Some(slot) = self.scalar_alias_roots.get_mut(dst.0 as usize) {
+            *slot = Some(root);
+        }
+    }
+
     pub(super) fn is_non_zero(&self, vreg: VReg) -> bool {
         self.non_zero.get(vreg.0 as usize).copied().unwrap_or(false)
     }
@@ -353,6 +369,9 @@ impl VerifierState {
         }
         if let Some(slot) = self.ranges.get_mut(vreg.0 as usize) {
             *slot = range;
+        }
+        if let Some(slot) = self.scalar_alias_roots.get_mut(vreg.0 as usize) {
+            *slot = None;
         }
         if let Some(slot) = self.non_zero.get_mut(vreg.0 as usize) {
             *slot = false;
@@ -415,6 +434,7 @@ impl VerifierState {
 
     fn map_lookup_keys_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
         lhs == rhs
+            || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs)
             || matches!(
                 (self.get_range(lhs), self.get_range(rhs)),
                 (

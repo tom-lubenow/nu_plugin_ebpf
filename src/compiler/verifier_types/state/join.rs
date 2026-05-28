@@ -4,6 +4,7 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn equivalent(&self, other: &VerifierState) -> bool {
         self.regs == other.regs
             && self.ranges == other.ranges
+            && self.scalar_alias_roots == other.scalar_alias_roots
             && self.non_zero == other.non_zero
             && self.not_equal == other.not_equal
             && self.ctx_field_sources == other.ctx_field_sources
@@ -84,6 +85,14 @@ impl VerifierState {
             let a = self.ranges[i];
             let b = other.ranges[i];
             ranges.push(join_range(a, b));
+        }
+        let mut scalar_alias_roots = Vec::with_capacity(self.scalar_alias_roots.len());
+        for i in 0..self.scalar_alias_roots.len() {
+            let merged = match (self.scalar_alias_roots[i], other.scalar_alias_roots[i]) {
+                (Some(left), Some(right)) if left == right => Some(left),
+                _ => None,
+            };
+            scalar_alias_roots.push(merged);
         }
         let mut non_zero = Vec::with_capacity(self.non_zero.len());
         for i in 0..self.non_zero.len() {
@@ -194,6 +203,7 @@ impl VerifierState {
         VerifierState {
             regs,
             ranges,
+            scalar_alias_roots,
             non_zero,
             not_equal,
             ctx_field_sources,
