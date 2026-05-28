@@ -3591,6 +3591,40 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:level" "ctx:optname" "ctx:optlen"]
     }
     {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getpeername4"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.remote_ip4 = 2130706433'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:remote_ip4"]
+    }
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getsockname6"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.local_ip6.1 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:local_ip6"]
+    }
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.msg_src_ip6.3 = 42'
+            '  $ctx.local_ip6.2 = 24'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:msg_src_ip6" "ctx:local_ip6"]
+    }
+    {
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
@@ -7275,6 +7309,55 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  (($ctx.user_ip6 | get 3) + ($ctx.remote_ip6 | get 3) + $ctx.user_port + $ctx.remote_port) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-getpeername4-writable-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context writable source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getpeername4"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.remote_ip4 = 2130706433'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-getsockname6-writable-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context writable ipv6 source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getsockname6"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.local_ip6.1 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-sendmsg6-writable-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context writable ipv6 source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.msg_src_ip6.3 = 42'
+            '  $ctx.local_ip6.2 = 24'
             '  "allow"'
             '}'
         ]
