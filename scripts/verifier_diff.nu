@@ -4198,6 +4198,33 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pkt_type" "ctx:queue_mapping" "ctx:vlan_present" "ctx:vlan_tci" "ctx:vlan_proto" "ctx:hash_recalc" "ctx:csum_level" "ctx:cgroup_classid" "ctx:route_realm" "ctx:cb" "helper:bpf_get_hash_recalc" "helper:bpf_csum_level" "helper:bpf_get_cgroup_classid" "helper:bpf_get_route_realm"]
     }
     {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.queue_mapping = 1'
+            '  $ctx.cb.2 = 9'
+            '  $ctx.tc_classid = 42'
+            '  $ctx.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:queue_mapping" "ctx:cb" "ctx:tc_classid" "ctx:tstamp"]
+    }
+    {
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|event|'
+            '  mut event = $event'
+            '  $event.mark = 7'
+            '  $event.priority = 3'
+            '  $event.cb.1 = 9'
+            '  "reroute"'
+            '}'
+        ]
+        feature_keys: ["ctx:mark" "ctx:priority" "ctx:cb"]
+    }
+    {
         target: "iter:task"
         program: [
             '{|ctx|'
@@ -18559,10 +18586,16 @@ def normalize-context-path-token [token: string] {
 
 def context-field-access-is-assignment-lhs? [raw_access: string field: string] {
     let compact = ($raw_access | str trim | str replace --all " " "")
-    let assign_prefix = $"($field)="
-    let equality_prefix = $"($field)=="
+    if not ($compact | str contains "=") {
+        return false
+    }
+    if ($compact | str contains "==") {
+        return false
+    }
 
-    ($compact | str starts-with $assign_prefix) and not ($compact | str starts-with $equality_prefix)
+    let lhs = ($compact | split row "=" | first)
+
+    ($lhs == $field) or ($lhs | str starts-with $"($field).")
 }
 
 def line-assigns-context-field? [line: string context_names fields] {
