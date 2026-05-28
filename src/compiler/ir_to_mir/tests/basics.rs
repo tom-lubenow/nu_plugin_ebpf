@@ -2269,7 +2269,7 @@ fn test_lower_fentry_pointer_root_scalar_field_projection() {
             )))
     );
     assert!(
-        blocks
+        !blocks
             .iter()
             .any(|block| block.instructions.iter().any(|inst| matches!(
                 inst,
@@ -2277,18 +2277,20 @@ fn test_lower_fentry_pointer_root_scalar_field_projection() {
                     helper,
                     ..
                 } if *helper == BpfHelper::ProbeReadKernel as u32
-            )))
+            ))),
+        "trusted BTF scalar field should not use probe_read"
     );
     assert!(
         blocks
             .iter()
             .any(|block| block.instructions.iter().any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U32,
                     ..
                 }
-            )))
+            ))),
+        "trusted BTF scalar field should lower as a direct load"
     );
 }
 
@@ -2410,8 +2412,8 @@ fn test_lower_fentry_pointer_hop_scalar_field_projection() {
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read after direct trusted pointer hop"
+        helper_reads == 0,
+        "expected trusted BTF scalar leaf to avoid probe_read after direct pointer hop"
     );
     assert!(
         direct_kernel_pointer_loads >= 1,
@@ -2558,8 +2560,24 @@ fn test_lower_fentry_array_element_projection() {
         })
         .count();
     assert!(
-        helper_reads >= 1,
-        "expected a helper read for pointer-backed array element access"
+        helper_reads == 0,
+        "expected trusted BTF array element access to avoid probe_read"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected trusted BTF array element access to lower as a direct byte load"
     );
 }
 
@@ -3178,8 +3196,8 @@ fn test_lower_fentry_multi_level_pointer_field_projection() {
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read across trusted multi-level pointer hops"
+        helper_reads == 0,
+        "expected trusted BTF scalar leaf to avoid probe_read across multi-level pointer hops"
     );
     assert!(
         result
@@ -3190,12 +3208,12 @@ fn test_lower_fentry_multi_level_pointer_field_projection() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U64,
                     ..
                 }
             )),
-        "expected final inode-number load from the projected multi-level pointer field"
+        "expected final inode-number load from the projected multi-level pointer field to be direct"
     );
 }
 
@@ -3238,8 +3256,8 @@ fn test_lower_fentry_multi_level_pointer_index_projection() {
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read across trusted pointer indexing"
+        helper_reads == 0,
+        "expected trusted BTF scalar leaf to avoid probe_read across pointer indexing"
     );
     assert!(
         result
@@ -3250,12 +3268,12 @@ fn test_lower_fentry_multi_level_pointer_index_projection() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U64,
                     ..
                 }
             )),
-        "expected final inode-number load from the indexed multi-level pointer field"
+        "expected final inode-number load from the indexed multi-level pointer field to be direct"
     );
 }
 
@@ -4534,6 +4552,20 @@ fn test_lower_tp_btf_named_arg_alias_nested_projection() {
             )),
         "expected named tp_btf arg alias to resolve through ctx.arg0 before nested projection"
     );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, .. }
+                    if *helper == BpfHelper::ProbeReadKernel as u32
+            )),
+        "expected tp_btf pointer arg scalar projection to use probe_read_kernel because the verifier exposes the arg as scalar"
+    );
 }
 
 #[test]
@@ -4619,12 +4651,13 @@ fn test_lower_lsm_named_arg_alias_nested_projection() {
         HashMap::new(),
         HashMap::new(),
     );
-    let helper_requirement = program
-        .helper_compatibility_requirements()
-        .into_iter()
-        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
-        .expect("named LSM arg scalar projection should report probe_read_kernel compatibility");
-    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
+    assert!(
+        !program
+            .helper_compatibility_requirements()
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "named LSM arg scalar projection should not report probe_read_kernel compatibility"
+    );
 }
 
 #[test]
@@ -4680,14 +4713,13 @@ fn test_lower_lsm_cgroup_named_arg_alias_nested_projection() {
         HashMap::new(),
         HashMap::new(),
     );
-    let helper_requirement = program
-        .helper_compatibility_requirements()
-        .into_iter()
-        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
-        .expect(
-            "named cgroup LSM arg scalar projection should report probe_read_kernel compatibility",
-        );
-    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
+    assert!(
+        !program
+            .helper_compatibility_requirements()
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "named cgroup LSM arg scalar projection should not report probe_read_kernel compatibility"
+    );
 }
 
 #[test]

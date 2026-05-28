@@ -120,11 +120,16 @@ impl<'a> HirToMirLowering<'a> {
                     field: ctx_field.clone(),
                     slot: None,
                 });
+                let trusted_btf = address_space == AddressSpace::Kernel
+                    && ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                        self.probe_ctx,
+                        ctx_field,
+                    );
                 TrampolineCursor::Pointer {
                     ptr_vreg: root_ptr_vreg,
                     address_space,
                     base_offset: 0,
-                    trusted_btf: address_space == AddressSpace::Kernel,
+                    trusted_btf,
                 }
             }
             TrampolineValueKind::Scalar => {
@@ -311,24 +316,51 @@ impl<'a> HirToMirLowering<'a> {
                         }
                         if trusted_btf
                             && address_space == AddressSpace::Kernel
-                            && matches!(
+                            && !projected_by_ref
+                            && !matches!(
                                 projected_ty,
                                 MirType::Ptr {
-                                    address_space: AddressSpace::Kernel,
+                                    address_space: AddressSpace::User,
                                     ..
                                 }
                             )
                         {
-                            self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
-                            self.emit(MirInst::Load {
-                                dst: dst_vreg,
-                                ptr: ptr_vreg,
-                                offset: Self::trampoline_projection_offset_i32(
-                                    field_offset,
-                                    path_desc,
-                                )?,
-                                ty: projected_ty.clone(),
-                            });
+                            let loaded_vreg = if segment.bitfield.is_some() {
+                                let storage_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints
+                                    .insert(storage_vreg, projected_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: storage_vreg,
+                                    ptr: ptr_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: projected_ty.clone(),
+                                });
+                                storage_vreg
+                            } else {
+                                dst_vreg
+                            };
+                            if let Some(bitfield) = segment.bitfield {
+                                self.emit_bitfield_extract(
+                                    dst_vreg,
+                                    loaded_vreg,
+                                    projected_ty,
+                                    bitfield,
+                                )?;
+                            } else {
+                                self.vreg_type_hints.insert(dst_vreg, projected_ty.clone());
+                                self.emit(MirInst::Load {
+                                    dst: dst_vreg,
+                                    ptr: ptr_vreg,
+                                    offset: Self::trampoline_projection_offset_i32(
+                                        field_offset,
+                                        path_desc,
+                                    )?,
+                                    ty: projected_ty.clone(),
+                                });
+                            }
                             break;
                         }
                         let projected_slot = self.func.alloc_stack_slot(

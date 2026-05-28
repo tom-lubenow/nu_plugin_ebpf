@@ -1849,6 +1849,38 @@ fn test_program_type_ctx_field_trusted_btf_pointer_policy_follows_context_schema
             &CtxField::NetfilterState
         )
     );
+
+    if matches!(
+        KernelBtf::get().function_trampoline_arg_type_info("security_file_open", 0),
+        Ok(Some(crate::kernel_btf::TypeInfo::Ptr {
+            is_user: false,
+            ..
+        }))
+    ) {
+        let fentry = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+        assert!(
+            ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                Some(&fentry),
+                &CtxField::Arg(0)
+            )
+        );
+    }
+    if matches!(
+        KernelBtf::get().tp_btf_arg_type_info("sys_enter", 0),
+        Ok(Some(crate::kernel_btf::TypeInfo::Ptr {
+            is_user: false,
+            ..
+        }))
+    ) {
+        let tp_btf = ProbeContext::new(EbpfProgramType::TpBtf, "sys_enter");
+        assert!(
+            !ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                Some(&tp_btf),
+                &CtxField::Arg(0)
+            ),
+            "tp_btf pointer args are verifier scalars and must not seed trusted direct-load provenance"
+        );
+    }
 }
 
 #[test]

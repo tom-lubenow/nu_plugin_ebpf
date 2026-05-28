@@ -952,20 +952,26 @@ impl<'a> HirToMirLowering<'a> {
             )?;
 
             let projected_ty = projected_ty.clone();
+            let root_trusted_btf = ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                self.probe_ctx,
+                &ctx_field,
+            );
             let meta = self.get_or_create_metadata(src_dst);
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = Some(ctx_field.clone());
-            meta.trusted_btf = matches!(
-                spec.kind,
-                TrampolineValueKind::Pointer { user_space: false }
-            ) && matches!(
-                meta.field_type.as_ref(),
-                Some(MirType::Ptr {
-                    address_space: AddressSpace::Kernel,
-                    ..
-                })
-            );
+            meta.trusted_btf = root_trusted_btf
+                && matches!(
+                    spec.kind,
+                    TrampolineValueKind::Pointer { user_space: false }
+                )
+                && matches!(
+                    meta.field_type.as_ref(),
+                    Some(MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    })
+                );
             meta.kernel_btf_field_addr = kernel_btf_field_addr;
             meta.source_var = None;
             return Ok(());

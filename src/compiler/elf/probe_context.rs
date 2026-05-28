@@ -197,16 +197,30 @@ impl ProbeContext {
         }
 
         let type_info = match field {
-            CtxField::Arg(idx) if self.uses_btf_trampoline() => {
+            CtxField::Arg(idx) if self.btf_trampoline_args_are_trusted() => {
                 self.btf_arg_type_info(*idx as usize).ok().flatten()
             }
-            CtxField::RetVal if self.retval_access().is_trampoline() => {
+            CtxField::RetVal
+                if self.retval_access().is_trampoline()
+                    && self.btf_trampoline_args_are_trusted() =>
+            {
                 self.btf_ret_type_info().ok().flatten()
             }
             _ => None,
         };
 
         matches!(type_info, Some(TypeInfo::Ptr { is_user: false, .. }))
+    }
+
+    fn btf_trampoline_args_are_trusted(&self) -> bool {
+        matches!(
+            self.btf_callable_surface(),
+            Some(
+                ProgramBtfCallableSurface::FunctionTrampoline
+                    | ProgramBtfCallableSurface::LsmHook
+                    | ProgramBtfCallableSurface::StructOpsCallback
+            )
+        )
     }
 
     pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
