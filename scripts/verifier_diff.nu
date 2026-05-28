@@ -5232,6 +5232,47 @@ const FIXTURES = [
         error_contains: "unreleased ringbuf dynptr reservation"
     }
     {
+        name: "ringbuf-dynptr-rejects-conditional-release-leak"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased ringbuf dynptr reservation"
+    }
+    {
+        name: "ringbuf-dynptr-rejects-release-after-conditional-release"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  }'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ringbuf dynptr reservation already released"
+    }
+    {
         name: "ringbuf-dynptr-allows-slot-reuse-after-submit"
         category: "helper-state"
         tags: [ringbuf dynptr ref-lifetime]

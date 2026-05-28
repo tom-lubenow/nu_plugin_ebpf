@@ -1182,6 +1182,69 @@ fn test_verify_mir_ringbuf_dynptr_leak_is_rejected() {
 }
 
 #[test]
+fn test_verify_mir_ringbuf_dynptr_conditional_release_leak_is_rejected() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let reserve_ret = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserve_ret,
+            helper: BpfHelper::RingbufReserveDynptr as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmitDynptr as u32,
+            args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
+        });
+    func.block_mut(release).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(reserve_ret, MirType::I64);
+    types.insert(submit_ret, MirType::I64);
+    let err = verify_mir(&func, &types)
+        .expect_err("expected conditional unreleased ringbuf dynptr error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("unreleased ringbuf dynptr reservation")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_ringbuf_dynptr_submit_rejects_non_ringbuf_dynptr() {
     let mut from_ret = VReg(0);
     let mut submit_ret = VReg(0);

@@ -136,6 +136,11 @@ impl VerifierState {
                     .is_some_and(|(_, max_depth)| *max_depth > 0)
             })
             .map(|(slot, _)| *slot)
+            .or_else(|| {
+                self.ringbuf_dynptr_slots
+                    .iter()
+                    .find_map(|(slot, (_, max_depth))| (*max_depth > 0).then_some(*slot))
+            })
     }
 
     fn ringbuf_dynptr_root(&self, slot: StackSlotId) -> Option<StackSlotId> {
