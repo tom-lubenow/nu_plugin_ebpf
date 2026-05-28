@@ -2,7 +2,7 @@
 
 use nu_plugin::{EngineInterface, EvaluatedCall, PluginCommand};
 use nu_protocol::{
-    Category, Example, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value,
+    Category, Example, LabeledError, PipelineData, Signature, Span, SyntaxShape, Type, Value,
 };
 
 #[cfg(target_os = "linux")]
@@ -78,7 +78,6 @@ impl PluginCommand for EbpfSpec {
 
 #[cfg(target_os = "linux")]
 fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
-    use crate::compiler::EbpfProgramType;
     use crate::program_spec::ProgramSpec;
 
     let list = call.has_flag("list")?;
@@ -89,23 +88,10 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
             return Err(LabeledError::new("Cannot combine a probe with --list")
                 .with_label("remove either the positional probe or --list", call.head));
         }
-        let rows = EbpfProgramType::supported_program_types()
-            .iter()
-            .copied()
-            .map(|program_type| {
-                let target = ProgramSpec::representative_target_for_program_type(program_type);
-                let probe = format!("{}:{target}", program_type.canonical_prefix());
-                let spec = ProgramSpec::from_program_type_target(program_type, target)
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "{} representative target should parse: {err}",
-                            program_type.canonical_prefix()
-                        )
-                    });
-                spec_record(probe, spec, call.head, false)
-            })
-            .collect();
-        return Ok(PipelineData::Value(Value::list(rows, call.head), None));
+        return Ok(PipelineData::Value(
+            Value::list(spec_list_records(call.head), call.head),
+            None,
+        ));
     }
 
     let Some(probe) = probe else {
@@ -123,4 +109,94 @@ fn run_spec(call: &EvaluatedCall) -> Result<PipelineData, LabeledError> {
         spec_record(probe, spec, call.head, true),
         None,
     ))
+}
+
+#[cfg(target_os = "linux")]
+fn spec_list_records(span: Span) -> Vec<Value> {
+    use crate::compiler::EbpfProgramType;
+    use crate::program_spec::ProgramSpec;
+
+    EbpfProgramType::supported_program_types()
+        .iter()
+        .copied()
+        .map(|program_type| {
+            let target = ProgramSpec::representative_target_for_program_type(program_type);
+            let probe = format!("{}:{target}", program_type.canonical_prefix());
+            let spec =
+                ProgramSpec::from_program_type_target(program_type, target).unwrap_or_else(|err| {
+                    panic!(
+                        "{} representative target should parse: {err}",
+                        program_type.canonical_prefix()
+                    )
+                });
+            spec_record(probe, spec, span, false)
+        })
+        .collect()
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::compiler::EbpfProgramType;
+    use crate::program_spec::ProgramSpec;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_spec_list_records_cover_supported_program_types() {
+        let rows = spec_list_records(Span::test_data());
+        assert_eq!(rows.len(), EbpfProgramType::supported_program_types().len());
+
+        let mut seen = HashSet::new();
+        for row in rows {
+            let record = row.as_record().expect("spec list row should be a record");
+            let program_type = record
+                .get("program_type")
+                .expect("program_type should be present")
+                .as_str()
+                .expect("program_type should be a string");
+            let probe = record
+                .get("probe")
+                .expect("probe should be present")
+                .as_str()
+                .expect("probe should be a string");
+            let target = record
+                .get("target")
+                .expect("target should be present")
+                .as_str()
+                .expect("target should be a string");
+            let section = record
+                .get("section")
+                .expect("section should be present")
+                .as_str()
+                .expect("section should be a string");
+            let section_prefix = record
+                .get("section_prefix")
+                .expect("section_prefix should be present")
+                .as_str()
+                .expect("section_prefix should be a string");
+
+            let parsed_type = EbpfProgramType::from_spec_prefix(program_type)
+                .expect("program_type should be a modeled canonical prefix");
+            let representative_target =
+                ProgramSpec::representative_target_for_program_type(parsed_type);
+
+            assert!(
+                seen.insert(program_type.to_string()),
+                "duplicate spec list row for {program_type}"
+            );
+            assert_eq!(program_type, parsed_type.canonical_prefix());
+            assert_eq!(probe, format!("{program_type}:{representative_target}"));
+            assert_eq!(target, representative_target);
+            assert_eq!(section_prefix, parsed_type.section_prefix());
+            assert!(!section.is_empty(), "{program_type} should emit a section");
+        }
+
+        for program_type in EbpfProgramType::supported_program_types() {
+            assert!(
+                seen.contains(program_type.canonical_prefix()),
+                "{} missing from spec list rows",
+                program_type.canonical_prefix()
+            );
+        }
+    }
 }
