@@ -7189,6 +7189,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sock-release-context-write"
+        category: "context-surface"
+        tags: [cgroup-sock context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:sock_release"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.bound_dev_if = 1'
+            '  $ctx.mark = 7'
+            '  $ctx.priority = 3'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sock-post-bind6-context"
         category: "context-surface"
         tags: [cgroup-sock context ipv6]
@@ -7219,6 +7237,40 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "ctx.mark is only writable on cgroup_sock sock_create/sock_release hooks"
+    }
+    {
+        name: "cgroup-sock-rejects-post-bind-bound-dev-if-write"
+        category: "context-policy"
+        tags: [cgroup-sock reject writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.bound_dev_if = 1'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.bound_dev_if is only writable on cgroup_sock sock_create/sock_release hooks"
+    }
+    {
+        name: "cgroup-sock-rejects-post-bind-priority-write"
+        category: "context-policy"
+        tags: [cgroup-sock reject writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.priority = 3'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.priority is only writable on cgroup_sock sock_create/sock_release hooks"
     }
     {
         name: "cgroup-sock-rejects-create-local-ip4"
