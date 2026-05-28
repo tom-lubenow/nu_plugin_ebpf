@@ -637,14 +637,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
             CtxField::PerfSamplePeriod => {
-                let (sample_period_offset, _) = Self::perf_event_data_offsets()?;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, sample_period_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::PerfAddr => {
-                let (_, addr_offset) = Self::perf_event_data_offsets()?;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, addr_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::PerfCounter => {
                 self.compile_perf_event_value_field(dst, 0)?;

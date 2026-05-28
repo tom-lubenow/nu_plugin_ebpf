@@ -13,20 +13,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         })
     }
 
-    pub(super) fn perf_event_data_offsets() -> Result<(i16, i16), CompileError> {
-        #[cfg(target_arch = "x86_64")]
-        {
-            Ok((168, 176))
-        }
-        #[cfg(not(target_arch = "x86_64"))]
-        {
-            Err(CompileError::UnsupportedInstruction(
-                "perf_event ctx.sample_period/ctx.addr are not yet modeled on this architecture"
-                    .to_string(),
-            ))
-        }
-    }
-
     pub(super) fn compile_perf_event_value_field(
         &mut self,
         dst: EbpfReg,

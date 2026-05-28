@@ -680,6 +680,10 @@ impl EbpfProgramType {
             (Self::FlowDissector, CtxField::FlowKeys) => Some(ContextFieldDirectLoad::u64(144)),
             (Self::Netfilter, CtxField::NetfilterState) => Some(ContextFieldDirectLoad::u64(0)),
             (Self::Netfilter, CtxField::NetfilterSkb) => Some(ContextFieldDirectLoad::u64(8)),
+            #[cfg(target_arch = "x86_64")]
+            (Self::PerfEvent, CtxField::PerfSamplePeriod) => Some(ContextFieldDirectLoad::u64(168)),
+            #[cfg(target_arch = "x86_64")]
+            (Self::PerfEvent, CtxField::PerfAddr) => Some(ContextFieldDirectLoad::u64(176)),
             (Self::SkReuseport, CtxField::BindInany) => Some(ContextFieldDirectLoad::u32(28)),
             (Self::SkReuseport, CtxField::MigratingSocket) => Some(ContextFieldDirectLoad::u64(48)),
             (Self::LircMode2, CtxField::LircSample | CtxField::LircValue | CtxField::LircMode) => {
@@ -1374,6 +1378,22 @@ mod tests {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");
             assert_eq!(spec.ctx_field_direct_load(&field), expected);
         }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn test_perf_event_direct_load_metadata_tracks_x86_layout() {
+        let spec = ProgramSpec::parse("perf_event:software:cpu-clock:period=100000")
+            .expect("program spec should parse");
+
+        assert_eq!(
+            spec.ctx_field_direct_load(&CtxField::PerfSamplePeriod),
+            Some(ContextFieldDirectLoad::u64(168))
+        );
+        assert_eq!(
+            spec.ctx_field_direct_load(&CtxField::PerfAddr),
+            Some(ContextFieldDirectLoad::u64(176))
+        );
     }
 
     #[test]
