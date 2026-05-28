@@ -3532,6 +3532,30 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.retval = 0'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sockopt_retval"]
+    }
+    {
+        target: "cgroup_sockopt:/sys/fs/cgroup:set"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.level = 1'
+            '  $ctx.optname = 2'
+            '  $ctx.optlen = 4'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:level" "ctx:optname" "ctx:optlen"]
+    }
+    {
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
