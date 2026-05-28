@@ -11681,6 +11681,29 @@ const FIXTURES = [
         error_contains: "expects kernel pointer, got Map"
     }
     {
+        name: "source-kfunc-refcount-acquire-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc object bpf_refcount ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let obj = (kfunc-call "bpf_refcount_acquire_impl" $task 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects object reference"
+    }
+    {
         name: "source-kfunc-percpu-obj-new-drop"
         category: "helper-state"
         tags: [kfunc object ref-lifetime source accept]
