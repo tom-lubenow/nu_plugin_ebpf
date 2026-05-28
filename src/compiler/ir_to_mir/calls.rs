@@ -1011,6 +1011,27 @@ impl<'a> HirToMirLowering<'a> {
                         "BPF helper calls support at most 5 arguments".into(),
                     ));
                 }
+                if args.len() < sig.min_args || args.len() > sig.max_args {
+                    let with_live_value = args.len().saturating_add(1);
+                    if src_dst_had_value
+                        && self.pipeline_input.is_none()
+                        && self.positional_args.len() > 1
+                        && with_live_value >= sig.min_args
+                        && with_live_value <= sig.max_args
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "helper-call '{}' does not prepend the piped/live value when explicit helper arguments are present; pass that value explicitly as the first helper argument",
+                            helper.name()
+                        )));
+                    }
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' expects {}..={} helper arguments after the helper name, got {}",
+                        helper.name(),
+                        sig.min_args,
+                        sig.max_args,
+                        args.len()
+                    )));
+                }
                 self.validate_timer_helper_call_args(helper, &helper_map_args, &helper_arg_regs)?;
                 self.validate_kptr_xchg_helper_call_args(helper, &args, &helper_arg_regs)?;
 

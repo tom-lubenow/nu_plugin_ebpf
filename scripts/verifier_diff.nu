@@ -13419,6 +13419,23 @@ const FIXTURES = [
         error_contains: "helper d_path path expects pointer in [Kernel]"
     }
     {
+        name: "source-helper-d-path-pipeline-requires-explicit-path"
+        category: "helper-state"
+        tags: [helper-call file path source reject pipeline diagnostic]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+            '  $ctx.arg0.f_path | helper-call "bpf_d_path" $buf 64'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "pass that value explicitly as the first helper argument"
+    }
+    {
         name: "source-kfunc-path-d-path-accepts-file-path"
         category: "helper-state"
         tags: [kfunc file path source accept]
