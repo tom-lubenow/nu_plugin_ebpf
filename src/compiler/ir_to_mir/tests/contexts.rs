@@ -3378,6 +3378,103 @@ fn test_lower_flow_dissector_flow_keys_array_assignment() {
 }
 
 #[test]
+fn test_lower_bound_flow_dissector_flow_keys_scalar_assignment() {
+    let hir = make_bound_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("flow_keys")],
+        },
+        CellPath {
+            members: vec![string_member("ip_proto")],
+        },
+        HirLiteral::Int(17),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound flow_dissector ctx.flow_keys pointer assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::FlowKeys,
+            ..
+        }
+    )));
+
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            offset: 9,
+            ty: MirType::U8,
+            ..
+        }
+    )));
+
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("bound flow_dissector ctx.flow_keys pointer assignment should compile");
+}
+
+#[test]
+fn test_lower_flow_dissector_flow_keys_root_assignment_rejected() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("flow_keys")],
+        },
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("flow_dissector ctx.flow_keys root assignment should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("requires a scalar field, not the root context pointer")
+    );
+}
+
+#[test]
+fn test_lower_flow_dissector_flow_keys_aggregate_assignment_rejected() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("flow_keys"), string_member("ipv6_dst")],
+        },
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("flow_dissector ctx.flow_keys aggregate assignment should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("requires a scalar field, not Array")
+    );
+}
+
+#[test]
 fn test_lower_netfilter_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"queue".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");

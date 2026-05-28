@@ -1514,6 +1514,67 @@ pub(super) fn make_bound_ctx_path_program(binding: CellPath, access: CellPath) -
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+pub(super) fn make_bound_ctx_upsert_program(
+    binding: CellPath,
+    access: CellPath,
+    lit: HirLiteral,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let local_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit,
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(2),
+                    new_value: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 10],
+        ast: vec![None; 10],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 pub(super) fn make_bound_ctx_get_program(
     binding: CellPath,
     access: CellPath,
