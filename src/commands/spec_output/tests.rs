@@ -2552,6 +2552,33 @@ fn test_spec_context_fields_include_skb_backed_socket_minimum_kernel_metadata() 
 }
 
 #[test]
+fn test_spec_context_fields_include_tc_action_skb_metadata_minimum_kernel_metadata() {
+    let spec = ProgramSpec::parse("tc_action:demo-action").expect("tc_action spec should parse");
+    let fields = spec_context_fields(&spec, false);
+
+    for (field_name, minimum_kernel, source_fragment) in [
+        ("queue_mapping", "4.1", "/v4.1/include/uapi/linux/bpf.h"),
+        ("tc_index", "4.7", "/v4.7/include/uapi/linux/bpf.h"),
+        ("tc_classid", "4.7", "/v4.7/include/uapi/linux/bpf.h"),
+        ("data_meta", "4.15", "/v4.15/include/uapi/linux/bpf.h"),
+        ("wire_len", "5.0", "/v5.0/include/uapi/linux/bpf.h"),
+        ("gso_segs", "5.1", "/v5.1/include/uapi/linux/bpf.h"),
+        ("gso_size", "5.7", "/v5.7/include/uapi/linux/bpf.h"),
+        ("hwtstamp", "5.16", "/v5.16/include/uapi/linux/bpf.h"),
+        ("tstamp_type", "5.18", "/v5.18/include/uapi/linux/bpf.h"),
+    ] {
+        let field = field(&fields, field_name);
+        assert_eq!(field.minimum_kernel, Some(minimum_kernel));
+        assert!(
+            field
+                .minimum_kernel_source
+                .is_some_and(|source| source.contains(source_fragment)),
+            "ctx.{field_name} should point at {source_fragment}"
+        );
+    }
+}
+
+#[test]
 fn test_spec_context_fields_include_iterator_minimum_kernel_metadata() {
     for (spec_text, field_name, minimum_kernel, source_fragment) in [
         ("iter:task", "iter_meta", "5.8", "/v5.8/include/linux/bpf.h"),
