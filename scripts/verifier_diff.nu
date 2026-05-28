@@ -8168,6 +8168,112 @@ const FIXTURES = [
         error_contains: "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs"
     }
     {
+        name: "source-helper-get-retval-cgroup-device"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_device:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_retval" | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-set-retval-cgroup-sock"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval cgroup-sock source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:sock_create"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_set_retval" (-1)'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-get-retval-cgroup-sockopt"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval cgroup-sockopt source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_retval" | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-set-retval-cgroup-sock-addr-sendmsg"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval cgroup-sock-addr source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_set_retval" (-1)'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-get-retval-cgroup-sysctl"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval cgroup-sysctl source accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_retval" | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-get-retval-rejects-non-cgroup-context"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval source reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_retval" | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_retval' is only valid in cgroup_device, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, and cgroup_sysctl programs"
+    }
+    {
+        name: "source-helper-set-retval-rejects-cgroup-sock-addr-getpeername"
+        category: "helper-state"
+        tags: [helper-call cgroup-retval cgroup-sock-addr source reject]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getpeername4"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_set_retval" (-1)'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_set_retval' is not valid on cgroup_sock_addr recvmsg/getpeername/getsockname hooks"
+    }
+    {
         name: "cgroup-sockopt-get-context-fields"
         category: "context-surface"
         tags: [cgroup-sockopt context source metadata]
