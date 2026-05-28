@@ -6408,6 +6408,9 @@ fn test_helper_pointer_arg_requires_raw_context_mappings() {
         BpfHelper::SkbPullData,
         BpfHelper::SkbLoadBytes,
         BpfHelper::FibLookup,
+        BpfHelper::GetNetnsCookie,
+        BpfHelper::SkAssign,
+        BpfHelper::SysctlGetName,
         BpfHelper::XdpLoadBytes,
         BpfHelper::TailCall,
     ] {
@@ -6425,6 +6428,37 @@ fn test_helper_pointer_arg_requires_raw_context_mappings() {
         BpfHelper::MapLookupElem.pointer_arg_requires_raw_context(0),
         None
     );
+}
+
+#[test]
+fn test_helper_arg0_context_pointer_semantics_have_raw_context_metadata() {
+    for helper_id in 1..=211 {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            continue;
+        };
+        if matches!(helper, BpfHelper::GetSocketCookie) {
+            continue;
+        }
+        for rule in helper.semantics().ptr_arg_rules {
+            if rule.arg_idx != 0 {
+                continue;
+            }
+            let is_context_like = rule.op.ends_with(" ctx") || rule.op.ends_with(" skb");
+            let is_kernel_only = rule.allowed.allow_kernel
+                && !rule.allowed.allow_stack
+                && !rule.allowed.allow_map
+                && !rule.allowed.allow_user;
+            if is_context_like && is_kernel_only {
+                assert_eq!(
+                    helper.pointer_arg_requires_raw_context(0),
+                    Some("raw context"),
+                    "{} {}",
+                    helper.name(),
+                    rule.op
+                );
+            }
+        }
+    }
 }
 
 #[test]

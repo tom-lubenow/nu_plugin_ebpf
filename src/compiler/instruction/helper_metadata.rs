@@ -265,6 +265,8 @@ impl BpfHelper {
             | BpfHelper::GetStack
             | BpfHelper::GetStackId
             | BpfHelper::GetHashRecalc
+            | BpfHelper::GetNetnsCookie
+            | BpfHelper::GetSockOpt
             | BpfHelper::GetSocketUid
             | BpfHelper::L3CsumReplace
             | BpfHelper::L4CsumReplace
@@ -284,7 +286,9 @@ impl BpfHelper {
             | BpfHelper::RcKeydown
             | BpfHelper::RcPointerRel
             | BpfHelper::RcRepeat
+            | BpfHelper::ReadBranchRecords
             | BpfHelper::ReserveHdrOpt
+            | BpfHelper::SetSockOpt
             | BpfHelper::SkbAdjustRoom
             | BpfHelper::SkbAncestorCgroupId
             | BpfHelper::SkbCgroupClassid
@@ -308,13 +312,23 @@ impl BpfHelper {
             | BpfHelper::SkbUnderCgroup
             | BpfHelper::SkbVlanPop
             | BpfHelper::SkbVlanPush
+            | BpfHelper::SkAssign
             | BpfHelper::SkLookupTcp
             | BpfHelper::SkLookupUdp
             | BpfHelper::SkcLookupTcp
+            | BpfHelper::SkRedirectHash
+            | BpfHelper::SkRedirectMap
             | BpfHelper::SockOpsCbFlagsSet
+            | BpfHelper::SockHashUpdate
+            | BpfHelper::SockMapUpdate
             | BpfHelper::StoreHdrOpt
             | BpfHelper::SetHash
             | BpfHelper::SetHashInvalid
+            | BpfHelper::SkSelectReuseport
+            | BpfHelper::SysctlGetCurrentValue
+            | BpfHelper::SysctlGetName
+            | BpfHelper::SysctlGetNewValue
+            | BpfHelper::SysctlSetNewValue
             | BpfHelper::TailCall
             | BpfHelper::XdpAdjustHead
             | BpfHelper::XdpAdjustMeta

@@ -10990,19 +10990,13 @@ fn test_type_error_helper_sk_release_rejects_non_kernel_pointer() {
 #[test]
 fn test_infer_helper_sk_assign_allows_null_sk_arg() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst,
