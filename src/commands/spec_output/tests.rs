@@ -500,6 +500,13 @@ fn test_spec_context_fields_label_flow_keys_as_context_pointer() {
         Some("ptr<context, struct<bpf_flow_keys>>")
     );
     assert!(flow_keys.pointer_non_null);
+    assert_eq!(flow_keys.requirement_key.as_deref(), Some("ctx:flow_keys"));
+    assert_eq!(flow_keys.minimum_kernel, Some("4.20"));
+    assert!(
+        flow_keys
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.20/include/uapi/linux/bpf.h"))
+    );
 }
 
 #[test]
