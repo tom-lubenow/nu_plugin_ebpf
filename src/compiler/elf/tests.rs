@@ -5290,6 +5290,98 @@ fn test_elf_map_btf_emits_declared_key_and_value_types() {
 }
 
 #[test]
+fn test_elf_local_storage_map_btf_emits_required_typed_key_value_and_flags() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let map_ref = MapRef {
+        name: "task_state".to_string(),
+        kind: MapKind::TaskStorage,
+    };
+    let value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "hits".to_string(),
+            ty: MirType::I64,
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Fentry,
+        "security_file_open",
+        "typed_local_storage",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![EbpfMap {
+            name: "task_state".to_string(),
+            def: BpfMapDef::task_storage(value_ty.size() as u32),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(map_ref, value_ty)]),
+        HashMap::new(),
+    );
+
+    let elf = program.to_elf().expect("local-storage map ELF should emit");
+    let aya = AyaObject::parse(&elf).expect("Aya should parse local-storage map BTF");
+    assert!(aya.maps.get("task_state").is_some());
+
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let maps_section = parsed
+        .section_by_name(".maps")
+        .expect("expected .maps section");
+    assert_eq!(
+        maps_section
+            .data()
+            .expect(".maps section should be readable")
+            .len(),
+        48,
+        "BTF-defined map records should include map_flags"
+    );
+
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+
+    assert!(
+        btf_data
+            .windows(b"map_flags\0".len())
+            .any(|w| w == b"map_flags\0"),
+        "local-storage maps must emit BPF_F_NO_PREALLOC through BTF map_flags"
+    );
+    assert!(
+        btf_data.windows(b"key\0".len()).any(|w| w == b"key\0"),
+        "local-storage maps must use __type(key, int)"
+    );
+    assert!(
+        btf_data.windows(b"value\0".len()).any(|w| w == b"value\0"),
+        "local-storage maps must use __type(value, T)"
+    );
+    assert!(
+        btf_data
+            .windows(b"key_size\0".len())
+            .all(|w| w != b"key_size\0"),
+        "local-storage maps should not use key_size-only metadata"
+    );
+    assert!(
+        btf_data
+            .windows(b"value_size\0".len())
+            .all(|w| w != b"value_size\0"),
+        "local-storage maps should not use value_size-only metadata"
+    );
+}
+
+#[test]
 fn test_elf_map_btf_emits_kptr_value_type_tag() {
     use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
 

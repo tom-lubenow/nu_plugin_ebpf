@@ -1514,13 +1514,14 @@ impl EbpfObject {
                 sh_flags: object::elf::SHF_ALLOC as u64 | object::elf::SHF_WRITE as u64,
             };
 
-            // BTF-defined maps use a struct with pointer-sized fields (40 bytes per map)
-            // Fields: type, key_size, value_size, max_entries, pinning (5 pointers * 8 bytes)
-            let btf_map_size = 40u64;
+            // BTF-defined maps use a struct with pointer-sized fields.
+            // Fields: type, key/key_size, value/value_size, max_entries,
+            // map_flags, pinning (6 pointers * 8 bytes).
+            let btf_map_size = 48u64;
 
             for map in &self.maps {
                 // BTF-defined map data is all zeros (values come from BTF type metadata)
-                let map_data = [0u8; 40];
+                let map_data = [0u8; 48];
                 let map_offset = obj.append_section_data(maps_section_id, &map_data, 8);
 
                 // Add a symbol for this map (must be GLOBAL with DEFAULT visibility for libbpf/Aya)
@@ -2195,8 +2196,9 @@ impl EbpfObject {
         let mut btf = BtfBuilder::new();
         let mut emitted_anything = false;
 
-        // Add base int type (used as array element and index type)
+        // Add base int types used by map metadata and fallback typed values.
         let int_type = btf.add_int("int", 4, true);
+        let byte_type = btf.add_int("u8", 1, false);
 
         if !self.maps.is_empty() {
             emitted_anything = true;
@@ -2206,6 +2208,9 @@ impl EbpfObject {
             let mut offset = 0u32;
 
             for map in &self.maps {
+                let map_kind = map.def.map_kind();
+                let requires_typed_local_storage = map_kind.is_some_and(MapKind::is_local_storage);
+
                 // Create __uint types for each map attribute
                 // __uint(name, val) expands to: int (*name)[val]
 
@@ -2216,6 +2221,9 @@ impl EbpfObject {
                 let key_member = if let Some(key_ty) = self.generic_map_key_btf_type(map) {
                     let key_type = Self::emit_local_btf_mir_type(&mut btf, key_ty, int_type);
                     ("key", btf.add_ptr(key_type))
+                } else if requires_typed_local_storage {
+                    // Local-storage maps require BTF key and value types; the key is int.
+                    ("key", btf.add_ptr(int_type))
                 } else {
                     ("key_size", btf.add_uint_type(int_type, map.def.key_size))
                 };
@@ -2224,6 +2232,13 @@ impl EbpfObject {
                 // are visible to the kernel; untyped maps keep __uint(value_size, N).
                 let value_member = if let Some(value_ty) = self.generic_map_value_btf_type(map) {
                     let value_type = Self::emit_local_btf_mir_type(&mut btf, value_ty, int_type);
+                    ("value", btf.add_ptr(value_type))
+                } else if requires_typed_local_storage {
+                    let value_type = if map.def.value_size == 1 {
+                        byte_type
+                    } else {
+                        btf.add_array(byte_type, int_type, map.def.value_size)
+                    };
                     ("value", btf.add_ptr(value_type))
                 } else {
                     (
@@ -2236,6 +2251,9 @@ impl EbpfObject {
                 // Note: 0 means auto-size (e.g., num_cpus for perf event arrays)
                 let max_entries_ptr = btf.add_uint_type(int_type, map.def.max_entries);
 
+                // map_flags field: __uint(map_flags, flags)
+                let map_flags_ptr = btf.add_uint_type(int_type, map.def.map_flags);
+
                 // pinning field: __uint(pinning, LIBBPF_PIN_BY_NAME) for shared maps
                 let pinning_ptr = btf.add_uint_type(int_type, map.def.pinning as u32);
 
@@ -2245,14 +2263,15 @@ impl EbpfObject {
                     key_member,
                     value_member,
                     ("max_entries", max_entries_ptr),
+                    ("map_flags", map_flags_ptr),
                     ("pinning", pinning_ptr),
                 ]);
 
                 // Add a variable for this map
                 let var_type = btf.add_var(&map.name, struct_type, BtfVarLinkage::GlobalAlloc);
 
-                // Size of BTF-defined map struct (5 pointers * 8 bytes = 40 bytes)
-                let map_size = 40u32;
+                // Size of BTF-defined map struct (6 pointers * 8 bytes = 48 bytes)
+                let map_size = 48u32;
                 vars.push((var_type, offset, map_size));
                 offset += map_size;
             }
@@ -2322,9 +2341,9 @@ impl EbpfObject {
         let mut data = Vec::new();
 
         for _map in &self.maps {
-            // BTF-defined map struct has 5 pointer fields = 40 bytes
+            // BTF-defined map struct has 6 pointer fields = 48 bytes
             // All zeros - actual values are encoded in BTF type metadata
-            data.extend_from_slice(&[0u8; 40]);
+            data.extend_from_slice(&[0u8; 48]);
         }
 
         data

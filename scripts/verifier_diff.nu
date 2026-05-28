@@ -5328,7 +5328,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "task-storage-map-delete"
@@ -5343,7 +5343,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "task-storage-map-contains"
@@ -5360,7 +5360,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-storage-map-contains"
@@ -5426,7 +5426,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "inode-storage-map-get-init"
@@ -5444,7 +5444,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgrp-storage-map-contains"
@@ -5459,7 +5459,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgrp-storage-map-get-init"
@@ -5477,7 +5477,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgrp-storage-map-delete"
@@ -5492,7 +5492,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "task-storage-rejects-socket-owner"
