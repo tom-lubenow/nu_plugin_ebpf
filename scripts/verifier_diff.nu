@@ -8375,6 +8375,41 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.flow_keys.ip_proto = 6'
+            '  $ctx.flow_keys.nhoff = 14'
+            '  $ctx.flow_keys.ipv6_dst.3 = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "flow-dissector-bound-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable alias source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut keys = $ctx.flow_keys'
+            '  $keys.ip_proto = 17'
+            '  $keys.ipv6_src.0 = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "flow-dissector-packet-context"
         category: "context-surface"
         tags: [flow-dissector context packet]

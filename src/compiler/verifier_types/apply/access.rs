@@ -110,6 +110,7 @@ pub(super) fn apply_store_inst(
             AddressSpace::Stack,
             AddressSpace::Map,
             AddressSpace::Packet,
+            AddressSpace::Context,
             AddressSpace::Kernel,
         ],
         offset,

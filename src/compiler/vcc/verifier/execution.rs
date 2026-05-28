@@ -1046,13 +1046,14 @@ impl VccVerifier {
                             return;
                         }
                         let store_allowed = Self::is_mem_space_allowed(ptr_info.space)
+                            || ptr_info.space == VccAddrSpace::Context
                             || (ptr_info.space == VccAddrSpace::Kernel
                                 && ptr_info.context_buffer_root.is_some());
                         if !store_allowed {
                             self.errors.push(VccError::new(
                                 VccErrorKind::PointerBounds,
                                 format!(
-                                    "store requires pointer in [Stack, Map, Packet, guarded ContextBuffer], got {}",
+                                    "store requires pointer in [Stack, Map, Packet, Context, guarded ContextBuffer], got {}",
                                     Self::space_name(ptr_info.space)
                                 ),
                             ));

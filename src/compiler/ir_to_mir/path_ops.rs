@@ -1191,6 +1191,35 @@ impl<'a> HirToMirLowering<'a> {
                     ))
                 })?;
         }
+        let root_ctx_field = self
+            .get_metadata(src_dst)
+            .and_then(|meta| meta.root_ctx_field.clone());
+        if let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Context,
+        } = &base_runtime_ty
+        {
+            if root_ctx_field == Some(CtxField::FlowKeys) {
+                self.lower_context_pointer_scalar_update(
+                    base_vreg,
+                    pointee.as_ref(),
+                    &path.members,
+                    new_value,
+                    &path_desc,
+                )?;
+                let meta = self.get_or_create_metadata(src_dst);
+                meta.field_type = Some(pointee.as_ref().clone());
+                meta.kernel_btf_field_addr = None;
+                meta.source_var = None;
+                self.set_reg_constant_value(src_dst, constant_value);
+                return Ok(());
+            }
+
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' only supports writable context pointers rooted at ctx.flow_keys",
+                path_desc
+            )));
+        }
         let MirType::Ptr {
             pointee,
             address_space: AddressSpace::Stack | AddressSpace::Map,

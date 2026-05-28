@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::EbpfProgramType;
+use crate::compiler::ctx_field_schema::synthetic_bpf_flow_keys_type;
 use crate::compiler::elf::CtxWriteTarget;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
@@ -82,6 +83,14 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<Option<(CtxField, usize)>, CompileError> {
         let (field, index) = self.resolve_ctx_field_from_path(path)?;
         Ok(matches!(field, CtxField::Data | CtxField::DataMeta).then_some((field, index)))
+    }
+
+    fn flow_keys_ctx_store_root_from_path(
+        &self,
+        path: &CellPath,
+    ) -> Result<Option<usize>, CompileError> {
+        let (field, index) = self.resolve_ctx_field_from_path(path)?;
+        Ok(matches!(field, CtxField::FlowKeys).then_some(index))
     }
 
     fn materialize_scalar_assignment_value(
@@ -344,6 +353,91 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
+    pub(super) fn lower_context_pointer_scalar_update(
+        &mut self,
+        base_vreg: VReg,
+        pointee_ty: &MirType,
+        path_members: &[PathMember],
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        if path_members.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a scalar field, not the root context pointer",
+                path_desc
+            )));
+        }
+
+        let projection =
+            Self::resolve_typed_value_projection_path(pointee_ty, path_members, path_desc)?;
+        if projection.bitfield.is_some() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' does not support bitfield stores",
+                path_desc
+            )));
+        }
+        if matches!(
+            projection.ty,
+            MirType::Array { .. } | MirType::Struct { .. }
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a scalar field, not {:?}",
+                path_desc, projection.ty
+            )));
+        }
+
+        let stored_vreg =
+            self.materialize_scalar_assignment_value(new_value, &projection.ty, path_desc)?;
+        self.emit(MirInst::Store {
+            ptr: base_vreg,
+            offset: Self::trampoline_projection_offset_i32(projection.offset, path_desc)?,
+            val: MirValue::VReg(stored_vreg),
+            ty: projection.ty,
+        });
+        Ok(())
+    }
+
+    fn lower_flow_keys_ctx_update(
+        &mut self,
+        src_dst: RegId,
+        path_members: &[PathMember],
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
+        };
+        ctx.validate_load_ctx_field(&CtxField::FlowKeys)?;
+
+        let flow_keys_ty = synthetic_bpf_flow_keys_type();
+        let base_ty = MirType::Ptr {
+            pointee: Box::new(flow_keys_ty.clone()),
+            address_space: AddressSpace::Context,
+        };
+        let base_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(base_vreg, base_ty);
+        self.emit(MirInst::LoadCtxField {
+            dst: base_vreg,
+            field: CtxField::FlowKeys,
+            slot: None,
+        });
+        self.lower_context_pointer_scalar_update(
+            base_vreg,
+            &flow_keys_ty,
+            path_members,
+            new_value,
+            path_desc,
+        )?;
+
+        self.implied_ctx_fields.insert(CtxField::FlowKeys);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
+    }
+
     fn lower_packet_ctx_update(
         &mut self,
         src_dst: RegId,
@@ -449,6 +543,14 @@ impl<'a> HirToMirLowering<'a> {
             return self.lower_packet_ctx_update(
                 src_dst,
                 root_field,
+                &path.members[index..],
+                new_value,
+                &path_desc,
+            );
+        }
+        if let Some(index) = self.flow_keys_ctx_store_root_from_path(path)? {
+            return self.lower_flow_keys_ctx_update(
+                src_dst,
                 &path.members[index..],
                 new_value,
                 &path_desc,

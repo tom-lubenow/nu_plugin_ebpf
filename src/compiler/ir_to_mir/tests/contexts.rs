@@ -3295,6 +3295,89 @@ fn test_lower_flow_dissector_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_flow_dissector_flow_keys_scalar_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("flow_keys"), string_member("ip_proto")],
+        },
+        HirLiteral::Int(6),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("flow_dissector ctx.flow_keys.ip_proto assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let flow_keys_vreg = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::LoadCtxField {
+                dst,
+                field: CtxField::FlowKeys,
+                ..
+            } => Some(*dst),
+            _ => None,
+        })
+        .expect("expected flow_keys pointer load");
+
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            ptr,
+            offset: 9,
+            ty: MirType::U8,
+            ..
+        } if *ptr == flow_keys_vreg
+    )));
+
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("flow_dissector ctx.flow_keys.ip_proto assignment should compile");
+}
+
+#[test]
+fn test_lower_flow_dissector_flow_keys_array_assignment() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![
+                string_member("flow_keys"),
+                string_member("ipv6_dst"),
+                int_member(3),
+            ],
+        },
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("flow_dissector ctx.flow_keys.ipv6_dst.3 assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            offset: 44,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_netfilter_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"queue".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");

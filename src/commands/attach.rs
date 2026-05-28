@@ -798,6 +798,9 @@ Context parameter syntax (recommended):
     {|ctx| ($ctx.flow_keys.ipv6_dst | get 3) } - Get an IPv6 destination word
     {|ctx| $ctx.flow_keys.flags } - Get flow dissector flags
     {|ctx| $ctx.flow_keys.flow_label } - Get the IPv6 flow label
+    `mut ctx = $ctx; $ctx.flow_keys.ip_proto = 6` writes a scalar
+    dissected-flow key. Bound flow-key pointers can be written too, for
+    example `mut keys = $ctx.flow_keys; $keys.ipv6_dst.3 = 1`.
     Note: `flow_dissector:/proc/self/ns/net` emits a `flow_dissector`
     section. Current Aya loader support is compile/dry-run only, so live
     attach returns a clear unsupported error instead of attempting to load
