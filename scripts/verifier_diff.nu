@@ -8509,6 +8509,70 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-reuseport-migrating-socket-alias-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket alias source metadata]
+        target: "sk_reuseport:migrate"
+        program: [
+            '{|ctx|'
+            '  let migrating = $ctx.migrating_socket'
+            '  if $migrating {'
+            '    $migrating.remote_port | count'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-reuseport-select-migrating-sk-nullable-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  if $ctx.migrating_sk {'
+            '    $ctx.migrating_sk.family | count'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-reuseport-rejects-migrating-sk-on-packet-context"
+        category: "context-policy"
+        tags: [sk-reuseport reject context]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  $ctx.migrating_sk | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.migrating_sk is only available on sk_reuseport programs"
+    }
+    {
+        name: "sk-reuseport-rejects-sk-assignment"
+        category: "context-policy"
+        tags: [sk-reuseport reject context writable]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk = 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.sk is read-only"
+    }
+    {
         name: "sk-reuseport-rejects-skb-pkt-type-context"
         category: "context-policy"
         tags: [sk-reuseport reject context packet]
