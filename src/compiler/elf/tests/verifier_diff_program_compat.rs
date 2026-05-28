@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::compiler::ProgramCompatibilityRequirement;
+use crate::compiler::{MapKind, MapValueCompatibilityRequirement, ProgramCompatibilityRequirement};
 use crate::program_spec::ProgramSpec;
 
 #[derive(Debug, Clone)]
@@ -33,6 +33,15 @@ fn verifier_diff_quoted_field<'a>(text: &'a str, field: &str) -> Option<&'a str>
     let needle = format!("{field}: \"");
     let rest = text.split_once(&needle)?.1;
     let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+fn verifier_diff_dollar_field<'a>(text: &'a str, field: &str) -> Option<&'a str> {
+    let needle = format!("{field}: $");
+    let rest = text.split_once(&needle)?.1;
+    let end = rest
+        .find(|c: char| c.is_whitespace() || c == '}')
+        .unwrap_or(rest.len());
     Some(&rest[..end])
 }
 
@@ -75,6 +84,31 @@ fn verifier_diff_program_feature_records(
         assert!(
             records.insert(record.key.clone(), record).is_none(),
             "duplicate scripts/verifier_diff.nu program kernel feature key in {const_name}"
+        );
+    }
+
+    records
+}
+
+fn verifier_diff_feature_table_records(
+    source: &str,
+    const_name: &str,
+    table_key_field: &str,
+) -> BTreeMap<String, VerifierDiffFeatureRecord> {
+    let body = verifier_diff_const_body(source, const_name, '[');
+    let mut records = BTreeMap::new();
+
+    for line in body.lines() {
+        let Some(table_key) = verifier_diff_quoted_field(line, table_key_field) else {
+            continue;
+        };
+        let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+            panic!("{const_name} entry {table_key} should reference a feature const")
+        });
+        let record = verifier_diff_feature_record(source, feature_const);
+        assert!(
+            records.insert(table_key.to_string(), record).is_none(),
+            "duplicate scripts/verifier_diff.nu {const_name} entry for {table_key}"
         );
     }
 
@@ -267,6 +301,142 @@ fn program_compatibility_verifier_feature_key(
         ProgramCompatibilityRequirement::QdiscOps => "struct_ops:Qdisc_ops",
         ProgramCompatibilityRequirement::CgroupUnixSockAddr => "attach:BPF_CGROUP_UNIX_SOCK_ADDR",
     })
+}
+
+fn assert_verifier_feature_record_matches_map_kind(
+    kind: MapKind,
+    record: &VerifierDiffFeatureRecord,
+) {
+    let requirement = kind.compatibility_requirement();
+    assert_eq!(
+        record.key,
+        requirement.key(),
+        "scripts/verifier_diff.nu map feature key drifted for {}",
+        kind.key()
+    );
+    assert_eq!(
+        record.min_kernel,
+        requirement.minimum_kernel(),
+        "scripts/verifier_diff.nu map min_kernel drifted for {}",
+        kind.key()
+    );
+    assert_eq!(
+        record.source,
+        requirement.minimum_kernel_source(),
+        "scripts/verifier_diff.nu map source drifted for {}",
+        kind.key()
+    );
+    assert_eq!(
+        record.max_kernel_exclusive, None,
+        "map compatibility features should not use max_kernel_exclusive"
+    );
+}
+
+#[test]
+fn test_verifier_diff_map_feature_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let records =
+        verifier_diff_feature_table_records(verifier_diff, "MAP_KIND_KERNEL_FEATURES", "kind");
+
+    for kind in MapKind::all() {
+        let record = records.get(kind.key()).unwrap_or_else(|| {
+            panic!(
+                "scripts/verifier_diff.nu MAP_KIND_KERNEL_FEATURES is missing {}",
+                kind.key()
+            )
+        });
+        assert_verifier_feature_record_matches_map_kind(*kind, record);
+    }
+
+    for (kind_name, record) in &records {
+        let kind = MapKind::from_name(kind_name).unwrap_or_else(|| {
+            panic!("scripts/verifier_diff.nu has unknown map kind feature entry {kind_name}")
+        });
+        assert_verifier_feature_record_matches_map_kind(kind, record);
+    }
+}
+
+fn verifier_diff_map_value_token(requirement: MapValueCompatibilityRequirement) -> &'static str {
+    match requirement {
+        MapValueCompatibilityRequirement::BpfSpinLock => "bpf_spin_lock",
+        MapValueCompatibilityRequirement::BpfTimer => "bpf_timer",
+        MapValueCompatibilityRequirement::BpfKptr => "kptr:",
+        MapValueCompatibilityRequirement::BpfWorkqueue => "bpf_wq",
+        MapValueCompatibilityRequirement::BpfRefcount => "bpf_refcount",
+        MapValueCompatibilityRequirement::BpfListHead => "bpf_list_head",
+        MapValueCompatibilityRequirement::BpfListNode => "bpf_list_node",
+        MapValueCompatibilityRequirement::BpfRbRoot => "bpf_rb_root",
+        MapValueCompatibilityRequirement::BpfRbNode => "bpf_rb_node",
+    }
+}
+
+fn assert_verifier_feature_record_matches_map_value(
+    requirement: MapValueCompatibilityRequirement,
+    record: &VerifierDiffFeatureRecord,
+) {
+    assert_eq!(
+        record.key,
+        requirement.key(),
+        "scripts/verifier_diff.nu map-value feature key drifted for {}",
+        requirement.key()
+    );
+    assert_eq!(
+        record.min_kernel,
+        requirement.minimum_kernel(),
+        "scripts/verifier_diff.nu map-value min_kernel drifted for {}",
+        requirement.key()
+    );
+    assert_eq!(
+        record.source,
+        requirement.minimum_kernel_source(),
+        "scripts/verifier_diff.nu map-value source drifted for {}",
+        requirement.key()
+    );
+    assert_eq!(
+        record.max_kernel_exclusive, None,
+        "map-value compatibility features should not use max_kernel_exclusive"
+    );
+}
+
+#[test]
+fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let records =
+        verifier_diff_feature_table_records(verifier_diff, "MAP_VALUE_KERNEL_FEATURES", "token");
+    let requirements = [
+        MapValueCompatibilityRequirement::BpfSpinLock,
+        MapValueCompatibilityRequirement::BpfTimer,
+        MapValueCompatibilityRequirement::BpfKptr,
+        MapValueCompatibilityRequirement::BpfWorkqueue,
+        MapValueCompatibilityRequirement::BpfRefcount,
+        MapValueCompatibilityRequirement::BpfListHead,
+        MapValueCompatibilityRequirement::BpfListNode,
+        MapValueCompatibilityRequirement::BpfRbRoot,
+        MapValueCompatibilityRequirement::BpfRbNode,
+    ];
+    let mut expected_tokens = BTreeSet::new();
+
+    for requirement in requirements {
+        let token = verifier_diff_map_value_token(requirement);
+        assert!(
+            expected_tokens.insert(token),
+            "duplicate verifier_diff.nu map-value token mapping for {requirement:?}"
+        );
+        let record = records.get(token).unwrap_or_else(|| {
+            panic!("scripts/verifier_diff.nu MAP_VALUE_KERNEL_FEATURES is missing {token}")
+        });
+        assert_verifier_feature_record_matches_map_value(requirement, record);
+    }
+
+    let unexpected_tokens = records
+        .keys()
+        .filter(|token| !expected_tokens.contains(token.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        unexpected_tokens.is_empty(),
+        "scripts/verifier_diff.nu has map-value feature metadata without a Rust requirement: {unexpected_tokens:?}"
+    );
 }
 
 #[test]
