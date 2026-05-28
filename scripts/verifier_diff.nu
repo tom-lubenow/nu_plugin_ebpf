@@ -6937,6 +6937,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "dynptr-record-field-direct-rejects-distinct-projection"
+        category: "helper-state"
+        tags: [kfunc dynptr record source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = { d: "0123456789abcdef" }'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $rec.d'
+            '  let ptr = (kfunc-call "bpf_dynptr_slice" $rec.d 0 0 4)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_slice' arg0 requires initialized dynptr stack object"
+    }
+    {
         name: "dynptr-kfunc-slice-rejects-nonzero-buffer"
         category: "helper-state"
         tags: [kfunc dynptr reject]
