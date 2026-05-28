@@ -496,9 +496,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         );
     }
 
-    validate_helper_raw_context_arg_shape(
-        helper, args, types, state, program, probe_ctx, errors,
-    );
+    validate_helper_raw_context_arg_shape(helper, args, types, state, program, probe_ctx, errors);
 
     let arg_is_known_zero = |arg_idx| {
         args.get(arg_idx).is_some_and(|value| {

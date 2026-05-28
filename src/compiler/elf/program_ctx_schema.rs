@@ -2,10 +2,10 @@ use super::{
     CtxField, EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
+    ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
     ctx_field_sock_ops_load_guard, program_type_ctx_field_is_trusted_btf_kernel_pointer,
     program_type_ctx_field_pointer_is_non_null, program_type_ctx_field_projection_spec,
-    program_type_ctx_field_type_spec, ContextFieldLoadGuard, ContextFieldProjectionSpec,
-    ContextFieldTypeSpec,
+    program_type_ctx_field_type_spec,
 };
 use crate::program_spec::ProgramSpec;
 
