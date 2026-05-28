@@ -1,5 +1,11 @@
 use crate::compiler::EbpfProgramType;
+use crate::compiler::instruction::KfuncCompatibilityRequirement;
 use crate::program_spec::{ProgramSpec, StructOpsFamily};
+
+const LINUX_NET_CORE_FILTER_C_V6_4_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.4/net/core/filter.c";
+const LINUX_NET_CORE_FILTER_C_V6_12_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.12/net/core/filter.c";
 
 const SCHED_EXT_DISPATCH_ONLY_KFUNCS: &[&str] = &[
     "scx_bpf_dispatch_nr_slots",
@@ -42,7 +48,13 @@ const SKB_PACKET_DYNPTR_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
 ];
-const SKB_PACKET_DYNPTR_PROGRAM_LABEL: &str = "socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser, and netfilter";
+const SKB_TRACING_DYNPTR_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Fentry,
+    EbpfProgramType::Fexit,
+    EbpfProgramType::FmodRet,
+    EbpfProgramType::TpBtf,
+];
+const SKB_DYNPTR_PROGRAM_LABEL: &str = "socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser, netfilter, fentry, fexit, fmod_ret, and tp_btf";
 const SCHED_EXT_SLEEPABLE_ONLY_KFUNCS: &[&str] = &["scx_bpf_create_dsq"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +112,14 @@ fn modeled_kfunc_policy(kfunc: &str) -> Option<ProgramSpecificKfuncPolicy> {
 
 fn skb_packet_dynptr_kfunc_allowed(program_type: EbpfProgramType) -> bool {
     SKB_PACKET_DYNPTR_PROGRAMS.contains(&program_type)
+}
+
+fn skb_tracing_dynptr_kfunc_allowed(program_type: EbpfProgramType) -> bool {
+    SKB_TRACING_DYNPTR_PROGRAMS.contains(&program_type)
+}
+
+fn skb_dynptr_kfunc_allowed(program_type: EbpfProgramType) -> bool {
+    skb_packet_dynptr_kfunc_allowed(program_type) || skb_tracing_dynptr_kfunc_allowed(program_type)
 }
 
 fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
@@ -170,6 +190,14 @@ impl ProgramSpec {
                 "skb-backed program",
             );
         }
+        if skb_tracing_dynptr_kfunc_allowed(self.program_type()) {
+            push_program_kfunc_surfaces(
+                &mut surfaces,
+                SKB_PACKET_DYNPTR_KFUNCS,
+                "skb-tracing-dynptr",
+                "tracing program with sk_buff argument",
+            );
+        }
 
         let Some((StructOpsFamily::SchedExt, sleepable)) =
             self.attach_shape().struct_ops_callback()
@@ -234,11 +262,11 @@ impl ProgramSpec {
             return Some(format!("kfunc '{}' is only valid in xdp programs", kfunc));
         }
         if SKB_PACKET_DYNPTR_KFUNCS.contains(&kfunc)
-            && !skb_packet_dynptr_kfunc_allowed(self.program_type())
+            && !skb_dynptr_kfunc_allowed(self.program_type())
         {
             return Some(format!(
                 "kfunc '{}' is only valid in {} programs",
-                kfunc, SKB_PACKET_DYNPTR_PROGRAM_LABEL
+                kfunc, SKB_DYNPTR_PROGRAM_LABEL
             ));
         }
 
@@ -266,6 +294,26 @@ impl ProgramSpec {
             "kfunc '{}' is only valid in {}, not sched_ext_ops.{}",
             kfunc, allowed, callback_name
         ))
+    }
+
+    pub(crate) fn kfunc_compatibility_requirement_for_name(
+        &self,
+        kfunc: &str,
+    ) -> Option<KfuncCompatibilityRequirement> {
+        let requirement = KfuncCompatibilityRequirement::for_name(kfunc)?;
+        Some(match (kfunc, self.program_type()) {
+            ("bpf_dynptr_from_skb", program_type)
+                if SKB_PACKET_DYNPTR_PROGRAMS.contains(&program_type) =>
+            {
+                requirement.with_minimum_kernel("6.4", LINUX_NET_CORE_FILTER_C_V6_4_SOURCE)
+            }
+            ("bpf_dynptr_from_skb", program_type)
+                if SKB_TRACING_DYNPTR_PROGRAMS.contains(&program_type) =>
+            {
+                requirement.with_minimum_kernel("6.12", LINUX_NET_CORE_FILTER_C_V6_12_SOURCE)
+            }
+            _ => requirement,
+        })
     }
 }
 
@@ -343,6 +391,14 @@ mod tests {
             assert!(
                 skb_dynptr_programs.insert(*program_type),
                 "duplicate skb packet dynptr program type {:?}",
+                program_type
+            );
+        }
+        assert!(!SKB_TRACING_DYNPTR_PROGRAMS.is_empty());
+        for program_type in SKB_TRACING_DYNPTR_PROGRAMS {
+            assert!(
+                skb_dynptr_programs.insert(*program_type),
+                "duplicate skb dynptr program type {:?}",
                 program_type
             );
         }
@@ -429,6 +485,7 @@ mod tests {
             ),
             ("xdp-only kfuncs", XDP_ONLY_KFUNCS),
             ("skb packet dynptr kfuncs", SKB_PACKET_DYNPTR_KFUNCS),
+            ("skb tracing dynptr kfuncs", SKB_PACKET_DYNPTR_KFUNCS),
             (
                 "sched_ext dispatch-only kfuncs",
                 SCHED_EXT_DISPATCH_ONLY_KFUNCS,
@@ -611,6 +668,10 @@ mod tests {
             .expect("expected tc spec");
         assert_eq!(kfunc_surface_names(&tc), vec!["bpf_dynptr_from_skb"]);
 
+        let fentry = ProgramSpec::from_program_type_target(EbpfProgramType::Fentry, "tcp_sendmsg")
+            .expect("expected fentry spec");
+        assert_eq!(kfunc_surface_names(&fentry), vec!["bpf_dynptr_from_skb"]);
+
         let sock_ops =
             ProgramSpec::from_program_type_target(EbpfProgramType::SockOps, "/sys/fs/cgroup")
                 .expect("expected sock_ops spec");
@@ -690,6 +751,10 @@ mod tests {
             (EbpfProgramType::Netkit, "nk0:primary"),
             (EbpfProgramType::TcAction, "demo-action"),
             (EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:egress"),
+            (EbpfProgramType::Fentry, "tcp_sendmsg"),
+            (EbpfProgramType::Fexit, "tcp_sendmsg"),
+            (EbpfProgramType::FmodRet, "tcp_sendmsg"),
+            (EbpfProgramType::TpBtf, "sys_enter"),
         ] {
             let spec = ProgramSpec::from_program_type_target(program_type, target)
                 .unwrap_or_else(|err| panic!("expected {program_type:?} spec: {err}"));
@@ -710,7 +775,7 @@ mod tests {
                 spec.kfunc_call_error("bpf_dynptr_from_skb"),
                 Some(format!(
                     "kfunc 'bpf_dynptr_from_skb' is only valid in {} programs",
-                    SKB_PACKET_DYNPTR_PROGRAM_LABEL
+                    SKB_DYNPTR_PROGRAM_LABEL
                 ))
             );
             assert!(
@@ -718,5 +783,36 @@ mod tests {
                 "{program_type:?} should not advertise bpf_dynptr_from_skb"
             );
         }
+    }
+
+    #[test]
+    fn test_program_spec_kfunc_compatibility_requirement_is_program_specific() {
+        let tc = ProgramSpec::from_program_type_target(EbpfProgramType::Tc, "lo:ingress")
+            .expect("expected tc spec");
+        let tc_requirement = tc
+            .kfunc_compatibility_requirement_for_name("bpf_dynptr_from_skb")
+            .expect("expected tc skb dynptr compatibility metadata");
+        assert_eq!(tc_requirement.name(), "bpf_dynptr_from_skb");
+        assert_eq!(tc_requirement.key(), "kfunc:bpf_dynptr_from_skb");
+        assert_eq!(tc_requirement.minimum_kernel(), "6.4");
+        assert!(
+            tc_requirement
+                .minimum_kernel_source()
+                .contains("/v6.4/net/core/filter.c")
+        );
+
+        let fentry = ProgramSpec::from_program_type_target(EbpfProgramType::Fentry, "tcp_sendmsg")
+            .expect("expected fentry spec");
+        let fentry_requirement = fentry
+            .kfunc_compatibility_requirement_for_name("bpf_dynptr_from_skb")
+            .expect("expected tracing skb dynptr compatibility metadata");
+        assert_eq!(fentry_requirement.name(), "bpf_dynptr_from_skb");
+        assert_eq!(fentry_requirement.key(), "kfunc:bpf_dynptr_from_skb");
+        assert_eq!(fentry_requirement.minimum_kernel(), "6.12");
+        assert!(
+            fentry_requirement
+                .minimum_kernel_source()
+                .contains("/v6.12/net/core/filter.c")
+        );
     }
 }

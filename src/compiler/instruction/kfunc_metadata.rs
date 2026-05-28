@@ -79,12 +79,18 @@ const LINUX_SCHED_EXT_C_V6_19_SOURCE: &str =
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KfuncCompatibilityRequirement {
     name: &'static str,
+    minimum_kernel_override: Option<&'static str>,
+    minimum_kernel_source_override: Option<&'static str>,
 }
 
 impl KfuncCompatibilityRequirement {
     pub fn for_name(name: &str) -> Option<Self> {
         let name = known_kfunc_name(name)?;
-        Some(Self { name })
+        Some(Self {
+            name,
+            minimum_kernel_override: None,
+            minimum_kernel_source_override: None,
+        })
     }
 
     pub fn name(self) -> &'static str {
@@ -99,14 +105,28 @@ impl KfuncCompatibilityRequirement {
         "kfunc"
     }
 
+    pub(crate) fn with_minimum_kernel(
+        mut self,
+        minimum_kernel: &'static str,
+        minimum_kernel_source: &'static str,
+    ) -> Self {
+        self.minimum_kernel_override = Some(minimum_kernel);
+        self.minimum_kernel_source_override = Some(minimum_kernel_source);
+        self
+    }
+
     pub fn minimum_kernel(self) -> &'static str {
-        kfunc_minimum_kernel(self.name)
-            .expect("kfunc requirement is constructed only for versioned kfuncs")
+        self.minimum_kernel_override.unwrap_or_else(|| {
+            kfunc_minimum_kernel(self.name)
+                .expect("kfunc requirement is constructed only for versioned kfuncs")
+        })
     }
 
     pub fn minimum_kernel_source(self) -> &'static str {
-        kfunc_minimum_kernel_source(self.name)
-            .expect("kfunc requirement is constructed only for versioned kfuncs")
+        self.minimum_kernel_source_override.unwrap_or_else(|| {
+            kfunc_minimum_kernel_source(self.name)
+                .expect("kfunc requirement is constructed only for versioned kfuncs")
+        })
     }
 
     pub fn maximum_kernel_exclusive(self) -> Option<&'static str> {

@@ -309,22 +309,42 @@ fn helper_compatibility_requirements_for_programs(
 
 fn kfunc_compatibility_requirements_for_names(
     used_kfuncs: &HashSet<String>,
+    program_spec: Option<&ProgramSpec>,
 ) -> Vec<KfuncCompatibilityRequirement> {
     sorted_kfunc_names(used_kfuncs)
         .iter()
         .map(String::as_str)
-        .filter_map(KfuncCompatibilityRequirement::for_name)
+        .filter_map(|kfunc| match program_spec {
+            Some(spec) => spec.kfunc_compatibility_requirement_for_name(kfunc),
+            None => KfuncCompatibilityRequirement::for_name(kfunc),
+        })
         .collect()
+}
+
+fn kfunc_compatibility_requirements_for_section(
+    program: &EbpfProgramSection,
+) -> Vec<KfuncCompatibilityRequirement> {
+    let parsed_program_spec;
+    let program_spec = match &program.program_spec {
+        Some(program_spec) => Some(program_spec),
+        None => {
+            parsed_program_spec =
+                parsed_program_spec_for_program(program.prog_type, &program.target);
+            parsed_program_spec.as_ref()
+        }
+    };
+    kfunc_compatibility_requirements_for_names(&program.used_kfuncs, program_spec)
 }
 
 fn kfunc_compatibility_requirements_for_programs(
     programs: &[EbpfProgramSection],
 ) -> Vec<KfuncCompatibilityRequirement> {
-    let mut used_kfuncs = HashSet::new();
+    let mut requirements = Vec::new();
     for program in programs {
-        used_kfuncs.extend(program.used_kfuncs.iter().cloned());
+        requirements.extend(kfunc_compatibility_requirements_for_section(program));
     }
-    kfunc_compatibility_requirements_for_names(&used_kfuncs)
+    requirements.sort_by_key(|requirement| requirement.key());
+    requirements
 }
 
 fn sorted_kfunc_names(used_kfuncs: &HashSet<String>) -> Vec<String> {
@@ -1071,7 +1091,7 @@ impl EbpfProgramSection {
     }
 
     pub fn kfunc_compatibility_requirements(&self) -> Vec<KfuncCompatibilityRequirement> {
-        kfunc_compatibility_requirements_for_names(&self.used_kfuncs)
+        kfunc_compatibility_requirements_for_section(self)
     }
 
     pub fn used_kfuncs(&self) -> Vec<String> {
@@ -2373,7 +2393,8 @@ impl EbpfProgram {
     }
 
     pub fn kfunc_compatibility_requirements(&self) -> Vec<KfuncCompatibilityRequirement> {
-        kfunc_compatibility_requirements_for_names(&self.used_kfuncs)
+        let section = self.clone().into_program_section();
+        kfunc_compatibility_requirements_for_section(&section)
     }
 
     pub fn used_kfuncs(&self) -> Vec<String> {

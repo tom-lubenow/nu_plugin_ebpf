@@ -5794,6 +5794,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "dynptr-kfunc-from-skb-accepts-tracing-skb-argument"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tracing accept]
+        requires: [kernel-btf]
+        target: "fentry:tcp_v4_rcv"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx.arg0 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "dynptr-kfunc-from-skb-rejects-reinitialize"
         category: "helper-state"
         tags: [kfunc dynptr skb tc reject]
@@ -5843,7 +5861,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "kfunc 'bpf_dynptr_from_skb' is only valid in socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser, and netfilter programs"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' is only valid in socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, sk_skb_parser, netfilter, fentry, fexit, fmod_ret, and tp_btf programs"
     }
     {
         name: "dynptr-kfunc-size-initialized-ringbuf"
@@ -12397,6 +12415,31 @@ def kfunc-kernel-feature [name: string] {
     $feature
 }
 
+def target-uses-bpf-tracing-prog-type [target] {
+    let target_text = ($target | default "")
+    [
+        ($target_text | str starts-with "fentry:")
+        ($target_text | str starts-with "fentry.s:")
+        ($target_text | str starts-with "fexit:")
+        ($target_text | str starts-with "fexit.s:")
+        ($target_text | str starts-with "fmod_ret:")
+        ($target_text | str starts-with "fmod_ret.s:")
+        ($target_text | str starts-with "tp_btf:")
+    ] | any {|matches| $matches }
+}
+
+def program-kfunc-kernel-feature [name: string target] {
+    if $name == "bpf_dynptr_from_skb" and (target-uses-bpf-tracing-prog-type $target) {
+        return {
+            key: "kfunc:bpf_dynptr_from_skb"
+            min_kernel: "6.12"
+            source: "https://github.com/torvalds/linux/blob/v6.12/net/core/filter.c"
+        }
+    }
+
+    kfunc-kernel-feature $name
+}
+
 def sock-ops-context-field-kernel-feature [field: string] {
     if $field in ["op" "reply" "replylong"] {
         return {
@@ -13872,7 +13915,7 @@ def program-kfunc-kernel-features [source: string target] {
     let context_names = (program-context-variable-names $source)
 
     for kfunc_name in (program-kfunc-names $source) {
-        let feature = (kfunc-kernel-feature $kfunc_name)
+        let feature = (program-kfunc-kernel-feature $kfunc_name $target_text)
         if $feature != null {
             $features = (append-missing-kernel-features $features [$feature])
         }

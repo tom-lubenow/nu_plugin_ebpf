@@ -10726,6 +10726,48 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
 }
 
 #[test]
+fn test_ebpf_program_reports_program_specific_kfunc_compatibility_requirements() {
+    let tc = EbpfProgram::new(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_kfuncs(["bpf_dynptr_from_skb"]);
+    assert_eq!(tc.kfunc_compatibility_minimum_kernel(), Some("6.4"));
+    let tc_requirements = tc.kfunc_compatibility_requirements();
+    assert_eq!(tc_requirements.len(), 1);
+    assert_eq!(tc_requirements[0].key(), "kfunc:bpf_dynptr_from_skb");
+    assert_eq!(tc_requirements[0].minimum_kernel(), "6.4");
+
+    let tracing = EbpfProgram::new(
+        EbpfProgramType::Fentry,
+        "tcp_sendmsg",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_kfuncs(["bpf_dynptr_from_skb"]);
+    assert_eq!(tracing.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    let tracing_requirements = tracing.kfunc_compatibility_requirements();
+    assert_eq!(tracing_requirements.len(), 1);
+    assert_eq!(tracing_requirements[0].key(), "kfunc:bpf_dynptr_from_skb");
+    assert_eq!(tracing_requirements[0].minimum_kernel(), "6.12");
+
+    let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
+        license: "GPL".to_string(),
+        maps: Vec::new(),
+        readonly_globals: Vec::new(),
+        data_globals: Vec::new(),
+        bss_globals: Vec::new(),
+        extra_data_symbols: Vec::new(),
+        programs: vec![tc.into_program_section(), tracing.into_program_section()],
+    };
+    assert_eq!(object.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
+}
+
+#[test]
 fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
     let map_ref = MapRef {
         name: "work_items".to_string(),

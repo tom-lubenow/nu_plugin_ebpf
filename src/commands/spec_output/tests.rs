@@ -1350,6 +1350,25 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
         .expect("TC skb dynptr kfunc should be advertised");
     assert_eq!(skb_dynptr.policy, "skb-packet-dynptr");
     assert_eq!(skb_dynptr.note, "skb-backed program");
+    assert_eq!(skb_dynptr.minimum_kernel, Some("6.4"));
+
+    let fentry = ProgramSpec::parse("fentry:tcp_sendmsg").expect("fentry spec should parse");
+    let fentry_kfuncs = spec_kfunc_calls(&fentry);
+    let tracing_skb_dynptr = fentry_kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "bpf_dynptr_from_skb")
+        .expect("tracing skb dynptr kfunc should be advertised");
+    assert_eq!(tracing_skb_dynptr.policy, "skb-tracing-dynptr");
+    assert_eq!(
+        tracing_skb_dynptr.note,
+        "tracing program with sk_buff argument"
+    );
+    assert_eq!(tracing_skb_dynptr.minimum_kernel, Some("6.12"));
+    assert!(
+        tracing_skb_dynptr
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v6.12/net/core/filter.c"))
+    );
 }
 
 #[test]

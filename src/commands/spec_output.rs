@@ -9,9 +9,9 @@ use crate::compiler::instruction::{
 use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
-    HelperCompatibilityRequirement, KfuncCompatibilityRequirement, MapKind, PacketContextKind,
-    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
-    SockOpsCallbackGuard, bpf_sock_projection_member_aliases, ctx_field_backing_helper,
+    HelperCompatibilityRequirement, MapKind, PacketContextKind, ProbeContext,
+    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
+    bpf_sock_projection_member_aliases, ctx_field_backing_helper,
     ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
@@ -351,11 +351,6 @@ fn kfunc_ret_kind_label(kind: KfuncRetKind) -> &'static str {
         KfuncRetKind::PointerMaybeNull => "pointer-maybe-null",
         KfuncRetKind::Void => "void",
     }
-}
-
-#[cfg(target_os = "linux")]
-fn kfunc_requirement_key(kfunc: &str) -> Option<String> {
-    KfuncCompatibilityRequirement::for_name(kfunc).map(KfuncCompatibilityRequirement::key)
 }
 
 #[cfg(target_os = "linux")]
@@ -1462,7 +1457,7 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
         .map(|surface| {
             let kfunc_requirement = surface
                 .kfunc
-                .and_then(KfuncCompatibilityRequirement::for_name);
+                .and_then(|kfunc| spec.kfunc_compatibility_requirement_for_name(kfunc));
             SpecContextWrite {
                 field: surface.field_name,
                 kind: surface.kind,
@@ -1480,7 +1475,9 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                     .helper
                     .and_then(BpfHelper::minimum_kernel_source),
                 kfunc: surface.kfunc,
-                kfunc_requirement_key: surface.kfunc.and_then(kfunc_requirement_key),
+                kfunc_requirement_key: kfunc_requirement
+                    .as_ref()
+                    .map(|requirement| requirement.key()),
                 kfunc_minimum_kernel: kfunc_requirement
                     .as_ref()
                     .map(|requirement| requirement.minimum_kernel()),
@@ -1529,7 +1526,7 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
     spec.kfunc_call_surfaces_for_spec()
         .into_iter()
         .map(|surface| {
-            let requirement = KfuncCompatibilityRequirement::for_name(surface.kfunc);
+            let requirement = spec.kfunc_compatibility_requirement_for_name(surface.kfunc);
             let signature = KfuncSignature::for_name(surface.kfunc);
             let semantics = kfunc_semantics(surface.kfunc);
             let pointer_arg_ref_kinds =
@@ -1551,7 +1548,7 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
                 return_kind: signature
                     .as_ref()
                     .map(|signature| kfunc_ret_kind_label(signature.ret_kind)),
-                requirement_key: kfunc_requirement_key(surface.kfunc),
+                requirement_key: requirement.as_ref().map(|requirement| requirement.key()),
                 minimum_kernel: requirement
                     .as_ref()
                     .map(|requirement| requirement.minimum_kernel()),
