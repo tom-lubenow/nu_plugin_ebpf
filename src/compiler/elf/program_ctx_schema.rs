@@ -394,13 +394,21 @@ impl SocketContextLayout {
             (Self::CgroupSock, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(12)),
             (Self::CgroupSock, CtxField::SockMark) => Some(ContextFieldDirectLoad::u32(16)),
             (Self::CgroupSock, CtxField::SockPriority) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::CgroupSock, CtxField::LocalIp4) => Some(ContextFieldDirectLoad::u32(24)),
+            (Self::CgroupSock, CtxField::LocalPort) => Some(ContextFieldDirectLoad::u32(44)),
+            (Self::CgroupSock, CtxField::RemotePort) => Some(ContextFieldDirectLoad::u16(48)),
+            (Self::CgroupSock, CtxField::RemoteIp4) => Some(ContextFieldDirectLoad::u32(52)),
             (Self::CgroupSock, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(72)),
             (Self::CgroupSock, CtxField::SockRxQueueMapping) => {
                 Some(ContextFieldDirectLoad::u32(76))
             }
+            (Self::SockAddr, CtxField::UserFamily) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::SockAddr, CtxField::UserIp4) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::SockAddr, CtxField::UserPort) => Some(ContextFieldDirectLoad::u32(24)),
             (Self::SockAddr, CtxField::Family) => Some(ContextFieldDirectLoad::u32(28)),
             (Self::SockAddr, CtxField::SockType) => Some(ContextFieldDirectLoad::u32(32)),
             (Self::SockAddr, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(36)),
+            (Self::SockAddr, CtxField::MsgSrcIp4) => Some(ContextFieldDirectLoad::u32(40)),
             (Self::SockAddr, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(64)),
             (Self::CgroupSockopt, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(0)),
             (Self::SkLookup, CtxField::Socket | CtxField::LookupCookie) => {
@@ -408,14 +416,30 @@ impl SocketContextLayout {
             }
             (Self::SkLookup, CtxField::Family) => Some(ContextFieldDirectLoad::u32(8)),
             (Self::SkLookup, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(12)),
+            (Self::SkLookup, CtxField::RemoteIp4) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::SkLookup, CtxField::RemotePort) => Some(ContextFieldDirectLoad::u16(36)),
+            (Self::SkLookup, CtxField::LocalIp4) => Some(ContextFieldDirectLoad::u32(40)),
+            (Self::SkLookup, CtxField::LocalPort) => Some(ContextFieldDirectLoad::u32(60)),
             (Self::SkMsg, CtxField::Family) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::SkMsg, CtxField::RemoteIp4) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::SkMsg, CtxField::LocalIp4) => Some(ContextFieldDirectLoad::u32(24)),
+            (Self::SkMsg, CtxField::RemotePort) => Some(ContextFieldDirectLoad::u32(60)),
+            (Self::SkMsg, CtxField::LocalPort) => Some(ContextFieldDirectLoad::u32(64)),
             (Self::SkMsg, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(72)),
             (Self::SkBuff, CtxField::Family) => Some(ContextFieldDirectLoad::u32(88)),
+            (Self::SkBuff, CtxField::RemoteIp4) => Some(ContextFieldDirectLoad::u32(92)),
+            (Self::SkBuff, CtxField::LocalIp4) => Some(ContextFieldDirectLoad::u32(96)),
+            (Self::SkBuff, CtxField::RemotePort) => Some(ContextFieldDirectLoad::u32(132)),
+            (Self::SkBuff, CtxField::LocalPort) => Some(ContextFieldDirectLoad::u32(136)),
             (Self::SkBuff, CtxField::Protocol) => Some(ContextFieldDirectLoad::u16(16)),
             (Self::SkBuff, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(168)),
             (Self::SkBuff, CtxField::SockMark) => Some(ContextFieldDirectLoad::u32(8)),
             (Self::SkBuff, CtxField::SockPriority) => Some(ContextFieldDirectLoad::u32(32)),
             (Self::SockOps, CtxField::Family) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::SockOps, CtxField::RemoteIp4) => Some(ContextFieldDirectLoad::u32(24)),
+            (Self::SockOps, CtxField::LocalIp4) => Some(ContextFieldDirectLoad::u32(28)),
+            (Self::SockOps, CtxField::RemotePort) => Some(ContextFieldDirectLoad::u16(64)),
+            (Self::SockOps, CtxField::LocalPort) => Some(ContextFieldDirectLoad::u32(68)),
             (Self::SockOps, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(184)),
             (Self::SockOps, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(88)),
             (Self::SkReuseport, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(24)),
@@ -561,6 +585,13 @@ impl EbpfProgramType {
             CtxField::SockType => self.sock_type_context_layout(),
             CtxField::Protocol => self.protocol_context_layout(),
             CtxField::Socket => self.socket_ref_context_layout(),
+            CtxField::UserFamily | CtxField::UserIp4 | CtxField::UserPort | CtxField::MsgSrcIp4 => {
+                self.socket_family_context_layout()
+            }
+            CtxField::RemoteIp4
+            | CtxField::RemotePort
+            | CtxField::LocalIp4
+            | CtxField::LocalPort => self.socket_tuple_context_layout(),
             CtxField::SockMark | CtxField::SockPriority => self.sock_mark_priority_context_layout(),
             CtxField::SockState => self.sock_state_context_layout(),
             CtxField::BoundDevIf | CtxField::SockRxQueueMapping => {
@@ -975,6 +1006,26 @@ mod tests {
                 Some(ContextFieldDirectLoad::u32(12)),
             ),
             (
+                "cgroup_sock:/sys/fs/cgroup:post_bind4",
+                CtxField::LocalIp4,
+                Some(ContextFieldDirectLoad::u32(24)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:post_bind4",
+                CtxField::LocalPort,
+                Some(ContextFieldDirectLoad::u32(44)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::RemotePort,
+                Some(ContextFieldDirectLoad::u16(48)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::RemoteIp4,
+                Some(ContextFieldDirectLoad::u32(52)),
+            ),
+            (
                 "cgroup_sock:/sys/fs/cgroup:sock_create",
                 CtxField::Socket,
                 None,
@@ -991,8 +1042,28 @@ mod tests {
             ),
             (
                 "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::UserFamily,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::UserIp4,
+                Some(ContextFieldDirectLoad::u32(4)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::UserPort,
+                Some(ContextFieldDirectLoad::u32(24)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
                 CtxField::SockType,
                 Some(ContextFieldDirectLoad::u32(32)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+                CtxField::MsgSrcIp4,
+                Some(ContextFieldDirectLoad::u32(40)),
             ),
             (
                 "cgroup_sock_addr:/sys/fs/cgroup:connect4",
@@ -1010,9 +1081,39 @@ mod tests {
                 Some(ContextFieldDirectLoad::u64(0)),
             ),
             (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::RemoteIp4,
+                Some(ContextFieldDirectLoad::u32(16)),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::RemotePort,
+                Some(ContextFieldDirectLoad::u16(36)),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::LocalIp4,
+                Some(ContextFieldDirectLoad::u32(40)),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::LocalPort,
+                Some(ContextFieldDirectLoad::u32(60)),
+            ),
+            (
                 "sk_msg:/sys/fs/bpf/demo",
                 CtxField::Family,
                 Some(ContextFieldDirectLoad::u32(16)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::RemotePort,
+                Some(ContextFieldDirectLoad::u32(60)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::LocalPort,
+                Some(ContextFieldDirectLoad::u32(64)),
             ),
             (
                 "sk_msg:/sys/fs/bpf/demo",
@@ -1024,6 +1125,16 @@ mod tests {
                 "sock_ops:/sys/fs/cgroup",
                 CtxField::Family,
                 Some(ContextFieldDirectLoad::u32(20)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::RemotePort,
+                Some(ContextFieldDirectLoad::u16(64)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::LocalPort,
+                Some(ContextFieldDirectLoad::u32(68)),
             ),
             (
                 "sock_ops:/sys/fs/cgroup",
@@ -1039,6 +1150,16 @@ mod tests {
                 "socket_filter:tcp4:127.0.0.1:80",
                 CtxField::Protocol,
                 Some(ContextFieldDirectLoad::u16(16)),
+            ),
+            (
+                "cgroup_skb:/sys/fs/cgroup:egress",
+                CtxField::RemotePort,
+                Some(ContextFieldDirectLoad::u32(132)),
+            ),
+            (
+                "cgroup_skb:/sys/fs/cgroup:egress",
+                CtxField::LocalPort,
+                Some(ContextFieldDirectLoad::u32(136)),
             ),
             (
                 "cgroup_skb:/sys/fs/cgroup:ingress",

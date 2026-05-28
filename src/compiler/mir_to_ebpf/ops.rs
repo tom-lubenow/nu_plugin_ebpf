@@ -815,23 +815,20 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::UserFamily => {
-                let offset = Self::bpf_sock_addr_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::UserIp4 => {
-                let offset = Self::bpf_sock_addr_offsets().1;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::UserIp6 => {
                 let offset = Self::bpf_sock_addr_offsets().2;
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.user_ip6", false)?;
             }
             CtxField::UserPort => {
-                let offset = Self::bpf_sock_addr_offsets().3;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Family => {
                 let load = self.ctx_field_direct_load(field)?;
@@ -935,9 +932,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::MsgSrcIp4 => {
-                let offset = Self::bpf_sock_addr_offsets().7;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::MsgSrcIp6 => {
                 let offset = Self::bpf_sock_addr_offsets().8;
@@ -951,16 +947,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 )?;
             }
             CtxField::RemoteIp4 => {
-                let offset = match self
+                let layout = self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().10,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().2,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().3,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().1,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().3,
+                    .and_then(|ctx| ctx.socket_tuple_context_layout());
+                match layout {
                     Some(SocketContextLayout::SockAddr) => {
                         let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
                         else {
@@ -970,16 +961,24 @@ impl<'a> MirToEbpfCompiler<'a> {
                         };
                         return self.compile_load_ctx_field(dst, &alias_field, slot);
                     }
+                    Some(
+                        SocketContextLayout::CgroupSock
+                        | SocketContextLayout::SockOps
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SkLookup,
+                    ) => {
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
+                        self.instructions.push(EbpfInsn::end32_to_be(dst));
+                    }
                     Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.remote_ip4 is only available on cgroup_sock, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-                self.instructions.push(EbpfInsn::end32_to_be(dst));
+                }
             }
             CtxField::RemoteIp6 => {
                 let offset = match self
@@ -1015,12 +1014,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.socket_tuple_context_layout());
-                let offset = match layout {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().9,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().6,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().7,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().5,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().5,
+                match layout {
                     Some(SocketContextLayout::SockAddr) => {
                         let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
                         else {
@@ -1030,39 +1024,38 @@ impl<'a> MirToEbpfCompiler<'a> {
                         };
                         return self.compile_load_ctx_field(dst, &alias_field, slot);
                     }
+                    Some(
+                        layout @ (SocketContextLayout::CgroupSock
+                        | SocketContextLayout::SockOps
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SkLookup),
+                    ) => {
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
+                        if matches!(
+                            layout,
+                            SocketContextLayout::SkMsg | SocketContextLayout::SkBuff
+                        ) {
+                            self.instructions.push(EbpfInsn::end32_to_be(dst));
+                        } else {
+                            self.instructions.push(EbpfInsn::end16_to_be(dst));
+                        }
+                    }
                     Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.remote_port is only available on cgroup_sock, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
-                };
-                if matches!(
-                    layout,
-                    Some(SocketContextLayout::SkMsg)
-                        | Some(SocketContextLayout::SkBuff)
-                        | Some(SocketContextLayout::SkReuseport)
-                ) {
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-                    self.instructions.push(EbpfInsn::end32_to_be(dst));
-                } else {
-                    self.instructions
-                        .push(EbpfInsn::ldxh(dst, EbpfReg::R9, offset));
-                    self.instructions.push(EbpfInsn::end16_to_be(dst));
                 }
             }
             CtxField::LocalIp4 => {
-                let offset = match self
+                let layout = self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().6,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().3,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().4,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().2,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().6,
+                    .and_then(|ctx| ctx.socket_tuple_context_layout());
+                match layout {
                     Some(SocketContextLayout::SockAddr) => {
                         let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
                         else {
@@ -1072,16 +1065,24 @@ impl<'a> MirToEbpfCompiler<'a> {
                         };
                         return self.compile_load_ctx_field(dst, &alias_field, slot);
                     }
+                    Some(
+                        SocketContextLayout::CgroupSock
+                        | SocketContextLayout::SockOps
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SkLookup,
+                    ) => {
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
+                        self.instructions.push(EbpfInsn::end32_to_be(dst));
+                    }
                     Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.local_ip4 is only available on cgroup_sock post_bind4, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
-                self.instructions.push(EbpfInsn::end32_to_be(dst));
+                }
             }
             CtxField::LocalIp6 => {
                 let offset = match self
@@ -1113,16 +1114,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
             }
             CtxField::LocalPort => {
-                let offset = match self
+                let layout = self
                     .probe_ctx
                     .as_ref()
-                    .and_then(|ctx| ctx.socket_tuple_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().8,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().7,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().8,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().6,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().8,
+                    .and_then(|ctx| ctx.socket_tuple_context_layout());
+                match layout {
                     Some(SocketContextLayout::SockAddr) => {
                         let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
                         else {
@@ -1132,15 +1128,23 @@ impl<'a> MirToEbpfCompiler<'a> {
                         };
                         return self.compile_load_ctx_field(dst, &alias_field, slot);
                     }
+                    Some(
+                        SocketContextLayout::CgroupSock
+                        | SocketContextLayout::SockOps
+                        | SocketContextLayout::SkMsg
+                        | SocketContextLayout::SkBuff
+                        | SocketContextLayout::SkLookup,
+                    ) => {
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
+                    }
                     Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
                     | None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.local_port is only available on cgroup_sock post_bind4/post_bind6 hooks and socket tuple programs".to_string(),
                         ));
                     }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                }
             }
             CtxField::LookupCookie => {
                 let load = self.ctx_field_direct_load(field)?;
