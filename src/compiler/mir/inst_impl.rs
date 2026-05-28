@@ -55,6 +55,10 @@ impl MirInst {
                 }
             }
             MirInst::MapLookup { key, .. } => f(key),
+            MirInst::MapLookupDynamic { map_ptr, key, .. } => {
+                f(map_ptr);
+                f(key);
+            }
             MirInst::LoadGlobal { .. } => {}
             MirInst::MapUpdate { key, val, .. } => {
                 f(key);
@@ -137,6 +141,7 @@ impl MirInst {
             | MirInst::CallKfunc { dst, .. }
             | MirInst::CallSubfn { dst, .. }
             | MirInst::MapLookup { dst, .. }
+            | MirInst::MapLookupDynamic { dst, .. }
             | MirInst::LoadGlobal { dst, .. }
             | MirInst::LoadCtxField { dst, .. }
             | MirInst::StrCmp { dst, .. }
@@ -190,6 +195,10 @@ impl MirInst {
                 }
             }
             MirInst::MapLookup { key, .. } => uses.push(*key),
+            MirInst::MapLookupDynamic { map_ptr, key, .. } => {
+                uses.push(*map_ptr);
+                uses.push(*key);
+            }
             MirInst::LoadGlobal { .. } => {}
             MirInst::MapUpdate { key, val, .. } => {
                 uses.push(*key);

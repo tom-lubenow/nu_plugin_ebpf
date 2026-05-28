@@ -5295,9 +5295,9 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "map-define-map-in-map-operation-rejects"
+        name: "map-define-map-in-map-operation-accepts"
         category: "maps"
-        tags: [maps map-define map-in-map reject]
+        tags: [maps map-define map-in-map accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -5308,14 +5308,13 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "first-class map-in-map operations are not modeled yet"
     }
     {
-        name: "map-define-map-in-map-inferred-operation-rejects"
+        name: "map-define-map-in-map-inferred-operation-accepts"
         category: "maps"
-        tags: [maps map-define map-in-map kind-inference reject]
+        tags: [maps map-define map-in-map kind-inference accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -5326,14 +5325,33 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "first-class map-in-map operations are not modeled yet"
     }
     {
-        name: "map-define-hash-of-maps-operation-rejects"
+        name: "map-define-map-in-map-dynamic-inner-lookup-accepts"
         category: "maps"
-        tags: [maps map-define map-in-map reject]
+        tags: [maps map-define map-in-map dynamic-lookup accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_seen --max-entries 4'
+            '  let inner = (0 | map-get outer_array)'
+            '  if $inner {'
+            '    let value = (7 | map-get $inner)'
+            '    if $value { $value | count }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "map-define-hash-of-maps-operation-accepts"
+        category: "maps"
+        tags: [maps map-define map-in-map accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -5344,14 +5362,13 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "first-class map-in-map operations are not modeled yet"
     }
     {
-        name: "map-define-hash-of-maps-inferred-operation-rejects"
+        name: "map-define-hash-of-maps-inferred-operation-accepts"
         category: "maps"
-        tags: [maps map-define map-in-map kind-inference reject]
+        tags: [maps map-define map-in-map kind-inference accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -5362,9 +5379,8 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
+        local: "accept"
         kernel: "skip"
-        error_contains: "first-class map-in-map operations are not modeled yet"
     }
     {
         name: "map-define-map-in-map-rejects-missing-inner-map"

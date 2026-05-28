@@ -692,7 +692,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind_arg} is reserved for sk_reuseport socket selection; use redirect-socket with --kind reuseport-sockarray instead of generic map commands"
             ),
             MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
-                "{context} --kind {kind_arg} names a map-in-map family; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet"
+                "{context} --kind {kind_arg} names a map-in-map family; use map-define --inner-map plus map-get for outer and guarded dynamic inner lookups; updates and deletes are not modeled yet"
             ),
             MapKind::StructOps => format!(
                 "{context} --kind {kind_arg} is reserved for struct_ops objects; use struct_ops attach syntax instead of generic map commands"
@@ -1514,7 +1514,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_map_in_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-delete map '{}' uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                "map-delete is not supported for map-in-map outer map '{}' ({}) yet; use map-get for outer and guarded dynamic inner lookups",
                 map_name, map_kind
             )));
         }
@@ -1544,12 +1544,6 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
-        if map_kind.is_map_in_map() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map-get map '{}' uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
-                map_name, map_kind
-            )));
-        }
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-get is not supported for map kind {} ('{}'); use map-push and future queue/stack-specific operations instead",
@@ -1572,7 +1566,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_map_in_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-put map '{}' uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                "map-put is not supported for map-in-map outer map '{}' ({}) yet; use map-get for outer and guarded dynamic inner lookups",
                 map_name, map_kind
             )));
         }

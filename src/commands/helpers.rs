@@ -431,9 +431,10 @@ Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
 `--inner-map` naming a previously declared inner map template. Dry-run/object
 emission includes libbpf-compatible BTF `values` metadata when that inner
 template is also emitted as a runtime map. Live loading is rejected before Aya
-because Aya does not materialize `inner_map_fd` from that metadata. First-class
-map-in-map operations remain pending, and outer maps intentionally do not
-accept `--value-type`.
+because Aya does not materialize `inner_map_fd` from that metadata. Dry-run
+outer `map-get` and guarded dynamic inner `map-get $inner` lookups are modeled;
+map-in-map update/delete/contains remain pending, and outer maps intentionally
+do not accept `--value-type`.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024

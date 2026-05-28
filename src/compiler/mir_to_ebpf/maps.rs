@@ -802,11 +802,51 @@ impl<'a> MirToEbpfCompiler<'a> {
         let key_size = match key_layout {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
         };
-        let value_size = self.value_ptr_size_from_lookup_dst(dst);
+        let value_size = if map.kind.is_map_in_map() {
+            4
+        } else {
+            self.value_ptr_size_from_lookup_dst(dst)
+        };
         self.register_generic_map_spec(map, key_size, Some(value_size))?;
 
         self.setup_map_key_arg(key_reg, key_layout)?;
         self.emit_map_fd_load(EbpfReg::R1, &map.name);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapLookupElem));
+        if dst_reg != EbpfReg::R0 {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R0));
+        }
+        Ok(())
+    }
+
+    pub(super) fn compile_dynamic_map_lookup(
+        &mut self,
+        dst_reg: EbpfReg,
+        map_reg: EbpfReg,
+        inner_map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        key_reg: EbpfReg,
+    ) -> Result<(), CompileError> {
+        if !inner_map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+            return Err(CompileError::UnsupportedInstruction(
+                inner_map
+                    .kind
+                    .generic_map_op_error(MapOpKind::Lookup, &inner_map.name),
+            ));
+        }
+        let default_key_size = self
+            .generic_map_key_types
+            .get(inner_map)
+            .map(|ty| ty.size().max(1))
+            .unwrap_or(8);
+        let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
+
+        if map_reg != EbpfReg::R1 {
+            self.instructions
+                .push(EbpfInsn::mov64_reg(EbpfReg::R1, map_reg));
+        }
+        self.setup_map_key_arg(key_reg, key_layout)?;
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapLookupElem));
         if dst_reg != EbpfReg::R0 {

@@ -1239,6 +1239,116 @@ fn test_map_lookup_compiles_and_emits_generic_map() {
 }
 
 #[test]
+fn test_dynamic_map_lookup_compiles_after_map_in_map_outer_lookup() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let lookup_inner = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let outer = MapRef {
+        name: "outer_maps".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let inner = MapRef {
+        name: "inner_values".to_string(),
+        kind: MapKind::Hash,
+    };
+    let outer_key = func.alloc_vreg();
+    let inner_key = func.alloc_vreg();
+    let inner_map_ptr = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let value_ptr = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: outer_key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: inner_map_ptr,
+        map: outer.clone(),
+        key: outer_key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(inner_map_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: lookup_inner,
+        if_false: done,
+    };
+
+    func.block_mut(lookup_inner)
+        .instructions
+        .push(MirInst::Copy {
+            dst: inner_key,
+            src: MirValue::Const(7),
+        });
+    func.block_mut(lookup_inner)
+        .instructions
+        .push(MirInst::MapLookupDynamic {
+            dst: value_ptr,
+            map_ptr: inner_map_ptr,
+            inner_map: inner.clone(),
+            key: inner_key,
+        });
+    func.block_mut(lookup_inner).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+    func.block_mut(done).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let type_hints = MirTypeHints {
+        main: HashMap::from([
+            (outer_key, MirType::U32),
+            (inner_key, MirType::I64),
+            (inner_map_ptr, MirType::named_kernel_struct_ptr("bpf_map")),
+            (cond, MirType::Bool),
+            (
+                value_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U64),
+                    address_space: AddressSpace::Map,
+                },
+            ),
+        ]),
+        generic_map_value_types: HashMap::from([(inner.clone(), MirType::U64)]),
+        generic_map_max_entries: HashMap::from([(outer.clone(), 4), (inner.clone(), 16)]),
+        generic_map_inner_templates: HashMap::from([(outer.clone(), inner.clone())]),
+        declared_generic_maps: std::collections::HashSet::from([outer.clone(), inner.clone()]),
+        ..MirTypeHints::default()
+    };
+
+    let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
+        .expect("dynamic map lookup should compile");
+    let lookup_calls = result
+        .bytecode
+        .chunks(8)
+        .filter(|chunk| {
+            chunk[0] == opcode::CALL
+                && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]])
+                    == BpfHelper::MapLookupElem as i32
+        })
+        .count();
+    assert_eq!(
+        lookup_calls, 2,
+        "expected outer and dynamic inner bpf_map_lookup_elem calls"
+    );
+    assert!(result.maps.iter().any(|map| map.name == outer.name));
+    assert!(result.maps.iter().any(|map| map.name == inner.name));
+}
+
+#[test]
 fn test_generic_map_max_entries_hint_sets_map_capacity() {
     use crate::compiler::mir::*;
 

@@ -80,6 +80,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_map_lookup_inst(*dst, map, *key)?;
             }
 
+            LirInst::MapLookupDynamic {
+                dst,
+                map_ptr,
+                inner_map,
+                key,
+            } => {
+                self.compile_dynamic_map_lookup_inst(*dst, *map_ptr, inner_map, *key)?;
+            }
+
             LirInst::LoadGlobal { dst, symbol } => {
                 self.compile_load_global_inst(*dst, symbol)?;
             }

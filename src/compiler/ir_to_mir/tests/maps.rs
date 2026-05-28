@@ -2513,11 +2513,11 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
     for (kind, expected) in [
         (
             "array-of-maps",
-            "first-class map-in-map operations are not modeled yet",
+            "map-put is not supported for map-in-map outer map",
         ),
         (
             "hash-of-maps",
-            "first-class map-in-map operations are not modeled yet",
+            "map-put is not supported for map-in-map outer map",
         ),
         ("struct-ops", "reserved for struct_ops objects"),
         ("user-ringbuf", "reserved for user-ringbuf helper surfaces"),
@@ -3057,7 +3057,7 @@ fn test_map_get_infers_prior_map_define_kind_when_kind_is_omitted() {
 }
 
 #[test]
-fn test_map_get_rejects_declared_map_in_map_when_kind_is_omitted() {
+fn test_map_get_accepts_declared_map_in_map_when_kind_is_omitted() {
     let map_get_decl = DeclId::new(42);
     let (mut hir, mut decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
     decl_names.insert(map_get_decl, "map-get".to_string());
@@ -3081,7 +3081,7 @@ fn test_map_get_rejects_declared_map_in_map_when_kind_is_omitted() {
     hir.main.register_count = 13;
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &decl_names,
@@ -3089,18 +3089,97 @@ fn test_map_get_rejects_declared_map_in_map_when_kind_is_omitted() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("map-get should reject declared map-in-map operations without --kind");
+    .expect("map-get should infer the declared map-in-map kind");
 
-    match err {
-        CompileError::UnsupportedInstruction(msg) => {
-            assert!(msg.contains("declared array-of-maps"), "{msg}");
-            assert!(
-                msg.contains("first-class map-in-map operations are not modeled yet"),
-                "{msg}"
-            );
-        }
-        other => panic!("unexpected lowering error: {other:?}"),
-    }
+    let expected = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let outer_lookup_dst = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find_map(|inst| match inst {
+            MirInst::MapLookup { dst, map, .. } if *map == expected => Some(*dst),
+            _ => None,
+        })
+        .expect("expected outer map-in-map lookup");
+    assert!(
+        result
+            .type_hints
+            .main
+            .get(&outer_lookup_dst)
+            .is_some_and(MirType::is_bpf_map_ptr),
+        "outer map-in-map lookup should produce a bpf_map kernel pointer"
+    );
+}
+
+#[test]
+fn test_map_get_on_map_in_map_result_lowers_dynamic_inner_lookup() {
+    let map_get_decl = DeclId::new(42);
+    let (mut hir, mut decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
+    decl_names.insert(map_get_decl, "map-get".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(12),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(12),
+        args: HirCallArgs {
+            positional: vec![RegId::new(5)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(13),
+        lit: HirLiteral::Int(7),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(13),
+        args: HirCallArgs {
+            positional: vec![RegId::new(12)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(13),
+    };
+    hir.main.register_count = 14;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("dynamic map-get through map-in-map result should lower");
+
+    let expected_inner = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapLookupDynamic { inner_map, .. } if *inner_map == expected_inner
+            )),
+        "expected dynamic lookup through the inner map template"
+    );
 }
 
 #[test]

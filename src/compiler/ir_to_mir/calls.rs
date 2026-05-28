@@ -1397,39 +1397,22 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.require_only_named_args("map-get", &["kind", "init", "flags"])?;
 
-                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                let (map_arg_vreg, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
-                        "map-get requires a literal map name as the first positional argument"
+                        "map-get requires a literal map name or map-in-map lookup result as the first positional argument"
                             .into(),
                     )
                 })?;
-                let map_name = self.literal_string_arg(map_reg, "map-get")?;
-                self.validate_generic_map_name(&map_name, "map-get")?;
-                let map_kind = self.map_get_kind_arg("map-get", &map_name)?;
-                let map_ref = MapRef {
-                    name: map_name.clone(),
-                    kind: map_kind,
-                };
-                if map_kind.is_local_storage() {
-                    self.lower_local_storage_map_get(
-                        src_dst,
-                        dst_vreg,
-                        result_vreg,
-                        src_dst_had_value,
-                        map_ref,
-                    )?;
-                } else {
-                    if self.named_args.contains_key("init") {
+                if let Some(inner_map) = self
+                    .get_metadata(map_reg)
+                    .and_then(|meta| meta.dynamic_map_ref.clone())
+                {
+                    if !self.named_args.is_empty() {
                         return Err(CompileError::UnsupportedInstruction(
-                            "map-get --init is only supported for local-storage map kinds".into(),
+                            "map-get on a dynamic inner-map pointer does not accept named arguments"
+                                .into(),
                         ));
                     }
-                    if self.named_args.contains_key("flags") {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "map-get --flags is only supported for local-storage map kinds".into(),
-                        ));
-                    }
-                    self.validate_generic_map_lookup_kind(map_kind, &map_name)?;
                     let key_vreg = self
                         .positional_args
                         .get(1)
@@ -1448,13 +1431,18 @@ impl<'a> HirToMirLowering<'a> {
                         .map(|(_, reg)| *reg)
                         .or(self.pipeline_input_reg)
                         .or_else(|| src_dst_had_value.then_some(src_dst));
-                    let key_vreg =
-                        self.map_key_vreg_for_named_schema(&map_ref, key_vreg, key_reg, "map-get")?;
+                    let key_vreg = self.map_key_vreg_for_named_schema(
+                        &inner_map,
+                        key_vreg,
+                        key_reg,
+                        "map-get dynamic map",
+                    )?;
                     let lookup_vreg = self.func.alloc_vreg();
 
-                    self.emit(MirInst::MapLookup {
+                    self.emit(MirInst::MapLookupDynamic {
                         dst: lookup_vreg,
-                        map: map_ref.clone(),
+                        map_ptr: map_arg_vreg,
+                        inner_map: inner_map.clone(),
                         key: key_vreg,
                     });
                     self.emit(MirInst::Copy {
@@ -1462,44 +1450,101 @@ impl<'a> HirToMirLowering<'a> {
                         src: MirValue::VReg(lookup_vreg),
                     });
 
-                    let stored_ty =
-                        self.validated_named_map_value_type(&map_ref, "map-get value schema")?;
-                    let runtime_ty = MirType::Ptr {
-                        pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
-                        address_space: AddressSpace::Map,
+                    let stored_ty = self.validated_named_map_value_type(
+                        &inner_map,
+                        "map-get dynamic value schema",
+                    )?;
+                    self.record_map_value_lookup_result(
+                        src_dst,
+                        lookup_vreg,
+                        result_vreg,
+                        &inner_map,
+                        key_vreg,
+                        stored_ty,
+                    );
+                } else {
+                    let map_name = self.literal_string_arg(map_reg, "map-get")?;
+                    self.validate_generic_map_name(&map_name, "map-get")?;
+                    let map_kind = self.map_get_kind_arg("map-get", &map_name)?;
+                    let map_ref = MapRef {
+                        name: map_name.clone(),
+                        kind: map_kind,
                     };
-                    self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
-                    self.vreg_type_hints.insert(result_vreg, runtime_ty);
+                    if map_kind.is_local_storage() {
+                        self.lower_local_storage_map_get(
+                            src_dst,
+                            dst_vreg,
+                            result_vreg,
+                            src_dst_had_value,
+                            map_ref,
+                        )?;
+                    } else {
+                        if self.named_args.contains_key("init") {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "map-get --init is only supported for local-storage map kinds"
+                                    .into(),
+                            ));
+                        }
+                        if self.named_args.contains_key("flags") {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "map-get --flags is only supported for local-storage map kinds"
+                                    .into(),
+                            ));
+                        }
+                        self.validate_generic_map_lookup_kind(map_kind, &map_name)?;
+                        let key_vreg = self
+                        .positional_args
+                        .get(1)
+                        .map(|(vreg, _)| *vreg)
+                        .or(self.pipeline_input)
+                        .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-get requires a key from pipeline input or a second positional argument"
+                                    .into(),
+                            )
+                        })?;
+                        let key_reg = self
+                            .positional_args
+                            .get(1)
+                            .map(|(_, reg)| *reg)
+                            .or(self.pipeline_input_reg)
+                            .or_else(|| src_dst_had_value.then_some(src_dst));
+                        let key_vreg = self.map_key_vreg_for_named_schema(
+                            &map_ref, key_vreg, key_reg, "map-get",
+                        )?;
+                        let lookup_vreg = self.func.alloc_vreg();
 
-                    self.reset_call_result_metadata(src_dst);
-                    if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) =
-                        stored_ty
-                    {
-                        let semantics = self.named_map_value_semantics(&map_ref).cloned();
-                        let key_ty = if map_ref.kind.is_array_index_map() {
-                            MirType::U32
+                        self.emit(MirInst::MapLookup {
+                            dst: lookup_vreg,
+                            map: map_ref.clone(),
+                            key: key_vreg,
+                        });
+                        self.emit(MirInst::Copy {
+                            dst: result_vreg,
+                            src: MirValue::VReg(lookup_vreg),
+                        });
+
+                        if map_ref.kind.is_map_in_map() {
+                            let inner_map = self.map_in_map_inner_template(&map_ref, "map-get")?;
+                            let runtime_ty = MirType::named_kernel_struct_ptr("bpf_map");
+                            self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
+                            self.vreg_type_hints.insert(result_vreg, runtime_ty.clone());
+                            self.reset_call_result_metadata(src_dst);
+                            let meta = self.get_or_create_metadata(src_dst);
+                            meta.field_type = Some(runtime_ty);
+                            meta.dynamic_map_ref = Some(inner_map);
                         } else {
-                            self.named_map_key_type(&map_ref)
-                                .cloned()
-                                .or_else(|| {
-                                    self.vreg_type_hints
-                                        .get(&key_vreg)
-                                        .map(|ty| self.stored_generic_map_value_type(ty))
-                                })
-                                .unwrap_or(MirType::Unknown)
-                        };
-                        let meta = self.get_or_create_metadata(src_dst);
-                        meta.field_type = Some(MirType::Ptr {
-                            pointee: Box::new(value_ty.clone()),
-                            address_space: AddressSpace::Map,
-                        });
-                        meta.map_value_origin = Some(MapValueOrigin {
-                            map_ref: map_ref.clone(),
-                            key_ty,
-                            value_ty,
-                        });
-                        if let Some(semantics) = semantics {
-                            meta.annotated_semantics = Some(semantics);
+                            let stored_ty = self
+                                .validated_named_map_value_type(&map_ref, "map-get value schema")?;
+                            self.record_map_value_lookup_result(
+                                src_dst,
+                                lookup_vreg,
+                                result_vreg,
+                                &map_ref,
+                                key_vreg,
+                                stored_ty,
+                            );
                         }
                     }
                 }
@@ -2405,15 +2450,96 @@ impl<'a> HirToMirLowering<'a> {
                     map_ref.name, scalar_ty
                 ))),
                 _ => {
-                    let typed_key_vreg = self.func.alloc_vreg();
-                    self.emit(MirInst::Copy {
-                        dst: typed_key_vreg,
-                        src: MirValue::VReg(key_vreg),
+                    let slot = self.func.alloc_stack_slot(
+                        align_to_eight(scalar_ty.size().max(1)),
+                        8,
+                        StackSlotKind::Local,
+                    );
+                    self.record_stack_slot_type(slot, scalar_ty.clone());
+                    self.emit(MirInst::StoreSlot {
+                        slot,
+                        offset: 0,
+                        val: MirValue::VReg(key_vreg),
+                        ty: scalar_ty.clone(),
                     });
-                    self.vreg_type_hints.insert(typed_key_vreg, scalar_ty);
-                    Ok(typed_key_vreg)
+                    let key_ptr_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: key_ptr_vreg,
+                        src: MirValue::StackSlot(slot),
+                    });
+                    self.vreg_type_hints.insert(
+                        key_ptr_vreg,
+                        MirType::Ptr {
+                            pointee: Box::new(scalar_ty),
+                            address_space: AddressSpace::Stack,
+                        },
+                    );
+                    Ok(key_ptr_vreg)
                 }
             },
+        }
+    }
+
+    fn map_in_map_inner_template(
+        &self,
+        map_ref: &MapRef,
+        context: &str,
+    ) -> Result<MapRef, CompileError> {
+        self.map_inner_templates
+            .get(map_ref)
+            .cloned()
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} map '{}' uses {} and requires a prior map-define --inner-map declaration",
+                    map_ref.name, map_ref.kind
+                ))
+            })
+    }
+
+    fn record_map_value_lookup_result(
+        &mut self,
+        src_dst: RegId,
+        lookup_vreg: VReg,
+        result_vreg: VReg,
+        map_ref: &MapRef,
+        key_vreg: VReg,
+        stored_ty: Option<MirType>,
+    ) {
+        let runtime_ty = MirType::Ptr {
+            pointee: Box::new(stored_ty.clone().unwrap_or(MirType::U8)),
+            address_space: AddressSpace::Map,
+        };
+        self.vreg_type_hints.insert(lookup_vreg, runtime_ty.clone());
+        self.vreg_type_hints.insert(result_vreg, runtime_ty);
+
+        self.reset_call_result_metadata(src_dst);
+        if let Some(value_ty @ (MirType::Array { .. } | MirType::Struct { .. })) = stored_ty {
+            let semantics = self.named_map_value_semantics(map_ref).cloned();
+            let key_ty = if map_ref.kind.is_array_index_map() {
+                MirType::U32
+            } else {
+                self.named_map_key_type(map_ref)
+                    .cloned()
+                    .or_else(|| {
+                        self.vreg_type_hints
+                            .get(&key_vreg)
+                            .map(|ty| self.stored_generic_map_value_type(ty))
+                    })
+                    .unwrap_or(MirType::Unknown)
+            };
+            let meta = self.get_or_create_metadata(src_dst);
+            meta.field_type = Some(MirType::Ptr {
+                pointee: Box::new(value_ty.clone()),
+                address_space: AddressSpace::Map,
+            });
+            meta.map_value_origin = Some(MapValueOrigin {
+                map_ref: map_ref.clone(),
+                key_ty,
+                value_ty,
+            });
+            if let Some(semantics) = semantics {
+                meta.annotated_semantics = Some(semantics);
+            }
         }
     }
 
@@ -2893,7 +3019,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             map_kind if map_kind.is_map_in_map() => {
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{CONTEXT} map uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                    "{CONTEXT} is not supported for map-in-map outer map kind {} yet; use map-get and pointer truthiness instead",
                     map_kind
                 )))
             }

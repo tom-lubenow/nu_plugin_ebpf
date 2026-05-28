@@ -111,6 +111,14 @@ pub(super) fn apply_inst(
         MirInst::MapLookup { dst, map, key } => {
             apply_map_lookup_inst(*dst, map, *key, types, state, errors);
         }
+        MirInst::MapLookupDynamic {
+            dst,
+            map_ptr,
+            inner_map,
+            key,
+        } => {
+            apply_map_lookup_dynamic_inst(*dst, *map_ptr, inner_map, *key, types, state, errors);
+        }
         MirInst::LoadGlobal { dst, ty, .. } => {
             apply_global_load_inst(*dst, ty, state);
         }

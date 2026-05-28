@@ -104,6 +104,7 @@ impl<'a> TypeInference<'a> {
             MirInst::CallKfunc { .. } => Some(ProgramCapability::KfuncCalls),
             MirInst::TailCall { .. } => Some(ProgramCapability::TailCalls),
             MirInst::LoadMapFd { .. } => Some(ProgramCapability::GenericMaps),
+            MirInst::MapLookupDynamic { .. } => Some(ProgramCapability::GenericMaps),
             MirInst::MapLookup { map, .. }
             | MirInst::MapUpdate { map, .. }
             | MirInst::MapDelete { map, .. }
@@ -554,6 +555,25 @@ impl<'a> TypeInference<'a> {
                     errors.push(TypeError::new(
                         map.kind.generic_map_op_error(MapOpKind::Lookup, &map.name),
                     ));
+                }
+            }
+
+            MirInst::MapLookupDynamic {
+                map_ptr, inner_map, ..
+            } => {
+                if !inner_map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+                    errors.push(TypeError::new(
+                        inner_map
+                            .kind
+                            .generic_map_op_error(MapOpKind::Lookup, &inner_map.name),
+                    ));
+                }
+                let map_ptr_ty = self.mir_type_for_vreg(*map_ptr, types);
+                if Self::mir_ptr_space(&map_ptr_ty).is_none() {
+                    errors.push(TypeError::new(format!(
+                        "dynamic map lookup expects a map pointer, got {:?}",
+                        map_ptr_ty
+                    )));
                 }
             }
 

@@ -357,7 +357,20 @@ pub(crate) fn infer_instruction_def_type(
             .or_else(|| {
                 recover_ctx_field_hint(probe_ctx, field, slot.is_some()).map(|ty| (*dst, ty, true))
             }),
-        MirInst::MapLookup { dst, map, .. } => Some((
+        MirInst::MapLookup { dst, map, .. } if map.kind.is_map_in_map() => Some((
+            *dst,
+            hints
+                .get(dst)
+                .cloned()
+                .unwrap_or_else(|| MirType::named_kernel_struct_ptr("bpf_map")),
+            true,
+        )),
+        MirInst::MapLookup { dst, map, .. }
+        | MirInst::MapLookupDynamic {
+            dst,
+            inner_map: map,
+            ..
+        } => Some((
             *dst,
             MirType::Ptr {
                 pointee: Box::new(match map_value_types.get(map).cloned() {

@@ -228,8 +228,11 @@ fn check_generic_map_layout_constraints(
                     else {
                         continue;
                     };
-                    let value_size =
-                        infer_map_lookup_value_size(*dst, map, types, generic_map_value_types);
+                    let value_size = if map.kind.is_map_in_map() {
+                        4
+                    } else {
+                        infer_map_lookup_value_size(*dst, map, types, generic_map_value_types)
+                    };
                     register_generic_map_layout_spec(
                         map,
                         key_size,
@@ -237,6 +240,18 @@ fn check_generic_map_layout_constraints(
                         &mut specs,
                         &mut errors,
                     );
+                }
+                MirInst::MapLookupDynamic { inner_map, key, .. } => {
+                    if !inner_map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+                        errors.push(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            inner_map
+                                .kind
+                                .generic_map_op_error(MapOpKind::Lookup, &inner_map.name),
+                        ));
+                        continue;
+                    }
+                    let _ = infer_map_operand_size(*key, "map key", types, &mut errors);
                 }
                 MirInst::MapUpdate { map, key, val, .. } => {
                     if !map.kind.supports_generic_map_op(MapOpKind::Update) {

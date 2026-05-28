@@ -344,6 +344,19 @@ fn lower_inst(
                 key: *key,
             });
         }
+        MirInst::MapLookupDynamic {
+            dst,
+            map_ptr,
+            inner_map,
+            key,
+        } => {
+            out.push(LirInst::MapLookupDynamic {
+                dst: *dst,
+                map_ptr: *map_ptr,
+                inner_map: inner_map.clone(),
+                key: *key,
+            });
+        }
         MirInst::LoadGlobal { dst, symbol, .. } => {
             out.push(LirInst::LoadGlobal {
                 dst: *dst,

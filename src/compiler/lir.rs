@@ -252,6 +252,12 @@ pub enum LirInst {
         map: MapRef,
         key: VReg,
     },
+    MapLookupDynamic {
+        dst: VReg,
+        map_ptr: VReg,
+        inner_map: MapRef,
+        key: VReg,
+    },
     LoadGlobal {
         dst: VReg,
         symbol: String,
@@ -407,6 +413,7 @@ impl LirInst {
             | LirInst::LoadSubprogram { dst, .. }
             | LirInst::LoadMapFd { dst, .. }
             | LirInst::MapLookup { dst, .. }
+            | LirInst::MapLookupDynamic { dst, .. }
             | LirInst::LoadGlobal { dst, .. }
             | LirInst::LoadCtxField { dst, .. }
             | LirInst::StrCmp { dst, .. }
@@ -459,6 +466,10 @@ impl LirInst {
             LirInst::LoadSubprogram { .. } => {}
             LirInst::LoadMapFd { .. } => {}
             LirInst::MapLookup { key, .. } => uses.push(*key),
+            LirInst::MapLookupDynamic { map_ptr, key, .. } => {
+                uses.push(*map_ptr);
+                uses.push(*key);
+            }
             LirInst::LoadGlobal { .. } => {}
             LirInst::MapUpdate { key, val, .. } => {
                 uses.push(*key);
@@ -537,6 +548,7 @@ impl LirInst {
                 | LirInst::CallSubfn { .. }
                 | LirInst::TailCall { .. }
                 | LirInst::MapLookup { .. }
+                | LirInst::MapLookupDynamic { .. }
                 | LirInst::MapUpdate { .. }
                 | LirInst::MapDelete { .. }
                 | LirInst::MapPush { .. }

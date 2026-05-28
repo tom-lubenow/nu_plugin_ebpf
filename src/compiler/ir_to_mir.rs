@@ -225,6 +225,8 @@ struct RegMetadata {
     annotated_semantics: Option<AnnotatedValueSemantics>,
     /// Provenance for pointers that still refer to a concrete map value allocation.
     map_value_origin: Option<MapValueOrigin>,
+    /// Inner map template carried by a map-in-map outer lookup result.
+    dynamic_map_ref: Option<MapRef>,
     /// Closure block ID (for inline execution in where/each)
     closure_block_id: Option<nu_protocol::BlockId>,
 }

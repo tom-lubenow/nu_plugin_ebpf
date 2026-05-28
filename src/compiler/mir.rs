@@ -367,7 +367,7 @@ impl MapKind {
     pub fn map_fd_materialization_error(self, map_name: &str) -> String {
         match self {
             MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
-                "map '{}' uses {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations and live inner_map_fd materialization are not modeled yet",
+                "map '{}' uses {}; map-define --inner-map declarations, object BTF emission, and dry-run map-in-map lookups are supported, but live inner_map_fd materialization is not modeled yet",
                 map_name, self
             ),
             MapKind::DeprecatedCgroupStorage | MapKind::DeprecatedPerCpuCgroupStorage => format!(
@@ -396,6 +396,8 @@ impl MapKind {
                 | MapKind::PerCpuHash
                 | MapKind::PerCpuArray
                 | MapKind::LruPerCpuHash
+                | MapKind::ArrayOfMaps
+                | MapKind::HashOfMaps
                 | MapKind::Queue
                 | MapKind::Stack
                 | MapKind::BloomFilter
@@ -404,7 +406,19 @@ impl MapKind {
 
     pub fn supports_generic_map_op(self, op: MapOpKind) -> bool {
         match op {
-            MapOpKind::Lookup | MapOpKind::Update => matches!(
+            MapOpKind::Lookup => matches!(
+                self,
+                MapKind::Hash
+                    | MapKind::Array
+                    | MapKind::LpmTrie
+                    | MapKind::LruHash
+                    | MapKind::PerCpuHash
+                    | MapKind::PerCpuArray
+                    | MapKind::LruPerCpuHash
+                    | MapKind::ArrayOfMaps
+                    | MapKind::HashOfMaps
+            ),
+            MapOpKind::Update => matches!(
                 self,
                 MapKind::Hash
                     | MapKind::Array
@@ -2291,6 +2305,14 @@ pub enum MirInst {
 
     /// Map lookup
     MapLookup { dst: VReg, map: MapRef, key: VReg },
+
+    /// Map lookup through a runtime map pointer, used for map-in-map inner maps.
+    MapLookupDynamic {
+        dst: VReg,
+        map_ptr: VReg,
+        inner_map: MapRef,
+        key: VReg,
+    },
 
     /// Load a compiler-generated global symbol from `.rodata`, `.data`, or `.bss`
     LoadGlobal {

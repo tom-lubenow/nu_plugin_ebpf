@@ -258,6 +258,7 @@ fn apply_alias_inst(
         | MirInst::LoadSubprogram { dst, .. }
         | MirInst::CallKfunc { dst, .. }
         | MirInst::MapLookup { dst, .. }
+        | MirInst::MapLookupDynamic { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::ListNew { dst, .. }
         | MirInst::ListLen { dst, .. }

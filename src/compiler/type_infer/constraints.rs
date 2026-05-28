@@ -272,8 +272,18 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::MapLookup { dst, .. } => {
-                // Map lookup returns pointer to value
+            MirInst::MapLookup { dst, map, .. } if map.kind.is_map_in_map() => {
+                // Map-in-map outer lookup returns a nullable inner map pointer.
+                let dst_ty = self.vreg_type(*dst);
+                self.constrain(
+                    dst_ty,
+                    HMType::from_mir_type(&MirType::named_kernel_struct_ptr("bpf_map")),
+                    "map_in_map_lookup",
+                );
+            }
+
+            MirInst::MapLookup { dst, .. } | MirInst::MapLookupDynamic { dst, .. } => {
+                // Map lookup returns pointer to value.
                 let dst_ty = self.vreg_type(*dst);
                 let pointee = HMType::Var(self.tvar_gen.fresh());
                 let ptr_ty = HMType::Ptr {

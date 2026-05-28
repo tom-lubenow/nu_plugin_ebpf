@@ -125,6 +125,7 @@ fn has_side_effects(inst: &MirInst) -> bool {
         | MirInst::CallKfunc { .. }
         | MirInst::CallSubfn { .. }
         | MirInst::MapLookup { .. }
+        | MirInst::MapLookupDynamic { .. }
         | MirInst::MapUpdate { .. }
         | MirInst::MapDelete { .. }
         | MirInst::MapPush { .. }

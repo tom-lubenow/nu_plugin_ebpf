@@ -578,7 +578,106 @@ impl<'a> VccLowerer<'a> {
                     .get(dst)
                     .map(vcc_type_from_mir)
                     .unwrap_or(VccValueType::Unknown);
-                let bounds = map_value_limit(map.name.as_str())
+                if map.kind.is_map_in_map() {
+                    let mut info = match inferred {
+                        VccValueType::Ptr(info) => info,
+                        _ => VccPointerInfo {
+                            space: VccAddrSpace::Kernel,
+                            nullability: VccNullability::MaybeNull,
+                            bounds: None,
+                            packet_root: None,
+                            packet_root_field: None,
+                            packet_ctx_field: None,
+                            packet_end: false,
+                            map_root: None,
+                            context_buffer_root: None,
+                            context_buffer_end: false,
+                            ringbuf_ref: None,
+                            kfunc_ref: None,
+                        },
+                    };
+                    info.space = VccAddrSpace::Kernel;
+                    info.nullability = VccNullability::MaybeNull;
+                    let ty = VccValueType::Ptr(info);
+                    out.push(VccInst::Assume {
+                        dst: VccReg(dst.0),
+                        ty,
+                        ctx_field_source: None,
+                    });
+                    self.ptr_regs.insert(VccReg(dst.0), info);
+                } else {
+                    let bounds = map_value_limit(map.name.as_str())
+                        .or_else(|| map_value_limit_from_dst_type(self.types.get(dst)))
+                        .map(|limit| VccBounds {
+                            min: 0,
+                            max: 0,
+                            limit,
+                        });
+                    let mut info = match inferred {
+                        VccValueType::Ptr(info) => info,
+                        _ => VccPointerInfo {
+                            space: VccAddrSpace::MapValue,
+                            nullability: VccNullability::MaybeNull,
+                            bounds: None,
+                            packet_root: None,
+                            packet_root_field: None,
+                            packet_ctx_field: None,
+                            packet_end: false,
+                            map_root: Some(VccReg(dst.0)),
+                            context_buffer_root: None,
+                            context_buffer_end: false,
+                            ringbuf_ref: None,
+                            kfunc_ref: None,
+                        },
+                    };
+                    info.space = VccAddrSpace::MapValue;
+                    info.nullability = VccNullability::MaybeNull;
+                    info.map_root = Some(VccReg(dst.0));
+                    if info.bounds.is_none() {
+                        info.bounds = bounds;
+                    }
+                    let ty = VccValueType::Ptr(info);
+                    out.push(VccInst::Assume {
+                        dst: VccReg(dst.0),
+                        ty,
+                        ctx_field_source: None,
+                    });
+                    out.push(VccInst::MapLookupSource {
+                        root: VccReg(dst.0),
+                        map: map.clone(),
+                        key: VccReg(key.0),
+                    });
+                    if let VccValueType::Ptr(info) = ty {
+                        self.ptr_regs.insert(VccReg(dst.0), info);
+                    }
+                }
+            }
+            MirInst::MapLookupDynamic {
+                dst,
+                map_ptr,
+                inner_map,
+                key,
+            } => {
+                if !inner_map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        inner_map
+                            .kind
+                            .generic_map_op_error(MapOpKind::Lookup, &inner_map.name),
+                    ));
+                }
+                out.push(VccInst::AssertPtrAccess {
+                    ptr: VccReg(map_ptr.0),
+                    size: VccValue::Imm(1),
+                    op: "dynamic map lookup",
+                });
+                self.verify_map_key(&inner_map.name, *key, out)?;
+                let inferred = self
+                    .types
+                    .get(dst)
+                    .map(vcc_type_from_mir)
+                    .unwrap_or(VccValueType::Unknown);
+                let bounds = map_value_limit(inner_map.name.as_str())
                     .or_else(|| map_value_limit_from_dst_type(self.types.get(dst)))
                     .map(|limit| VccBounds {
                         min: 0,
@@ -613,11 +712,6 @@ impl<'a> VccLowerer<'a> {
                     dst: VccReg(dst.0),
                     ty,
                     ctx_field_source: None,
-                });
-                out.push(VccInst::MapLookupSource {
-                    root: VccReg(dst.0),
-                    map: map.clone(),
-                    key: VccReg(key.0),
                 });
                 if let VccValueType::Ptr(info) = ty {
                     self.ptr_regs.insert(VccReg(dst.0), info);

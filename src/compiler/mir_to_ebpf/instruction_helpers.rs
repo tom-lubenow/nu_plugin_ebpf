@@ -201,6 +201,19 @@ impl<'a> MirToEbpfCompiler<'a> {
         self.compile_generic_map_lookup(dst, dst_reg, map, key, key_reg)
     }
 
+    pub(super) fn compile_dynamic_map_lookup_inst(
+        &mut self,
+        dst: VReg,
+        map_ptr: VReg,
+        inner_map: &crate::compiler::mir::MapRef,
+        key: VReg,
+    ) -> Result<(), CompileError> {
+        let dst_reg = self.alloc_dst_reg(dst)?;
+        let map_reg = self.ensure_reg(map_ptr)?;
+        let key_reg = self.ensure_reg(key)?;
+        self.compile_dynamic_map_lookup(dst_reg, map_reg, inner_map, key, key_reg)
+    }
+
     pub(super) fn compile_load_global_inst(
         &mut self,
         dst: VReg,

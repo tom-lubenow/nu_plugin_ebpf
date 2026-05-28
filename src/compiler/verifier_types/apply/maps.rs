@@ -16,6 +16,20 @@ pub(super) fn apply_map_lookup_inst(
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_key_access(map, key, types, state, errors);
 
+    if map.kind.is_map_in_map() {
+        state.set(
+            dst,
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                nullability: Nullability::MaybeNull,
+                bounds: None,
+                ringbuf_ref: None,
+                kfunc_ref: None,
+            },
+        );
+        return;
+    }
+
     let bounds = map_value_limit(map)
         .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
         .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
@@ -30,6 +44,47 @@ pub(super) fn apply_map_lookup_inst(
         },
     );
     state.set_map_lookup_source(dst, map, key);
+}
+
+pub(super) fn apply_map_lookup_dynamic_inst(
+    dst: VReg,
+    map_ptr: VReg,
+    inner_map: &MapRef,
+    key: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !inner_map.kind.supports_generic_map_op(MapOpKind::Lookup) {
+        errors.push(VerifierTypeError::new(
+            inner_map
+                .kind
+                .generic_map_op_error(MapOpKind::Lookup, &inner_map.name),
+        ));
+    }
+    let _ = require_ptr_with_space(
+        map_ptr,
+        "dynamic map lookup",
+        &[AddressSpace::Kernel],
+        state,
+        errors,
+    );
+    check_map_operand_scalar_size(key, "map key", types, errors);
+    check_map_key_access(inner_map, key, types, state, errors);
+
+    let bounds = map_value_limit(inner_map)
+        .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
+        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
+    state.set(
+        dst,
+        VerifierType::Ptr {
+            space: AddressSpace::Map,
+            nullability: Nullability::MaybeNull,
+            bounds,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        },
+    );
 }
 
 pub(super) fn apply_global_load_inst(dst: VReg, ty: &MirType, state: &mut VerifierState) {
