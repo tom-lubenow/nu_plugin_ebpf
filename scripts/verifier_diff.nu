@@ -6547,6 +6547,74 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-l3-csum-replace-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper checksum packet-bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  helper-call "bpf_l3_csum_replace" $ctx 0 0 0 0'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "tc-l3-csum-replace-allows-reloaded-data"
+        category: "helper-state"
+        tags: [tc helper checksum packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_l3_csum_replace" $ctx 0 0 0 0'
+            '  ($ctx.data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-l4-csum-replace-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper checksum packet-bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  helper-call "bpf_l4_csum_replace" $ctx 0 0 0 0'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "tc-l4-csum-replace-allows-reloaded-data"
+        category: "helper-state"
+        tags: [tc helper checksum packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_l4_csum_replace" $ctx 0 0 0 0'
+            '  ($ctx.data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]
