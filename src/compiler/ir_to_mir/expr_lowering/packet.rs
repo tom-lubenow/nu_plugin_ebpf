@@ -42,9 +42,10 @@ impl<'a> HirToMirLowering<'a> {
         root_runtime_ty: &MirType,
         projected_ty: &MirType,
         path_desc: &str,
-    ) -> Result<(), CompileError> {
+    ) -> Result<Option<KernelBtfFieldAddr>, CompileError> {
         let projected_by_ref =
             matches!(projected_ty, MirType::Array { .. } | MirType::Struct { .. });
+        let mut kernel_btf_field_addr = None;
 
         enum TrampolineCursor {
             Stack {
@@ -276,6 +277,38 @@ impl<'a> HirToMirLowering<'a> {
                             })?;
 
                     if is_last {
+                        if trusted_btf && address_space == AddressSpace::Kernel && projected_by_ref
+                        {
+                            let field_ptr_ty = MirType::Ptr {
+                                pointee: Box::new(projected_ty.clone()),
+                                address_space: AddressSpace::Kernel,
+                            };
+                            let field_ptr_vreg = self.func.alloc_vreg();
+                            self.vreg_type_hints
+                                .insert(field_ptr_vreg, field_ptr_ty.clone());
+                            if field_offset == 0 {
+                                self.emit(MirInst::Copy {
+                                    dst: field_ptr_vreg,
+                                    src: MirValue::VReg(ptr_vreg),
+                                });
+                            } else {
+                                self.emit(MirInst::BinOp {
+                                    dst: field_ptr_vreg,
+                                    op: BinOpKind::Add,
+                                    lhs: MirValue::VReg(ptr_vreg),
+                                    rhs: MirValue::Const(i64::from(
+                                        Self::trampoline_projection_offset_i32(
+                                            field_offset,
+                                            path_desc,
+                                        )?,
+                                    )),
+                                });
+                            }
+                            kernel_btf_field_addr = Some(KernelBtfFieldAddr {
+                                ptr_vreg: field_ptr_vreg,
+                                pointee_ty: projected_ty.clone(),
+                            });
+                        }
                         if trusted_btf
                             && address_space == AddressSpace::Kernel
                             && matches!(
@@ -429,7 +462,7 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        Ok(())
+        Ok(kernel_btf_field_addr)
     }
 
     fn resolve_kernel_btf_struct_field_step(

@@ -833,6 +833,9 @@ impl<'a> HirToMirLowering<'a> {
                         call_args.push(call_arg_vreg);
                         continue;
                     }
+                    let arg_vreg = self.materialize_kernel_btf_field_addr_kfunc_arg(
+                        &kfunc, idx, arg_vreg, arg_reg,
+                    );
                     let (call_arg_vreg, writeback) =
                         self.materialize_scalar_kfunc_out_arg(&kfunc, idx, arg_vreg, arg_reg)?;
                     call_args.push(call_arg_vreg);

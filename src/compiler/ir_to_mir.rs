@@ -176,6 +176,12 @@ struct MapValueOrigin {
     value_ty: MirType,
 }
 
+#[derive(Debug, Clone)]
+struct KernelBtfFieldAddr {
+    ptr_vreg: VReg,
+    pointee_ty: MirType,
+}
+
 /// Metadata tracked for each Nushell register during lowering
 #[derive(Debug, Clone, Default)]
 struct RegMetadata {
@@ -203,6 +209,11 @@ struct RegMetadata {
     root_ctx_field: Option<CtxField>,
     /// Whether this value preserves verifier-trusted kernel BTF pointer provenance.
     trusted_btf: bool,
+    /// Alternate address for a terminal aggregate field inside trusted kernel BTF memory.
+    ///
+    /// Ordinary field access keeps value semantics by copying aggregates to stack storage.
+    /// Some kfuncs instead need the original kernel field address, so retain it separately.
+    kernel_btf_field_addr: Option<KernelBtfFieldAddr>,
     /// Direct backing variable for values loaded from `LoadVariable`.
     /// This is intentionally cleared by transformations that produce new values.
     source_var: Option<VarId>,

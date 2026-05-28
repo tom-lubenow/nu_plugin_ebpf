@@ -334,6 +334,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.field_type = Some(element_ty.clone());
         meta.root_ctx_field = root_ctx_field.cloned();
         meta.trusted_btf = false;
+        meta.kernel_btf_field_addr = None;
 
         Ok(element_ty)
     }
@@ -409,6 +410,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.field_type = Some(MirType::U64);
         meta.root_ctx_field = None;
         meta.trusted_btf = false;
+        meta.kernel_btf_field_addr = None;
         meta.source_var = None;
         Ok(true)
     }
@@ -555,6 +557,7 @@ impl<'a> HirToMirLowering<'a> {
                 ..
             })
         );
+        meta.kernel_btf_field_addr = None;
         meta.source_var = None;
         Ok(())
     }
@@ -672,6 +675,7 @@ impl<'a> HirToMirLowering<'a> {
                     })
                 );
             meta.annotated_semantics = projected_semantics;
+            meta.kernel_btf_field_addr = None;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);
             return Ok(());
@@ -761,6 +765,7 @@ impl<'a> HirToMirLowering<'a> {
                             ..
                         })
                     );
+                meta.kernel_btf_field_addr = None;
                 meta.source_var = None;
                 return Ok(());
             }
@@ -808,6 +813,7 @@ impl<'a> HirToMirLowering<'a> {
                             ..
                         })
                     );
+                meta.kernel_btf_field_addr = None;
                 meta.source_var = None;
                 return Ok(());
             }
@@ -857,6 +863,7 @@ impl<'a> HirToMirLowering<'a> {
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
                 meta.trusted_btf = false;
+                meta.kernel_btf_field_addr = None;
                 meta.source_var = None;
                 return Ok(());
             }
@@ -934,7 +941,7 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     TrampolineValueKind::Scalar => MirType::I64,
                 });
-            self.lower_trampoline_field_projection(
+            let kernel_btf_field_addr = self.lower_trampoline_field_projection(
                 dst_vreg,
                 &ctx_field,
                 spec,
@@ -959,6 +966,7 @@ impl<'a> HirToMirLowering<'a> {
                     ..
                 })
             );
+            meta.kernel_btf_field_addr = kernel_btf_field_addr;
             meta.source_var = None;
             return Ok(());
         }
@@ -1121,6 +1129,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.field_type = Some(field_type);
         meta.root_ctx_field = Some(ctx_field);
         meta.trusted_btf = trusted_btf;
+        meta.kernel_btf_field_addr = None;
         meta.source_var = None;
 
         Ok(())
@@ -1367,6 +1376,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let meta = self.get_or_create_metadata(src_dst);
         meta.field_type = Some(pointee.as_ref().clone());
+        meta.kernel_btf_field_addr = None;
         meta.source_var = None;
         self.set_reg_constant_value(src_dst, constant_value);
         Ok(())

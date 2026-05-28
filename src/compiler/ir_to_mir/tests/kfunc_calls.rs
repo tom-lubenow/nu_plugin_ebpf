@@ -374,6 +374,131 @@ fn test_kfunc_pointer_return_overrides_reused_hir_register_hint() {
 }
 
 #[test]
+fn test_kfunc_path_d_path_uses_kernel_addr_for_trampoline_struct_field() {
+    use crate::compiler::ir_to_mir::tests::helpers::string_member;
+
+    let ctx_var = VarId::new(0);
+    let kfunc_decl = DeclId::new(42);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("arg0"), string_member("f_path")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"bpf_path_d_path".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(
+                        b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                            .to_vec(),
+                    ),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(64),
+                },
+                HirStmt::Call {
+                    decl_id: kfunc_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(2),
+                            RegId::new(0),
+                            RegId::new(3),
+                            RegId::new(4),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(kfunc_decl, "kfunc-call".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_path_d_path should use original kernel field address");
+
+    let call_args = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::CallKfunc { kfunc, args, .. } if kfunc == "bpf_path_d_path" => {
+                Some(args.clone())
+            }
+            _ => None,
+        })
+        .expect("expected bpf_path_d_path call");
+
+    assert_eq!(call_args.len(), 3);
+    assert!(
+        matches!(
+            result.type_hints.main.get(&call_args[0]),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            }) if matches!(
+                pointee.as_ref(),
+                MirType::Struct {
+                    name: Some(name),
+                    ..
+                } if name == "path"
+            )
+        ),
+        "arg0 should be the original kernel struct path address"
+    );
+    assert!(
+        result.type_hints.main.values().any(|ty| matches!(
+            ty,
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack,
+            } if matches!(
+                pointee.as_ref(),
+                MirType::Struct {
+                    name: Some(name),
+                    ..
+                } if name == "path"
+            )
+        )),
+        "ordinary struct field value semantics should still materialize a stack copy"
+    );
+}
+
+#[test]
 fn test_helper_call_with_ctx_variable_lowers_real_context_pointer() {
     let ctx_var = VarId::new(7);
     let func = HirFunction {

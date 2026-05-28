@@ -1375,6 +1375,37 @@ impl<'a> HirToMirLowering<'a> {
         *self.get_or_create_metadata(reg) = RegMetadata::default();
     }
 
+    pub(super) fn materialize_kernel_btf_field_addr_kfunc_arg(
+        &mut self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg_vreg: VReg,
+        arg_reg: Option<RegId>,
+    ) -> VReg {
+        // `$ctx.arg0.f_path` has value semantics, so normal lowering copies
+        // `struct path` to stack. `bpf_path_d_path()` specifically wants the
+        // original kernel address of that field instead.
+        if kfunc != "bpf_path_d_path" || arg_idx != 0 {
+            return arg_vreg;
+        }
+
+        let Some(addr) = arg_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .and_then(|meta| meta.kernel_btf_field_addr.clone())
+        else {
+            return arg_vreg;
+        };
+
+        self.vreg_type_hints.insert(
+            addr.ptr_vreg,
+            MirType::Ptr {
+                pointee: Box::new(addr.pointee_ty),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        addr.ptr_vreg
+    }
+
     pub(super) fn materialize_scalar_kfunc_out_arg(
         &mut self,
         kfunc: &str,

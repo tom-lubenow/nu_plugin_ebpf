@@ -186,6 +186,7 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn clear_source_var(&mut self, reg: RegId) {
         if let Some(meta) = self.reg_metadata.get_mut(&reg.get()) {
             meta.source_var = None;
+            meta.kernel_btf_field_addr = None;
         }
     }
 
