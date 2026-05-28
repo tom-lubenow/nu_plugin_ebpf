@@ -97,38 +97,25 @@ impl<'a> MirToEbpfCompiler<'a> {
             self.emit_store(EbpfReg::R9, store.offset, val_reg, size)?;
             return Ok(());
         }
+        if let Some(store) = target.ctx_field_indexed_store() {
+            let store_reg = if store.convert_to_big_endian {
+                self.instructions
+                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                EbpfReg::R0
+            } else {
+                val_reg
+            };
+            self.emit_store(EbpfReg::R9, store.offset, store_reg, size)?;
+            return Ok(());
+        }
         let (offset, store_reg) = match target {
-            CtxStoreTarget::SockOpsReplyLong(index) => (
-                Self::bpf_sock_ops_args_offset()
-                    + i16::from(*index).checked_mul(4).ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "sock_ops replylong index overflowed".into(),
-                        )
-                    })?,
-                val_reg,
-            ),
             CtxStoreTarget::SockOpsCbFlags => unreachable!("helper-backed store handled above"),
-            CtxStoreTarget::SkbCbWord(index) => (
-                Self::sk_buff_cb_offset()
-                    + i16::from(*index).checked_mul(4).ok_or_else(|| {
-                        CompileError::UnsupportedInstruction("skb cb index overflowed".into())
-                    })?,
-                val_reg,
-            ),
             CtxStoreTarget::CgroupSockAddrUserIp4 => {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
                 self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
                 (Self::bpf_sock_addr_offsets().1, EbpfReg::R0)
-            }
-            CtxStoreTarget::CgroupSockAddrUserIp6Word(index) => {
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
-                (
-                    Self::bpf_sock_addr_offsets().2 + i16::from(*index) * 4,
-                    EbpfReg::R0,
-                )
             }
             CtxStoreTarget::CgroupSockAddrUserPort => {
                 self.instructions
@@ -143,16 +130,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
                 (Self::bpf_sock_addr_offsets().7, EbpfReg::R0)
             }
-            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index) => {
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
-                (
-                    Self::bpf_sock_addr_offsets().8 + i16::from(*index) * 4,
-                    EbpfReg::R0,
-                )
-            }
             CtxStoreTarget::SockOpsReply
+            | CtxStoreTarget::SockOpsReplyLong(_)
             | CtxStoreTarget::SockOpsSkTxhash
             | CtxStoreTarget::CgroupSockBoundDevIf
             | CtxStoreTarget::CgroupSockMark
@@ -161,14 +140,17 @@ impl<'a> MirToEbpfCompiler<'a> {
             | CtxStoreTarget::SkbQueueMapping
             | CtxStoreTarget::SkbPriority
             | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbCbWord(_)
             | CtxStoreTarget::SkbTcClassid
             | CtxStoreTarget::SkbTstamp
             | CtxStoreTarget::SysctlFilePos
             | CtxStoreTarget::SockoptLevel
             | CtxStoreTarget::SockoptOptname
             | CtxStoreTarget::SockoptOptlen
-            | CtxStoreTarget::SockoptRetval => {
-                unreachable!("fixed-offset store handled by metadata")
+            | CtxStoreTarget::SockoptRetval
+            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => {
+                unreachable!("metadata-backed store handled above")
             }
         };
         self.emit_store(EbpfReg::R9, offset, store_reg, size)?;

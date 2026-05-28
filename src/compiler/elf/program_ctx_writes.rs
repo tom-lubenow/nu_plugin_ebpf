@@ -1,6 +1,6 @@
 use super::{
-    ContextFieldDirectStore, CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement,
-    ProgramContextFamily,
+    ContextFieldDirectStore, ContextFieldIndexedStore, CtxWriteTarget, EbpfProgramType,
+    ProgramCompatibilityRequirement, ProgramContextFamily,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, CtxStoreTarget};
@@ -996,6 +996,43 @@ impl CtxStoreTarget {
         }
     }
 
+    pub(crate) fn ctx_field_indexed_store(&self) -> Option<ContextFieldIndexedStore> {
+        match self {
+            CtxStoreTarget::SockOpsReplyLong(index) => {
+                Some(ContextFieldIndexedStore::new(4 + i16::from(*index) * 4))
+            }
+            CtxStoreTarget::SkbCbWord(index) => {
+                Some(ContextFieldIndexedStore::new(48 + i16::from(*index) * 4))
+            }
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(index) => Some(
+                ContextFieldIndexedStore::big_endian_u32(8 + i16::from(*index) * 4),
+            ),
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index) => Some(
+                ContextFieldIndexedStore::big_endian_u32(44 + i16::from(*index) * 4),
+            ),
+            CtxStoreTarget::SockOpsReply
+            | CtxStoreTarget::SockOpsCbFlags
+            | CtxStoreTarget::SockOpsSkTxhash
+            | CtxStoreTarget::CgroupSockBoundDevIf
+            | CtxStoreTarget::CgroupSockMark
+            | CtxStoreTarget::CgroupSockPriority
+            | CtxStoreTarget::SkbMark
+            | CtxStoreTarget::SkbQueueMapping
+            | CtxStoreTarget::SkbPriority
+            | CtxStoreTarget::SkbTcIndex
+            | CtxStoreTarget::SkbTcClassid
+            | CtxStoreTarget::SkbTstamp
+            | CtxStoreTarget::SysctlFilePos
+            | CtxStoreTarget::SockoptLevel
+            | CtxStoreTarget::SockoptOptname
+            | CtxStoreTarget::SockoptOptlen
+            | CtxStoreTarget::SockoptRetval
+            | CtxStoreTarget::CgroupSockAddrUserIp4
+            | CtxStoreTarget::CgroupSockAddrUserPort
+            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => None,
+        }
+    }
+
     fn required_context_family(&self) -> Option<ProgramContextFamily> {
         match self {
             CtxStoreTarget::SockOpsReply
@@ -1401,6 +1438,34 @@ mod tests {
             (CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(0), None),
         ] {
             assert_eq!(target.ctx_field_direct_store(), expected);
+        }
+    }
+
+    #[test]
+    fn test_ctx_store_targets_indexed_store_metadata_tracks_offsets() {
+        for (target, expected) in [
+            (
+                CtxStoreTarget::SockOpsReplyLong(2),
+                Some(ContextFieldIndexedStore::new(12)),
+            ),
+            (
+                CtxStoreTarget::SkbCbWord(2),
+                Some(ContextFieldIndexedStore::new(56)),
+            ),
+            (
+                CtxStoreTarget::CgroupSockAddrUserIp6Word(2),
+                Some(ContextFieldIndexedStore::big_endian_u32(16)),
+            ),
+            (
+                CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(1),
+                Some(ContextFieldIndexedStore::big_endian_u32(48)),
+            ),
+            (CtxStoreTarget::SockOpsReply, None),
+            (CtxStoreTarget::CgroupSockAddrUserIp4, None),
+            (CtxStoreTarget::CgroupSockAddrUserPort, None),
+            (CtxStoreTarget::CgroupSockAddrMsgSrcIp4, None),
+        ] {
+            assert_eq!(target.ctx_field_indexed_store(), expected);
         }
     }
 

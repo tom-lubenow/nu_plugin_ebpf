@@ -60,14 +60,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
-    pub(crate) fn sk_buff_cb_offset() -> i16 {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 cb[5];
-        // };
-        48
-    }
-
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()
     -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
@@ -83,10 +75,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     struct bpf_sock *sk;
         // };
         (0, 4, 8, 24, 28, 32, 36, 40, 44, 64)
-    }
-
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_args_offset() -> i16 {
-        4
     }
 
     pub(super) fn bpf_nf_ctx_offsets() -> (i16, i16) {
