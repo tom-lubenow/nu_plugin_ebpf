@@ -10642,6 +10642,43 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_iter_num_destroy' requires a matching bpf_iter_num_new"
     }
     {
+        name: "source-kfunc-iter-task-null-task-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_task_new" $iter 0 0'
+            '  let task = (kfunc-call "bpf_iter_task_next" $iter)'
+            '  if $task { 0 }'
+            '  kfunc-call "bpf_iter_task_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-task-rejects-nonzero-task-scalar"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_task_new" $iter 1 0'
+            '  kfunc-call "bpf_iter_task_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_task_new' arg1 expects null (0) or pointer"
+    }
+    {
         name: "source-kfunc-task-ref-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]
