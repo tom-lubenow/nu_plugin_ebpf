@@ -702,32 +702,17 @@ impl<'a> HirToMirLowering<'a> {
         dst: RegId,
         value: &Value,
     ) -> Result<(), CompileError> {
-        self.lower_constant_value_with_lists(dst, value, true)
-    }
-
-    fn lower_constant_value_with_lists(
-        &mut self,
-        dst: RegId,
-        value: &Value,
-        allow_top_level_list: bool,
-    ) -> Result<(), CompileError> {
         if let Some(lit) = HirLiteral::from_constant_value(value) {
             self.lower_load_literal(dst, &lit)?;
         } else {
             match value {
                 Value::Record { val, .. } => self.lower_constant_record_value(dst, val.as_ref())?,
-                Value::List { vals, .. } if allow_top_level_list => {
+                Value::List { vals, .. } => {
                     if crate::compiler::hir::supports_numeric_constant_list(value) {
                         self.lower_constant_list_value(dst, vals)?;
                     } else {
                         self.lower_constant_fixed_array_value(dst, vals)?;
                     }
-                }
-                Value::List { .. } => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "constant lists nested inside records are not yet supported in eBPF lowering"
-                            .into(),
-                    ));
                 }
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(format!(

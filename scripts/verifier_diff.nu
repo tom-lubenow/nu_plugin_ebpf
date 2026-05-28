@@ -5079,6 +5079,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "constant-record-nested-list"
+        category: "globals"
+        tags: [globals records list accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let config = { pid: 7 samples: [11 22] }'
+            '  (($config.samples | get 1) + $config.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-define-null-only-lookup-keeps-value-layout"
         category: "maps"
         tags: [maps map-define accept]
