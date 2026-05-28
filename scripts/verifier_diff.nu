@@ -3620,6 +3620,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: []
     }
     {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  $ctx.flow_keys.ip_proto | count'
+            '  "fallback"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
         target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
         program: [
             '{|ctx|'
