@@ -10691,6 +10691,55 @@ fn test_ebpf_object_reports_program_compatibility_requirements() {
     );
     assert_eq!(object.program_compatibility_minimum_kernel(), Some("5.18"));
 
+    for (target, requirement, minimum_kernel) in [
+        (
+            "lo",
+            ProgramCompatibilityRequirement::XdpSkbAttachMode,
+            "4.12",
+        ),
+        (
+            "lo:drv",
+            ProgramCompatibilityRequirement::XdpDrvAttachMode,
+            "4.12",
+        ),
+        (
+            "lo:hw",
+            ProgramCompatibilityRequirement::XdpHwAttachMode,
+            "4.13",
+        ),
+        (
+            "devmap",
+            ProgramCompatibilityRequirement::XdpDevmapAttach,
+            "5.8",
+        ),
+        (
+            "cpumap",
+            ProgramCompatibilityRequirement::XdpCpumapAttach,
+            "5.9",
+        ),
+    ] {
+        let program = EbpfProgram::new(EbpfProgramType::Xdp, target, "main", EbpfBuilder::new());
+        let requirements = program.program_compatibility_requirements();
+        assert!(
+            requirements.contains(&ProgramCompatibilityRequirement::XdpProgram),
+            "xdp target {target} should include base XDP compatibility"
+        );
+        assert!(
+            requirements.contains(&requirement),
+            "xdp target {target} should include {requirement:?}"
+        );
+        assert_eq!(
+            program.program_compatibility_minimum_kernel(),
+            Some(minimum_kernel),
+            "xdp target {target} should aggregate attach-mode minimum"
+        );
+        assert_eq!(
+            program.into_object().program_compatibility_minimum_kernel(),
+            Some(minimum_kernel),
+            "xdp target {target} object should preserve attach-mode minimum"
+        );
+    }
+
     let struct_ops = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8]).build();
     let requirements = struct_ops.program_compatibility_requirements();
     assert!(
