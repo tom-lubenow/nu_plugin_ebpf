@@ -312,6 +312,47 @@ fn make_string_append_int_function() -> MirFunction {
     func
 }
 
+fn make_lir_precolored_move_after_string_append_function() -> (LirFunction, VReg) {
+    use crate::compiler::lir::{LirFunction, LirInst};
+
+    let mut func = LirFunction::new();
+    let bb0 = func.alloc_block();
+    func.entry = bb0;
+
+    let value = func.alloc_vreg();
+    let len = func.alloc_vreg();
+    let abi_r2 = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.precolored.insert(abi_r2, EbpfReg::R2);
+
+    func.block_mut(bb0).instructions.push(LirInst::Copy {
+        dst: value,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(bb0).instructions.push(LirInst::Copy {
+        dst: len,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(bb0)
+        .instructions
+        .push(LirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::Literal {
+                bytes: b"scratch".to_vec(),
+            },
+        });
+    func.block_mut(bb0)
+        .instructions
+        .push(LirInst::ParallelMove {
+            moves: vec![(abi_r2, value)],
+        });
+    func.block_mut(bb0).terminator = LirInst::Return { val: None };
+
+    (func, value)
+}
+
 fn make_helper_call_clobber_function() -> MirFunction {
     let mut func = MirFunction::new();
     let bb0 = func.alloc_block();
@@ -479,6 +520,28 @@ fn test_string_append_int_clobber_constraints() {
         ),
         "StringAppend integer source should avoid R1-R5 scratch regs, got {:?}",
         val_reg
+    );
+}
+
+#[test]
+fn test_precolored_coalesce_respects_scratch_forbidden_registers() {
+    let (func, value) = make_lir_precolored_move_after_string_append_function();
+    let loop_depths = compute_loop_depths(&func);
+    let mut allocator =
+        GraphColoringAllocator::new(vec![EbpfReg::R1, EbpfReg::R2, EbpfReg::R3, EbpfReg::R6]);
+    allocator.set_precolored(func.precolored.clone());
+
+    let result = allocator.allocate(&func, Some(&loop_depths));
+    let value_reg = result
+        .coloring
+        .get(&value)
+        .copied()
+        .expect("value live across StringAppend should be colored");
+
+    assert_ne!(
+        value_reg,
+        EbpfReg::R2,
+        "value live across StringAppend must not coalesce into precolored R2"
     );
 }
 

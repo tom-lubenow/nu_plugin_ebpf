@@ -29,6 +29,15 @@ impl GraphColoringAllocator {
             self.add_worklist(u);
             self.add_worklist(v);
         } else if self.is_precolored(u) {
+            if self
+                .precolored_reg(u)
+                .is_some_and(|reg| self.is_forbidden(v, reg))
+            {
+                self.move_state.insert(mv, MoveState::Constrained);
+                self.add_worklist(u);
+                self.add_worklist(v);
+                return;
+            }
             if self.george(u, v) {
                 self.move_state.insert(mv, MoveState::Coalesced);
                 self.combine(u, v);
@@ -108,6 +117,7 @@ impl GraphColoringAllocator {
 
         self.node_state.insert(v, NodeState::Coalesced);
         self.alias.insert(v, u);
+        self.merge_forbidden_regs(u, v);
 
         // Merge move lists
         let v_moves: Vec<Move> = self.graph.moves_for(v).collect();

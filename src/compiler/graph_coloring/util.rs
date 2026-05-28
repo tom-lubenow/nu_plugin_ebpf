@@ -5,6 +5,10 @@ impl GraphColoringAllocator {
         matches!(self.node_state.get(&vreg), Some(NodeState::Precolored))
     }
 
+    pub(super) fn precolored_reg(&self, vreg: VReg) -> Option<EbpfReg> {
+        self.precolored.get(&vreg).copied()
+    }
+
     pub(super) fn is_forbidden(&self, vreg: VReg, reg: EbpfReg) -> bool {
         self.forbidden_regs
             .get(&vreg)
@@ -30,5 +34,15 @@ impl GraphColoringAllocator {
             let entry = self.forbidden_regs.entry(*vreg).or_default();
             entry.extend(regs.iter().copied());
         }
+    }
+
+    pub(super) fn merge_forbidden_regs(&mut self, into: VReg, from: VReg) {
+        let Some(from_regs) = self.forbidden_regs.get(&from).cloned() else {
+            return;
+        };
+        self.forbidden_regs
+            .entry(into)
+            .or_default()
+            .extend(from_regs);
     }
 }
