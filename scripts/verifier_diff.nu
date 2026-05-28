@@ -3736,7 +3736,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sk" "helper:bpf_get_listener_sock" "helper:bpf_probe_read_kernel"]
     }
     {
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let task = $ctx.task'
@@ -3747,7 +3747,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:task" "helper:bpf_get_current_task_btf" "helper:bpf_task_pt_regs"]
     }
     {
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let cg = $ctx.current_cgroup'
@@ -4451,7 +4451,7 @@ const FIXTURES = [
         name: "kretprobe-context"
         category: "tracing"
         tags: [kretprobe context]
-        target: "kretprobe:sys_clone"
+        target: "kretprobe:ksys_read"
         program: [
             '{|ctx|'
             '  ($ctx.retval + $ctx.pid) | count'
@@ -4459,7 +4459,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ksyscall-context"
@@ -4473,7 +4473,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "kretsyscall-context"
@@ -4487,7 +4487,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tracepoint-openat-context"
@@ -4497,12 +4497,12 @@ const FIXTURES = [
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
-            '  ($ctx.id + ($ctx.args | get 1) + $ctx.current_task.pid) | count'
+            '  ($ctx.dfd + $ctx.flags + $ctx.mode + $ctx.current_task.pid) | count'
             '  0'
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "perf-event-context"
@@ -4516,7 +4516,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "perf-event-pt-regs-arg-context"
@@ -7163,7 +7163,7 @@ const FIXTURES = [
         name: "stackid-built-in-kstacks"
         category: "maps"
         tags: [helper-call stack-trace reserved-name]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  helper-call "bpf_get_stackid" $ctx kstacks 0 | count'
@@ -7177,7 +7177,7 @@ const FIXTURES = [
         name: "stackid-context-fields"
         category: "context-surface"
         tags: [context stack-trace kstack ustack accept]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  ($ctx.kstack + $ctx.ustack) | count'
@@ -7192,7 +7192,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [context task pt-regs helper-backed accept]
         requires: [kernel-btf]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  $ctx.task.pt_regs.arg0 | count'
@@ -7207,7 +7207,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [context task pt-regs helper-backed source metadata accept]
         requires: [kernel-btf]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let task = $ctx.task'
@@ -7223,7 +7223,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [context task helper-call source metadata accept]
         requires: [kernel-btf]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let task = (helper-call "bpf_get_current_task_btf")'
@@ -7239,7 +7239,7 @@ const FIXTURES = [
         category: "context-surface"
         tags: [context cgroup btf source metadata accept]
         requires: [kernel-btf]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let cg = $ctx.current_cgroup'
@@ -15806,7 +15806,7 @@ const FIXTURES = [
         name: "kprobe-override-return"
         category: "helper-state"
         tags: [kprobe helper-call]
-        target: "kprobe:sys_clone"
+        target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  helper-call "bpf_override_return" $ctx 0'
@@ -15820,7 +15820,7 @@ const FIXTURES = [
         name: "kretprobe-rejects-override-return"
         category: "helper-state"
         tags: [kretprobe helper-call reject]
-        target: "kretprobe:sys_clone"
+        target: "kretprobe:ksys_read"
         program: [
             '{|ctx|'
             '  helper-call "bpf_override_return" $ctx 0'
