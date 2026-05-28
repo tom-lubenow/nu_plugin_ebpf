@@ -47,6 +47,10 @@ fn res_spin_lock_kernel_ptr_ty() -> MirType {
 }
 
 fn graph_value_with_lock_and_root_ty() -> MirType {
+    graph_value_with_lock_and_graph_root_ty(MirType::bpf_list_head_root_struct("node_data", "node"))
+}
+
+fn graph_value_with_lock_and_graph_root_ty(root_ty: MirType) -> MirType {
     MirType::Struct {
         name: Some("graph_value".to_string()),
         kernel_btf_type_id: None,
@@ -60,7 +64,7 @@ fn graph_value_with_lock_and_root_ty() -> MirType {
             },
             StructField {
                 name: "root".to_string(),
-                ty: MirType::bpf_list_head_root_struct("node_data", "node"),
+                ty: root_ty,
                 offset: 8,
                 synthetic: false,
                 bitfield: None,
@@ -231,6 +235,31 @@ fn graph_lock_root_function(same_map_value: bool) -> (MirFunction, HashMap<VReg,
 fn graph_lock_root_repeated_lookup_function(
     same_key: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        same_key,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
+fn graph_rbtree_lock_root_repeated_lookup_function(
+    same_key: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        same_key,
+        "bpf_rbtree_first",
+        MirType::bpf_rb_root_struct_with_contains("rb_item", "rb"),
+        MirType::bpf_rb_node_struct(),
+    )
+}
+
+fn graph_lock_root_repeated_lookup_for_kfunc(
+    same_key: bool,
+    kfunc: &str,
+    root_ty: MirType,
+    node_ty: MirType,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let lock_ready = func.alloc_block();
     let use_root = func.alloc_block();
@@ -315,7 +344,7 @@ fn graph_lock_root_repeated_lookup_function(
         .instructions
         .push(MirInst::CallKfunc {
             dst: node,
-            kfunc: "bpf_list_front".to_string(),
+            kfunc: kfunc.to_string(),
             btf_id: None,
             args: vec![root],
         });
@@ -327,7 +356,7 @@ fn graph_lock_root_repeated_lookup_function(
     for i in 0..func.vreg_count {
         types.insert(VReg(i), MirType::I64);
     }
-    let graph_value = graph_value_with_lock_and_root_ty();
+    let graph_value = graph_value_with_lock_and_graph_root_ty(root_ty.clone());
     for value in [lock_value, root_value] {
         types.insert(
             value,
@@ -347,14 +376,14 @@ fn graph_lock_root_repeated_lookup_function(
     types.insert(
         root,
         MirType::Ptr {
-            pointee: Box::new(MirType::bpf_list_head_root_struct("node_data", "node")),
+            pointee: Box::new(root_ty),
             address_space: AddressSpace::Map,
         },
     );
     types.insert(
         node,
         MirType::Ptr {
-            pointee: Box::new(MirType::bpf_list_node_struct()),
+            pointee: Box::new(node_ty),
             address_space: AddressSpace::Kernel,
         },
     );
@@ -928,6 +957,27 @@ fn test_verify_mir_kfunc_list_front_rejects_different_key_repeated_map_lookup_bp
     let (func, types) = graph_lock_root_repeated_lookup_function(false);
 
     let err = verify_mir(&func, &types).expect_err("expected different-key graph lock/root error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires bpf_spin_lock from the same map value")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_rbtree_first_accepts_same_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_rbtree_lock_root_repeated_lookup_function(true);
+
+    verify_mir(&func, &types).expect("same map/key rbtree lock/root should verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_rbtree_first_rejects_different_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_rbtree_lock_root_repeated_lookup_function(false);
+
+    let err = verify_mir(&func, &types).expect_err("expected different-key rbtree lock/root error");
     assert!(
         err.iter().any(|e| e
             .message
