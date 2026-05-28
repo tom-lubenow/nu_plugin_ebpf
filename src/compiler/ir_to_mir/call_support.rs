@@ -29,6 +29,46 @@ impl<'a> HirToMirLowering<'a> {
         matches!(kind, MapKind::Hash | MapKind::Array | MapKind::LruHash)
     }
 
+    fn bpf_wq_kfunc_arg_error(kfunc: &str, arg_idx: usize) -> CompileError {
+        CompileError::UnsupportedInstruction(format!(
+            "kfunc-call '{}' requires arg{} to be a bpf_wq field projected from a concrete map value",
+            kfunc, arg_idx
+        ))
+    }
+
+    fn bpf_wq_map_kind_allowed(kind: MapKind) -> bool {
+        matches!(kind, MapKind::Hash | MapKind::Array | MapKind::LruHash)
+    }
+
+    pub(super) fn bpf_wq_arg_origin(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+        wq_reg: RegId,
+    ) -> Result<MapValueOrigin, CompileError> {
+        let wq_ty = self
+            .reg_map
+            .get(&wq_reg.get())
+            .copied()
+            .and_then(|wq_vreg| self.typed_value_runtime_type(wq_reg, wq_vreg));
+        if !wq_ty.as_ref().is_some_and(MirType::is_bpf_wq_map_ptr) {
+            return Err(Self::bpf_wq_kfunc_arg_error(kfunc, arg_idx));
+        }
+        let Some(origin) = self
+            .get_metadata(wq_reg)
+            .and_then(|meta| meta.map_value_origin.clone())
+        else {
+            return Err(Self::bpf_wq_kfunc_arg_error(kfunc, arg_idx));
+        };
+        if !Self::bpf_wq_map_kind_allowed(origin.map_ref.kind) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "kfunc-call '{}' requires arg{} bpf_wq to come from a hash, array, or lru-hash map value, got {}",
+                kfunc, arg_idx, origin.map_ref.kind
+            )));
+        }
+        Ok(origin)
+    }
+
     pub(super) fn timer_arg_origin(
         &self,
         helper: BpfHelper,

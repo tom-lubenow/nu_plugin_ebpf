@@ -148,6 +148,9 @@ impl<'a> VccLowerer<'a> {
                     }
                 }
                 KfuncArgKind::Pointer => {
+                    if self.is_local_kfunc_map_ref_arg(kfunc, idx, *arg) {
+                        continue;
+                    }
                     if !self.is_pointer_reg(*arg)
                         && Self::kfunc_pointer_arg_allows_const_zero(kfunc, idx)
                     {
@@ -386,6 +389,10 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
+    }
+
+    pub(super) fn kfunc_supports_local_map_fd(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_supports_local_map_fd_shared(kfunc, arg_idx)
     }
 
     pub(super) fn kfunc_iter_lifecycle(
@@ -915,6 +922,11 @@ impl<'a> VccLowerer<'a> {
         matches!(self.types.get(vreg), Some(MirType::MapRef { .. }))
             && BpfHelper::from_u32(helper_id)
                 .is_some_and(|helper| helper.supports_local_helper_map_fd(arg_idx))
+    }
+
+    fn is_local_kfunc_map_ref_arg(&self, kfunc: &str, arg_idx: usize, arg: VReg) -> bool {
+        matches!(self.types.get(&arg), Some(MirType::MapRef { .. }))
+            && Self::kfunc_supports_local_map_fd(kfunc, arg_idx)
     }
 
     pub(super) fn check_helper_ringbuf_record_arg(

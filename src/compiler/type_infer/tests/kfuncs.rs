@@ -3785,6 +3785,96 @@ fn test_type_error_kfunc_map_sum_elem_count_requires_kernel_space() {
 }
 
 #[test]
+fn test_type_infer_kfunc_bpf_wq_init_accepts_map_backed_wq_and_map_fd() {
+    let mut func = make_test_function();
+    let wq = func.alloc_vreg();
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_init".to_string(),
+        btf_id: None,
+        args: vec![wq, map_fd, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let hints = HashMap::from([
+        (
+            wq,
+            MirType::Ptr {
+                pointee: Box::new(value_ty.clone()),
+                address_space: AddressSpace::Map,
+            },
+        ),
+        (
+            map_fd,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty),
+            },
+        ),
+    ]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    ti.infer(&func)
+        .expect("expected bpf_wq_init map-backed call to type-check");
+}
+
+#[test]
+fn test_type_error_kfunc_bpf_wq_start_rejects_stack_wq() {
+    let mut func = make_test_function();
+    let wq = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_start".to_string(),
+        btf_id: None,
+        args: vec![wq, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Stack,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_wq_start stack wq type error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("bpf_wq field expects pointer in [Map]")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_kfunc_list_front_pointer_return() {
     let mut func = make_test_function();
     let type_id = func.alloc_vreg();

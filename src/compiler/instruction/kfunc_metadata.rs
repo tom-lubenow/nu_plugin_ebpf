@@ -278,6 +278,9 @@ fn known_kfunc_name(name: &str) -> Option<&'static str> {
         "bpf_cpumask_weight" => "bpf_cpumask_weight",
         "bpf_cpumask_xor" => "bpf_cpumask_xor",
         "bpf_map_sum_elem_count" => "bpf_map_sum_elem_count",
+        "bpf_wq_init" => "bpf_wq_init",
+        "bpf_wq_set_callback_impl" => "bpf_wq_set_callback_impl",
+        "bpf_wq_start" => "bpf_wq_start",
         "bpf_sock_addr_set_sun_path" => "bpf_sock_addr_set_sun_path",
         "bpf_sock_ops_enable_tx_tstamp" => "bpf_sock_ops_enable_tx_tstamp",
         "bpf_iter_bits_destroy" => "bpf_iter_bits_destroy",
@@ -477,7 +480,10 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
         | "bpf_crypto_ctx_create"
         | "bpf_crypto_ctx_release"
         | "bpf_crypto_decrypt"
-        | "bpf_crypto_encrypt" => "6.10",
+        | "bpf_crypto_encrypt"
+        | "bpf_wq_init"
+        | "bpf_wq_set_callback_impl"
+        | "bpf_wq_start" => "6.10",
         "bpf_iter_bits_destroy" | "bpf_iter_bits_new" | "bpf_iter_bits_next" => "6.11",
         "bpf_copy_from_user_str"
         | "bpf_iter_scx_dsq_destroy"
@@ -651,6 +657,7 @@ fn kfunc_minimum_kernel_source(name: &str) -> Option<&'static str> {
         | "bpf_crypto_ctx_release"
         | "bpf_crypto_decrypt"
         | "bpf_crypto_encrypt" => LINUX_BPF_CRYPTO_C_V6_10_SOURCE,
+        "bpf_wq_init" | "bpf_wq_set_callback_impl" | "bpf_wq_start" => LINUX_HELPERS_C_V6_10_SOURCE,
         "bpf_iter_bits_destroy" | "bpf_iter_bits_new" | "bpf_iter_bits_next" => {
             LINUX_HELPERS_C_V6_11_SOURCE
         }

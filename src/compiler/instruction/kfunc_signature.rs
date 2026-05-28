@@ -218,6 +218,24 @@ impl KfuncSignature {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: KfuncRetKind::Scalar,
             }),
+            "bpf_wq_init" => Some(Self {
+                min_args: 3,
+                max_args: 3,
+                arg_kinds: [P, P, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_wq_start" => Some(Self {
+                min_args: 2,
+                max_args: 2,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
+            "bpf_wq_set_callback_impl" => Some(Self {
+                min_args: 4,
+                max_args: 4,
+                arg_kinds: [P, F, S, S, S],
+                ret_kind: KfuncRetKind::Scalar,
+            }),
             "bpf_preempt_disable" => Some(Self {
                 min_args: 0,
                 max_args: 0,
@@ -1002,6 +1020,9 @@ impl KfuncSignature {
             ("bpf_rbtree_add_impl", 2) => Some(
                 "kfunc 'bpf_rbtree_add_impl' callback must have signature fn(bpf_rb_node*, bpf_rb_node*) -> scalar",
             ),
+            ("bpf_wq_set_callback_impl", 1) => {
+                Some("kfunc 'bpf_wq_set_callback_impl' callback lowering is not modeled yet")
+            }
             _ => None,
         }
     }

@@ -923,6 +923,8 @@ impl<'a> TypeInference<'a> {
                             }
                         }
                         KfuncArgKind::Pointer => match arg_ty {
+                            MirType::MapRef { .. }
+                                if Self::kfunc_supports_local_map_fd(kfunc, idx) => {}
                             MirType::Ptr {
                                 address_space,
                                 pointee,

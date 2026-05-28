@@ -11686,6 +11686,107 @@ fn test_verify_mir_kfunc_map_sum_elem_count_accepts_kernel_pointer_arg() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_bpf_wq_init_accepts_map_backed_wq_and_map_fd() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let map_ref = MapRef {
+        name: "work_items".to_string(),
+        kind: MapKind::Array,
+    };
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map_fd,
+        map: map_ref,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_init".to_string(),
+        btf_id: None,
+        args: vec![wq, map_fd, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let mut types = HashMap::new();
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(value_ty.clone()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        map_fd,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(value_ty),
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected bpf_wq_init map-backed call to verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_bpf_wq_start_rejects_stack_wq() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_start".to_string(),
+        btf_id: None,
+        args: vec![wq, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected stack bpf_wq kfunc arg error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("bpf_wq field expects pointer in [Map]")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_rbtree_root_requires_kernel_pointer_arg() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

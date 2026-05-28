@@ -815,7 +815,7 @@ impl<'a> HirToMirLowering<'a> {
 
                 let mut call_args = Vec::with_capacity(args.len());
                 let mut writebacks = Vec::new();
-                for (idx, (arg_vreg, arg_reg)) in args.into_iter().enumerate() {
+                for (idx, (arg_vreg, arg_reg)) in args.iter().copied().enumerate() {
                     if kfunc_signature
                         .is_some_and(|sig| matches!(sig.arg_kind(idx), KfuncArgKind::Subprogram))
                     {
@@ -830,6 +830,12 @@ impl<'a> HirToMirLowering<'a> {
                         else {
                             unreachable!("callback lowering always returns a vreg")
                         };
+                        call_args.push(call_arg_vreg);
+                        continue;
+                    }
+                    if let Some(call_arg_vreg) =
+                        self.materialize_kfunc_map_fd_arg(&kfunc, idx, arg_reg, &args)?
+                    {
                         call_args.push(call_arg_vreg);
                         continue;
                     }
@@ -3175,6 +3181,58 @@ impl<'a> HirToMirLowering<'a> {
         };
         let map_vreg = self.emit_typed_map_fd_load(map_ref.name.clone(), map_ref.kind);
         Ok((MirValue::VReg(map_vreg), map_ref, map_vreg))
+    }
+
+    fn materialize_kfunc_map_fd_arg(
+        &mut self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg_reg: Option<RegId>,
+        args: &[(VReg, Option<RegId>)],
+    ) -> Result<Option<VReg>, CompileError> {
+        if !crate::compiler::instruction::kfunc_supports_local_map_fd(kfunc, arg_idx) {
+            return Ok(None);
+        }
+
+        let arg_reg = arg_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "kfunc-call '{}' arg{} must be a literal map name",
+                kfunc, arg_idx
+            ))
+        })?;
+        let map_name = match self.literal_string_arg(arg_reg, "kfunc-call") {
+            Ok(name) => name,
+            Err(_) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "kfunc-call '{}' arg{} must be a literal map name",
+                    kfunc, arg_idx
+                )));
+            }
+        };
+
+        match (kfunc, arg_idx) {
+            ("bpf_wq_init", 1) => {
+                let wq_reg = args.first().and_then(|(_, reg)| *reg).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "kfunc-call 'bpf_wq_init' requires arg0 bpf_wq field".into(),
+                    )
+                })?;
+                let origin = self.bpf_wq_arg_origin(kfunc, 0, wq_reg)?;
+                if map_name != origin.map_ref.name {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "kfunc-call 'bpf_wq_init' requires arg1 map '{}' to match the map value containing arg0 '{}' ({})",
+                        map_name, origin.map_ref.name, origin.map_ref.kind
+                    )));
+                }
+                Ok(Some(
+                    self.emit_typed_map_fd_load(map_name, origin.map_ref.kind),
+                ))
+            }
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "internal error: kfunc '{}' arg{} is not a map operand",
+                kfunc, arg_idx
+            ))),
+        }
     }
 
     fn emit_typed_map_fd_load(&mut self, map_name: String, map_kind: MapKind) -> VReg {

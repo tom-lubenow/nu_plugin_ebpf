@@ -125,6 +125,10 @@ impl<'a> TypeInference<'a> {
         kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_supports_local_map_fd(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_supports_local_map_fd_shared(kfunc, arg_idx)
+    }
+
     pub(super) fn kfunc_unknown_dynptr_copy(kfunc: &str) -> Vec<KfuncUnknownDynptrCopy> {
         kfunc_unknown_dynptr_copy_shared(kfunc)
     }

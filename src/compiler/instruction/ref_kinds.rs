@@ -160,6 +160,11 @@ pub fn kfunc_arg_pointee_mismatch(
         | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => {
             Some((pointee.is_bpf_rb_node_struct(), "bpf_rb_node"))
         }
+        ("bpf_wq_init" | "bpf_wq_start" | "bpf_wq_set_callback_impl", 0) => Some((
+            pointee.is_bpf_wq_struct()
+                || offset_zero_field().is_some_and(MirType::is_bpf_wq_struct),
+            "bpf_wq",
+        )),
         (
             "bpf_res_spin_lock"
             | "bpf_res_spin_unlock"
@@ -1139,10 +1144,7 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
     KernelBtf::get().kfunc_pointer_arg_requires_kernel(kfunc, arg_idx)
 }
 
-pub fn kfunc_pointer_arg_requires_raw_context(
-    kfunc: &str,
-    arg_idx: usize,
-) -> Option<&'static str> {
+pub fn kfunc_pointer_arg_requires_raw_context(kfunc: &str, arg_idx: usize) -> Option<&'static str> {
     if matches!(
         (kfunc, arg_idx),
         ("bpf_xdp_get_xfrm_state", 0)
@@ -1314,6 +1316,10 @@ pub fn kfunc_pointer_arg_requires_stack_or_map(kfunc: &str, arg_idx: usize) -> b
     true
 }
 
+pub fn kfunc_supports_local_map_fd(kfunc: &str, arg_idx: usize) -> bool {
+    matches!((kfunc, arg_idx), ("bpf_wq_init", 1))
+}
+
 pub fn kfunc_pointer_arg_min_access_size(kfunc: &str, arg_idx: usize) -> Option<usize> {
     if kfunc_pointer_arg_requires_stack_or_map(kfunc, arg_idx) {
         Some(1)
@@ -1354,6 +1360,10 @@ pub fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
             | ("bpf_list_push_front_impl", 2)
             | ("bpf_list_push_back_impl", 2)
             | ("bpf_rbtree_add_impl", 3)
+            | ("bpf_wq_init", 2)
+            | ("bpf_wq_start", 1)
+            | ("bpf_wq_set_callback_impl", 2)
+            | ("bpf_wq_set_callback_impl", 3)
             | ("bpf_dynptr_from_skb", 1)
             | ("bpf_dynptr_from_xdp", 1)
     )

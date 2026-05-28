@@ -50,6 +50,9 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
             {
                 return;
             }
+            if kfunc_local_map_ref_arg(kfunc, arg_idx, arg, types) {
+                return;
+            }
             match ty {
                 VerifierType::Ptr {
                     space,
@@ -572,11 +575,28 @@ pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_zero(
     kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
 }
 
+pub(in crate::compiler::verifier_types) fn kfunc_supports_local_map_fd(
+    kfunc: &str,
+    arg_idx: usize,
+) -> bool {
+    kfunc_supports_local_map_fd_shared(kfunc, arg_idx)
+}
+
 pub(in crate::compiler::verifier_types) fn kfunc_pointer_arg_expected_ref_kind(
     kfunc: &str,
     arg_idx: usize,
 ) -> Option<KfuncRefKind> {
     kfunc_pointer_arg_ref_kind(kfunc, arg_idx)
+}
+
+fn kfunc_local_map_ref_arg(
+    kfunc: &str,
+    arg_idx: usize,
+    arg: VReg,
+    types: &HashMap<VReg, MirType>,
+) -> bool {
+    matches!(types.get(&arg), Some(MirType::MapRef { .. }))
+        && kfunc_supports_local_map_fd(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_iter_lifecycle(

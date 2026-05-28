@@ -717,25 +717,13 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "helper:bpf_sk_select_reuseport",
             "4.19",
         ),
-        (
-            BpfHelper::SkLookupTcp,
-            "helper:bpf_sk_lookup_tcp",
-            "4.20",
-        ),
-        (
-            BpfHelper::SkLookupUdp,
-            "helper:bpf_sk_lookup_udp",
-            "4.20",
-        ),
+        (BpfHelper::SkLookupTcp, "helper:bpf_sk_lookup_tcp", "4.20"),
+        (BpfHelper::SkLookupUdp, "helper:bpf_sk_lookup_udp", "4.20"),
         (BpfHelper::SkRelease, "helper:bpf_sk_release", "4.20"),
         (BpfHelper::MsgPushData, "helper:bpf_msg_push_data", "4.20"),
         (BpfHelper::MsgPopData, "helper:bpf_msg_pop_data", "5.0"),
         (BpfHelper::SpinLock, "helper:bpf_spin_lock", "5.1"),
-        (
-            BpfHelper::SkcLookupTcp,
-            "helper:bpf_skc_lookup_tcp",
-            "5.2",
-        ),
+        (BpfHelper::SkcLookupTcp, "helper:bpf_skc_lookup_tcp", "5.2"),
         (BpfHelper::SkAssign, "helper:bpf_sk_assign", "5.7"),
         (
             BpfHelper::RingbufReserve,
@@ -4393,6 +4381,12 @@ fn test_kfunc_kernel_compatibility_metadata() {
             "/kernel/bpf/map_iter.c",
         ),
         (
+            "bpf_wq_init",
+            "kfunc:bpf_wq_init",
+            "6.10",
+            "/kernel/bpf/helpers.c",
+        ),
+        (
             "bpf_sock_addr_set_sun_path",
             "kfunc:bpf_sock_addr_set_sun_path",
             "6.7",
@@ -5317,6 +5311,36 @@ fn test_kfunc_signature_map_sum_elem_count() {
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), KfuncArgKind::Pointer);
     assert_eq!(sig.ret_kind, KfuncRetKind::Scalar);
+}
+
+#[test]
+fn test_kfunc_signature_bpf_wq() {
+    let init =
+        KfuncSignature::for_name("bpf_wq_init").expect("expected bpf_wq_init kfunc signature");
+    assert_eq!(init.min_args, 3);
+    assert_eq!(init.max_args, 3);
+    assert_eq!(init.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(init.arg_kind(1), KfuncArgKind::Pointer);
+    assert_eq!(init.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(init.ret_kind, KfuncRetKind::Scalar);
+
+    let start =
+        KfuncSignature::for_name("bpf_wq_start").expect("expected bpf_wq_start kfunc signature");
+    assert_eq!(start.min_args, 2);
+    assert_eq!(start.max_args, 2);
+    assert_eq!(start.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(start.arg_kind(1), KfuncArgKind::Scalar);
+    assert_eq!(start.ret_kind, KfuncRetKind::Scalar);
+
+    let set_callback = KfuncSignature::for_name("bpf_wq_set_callback_impl")
+        .expect("expected bpf_wq_set_callback_impl kfunc signature");
+    assert_eq!(set_callback.min_args, 4);
+    assert_eq!(set_callback.max_args, 4);
+    assert_eq!(set_callback.arg_kind(0), KfuncArgKind::Pointer);
+    assert_eq!(set_callback.arg_kind(1), KfuncArgKind::Subprogram);
+    assert_eq!(set_callback.arg_kind(2), KfuncArgKind::Scalar);
+    assert_eq!(set_callback.arg_kind(3), KfuncArgKind::Scalar);
+    assert_eq!(set_callback.ret_kind, KfuncRetKind::Scalar);
 }
 
 #[test]
