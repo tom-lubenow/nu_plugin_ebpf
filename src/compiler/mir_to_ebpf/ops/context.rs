@@ -68,41 +68,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         48
     }
 
-    pub(super) fn sk_buff_socket_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 data;
-        //     __u32 data_end;
-        //     __u32 napi_id;
-        //     __u32 family;
-        //     __u32 remote_ip4;     // network byte order
-        //     __u32 local_ip4;      // network byte order
-        //     __u32 remote_ip6[4];  // network byte order
-        //     __u32 local_ip6[4];   // network byte order
-        //     __u32 remote_port;    // network byte order (u32)
-        //     __u32 local_port;     // host byte order
-        //     ...
-        //     struct bpf_sock *sk;
-        // };
-        (88, 92, 96, 100, 116, 132, 136, 168)
-    }
-
-    pub(super) fn sk_msg_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct sk_msg_md {
-        //     __bpf_md_ptr(void *, data);
-        //     __bpf_md_ptr(void *, data_end);
-        //     __u32 family;
-        //     __u32 remote_ip4;     // network byte order
-        //     __u32 local_ip4;      // network byte order
-        //     __u32 remote_ip6[4];  // network byte order
-        //     __u32 local_ip6[4];   // network byte order
-        //     __u32 remote_port;    // network byte order (u32)
-        //     __u32 local_port;     // host byte order
-        //     __u32 size;
-        // };
-        (0, 8, 16, 20, 24, 28, 44, 60, 64, 68)
-    }
-
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_addr_offsets()
     -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct bpf_sock_addr {
@@ -118,81 +83,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     struct bpf_sock *sk;
         // };
         (0, 4, 8, 24, 28, 32, 36, 40, 44, 64)
-    }
-
-    pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_offsets() -> (
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-        i16,
-    ) {
-        // struct bpf_sock {
-        //     __u32 bound_dev_if;
-        //     __u32 family;
-        //     __u32 type;
-        //     __u32 protocol;
-        //     __u32 mark;
-        //     __u32 priority;
-        //     __u32 src_ip4;
-        //     __u32 src_ip6[4];
-        //     __u32 src_port;
-        //     __be16 dst_port;
-        //     __u32 dst_ip4;
-        //     __u32 dst_ip6[4];
-        //     ...
-        //     __u32 state;
-        //     __s32 rx_queue_mapping;
-        // };
-        (0, 4, 8, 12, 16, 20, 24, 28, 44, 48, 52, 56, 72, 76)
-    }
-
-    pub(super) fn bpf_sk_lookup_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct bpf_sk_lookup {
-        //     union { struct bpf_sock *sk; __u64 cookie; };
-        //     __u32 family;
-        //     __u32 protocol;
-        //     __u32 remote_ip4;     // network byte order
-        //     __u32 remote_ip6[4];  // network byte order
-        //     __be16 remote_port;   // network byte order
-        //     ...
-        //     __u32 local_ip4;      // network byte order
-        //     __u32 local_ip6[4];   // network byte order
-        //     __u32 local_port;     // host byte order
-        //     __u32 ingress_ifindex;
-        // };
-        (0, 8, 12, 16, 20, 36, 40, 44, 60, 64)
-    }
-
-    pub(super) fn bpf_sock_ops_offsets()
-    -> (i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16, i16) {
-        // struct bpf_sock_ops {
-        //     __u32 op;
-        //     union { __u32 args[4]; __u32 reply; __u32 replylong[4]; };
-        //     __u32 family;
-        //     __u32 remote_ip4;     // network byte order
-        //     __u32 local_ip4;      // network byte order
-        //     __u32 remote_ip6[4];  // network byte order
-        //     __u32 local_ip6[4];   // network byte order
-        //     __u32 remote_port;    // network byte order
-        //     __u32 local_port;     // host byte order
-        //     __u32 is_fullsock;
-        //     ...
-        //     __u32 bpf_sock_ops_cb_flags;
-        //     __u32 state;
-        //     ...
-        //     struct bpf_sock *sk;
-        // };
-        (0, 20, 24, 28, 32, 48, 64, 68, 72, 84, 88, 184)
     }
 
     pub(in crate::compiler::mir_to_ebpf) fn bpf_sock_ops_args_offset() -> i16 {

@@ -1,6 +1,6 @@
 use super::{
-    ContextFieldDirectLoad, CtxField, EbpfProgramType, IngressIfindexContextLayout,
-    PacketContextKind, SocketContextLayout,
+    ContextFieldArrayLoad, ContextFieldDirectLoad, CtxField, EbpfProgramType,
+    IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
@@ -383,6 +383,13 @@ impl PacketContextKind {
             _ => None,
         }
     }
+
+    pub(crate) fn ctx_field_array_load(self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
+        match (self, field) {
+            (Self::SkBuff, CtxField::SkbCb) => Some(ContextFieldArrayLoad::u32_words(48, 5, false)),
+            _ => None,
+        }
+    }
 }
 
 impl SocketContextLayout {
@@ -444,6 +451,48 @@ impl SocketContextLayout {
             (Self::SockOps, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(88)),
             (Self::SkReuseport, CtxField::Protocol) => Some(ContextFieldDirectLoad::u32(24)),
             (Self::SkReuseport, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(40)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn ctx_field_array_load(self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
+        match (self, field) {
+            (Self::SockAddr, CtxField::UserIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(8, 4, false))
+            }
+            (Self::SockAddr, CtxField::MsgSrcIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(44, 4, false))
+            }
+            (Self::CgroupSock, CtxField::LocalIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(28, 4, true))
+            }
+            (Self::CgroupSock, CtxField::RemoteIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(56, 4, true))
+            }
+            (Self::SkLookup, CtxField::RemoteIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(20, 4, true))
+            }
+            (Self::SkLookup, CtxField::LocalIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(44, 4, true))
+            }
+            (Self::SkMsg, CtxField::RemoteIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(28, 4, true))
+            }
+            (Self::SkMsg, CtxField::LocalIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(44, 4, true))
+            }
+            (Self::SkBuff, CtxField::RemoteIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(100, 4, true))
+            }
+            (Self::SkBuff, CtxField::LocalIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(116, 4, true))
+            }
+            (Self::SockOps, CtxField::RemoteIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(32, 4, true))
+            }
+            (Self::SockOps, CtxField::LocalIp6) => {
+                Some(ContextFieldArrayLoad::u32_words(48, 4, true))
+            }
             _ => None,
         }
     }
@@ -606,6 +655,19 @@ impl EbpfProgramType {
         layout.ctx_field_direct_load(field)
     }
 
+    pub(crate) fn socket_ctx_field_array_load(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldArrayLoad> {
+        let layout = match field {
+            CtxField::UserIp6 | CtxField::MsgSrcIp6 => self.socket_family_context_layout(),
+            CtxField::RemoteIp6 | CtxField::LocalIp6 => self.socket_tuple_context_layout(),
+            _ => None,
+        }?;
+
+        layout.ctx_field_array_load(field)
+    }
+
     pub(crate) fn ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         if let Some(load) = self.socket_ctx_field_direct_load(field) {
             return Some(load);
@@ -683,6 +745,22 @@ impl EbpfProgramType {
         }
     }
 
+    pub(crate) fn ctx_field_array_load(&self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
+        if let Some(load) = self.socket_ctx_field_array_load(field) {
+            return Some(load);
+        }
+        if let Some(load) = self.packet_ctx_field_array_load(field) {
+            return Some(load);
+        }
+
+        match (self, field) {
+            (Self::SockOps, CtxField::SockOpsArgs | CtxField::SockOpsReplyLong) => {
+                Some(ContextFieldArrayLoad::u32_words(4, 4, false))
+            }
+            _ => None,
+        }
+    }
+
     fn packet_ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         match field {
             CtxField::DataMeta => self.data_meta_context_kind()?.ctx_field_direct_load(field),
@@ -693,6 +771,10 @@ impl EbpfProgramType {
             },
             _ => self.packet_context_kind()?.ctx_field_direct_load(field),
         }
+    }
+
+    fn packet_ctx_field_array_load(&self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
+        self.packet_context_kind()?.ctx_field_array_load(field)
     }
 }
 
@@ -768,6 +850,14 @@ impl ProgramSpec {
 
         self.iter_ctx_field_direct_load(field)
             .or_else(|| self.program_type().ctx_field_direct_load(field))
+    }
+
+    pub(crate) fn ctx_field_array_load(&self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        self.program_type().ctx_field_array_load(field)
     }
 }
 
@@ -1398,6 +1488,97 @@ mod tests {
         ] {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");
             assert_eq!(spec.ctx_field_direct_load(&field), expected);
+        }
+    }
+
+    #[test]
+    fn test_context_array_load_metadata_tracks_layouts() {
+        for (spec, field, expected) in [
+            (
+                "tc:lo:ingress",
+                CtxField::SkbCb,
+                Some(ContextFieldArrayLoad::u32_words(48, 5, false)),
+            ),
+            ("xdp:lo", CtxField::SkbCb, None),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+                CtxField::UserIp6,
+                Some(ContextFieldArrayLoad::u32_words(8, 4, false)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+                CtxField::MsgSrcIp6,
+                Some(ContextFieldArrayLoad::u32_words(44, 4, false)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::UserIp6,
+                None,
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:post_bind6",
+                CtxField::LocalIp6,
+                Some(ContextFieldArrayLoad::u32_words(28, 4, true)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::RemoteIp6,
+                Some(ContextFieldArrayLoad::u32_words(56, 4, true)),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::RemoteIp6,
+                Some(ContextFieldArrayLoad::u32_words(20, 4, true)),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::LocalIp6,
+                Some(ContextFieldArrayLoad::u32_words(44, 4, true)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::RemoteIp6,
+                Some(ContextFieldArrayLoad::u32_words(28, 4, true)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::LocalIp6,
+                Some(ContextFieldArrayLoad::u32_words(44, 4, true)),
+            ),
+            (
+                "cgroup_skb:/sys/fs/cgroup:egress",
+                CtxField::RemoteIp6,
+                Some(ContextFieldArrayLoad::u32_words(100, 4, true)),
+            ),
+            (
+                "cgroup_skb:/sys/fs/cgroup:egress",
+                CtxField::LocalIp6,
+                Some(ContextFieldArrayLoad::u32_words(116, 4, true)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockOpsArgs,
+                Some(ContextFieldArrayLoad::u32_words(4, 4, false)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockOpsReplyLong,
+                Some(ContextFieldArrayLoad::u32_words(4, 4, false)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::RemoteIp6,
+                Some(ContextFieldArrayLoad::u32_words(32, 4, true)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::LocalIp6,
+                Some(ContextFieldArrayLoad::u32_words(48, 4, true)),
+            ),
+            ("sk_reuseport:select", CtxField::RemoteIp6, None),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            assert_eq!(spec.ctx_field_array_load(&field), expected);
         }
     }
 }

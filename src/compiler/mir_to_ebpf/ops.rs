@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{
-    ContextFieldDirectLoad, ContextFieldDirectLoadWidth, SocketContextLayout,
+    ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldDirectLoadWidth, SocketContextLayout,
 };
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
@@ -35,6 +35,43 @@ impl<'a> MirToEbpfCompiler<'a> {
                     field.display_name()
                 ))
             })
+    }
+
+    fn ctx_field_array_load(
+        &self,
+        field: &CtxField,
+    ) -> Result<ContextFieldArrayLoad, CompileError> {
+        self.probe_ctx
+            .as_ref()
+            .and_then(|ctx| {
+                ctx.parsed_program_spec()
+                    .and_then(|spec| spec.ctx_field_array_load(field))
+                    .or_else(|| ctx.program_type().ctx_field_array_load(field))
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "ctx.{} is not available as a context array load for this program",
+                    field.display_name()
+                ))
+            })
+    }
+
+    fn compile_ctx_array_field_to_stack(
+        &mut self,
+        dst: EbpfReg,
+        field: &CtxField,
+        slot: Option<StackSlotId>,
+        field_name: &str,
+    ) -> Result<(), CompileError> {
+        let load = self.ctx_field_array_load(field)?;
+        self.compile_ctx_u32_array_to_stack(
+            dst,
+            slot,
+            load.base_offset,
+            load.count,
+            field_name,
+            load.normalize_big_endian,
+        )
     }
 
     fn emit_ctx_direct_load(&mut self, dst: EbpfReg, load: ContextFieldDirectLoad) {
@@ -732,15 +769,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions.push(EbpfInsn::end16_to_be(dst));
             }
             CtxField::SkbCb => {
-                let cb_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_cb_offset(),
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.cb is only available on skb-backed packet programs".to_string(),
-                        ));
-                    }
-                };
-                self.compile_ctx_u32_array_to_stack(dst, slot, cb_offset, 5, "ctx.cb", false)?;
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.cb")?;
             }
             CtxField::TcClassid => {
                 let load = self.ctx_field_direct_load(field)?;
@@ -822,8 +851,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::UserIp6 => {
-                let offset = Self::bpf_sock_addr_offsets().2;
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.user_ip6", false)?;
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.user_ip6")?;
             }
             CtxField::UserPort => {
                 let load = self.ctx_field_direct_load(field)?;
@@ -935,15 +963,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::MsgSrcIp6 => {
-                let offset = Self::bpf_sock_addr_offsets().8;
-                self.compile_ctx_u32_array_to_stack(
-                    dst,
-                    slot,
-                    offset,
-                    4,
-                    "ctx.msg_src_ip6",
-                    false,
-                )?;
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.msg_src_ip6")?;
             }
             CtxField::RemoteIp4 => {
                 let layout = self
@@ -980,16 +1000,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::RemoteIp6 => {
-                let offset = match self
+                match self
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.socket_tuple_context_layout())
                 {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().11,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().4,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().5,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().3,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().4,
                     Some(SocketContextLayout::SockAddr) => {
                         let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
                         else {
@@ -999,14 +1014,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                         };
                         return self.compile_load_ctx_field(dst, &alias_field, slot);
                     }
-                    Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.remote_ip6 is only available on cgroup_sock, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
-                        ));
-                    }
-                };
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.remote_ip6", true)?;
+                    _ => {}
+                }
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.remote_ip6")?;
             }
             CtxField::RemotePort => {
                 let layout = self
@@ -1084,16 +1094,11 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::LocalIp6 => {
-                let offset = match self
+                match self
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.socket_tuple_context_layout())
                 {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().7,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().5,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().6,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().4,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().7,
                     Some(SocketContextLayout::SockAddr) => {
                         let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
                         else {
@@ -1103,14 +1108,9 @@ impl<'a> MirToEbpfCompiler<'a> {
                         };
                         return self.compile_load_ctx_field(dst, &alias_field, slot);
                     }
-                    Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.local_ip6 is only available on cgroup_sock post_bind6, cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
-                        ));
-                    }
-                };
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.local_ip6", true)?;
+                    _ => {}
+                }
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.local_ip6")?;
             }
             CtxField::LocalPort => {
                 let layout = self
@@ -1192,16 +1192,14 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsArgs => {
-                let offset = Self::bpf_sock_ops_args_offset();
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.args", false)?;
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.args")?;
             }
             CtxField::SockOpsReply => {
                 let load = self.ctx_field_direct_load(field)?;
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsReplyLong => {
-                let offset = Self::bpf_sock_ops_args_offset();
-                self.compile_ctx_u32_array_to_stack(dst, slot, offset, 4, "ctx.replylong", false)?;
+                self.compile_ctx_array_field_to_stack(dst, field, slot, "ctx.replylong")?;
             }
             CtxField::IsFullsock => {
                 let load = self.ctx_field_direct_load(field)?;

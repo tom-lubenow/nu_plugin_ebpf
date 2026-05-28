@@ -2657,6 +2657,27 @@ impl ContextFieldDirectLoad {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ContextFieldArrayLoad {
+    pub(crate) base_offset: i16,
+    pub(crate) count: usize,
+    pub(crate) normalize_big_endian: bool,
+}
+
+impl ContextFieldArrayLoad {
+    pub(crate) const fn u32_words(
+        base_offset: i16,
+        count: usize,
+        normalize_big_endian: bool,
+    ) -> Self {
+        Self {
+            base_offset,
+            count,
+            normalize_big_endian,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ContextFieldDirectStore {
     pub(crate) offset: i16,
 }
