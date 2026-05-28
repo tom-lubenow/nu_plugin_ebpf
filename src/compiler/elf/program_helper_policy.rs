@@ -81,6 +81,7 @@ enum HelperProgramSurfaceFamily {
     TaskStorage,
     Lsm,
     TrampolineArgs,
+    TrampolineArgCount,
     Fexit,
     SkStorageGet,
     SkStorageDelete,
@@ -607,6 +608,17 @@ const HELPER_PROGRAM_SURFACE_FAMILY_SPECS: &[HelperProgramSurfaceFamilySpec] = &
         label: "fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup",
     },
     HelperProgramSurfaceFamilySpec {
+        family: HelperProgramSurfaceFamily::TrampolineArgCount,
+        program_types: &[
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
+            EbpfProgramType::TpBtf,
+            EbpfProgramType::Lsm,
+        ],
+        label: "fentry, fexit, fmod_ret, tp_btf, and lsm",
+    },
+    HelperProgramSurfaceFamilySpec {
         family: HelperProgramSurfaceFamily::Fexit,
         program_types: &[EbpfProgramType::Fexit, EbpfProgramType::FmodRet],
         label: "fexit and fmod_ret",
@@ -1109,8 +1121,11 @@ fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurface
         | BpfHelper::InodeStorageDelete => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Lsm,
         },
-        BpfHelper::GetFuncArg | BpfHelper::GetFuncArgCnt => HelperProgramSurfaceSpec {
+        BpfHelper::GetFuncArg => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::TrampolineArgs,
+        },
+        BpfHelper::GetFuncArgCnt => HelperProgramSurfaceSpec {
+            family: HelperProgramSurfaceFamily::TrampolineArgCount,
         },
         BpfHelper::GetFuncRet => HelperProgramSurfaceSpec {
             family: HelperProgramSurfaceFamily::Fexit,

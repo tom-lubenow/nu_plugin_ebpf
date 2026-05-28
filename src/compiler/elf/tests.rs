@@ -2279,7 +2279,7 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncArgCnt),
         Some(
-            "helper 'bpf_get_func_arg_cnt' is only valid in fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup programs"
+            "helper 'bpf_get_func_arg_cnt' is only valid in fentry, fexit, fmod_ret, tp_btf, and lsm programs"
                 .to_string()
         )
     );
@@ -2731,6 +2731,13 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
     assert_eq!(
         EbpfProgramType::Lsm.helper_call_error(BpfHelper::GetFuncArgCnt),
         None
+    );
+    assert_eq!(
+        EbpfProgramType::LsmCgroup.helper_call_error(BpfHelper::GetFuncArgCnt),
+        Some(
+            "helper 'bpf_get_func_arg_cnt' is only valid in fentry, fexit, fmod_ret, tp_btf, and lsm programs"
+                .to_string()
+        )
     );
     assert_eq!(
         EbpfProgramType::Fexit.helper_call_error(BpfHelper::GetFuncRet),
@@ -7233,7 +7240,6 @@ fn test_probe_context_arg_count_field_surface_follows_program_model() {
         EbpfProgramType::Fexit,
         EbpfProgramType::TpBtf,
         EbpfProgramType::Lsm,
-        EbpfProgramType::LsmCgroup,
     ] {
         let ctx = ProbeContext::new(program_type, "do_sys_openat2");
         assert!(
@@ -7241,6 +7247,12 @@ fn test_probe_context_arg_count_field_surface_follows_program_model() {
             "ctx.arg_count should be allowed on {program_type:?}"
         );
     }
+
+    let lsm_cgroup = ProbeContext::new(EbpfProgramType::LsmCgroup, "socket_bind");
+    let err = lsm_cgroup
+        .ctx_field_access_error(&CtxField::ArgCount)
+        .expect("expected arg_count rejection on lsm_cgroup");
+    assert!(err.contains("ctx.arg_count is only available on BTF-backed tracing contexts"));
 
     let xdp = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let err = xdp

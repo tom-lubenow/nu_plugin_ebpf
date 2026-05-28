@@ -172,7 +172,7 @@ The closure receives a context parameter with these fields:
 | `optval_end` | Kernel pointer to the end of the sockopt buffer | cgroup_sockopt |
 | `sockopt_retval` (`ctx.retval` on cgroup_sockopt) | Getsockopt return value on `get` hooks | cgroup_sockopt |
 | `arg0`-`argN` | Function arguments or raw sampled ABI register slots; kernel-BTF-backed contexts also expose named `ctx.arg.<name>` aliases when kernel BTF includes names | kprobe, kprobe.multi, ksyscall, uprobe, uprobe.multi, fentry, fexit, fmod_ret, tp_btf, lsm, lsm_cgroup, struct_ops, raw_tracepoint, raw_tracepoint.w, perf_event |
-| `arg_count` | Number of argument registers available to a BTF-backed tracing program (`bpf_get_func_arg_cnt`) | fentry, fexit, fmod_ret, tp_btf, lsm, lsm_cgroup |
+| `arg_count` | Number of argument registers available to a BTF-backed tracing program (`bpf_get_func_arg_cnt`) | fentry, fexit, fmod_ret, tp_btf, lsm |
 | `retval` | Return value | kretprobe, kretprobe.multi, kretsyscall, uretprobe, uretprobe.multi, fexit, fmod_ret |
 
 Tracepoint fields are read from `/sys/kernel/tracing/events/<category>/<name>/format`.
@@ -778,7 +778,7 @@ Namespace-aware PID/TGID reads are available through `helper-call "bpf_get_ns_cu
 String-to-integer parsing helpers `bpf_strtol` and `bpf_strtoul` are modeled for escape-hatch use with stack/map input buffers, 8-byte stack/map result slots, and base-selector flags restricted to `0`, `8`, `10`, or `16`. `bpf_strncmp` is also modeled as an escape hatch: `S1` must be a stack/map buffer with positive `S1_SIZE`, while `S2` must be a read-only map/rodata string.
 Legacy `bpf_probe_read_str` is modeled for escape-hatch compatibility on the same tracing/LSM/perf surfaces as legacy `bpf_probe_read`, but normal string reads should use `read-str` or `read-kernel-str` so the compiler can choose the explicit user/kernel helper.
 BPF packet-output helpers `bpf_skb_output` and `bpf_xdp_output` are modeled for tracing/perf-style programs that receive typed `sk_buff` / `xdp_buff` context pointers; they use perf-event-array maps and stack/map data buffers sized by the helper `size` argument, and are not treated as ordinary XDP/TC packet-program helpers.
-BTF-backed tracing argument count is available as `ctx.arg_count`; the lower-level `bpf_get_func_arg`, `bpf_get_func_ret`, and `bpf_get_func_arg_cnt` helpers are modeled for explicit `helper-call` use when fixed `ctx.argN` / `ctx.retval` projections are not the right fit.
+BTF-backed tracing argument count is available as `ctx.arg_count` on program types where the kernel permits `bpf_get_func_arg_cnt`; LSM cgroup programs expose function arguments but not `ctx.arg_count`. The lower-level `bpf_get_func_arg`, `bpf_get_func_ret`, and `bpf_get_func_arg_cnt` helpers are modeled for explicit `helper-call` use when fixed `ctx.argN` / `ctx.retval` projections are not the right fit.
 
 ## Discovering Tracepoints
 

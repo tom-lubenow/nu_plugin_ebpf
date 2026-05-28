@@ -4777,8 +4777,9 @@ const FIXTURES = [
             '  1'
             '}'
         ]
-        local: "accept"
+        local: "reject"
         kernel: "skip"
+        error_contains: "ctx.arg_count is only available on BTF-backed tracing contexts with bpf_get_func_arg_cnt support"
     }
     {
         name: "lsm-cgroup-named-arg-context"

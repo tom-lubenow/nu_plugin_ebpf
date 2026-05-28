@@ -1274,7 +1274,6 @@ const BTF_ARG_COUNT_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::FmodRet,
     EbpfProgramType::TpBtf,
     EbpfProgramType::Lsm,
-    EbpfProgramType::LsmCgroup,
 ];
 
 const PERF_EVENT_FIELD_PROGRAMS: &[EbpfProgramType] = &[EbpfProgramType::PerfEvent];
@@ -1915,7 +1914,7 @@ impl BaseContextFieldAccessRequirement {
                 field.display_name()
             ),
             Self::ArgCountField => {
-                "ctx.arg_count is only available on BTF-backed tracing contexts (fentry, fexit, fmod_ret, tp_btf, lsm, and lsm_cgroup)".to_string()
+                "ctx.arg_count is only available on BTF-backed tracing contexts with bpf_get_func_arg_cnt support (fentry, fexit, fmod_ret, tp_btf, and lsm)".to_string()
             }
             Self::RetvalField => "ctx.retval is only available on return probes with return-value access (kretprobe, kretprobe.multi, kretsyscall, uretprobe, uretprobe.multi, fexit, and fmod_ret)".to_string(),
             Self::TracepointFields => match field {
