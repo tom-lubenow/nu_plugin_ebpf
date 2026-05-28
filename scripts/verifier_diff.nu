@@ -12931,6 +12931,95 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-crypto-decrypt-accepts-tracked-ctx"
+        category: "helper-state"
+        tags: [kfunc crypto ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define crypto_params --kind array --value-type "bytes:512" --max-entries 1'
+            '  let params = (0 | map-get crypto_params --kind array)'
+            '  let err = "00000000"'
+            '  let src = "abcdefghijklmnop"'
+            '  let dst = "ABCDEFGHIJKLMNOP"'
+            '  let siv = "0000000000000000"'
+            '  if $params {'
+            '    let crypto = (kfunc-call "bpf_crypto_ctx_create" $params 408 $err)'
+            '    if $crypto {'
+            '      kfunc-call "bpf_crypto_decrypt" $crypto $src $dst $siv'
+            '      $crypto | kfunc-call "bpf_crypto_ctx_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-crypto-encrypt-rejects-kernel-src"
+        category: "helper-state"
+        tags: [kfunc crypto source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define crypto_params --kind array --value-type "bytes:512" --max-entries 1'
+            '  let params = (0 | map-get crypto_params --kind array)'
+            '  let err = "00000000"'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  let dst = "ABCDEFGHIJKLMNOP"'
+            '  let siv = "0000000000000000"'
+            '  if $params {'
+            '    if $task {'
+            '      let crypto = (kfunc-call "bpf_crypto_ctx_create" $params 408 $err)'
+            '      if $crypto {'
+            '        kfunc-call "bpf_crypto_encrypt" $crypto $task $dst $siv'
+            '        $crypto | kfunc-call "bpf_crypto_ctx_release"'
+            '      }'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc bpf_crypto_encrypt src expects pointer in [Stack, Map], got Kernel"
+    }
+    {
+        name: "source-kfunc-crypto-decrypt-rejects-kernel-src"
+        category: "helper-state"
+        tags: [kfunc crypto source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define crypto_params --kind array --value-type "bytes:512" --max-entries 1'
+            '  let params = (0 | map-get crypto_params --kind array)'
+            '  let err = "00000000"'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  let dst = "ABCDEFGHIJKLMNOP"'
+            '  let siv = "0000000000000000"'
+            '  if $params {'
+            '    if $task {'
+            '      let crypto = (kfunc-call "bpf_crypto_ctx_create" $params 408 $err)'
+            '      if $crypto {'
+            '        kfunc-call "bpf_crypto_decrypt" $crypto $task $dst $siv'
+            '        $crypto | kfunc-call "bpf_crypto_ctx_release"'
+            '      }'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc bpf_crypto_decrypt src expects pointer in [Stack, Map], got Kernel"
+    }
+    {
         name: "source-kfunc-cgroup-acquire-release"
         category: "helper-state"
         tags: [kfunc cgroup ref-lifetime source accept]
