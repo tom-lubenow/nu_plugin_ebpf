@@ -5068,6 +5068,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "task-storage-map-contains"
+        category: "maps"
+        tags: [maps local-storage task-storage map-contains accept]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  if ($ctx.task | map-contains task_state --kind task-storage) {'
+            '    1 | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sk-storage-map-contains"
         category: "maps"
         tags: [maps local-storage sk-storage map-contains accept]
@@ -5076,6 +5093,42 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.sk | map-contains sock_state --kind sk-storage'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-storage-map-get-init"
+        category: "maps"
+        tags: [maps local-storage sk-storage map-get accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  let state = ($ctx.sk | map-get sock_state --kind sk-storage --init { hits: 0 })'
+            '  if $state {'
+            '    $state.hits | count'
+            '  }'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sk-storage-map-delete"
+        category: "maps"
+        tags: [maps local-storage sk-storage map-delete accept]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk {'
+            '    $sk | map-delete sock_state --kind sk-storage'
+            '  }'
             '  "allow"'
             '}'
         ]
@@ -5098,6 +5151,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "inode-storage-map-get-init"
+        category: "maps"
+        tags: [maps local-storage inode-storage map-get accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let state = ($ctx.arg.file.f_inode | map-get inode_state --kind inode-storage --init { hits: 0 })'
+            '  if $state {'
+            '    $state.hits | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgrp-storage-map-contains"
         category: "maps"
         tags: [maps local-storage cgrp-storage map-contains accept]
@@ -5106,6 +5177,39 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.current_cgroup | map-contains cgrp_state --kind cgrp-storage'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgrp-storage-map-get-init"
+        category: "maps"
+        tags: [maps local-storage cgrp-storage map-get accept]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  let state = ($ctx.current_cgroup | map-get cgrp_state --kind cgrp-storage --init { hits: 0 })'
+            '  if $state {'
+            '    $state.hits | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgrp-storage-map-delete"
+        category: "maps"
+        tags: [maps local-storage cgrp-storage map-delete accept]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_cgroup | map-delete cgrp_state --kind cgrp-storage'
             '  0'
             '}'
         ]
