@@ -115,7 +115,8 @@ type labels, pointer verifier facts, and any load guards, tracepoint payload
 fields with tracefs/fallback provenance, nested context projections, writable
 context surfaces with backing helper/kfunc metadata where applicable, return aliases,
 target, aliases, parsed attach shape, section construction,
-sleepable/BTF-callable metadata, kernel-target validation, capability labels,
+sleepable/BTF-callable metadata, kernel-target validation plus modeled
+validation help, capability labels,
 supported first-class intrinsic commands with helper-backed mode/kind variants,
 intrinsic context-field requirements, modeled program-specific `kfunc-call`
 surfaces with signature, pointer-argument, ref-lifetime, and source-backed

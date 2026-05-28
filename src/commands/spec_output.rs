@@ -1703,9 +1703,10 @@ pub(super) fn spec_record(
     let attach_kind = program_type.attach_kind();
     let live_attach_policy = spec.live_attach_policy();
     let live_attach_note = live_attach_policy.note.unwrap_or("");
-    let kernel_target_validation = program_type
-        .kernel_target_validation()
-        .map(|validation| validation.key());
+    let kernel_target_validation = program_type.kernel_target_validation();
+    let kernel_target_validation_key = kernel_target_validation.map(|validation| validation.key());
+    let kernel_target_validation_help =
+        kernel_target_validation.and_then(|validation| validation.unsupported_target_help());
     let btf_callable_surface = spec.btf_callable_surface().map(|surface| surface.key());
     let context_fields = context_field_records(&spec, span, resolve_dynamic_args);
     let (tracepoint_fields, tracepoint_field_error) =
@@ -1813,7 +1814,8 @@ pub(super) fn spec_record(
             "attach_kind" => Value::string(attach_kind.key(), span),
             "attach_shape" => attach_shape_record(&spec, span),
             "target_kind" => Value::string(spec.target_kind().key(), span),
-            "kernel_target_validation" => optional_static_str(kernel_target_validation, span),
+            "kernel_target_validation" => optional_static_str(kernel_target_validation_key, span),
+            "kernel_target_validation_help" => optional_static_str(kernel_target_validation_help, span),
             "btf_callable_surface" => optional_static_str(btf_callable_surface, span),
             "sleepable" => Value::bool(spec.sleepable(), span),
             "arg_access" => Value::string(spec.arg_access().key(), span),

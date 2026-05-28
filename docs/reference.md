@@ -211,7 +211,10 @@ known. These labels describe feature surfaces.
 lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), a lane description,
 and nullable minimum-kernel/source fields. These lanes are test-planning
 metadata, not live-attach authorization flags; use the separate
-`live_attach_*` fields to inspect loader policy. Source-verified requirements
+`live_attach_*` fields to inspect loader policy. Kernel-BTF-backed target
+families also expose `kernel_target_validation` and
+`kernel_target_validation_help`, so tooling can present target-signature,
+tracepoint, or LSM-hook guidance before attach. Source-verified requirements
 carry minimum
 versions, `compatibility_minimum_kernel` reports the maximum known requirement
 for the parsed target, and `compatibility_default_test_lane` reports the most

@@ -1025,6 +1025,14 @@ fn test_spec_record_includes_registry_shape_metadata() {
             .expect("kernel target validation should be a string"),
         "fentry-trampoline"
     );
+    assert!(
+        record
+            .get("kernel_target_validation_help")
+            .expect("kernel target validation help should be present")
+            .as_str()
+            .expect("kernel target validation help should be a string")
+            .contains("trampoline-compatible target")
+    );
     assert_eq!(
         record
             .get("btf_callable_surface")
@@ -1086,9 +1094,41 @@ fn test_spec_record_includes_registry_shape_metadata() {
     );
     assert!(
         record
+            .get("kernel_target_validation_help")
+            .expect("kernel target validation help should be present")
+            .is_nothing()
+    );
+    assert!(
+        record
             .get("btf_callable_surface")
             .expect("BTF callable surface should be present")
             .is_nothing()
+    );
+
+    let tp_btf = ProgramSpec::parse("tp_btf:sched_switch").expect("tp_btf spec should parse");
+    let record = spec_record(
+        "tp_btf:sched_switch".to_string(),
+        tp_btf,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("spec output should be a record");
+    assert_eq!(
+        record
+            .get("kernel_target_validation")
+            .expect("kernel target validation should be present")
+            .as_str()
+            .expect("kernel target validation should be a string"),
+        "tp-btf-tracepoint"
+    );
+    assert!(
+        record
+            .get("kernel_target_validation_help")
+            .expect("kernel target validation help should be present")
+            .as_str()
+            .expect("kernel target validation help should be a string")
+            .contains("BTF-enabled tracepoint")
     );
 }
 
