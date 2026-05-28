@@ -496,7 +496,9 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         );
     }
 
-    validate_helper_raw_context_arg_shape(helper, args, state, program, probe_ctx, errors);
+    validate_helper_raw_context_arg_shape(
+        helper, args, types, state, program, probe_ctx, errors,
+    );
 
     let arg_is_known_zero = |arg_idx| {
         args.get(arg_idx).is_some_and(|value| {
@@ -972,6 +974,7 @@ fn validate_get_socket_cookie_arg_shape(
 fn validate_helper_raw_context_arg_shape(
     helper: BpfHelper,
     args: &[MirValue],
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
@@ -981,7 +984,7 @@ fn validate_helper_raw_context_arg_shape(
         let Some(expected) = helper.pointer_arg_requires_raw_context(arg_idx) else {
             continue;
         };
-        if helper_arg_is_known_non_raw_context_pointer(arg, state, program, probe_ctx) {
+        if helper_arg_is_known_non_raw_context_pointer(arg, types, state, program, probe_ctx) {
             errors.push(VerifierTypeError::new(format!(
                 "helper '{}' arg{} expects {} pointer",
                 helper.name(),
@@ -994,14 +997,19 @@ fn validate_helper_raw_context_arg_shape(
 
 fn helper_arg_is_known_non_raw_context_pointer(
     arg: &MirValue,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
 ) -> bool {
     match arg {
-        MirValue::VReg(vreg) => state.ctx_field_source(*vreg).is_some_and(|field| {
-            !ctx_field_is_raw_context_pointer(field, program, probe_ctx)
-        }),
+        MirValue::VReg(vreg) => match state.ctx_field_source(*vreg) {
+            Some(field) => !ctx_field_is_raw_context_pointer(field, program, probe_ctx),
+            None => types
+                .get(vreg)
+                .and_then(MirType::kernel_struct_ptr_pointee_name)
+                .is_some(),
+        },
         MirValue::Const(_) | MirValue::StackSlot(_) => false,
     }
 }

@@ -358,6 +358,40 @@ fn test_type_error_helper_raw_context_arg_rejects_socket_field_alias() {
 }
 
 #[test]
+fn test_type_error_helper_raw_context_arg_rejects_helper_return_pointer() {
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let stack_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: task,
+        helper: BpfHelper::GetCurrentTaskBtf as u32,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(task),
+            MirValue::StackSlot(stack_slot),
+            MirValue::Const(8),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected helper-return pointer to fail raw context helper arg");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_stack' arg0 expects raw context pointer")
+    }));
+}
+
+#[test]
 fn test_infer_syscall_helpers_in_syscall_program() {
     let mut func = make_test_function();
     let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
@@ -9512,20 +9546,14 @@ fn test_type_error_helper_inode_storage_delete_rejects_non_kernel_inode_pointer(
 #[test]
 fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst,
@@ -9556,20 +9584,14 @@ fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
 #[test]
 fn test_infer_helper_skc_lookup_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst,
@@ -9600,21 +9622,15 @@ fn test_infer_helper_skc_lookup_returns_kernel_pointer() {
 #[test]
 fn test_infer_helper_get_listener_sock_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let sock = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst: sock,
@@ -9642,21 +9658,15 @@ fn test_infer_helper_get_listener_sock_returns_kernel_pointer() {
 #[test]
 fn test_infer_helper_sk_fullsock_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let sock = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst: sock,
@@ -9684,21 +9694,15 @@ fn test_infer_helper_sk_fullsock_returns_kernel_pointer() {
 #[test]
 fn test_infer_helper_tcp_sock_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let sock = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst: sock,
@@ -9726,21 +9730,15 @@ fn test_infer_helper_tcp_sock_returns_kernel_pointer() {
 #[test]
 fn test_infer_helper_skc_to_tcp_sock_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let sock = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst: sock,
@@ -9771,21 +9769,15 @@ fn test_infer_helper_skc_to_tcp_sock_returns_kernel_pointer() {
 #[test]
 fn test_infer_helper_skc_to_tcp6_sock_returns_kernel_pointer() {
     let mut func = make_test_function();
-    let pid = func.alloc_vreg();
     let ctx = func.alloc_vreg();
     let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let sock = func.alloc_vreg();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::Copy {
-        dst: pid,
-        src: MirValue::Const(7),
-    });
-    block.instructions.push(MirInst::CallKfunc {
+    block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        kfunc: "bpf_task_from_pid".to_string(),
-        btf_id: None,
-        args: vec![pid],
+        field: CtxField::Context,
+        slot: None,
     });
     block.instructions.push(MirInst::CallHelper {
         dst: sock,
@@ -9840,21 +9832,15 @@ fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
 
     for (helper, expected_ty) in helpers {
         let mut func = make_test_function();
-        let pid = func.alloc_vreg();
         let ctx = func.alloc_vreg();
         let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
         let sock = func.alloc_vreg();
         let dst = func.alloc_vreg();
         let block = func.block_mut(BlockId(0));
-        block.instructions.push(MirInst::Copy {
-            dst: pid,
-            src: MirValue::Const(7),
-        });
-        block.instructions.push(MirInst::CallKfunc {
+        block.instructions.push(MirInst::LoadCtxField {
             dst: ctx,
-            kfunc: "bpf_task_from_pid".to_string(),
-            btf_id: None,
-            args: vec![pid],
+            field: CtxField::Context,
+            slot: None,
         });
         block.instructions.push(MirInst::CallHelper {
             dst: sock,

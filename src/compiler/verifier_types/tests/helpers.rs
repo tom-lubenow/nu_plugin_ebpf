@@ -3194,6 +3194,48 @@ fn test_verify_mir_for_probe_context_skb_helper_rejects_socket_field_alias() {
 }
 
 #[test]
+fn test_verify_mir_helper_raw_context_arg_rejects_helper_return_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let task = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let stack_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::StackSlot(stack_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected helper-return pointer to fail raw context helper arg");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_stack' arg0 expects raw context pointer")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_netns_cookie_accepts_cgroup_sockopt() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

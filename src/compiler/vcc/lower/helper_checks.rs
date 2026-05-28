@@ -1402,7 +1402,7 @@ impl<'a> VccLowerer<'a> {
             let Some(expected) = helper.pointer_arg_requires_raw_context(arg_idx) else {
                 continue;
             };
-            if self.helper_arg_is_non_raw_context_pointer(arg) {
+            if self.helper_arg_is_known_non_raw_context_pointer(arg) {
                 return Err(VccError::new(
                     VccErrorKind::PointerBounds,
                     format!(
@@ -1415,6 +1415,21 @@ impl<'a> VccLowerer<'a> {
             }
         }
         Ok(())
+    }
+
+    fn helper_arg_is_known_non_raw_context_pointer(&self, arg: &MirValue) -> bool {
+        match arg {
+            MirValue::VReg(vreg) => {
+                if let Some(field) = self.direct_ctx_field_regs.get(&VccReg(vreg.0)) {
+                    return !self.ctx_field_is_raw_context_pointer(field);
+                }
+                self.types
+                    .get(vreg)
+                    .and_then(MirType::kernel_struct_ptr_pointee_name)
+                    .is_some()
+            }
+            MirValue::Const(_) | MirValue::StackSlot(_) => false,
+        }
     }
 
     fn verify_get_socket_cookie_arg_shape(

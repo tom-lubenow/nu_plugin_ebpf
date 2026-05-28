@@ -665,6 +665,7 @@ impl<'a> TypeInference<'a> {
         self.validate_helper_raw_context_arg_shape(
             helper,
             args,
+            types,
             direct_ctx_field_sources,
             errors,
         );
@@ -683,6 +684,7 @@ impl<'a> TypeInference<'a> {
         &self,
         helper: BpfHelper,
         args: &[MirValue],
+        types: &HashMap<VReg, MirType>,
         direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         errors: &mut Vec<TypeError>,
     ) {
@@ -690,7 +692,11 @@ impl<'a> TypeInference<'a> {
             let Some(expected) = helper.pointer_arg_requires_raw_context(arg_idx) else {
                 continue;
             };
-            if self.helper_arg_is_known_non_raw_context_pointer(arg, direct_ctx_field_sources) {
+            if self.helper_arg_is_known_non_raw_context_pointer(
+                arg,
+                types,
+                direct_ctx_field_sources,
+            ) {
                 errors.push(TypeError::new(format!(
                     "helper '{}' arg{} expects {} pointer",
                     helper.name(),
@@ -704,15 +710,20 @@ impl<'a> TypeInference<'a> {
     fn helper_arg_is_known_non_raw_context_pointer(
         &self,
         arg: &MirValue,
+        types: &HashMap<VReg, MirType>,
         direct_ctx_field_sources: &HashMap<VReg, CtxField>,
     ) -> bool {
         match arg {
-            MirValue::VReg(vreg) => direct_ctx_field_sources.get(vreg).is_some_and(|field| {
-                !ProbeContext::resolve_ctx_field_is_raw_context_pointer(
+            MirValue::VReg(vreg) => match direct_ctx_field_sources.get(vreg) {
+                Some(field) => !ProbeContext::resolve_ctx_field_is_raw_context_pointer(
                     self.probe_ctx.as_ref(),
                     field,
-                )
-            }),
+                ),
+                None => self
+                    .mir_type_for_vreg(*vreg, types)
+                    .kernel_struct_ptr_pointee_name()
+                    .is_some(),
+            },
             MirValue::Const(_) | MirValue::StackSlot(_) => false,
         }
     }

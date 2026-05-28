@@ -7573,6 +7573,24 @@ const FIXTURES = [
         error_contains: "helper 'bpf_fib_lookup' arg0 expects raw context pointer"
     }
     {
+        name: "helper-get-stack-rejects-task-ctx-arg"
+        category: "helper-state"
+        tags: [helper raw-context reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define scratch --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get scratch --kind array)'
+            '  let task = (helper-call "bpf_get_current_task_btf")'
+            '  if $dst { helper-call "bpf_get_stack" $task $dst 8 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_stack' arg0 expects raw context pointer"
+    }
+    {
         name: "xdp-load-bytes-helper"
         category: "helper-state"
         tags: [xdp helper bytes accept source metadata]
