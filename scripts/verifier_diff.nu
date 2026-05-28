@@ -7420,6 +7420,58 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-set-scalar-writes"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:set"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.level = 1'
+            '  $ctx.optname = 2'
+            '  $ctx.optlen = 4'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-get-rejects-level-write"
+        category: "context-policy"
+        tags: [cgroup-sockopt reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.level = 1'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.level is only writable on cgroup_sockopt:set hooks"
+    }
+    {
+        name: "cgroup-sockopt-set-rejects-retval-write"
+        category: "context-policy"
+        tags: [cgroup-sockopt reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:set"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.retval = 0'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cgroup_sockopt:get"
+    }
+    {
         name: "cgroup-sockopt-bound-tcp-socket-projection"
         category: "context-surface"
         tags: [cgroup-sockopt context source metadata]
