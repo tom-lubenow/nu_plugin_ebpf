@@ -1441,6 +1441,42 @@ impl<'a> HirToMirLowering<'a> {
                                     )?,
                                     ty: next_ty.clone(),
                                 });
+                            } else if *trusted_btf && *address_space == AddressSpace::Kernel {
+                                let loaded_vreg = if bitfield.is_some() {
+                                    let storage_vreg = self.func.alloc_vreg();
+                                    self.vreg_type_hints.insert(storage_vreg, next_ty.clone());
+                                    self.emit(MirInst::Load {
+                                        dst: storage_vreg,
+                                        ptr: *base_vreg,
+                                        offset: Self::trampoline_projection_offset_i32(
+                                            field_offset,
+                                            path_desc,
+                                        )?,
+                                        ty: next_ty.clone(),
+                                    });
+                                    storage_vreg
+                                } else {
+                                    dst_vreg
+                                };
+                                if let Some(bitfield) = bitfield {
+                                    self.emit_bitfield_extract(
+                                        dst_vreg,
+                                        loaded_vreg,
+                                        &next_ty,
+                                        bitfield,
+                                    )?;
+                                } else {
+                                    self.vreg_type_hints.insert(dst_vreg, next_ty.clone());
+                                    self.emit(MirInst::Load {
+                                        dst: dst_vreg,
+                                        ptr: *base_vreg,
+                                        offset: Self::trampoline_projection_offset_i32(
+                                            field_offset,
+                                            path_desc,
+                                        )?,
+                                        ty: next_ty.clone(),
+                                    });
+                                }
                             } else if *address_space == AddressSpace::Kernel
                                 && root_ctx_field == Some(&CtxField::SockoptOptval)
                             {

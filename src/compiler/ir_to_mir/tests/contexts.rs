@@ -5405,6 +5405,21 @@ fn test_lower_bound_current_cgroup_btf_projection_preserves_trusted_provenance()
         "expected bound current_cgroup projection to preserve trusted BTF provenance through the follow-up cgroup.kn pointer load"
     );
     assert!(
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper { helper, .. }
+                if *helper == BpfHelper::ProbeReadKernel as u32
+        )),
+        "expected trusted BTF scalar projection to use a direct load instead of probe_read_kernel"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Load { ty, .. } if ty == &expected_ty
+        )),
+        "expected trusted BTF scalar projection to emit a direct load of {expected_ty:?}"
+    );
+    assert!(
         result.type_hints.main.values().any(|ty| ty == &expected_ty),
         "expected bound current_cgroup projection to type as {expected_ty:?}"
     );

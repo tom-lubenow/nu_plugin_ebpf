@@ -2475,12 +2475,28 @@ fn test_lower_netfilter_state_pointer_hop_preserves_trusted_btf_provenance() {
         .count();
 
     assert_eq!(
-        helper_reads, 1,
-        "expected only the scalar net_device field leaf to use probe_read"
+        helper_reads, 0,
+        "expected trusted BTF scalar projection to avoid probe_read"
     );
     assert!(
         direct_kernel_pointer_loads >= 1,
         "expected netfilter trusted BTF pointer hop to use a direct load"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::I32 | MirType::U32,
+                    ..
+                }
+            )),
+        "expected scalar net_device field leaf to use a direct trusted BTF load"
     );
 
     let compiled =
@@ -2493,13 +2509,14 @@ fn test_lower_netfilter_state_pointer_hop_preserves_trusted_btf_provenance() {
         HashMap::new(),
         HashMap::new(),
     );
-    let helper_requirement = program
-        .helper_compatibility_requirements()
-        .into_iter()
-        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
-        .expect("netfilter scalar BTF projection should report probe_read_kernel compatibility");
-    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
-    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.5"));
+    let helper_requirements = program.helper_compatibility_requirements();
+    assert!(
+        !helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "trusted BTF scalar projection should not report probe_read_kernel compatibility"
+    );
+    assert_eq!(program.helper_compatibility_minimum_kernel(), None);
 }
 
 #[test]
@@ -3032,37 +3049,29 @@ fn test_lower_generic_field_projection_after_pointer_binding() {
     )
     .expect("generic pointer field projection should lower");
 
+    let instructions: Vec<&MirInst> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
     assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::CallHelper {
-                    helper,
-                    args,
-                    ..
-                } if *helper == BpfHelper::ProbeReadKernel as u32
-                    && matches!(args.get(0), Some(MirValue::StackSlot(_)))
-            ))
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper { helper, .. } if *helper == BpfHelper::ProbeReadKernel as u32
+        )),
+        "trusted BTF scalar projection should avoid probe_read after pointer binding"
     );
     assert!(
-        result
-            .program
-            .main
-            .blocks
-            .iter()
-            .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(
-                inst,
-                MirInst::LoadSlot {
-                    ty: MirType::U64,
-                    ..
-                }
-            ))
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Load {
+                ty: MirType::U64,
+                ..
+            }
+        )),
+        "expected final inode number to use a direct trusted BTF load"
     );
 }
 
@@ -3103,8 +3112,8 @@ fn test_lower_generic_field_projection_after_deeper_pointer_binding() {
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read across a deeper trusted pointer path"
+        helper_reads == 0,
+        "expected trusted BTF scalar projection to avoid probe_read across a deeper pointer path"
     );
     assert!(
         result
@@ -3115,12 +3124,12 @@ fn test_lower_generic_field_projection_after_deeper_pointer_binding() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U32 | MirType::U64 | MirType::I32 | MirType::I64,
                     ..
                 }
             )),
-        "expected final scalar load from helper scratch slot"
+        "expected final scalar load to use a direct trusted BTF load"
     );
 }
 
@@ -3284,8 +3293,8 @@ fn test_lower_generic_field_projection_after_multi_level_pointer_binding() {
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read across a bound trusted pointer path"
+        helper_reads == 0,
+        "expected trusted BTF scalar projection to avoid probe_read across a bound pointer path"
     );
     assert!(
         result
@@ -3296,12 +3305,12 @@ fn test_lower_generic_field_projection_after_multi_level_pointer_binding() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U64,
                     ..
                 }
             )),
-        "expected final inode number load from helper scratch slot"
+        "expected final inode number to use a direct trusted BTF load"
     );
 }
 
@@ -3347,8 +3356,8 @@ fn test_lower_generic_field_projection_after_binding_root_trampoline_arg() {
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read after binding a trusted trampoline arg"
+        helper_reads == 0,
+        "expected trusted BTF scalar projection to avoid probe_read after binding a trampoline arg"
     );
     assert!(
         result
@@ -3359,12 +3368,12 @@ fn test_lower_generic_field_projection_after_binding_root_trampoline_arg() {
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U64,
                     ..
                 }
             )),
-        "expected final inode number load from the bound trampoline arg"
+        "expected final inode number to use a direct trusted BTF load"
     );
 }
 
@@ -3413,8 +3422,8 @@ fn test_lower_generic_pointer_index_projection_after_binding_root_trampoline_arg
         })
         .count();
     assert!(
-        helper_reads == 1,
-        "expected only the scalar leaf to use probe_read across bound trusted pointer indexing"
+        helper_reads == 0,
+        "expected trusted BTF scalar projection to avoid probe_read across bound pointer indexing"
     );
     assert!(
         result
@@ -3425,12 +3434,12 @@ fn test_lower_generic_pointer_index_projection_after_binding_root_trampoline_arg
             .flat_map(|block| block.instructions.iter())
             .any(|inst| matches!(
                 inst,
-                MirInst::LoadSlot {
+                MirInst::Load {
                     ty: MirType::U64,
                     ..
                 }
             )),
-        "expected final inode number load from the indexed bound pointer"
+        "expected final inode number to use a direct trusted BTF load"
     );
 }
 
