@@ -2721,6 +2721,33 @@ fn test_lower_map_delete_rejects_queue_kind() {
 }
 
 #[test]
+fn test_lower_map_delete_rejects_bloom_filter_kind() {
+    let hir = make_map_delete_program(DeclId::new(42), "bloom-filter");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let decl_names = HashMap::from([(DeclId::new(42), "map-delete".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bloom-filter map-delete should be rejected during lowering");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(
+                msg.contains("map-delete --kind bloom-filter is not deletable"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_map_delete_rejects_stack_trace_kind_with_stack_guidance() {
     let hir = make_map_delete_program(DeclId::new(42), "stack-trace");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
