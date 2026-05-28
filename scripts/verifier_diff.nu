@@ -433,6 +433,7 @@ const PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "sk_reuseport:migrate" feature_keys: ["attach:BPF_SK_REUSEPORT_SELECT" "attach:BPF_SK_REUSEPORT_SELECT_OR_MIGRATE"] }
     { target: "cgroup_skb:/sys/fs/cgroup:egress" feature_keys: ["program:BPF_PROG_TYPE_CGROUP_SKB"] }
     { target: "cgroup_sock_addr:/sys/fs/cgroup:connect4" feature_keys: ["program:BPF_PROG_TYPE_CGROUP_SOCK_ADDR"] }
+    { target: "cgroup_sock_addr:/sys/fs/cgroup_unix:connect4" feature_keys: ["program:BPF_PROG_TYPE_CGROUP_SOCK_ADDR"] }
     { target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix" feature_keys: ["program:BPF_PROG_TYPE_CGROUP_SOCK_ADDR" "attach:BPF_CGROUP_UNIX_SOCK_ADDR"] }
     { target: "cgroup_sockopt:/sys/fs/cgroup:get" feature_keys: ["program:BPF_PROG_TYPE_CGROUP_SOCKOPT"] }
     { target: "cgroup_sock:/sys/fs/cgroup:sock_create" feature_keys: ["program:BPF_PROG_TYPE_CGROUP_SOCK"] }
@@ -4464,6 +4465,16 @@ const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
 ]
 
 const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup_unix:connect4"
+        program: [
+            '{|event|'
+            '  $event.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: []
+    }
     {
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
         program: [
@@ -19423,6 +19434,11 @@ def program-helper-kernel-features [source: string] {
 def program-kfunc-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
+    let cgroup_sock_addr_hook = if ($target_text | str starts-with "cgroup_sock_addr:") {
+        $target_text | split row ":" | last
+    } else {
+        ""
+    }
     let context_names = (program-context-variable-names $source)
 
     for kfunc_name in (program-kfunc-names $source) {
@@ -19436,7 +19452,7 @@ def program-kfunc-kernel-features [source: string target] {
         let trimmed = ($line | str trim)
         if (
             ($target_text | str starts-with "cgroup_sock_addr:")
-            and ($target_text | str contains "_unix")
+            and ($cgroup_sock_addr_hook | str ends-with "_unix")
             and (line-assigns-context-field? $trimmed $context_names ["sun_path"])
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH])
@@ -19947,7 +19963,7 @@ def target-kernel-features [target] {
         } else {
             $features = ($features | append $KERNEL_FEATURE_XDP_ATTACH_SKB)
         }
-        if ($target | str contains ":frags") {
+        if ("frags" in $xdp_parts) {
             $features = ($features | append $KERNEL_FEATURE_XDP_MULTI_BUFFER)
         }
     } else if ($target | str starts-with "socket_filter:") {
@@ -19964,7 +19980,8 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_PROG_FLOW_DISSECTOR)
     } else if ($target | str starts-with "netfilter:") {
         $features = ($features | append $KERNEL_FEATURE_NETFILTER_LINK)
-        if ($target | str contains ":defrag") {
+        let netfilter_parts = ($target | split row ":")
+        if ("defrag" in $netfilter_parts) {
             $features = ($features | append $KERNEL_FEATURE_NETFILTER_DEFRAG)
         }
     } else if ($target | str starts-with "lwt_seg6local:") {
@@ -19980,14 +19997,16 @@ def target-kernel-features [target] {
         $features = ($features | append $KERNEL_FEATURE_PROG_SK_SKB)
     } else if ($target | str starts-with "sk_reuseport:") {
         $features = ($features | append $KERNEL_FEATURE_SK_REUSEPORT_ATTACH)
-        if ($target | str contains ":migrate") {
+        let sk_reuseport_parts = ($target | split row ":")
+        if ("migrate" in $sk_reuseport_parts) {
             $features = ($features | append $KERNEL_FEATURE_SK_REUSEPORT_MIGRATION)
         }
     } else if ($target | str starts-with "cgroup_skb:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SKB)
     } else if ($target | str starts-with "cgroup_sock_addr:") {
         $features = ($features | append $KERNEL_FEATURE_PROG_CGROUP_SOCK_ADDR)
-        if ($target | str contains "_unix") {
+        let cgroup_sock_addr_hook = ($target | split row ":" | last)
+        if ($cgroup_sock_addr_hook | str ends-with "_unix") {
             $features = ($features | append $KERNEL_FEATURE_ATTACH_CGROUP_UNIX_SOCK_ADDR)
         }
     } else if ($target | str starts-with "cgroup_sockopt:") {
