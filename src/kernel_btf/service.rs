@@ -641,6 +641,77 @@ impl KernelBtf {
             .map(Some)
     }
 
+    /// Resolve argument type information for a kfunc function-pointer callback parameter.
+    ///
+    /// Returns `Ok(None)` when the kfunc or argument exists but that argument is
+    /// not a BTF function pointer, or when the callback does not have arguments.
+    pub fn kfunc_callback_arg_type_infos(
+        &self,
+        kfunc_name: &str,
+        callback_arg_idx: usize,
+    ) -> Result<Option<Vec<TypeInfo>>, BtfError> {
+        let btf = self.load_kernel_btf_for_query()?;
+        let kfunc_ty = btf
+            .get_types()
+            .iter()
+            .find(|ty| ty.is_function && ty.name.as_deref() == Some(kfunc_name))
+            .ok_or_else(|| BtfError::TypeNotFound(kfunc_name.to_string()))?;
+        let Type::FunctionProto(kfunc_proto) = &kfunc_ty.base_type else {
+            return Err(BtfError::KernelBtfError(format!(
+                "kfunc '{}' is missing a function prototype in kernel BTF",
+                kfunc_name
+            )));
+        };
+        let Some(callback_param) = kfunc_proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+            .nth(callback_arg_idx)
+        else {
+            return Ok(None);
+        };
+
+        let callback_ty = btf.get_type_by_id(callback_param.type_id).map_err(|e| {
+            BtfError::KernelBtfError(format!(
+                "failed to resolve kfunc '{}' callback arg{} type {}: {}",
+                kfunc_name, callback_arg_idx, callback_param.type_id, e
+            ))
+        })?;
+        if callback_ty.num_refs == 0 || !matches!(callback_ty.base_type, Type::FunctionProto(_)) {
+            return Ok(None);
+        }
+        let Type::FunctionProto(callback_proto) = &callback_ty.base_type else {
+            unreachable!("callback function pointer was checked above")
+        };
+
+        let raw_type_sizes = self.load_raw_type_size_map().unwrap_or_default();
+        let raw_pointer_targets = self.load_raw_pointer_target_map().unwrap_or_default();
+        let mut infos = Vec::new();
+        for param in callback_proto
+            .params
+            .iter()
+            .take_while(|param| param.type_id != 0)
+        {
+            let param_ty = btf.get_type_by_id(param.type_id).map_err(|e| {
+                BtfError::KernelBtfError(format!(
+                    "failed to resolve kfunc '{}' callback parameter type {}: {}",
+                    kfunc_name, param.type_id, e
+                ))
+            })?;
+            infos.push(Self::type_info_from_btf_type(
+                &btf,
+                &param_ty,
+                &raw_type_sizes,
+                &raw_pointer_targets,
+            )?);
+        }
+        if infos.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(infos))
+        }
+    }
+
     /// Resolve all user-visible argument metadata for a trampoline function.
     pub fn function_trampoline_arg_infos(
         &self,

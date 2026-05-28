@@ -673,6 +673,24 @@ fn test_kfunc_signature_hint_marks_function_pointer_args_as_subprograms() {
 }
 
 #[test]
+fn test_kfunc_callback_arg_type_infos_resolves_function_pointer_candidate() {
+    let Some((kfunc, callback_idx)) = find_kfunc_callback_signature_hint_candidate() else {
+        return;
+    };
+
+    let args = KernelBtf::get()
+        .kfunc_callback_arg_type_infos(kfunc, callback_idx)
+        .expect("candidate callback prototype query should succeed")
+        .expect("candidate callback prototype should have arguments");
+
+    assert!(!args.is_empty());
+    assert!(matches!(
+        args.first(),
+        Some(TypeInfo::Ptr { .. } | TypeInfo::Int { .. })
+    ));
+}
+
+#[test]
 fn test_tp_btf_arg_type_info_skips_hidden_context_slot() {
     let callable_name = KernelBtf::tp_btf_type_name("sys_enter");
     let Ok(Some(raw_visible_arg)) =

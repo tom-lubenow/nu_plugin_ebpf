@@ -465,11 +465,48 @@ impl<'a> HirToMirLowering<'a> {
                     },
                 ])
             }
-            _ => Err(CompileError::UnsupportedInstruction(format!(
-                "kfunc-call '{}' arg{} callback lowering is not modeled yet",
-                kfunc, arg_idx
-            ))),
+            _ => self.kernel_btf_kfunc_callback_subfunction_arg_seeds(kfunc, arg_idx),
         }
+    }
+
+    fn kernel_btf_kfunc_callback_subfunction_arg_seeds(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Result<Vec<SubfunctionArgSeed>, CompileError> {
+        let arg_infos = KernelBtf::get()
+            .kfunc_callback_arg_type_infos(kfunc, arg_idx)
+            .map_err(|err| {
+                CompileError::UnsupportedInstruction(format!(
+                    "kfunc-call '{}' arg{} callback lowering could not resolve kernel BTF callback prototype: {}",
+                    kfunc, arg_idx, err
+                ))
+            })?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "kfunc-call '{}' arg{} callback lowering is not modeled yet",
+                    kfunc, arg_idx
+                ))
+            })?;
+        if arg_infos.len() > 5 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "kfunc-call '{}' arg{} callback ABI supplies {} arguments; BPF subprogram callbacks support at most 5",
+                kfunc,
+                arg_idx,
+                arg_infos.len()
+            )));
+        }
+
+        Ok(arg_infos
+            .iter()
+            .map(|type_info| SubfunctionArgSeed {
+                type_hint: Some(Self::kernel_btf_callback_arg_type_from_info(type_info)),
+                metadata: None,
+                synthetic_stack_slot: None,
+                non_null: false,
+                trusted_btf: matches!(type_info, TypeInfo::Ptr { is_user: false, .. }),
+            })
+            .collect())
     }
 
     pub(super) fn aggregate_call_value_type<'b>(ty: &'b MirType) -> Option<&'b MirType> {
@@ -520,6 +557,59 @@ impl<'a> HirToMirLowering<'a> {
                 }],
             }),
             address_space: AddressSpace::Kernel,
+        }
+    }
+
+    fn kernel_btf_callback_arg_type_from_info(type_info: &TypeInfo) -> MirType {
+        match type_info {
+            TypeInfo::Int { size, signed } => match (*size, *signed) {
+                (1, false) => MirType::U8,
+                (1, true) => MirType::I8,
+                (2, false) => MirType::U16,
+                (2, true) => MirType::I16,
+                (4, false) => MirType::U32,
+                (4, true) => MirType::I32,
+                (8, false) => MirType::U64,
+                (8, true) => MirType::I64,
+                _ => MirType::Unknown,
+            },
+            TypeInfo::Ptr { target, is_user } => MirType::Ptr {
+                pointee: Box::new(Self::kernel_btf_callback_arg_type_from_info(target)),
+                address_space: if *is_user {
+                    AddressSpace::User
+                } else {
+                    AddressSpace::Kernel
+                },
+            },
+            TypeInfo::Struct {
+                name,
+                btf_type_id,
+                size,
+                ..
+            } => {
+                if *size == 0 {
+                    return MirType::Unknown;
+                }
+                MirType::Struct {
+                    name: Some(name.clone()),
+                    kernel_btf_type_id: *btf_type_id,
+                    fields: vec![StructField {
+                        name: "__opaque".to_string(),
+                        ty: MirType::Array {
+                            elem: Box::new(MirType::U8),
+                            len: *size,
+                        },
+                        offset: 0,
+                        synthetic: false,
+                        bitfield: None,
+                    }],
+                }
+            }
+            TypeInfo::Array { element, len } => MirType::Array {
+                elem: Box::new(Self::kernel_btf_callback_arg_type_from_info(element)),
+                len: *len,
+            },
+            TypeInfo::Void | TypeInfo::Unknown => MirType::Unknown,
         }
     }
 
