@@ -4312,7 +4312,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "accept"
+        kernel: "skip"
     }
     {
         name: "kprobe-multi-context"
@@ -4326,7 +4326,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "kretprobe-multi-context"
@@ -4340,7 +4340,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "uprobe-multi-context"
@@ -4544,7 +4544,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tp-btf-bound-arg-context"
@@ -4560,7 +4560,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "fentry-context"
@@ -4575,7 +4575,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "fentry-bound-arg-context"
@@ -4591,7 +4591,22 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
+    }
+    {
+        name: "fentry-array-element-context"
+        category: "tracing"
+        tags: [fentry context array]
+        requires: [kernel-btf]
+        target: "fentry:wake_up_new_task"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0.comm.0 + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "fentry-sleepable-context"
@@ -4748,7 +4763,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "lsm-cgroup-context"
@@ -4778,7 +4793,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "syscall-helper-context"
