@@ -2630,6 +2630,21 @@ pub(crate) enum ProgramAttachShape {
 }
 
 impl ProgramAttachShape {
+    pub(crate) fn iter_target_kind(self) -> Option<IterTargetKind> {
+        match self {
+            Self::Iter { target_kind } => target_kind,
+            _ => None,
+        }
+    }
+
+    pub(crate) fn iter_sock_ctx_offset(self) -> Option<i16> {
+        match self.iter_target_kind()? {
+            IterTargetKind::BpfSkStorageMap => Some(16),
+            IterTargetKind::Sockmap => Some(24),
+            _ => None,
+        }
+    }
+
     pub(crate) fn is_tc_ingress(self) -> bool {
         matches!(self, Self::Tc { ingress: true })
     }
@@ -4019,6 +4034,23 @@ mod tests {
         );
         assert_eq!(sched_ext_select_cpu.section_name(), "struct_ops/select_cpu");
         assert_eq!(sched_ext_init.section_name(), "struct_ops.s/init");
+    }
+
+    #[test]
+    fn test_program_attach_shape_reports_iter_sock_context_offsets() {
+        let sk_storage = ProgramSpec::parse("iter:bpf_sk_storage_map")
+            .expect("bpf_sk_storage_map iterator target should parse");
+        let sockmap =
+            ProgramSpec::parse("iter:sockmap").expect("sockmap iterator target should parse");
+        let bpf_map =
+            ProgramSpec::parse("iter:bpf_map").expect("bpf_map iterator target should parse");
+        let unknown =
+            ProgramSpec::parse("iter:future_target").expect("unknown iterator target should parse");
+
+        assert_eq!(sk_storage.attach_shape().iter_sock_ctx_offset(), Some(16));
+        assert_eq!(sockmap.attach_shape().iter_sock_ctx_offset(), Some(24));
+        assert_eq!(bpf_map.attach_shape().iter_sock_ctx_offset(), None);
+        assert_eq!(unknown.attach_shape().iter_sock_ctx_offset(), None);
     }
 
     #[test]

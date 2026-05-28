@@ -2,7 +2,6 @@ use super::*;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
-use crate::program_spec::ProgramSpec;
 
 mod context;
 
@@ -18,18 +17,16 @@ impl<'a> MirToEbpfCompiler<'a> {
     }
 
     fn iter_sock_ctx_offset(&self) -> Result<i16, CompileError> {
-        match self
-            .probe_ctx
+        self.probe_ctx
             .as_ref()
             .and_then(|ctx| ctx.parsed_program_spec())
-        {
-            Some(ProgramSpec::Iter { target }) if target.name == "bpf_sk_storage_map" => Ok(16),
-            Some(ProgramSpec::Iter { target }) if target.name == "sockmap" => Ok(24),
-            _ => Err(CompileError::UnsupportedInstruction(
+            .and_then(|spec| spec.attach_shape().iter_sock_ctx_offset())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
                 "ctx.iter_sock is only available on iter:bpf_sk_storage_map and iter:sockmap programs"
                     .into(),
-            )),
-        }
+                )
+            })
     }
 
     /// Emit binary operation with register operand
