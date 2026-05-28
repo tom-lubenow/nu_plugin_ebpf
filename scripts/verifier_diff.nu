@@ -3543,7 +3543,7 @@ const CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "sk_lookup:/proc/self/ns/net" field: "netns_cookie" feature: $KERNEL_FEATURE_BPF_GET_NETNS_COOKIE }
     { target: "raw_tracepoint:sys_enter" field: "ktime" feature: $KERNEL_FEATURE_BPF_KTIME_GET_NS }
     { target: "raw_tracepoint:sys_enter" field: "ktime_boot" feature: $KERNEL_FEATURE_BPF_KTIME_GET_BOOT_NS }
-    { target: "raw_tracepoint:sys_enter" field: "ktime_coarse" feature: $KERNEL_FEATURE_BPF_KTIME_GET_COARSE_NS }
+    { target: "tc:lo:ingress" field: "ktime_coarse" feature: $KERNEL_FEATURE_BPF_KTIME_GET_COARSE_NS }
     { target: "raw_tracepoint:sys_enter" field: "ktime_tai" feature: $KERNEL_FEATURE_BPF_KTIME_GET_TAI_NS }
     { target: "raw_tracepoint:sys_enter" field: "jiffies" feature: $KERNEL_FEATURE_BPF_JIFFIES64 }
     { target: "fentry:security_file_open" field: "func_ip" feature: $KERNEL_FEATURE_BPF_GET_FUNC_IP }
@@ -4307,12 +4307,27 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  ($ctx.ktime + $ctx.ktime_boot + $ctx.ktime_coarse + $ctx.ktime_tai + $ctx.jiffies) | count'
+            '  ($ctx.ktime + $ctx.ktime_boot + $ctx.ktime_tai + $ctx.jiffies) | count'
             '  0'
             '}'
         ]
         local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "raw-tracepoint-coarse-time-reject"
+        category: "context-surface"
+        tags: [raw-tracepoint context time reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx.ktime_coarse | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
         kernel: "skip"
+        error_contains: "ctx.ktime_coarse is not available on raw_tracepoint programs"
     }
     {
         name: "kprobe-multi-context"
@@ -7260,6 +7275,20 @@ const FIXTURES = [
             '{|ctx|'
             '  map-contains tracked_cgroups 0 --kind cgroup-array'
             '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-coarse-time-context"
+        category: "context-surface"
+        tags: [tc context time source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx.ktime_coarse | count'
+            '  0'
             '}'
         ]
         local: "accept"

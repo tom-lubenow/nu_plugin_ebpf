@@ -5648,7 +5648,6 @@ fn test_lower_kprobe_time_ctx_fields() {
     for (field_name, expected_field) in [
         ("ktime", CtxField::Timestamp),
         ("ktime_boot", CtxField::BootTimestamp),
-        ("ktime_coarse", CtxField::CoarseTimestamp),
         ("ktime_tai", CtxField::TaiTimestamp),
         ("jiffies", CtxField::Jiffies),
     ] {
@@ -5673,6 +5672,29 @@ fn test_lower_kprobe_time_ctx_fields() {
             MirInst::LoadCtxField { field, .. } if field == &expected_field
         )));
     }
+}
+
+#[test]
+fn test_lower_rejects_kprobe_coarse_time_ctx_field() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("ktime_coarse")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("kprobe ctx.ktime_coarse should reject");
+
+    assert!(
+        err.to_string()
+            .contains("ctx.ktime_coarse is not available on kprobe programs")
+    );
 }
 
 #[test]

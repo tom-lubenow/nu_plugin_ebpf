@@ -2269,6 +2269,16 @@ fn test_program_type_helper_call_error_covers_program_only_rules() {
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::ReadBranchRecords),
         Some("helper 'bpf_read_branch_records' is only valid in perf_event programs".to_string())
     );
+    assert!(
+        EbpfProgramType::Kprobe
+            .helper_call_error(BpfHelper::KtimeGetCoarseNs)
+            .is_some_and(|err| err
+                .contains("helper 'bpf_ktime_get_coarse_ns' is only valid in xdp, socket_filter"))
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_call_error(BpfHelper::KtimeGetCoarseNs),
+        None
+    );
     assert_eq!(
         EbpfProgramType::Xdp.helper_call_error(BpfHelper::GetFuncArg),
         Some(
@@ -7865,6 +7875,32 @@ fn test_probe_context_allows_cpu_and_timestamp_on_xdp() {
     ] {
         assert!(ctx.ctx_field_access_error(&field).is_none());
     }
+}
+
+#[test]
+fn test_probe_context_rejects_coarse_timestamp_on_tracing_contexts() {
+    for program_type in [
+        EbpfProgramType::Kprobe,
+        EbpfProgramType::Uprobe,
+        EbpfProgramType::PerfEvent,
+        EbpfProgramType::RawTracepoint,
+        EbpfProgramType::RawTracepointWritable,
+        EbpfProgramType::Tracepoint,
+        EbpfProgramType::Fentry,
+        EbpfProgramType::Lsm,
+    ] {
+        let ctx = ProbeContext::new(program_type, "demo");
+        let err = ctx
+            .ctx_field_access_error(&CtxField::CoarseTimestamp)
+            .unwrap_or_else(|| panic!("expected ktime_coarse rejection on {program_type:?}"));
+        assert!(err.contains("ctx.ktime_coarse is not available"));
+    }
+
+    let tc = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    assert!(
+        tc.ctx_field_access_error(&CtxField::CoarseTimestamp)
+            .is_none()
+    );
 }
 
 #[test]

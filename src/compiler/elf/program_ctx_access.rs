@@ -962,11 +962,14 @@ const BASE_CONTEXT_FIELD_ACCESS_SURFACES: &[BaseContextFieldAccessSurfaceSpec] =
         &[
             CtxField::Timestamp,
             CtxField::BootTimestamp,
-            CtxField::CoarseTimestamp,
             CtxField::TaiTimestamp,
             CtxField::Jiffies,
         ],
         BaseContextFieldAccessRequirement::TimestampField,
+    ),
+    (
+        &[CtxField::CoarseTimestamp],
+        BaseContextFieldAccessRequirement::CoarseTimestampField,
     ),
     (
         PERF_EVENT_CTX_FIELDS,
@@ -1181,6 +1184,7 @@ enum BaseContextFieldAccessRequirement {
     RandomField,
     CurrentTaskCgroupField,
     TimestampField,
+    CoarseTimestampField,
     PerfEventField,
     PerfEventHelperFields,
     XdpHelperFields,
@@ -1323,6 +1327,34 @@ const BASE_RUNTIME_FIELD_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::LsmCgroup,
     EbpfProgramType::Xdp,
     EbpfProgramType::PerfEvent,
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::CgroupDevice,
+    EbpfProgramType::SkLookup,
+    EbpfProgramType::FlowDissector,
+    EbpfProgramType::Netfilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
+    EbpfProgramType::SkReuseport,
+    EbpfProgramType::SkMsg,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::SockOps,
+    EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
+    EbpfProgramType::Netkit,
+    EbpfProgramType::TcAction,
+    EbpfProgramType::CgroupSkb,
+    EbpfProgramType::CgroupSock,
+    EbpfProgramType::CgroupSysctl,
+    EbpfProgramType::CgroupSockopt,
+    EbpfProgramType::CgroupSockAddr,
+    EbpfProgramType::LircMode2,
+];
+
+const COARSE_TIMESTAMP_FIELD_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::Xdp,
     EbpfProgramType::SocketFilter,
     EbpfProgramType::CgroupDevice,
     EbpfProgramType::SkLookup,
@@ -1539,6 +1571,10 @@ const BASE_CONTEXT_FIELD_ACCESS_PROGRAM_SURFACES: &[BaseContextFieldAccessProgra
         program_types: BASE_RUNTIME_FIELD_PROGRAMS,
     },
     BaseContextFieldAccessProgramSurfaceSpec {
+        requirement: BaseContextFieldAccessRequirement::CoarseTimestampField,
+        program_types: COARSE_TIMESTAMP_FIELD_PROGRAMS,
+    },
+    BaseContextFieldAccessProgramSurfaceSpec {
         requirement: BaseContextFieldAccessRequirement::XdpHelperFields,
         program_types: XDP_MD_FIELD_PROGRAMS,
     },
@@ -1689,7 +1725,9 @@ impl BaseContextFieldAccessRequirement {
             Self::CpuField => self.allowed_by_program_surface(program_type),
             Self::RandomField => self.allowed_by_program_surface(program_type),
             Self::CurrentTaskCgroupField => self.allowed_by_program_surface(program_type),
-            Self::TimestampField => self.allowed_by_program_surface(program_type),
+            Self::TimestampField | Self::CoarseTimestampField => {
+                self.allowed_by_program_surface(program_type)
+            }
             Self::PerfEventField => {
                 self.allowed_by_program_surface(program_type) && cfg!(target_arch = "x86_64")
             }
@@ -1748,6 +1786,7 @@ impl BaseContextFieldAccessRequirement {
             | Self::RandomField
             | Self::CurrentTaskCgroupField
             | Self::TimestampField
+            | Self::CoarseTimestampField
             | Self::StackFields => format!(
                 "ctx.{} is not available on {} programs",
                 field.display_name(),

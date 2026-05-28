@@ -47,7 +47,7 @@ The closure receives a context parameter with these fields:
 | `random` / `prandom_u32` | Pseudo-random `u32` from `bpf_get_prandom_u32`; ordinary `random int` is preferred when it fits the expression | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ktime` | Kernel timestamp (ns) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `ktime_boot` | Boot-time kernel timestamp (ns, includes suspend time) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
-| `ktime_coarse` | Coarse kernel timestamp (ns) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
+| `ktime_coarse` | Coarse kernel timestamp (ns) | non-tracing runtime-context program types such as XDP, TC/TCX/Netkit, LWT, cgroup, socket, flow dissector, netfilter, and LIRC |
 | `ktime_tai` | TAI kernel timestamp (ns) | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `jiffies` | Kernel jiffies counter | all runtime-context program types except `freplace`/extension, `syscall`, and `struct_ops` callbacks |
 | `func_ip` | Address of the traced function/probe target (`bpf_get_func_ip`) | kprobe, kretprobe, kprobe.multi, kretprobe.multi, ksyscall, kretsyscall, uprobe, uretprobe, uprobe.multi, uretprobe.multi, perf_event, raw_tracepoint, raw_tracepoint.w, tracepoint, fentry, fexit, fmod_ret, tp_btf |
@@ -617,7 +617,8 @@ specs do not expose this field surface.
 
 `ctx.ktime` remains the preferred ordinary timestamp surface. Specific
 kernel clocks/counters are also available as ordinary fields:
-`ctx.ktime_boot`, `ctx.ktime_coarse`, `ctx.ktime_tai`, and `ctx.jiffies`.
+`ctx.ktime_boot`, `ctx.ktime_tai`, and `ctx.jiffies` on runtime-context
+programs, plus `ctx.ktime_coarse` on non-tracing runtime-context programs.
 The corresponding modeled helper escape hatch forms remain available.
 Pseudo-randomness is also available without raw helper spelling as either the
 ordinary Nushell primitive `random int` or the context fields `ctx.random` /

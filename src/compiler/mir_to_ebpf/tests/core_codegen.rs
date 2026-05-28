@@ -2700,7 +2700,6 @@ fn test_compile_kprobe_time_ctx_fields_call_expected_helpers() {
     for (field, helper) in [
         (CtxField::Timestamp, BpfHelper::KtimeGetNs),
         (CtxField::BootTimestamp, BpfHelper::KtimeGetBootNs),
-        (CtxField::CoarseTimestamp, BpfHelper::KtimeGetCoarseNs),
         (CtxField::TaiTimestamp, BpfHelper::KtimeGetTaiNs),
         (CtxField::Jiffies, BpfHelper::Jiffies64),
     ] {
@@ -2739,6 +2738,45 @@ fn test_compile_kprobe_time_ctx_fields_call_expected_helpers() {
             insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL && insn.imm == helper as i32
         }));
     }
+}
+
+#[test]
+fn test_compile_tc_coarse_time_ctx_field_calls_expected_helper() {
+    let ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::LoadCtxField {
+            dst,
+            field: CtxField::CoarseTimestamp,
+            slot: None,
+        });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, Some(&ctx));
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .unwrap();
+    compiler.compile_function(&program.main).unwrap();
+    compiler.fixup_jumps().unwrap();
+
+    assert!(compiler.instructions.iter().any(|insn| {
+        insn.opcode == opcode::BPF_JMP | opcode::BPF_CALL
+            && insn.imm == BpfHelper::KtimeGetCoarseNs as i32
+    }));
 }
 
 #[test]
