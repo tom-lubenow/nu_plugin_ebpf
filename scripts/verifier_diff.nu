@@ -12749,6 +12749,48 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-xdp-xfrm-state-rejects-small-opts-buffer"
+        category: "helper-state"
+        tags: [kfunc btf xdp bounds source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define opts --kind array --value-type bytes:16 --max-entries 1'
+            '  let opts = (0 | map-get opts --kind array)'
+            '  if $opts {'
+            '    let state = (kfunc-call "bpf_xdp_get_xfrm_state" $ctx $opts 32)'
+            '    if $state { kfunc-call "bpf_xdp_xfrm_state_release" $state }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc bpf_xdp_get_xfrm_state opts requires 32 bytes"
+    }
+    {
+        name: "source-kfunc-xdp-xfrm-state-rejects-non-xdp-program"
+        category: "helper-state"
+        tags: [kfunc btf xdp program-policy source reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define opts --kind array --value-type bytes:32 --max-entries 1'
+            '  let opts = (0 | map-get opts --kind array)'
+            '  if $opts {'
+            '    let state = (kfunc-call "bpf_xdp_get_xfrm_state" $ctx $opts 32)'
+            '    if $state { kfunc-call "bpf_xdp_xfrm_state_release" $state }'
+            '  }'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_xdp_get_xfrm_state' is only valid in xdp programs"
+    }
+    {
         name: "source-kfunc-xdp-xfrm-state-rejects-leak"
         category: "helper-state"
         tags: [kfunc btf xdp ref-lifetime source reject]
