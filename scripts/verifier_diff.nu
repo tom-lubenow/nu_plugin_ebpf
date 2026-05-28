@@ -8234,6 +8234,88 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sock-ops-metrics-context"
+        category: "context-surface"
+        tags: [sock-ops context source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.is_fullsock + $ctx.snd_cwnd + $ctx.srtt_us + $ctx.state + $ctx.rtt_min + $ctx.snd_ssthresh + $ctx.rcv_nxt + $ctx.snd_nxt) | count'
+            '  ($ctx.snd_una + $ctx.mss_cache + $ctx.ecn_flags + $ctx.rate_delivered + $ctx.rate_interval_us + $ctx.packets_out + $ctx.retrans_out + $ctx.total_retrans) | count'
+            '  ($ctx.segs_in + $ctx.data_segs_in + $ctx.segs_out + $ctx.data_segs_out + $ctx.lost_out + $ctx.sacked_out + ($ctx.bytes_received mod 1024) + ($ctx.bytes_acked mod 1024)) | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-rejects-replylong-write-without-index"
+        category: "context-policy"
+        tags: [sock-ops reject context writable]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.replylong = 7'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a fixed index"
+    }
+    {
+        name: "sock-ops-rejects-reply-write-on-packet-context"
+        category: "context-policy"
+        tags: [sock-ops reject context writable]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.reply = 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "sock_ops programs"
+    }
+    {
+        name: "sock-ops-rejects-cb-flags-write-on-packet-context"
+        category: "context-policy"
+        tags: [sock-ops reject context writable]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.cb_flags = 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "sock_ops programs"
+    }
+    {
+        name: "sock-ops-rejects-sk-txhash-write-on-packet-context"
+        category: "context-policy"
+        tags: [sock-ops reject context writable]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sk_txhash = 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "sock_ops programs"
+    }
+    {
         name: "sock-ops-bound-socket-projection-context"
         category: "context-surface"
         tags: [sock-ops context source metadata]
