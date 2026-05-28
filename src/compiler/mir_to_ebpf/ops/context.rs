@@ -1,18 +1,6 @@
 use super::*;
 
 impl<'a> MirToEbpfCompiler<'a> {
-    pub(super) fn raw_tracepoint_arg_offset(index: usize) -> Result<i16, CompileError> {
-        let byte_offset = index.checked_mul(8).ok_or_else(|| {
-            CompileError::UnsupportedInstruction("raw tracepoint arg offset overflow".into())
-        })?;
-        i16::try_from(byte_offset).map_err(|_| {
-            CompileError::UnsupportedInstruction(format!(
-                "raw tracepoint arg index {} is too large",
-                index
-            ))
-        })
-    }
-
     pub(super) fn compile_perf_event_value_field(
         &mut self,
         dst: EbpfReg,

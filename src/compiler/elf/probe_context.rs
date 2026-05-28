@@ -972,17 +972,17 @@ impl ProbeContext {
                 }
             }
             CtxField::Arg(idx) if self.arg_access().is_raw_tracepoint() => {
-                let byte_offset = usize::from(*idx).checked_mul(8).ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(
-                        "raw tracepoint arg offset overflow".into(),
-                    )
-                })?;
-                i16::try_from(byte_offset).map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "raw tracepoint arg index {} is too large",
+                if self
+                    .parsed_program_spec()
+                    .and_then(|spec| spec.ctx_field_direct_load(field))
+                    .or_else(|| self.program_type().ctx_field_direct_load(field))
+                    .is_none()
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "ctx.arg{} is not available as a raw tracepoint context load",
                         idx
-                    ))
-                })?;
+                    )));
+                }
             }
             CtxField::Arg(idx) if self.uses_btf_trampoline() => {
                 if self

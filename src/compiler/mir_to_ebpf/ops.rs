@@ -1500,9 +1500,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                         )?;
                     }
                     Some(ctx) if ctx.uses_raw_tracepoint_args() => {
-                        let offset = Self::raw_tracepoint_arg_offset(n)?;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
                     }
                     _ => {
                         if n >= 6 {

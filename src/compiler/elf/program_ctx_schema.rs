@@ -680,6 +680,9 @@ impl EbpfProgramType {
             (Self::FlowDissector, CtxField::FlowKeys) => Some(ContextFieldDirectLoad::u64(144)),
             (Self::Netfilter, CtxField::NetfilterState) => Some(ContextFieldDirectLoad::u64(0)),
             (Self::Netfilter, CtxField::NetfilterSkb) => Some(ContextFieldDirectLoad::u64(8)),
+            (Self::RawTracepoint | Self::RawTracepointWritable, CtxField::Arg(index)) => {
+                Some(ContextFieldDirectLoad::u64(i16::from(*index) * 8))
+            }
             #[cfg(target_arch = "x86_64")]
             (Self::PerfEvent, CtxField::PerfSamplePeriod) => Some(ContextFieldDirectLoad::u64(168)),
             #[cfg(target_arch = "x86_64")]
@@ -1414,6 +1417,32 @@ mod tests {
         assert_eq!(
             spec.ctx_field_direct_load(&CtxField::PerfAddr),
             Some(ContextFieldDirectLoad::u64(176))
+        );
+    }
+
+    #[test]
+    fn test_raw_tracepoint_arg_load_metadata_tracks_layout() {
+        for spec in [
+            ProgramSpec::parse("raw_tracepoint:sys_enter").expect("program spec should parse"),
+            ProgramSpec::parse("raw_tracepoint.w:sys_enter").expect("program spec should parse"),
+        ] {
+            assert_eq!(
+                spec.ctx_field_direct_load(&CtxField::Arg(0)),
+                Some(ContextFieldDirectLoad::u64(0))
+            );
+            assert_eq!(
+                spec.ctx_field_direct_load(&CtxField::Arg(3)),
+                Some(ContextFieldDirectLoad::u64(24))
+            );
+            assert_eq!(
+                spec.ctx_field_direct_load(&CtxField::Arg(u8::MAX)),
+                Some(ContextFieldDirectLoad::u64(2040))
+            );
+        }
+
+        assert_eq!(
+            EbpfProgramType::Kprobe.ctx_field_direct_load(&CtxField::Arg(0)),
+            None
         );
     }
 
