@@ -50,26 +50,14 @@ fn validate_kprobe_multi_pattern(pattern: &str) -> Result<(), LoadError> {
     }
 }
 
-/// Validate a tracepoint target exists
-///
-/// Tracepoint format: category/name (e.g., syscalls/sys_enter_openat)
-fn validate_tracepoint_target(target: &str) -> Result<(), LoadError> {
+/// Validate a tracepoint target exists.
+fn validate_tracepoint_target(category: &str, name: &str) -> Result<(), LoadError> {
     let btf = KernelBtf::get();
 
     // If we can't validate (no tracefs), allow the attempt
     if !btf.has_tracefs() {
         return Ok(());
     }
-
-    // Parse category/name
-    let parts: Vec<&str> = target.splitn(2, '/').collect();
-    if parts.len() != 2 {
-        return Err(LoadError::Load(format!(
-            "Invalid tracepoint format: {target}. Expected: category/name (e.g., syscalls/sys_enter_openat)"
-        )));
-    }
-
-    let (category, name) = (parts[0], parts[1]);
 
     if btf.tracepoint_exists(category, name) {
         return Ok(());
@@ -243,7 +231,7 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                 name,
             )
         }
-        ProgramSpec::Tracepoint { .. } => validate_tracepoint_target(&spec.target_string()),
+        ProgramSpec::Tracepoint { category, name } => validate_tracepoint_target(category, name),
         ProgramSpec::RawTracepoint { .. } | ProgramSpec::RawTracepointWritable { .. } => Ok(()),
         ProgramSpec::Extension { target } => {
             if target.function.is_empty() {
