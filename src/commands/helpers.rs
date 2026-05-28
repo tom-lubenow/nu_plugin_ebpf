@@ -425,8 +425,8 @@ tag. Bare `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, and `bpf_rb_node`
 tokens are intentionally still rejected.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource. Later map operations infer a
-unique prior `map-define` kind by name, so declared non-hash maps do not need
-to repeat `--kind` at each use.
+unique prior kind by name from `map-define` or an earlier explicit `--kind`
+use, so non-hash maps do not need to repeat `--kind` at each use.
 Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
 `--inner-map` naming a previously declared inner map template. Dry-run/object
 emission includes libbpf-compatible BTF `values` metadata when that inner

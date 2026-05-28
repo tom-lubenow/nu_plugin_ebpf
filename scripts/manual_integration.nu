@@ -55,7 +55,10 @@ def newest-modified [label: string, paths: list<string>] {
 }
 
 def plugin-source-inputs [repo_root: string] {
-    let rust_sources = (glob ($repo_root | path join "src/**/*.rs"))
+    let rust_sources = (
+        glob ($repo_root | path join "src/**/*.rs")
+        | where {|path| not (($path | str contains "/tests/") or ($path | str ends-with "/tests.rs")) }
+    )
     $rust_sources | append [
         ($repo_root | path join Cargo.toml)
         ($repo_root | path join Cargo.lock)

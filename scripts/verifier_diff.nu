@@ -5263,6 +5263,22 @@ const FIXTURES = [
         error_contains: "conflicts with prior map kind"
     }
     {
+        name: "map-operation-inferred-array-kind"
+        category: "maps"
+        tags: [maps kind-inference accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  42 | map-put operation_slots 0 --kind array'
+            '  let entry = (0 | map-get operation_slots)'
+            '  if $entry { $entry | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "map-define-map-in-map-inner-template-object"
         category: "maps"
         tags: [maps map-define map-in-map accept]
@@ -16863,7 +16879,10 @@ def newest-modified [label: string paths: list<string>] {
 }
 
 def plugin-source-inputs [repo_root: string] {
-    let rust_sources = (glob ($repo_root | path join "src/**/*.rs"))
+    let rust_sources = (
+        glob ($repo_root | path join "src/**/*.rs")
+        | where {|path| not (($path | str contains "/tests/") or ($path | str ends-with "/tests.rs")) }
+    )
     $rust_sources | append [
         ($repo_root | path join Cargo.toml)
         ($repo_root | path join Cargo.lock)

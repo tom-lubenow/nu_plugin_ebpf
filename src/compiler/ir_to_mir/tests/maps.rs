@@ -1871,6 +1871,53 @@ fn test_lower_map_put_respects_kind_and_flags() {
 }
 
 #[test]
+fn test_map_get_infers_prior_operation_kind_when_kind_is_omitted() {
+    let map_put_decl = DeclId::new(42);
+    let map_get_decl = DeclId::new(43);
+    let mut hir = make_map_put_program(map_put_decl, 0, "array");
+    let mut decl_names = HashMap::new();
+    decl_names.insert(map_put_decl, "map-put".to_string());
+    decl_names.insert(map_get_decl, "map-get".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: RegId::new(3) };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-get should infer the prior explicit map-put kind");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapLookup { map, .. }
+                    if map.name == "cached_path" && map.kind == MapKind::Array
+            )),
+        "map-get without --kind should use the prior explicit operation kind"
+    );
+}
+
+#[test]
 fn test_lower_map_put_respects_lru_hash_kind() {
     let hir = make_map_put_program(DeclId::new(42), 1, "lru-hash");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
