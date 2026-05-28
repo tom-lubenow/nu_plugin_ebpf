@@ -11322,6 +11322,81 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_iter_num_destroy' requires a matching bpf_iter_num_new"
     }
     {
+        name: "source-kfunc-iter-bits-lifecycle-balanced"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let bits = "abcdefgh"'
+            '  kfunc-call "bpf_iter_bits_new" $iter $bits 1'
+            '  let item = (kfunc-call "bpf_iter_bits_next" $iter)'
+            '  if $item { 0 }'
+            '  kfunc-call "bpf_iter_bits_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-iter-bits-rejects-next-without-new"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_bits_next" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_bits_next' requires a matching bpf_iter_bits_new"
+    }
+    {
+        name: "source-kfunc-iter-bits-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let bits = "abcdefgh"'
+            '  kfunc-call "bpf_iter_bits_new" $iter $bits 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased iter_bits iterator"
+    }
+    {
+        name: "source-kfunc-iter-bits-rejects-double-destroy"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let bits = "abcdefgh"'
+            '  kfunc-call "bpf_iter_bits_new" $iter $bits 1'
+            '  kfunc-call "bpf_iter_bits_destroy" $iter'
+            '  kfunc-call "bpf_iter_bits_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_bits_destroy' requires a matching bpf_iter_bits_new"
+    }
+    {
         name: "source-kfunc-iter-task-null-task-lifecycle-balanced"
         category: "helper-state"
         tags: [kfunc iter ref-lifetime source accept]
