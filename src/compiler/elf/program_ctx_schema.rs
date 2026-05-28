@@ -338,6 +338,50 @@ fn program_context_layout_spec(
         .find(|spec| spec.program_type == program_type)
 }
 
+impl PacketContextKind {
+    pub(crate) fn ctx_field_direct_load(self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
+        match (self, field) {
+            (Self::XdpMd, CtxField::Data) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::XdpMd, CtxField::DataEnd) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::XdpMd, CtxField::DataMeta) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::XdpMd, CtxField::IngressIfindex) => Some(ContextFieldDirectLoad::u32(12)),
+            (Self::XdpMd, CtxField::RxQueueIndex) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::XdpMd, CtxField::EgressIfindex) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::SkBuff, CtxField::PacketLen) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::SkBuff, CtxField::PktType) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::SkBuff, CtxField::QueueMapping) => Some(ContextFieldDirectLoad::u32(12)),
+            (Self::SkBuff, CtxField::VlanPresent) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::SkBuff, CtxField::VlanTci) => Some(ContextFieldDirectLoad::u32(24)),
+            (Self::SkBuff, CtxField::IngressIfindex) => Some(ContextFieldDirectLoad::u32(36)),
+            (Self::SkBuff, CtxField::Ifindex) => Some(ContextFieldDirectLoad::u32(40)),
+            (Self::SkBuff, CtxField::TcIndex) => Some(ContextFieldDirectLoad::u32(44)),
+            (Self::SkBuff, CtxField::SkbHash) => Some(ContextFieldDirectLoad::u32(68)),
+            (Self::SkBuff, CtxField::TcClassid) => Some(ContextFieldDirectLoad::u32(72)),
+            (Self::SkBuff, CtxField::Data) => Some(ContextFieldDirectLoad::u32(76)),
+            (Self::SkBuff, CtxField::DataEnd) => Some(ContextFieldDirectLoad::u32(80)),
+            (Self::SkBuff, CtxField::NapiId) => Some(ContextFieldDirectLoad::u32(84)),
+            (Self::SkBuff, CtxField::DataMeta) => Some(ContextFieldDirectLoad::u32(140)),
+            (Self::SkBuff, CtxField::Tstamp) => Some(ContextFieldDirectLoad::u64(152)),
+            (Self::SkBuff, CtxField::WireLen) => Some(ContextFieldDirectLoad::u32(160)),
+            (Self::SkBuff, CtxField::GsoSegs) => Some(ContextFieldDirectLoad::u32(164)),
+            (Self::SkBuff, CtxField::GsoSize) => Some(ContextFieldDirectLoad::u32(176)),
+            (Self::SkBuff, CtxField::TstampType) => Some(ContextFieldDirectLoad::u8(180)),
+            (Self::SkBuff, CtxField::Hwtstamp) => Some(ContextFieldDirectLoad::u64(184)),
+            (Self::SkMsg, CtxField::Data) => Some(ContextFieldDirectLoad::u64(0)),
+            (Self::SkMsg, CtxField::DataEnd) => Some(ContextFieldDirectLoad::u64(8)),
+            (Self::SkMsg, CtxField::PacketLen) => Some(ContextFieldDirectLoad::u32(68)),
+            (Self::SockOps, CtxField::Data) => Some(ContextFieldDirectLoad::u64(192)),
+            (Self::SockOps, CtxField::DataEnd) => Some(ContextFieldDirectLoad::u64(200)),
+            (Self::SockOps, CtxField::PacketLen) => Some(ContextFieldDirectLoad::u32(208)),
+            (Self::SkReuseport, CtxField::Data) => Some(ContextFieldDirectLoad::u64(0)),
+            (Self::SkReuseport, CtxField::DataEnd) => Some(ContextFieldDirectLoad::u64(8)),
+            (Self::SkReuseport, CtxField::PacketLen) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::SkReuseport, CtxField::SkbHash) => Some(ContextFieldDirectLoad::u32(32)),
+            _ => None,
+        }
+    }
+}
+
 impl SocketContextLayout {
     pub(crate) fn ctx_field_direct_load(self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         match (self, field) {
@@ -526,6 +570,9 @@ impl EbpfProgramType {
         if let Some(load) = self.socket_ctx_field_direct_load(field) {
             return Some(load);
         }
+        if let Some(load) = self.packet_ctx_field_direct_load(field) {
+            return Some(load);
+        }
 
         match (self, field) {
             (Self::FlowDissector, CtxField::FlowKeys) => Some(ContextFieldDirectLoad::u64(144)),
@@ -595,6 +642,18 @@ impl EbpfProgramType {
             _ => None,
         }
     }
+
+    fn packet_ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
+        match field {
+            CtxField::DataMeta => self.data_meta_context_kind()?.ctx_field_direct_load(field),
+            CtxField::IngressIfindex => match self.ingress_ifindex_context_layout()? {
+                IngressIfindexContextLayout::XdpMd => Some(ContextFieldDirectLoad::u32(12)),
+                IngressIfindexContextLayout::SkBuff => Some(ContextFieldDirectLoad::u32(36)),
+                IngressIfindexContextLayout::SkLookup => Some(ContextFieldDirectLoad::u32(64)),
+            },
+            _ => self.packet_context_kind()?.ctx_field_direct_load(field),
+        }
+    }
 }
 
 impl ProgramSpec {
@@ -636,10 +695,6 @@ impl ProgramSpec {
 
     pub(crate) fn socket_ref_context_layout(&self) -> Option<SocketContextLayout> {
         self.program_type().socket_ref_context_layout()
-    }
-
-    pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
-        self.program_type().ingress_ifindex_context_layout()
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
@@ -1079,6 +1134,106 @@ mod tests {
                 "cgroup_sockopt:/sys/fs/cgroup:set",
                 CtxField::SockoptRetval,
                 None,
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            assert_eq!(spec.ctx_field_direct_load(&field), expected);
+        }
+    }
+
+    #[test]
+    fn test_packet_context_direct_load_metadata_tracks_layouts() {
+        for (spec, field, expected) in [
+            ("xdp:lo", CtxField::PacketLen, None),
+            (
+                "xdp:lo",
+                CtxField::Data,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "xdp:lo",
+                CtxField::DataMeta,
+                Some(ContextFieldDirectLoad::u32(8)),
+            ),
+            (
+                "xdp:lo",
+                CtxField::IngressIfindex,
+                Some(ContextFieldDirectLoad::u32(12)),
+            ),
+            (
+                "xdp:lo",
+                CtxField::RxQueueIndex,
+                Some(ContextFieldDirectLoad::u32(16)),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::PacketLen,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::Data,
+                Some(ContextFieldDirectLoad::u32(76)),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::DataMeta,
+                Some(ContextFieldDirectLoad::u32(140)),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::TstampType,
+                Some(ContextFieldDirectLoad::u8(180)),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::Hwtstamp,
+                Some(ContextFieldDirectLoad::u64(184)),
+            ),
+            (
+                "cgroup_skb:/sys/fs/cgroup:ingress",
+                CtxField::DataMeta,
+                None,
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::IngressIfindex,
+                Some(ContextFieldDirectLoad::u32(64)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::Data,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::PacketLen,
+                Some(ContextFieldDirectLoad::u32(68)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::Data,
+                Some(ContextFieldDirectLoad::u64(192)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::PacketLen,
+                Some(ContextFieldDirectLoad::u32(208)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::DataEnd,
+                Some(ContextFieldDirectLoad::u64(8)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::PacketLen,
+                Some(ContextFieldDirectLoad::u32(16)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::SkbHash,
+                Some(ContextFieldDirectLoad::u32(32)),
             ),
         ] {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");

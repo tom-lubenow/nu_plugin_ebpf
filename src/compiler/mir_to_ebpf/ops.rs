@@ -1,8 +1,7 @@
 use super::*;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{
-    ContextFieldDirectLoad, ContextFieldDirectLoadWidth, IngressIfindexContextLayout,
-    SocketContextLayout,
+    ContextFieldDirectLoad, ContextFieldDirectLoadWidth, SocketContextLayout,
 };
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
@@ -40,6 +39,10 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     fn emit_ctx_direct_load(&mut self, dst: EbpfReg, load: ContextFieldDirectLoad) {
         match load.width {
+            ContextFieldDirectLoadWidth::U8 => {
+                self.instructions
+                    .push(EbpfInsn::ldxb(dst, EbpfReg::R9, load.offset));
+            }
             ContextFieldDirectLoadWidth::U32 => {
                 self.instructions
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, load.offset));
@@ -694,52 +697,18 @@ impl<'a> MirToEbpfCompiler<'a> {
                     self.instructions
                         .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
                 }
-                PacketContextKind::SkBuff => {
-                    let (len_offset, _, _, _, _, _, _) = Self::sk_buff_offsets();
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, len_offset));
-                }
-                PacketContextKind::SkMsg => {
-                    let (_, _, _, _, _, _, _, _, _, size_offset) = Self::sk_msg_md_offsets();
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, size_offset));
-                }
-                PacketContextKind::SockOps => {
-                    let skb_len_offset = Self::bpf_sock_ops_skb_field_offsets().0;
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, skb_len_offset));
-                }
-                PacketContextKind::SkReuseport => {
-                    let len_offset = Self::sk_reuseport_md_offsets().2;
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, len_offset));
+                _ => {
+                    let load = self.ctx_field_direct_load(field)?;
+                    self.emit_ctx_direct_load(dst, load);
                 }
             },
             CtxField::PktType => {
-                let pkt_type_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_packet_meta_offsets().0,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.pkt_type is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, pkt_type_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::QueueMapping => {
-                let queue_mapping_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_packet_meta_offsets().1,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.queue_mapping is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, queue_mapping_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::EthProtocol => {
                 let protocol_offset = match self.packet_context_kind()? {
@@ -757,30 +726,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions.push(EbpfInsn::end16_to_be(dst));
             }
             CtxField::VlanPresent => {
-                let vlan_present_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().1,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.vlan_present is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, vlan_present_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::VlanTci => {
-                let vlan_tci_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_vlan_offsets().2,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.vlan_tci is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, vlan_tci_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::VlanProto => {
                 let vlan_proto_offset = match self.packet_context_kind()? {
@@ -808,256 +759,75 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_ctx_u32_array_to_stack(dst, slot, cb_offset, 5, "ctx.cb", false)?;
             }
             CtxField::TcClassid => {
-                let tc_classid_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().0,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.tc_classid is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, tc_classid_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::NapiId => {
-                let napi_id_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().1,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.napi_id is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, napi_id_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::WireLen => {
-                let wire_len_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().2,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.wire_len is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, wire_len_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::GsoSegs => {
-                let gso_segs_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().3,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.gso_segs is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, gso_segs_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::GsoSize => {
-                let gso_size_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().4,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.gso_size is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, gso_size_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Tstamp => {
-                let tstamp_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_tstamp_offset(),
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.tstamp is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, tstamp_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::TstampType => {
-                let tstamp_type_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_tstamp_type_offset(),
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.tstamp_type is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxb(dst, EbpfReg::R9, tstamp_type_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Hwtstamp => {
-                let hwtstamp_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_extended_meta_offsets().5,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.hwtstamp is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, hwtstamp_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Data => {
-                match self.packet_context_kind()? {
-                    PacketContextKind::XdpMd => {
-                        let data_offset = Self::xdp_md_offsets().0;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
-                    }
-                    PacketContextKind::SkBuff => {
-                        let data_offset = Self::sk_buff_offsets().1;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_offset));
-                    }
-                    PacketContextKind::SkMsg => {
-                        let data_offset = Self::sk_msg_md_offsets().0;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_offset));
-                    }
-                    PacketContextKind::SockOps => {
-                        let data_offset = Self::bpf_sock_ops_packet_data_offsets().0;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_offset));
-                    }
-                    PacketContextKind::SkReuseport => {
-                        let data_offset = Self::sk_reuseport_md_offsets().0;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_offset));
-                    }
-                };
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::DataMeta => match self.data_meta_context_kind()? {
-                PacketContextKind::XdpMd => {
-                    let data_meta_offset = Self::xdp_md_offsets().2;
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_meta_offset));
-                }
-                PacketContextKind::SkBuff => {
-                    let data_meta_offset = Self::sk_buff_data_meta_offset();
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_meta_offset));
+                PacketContextKind::XdpMd | PacketContextKind::SkBuff => {
+                    let load = self.ctx_field_direct_load(field)?;
+                    self.emit_ctx_direct_load(dst, load);
                 }
                 _ => unreachable!("data_meta context kind must be xdp or skb"),
             },
             CtxField::DataEnd => {
-                match self.packet_context_kind()? {
-                    PacketContextKind::XdpMd => {
-                        let data_end_offset = Self::xdp_md_offsets().1;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
-                    }
-                    PacketContextKind::SkBuff => {
-                        let data_end_offset = Self::sk_buff_offsets().2;
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
-                    }
-                    PacketContextKind::SkMsg => {
-                        let data_end_offset = Self::sk_msg_md_offsets().1;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_end_offset));
-                    }
-                    PacketContextKind::SockOps => {
-                        let data_end_offset = Self::bpf_sock_ops_packet_data_offsets().1;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_end_offset));
-                    }
-                    PacketContextKind::SkReuseport => {
-                        let data_end_offset = Self::sk_reuseport_md_offsets().1;
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, data_end_offset));
-                    }
-                };
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::IngressIfindex => {
-                let ingress_ifindex_offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.ingress_ifindex_context_layout())
-                {
-                    Some(IngressIfindexContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().9,
-                    Some(IngressIfindexContextLayout::XdpMd) => Self::xdp_md_offsets().3,
-                    Some(IngressIfindexContextLayout::SkBuff) => Self::sk_buff_offsets().3,
-                    None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.ingress_ifindex is only available on xdp, socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_lookup, sk_skb, and sk_skb_parser programs".to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ingress_ifindex_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Ifindex => {
-                let ifindex_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_offsets().4,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.ifindex is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, ifindex_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::RxQueueIndex => {
-                let PacketContextKind::XdpMd = self.packet_context_kind()? else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "ctx.rx_queue_index is only available on xdp programs".to_string(),
-                    ));
-                };
-                let (_, _, _, _, rx_queue_index_offset, _) = Self::xdp_md_offsets();
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, rx_queue_index_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::EgressIfindex => {
-                let PacketContextKind::XdpMd = self.packet_context_kind()? else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "ctx.egress_ifindex is only available on xdp programs".to_string(),
-                    ));
-                };
-                let (_, _, _, _, _, egress_ifindex_offset) = Self::xdp_md_offsets();
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, egress_ifindex_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::TcIndex => {
-                let tc_index_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_offsets().5,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.tc_index is only available on skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, tc_index_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SkbHash => {
-                let hash_offset = match self.packet_context_kind()? {
-                    PacketContextKind::SkBuff => Self::sk_buff_offsets().6,
-                    PacketContextKind::SkReuseport => Self::sk_reuseport_md_offsets().6,
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.hash is only available on skb-backed packet and sk_reuseport programs".to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, hash_offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::UserFamily => {
                 let offset = Self::bpf_sock_addr_offsets().0;

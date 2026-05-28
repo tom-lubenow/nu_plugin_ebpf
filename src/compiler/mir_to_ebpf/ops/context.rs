@@ -88,16 +88,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 76, 80, 36, 40, 44, 68)
     }
 
-    pub(super) fn sk_buff_data_meta_offset() -> i16 {
-        // struct __sk_buff {
-        //     ...
-        //     __u32 remote_port;
-        //     __u32 local_port;
-        //     __u32 data_meta;
-        // };
-        140
-    }
-
     pub(crate) fn sk_buff_tstamp_offset() -> i16 {
         // struct __sk_buff {
         //     ...
@@ -106,19 +96,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u64 tstamp;
         // };
         152
-    }
-
-    pub(super) fn sk_buff_tstamp_type_offset() -> i16 {
-        // struct __sk_buff {
-        //     ...
-        //     __u64 tstamp;
-        //     __u32 wire_len;
-        //     __u32 gso_segs;
-        //     struct bpf_sock *sk;
-        //     __u32 gso_size;
-        //     __u8  tstamp_type;
-        // };
-        180
     }
 
     pub(crate) fn sk_buff_packet_meta_offsets() -> (i16, i16) {
@@ -364,25 +341,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         //     __u32 sk_txhash;
         // };
         (112, 116, 120, 124, 140, 144, 148, 152, 156, 160, 164)
-    }
-
-    pub(super) fn bpf_sock_ops_skb_field_offsets() -> (i16, i16, i16) {
-        // struct bpf_sock_ops {
-        //     ...
-        //     __u32 skb_len;
-        //     __u32 skb_tcp_flags;
-        //     __u64 skb_hwtstamp;
-        // };
-        (208, 212, 216)
-    }
-
-    pub(super) fn bpf_sock_ops_packet_data_offsets() -> (i16, i16) {
-        // struct bpf_sock_ops {
-        //     ...
-        //     void *skb_data;
-        //     void *skb_data_end;
-        // };
-        (192, 200)
     }
 
     pub(super) fn bpf_nf_ctx_offsets() -> (i16, i16) {

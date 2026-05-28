@@ -1,7 +1,7 @@
 use super::{
     CompileError, CtxField, CtxWriteTarget, EbpfProgramType, GetSocketCookieArgPolicy,
-    IngressIfindexContextLayout, PacketContextKind, ProbeContext, ProgramBtfCallableSurface,
-    ProgramIntrinsic, ProgramTypeInfo, ProgramValueAccess, SocketContextLayout,
+    PacketContextKind, ProbeContext, ProgramBtfCallableSurface, ProgramIntrinsic, ProgramTypeInfo,
+    ProgramValueAccess, SocketContextLayout,
 };
 #[cfg(test)]
 use crate::compiler::ctx_field_schema::synthetic_bpf_sock_type;
@@ -239,12 +239,6 @@ impl ProbeContext {
         self.parsed_program_spec()
             .and_then(|spec| spec.socket_ref_context_layout())
             .or_else(|| self.program_type().socket_ref_context_layout())
-    }
-
-    pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
-        self.parsed_program_spec()
-            .and_then(|spec| spec.ingress_ifindex_context_layout())
-            .or_else(|| self.program_type().ingress_ifindex_context_layout())
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {
