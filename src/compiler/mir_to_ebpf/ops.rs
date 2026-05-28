@@ -693,11 +693,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             }
             CtxField::PacketLen => match self.packet_context_kind()? {
                 PacketContextKind::XdpMd => {
-                    let (data_offset, data_end_offset, _, _, _, _) = Self::xdp_md_offsets();
-                    self.instructions
-                        .push(EbpfInsn::ldxw(dst, EbpfReg::R9, data_end_offset));
-                    self.instructions
-                        .push(EbpfInsn::ldxw(EbpfReg::R0, EbpfReg::R9, data_offset));
+                    let data_end_load = self.ctx_field_direct_load(&CtxField::DataEnd)?;
+                    self.emit_ctx_direct_load(dst, data_end_load);
+                    let data_load = self.ctx_field_direct_load(&CtxField::Data)?;
+                    self.emit_ctx_direct_load(EbpfReg::R0, data_load);
                     self.instructions
                         .push(EbpfInsn::sub64_reg(dst, EbpfReg::R0));
                 }

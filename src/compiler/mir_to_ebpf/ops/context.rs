@@ -60,18 +60,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
-    pub(super) fn xdp_md_offsets() -> (i16, i16, i16, i16, i16, i16) {
-        // struct xdp_md {
-        //     __u32 data;
-        //     __u32 data_end;
-        //     __u32 data_meta;
-        //     __u32 ingress_ifindex;
-        //     __u32 rx_queue_index;
-        //     __u32 egress_ifindex;
-        // };
-        (0, 4, 8, 12, 16, 20)
-    }
-
     pub(crate) fn sk_buff_offsets() -> (i16, i16, i16, i16, i16, i16, i16) {
         // struct __sk_buff {
         //     __u32 len;
