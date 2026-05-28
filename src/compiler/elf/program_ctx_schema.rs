@@ -1,3 +1,10 @@
+use super::program_ctx_access::{
+    ITER_CGROUP_TARGETS, ITER_DMABUF_TARGETS, ITER_IPV6_ROUTE_TARGETS, ITER_KMEM_CACHE_TARGETS,
+    ITER_KSYM_TARGETS, ITER_LINK_TARGETS, ITER_MAP_KEY_TARGETS, ITER_MAP_TARGETS,
+    ITER_MAP_VALUE_TARGETS, ITER_NETLINK_TARGETS, ITER_PROG_TARGETS, ITER_SOCKET_UID_TARGETS,
+    ITER_TASK_FILE_TARGETS, ITER_TASK_PAYLOAD_TARGETS, ITER_TASK_VMA_TARGETS, ITER_TCP_TARGETS,
+    ITER_UDP_TARGETS, ITER_UNIX_TARGETS,
+};
 use super::{
     ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldNestedLoad, CtxField,
     EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
@@ -8,7 +15,7 @@ use crate::compiler::ctx_field_schema::{
     program_type_ctx_field_pointer_is_non_null, program_type_ctx_field_projection_spec,
     program_type_ctx_field_type_spec,
 };
-use crate::program_spec::ProgramSpec;
+use crate::program_spec::{IterTargetKind, ProgramSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProgramContextLayoutSpec {
@@ -863,6 +870,87 @@ impl ProgramSpec {
             .flatten()
     }
 
+    pub(crate) fn iter_ctx_field_direct_load(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldDirectLoad> {
+        let target_kind = self.attach_shape().iter_target_kind();
+        match (field, target_kind) {
+            (CtxField::IterMeta, Some(_) | None)
+                if self.program_type() == EbpfProgramType::Iter =>
+            {
+                Some(ContextFieldDirectLoad::u64(0))
+            }
+            (CtxField::IterTask, Some(kind)) if ITER_TASK_PAYLOAD_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterFd, Some(kind)) if ITER_TASK_FILE_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u32(16))
+            }
+            (CtxField::IterFile, Some(kind)) if ITER_TASK_FILE_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(24))
+            }
+            (CtxField::IterVma, Some(kind)) if ITER_TASK_VMA_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(16))
+            }
+            (CtxField::IterCgroup, Some(kind)) if ITER_CGROUP_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterMap, Some(kind)) if ITER_MAP_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterMapKey, Some(kind)) if ITER_MAP_KEY_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(16))
+            }
+            (CtxField::IterMapValue, Some(kind)) if ITER_MAP_VALUE_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(24))
+            }
+            (CtxField::IterProg, Some(kind)) if ITER_PROG_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterLink, Some(kind)) if ITER_LINK_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterSkCommon, Some(kind)) if ITER_TCP_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterUdpSk, Some(kind)) if ITER_UDP_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterUnixSk, Some(kind)) if ITER_UNIX_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterUid, Some(kind)) if ITER_SOCKET_UID_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u32(16))
+            }
+            (CtxField::IterBucket, Some(kind)) if ITER_UDP_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u32(24))
+            }
+            (CtxField::IterDmabuf, Some(kind)) if ITER_DMABUF_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterIpv6Route, Some(kind)) if ITER_IPV6_ROUTE_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterKmemCache, Some(kind)) if ITER_KMEM_CACHE_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterKsym, Some(kind)) if ITER_KSYM_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterNetlinkSk, Some(kind)) if ITER_NETLINK_TARGETS.contains(&kind) => {
+                Some(ContextFieldDirectLoad::u64(8))
+            }
+            (CtxField::IterSock, Some(IterTargetKind::BpfSkStorageMap)) => {
+                Some(ContextFieldDirectLoad::u64(16))
+            }
+            (CtxField::IterSock, Some(IterTargetKind::Sockmap)) => {
+                Some(ContextFieldDirectLoad::u64(24))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         if self.ctx_field_access_error(field).is_some() {
             return None;
@@ -1444,6 +1532,62 @@ mod tests {
             EbpfProgramType::Kprobe.ctx_field_direct_load(&CtxField::Arg(0)),
             None
         );
+    }
+
+    #[test]
+    fn test_iter_context_direct_load_metadata_tracks_layouts() {
+        for (spec, field, expected) in [
+            (
+                "iter:task",
+                CtxField::IterMeta,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            (
+                "iter:task",
+                CtxField::IterTask,
+                Some(ContextFieldDirectLoad::u64(8)),
+            ),
+            (
+                "iter:task_file",
+                CtxField::IterFd,
+                Some(ContextFieldDirectLoad::u32(16)),
+            ),
+            (
+                "iter:task_file",
+                CtxField::IterFile,
+                Some(ContextFieldDirectLoad::u64(24)),
+            ),
+            (
+                "iter:task_vma",
+                CtxField::IterVma,
+                Some(ContextFieldDirectLoad::u64(16)),
+            ),
+            (
+                "iter:udp",
+                CtxField::IterBucket,
+                Some(ContextFieldDirectLoad::u32(24)),
+            ),
+            (
+                "iter:bpf_sk_storage_map",
+                CtxField::IterSock,
+                Some(ContextFieldDirectLoad::u64(16)),
+            ),
+            (
+                "iter:sockmap",
+                CtxField::IterSock,
+                Some(ContextFieldDirectLoad::u64(24)),
+            ),
+            ("iter:bpf_map", CtxField::IterSock, None),
+            (
+                "iter:future_target",
+                CtxField::IterMeta,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            ("iter:future_target", CtxField::IterTask, None),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("iter spec should parse");
+            assert_eq!(spec.iter_ctx_field_direct_load(&field), expected);
+        }
     }
 
     #[test]
