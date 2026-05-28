@@ -7922,6 +7922,39 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-device-rejects-packet-context"
+        category: "context-policy"
+        tags: [cgroup-device reject context]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  $ctx.access_type | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.access_type is only available on cgroup_device programs"
+    }
+    {
+        name: "cgroup-device-rejects-major-write"
+        category: "context-policy"
+        tags: [cgroup-device reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_device:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.major = 1'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.major is read-only"
+    }
+    {
         name: "cgroup-sysctl-new-value-write"
         category: "context-surface"
         tags: [cgroup-sysctl context writable]
