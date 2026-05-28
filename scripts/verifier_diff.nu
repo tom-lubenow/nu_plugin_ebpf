@@ -13435,6 +13435,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-path-d-path-pipeline-file-path"
+        category: "helper-state"
+        tags: [kfunc file path source accept pipeline]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+            '  $ctx.arg0.f_path | kfunc-call "bpf_path_d_path" $buf 64'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-path-d-path-rejects-zero-size"
         category: "helper-state"
         tags: [kfunc file path source reject]
