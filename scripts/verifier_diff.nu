@@ -3850,7 +3850,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: []
+        feature_keys: ["helper:bpf_probe_read_kernel"]
     }
     {
         target: "fentry:security_file_open"
@@ -3871,7 +3871,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: []
+        feature_keys: ["helper:bpf_probe_read_kernel"]
     }
     {
         target: "tp_btf:sys_enter"
@@ -3922,7 +3922,7 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  1'
             '}'
         ]
-        feature_keys: []
+        feature_keys: ["helper:bpf_probe_read_kernel"]
     }
     {
         target: "cgroup_sysctl:/sys/fs/cgroup"
@@ -18113,13 +18113,15 @@ def trusted-btf-projection-kernel-read? [parts target] {
     false
 }
 
-def context-projection-kernel-read-feature [raw_access: string target] {
+def context-projection-kernel-read-feature [raw_access: string target bound_alias: bool] {
     let parts = (context-projection-parts $raw_access)
     if ($parts | length) < 2 {
         return null
     }
 
     let member = ($parts | get 1)
+    let root = ($parts | first)
+    let target_text = ($target | default "")
     if (bpf-sock-projection-context-field $member) != null {
         return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
@@ -18131,6 +18133,16 @@ def context-projection-kernel-read-feature [raw_access: string target] {
         return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
     if (trusted-btf-projection-kernel-read? $parts $target) {
+        let direct_trampoline_arg_projection = (
+            (target-uses-btf-context-args? $target_text)
+            and (
+                ($root == "arg" and ($parts | length) >= 3)
+                or (($root in ["arg0" "arg1" "arg2" "arg3" "arg4" "arg5" "retval"]) and ($parts | length) >= 2)
+            )
+        )
+        if $direct_trampoline_arg_projection and not $bound_alias {
+            return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
+        }
         # Trusted kernel-BTF scalar projections lower as direct loads. Aggregate
         # projections that still need a helper should declare that explicitly.
         return null
@@ -18372,7 +18384,7 @@ def bound-context-projection-kernel-features [source: string target context_name
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
                 }
-                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
+                let read_feature = (context-projection-kernel-read-feature $raw_access $target true)
                 if $read_feature != null {
                     $features = (append-missing-kernel-features $features [$read_feature])
                 }
@@ -18721,7 +18733,7 @@ def program-context-field-kernel-features [source: string target] {
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
                 }
-                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
+                let read_feature = (context-projection-kernel-read-feature $raw_access $target false)
                 if $read_feature != null {
                     $features = (append-missing-kernel-features $features [$read_feature])
                 }
