@@ -4039,6 +4039,44 @@ fn test_infer_kfunc_graph_object_reference_return_preserves_payload_schema() {
         ),
         Some(object_ptr_ty.clone())
     );
+    let rb_object_ty = MirType::Struct {
+        name: Some("rb_item".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "rb".to_string(),
+                ty: MirType::bpf_rb_node_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: BpfGraphRootKind::RbRoot.node_size(),
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let rb_root_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::bpf_rb_root_struct_with_object(
+            "rb_item",
+            "rb",
+            rb_object_ty.clone(),
+        )),
+        address_space: AddressSpace::Map,
+    };
+    assert_eq!(
+        TypeInference::precise_kfunc_return_mir_type_for_args(
+            "bpf_rbtree_remove",
+            &[rb_root_ptr_ty],
+        ),
+        Some(MirType::Ptr {
+            pointee: Box::new(rb_object_ty),
+            address_space: AddressSpace::Kernel,
+        })
+    );
 
     let mut func = make_test_function();
     let root = func.alloc_vreg();

@@ -13299,6 +13299,41 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-rbtree-remove-projects-object-payload"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:rb_item:rb:record{refs:bpf_refcount,cookie:u64}}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    let node = (kfunc-call "bpf_rbtree_first" $entry.root)'
+            '    if $node {'
+            '      let obj = (kfunc-call "bpf_rbtree_remove" $entry.root $node)'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '      if $obj {'
+            '        let cookie = $obj.cookie'
+            '        let clone = (kfunc-call "bpf_refcount_acquire_impl" $obj 0)'
+            '        if $clone {'
+            '          kfunc-call "bpf_obj_drop_impl" $clone 0'
+            '        }'
+            '        kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '        $cookie'
+            '      }'
+            '    } else {'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-rbtree-root-from-node"
         category: "helper-state"
         tags: [kfunc object graph source accept]
