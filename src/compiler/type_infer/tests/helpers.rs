@@ -2421,6 +2421,36 @@ fn test_type_error_void_helper_return_value_cannot_be_used() {
 }
 
 #[test]
+fn test_type_error_void_kfunc_return_value_cannot_be_used() {
+    let mut func = make_test_function();
+    let void_ret = func.alloc_vreg();
+    let used = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallKfunc {
+        dst: void_ret,
+        kfunc: "bpf_rcu_read_lock".to_string(),
+        args: vec![],
+        btf_id: None,
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: used,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(void_ret),
+        rhs: MirValue::Const(1),
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected void kfunc return use to be rejected");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("void kfunc 'bpf_rcu_read_lock' return value cannot be used")
+    }));
+}
+
+#[test]
 fn test_infer_void_helper_accepts_statement_position_call() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
