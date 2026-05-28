@@ -529,6 +529,33 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["map:BPF_MAP_TYPE_PERF_EVENT_ARRAY"]
     }
+    {
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-get task_state --kind task-storage --init { hits: 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_TASK_STORAGE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.file.f_inode | map-delete inode_state --kind inode-storage'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_INODE_STORAGE"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  $ctx.current_cgroup | map-contains cgrp_state --kind cgrp-storage'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_CGRP_STORAGE"]
+    }
 ]
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
@@ -3953,6 +3980,96 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["helper:bpf_sock_ops_cb_flags_set"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-get task_state --kind task-storage --init { hits: 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_task_storage_get"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-delete task_state --kind task-storage'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_task_storage_delete"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.task | map-contains task_state --kind task-storage'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_task_storage_get"]
+    }
+    {
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk | map-get sock_state --kind sk-storage --init { hits: 0 }'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_storage_get"]
+    }
+    {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk | map-delete sock_state --kind sk-storage'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_storage_delete"]
+    }
+    {
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.file.f_inode | map-get inode_state --kind inode-storage --init { hits: 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_inode_storage_get"]
+    }
+    {
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.arg.file.f_inode | map-delete inode_state --kind inode-storage'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_inode_storage_delete"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_cgroup | map-get cgrp_state --kind cgrp-storage --init { hits: 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_cgrp_storage_get"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.current_cgroup | map-delete cgrp_state --kind cgrp-storage'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_cgrp_storage_delete"]
     }
 ]
 
