@@ -12565,6 +12565,26 @@ const FIXTURES = [
         error_contains: "reference already released"
     }
     {
+        name: "source-kfunc-task-release-rejects-cgroup-ref"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let cgrp = (kfunc-call "bpf_cgroup_from_id" 1)'
+            '  if $cgrp {'
+            '    kfunc-call "bpf_task_release" $cgrp'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects task reference, got cgroup reference"
+    }
+    {
         name: "source-helper-sk-lookup-release"
         category: "helper-state"
         tags: [helper-call socket ref-lifetime source accept]
@@ -12733,6 +12753,26 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-file-release-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc file ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_put_file" $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects file reference, got task reference"
+    }
+    {
         name: "source-kfunc-cgroup-acquire-release"
         category: "helper-state"
         tags: [kfunc cgroup ref-lifetime source accept]
@@ -12765,6 +12805,26 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cgroup-release-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_cgroup_release" $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects cgroup reference, got task reference"
     }
     {
         name: "source-kfunc-cgroup-from-id-release"
@@ -12839,6 +12899,26 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cpumask-release-rejects-task-ref"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_cpumask_release" $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects cpumask reference, got task reference"
     }
     {
         name: "source-kfunc-cpumask-acquire-release"
