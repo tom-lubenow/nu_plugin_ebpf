@@ -11610,6 +11610,25 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-helper-sk-lookup-udp-release"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_udp" $ctx $tuple 16 0 0)'
+            '  if $sk {'
+            '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-sk-lookup-rejects-leak"
         category: "helper-state"
         tags: [helper-call socket ref-lifetime source reject]
@@ -11625,6 +11644,24 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-helper-sk-release-rejects-unchecked-null"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source reject nullability]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  helper-call "bpf_sk_release" $sk'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper sk_release sock may dereference null pointer"
     }
     {
         name: "source-kfunc-file-ref-release"
