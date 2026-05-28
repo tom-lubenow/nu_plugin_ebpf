@@ -1,6 +1,6 @@
 use super::{
-    ContextFieldArrayLoad, ContextFieldDirectLoad, CtxField, EbpfProgramType,
-    IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
+    ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldNestedLoad, CtxField,
+    EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
@@ -765,6 +765,19 @@ impl EbpfProgramType {
         }
     }
 
+    pub(crate) fn ctx_field_nested_load(&self, field: &CtxField) -> Option<ContextFieldNestedLoad> {
+        match (self, field) {
+            (Self::Netfilter, CtxField::NetfilterHook) => Some(ContextFieldNestedLoad::new(
+                0,
+                ContextFieldDirectLoad::u8(0),
+            )),
+            (Self::Netfilter, CtxField::NetfilterProtocolFamily) => Some(
+                ContextFieldNestedLoad::new(0, ContextFieldDirectLoad::u8(1)),
+            ),
+            _ => None,
+        }
+    }
+
     fn packet_ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         match field {
             CtxField::DataMeta => self.data_meta_context_kind()?.ctx_field_direct_load(field),
@@ -862,6 +875,14 @@ impl ProgramSpec {
         }
 
         self.program_type().ctx_field_array_load(field)
+    }
+
+    pub(crate) fn ctx_field_nested_load(&self, field: &CtxField) -> Option<ContextFieldNestedLoad> {
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        self.program_type().ctx_field_nested_load(field)
     }
 }
 
@@ -1394,6 +1415,28 @@ mod tests {
             spec.ctx_field_direct_load(&CtxField::PerfAddr),
             Some(ContextFieldDirectLoad::u64(176))
         );
+    }
+
+    #[test]
+    fn test_context_nested_load_metadata_tracks_layouts() {
+        let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
+            .expect("program spec should parse");
+
+        assert_eq!(
+            spec.ctx_field_nested_load(&CtxField::NetfilterHook),
+            Some(ContextFieldNestedLoad::new(
+                0,
+                ContextFieldDirectLoad::u8(0)
+            ))
+        );
+        assert_eq!(
+            spec.ctx_field_nested_load(&CtxField::NetfilterProtocolFamily),
+            Some(ContextFieldNestedLoad::new(
+                0,
+                ContextFieldDirectLoad::u8(1)
+            ))
+        );
+        assert_eq!(spec.ctx_field_nested_load(&CtxField::NetfilterState), None);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 use super::*;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
 use crate::compiler::elf::{
-    ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldDirectLoadWidth, SocketContextLayout,
+    ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldDirectLoadWidth,
+    ContextFieldNestedLoad, SocketContextLayout,
 };
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
@@ -56,6 +57,25 @@ impl<'a> MirToEbpfCompiler<'a> {
             })
     }
 
+    fn ctx_field_nested_load(
+        &self,
+        field: &CtxField,
+    ) -> Result<ContextFieldNestedLoad, CompileError> {
+        self.probe_ctx
+            .as_ref()
+            .and_then(|ctx| {
+                ctx.parsed_program_spec()
+                    .and_then(|spec| spec.ctx_field_nested_load(field))
+                    .or_else(|| ctx.program_type().ctx_field_nested_load(field))
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "ctx.{} is not available as a nested context load for this program",
+                    field.display_name()
+                ))
+            })
+    }
+
     fn compile_ctx_array_field_to_stack(
         &mut self,
         dst: EbpfReg,
@@ -91,6 +111,32 @@ impl<'a> MirToEbpfCompiler<'a> {
             ContextFieldDirectLoadWidth::U64 => {
                 self.instructions
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, load.offset));
+            }
+        }
+    }
+
+    fn emit_ctx_nested_load(&mut self, dst: EbpfReg, load: ContextFieldNestedLoad) {
+        self.instructions.push(EbpfInsn::ldxdw(
+            EbpfReg::R0,
+            EbpfReg::R9,
+            load.pointer_offset,
+        ));
+        match load.field_load.width {
+            ContextFieldDirectLoadWidth::U8 => {
+                self.instructions
+                    .push(EbpfInsn::ldxb(dst, EbpfReg::R0, load.field_load.offset));
+            }
+            ContextFieldDirectLoadWidth::U16 => {
+                self.instructions
+                    .push(EbpfInsn::ldxh(dst, EbpfReg::R0, load.field_load.offset));
+            }
+            ContextFieldDirectLoadWidth::U32 => {
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R0, load.field_load.offset));
+            }
+            ContextFieldDirectLoadWidth::U64 => {
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R0, load.field_load.offset));
             }
         }
     }
@@ -925,16 +971,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_ctx_direct_load(dst, load);
             }
             CtxField::NetfilterHook | CtxField::NetfilterProtocolFamily => {
-                let state_offset = Self::bpf_nf_ctx_offsets().0;
-                let field_offset = match field {
-                    CtxField::NetfilterHook => 0,
-                    CtxField::NetfilterProtocolFamily => 1,
-                    _ => unreachable!("matched netfilter context field"),
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxdw(EbpfReg::R0, EbpfReg::R9, state_offset));
-                self.instructions
-                    .push(EbpfInsn::ldxb(dst, EbpfReg::R0, field_offset));
+                let load = self.ctx_field_nested_load(field)?;
+                self.emit_ctx_nested_load(dst, load);
             }
             CtxField::BindInany => {
                 let load = self.ctx_field_direct_load(field)?;

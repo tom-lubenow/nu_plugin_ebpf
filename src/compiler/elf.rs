@@ -2657,6 +2657,21 @@ impl ContextFieldDirectLoad {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ContextFieldNestedLoad {
+    pub(crate) pointer_offset: i16,
+    pub(crate) field_load: ContextFieldDirectLoad,
+}
+
+impl ContextFieldNestedLoad {
+    pub(crate) const fn new(pointer_offset: i16, field_load: ContextFieldDirectLoad) -> Self {
+        Self {
+            pointer_offset,
+            field_load,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ContextFieldArrayLoad {
     pub(crate) base_offset: i16,
     pub(crate) count: usize,
