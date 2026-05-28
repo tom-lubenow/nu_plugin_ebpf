@@ -174,11 +174,38 @@ mod tests {
                 .expect("section_prefix should be present")
                 .as_str()
                 .expect("section_prefix should be a string");
+            let live_attach_supported = record
+                .get("live_attach_supported")
+                .expect("live_attach_supported should be present")
+                .as_bool()
+                .expect("live_attach_supported should be a bool");
+            let live_attach_default_allowed = record
+                .get("live_attach_default_allowed")
+                .expect("live_attach_default_allowed should be present")
+                .as_bool()
+                .expect("live_attach_default_allowed should be a bool");
+            let live_attach_requires_opt_in = record
+                .get("live_attach_requires_opt_in")
+                .expect("live_attach_requires_opt_in should be present")
+                .as_bool()
+                .expect("live_attach_requires_opt_in should be a bool");
+            let live_attach_status = record
+                .get("live_attach_status")
+                .expect("live_attach_status should be present")
+                .as_str()
+                .expect("live_attach_status should be a string");
+            let live_attach_opt_in_reason = record
+                .get("live_attach_opt_in_reason")
+                .expect("live_attach_opt_in_reason should be present");
 
             let parsed_type = EbpfProgramType::from_spec_prefix(program_type)
                 .expect("program_type should be a modeled canonical prefix");
             let representative_target =
                 ProgramSpec::representative_target_for_program_type(parsed_type);
+            let representative_spec =
+                ProgramSpec::from_program_type_target(parsed_type, representative_target)
+                    .expect("representative target should parse");
+            let live_attach_policy = representative_spec.live_attach_policy();
 
             assert!(
                 seen.insert(program_type.to_string()),
@@ -189,6 +216,37 @@ mod tests {
             assert_eq!(target, representative_target);
             assert_eq!(section_prefix, parsed_type.section_prefix());
             assert!(!section.is_empty(), "{program_type} should emit a section");
+            assert_eq!(
+                live_attach_supported, live_attach_policy.loader_supported,
+                "{program_type} list row should report loader support from program policy"
+            );
+            assert_eq!(
+                live_attach_default_allowed, live_attach_policy.default_allowed,
+                "{program_type} list row should report default live-attach policy"
+            );
+            assert_eq!(
+                live_attach_requires_opt_in, live_attach_policy.requires_opt_in,
+                "{program_type} list row should report opt-in policy"
+            );
+            assert_eq!(
+                live_attach_status,
+                live_attach_policy.status().key(),
+                "{program_type} list row should report structured live-attach status"
+            );
+            if let Some(reason) = live_attach_policy.opt_in_reason {
+                assert_eq!(
+                    live_attach_opt_in_reason
+                        .as_str()
+                        .expect("opt-in reason should be a string"),
+                    reason.key(),
+                    "{program_type} list row should report structured opt-in reason"
+                );
+            } else {
+                assert!(
+                    live_attach_opt_in_reason.is_nothing(),
+                    "{program_type} list row should not report an opt-in reason"
+                );
+            }
         }
 
         for program_type in EbpfProgramType::supported_program_types() {
