@@ -2134,6 +2134,37 @@ fn test_kernel_kfunc_minimum_requirement_detail_accepts_newer_kernel() {
 }
 
 #[test]
+fn test_kernel_object_compatibility_uses_program_specific_kfunc_floor() {
+    let tc_object = EbpfProgram::new(
+        EbpfProgramType::Tc,
+        "lo:ingress",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_kfuncs(["bpf_dynptr_from_skb"])
+    .into_object();
+    let tc_msg = kernel_object_compatibility_requirement_detail(&tc_object, "6.3.0-test")
+        .expect("kernel 6.3 should be too old for packet skb dynptr kfuncs");
+    assert!(tc_msg.contains("compiled kfuncs require kernel>=6.4"));
+    assert!(kernel_object_compatibility_requirement_detail(&tc_object, "6.4.0").is_none());
+
+    let tracing_object = EbpfProgram::new(
+        EbpfProgramType::Fentry,
+        "tcp_v4_rcv",
+        "main",
+        EbpfBuilder::new(),
+    )
+    .with_used_kfuncs(["bpf_dynptr_from_skb"])
+    .into_object();
+    let tracing_msg =
+        kernel_object_compatibility_requirement_detail(&tracing_object, "6.10.0-test")
+            .expect("kernel 6.10 should be too old for tracing skb dynptr kfuncs");
+    assert!(tracing_msg.contains("compiled kfuncs require kernel>=6.12"));
+    assert!(tracing_msg.contains("bpf_dynptr_from_skb kfunc support"));
+    assert!(kernel_object_compatibility_requirement_detail(&tracing_object, "6.12.0").is_none());
+}
+
+#[test]
 fn test_kernel_kfunc_requirement_detail_reports_too_new_kernel_window() {
     let requirements = [
         KfuncCompatibilityRequirement::for_name("scx_bpf_reenqueue_local")
