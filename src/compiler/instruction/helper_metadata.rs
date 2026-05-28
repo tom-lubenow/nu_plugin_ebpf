@@ -1336,7 +1336,7 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
-                ret_kind: HelperRetKind::Scalar,
+                ret_kind: HelperRetKind::Void,
             },
             BpfHelper::UserRingbufDrain => HelperSignature {
                 min_args: 4,
@@ -1366,7 +1366,7 @@ impl BpfHelper {
                 min_args: 2,
                 max_args: 2,
                 arg_kinds: [P, S, S, S, S],
-                ret_kind: HelperRetKind::Scalar,
+                ret_kind: HelperRetKind::Void,
             },
             BpfHelper::DynptrRead => HelperSignature {
                 min_args: 5,

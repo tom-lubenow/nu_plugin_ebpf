@@ -5063,6 +5063,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ringbuf-submit-rejects-return-use"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime void-return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec {'
+            '    helper-call "bpf_ringbuf_submit" $rec 0 | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "void helper 'bpf_ringbuf_submit' return value cannot be used"
+    }
+    {
         name: "ringbuf-reserve-rejects-leak"
         category: "helper-state"
         tags: [ringbuf ref-lifetime reject]
@@ -5214,6 +5232,23 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "ringbuf-dynptr-submit-rejects-return-use"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime void-return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0 | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "void helper 'bpf_ringbuf_submit_dynptr' return value cannot be used"
     }
     {
         name: "ringbuf-dynptr-rejects-leak"

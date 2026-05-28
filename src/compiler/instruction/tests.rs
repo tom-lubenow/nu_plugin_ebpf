@@ -3520,7 +3520,7 @@ fn test_helper_signature_dynptr_helpers() {
         assert_eq!(sig.min_args, 2);
         assert_eq!(sig.max_args, 2);
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
-        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Void);
         assert_eq!(
             helper.dynptr_arg_role(0),
             Some(HelperDynptrArgRole::RingbufReservationRelease)
@@ -3705,6 +3705,19 @@ fn test_helper_signature_ringbuf_query() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
+fn test_helper_signature_ringbuf_release_helpers_return_void() {
+    for helper in [BpfHelper::RingbufSubmit, BpfHelper::RingbufDiscard] {
+        let sig = HelperSignature::for_id(helper as u32)
+            .expect("expected ringbuf release helper signature");
+        assert_eq!(sig.min_args, 2);
+        assert_eq!(sig.max_args, 2);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+        assert_eq!(sig.ret_kind, HelperRetKind::Void);
+    }
 }
 
 #[test]
