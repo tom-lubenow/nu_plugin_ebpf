@@ -402,13 +402,6 @@ impl BpfMapDef {
         };
 
         match map_type {
-            BpfMapType::ArrayOfMaps | BpfMapType::HashOfMaps => {
-                return Err(CompileError::InvalidProgram(format!(
-                    "runtime map '{}' ({}) requires inner-map metadata, which is not modeled by this compiler yet",
-                    map_name,
-                    self.map_type_name()
-                )));
-            }
             BpfMapType::CgroupStorage | BpfMapType::PerCpuCgroupStorage => {
                 return Err(CompileError::InvalidProgram(format!(
                     "runtime map '{}' ({}) uses a deprecated cgroup-storage map type; use cgrp-storage local-storage maps instead",
@@ -440,6 +433,16 @@ impl BpfMapDef {
             BpfMapType::Array | BpfMapType::PerCpuArray => {
                 self.require_field(map_name, "key_size", self.key_size, 4)?;
                 self.require_nonzero_field(map_name, "value_size", self.value_size)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::ArrayOfMaps => {
+                self.require_field(map_name, "key_size", self.key_size, 4)?;
+                self.require_field(map_name, "value_size", self.value_size, 4)?;
+                self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
+            }
+            BpfMapType::HashOfMaps => {
+                self.require_nonzero_field(map_name, "key_size", self.key_size)?;
+                self.require_field(map_name, "value_size", self.value_size, 4)?;
                 self.require_nonzero_field(map_name, "max_entries", self.max_entries)?;
             }
             BpfMapType::CgroupArray
@@ -826,6 +829,30 @@ impl BpfMapDef {
             map_type: BpfMapType::ProgArray as u32,
             key_size: 4,   // u32 index
             value_size: 4, // u32 program FD
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create an array-of-maps outer map definition.
+    pub fn array_of_maps(max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::ArrayOfMaps as u32,
+            key_size: 4,
+            value_size: 4,
+            max_entries,
+            map_flags: 0,
+            pinning: BpfPinningType::None,
+        }
+    }
+
+    /// Create a hash-of-maps outer map definition.
+    pub fn hash_of_maps(key_size: u32, max_entries: u32) -> Self {
+        Self {
+            map_type: BpfMapType::HashOfMaps as u32,
+            key_size,
+            value_size: 4,
             max_entries,
             map_flags: 0,
             pinning: BpfPinningType::None,

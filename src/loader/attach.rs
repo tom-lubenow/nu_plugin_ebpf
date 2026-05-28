@@ -51,6 +51,18 @@ fn unsupported_struct_ops_program_object_error(value_type_name: &str) -> LoadErr
     ))
 }
 
+fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
+    object.maps.iter().find_map(|map| {
+        let kind = map.def.map_kind()?;
+        kind.is_map_in_map().then(|| {
+            LoadError::Load(format!(
+                "live loading map-in-map runtime map '{}' ({}) is not supported by this loader yet; inner_map_fd materialization is pending; use --dry-run to compile",
+                map.name, kind
+            ))
+        })
+    })
+}
+
 fn compatibility_requirements_detail(
     requirements: &[crate::compiler::ProgramCompatibilityRequirement],
 ) -> String {
@@ -768,6 +780,9 @@ impl EbpfState {
             ));
         }
         if let Some(err) = current_kernel_compatibility_error(object) {
+            return Err(err);
+        }
+        if let Some(err) = unsupported_live_map_in_map_error(object) {
             return Err(err);
         }
         let syscall_probe_symbols = match &spec {

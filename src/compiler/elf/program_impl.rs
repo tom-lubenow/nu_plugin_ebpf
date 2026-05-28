@@ -896,6 +896,41 @@ impl EbpfProgram {
                 )));
             }
             map.def.validate_common_shape(&map.name)?;
+            if let Some(kind) = map.def.map_kind()
+                && kind.is_map_in_map()
+            {
+                let outer_ref = MapRef {
+                    name: map.name.clone(),
+                    kind,
+                };
+                let inner_ref =
+                    self.generic_map_inner_templates
+                        .get(&outer_ref)
+                        .ok_or_else(|| {
+                            invalid(format!(
+                                "runtime map '{}' ({}) requires map-in-map inner template metadata; use map-define --inner-map to declare it",
+                                map.name,
+                                map.def.map_type_name()
+                            ))
+                        })?;
+                if inner_ref.kind.is_map_in_map()
+                    || !inner_ref.kind.supports_map_fd_materialization()
+                {
+                    return Err(invalid(format!(
+                        "runtime map '{}' uses unsupported inner map template '{}' ({})",
+                        map.name, inner_ref.name, inner_ref.kind
+                    )));
+                }
+                if !self.maps.iter().any(|candidate| {
+                    candidate.name == inner_ref.name
+                        && candidate.def.map_kind() == Some(inner_ref.kind)
+                }) {
+                    return Err(invalid(format!(
+                        "runtime map '{}' inner template '{}' is not emitted as a runtime map",
+                        map.name, inner_ref.name
+                    )));
+                }
+            }
 
             match map.name.as_str() {
                 RINGBUF_MAP_NAME => {
@@ -1382,6 +1417,8 @@ impl EbpfObject {
             }
         }
 
+        let merged_generic_map_inner_templates = self.merged_generic_map_inner_templates()?;
+
         let mut program_names = HashSet::new();
         for program in &self.programs {
             if artifact_symbol_names.contains(program.name.as_str()) {
@@ -1417,7 +1454,7 @@ impl EbpfObject {
                 bytes_counter_key_schema: program.bytes_counter_key_schema.clone(),
                 generic_map_key_types: program.generic_map_key_types.clone(),
                 generic_map_max_entries: program.generic_map_max_entries.clone(),
-                generic_map_inner_templates: program.generic_map_inner_templates.clone(),
+                generic_map_inner_templates: merged_generic_map_inner_templates.clone(),
                 generic_map_value_types: program.generic_map_value_types.clone(),
                 generic_map_value_semantics: program.generic_map_value_semantics.clone(),
             };
@@ -2167,6 +2204,124 @@ impl EbpfObject {
             .find_map(|program| program.generic_map_key_types.get(&map_ref))
     }
 
+    fn map_ref_for_map(map: &EbpfMap) -> Option<MapRef> {
+        Some(MapRef {
+            name: map.name.clone(),
+            kind: map.def.map_kind()?,
+        })
+    }
+
+    fn generic_map_inner_template_ref(&self, map: &EbpfMap) -> Option<MapRef> {
+        let map_ref = Self::map_ref_for_map(map)?;
+        self.programs
+            .iter()
+            .find_map(|program| program.generic_map_inner_templates.get(&map_ref).cloned())
+    }
+
+    fn merged_generic_map_inner_templates(&self) -> Result<HashMap<MapRef, MapRef>, CompileError> {
+        let mut merged: HashMap<MapRef, MapRef> = HashMap::new();
+        for program in &self.programs {
+            for (outer_ref, inner_ref) in &program.generic_map_inner_templates {
+                if let Some(existing) = merged.get(outer_ref) {
+                    if existing != inner_ref {
+                        return Err(CompileError::InvalidProgram(format!(
+                            "conflicting map-in-map inner templates for runtime map '{}' ({}): '{}' ({}) vs '{}' ({})",
+                            outer_ref.name,
+                            outer_ref.kind,
+                            existing.name,
+                            existing.kind,
+                            inner_ref.name,
+                            inner_ref.kind
+                        )));
+                    }
+                } else {
+                    merged.insert(outer_ref.clone(), inner_ref.clone());
+                }
+            }
+        }
+        Ok(merged)
+    }
+
+    fn map_by_ref(&self, map_ref: &MapRef) -> Option<&EbpfMap> {
+        self.maps
+            .iter()
+            .find(|map| map.name == map_ref.name && map.def.map_kind() == Some(map_ref.kind))
+    }
+
+    fn emit_btf_map_struct_type(
+        &self,
+        btf: &mut BtfBuilder,
+        map: &EbpfMap,
+        int_type: u32,
+        byte_type: u32,
+        include_pinning: bool,
+        inner_template: Option<&EbpfMap>,
+    ) -> u32 {
+        let map_kind = map.def.map_kind();
+        let requires_typed_local_storage = map_kind.is_some_and(MapKind::is_local_storage);
+
+        let type_ptr = btf.add_uint_type(int_type, map.def.map_type);
+        let key_member = if let Some(key_ty) = self.generic_map_key_btf_type(map) {
+            let key_type = Self::emit_local_btf_mir_type(btf, key_ty, int_type);
+            ("key", btf.add_ptr(key_type))
+        } else if requires_typed_local_storage {
+            ("key", btf.add_ptr(int_type))
+        } else {
+            ("key_size", btf.add_uint_type(int_type, map.def.key_size))
+        };
+        let value_member = if map_kind.is_some_and(MapKind::is_map_in_map) {
+            ("value_size", btf.add_uint_type(int_type, 4))
+        } else if let Some(value_ty) = self.generic_map_value_btf_type(map) {
+            let value_type = Self::emit_local_btf_mir_type(btf, value_ty, int_type);
+            ("value", btf.add_ptr(value_type))
+        } else if requires_typed_local_storage {
+            let value_type = if map.def.value_size == 1 {
+                byte_type
+            } else {
+                btf.add_array(byte_type, int_type, map.def.value_size)
+            };
+            ("value", btf.add_ptr(value_type))
+        } else {
+            (
+                "value_size",
+                btf.add_uint_type(int_type, map.def.value_size),
+            )
+        };
+        let max_entries_ptr = btf.add_uint_type(int_type, map.def.max_entries);
+        let map_flags_ptr = btf.add_uint_type(int_type, map.def.map_flags);
+
+        let mut members = vec![
+            ("type", type_ptr),
+            key_member,
+            value_member,
+            ("max_entries", max_entries_ptr),
+            ("map_flags", map_flags_ptr),
+        ];
+
+        if include_pinning {
+            let pinning_ptr = btf.add_uint_type(int_type, map.def.pinning as u32);
+            members.push(("pinning", pinning_ptr));
+        }
+
+        if let Some(inner_template) = inner_template {
+            let inner_struct = self.emit_btf_map_struct_type(
+                btf,
+                inner_template,
+                int_type,
+                byte_type,
+                false,
+                None,
+            );
+            let inner_ptr = btf.add_ptr(inner_struct);
+            let values_array = btf.add_array(inner_ptr, int_type, 0);
+            members.push(("values", values_array));
+            let fixed_size = ((members.len() - 1) * 8) as u32;
+            btf.add_btf_map_struct_with_size(&members, fixed_size)
+        } else {
+            btf.add_btf_map_struct(&members)
+        }
+    }
+
     fn emit_struct_ops_value_btf_type(
         btf: &mut BtfBuilder,
         value_type_name: &str,
@@ -2224,64 +2379,17 @@ impl EbpfObject {
             let mut offset = 0u32;
 
             for map in &self.maps {
-                let map_kind = map.def.map_kind();
-                let requires_typed_local_storage = map_kind.is_some_and(MapKind::is_local_storage);
-
-                // Create __uint types for each map attribute
-                // __uint(name, val) expands to: int (*name)[val]
-
-                // type field: __uint(type, map_type_value)
-                let type_ptr = btf.add_uint_type(int_type, map.def.map_type);
-
-                // Typed schemas use __type(key, T); untyped maps keep __uint(key_size, N).
-                let key_member = if let Some(key_ty) = self.generic_map_key_btf_type(map) {
-                    let key_type = Self::emit_local_btf_mir_type(&mut btf, key_ty, int_type);
-                    ("key", btf.add_ptr(key_type))
-                } else if requires_typed_local_storage {
-                    // Local-storage maps require BTF key and value types; the key is int.
-                    ("key", btf.add_ptr(int_type))
-                } else {
-                    ("key_size", btf.add_uint_type(int_type, map.def.key_size))
-                };
-
-                // Typed schemas use __type(value, T) so verifier-managed map fields
-                // are visible to the kernel; untyped maps keep __uint(value_size, N).
-                let value_member = if let Some(value_ty) = self.generic_map_value_btf_type(map) {
-                    let value_type = Self::emit_local_btf_mir_type(&mut btf, value_ty, int_type);
-                    ("value", btf.add_ptr(value_type))
-                } else if requires_typed_local_storage {
-                    let value_type = if map.def.value_size == 1 {
-                        byte_type
-                    } else {
-                        btf.add_array(byte_type, int_type, map.def.value_size)
-                    };
-                    ("value", btf.add_ptr(value_type))
-                } else {
-                    (
-                        "value_size",
-                        btf.add_uint_type(int_type, map.def.value_size),
-                    )
-                };
-
-                // max_entries field: __uint(max_entries, count)
-                // Note: 0 means auto-size (e.g., num_cpus for perf event arrays)
-                let max_entries_ptr = btf.add_uint_type(int_type, map.def.max_entries);
-
-                // map_flags field: __uint(map_flags, flags)
-                let map_flags_ptr = btf.add_uint_type(int_type, map.def.map_flags);
-
-                // pinning field: __uint(pinning, LIBBPF_PIN_BY_NAME) for shared maps
-                let pinning_ptr = btf.add_uint_type(int_type, map.def.pinning as u32);
-
-                // Create the anonymous map struct with pointer-sized members
-                let struct_type = btf.add_btf_map_struct(&[
-                    ("type", type_ptr),
-                    key_member,
-                    value_member,
-                    ("max_entries", max_entries_ptr),
-                    ("map_flags", map_flags_ptr),
-                    ("pinning", pinning_ptr),
-                ]);
+                let inner_template = self
+                    .generic_map_inner_template_ref(map)
+                    .and_then(|map_ref| self.map_by_ref(&map_ref));
+                let struct_type = self.emit_btf_map_struct_type(
+                    &mut btf,
+                    map,
+                    int_type,
+                    byte_type,
+                    true,
+                    inner_template,
+                );
 
                 // Add a variable for this map
                 let var_type = btf.add_var(&map.name, struct_type, BtfVarLinkage::GlobalAlloc);

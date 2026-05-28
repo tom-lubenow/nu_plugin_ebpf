@@ -5748,6 +5748,152 @@ fn test_elf_map_btf_emits_bpf_refcount_value_type() {
 }
 
 #[test]
+fn test_elf_map_btf_emits_map_in_map_inner_template_values_member() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+    let inner_ref = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    let outer_ref = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "map_in_map",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![
+            EbpfMap {
+                name: "inner".to_string(),
+                def: BpfMapDef::hash(4, 8, 16),
+            },
+            EbpfMap {
+                name: "outer".to_string(),
+                def: BpfMapDef::array_of_maps(4),
+            },
+        ],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(inner_ref.clone(), MirType::U64)]),
+        HashMap::new(),
+    )
+    .with_generic_map_key_types(HashMap::from([(inner_ref.clone(), MirType::U32)]))
+    .with_generic_map_inner_templates(HashMap::from([(outer_ref, inner_ref)]));
+
+    let elf = program.to_elf().expect("map-in-map ELF should emit");
+    let aya = AyaObject::parse(&elf).expect("Aya should parse map-in-map BTF object metadata");
+    assert!(aya.maps.get("inner").is_some());
+    assert!(aya.maps.get("outer").is_some());
+
+    let parsed = object::File::parse(&*elf).expect("emitted object should parse");
+    let maps_section = parsed
+        .section_by_name(".maps")
+        .expect("expected .maps section");
+    assert_eq!(
+        maps_section
+            .data()
+            .expect(".maps section should be readable")
+            .len(),
+        96,
+        "map-in-map values metadata is a flexible BTF member, not extra fixed .maps data"
+    );
+    let btf_section = parsed
+        .section_by_name(".BTF")
+        .expect("expected .BTF section");
+    let btf_data = btf_section.data().expect(".BTF section should be readable");
+    Btf::parse(btf_data, Endianness::Little).expect("expected parsable BTF");
+    assert!(
+        btf_data
+            .windows(b"values\0".len())
+            .any(|w| w == b"values\0"),
+        "map-in-map BTF should expose libbpf-compatible __array(values, inner) metadata"
+    );
+}
+
+#[test]
+fn test_elf_map_in_map_inner_templates_merge_across_program_sections() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
+    let inner_ref = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    let other_ref = MapRef {
+        name: "other".to_string(),
+        kind: MapKind::Array,
+    };
+    let outer_ref = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+
+    let first = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "first",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![
+            EbpfMap {
+                name: "inner".to_string(),
+                def: BpfMapDef::hash(4, 8, 16),
+            },
+            EbpfMap {
+                name: "other".to_string(),
+                def: BpfMapDef::array(8, 16),
+            },
+            EbpfMap {
+                name: "outer".to_string(),
+                def: BpfMapDef::array_of_maps(4),
+            },
+        ],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let second = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "second", bytecode.clone())
+        .with_generic_map_inner_templates(HashMap::from([(outer_ref.clone(), inner_ref.clone())]))
+        .into_program_section();
+
+    let mut object = first.into_object();
+    object.programs.push(second);
+    object
+        .to_elf()
+        .expect("object-wide map-in-map template metadata should validate");
+
+    let conflicting = EbpfProgram::from_bytecode(EbpfProgramType::Xdp, "lo", "conflict", bytecode)
+        .with_generic_map_inner_templates(HashMap::from([(outer_ref, other_ref)]))
+        .into_program_section();
+    object.programs.push(conflicting);
+
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("conflicting object-wide map-in-map templates should fail");
+
+    assert!(
+        matches!(err, CompileError::InvalidProgram(ref msg) if msg.contains("conflicting map-in-map inner templates for runtime map 'outer'")),
+        "unexpected conflict error: {err:?}"
+    );
+}
+
+#[test]
 fn test_struct_ops_object_emits_btf_without_generic_maps() {
     let object = EbpfObject::struct_ops("demo", "fake_ops", vec![0; 32])
         .with_callback_slot("select_cpu", 8)
@@ -11353,11 +11499,11 @@ fn test_validate_runtime_artifacts_rejects_known_unmodeled_runtime_map_types() {
     for (map_type, expected) in [
         (
             BpfMapType::ArrayOfMaps,
-            "requires inner-map metadata, which is not modeled",
+            "requires map-in-map inner template metadata",
         ),
         (
             BpfMapType::HashOfMaps,
-            "requires inner-map metadata, which is not modeled",
+            "requires map-in-map inner template metadata",
         ),
         (BpfMapType::StructOps, "reserved for struct_ops objects"),
         (

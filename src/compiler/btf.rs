@@ -295,6 +295,32 @@ impl BtfBuilder {
         type_id
     }
 
+    /// Add an anonymous BTF-defined map struct with an explicit byte size.
+    ///
+    /// This is used for map-in-map/prog-array definitions whose final `values`
+    /// member is a zero-sized flexible array. The member is present in BTF at
+    /// the end of the fixed fields, but it does not contribute to struct size.
+    pub fn add_btf_map_struct_with_size(&mut self, members: &[(&str, u32)], size: u32) -> u32 {
+        let type_id = self.next_type_id;
+        self.next_type_id += 1;
+
+        self.types.extend_from_slice(&0u32.to_le_bytes());
+        self.types.extend_from_slice(
+            &Self::encode_info(BtfKind::Struct, members.len() as u16, false).to_le_bytes(),
+        );
+        self.types.extend_from_slice(&size.to_le_bytes());
+
+        for (idx, (member_name, member_type)) in members.iter().enumerate() {
+            let member_name_off = self.add_string(member_name);
+            self.types.extend_from_slice(&member_name_off.to_le_bytes());
+            self.types.extend_from_slice(&member_type.to_le_bytes());
+            let offset_bits = (idx * 8 * 8) as u32;
+            self.types.extend_from_slice(&offset_bits.to_le_bytes());
+        }
+
+        type_id
+    }
+
     /// Add a variable, return its type ID
     pub fn add_var(&mut self, name: &str, type_id: u32, linkage: BtfVarLinkage) -> u32 {
         let name_off = self.add_string(name);

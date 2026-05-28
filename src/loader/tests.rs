@@ -8,10 +8,11 @@ use super::*;
 use crate::compiler::instruction::{EbpfBuilder, EbpfInsn};
 use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
-    BpfHelper, ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField,
-    EbpfObject, EbpfProgram, EbpfProgramType, GlobalCompatibilityRequirement,
-    KfuncCompatibilityRequirement, MapRef, MapValueCompatibilityRequirement, MirType,
-    ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
+    BpfHelper, BpfMapDef, ContextFieldCompatibilityRequirement, CounterKeySchema,
+    CounterKeySchemaField, EbpfMap, EbpfObject, EbpfProgram, EbpfProgramType,
+    GlobalCompatibilityRequirement, KfuncCompatibilityRequirement, MapRef,
+    MapValueCompatibilityRequirement, MirType, ProgramCompatibilityRequirement,
+    ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -1547,6 +1548,60 @@ fn test_attach_with_pin_rejects_struct_ops_objects() {
 
     assert!(
         matches!(err, LoadError::Load(msg) if msg.contains("do not yet support pinned map sharing"))
+    );
+}
+
+#[test]
+fn test_attach_rejects_live_map_in_map_before_aya_load() {
+    let state = EbpfState::new();
+    let inner_ref = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    let outer_ref = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let object = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "test",
+        vec![],
+        0,
+        vec![
+            EbpfMap {
+                name: "inner".to_string(),
+                def: BpfMapDef::hash(4, 8, 16),
+            },
+            EbpfMap {
+                name: "outer".to_string(),
+                def: BpfMapDef::array_of_maps(4),
+            },
+        ],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(inner_ref.clone(), MirType::U64)]),
+        HashMap::new(),
+    )
+    .with_generic_map_key_types(HashMap::from([(inner_ref.clone(), MirType::U32)]))
+    .with_generic_map_inner_templates(HashMap::from([(outer_ref, inner_ref)]))
+    .into_object();
+
+    let err = state
+        .attach(&object)
+        .expect_err("live map-in-map should reject before Aya load");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains("live loading map-in-map runtime map 'outer'")
+                    && msg.contains("inner_map_fd materialization is pending")
+                    && msg.contains("--dry-run")
+        ),
+        "unexpected map-in-map live attach error: {err:?}"
     );
 }
 

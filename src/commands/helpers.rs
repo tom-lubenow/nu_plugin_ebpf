@@ -425,10 +425,12 @@ tag. Bare `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, and `bpf_rb_node`
 tokens are intentionally still rejected.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource.
-Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` for future
-object emission. They use `--inner-map` to name a previously declared inner
-map template and intentionally do not accept `--value-type` on the outer map
-itself yet.
+Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` with
+`--inner-map` naming a previously declared inner map template. Dry-run/object
+emission includes libbpf-compatible BTF `values` metadata when that inner
+template is also emitted as a runtime map. Live loader `inner_map_fd`
+materialization and first-class map-in-map operations remain pending, and outer
+maps intentionally do not accept `--value-type`.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024
