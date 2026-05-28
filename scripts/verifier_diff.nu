@@ -6918,6 +6918,25 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "dynptr-record-field-local-tracks-lifecycle"
+        category: "helper-state"
+        tags: [kfunc dynptr record source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = { d: "0123456789abcdef" }'
+            '  let d = $rec.d'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let ptr = (kfunc-call "bpf_dynptr_slice" $d 0 0 4)'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "dynptr-kfunc-slice-rejects-nonzero-buffer"
         category: "helper-state"
         tags: [kfunc dynptr reject]
@@ -14478,6 +14497,30 @@ const FIXTURES = [
             '  map-define crypto_params --kind array --value-type "bytes:512" --max-entries 1'
             '  let params = (0 | map-get crypto_params --kind array)'
             '  let err = "00000000"'
+            '  if $params {'
+            '    let crypto = (kfunc-call "bpf_crypto_ctx_create" $params 408 $err)'
+            '    if $crypto {'
+            '      $crypto | kfunc-call "bpf_crypto_ctx_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-crypto-ctx-create-record-field-err"
+        category: "helper-state"
+        tags: [kfunc crypto ref-lifetime record source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define crypto_params --kind array --value-type "bytes:512" --max-entries 1'
+            '  let params = (0 | map-get crypto_params --kind array)'
+            '  let rec = { err: "00000000" }'
+            '  let err = $rec.err'
             '  if $params {'
             '    let crypto = (kfunc-call "bpf_crypto_ctx_create" $params 408 $err)'
             '    if $crypto {'
