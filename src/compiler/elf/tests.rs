@@ -10740,6 +10740,59 @@ fn test_ebpf_object_reports_program_compatibility_requirements() {
         );
     }
 
+    for (program_type, target, requirement, minimum_kernel) in [
+        (
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing:priority=-100:defrag",
+            ProgramCompatibilityRequirement::NetfilterDefrag,
+            "6.6",
+        ),
+        (
+            EbpfProgramType::SkReuseport,
+            "migrate",
+            ProgramCompatibilityRequirement::SkReuseportMigration,
+            "5.14",
+        ),
+        (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:connect_unix",
+            ProgramCompatibilityRequirement::CgroupUnixSockAddr,
+            "6.7",
+        ),
+        (
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+            ProgramCompatibilityRequirement::RouteLwtSeg6Local,
+            "4.18",
+        ),
+        (
+            EbpfProgramType::Iter,
+            "task_vma",
+            ProgramCompatibilityRequirement::BpfIteratorTaskVmaTarget,
+            "5.12",
+        ),
+    ] {
+        let program = EbpfProgram::new(program_type, target, "main", EbpfBuilder::new());
+        let requirements = program.program_compatibility_requirements();
+        assert!(
+            requirements.contains(&requirement),
+            "{} target {target} should include {requirement:?}",
+            program_type.canonical_prefix()
+        );
+        assert_eq!(
+            program.program_compatibility_minimum_kernel(),
+            Some(minimum_kernel),
+            "{} target {target} should aggregate target-specific minimum",
+            program_type.canonical_prefix()
+        );
+        assert_eq!(
+            program.into_object().program_compatibility_minimum_kernel(),
+            Some(minimum_kernel),
+            "{} target {target} object should preserve target-specific minimum",
+            program_type.canonical_prefix()
+        );
+    }
+
     let struct_ops = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8]).build();
     let requirements = struct_ops.program_compatibility_requirements();
     assert!(
