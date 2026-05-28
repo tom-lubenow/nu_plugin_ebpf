@@ -10649,6 +10649,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-rcu-read-lock-rejects-return-use"
+        category: "helper-state"
+        tags: [kfunc rcu source void-return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_rcu_read_lock" | count'
+            '  kfunc-call "bpf_rcu_read_unlock"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "void kfunc 'bpf_rcu_read_lock' return value cannot be used"
+    }
+    {
         name: "source-kfunc-rcu-read-unlock-rejects-unmatched"
         category: "helper-state"
         tags: [kfunc rcu source reject]
