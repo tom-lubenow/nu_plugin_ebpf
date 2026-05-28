@@ -16776,10 +16776,44 @@ def newest-existing [label: string candidates: list<string>] {
     $existing | get 0.path
 }
 
+def newest-modified [label: string paths: list<string>] {
+    let existing = (
+        $paths
+        | where {|path| path-is-filelike $path }
+        | each {|path| ls -D $path | first | get modified }
+        | sort
+        | reverse
+    )
+
+    if (($existing | length) == 0) {
+        fail $"could not find ($label); checked: ($paths | str join ', ')"
+    }
+
+    $existing | get 0
+}
+
+def plugin-source-inputs [repo_root: string] {
+    let rust_sources = (glob ($repo_root | path join "src/**/*.rs"))
+    $rust_sources | append [
+        ($repo_root | path join Cargo.toml)
+        ($repo_root | path join Cargo.lock)
+        ($repo_root | path join build.rs)
+    ]
+}
+
+def assert-plugin-fresh [repo_root: string plugin_bin: string] {
+    let plugin_modified = (ls -D $plugin_bin | first | get modified)
+    let source_modified = (newest-modified "plugin source input" (plugin-source-inputs $repo_root))
+
+    if $source_modified > $plugin_modified {
+        fail $"plugin binary appears stale: ($plugin_bin) was modified ($plugin_modified), but plugin source inputs were modified ($source_modified); run `cargo build` or set PLUGIN_BIN"
+    }
+}
+
 def resolve-plugin-bin [repo_root: string] {
     let override = ($env | get -o PLUGIN_BIN)
 
-    if $override != null {
+    let plugin_bin = if $override != null {
         if (path-is-filelike $override) {
             $override
         } else {
@@ -16791,6 +16825,9 @@ def resolve-plugin-bin [repo_root: string] {
             ($repo_root | path join target release nu_plugin_ebpf)
         ]
     }
+
+    assert-plugin-fresh $repo_root $plugin_bin
+    $plugin_bin
 }
 
 def current-nu-bin [] {
