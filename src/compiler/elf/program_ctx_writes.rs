@@ -1366,6 +1366,12 @@ mod tests {
 
     #[test]
     fn test_context_write_surfaces_for_spec_filter_target_specific_availability() {
+        fn has_write(writes: &[ContextWriteSurface], field_name: &str) -> bool {
+            writes
+                .iter()
+                .any(|surface| surface.field_name == field_name)
+        }
+
         let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
         let tc_ingress_writes = tc_ingress.ctx_write_surfaces_for_spec();
         assert!(tc_ingress_writes.iter().any(|surface| {
@@ -1394,6 +1400,50 @@ mod tests {
                 .iter()
                 .any(|surface| surface.field_name == "tstamp"),
             "ctx.tstamp assignment is egress-only for cgroup_skb"
+        );
+
+        let connect4 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect4")
+            .expect("cgroup_sock_addr connect4 spec should parse")
+            .ctx_write_surfaces_for_spec();
+        assert!(has_write(&connect4, "remote_ip4"));
+        assert!(has_write(&connect4, "remote_port"));
+        assert!(
+            !has_write(&connect4, "local_ip4"),
+            "ctx.local_ip4 assignment should not be advertised on connect4"
+        );
+        assert!(
+            !has_write(&connect4, "sun_path"),
+            "ctx.sun_path assignment should not be advertised on inet hooks"
+        );
+
+        let getsockname6 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:getsockname6")
+            .expect("cgroup_sock_addr getsockname6 spec should parse")
+            .ctx_write_surfaces_for_spec();
+        assert!(has_write(&getsockname6, "local_ip6"));
+        assert!(has_write(&getsockname6, "local_port"));
+        assert!(
+            !has_write(&getsockname6, "remote_ip6"),
+            "ctx.remote_ip6 assignment should not be advertised on getsockname6"
+        );
+
+        let sendmsg6 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg6")
+            .expect("cgroup_sock_addr sendmsg6 spec should parse")
+            .ctx_write_surfaces_for_spec();
+        assert!(has_write(&sendmsg6, "remote_ip6"));
+        assert!(has_write(&sendmsg6, "msg_src_ip6"));
+        assert!(has_write(&sendmsg6, "local_ip6"));
+        assert!(
+            !has_write(&sendmsg6, "local_port"),
+            "ctx.local_port assignment should not be advertised on sendmsg6"
+        );
+
+        let connect_unix = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
+            .expect("cgroup_sock_addr connect_unix spec should parse")
+            .ctx_write_surfaces_for_spec();
+        assert!(has_write(&connect_unix, "sun_path"));
+        assert!(
+            !has_write(&connect_unix, "remote_port"),
+            "inet tuple writes should not be advertised on UNIX sock_addr hooks"
         );
     }
 }
