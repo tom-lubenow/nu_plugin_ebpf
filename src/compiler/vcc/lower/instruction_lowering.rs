@@ -513,7 +513,6 @@ impl<'a> VccLowerer<'a> {
                     )
                         && let VccValueType::Ptr(ref mut info) = ty
                     {
-                        info.space = VccAddrSpace::Context;
                         info.nullability = VccNullability::NonNull;
                     }
                     out.push(VccInst::Assume {

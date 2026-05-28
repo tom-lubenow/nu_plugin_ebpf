@@ -24,6 +24,13 @@ fn packet_u8_ptr() -> MirType {
     }
 }
 
+fn context_u8_ptr() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Context,
+    }
+}
+
 const BPF_SOCK_OPS_RTO_CB: i64 = 8;
 const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
@@ -919,6 +926,67 @@ fn test_verify_mir_for_probe_context_netfilter_state_allows_direct_kernel_pointe
     let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected netfilter ctx.state to carry trusted BTF pointer provenance");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_flow_keys_allows_direct_context_store() {
+    let (mut func, entry) = new_mir_function();
+    let flow_keys = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: flow_keys,
+            field: CtxField::FlowKeys,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Store {
+        ptr: flow_keys,
+        offset: 9,
+        val: MirValue::Const(6),
+        ty: MirType::U8,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(flow_keys, context_u8_ptr());
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected flow_dissector ctx.flow_keys to allow direct context stores");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_raw_context_store_is_rejected() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Store {
+        ptr: ctx,
+        offset: 0,
+        val: MirValue::Const(1),
+        ty: MirType::U8,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ctx, kernel_u8_ptr());
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("raw full-context pointer stores should be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("store on kernel pointers requires bounded context-buffer provenance")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
