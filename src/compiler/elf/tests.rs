@@ -587,8 +587,35 @@ fn test_program_type_metadata_for_tp_btf() {
     assert_eq!(info.canonical_prefix, "tp_btf");
     assert_eq!(info.attach_kind, ProgramAttachKind::TpBtf);
     assert_eq!(info.target_kind, ProgramTargetKind::BtfTracepoint);
+    assert_eq!(
+        info.kernel_target_validation,
+        Some(KernelTargetValidationKind::TpBtfTracepoint)
+    );
     assert_eq!(info.arg_access, ProgramValueAccess::Trampoline);
     assert_eq!(info.retval_access, ProgramValueAccess::None);
+}
+
+#[test]
+fn test_kernel_target_validation_help_is_modeled() {
+    assert_eq!(
+        KernelTargetValidationKind::SymbolOnly.unsupported_target_help(),
+        None
+    );
+    assert!(
+        KernelTargetValidationKind::FentryTrampoline
+            .unsupported_target_help()
+            .is_some_and(|help| help.contains("trampoline-compatible target"))
+    );
+    assert!(
+        KernelTargetValidationKind::TpBtfTracepoint
+            .unsupported_target_help()
+            .is_some_and(|help| help.contains("BTF-enabled tracepoint"))
+    );
+    assert!(
+        KernelTargetValidationKind::LsmHook
+            .unsupported_target_help()
+            .is_some_and(|help| help.contains("valid LSM hook"))
+    );
 }
 
 #[test]

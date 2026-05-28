@@ -25,8 +25,8 @@ use thiserror::Error;
 
 use self::libbpf::LibbpfStructOpsHandle;
 use crate::compiler::{
-    BpfFieldType, CompileError, CounterKeySchema, EbpfObject, EventSchema, MapRef, MirType,
-    ProgramAttachKind,
+    BpfFieldType, CompileError, CounterKeySchema, EbpfObject, EventSchema,
+    KernelTargetValidationKind, MapRef, MirType, ProgramAttachKind,
 };
 
 /// Maximum entries per eBPF hash map
@@ -75,6 +75,7 @@ pub enum LoadError {
     UnsupportedTrampolineTarget {
         probe_type: String,
         target: String,
+        validation: KernelTargetValidationKind,
         reason: String,
     },
 

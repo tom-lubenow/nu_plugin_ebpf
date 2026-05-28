@@ -1343,6 +1343,7 @@ fn test_parse_probe_spec_rejects_unsupported_fexit_aggregate_return_target() {
             probe_type,
             target,
             reason,
+            ..
         }) => {
             assert_eq!(probe_type, "fexit");
             assert_eq!(target, func_name);

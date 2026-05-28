@@ -2511,6 +2511,7 @@ pub enum KernelTargetValidationKind {
     FentryTrampoline,
     FexitTrampoline,
     FmodRetTrampoline,
+    TpBtfTracepoint,
     LsmHook,
 }
 
@@ -2521,8 +2522,24 @@ impl KernelTargetValidationKind {
             Self::FentryTrampoline => "fentry-trampoline",
             Self::FexitTrampoline => "fexit-trampoline",
             Self::FmodRetTrampoline => "fmod-ret-trampoline",
+            Self::TpBtfTracepoint => "tp-btf-tracepoint",
             Self::LsmHook => "lsm-hook",
         }
+    }
+
+    pub fn unsupported_target_help(self) -> Option<&'static str> {
+        Some(match self {
+            Self::FentryTrampoline | Self::FexitTrampoline | Self::FmodRetTrampoline => {
+                "fentry/fexit/fmod_ret require kernel BTF and a trampoline-compatible target signature. Try a scalar/pointer-return target or use kprobe/kretprobe for broader coverage"
+            }
+            Self::TpBtfTracepoint => {
+                "tp_btf requires kernel BTF and a BTF-enabled tracepoint name. Use raw_tracepoint or ordinary tracepoint targets for broader tracepoint coverage"
+            }
+            Self::LsmHook => {
+                "LSM programs require kernel BTF and a valid LSM hook name. Use an exported LSM hook such as file_open, or use a different probe family for non-LSM targets"
+            }
+            Self::SymbolOnly => return None,
+        })
     }
 }
 

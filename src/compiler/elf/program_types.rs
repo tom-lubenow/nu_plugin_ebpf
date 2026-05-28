@@ -680,7 +680,7 @@ pub(super) const TP_BTF_INFO: ProgramTypeInfo = ProgramTypeInfo {
     context_family: ProgramContextFamily::Probe,
     attach_kind: ProgramAttachKind::TpBtf,
     target_kind: ProgramTargetKind::BtfTracepoint,
-    kernel_target_validation: None,
+    kernel_target_validation: Some(KernelTargetValidationKind::TpBtfTracepoint),
     supported_capabilities: DEFAULT_PROBE_CAPABILITIES,
     arg_access: ProgramValueAccess::Trampoline,
     retval_access: ProgramValueAccess::None,

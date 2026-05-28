@@ -91,6 +91,7 @@ fn validate_trampoline_target(
         KernelTargetValidationKind::FentryTrampoline => btf.validate_fentry_target(func_name),
         KernelTargetValidationKind::FexitTrampoline => btf.validate_fexit_target(func_name),
         KernelTargetValidationKind::FmodRetTrampoline => btf.validate_fmod_ret_target(func_name),
+        KernelTargetValidationKind::TpBtfTracepoint => btf.validate_tp_btf_target(func_name),
         KernelTargetValidationKind::LsmHook => btf.validate_lsm_hook_target(func_name),
         KernelTargetValidationKind::SymbolOnly => return Ok(()),
     };
@@ -98,6 +99,7 @@ fn validate_trampoline_target(
     result.map_err(|e| LoadError::UnsupportedTrampolineTarget {
         probe_type: probe_type.to_string(),
         target: func_name.to_string(),
+        validation,
         reason: e.to_string(),
     })
 }
@@ -225,25 +227,21 @@ fn validate_program_spec(spec: &ProgramSpec) -> Result<(), LoadError> {
                     "LSM hook target cannot be empty".to_string(),
                 ));
             }
-            KernelBtf::get()
-                .validate_lsm_hook_target(hook)
-                .map_err(|e| LoadError::UnsupportedTrampolineTarget {
-                    probe_type: spec.program_type().canonical_prefix().to_string(),
-                    target: hook.clone(),
-                    reason: e.to_string(),
-                })
+            validate_trampoline_target(
+                KernelTargetValidationKind::LsmHook,
+                spec.program_type().canonical_prefix(),
+                hook,
+            )
         }
         ProgramSpec::TpBtf { name } => {
             if name.is_empty() {
                 return Err(LoadError::Load("tp_btf target cannot be empty".to_string()));
             }
-            KernelBtf::get().validate_tp_btf_target(name).map_err(|e| {
-                LoadError::UnsupportedTrampolineTarget {
-                    probe_type: spec.program_type().canonical_prefix().to_string(),
-                    target: name.clone(),
-                    reason: e.to_string(),
-                }
-            })
+            validate_trampoline_target(
+                KernelTargetValidationKind::TpBtfTracepoint,
+                spec.program_type().canonical_prefix(),
+                name,
+            )
         }
         ProgramSpec::Tracepoint { .. } => validate_tracepoint_target(&spec.target_string()),
         ProgramSpec::RawTracepoint { .. } | ProgramSpec::RawTracepointWritable { .. } => Ok(()),

@@ -1420,17 +1420,13 @@ fn run_attach(
         crate::loader::LoadError::UnsupportedTrampolineTarget {
             probe_type,
             target,
+            validation,
             reason,
         } => {
             let mut err =
                 LabeledError::new(format!("Unsupported {} target '{}'", probe_type, target))
                     .with_label(reason.clone(), call.head);
-            if let Some(help) = match probe_type.as_str() {
-                "fentry" | "fexit" => Some(
-                    "fentry/fexit require kernel BTF and a trampoline-compatible target signature. Try a scalar/pointer-return target or use kprobe/kretprobe for broader coverage",
-                ),
-                _ => None,
-            } {
+            if let Some(help) = validation.unsupported_target_help() {
                 err = err.with_help(help);
             }
             err
