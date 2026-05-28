@@ -3930,6 +3930,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:cpu" "ctx:timestamp" "ctx:cgroup_id" "helper:bpf_get_smp_processor_id" "helper:bpf_ktime_get_ns" "helper:bpf_get_current_cgroup_id"]
     }
     {
+        target: "cgroup_device:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.access_type + $ctx.device_access + $ctx.device_type + $ctx.major + $ctx.minor) | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:access_type" "ctx:device_access" "ctx:device_type" "ctx:major" "ctx:minor"]
+    }
+    {
         target: "lsm_cgroup:socket_bind"
         program: [
             '{|ctx|'
