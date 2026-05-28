@@ -403,21 +403,10 @@ fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
     let records =
         verifier_diff_feature_table_records(verifier_diff, "MAP_VALUE_KERNEL_FEATURES", "token");
-    let requirements = [
-        MapValueCompatibilityRequirement::BpfSpinLock,
-        MapValueCompatibilityRequirement::BpfTimer,
-        MapValueCompatibilityRequirement::BpfKptr,
-        MapValueCompatibilityRequirement::BpfWorkqueue,
-        MapValueCompatibilityRequirement::BpfRefcount,
-        MapValueCompatibilityRequirement::BpfListHead,
-        MapValueCompatibilityRequirement::BpfListNode,
-        MapValueCompatibilityRequirement::BpfRbRoot,
-        MapValueCompatibilityRequirement::BpfRbNode,
-    ];
     let mut expected_tokens = BTreeSet::new();
 
-    for requirement in requirements {
-        let token = verifier_diff_map_value_token(requirement);
+    for requirement in MapValueCompatibilityRequirement::all() {
+        let token = verifier_diff_map_value_token(*requirement);
         assert!(
             expected_tokens.insert(token),
             "duplicate verifier_diff.nu map-value token mapping for {requirement:?}"
@@ -425,7 +414,7 @@ fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
         let record = records.get(token).unwrap_or_else(|| {
             panic!("scripts/verifier_diff.nu MAP_VALUE_KERNEL_FEATURES is missing {token}")
         });
-        assert_verifier_feature_record_matches_map_value(requirement, record);
+        assert_verifier_feature_record_matches_map_value(*requirement, record);
     }
 
     let unexpected_tokens = records

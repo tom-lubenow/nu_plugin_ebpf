@@ -154,7 +154,23 @@ pub enum MapValueCompatibilityRequirement {
     BpfRbNode,
 }
 
+const ALL_MAP_VALUE_COMPATIBILITY_REQUIREMENTS: &[MapValueCompatibilityRequirement] = &[
+    MapValueCompatibilityRequirement::BpfSpinLock,
+    MapValueCompatibilityRequirement::BpfTimer,
+    MapValueCompatibilityRequirement::BpfKptr,
+    MapValueCompatibilityRequirement::BpfWorkqueue,
+    MapValueCompatibilityRequirement::BpfRefcount,
+    MapValueCompatibilityRequirement::BpfListHead,
+    MapValueCompatibilityRequirement::BpfListNode,
+    MapValueCompatibilityRequirement::BpfRbRoot,
+    MapValueCompatibilityRequirement::BpfRbNode,
+];
+
 impl MapValueCompatibilityRequirement {
+    pub fn all() -> &'static [Self] {
+        ALL_MAP_VALUE_COMPATIBILITY_REQUIREMENTS
+    }
+
     pub fn key(self) -> &'static str {
         match self {
             Self::BpfSpinLock => "map-value:bpf_spin_lock",

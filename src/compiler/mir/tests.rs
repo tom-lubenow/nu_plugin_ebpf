@@ -303,19 +303,10 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
         assert!(requirement.minimum_kernel_source().contains(source_suffix));
     }
 
-    let requirements = [
-        MapValueCompatibilityRequirement::BpfSpinLock,
-        MapValueCompatibilityRequirement::BpfTimer,
-        MapValueCompatibilityRequirement::BpfKptr,
-        MapValueCompatibilityRequirement::BpfRefcount,
-        MapValueCompatibilityRequirement::BpfWorkqueue,
-        MapValueCompatibilityRequirement::BpfListHead,
-        MapValueCompatibilityRequirement::BpfListNode,
-        MapValueCompatibilityRequirement::BpfRbRoot,
-        MapValueCompatibilityRequirement::BpfRbNode,
-    ];
     assert_eq!(
-        MapValueCompatibilityRequirement::effective_minimum_kernel(&requirements),
+        MapValueCompatibilityRequirement::effective_minimum_kernel(
+            MapValueCompatibilityRequirement::all()
+        ),
         Some("6.10")
     );
     assert!(MapValueCompatibilityRequirement::kernel_version_at_least(
