@@ -2002,6 +2002,9 @@ impl EbpfObject {
         root: crate::compiler::mir::BpfGraphRootInfo<'_>,
         array_index_type: u32,
     ) -> u32 {
+        if let Some(object_type) = root.object_type {
+            return Self::emit_local_btf_mir_type(btf, object_type, array_index_type);
+        }
         let node_type = Self::emit_bpf_graph_node_btf_type(btf, root.kind, array_index_type);
         btf.add_struct_with_offsets(
             root.value_type,

@@ -590,6 +590,19 @@ const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  map-define list_items --kind hash --value-type "record{root:bpf_list_head:node_data:node:record{refs:bpf_refcount,cookie:u64}}"'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map-value:bpf_list_head"
+            "map-value:bpf_list_node"
+            "map-value:bpf_refcount"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:node_data:node}"'
             '  0'
             '}'

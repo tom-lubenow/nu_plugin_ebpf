@@ -8,6 +8,7 @@ enum NamedTypeSpecContext {
     Global,
     MapKey,
     MapValue,
+    GraphObjectPayload,
 }
 
 #[derive(Clone, Debug)]
@@ -25,6 +26,14 @@ struct ParsedNamedRecordField {
     name: String,
     offset: usize,
     ty: ParsedNamedGlobalType,
+}
+
+#[derive(Clone, Debug)]
+struct ParsedGraphRootTypeSpec {
+    kind: BpfGraphRootKind,
+    value_type: String,
+    node_field: String,
+    object_ty: Option<MirType>,
 }
 
 #[derive(Clone, Debug)]
@@ -189,6 +198,45 @@ fn split_top_level_type_len<'a>(
     )))
 }
 
+fn split_top_level_colon_parts<'a>(
+    body: &'a str,
+    spec: &str,
+) -> Result<Vec<&'a str>, CompileError> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+
+    for (idx, ch) in body.char_indices() {
+        match ch {
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                if depth == 0 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "global type spec '{}' has an unmatched '}}'",
+                        spec
+                    )));
+                }
+                depth -= 1;
+            }
+            ':' if depth == 0 => {
+                parts.push(body[start..idx].trim());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+
+    if depth != 0 {
+        return Err(CompileError::UnsupportedInstruction(format!(
+            "global type spec '{}' has unmatched '{{' braces",
+            spec
+        )));
+    }
+
+    parts.push(body[start..].trim());
+    Ok(parts)
+}
+
 fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
     match value {
         Value::Bool { val, .. } => Some(if *val { 1 } else { 0 }),
@@ -291,7 +339,11 @@ impl ParsedNamedGlobalType {
             });
         }
 
-        if context == NamedTypeSpecContext::MapValue && spec == "bpf_refcount" {
+        if matches!(
+            context,
+            NamedTypeSpecContext::MapValue | NamedTypeSpecContext::GraphObjectPayload
+        ) && spec == "bpf_refcount"
+        {
             return Ok(Self {
                 ty: MirType::bpf_refcount_struct(),
                 list_max_len: None,
@@ -303,14 +355,28 @@ impl ParsedNamedGlobalType {
         }
 
         if context == NamedTypeSpecContext::MapValue
-            && let Some((kind, value_type, node_field)) = Self::parse_graph_root_type_spec(spec)?
+            && let Some(root) = Self::parse_graph_root_type_spec(spec)?
         {
-            let ty = match kind {
-                BpfGraphRootKind::ListHead => {
-                    MirType::bpf_list_head_root_struct(&value_type, &node_field)
+            let ty = match (root.kind, root.object_ty.clone()) {
+                (BpfGraphRootKind::ListHead, Some(object_ty)) => {
+                    MirType::bpf_list_head_root_struct_with_object(
+                        &root.value_type,
+                        &root.node_field,
+                        object_ty,
+                    )
                 }
-                BpfGraphRootKind::RbRoot => {
-                    MirType::bpf_rb_root_struct_with_contains(&value_type, &node_field)
+                (BpfGraphRootKind::RbRoot, Some(object_ty)) => {
+                    MirType::bpf_rb_root_struct_with_object(
+                        &root.value_type,
+                        &root.node_field,
+                        object_ty,
+                    )
+                }
+                (BpfGraphRootKind::ListHead, None) => {
+                    MirType::bpf_list_head_root_struct(&root.value_type, &root.node_field)
+                }
+                (BpfGraphRootKind::RbRoot, None) => {
+                    MirType::bpf_rb_root_struct_with_contains(&root.value_type, &root.node_field)
                 }
             };
             return Ok(Self {
@@ -320,9 +386,9 @@ impl ParsedNamedGlobalType {
                 string_content_cap: None,
                 semantics: None,
                 shape: NamedGlobalTypeShape::BpfGraphRoot {
-                    kind,
-                    value_type,
-                    node_field,
+                    kind: root.kind,
+                    value_type: root.value_type,
+                    node_field: root.node_field,
                 },
             });
         }
@@ -629,9 +695,12 @@ impl ParsedNamedGlobalType {
             NamedTypeSpecContext::Global => "global",
             NamedTypeSpecContext::MapKey => "map key",
             NamedTypeSpecContext::MapValue => "map value",
+            NamedTypeSpecContext::GraphObjectPayload => "graph object payload",
         };
         let map_suffix = if context == NamedTypeSpecContext::MapValue {
-            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, kptr:TYPE, bpf_list_head:TYPE:FIELD, and bpf_rb_root:TYPE:FIELD"
+            "; map value schemas also support bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, kptr:TYPE, bpf_list_head:TYPE:FIELD[:record{...}], and bpf_rb_root:TYPE:FIELD[:record{...}]"
+        } else if context == NamedTypeSpecContext::GraphObjectPayload {
+            "; graph object payload schemas also support bpf_refcount"
         } else {
             ""
         };
@@ -654,7 +723,7 @@ impl ParsedNamedGlobalType {
 
     fn parse_graph_root_type_spec(
         spec: &str,
-    ) -> Result<Option<(BpfGraphRootKind, String, String)>, CompileError> {
+    ) -> Result<Option<ParsedGraphRootTypeSpec>, CompileError> {
         let Some((kind, rest)) = spec
             .strip_prefix("bpf_list_head:")
             .map(|rest| (BpfGraphRootKind::ListHead, rest))
@@ -666,13 +735,17 @@ impl ParsedNamedGlobalType {
             return Ok(None);
         };
 
-        let Some((value_type, node_field)) = rest.split_once(':') else {
+        let parts = split_top_level_colon_parts(rest, spec)?;
+        if parts.len() < 2 || parts.len() > 3 {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph root type spec '{}' must use {}:TYPE:FIELD syntax",
+                "map value graph root type spec '{}' must use {}:TYPE:FIELD or {}:TYPE:FIELD:record{{...}} syntax",
                 spec,
+                kind.root_struct_name(),
                 kind.root_struct_name()
             )));
-        };
+        }
+        let value_type = parts[0];
+        let node_field = parts[1];
         if !Self::is_valid_kernel_type_name(value_type) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map value graph root type spec '{}' requires a named object type like {}:node_data:node",
@@ -688,7 +761,111 @@ impl ParsedNamedGlobalType {
             )));
         }
 
-        Ok(Some((kind, value_type.to_string(), node_field.to_string())))
+        let object_ty = if let Some(payload_spec) = parts.get(2) {
+            if payload_spec.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "map value graph root type spec '{}' has an empty object payload schema",
+                    spec
+                )));
+            }
+            let payload =
+                Self::parse_with_context(payload_spec, NamedTypeSpecContext::GraphObjectPayload)?;
+            Some(Self::graph_object_type_from_payload(
+                kind, value_type, node_field, payload.ty, spec,
+            )?)
+        } else {
+            None
+        };
+
+        Ok(Some(ParsedGraphRootTypeSpec {
+            kind,
+            value_type: value_type.to_string(),
+            node_field: node_field.to_string(),
+            object_ty,
+        }))
+    }
+
+    fn graph_node_type(kind: BpfGraphRootKind) -> MirType {
+        match kind {
+            BpfGraphRootKind::ListHead => MirType::bpf_list_node_struct(),
+            BpfGraphRootKind::RbRoot => MirType::bpf_rb_node_struct(),
+        }
+    }
+
+    fn graph_object_type_from_payload(
+        kind: BpfGraphRootKind,
+        value_type: &str,
+        node_field: &str,
+        payload_ty: MirType,
+        spec: &str,
+    ) -> Result<MirType, CompileError> {
+        let MirType::Struct {
+            fields: payload_fields,
+            ..
+        } = payload_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value graph root type spec '{}' requires the object payload schema to be record{{...}}",
+                spec
+            )));
+        };
+        if payload_fields
+            .iter()
+            .any(|field| !field.synthetic && field.name == node_field)
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map value graph root type spec '{}' object payload duplicates node field '{}'",
+                spec, node_field
+            )));
+        }
+
+        let node_ty = Self::graph_node_type(kind);
+        let node_size = node_ty.size();
+        let payload_size = payload_fields
+            .iter()
+            .filter_map(|field| field.offset.checked_add(field.ty.size()))
+            .max()
+            .unwrap_or(0);
+        let payload_align = payload_fields
+            .iter()
+            .map(|field| field.ty.align())
+            .max()
+            .unwrap_or(1)
+            .max(1);
+        let object_align = node_ty.align().max(payload_align).max(1);
+        let payload_base = align_up(node_size, payload_align);
+        let mut fields = vec![StructField {
+            name: node_field.to_string(),
+            ty: node_ty,
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }];
+        let mut pad_index = 0usize;
+        if let Some(padding) =
+            named_type_padding_field(node_size, payload_base.saturating_sub(node_size), pad_index)
+        {
+            fields.push(padding);
+            pad_index += 1;
+        }
+        fields.extend(payload_fields.into_iter().map(|mut field| {
+            field.offset = payload_base.saturating_add(field.offset);
+            field
+        }));
+        let final_size = align_up(payload_base.saturating_add(payload_size), object_align);
+        if let Some(padding) = named_type_padding_field(
+            payload_base.saturating_add(payload_size),
+            final_size.saturating_sub(payload_base.saturating_add(payload_size)),
+            pad_index,
+        ) {
+            fields.push(padding);
+        }
+
+        Ok(MirType::Struct {
+            name: Some(value_type.to_string()),
+            kernel_btf_type_id: None,
+            fields,
+        })
     }
 
     fn is_graph_object_type_spec_candidate(spec: &str) -> bool {

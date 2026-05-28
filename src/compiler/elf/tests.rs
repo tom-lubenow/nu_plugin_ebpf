@@ -5333,7 +5333,47 @@ fn test_elf_map_btf_emits_graph_root_decl_tag() {
         fields: vec![
             StructField {
                 name: "head".to_string(),
-                ty: MirType::bpf_list_head_root_struct("node_data", "node"),
+                ty: MirType::bpf_list_head_root_struct_with_object(
+                    "node_data",
+                    "node",
+                    MirType::Struct {
+                        name: Some("node_data".to_string()),
+                        kernel_btf_type_id: None,
+                        fields: vec![
+                            StructField {
+                                name: "node".to_string(),
+                                ty: MirType::bpf_list_node_struct(),
+                                offset: 0,
+                                synthetic: false,
+                                bitfield: None,
+                            },
+                            StructField {
+                                name: "cookie".to_string(),
+                                ty: MirType::U64,
+                                offset: 16,
+                                synthetic: false,
+                                bitfield: None,
+                            },
+                            StructField {
+                                name: "refs".to_string(),
+                                ty: MirType::bpf_refcount_struct(),
+                                offset: 24,
+                                synthetic: false,
+                                bitfield: None,
+                            },
+                            StructField {
+                                name: "__layout_pad0".to_string(),
+                                ty: MirType::Array {
+                                    elem: Box::new(MirType::U8),
+                                    len: 4,
+                                },
+                                offset: 28,
+                                synthetic: true,
+                                bitfield: None,
+                            },
+                        ],
+                    },
+                ),
                 offset: 0,
                 synthetic: false,
                 bitfield: None,
@@ -5399,6 +5439,10 @@ fn test_elf_map_btf_emits_graph_root_decl_tag() {
             .is_ok()
     );
     assert!(
+        btf.id_by_type_name_kind("bpf_refcount", BtfKind::Struct)
+            .is_ok()
+    );
+    assert!(
         btf.id_by_type_name_kind("bpf_rb_root", BtfKind::Struct)
             .is_ok()
     );
@@ -5412,6 +5456,10 @@ fn test_elf_map_btf_emits_graph_root_decl_tag() {
             .windows(b"contains:node_data:node\0".len())
             .any(|w| w == b"contains:node_data:node\0"),
         "graph root field should carry contains:TYPE:FIELD BTF decl tag"
+    );
+    assert!(
+        btf_data.windows(b"refs\0".len()).any(|w| w == b"refs\0"),
+        "graph object payload should emit its bpf_refcount field"
     );
     assert!(
         btf_data
@@ -10625,7 +10673,7 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
         vec![],
         None,
         None,
-        HashMap::from([(graph_root_map, graph_root_value_ty)]),
+        HashMap::from([(graph_root_map.clone(), graph_root_value_ty)]),
         HashMap::new(),
     );
     assert_eq!(
@@ -10633,6 +10681,66 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
         vec![
             MapValueCompatibilityRequirement::BpfListHead,
             MapValueCompatibilityRequirement::BpfListNode,
+        ]
+    );
+
+    let graph_payload_root_value_ty = MirType::Struct {
+        name: None,
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "root".to_string(),
+            ty: MirType::bpf_list_head_root_struct_with_object(
+                "node_data",
+                "node",
+                MirType::Struct {
+                    name: Some("node_data".to_string()),
+                    kernel_btf_type_id: None,
+                    fields: vec![
+                        StructField {
+                            name: "node".to_string(),
+                            ty: MirType::bpf_list_node_struct(),
+                            offset: 0,
+                            synthetic: false,
+                            bitfield: None,
+                        },
+                        StructField {
+                            name: "refs".to_string(),
+                            ty: MirType::bpf_refcount_struct(),
+                            offset: 16,
+                            synthetic: false,
+                            bitfield: None,
+                        },
+                    ],
+                },
+            ),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let graph_payload_root_program = EbpfProgram::with_maps(
+        EbpfProgramType::Xdp,
+        "lo",
+        "graph_payload_root_map",
+        vec![],
+        0,
+        vec![EbpfMap {
+            name: "graph_items".to_string(),
+            def: BpfMapDef::hash(4, graph_payload_root_value_ty.size() as u32, 16),
+        }],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::from([(graph_root_map, graph_payload_root_value_ty)]),
+        HashMap::new(),
+    );
+    assert_eq!(
+        graph_payload_root_program.map_value_compatibility_requirements(),
+        vec![
+            MapValueCompatibilityRequirement::BpfListHead,
+            MapValueCompatibilityRequirement::BpfListNode,
+            MapValueCompatibilityRequirement::BpfRefcount,
         ]
     );
 }

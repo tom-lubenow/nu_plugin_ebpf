@@ -481,6 +481,7 @@ pub const KSTACK_MAP_NAME: &str = "kstacks";
 pub const USTACK_MAP_NAME: &str = "ustacks";
 const BPF_KPTR_SLOT_STRUCT_PREFIX: &str = "__nu_bpf_kptr_";
 const BPF_GRAPH_ROOT_STRUCT_PREFIX: &str = "__nu_bpf_graph_root:";
+const BPF_GRAPH_OBJECT_SCHEMA_FIELD: &str = "__nu_bpf_graph_object_schema";
 const BPF_TIMER_FALLBACK_SIZE: usize = 16;
 const BPF_SPIN_LOCK_FALLBACK_SIZE: usize = 4;
 const BPF_RES_SPIN_LOCK_FALLBACK_SIZE: usize = 4;
@@ -564,6 +565,7 @@ pub struct BpfGraphRootInfo<'a> {
     pub kind: BpfGraphRootKind,
     pub value_type: &'a str,
     pub node_field: &'a str,
+    pub object_type: Option<&'a MirType>,
 }
 
 /// Bitfield extraction metadata for a logical struct field.
@@ -754,21 +756,76 @@ impl MirType {
     }
 
     pub fn bpf_list_head_root_struct(value_type: &str, node_field: &str) -> Self {
-        Self::bpf_graph_root_struct(BpfGraphRootKind::ListHead, value_type, node_field)
+        Self::bpf_graph_root_struct(BpfGraphRootKind::ListHead, value_type, node_field, None)
+    }
+
+    pub fn bpf_list_head_root_struct_with_object(
+        value_type: &str,
+        node_field: &str,
+        object_type: MirType,
+    ) -> Self {
+        Self::bpf_graph_root_struct(
+            BpfGraphRootKind::ListHead,
+            value_type,
+            node_field,
+            Some(object_type),
+        )
     }
 
     pub fn bpf_rb_root_struct_with_contains(value_type: &str, node_field: &str) -> Self {
-        Self::bpf_graph_root_struct(BpfGraphRootKind::RbRoot, value_type, node_field)
+        Self::bpf_graph_root_struct(BpfGraphRootKind::RbRoot, value_type, node_field, None)
     }
 
-    fn bpf_graph_root_struct(kind: BpfGraphRootKind, value_type: &str, node_field: &str) -> Self {
-        Self::opaque_named_struct_with_size(
-            &format!(
+    pub fn bpf_rb_root_struct_with_object(
+        value_type: &str,
+        node_field: &str,
+        object_type: MirType,
+    ) -> Self {
+        Self::bpf_graph_root_struct(
+            BpfGraphRootKind::RbRoot,
+            value_type,
+            node_field,
+            Some(object_type),
+        )
+    }
+
+    fn bpf_graph_root_struct(
+        kind: BpfGraphRootKind,
+        value_type: &str,
+        node_field: &str,
+        object_type: Option<MirType>,
+    ) -> Self {
+        let mut fields = vec![StructField {
+            name: "__opaque".to_string(),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: kind.root_size().max(1),
+            },
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }];
+        if let Some(object_type) = object_type {
+            fields.push(StructField {
+                name: BPF_GRAPH_OBJECT_SCHEMA_FIELD.to_string(),
+                ty: MirType::Array {
+                    elem: Box::new(object_type),
+                    len: 0,
+                },
+                offset: 0,
+                synthetic: true,
+                bitfield: None,
+            });
+        }
+
+        MirType::Struct {
+            name: Some(format!(
                 "{BPF_GRAPH_ROOT_STRUCT_PREFIX}{}:{value_type}:{node_field}",
                 kind.key()
-            ),
-            kind.root_size(),
-        )
+            )),
+            kernel_btf_type_id: None,
+            fields,
+        }
     }
 
     pub fn bpf_kptr_slot_struct(pointee_name: &str) -> Self {
@@ -836,7 +893,9 @@ impl MirType {
 
     pub fn bpf_graph_root_info(&self) -> Option<BpfGraphRootInfo<'_>> {
         let MirType::Struct {
-            name: Some(name), ..
+            fields,
+            name: Some(name),
+            ..
         } = self
         else {
             return None;
@@ -849,10 +908,18 @@ impl MirType {
         if value_type.is_empty() || node_field.is_empty() {
             return None;
         }
+        let object_type = fields
+            .iter()
+            .find(|field| field.synthetic && field.name == BPF_GRAPH_OBJECT_SCHEMA_FIELD)
+            .and_then(|field| match &field.ty {
+                MirType::Array { elem, len: 0 } => Some(elem.as_ref()),
+                _ => None,
+            });
         Some(BpfGraphRootInfo {
             kind,
             value_type,
             node_field,
+            object_type,
         })
     }
 

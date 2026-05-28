@@ -335,6 +335,7 @@ fn test_bpf_graph_root_wrappers_parse_contains_metadata() {
     assert_eq!(list_info.kind, BpfGraphRootKind::ListHead);
     assert_eq!(list_info.value_type, "node_data");
     assert_eq!(list_info.node_field, "node");
+    assert!(list_info.object_type.is_none());
     assert_eq!(list_root.size(), 16);
     assert_eq!(list_root.align(), 8);
     assert!(list_root.is_bpf_list_head_struct());
@@ -347,6 +348,7 @@ fn test_bpf_graph_root_wrappers_parse_contains_metadata() {
     assert_eq!(rb_info.kind, BpfGraphRootKind::RbRoot);
     assert_eq!(rb_info.value_type, "rb_node_data");
     assert_eq!(rb_info.node_field, "rb");
+    assert!(rb_info.object_type.is_none());
     assert_eq!(rb_root.size(), 16);
     assert_eq!(rb_root.align(), 8);
     assert!(rb_root.is_bpf_rb_root_struct());
@@ -358,6 +360,42 @@ fn test_bpf_graph_root_wrappers_parse_contains_metadata() {
             .is_none(),
         "plain graph helper structs should not imply contains metadata"
     );
+}
+
+#[test]
+fn test_bpf_graph_root_wrapper_can_carry_object_payload_schema() {
+    let object_ty = MirType::Struct {
+        name: Some("node_data".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            StructField {
+                name: "node".to_string(),
+                ty: MirType::bpf_list_node_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: 16,
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+    let root =
+        MirType::bpf_list_head_root_struct_with_object("node_data", "node", object_ty.clone());
+    let info = root
+        .bpf_graph_root_info()
+        .expect("root should carry contains metadata");
+
+    assert_eq!(info.kind, BpfGraphRootKind::ListHead);
+    assert_eq!(info.value_type, "node_data");
+    assert_eq!(info.node_field, "node");
+    assert_eq!(info.object_type, Some(&object_ty));
+    assert_eq!(root.size(), BpfGraphRootKind::ListHead.root_size());
+    assert!(root.is_bpf_list_head_struct());
 }
 
 #[test]

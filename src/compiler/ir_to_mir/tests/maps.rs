@@ -3324,6 +3324,56 @@ fn test_map_value_type_spec_supports_graph_root_schema() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_graph_root_payload_schema() {
+    let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_list_head:node_data:node:record{cookie:u64,refs:bpf_refcount},counter:u64}",
+    )
+    .expect("graph root object payload schema should parse");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let root = fields
+        .iter()
+        .find(|field| field.name == "root")
+        .and_then(|field| field.ty.bpf_graph_root_info())
+        .expect("root should carry contains metadata");
+    assert_eq!(root.kind, BpfGraphRootKind::ListHead);
+    assert_eq!(root.value_type, "node_data");
+    assert_eq!(root.node_field, "node");
+
+    let object_ty = root
+        .object_type
+        .expect("root should carry object payload schema");
+    let MirType::Struct {
+        name: Some(name),
+        fields: object_fields,
+        ..
+    } = object_ty
+    else {
+        panic!("expected named graph object payload type, got {object_ty:?}");
+    };
+    assert_eq!(name, "node_data");
+    let user_object_fields = object_fields
+        .iter()
+        .filter(|field| !field.synthetic)
+        .collect::<Vec<_>>();
+    assert_eq!(user_object_fields.len(), 3);
+    assert_eq!(user_object_fields[0].name, "node");
+    assert_eq!(user_object_fields[0].ty, MirType::bpf_list_node_struct());
+    assert_eq!(user_object_fields[0].offset, 0);
+    let payload_base = (BpfGraphRootKind::ListHead.node_size() + 7) & !7;
+    assert_eq!(user_object_fields[1].name, "cookie");
+    assert_eq!(user_object_fields[1].ty, MirType::U64);
+    assert_eq!(user_object_fields[1].offset, payload_base);
+    assert_eq!(user_object_fields[2].name, "refs");
+    assert_eq!(user_object_fields[2].ty, MirType::bpf_refcount_struct());
+    assert_eq!(user_object_fields[2].offset, payload_base + 8);
+    assert_eq!(object_ty.size(), payload_base + 16);
+}
+
+#[test]
 fn test_map_value_type_spec_supports_rbtree_root_schema() {
     let (ty, semantics) =
         HirToMirLowering::parse_named_map_value_type_spec("record{root:bpf_rb_root:rb_item:rb}")
@@ -3341,6 +3391,17 @@ fn test_map_value_type_spec_supports_rbtree_root_schema() {
     assert_eq!(root.kind, BpfGraphRootKind::RbRoot);
     assert_eq!(root.value_type, "rb_item");
     assert_eq!(root.node_field, "rb");
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_graph_root_payload_duplicate_node_field() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_list_head:node_data:node:record{node:u64,cookie:u64}}",
+    )
+    .expect_err("graph object payload should not redeclare node field");
+
+    let msg = err.to_string();
+    assert!(msg.contains("object payload duplicates node field"));
 }
 
 #[test]
