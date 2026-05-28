@@ -11182,6 +11182,31 @@ const FIXTURES = [
         error_contains: "cannot be called while bpf_spin_lock is held"
     }
     {
+        name: "spin-lock-rejects-kfunc-while-held"
+        category: "helper-state"
+        tags: [spin-lock map-define kfunc reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '    if $obj {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot be called while bpf_spin_lock is held"
+    }
+    {
         name: "spin-lock-map-define-rejects-lru-hash"
         category: "helper-state"
         tags: [spin-lock map-define reject]
