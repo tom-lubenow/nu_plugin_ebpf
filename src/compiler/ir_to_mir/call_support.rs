@@ -3,7 +3,7 @@ use crate::compiler::ProgramIntrinsic;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
     BpfHelper, HelperArgKind, HelperSignature, kfunc_pointer_arg_fixed_size,
-    kfunc_pointer_arg_requires_stack_slot_base,
+    kfunc_pointer_arg_requires_kernel, kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{AddressSpace, MapOpKind};
 use crate::kernel_btf::{KernelBtf, TypeInfo};
@@ -1382,10 +1382,9 @@ impl<'a> HirToMirLowering<'a> {
         arg_vreg: VReg,
         arg_reg: Option<RegId>,
     ) -> VReg {
-        // `$ctx.arg0.f_path` has value semantics, so normal lowering copies
-        // `struct path` to stack. `bpf_path_d_path()` specifically wants the
-        // original kernel address of that field instead.
-        if kfunc != "bpf_path_d_path" || arg_idx != 0 {
+        // Aggregate field access keeps value semantics by stack-copying the
+        // field. Kernel-only pointer ABI args need the original field address.
+        if !kfunc_pointer_arg_requires_kernel(kfunc, arg_idx) {
             return arg_vreg;
         }
 
