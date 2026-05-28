@@ -12700,6 +12700,26 @@ const FIXTURES = [
         error_contains: "reference already released"
     }
     {
+        name: "source-helper-sk-release-rejects-task-ref"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source reject]
+        requires: [loopback-interface kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    helper-call "bpf_sk_release" $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_release' arg0 expects socket pointer"
+    }
+    {
         name: "source-kfunc-file-ref-release"
         category: "helper-state"
         tags: [kfunc file ref-lifetime source accept]
