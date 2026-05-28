@@ -7860,6 +7860,36 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sk-reuseport-rejects-skb-pkt-type-context"
+        category: "context-policy"
+        tags: [sk-reuseport reject context packet]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  $ctx.pkt_type | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.pkt_type is only available on socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"
+    }
+    {
+        name: "sk-reuseport-rejects-skb-vlan-context"
+        category: "context-policy"
+        tags: [sk-reuseport reject context packet]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  $ctx.vlan_tci | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.vlan_tci is only available on socket_filter, lwt_*, tc_action, tc, tcx, netkit, cgroup_skb, sk_skb, and sk_skb_parser programs"
+    }
+    {
         name: "sk-lookup-context-clear-socket"
         category: "context-surface"
         tags: [sk-lookup context writable]
