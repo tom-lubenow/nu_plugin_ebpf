@@ -111,10 +111,10 @@ ebpf spec --list
 `ebpf spec` reports the parsed program type, context family, concrete context
 argument and return-value surfaces when knowable, argument/return access mode,
 packet context kind, direct packet-write support, modeled context fields with
-type labels, pointer verifier facts, and any load guards, tracepoint payload
-fields with tracefs/fallback provenance, nested context projections, writable
-context surfaces with backing helper/kfunc metadata where applicable, return aliases,
-target, aliases, parsed attach shape, section construction,
+type labels, pointer verifier facts, load-shape metadata, and any load guards,
+tracepoint payload fields with tracefs/fallback provenance, nested context
+projections, writable context surfaces with backing helper/kfunc metadata where
+applicable, return aliases, target, aliases, parsed attach shape, section construction,
 sleepable/BTF-callable metadata, kernel-target validation plus modeled
 validation help, capability labels,
 supported first-class intrinsic commands with helper-backed mode/kind variants,
