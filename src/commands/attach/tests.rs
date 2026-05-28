@@ -12146,6 +12146,105 @@ fn test_context_write_program_reports_direct_field_compatibility() {
             "4.14",
         ),
         (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member("mark")],
+            },
+            HirLiteral::Int(42),
+            HirLiteral::Int(0),
+            CtxField::SockMark,
+            "4.1",
+        ),
+        (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member("queue_mapping")],
+            },
+            HirLiteral::Int(4),
+            HirLiteral::Int(0),
+            CtxField::QueueMapping,
+            "4.1",
+        ),
+        (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member("tc_index")],
+            },
+            HirLiteral::Int(5),
+            HirLiteral::Int(0),
+            CtxField::TcIndex,
+            "4.7",
+        ),
+        (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member("cb"), int_member(2)],
+            },
+            HirLiteral::Int(7),
+            HirLiteral::Int(0),
+            CtxField::SkbCb,
+            "4.7",
+        ),
+        (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member("tc_classid")],
+            },
+            HirLiteral::Int(9),
+            HirLiteral::Int(0),
+            CtxField::TcClassid,
+            "4.7",
+        ),
+        (
+            EbpfProgramType::TcAction,
+            "demo-action",
+            CellPath {
+                members: vec![string_member("tstamp")],
+            },
+            HirLiteral::Int(123),
+            HirLiteral::Int(0),
+            CtxField::Tstamp,
+            "5.0",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            CellPath {
+                members: vec![string_member("mark")],
+            },
+            HirLiteral::Int(42),
+            HirLiteral::String(b"reroute".to_vec()),
+            CtxField::SockMark,
+            "4.1",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            CellPath {
+                members: vec![string_member("priority")],
+            },
+            HirLiteral::Int(3),
+            HirLiteral::String(b"reroute".to_vec()),
+            CtxField::SockPriority,
+            "4.1",
+        ),
+        (
+            EbpfProgramType::LwtXmit,
+            "demo-route",
+            CellPath {
+                members: vec![string_member("cb"), int_member(1)],
+            },
+            HirLiteral::Int(7),
+            HirLiteral::String(b"reroute".to_vec()),
+            CtxField::SkbCb,
+            "4.7",
+        ),
+        (
             EbpfProgramType::SockOps,
             "/sys/fs/cgroup",
             CellPath {
