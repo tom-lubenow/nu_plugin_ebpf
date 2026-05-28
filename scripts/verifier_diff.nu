@@ -6615,6 +6615,40 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-csum-update-preserves-packet-data"
+        category: "helper-state"
+        tags: [tc helper checksum packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  helper-call "bpf_csum_update" $ctx 0'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-set-hash-invalid-preserves-packet-data"
+        category: "helper-state"
+        tags: [tc helper hash packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  helper-call "bpf_set_hash_invalid" $ctx'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]
