@@ -5331,6 +5331,68 @@ const FIXTURES = [
         error_contains: "first-class map-in-map operations are not modeled yet"
     }
     {
+        name: "map-define-map-in-map-rejects-missing-inner-map"
+        category: "maps"
+        tags: [maps map-define map-in-map reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define outer_array --kind array-of-maps --max-entries 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires --inner-map"
+    }
+    {
+        name: "map-define-map-in-map-rejects-self-inner-map"
+        category: "maps"
+        tags: [maps map-define map-in-map reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define outer_array --kind array-of-maps --inner-map outer_array --max-entries 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use itself as its inner map template"
+    }
+    {
+        name: "map-define-map-in-map-rejects-outer-value-type"
+        category: "maps"
+        tags: [maps map-define map-in-map reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_seen --value-type u64 --max-entries 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "--value-type is not supported for map-in-map outer map"
+    }
+    {
+        name: "map-define-hash-of-maps-rejects-missing-key-type"
+        category: "maps"
+        tags: [maps map-define map-in-map reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_hash --kind hash-of-maps --inner-map inner_seen --max-entries 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "hash-of-maps requires --key-type"
+    }
+    {
         name: "queue-map-push-peek-record"
         category: "maps"
         tags: [maps queue map-push map-peek records accept]
