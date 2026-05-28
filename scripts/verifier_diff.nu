@@ -4212,6 +4212,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:queue_mapping" "ctx:cb" "ctx:tc_classid" "ctx:tstamp"]
     }
     {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.mark = (if $ctx.pid == 0 { 7 } else { 1 })'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:mark" "ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "lwt_xmit:demo-route"
         program: [
             '{|event|'
