@@ -3543,6 +3543,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sockopt_retval"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:optval"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:set"
         program: [
             '{|ctx|'
@@ -7472,6 +7483,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-optval-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sockopt-get-rejects-level-write"
         category: "context-policy"
         tags: [cgroup-sockopt reject context writable]
@@ -7487,6 +7514,23 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "ctx.level is only writable on cgroup_sockopt:set hooks"
+    }
+    {
+        name: "cgroup-sockopt-rejects-optval-write-without-index"
+        category: "context-policy"
+        tags: [cgroup-sockopt reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.optval = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires a fixed index"
     }
     {
         name: "cgroup-sockopt-set-rejects-retval-write"
