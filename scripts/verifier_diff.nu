@@ -11591,6 +11591,26 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-task-release-rejects-use-after-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
+            '  if $task {'
+            '    kfunc-call "bpf_task_release" $task'
+            '    $task.pid | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "reference already released"
+    }
+    {
         name: "source-helper-sk-lookup-release"
         category: "helper-state"
         tags: [helper-call socket ref-lifetime source accept]
@@ -11676,6 +11696,27 @@ const FIXTURES = [
             '  if $sk {'
             '    helper-call "bpf_sk_release" $sk'
             '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "reference already released"
+    }
+    {
+        name: "source-helper-sk-release-rejects-use-after-release"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  if $sk {'
+            '    helper-call "bpf_sk_release" $sk'
+            '    $sk.family | count'
             '  }'
             '  "pass"'
             '}'

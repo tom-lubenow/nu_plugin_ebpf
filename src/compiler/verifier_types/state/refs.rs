@@ -268,12 +268,7 @@ impl VerifierState {
                 } if ref_id == id
             );
             if is_ref {
-                self.regs[idx] = VerifierType::Unknown;
-                self.ranges[idx] = ValueRange::Unknown;
-                self.non_zero[idx] = false;
-                self.not_equal[idx].clear();
-                self.released_kfunc_ref_regs[idx] = true;
-                self.guards.remove(&reg);
+                self.mark_released_kfunc_ref(reg);
             }
         }
     }
@@ -321,6 +316,13 @@ impl VerifierState {
             .get(vreg.0 as usize)
             .copied()
             .unwrap_or(false)
+    }
+
+    pub(in crate::compiler::verifier_types) fn mark_released_kfunc_ref(&mut self, vreg: VReg) {
+        self.set_with_range(vreg, VerifierType::Unknown, ValueRange::Unknown);
+        if let Some(slot) = self.released_kfunc_ref_regs.get_mut(vreg.0 as usize) {
+            *slot = true;
+        }
     }
 
     pub(in crate::compiler::verifier_types) fn kfunc_ref_kind(

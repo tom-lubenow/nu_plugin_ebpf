@@ -32,7 +32,13 @@ pub(super) fn apply_copy_inst(
         MirValue::Const(value) if *value != 0 => vec![0],
         _ => Vec::new(),
     };
+    let src_released_kfunc_ref =
+        matches!(src, MirValue::VReg(vreg) if state.is_released_kfunc_ref(*vreg));
     state.set_with_range(dst, ty, range);
+    if src_released_kfunc_ref {
+        state.mark_released_kfunc_ref(dst);
+        return;
+    }
     state.set_ctx_field_source(dst, src_ctx_field);
     if src_non_zero {
         state.set_non_zero(dst, true);
@@ -104,8 +110,19 @@ pub(super) fn apply_binop_inst(
         return;
     }
 
+    if matches!(op, BinOpKind::Add | BinOpKind::Sub)
+        && (released_kfunc_ref_value(lhs, state) || released_kfunc_ref_value(rhs, state))
+    {
+        state.mark_released_kfunc_ref(dst);
+        return;
+    }
+
     let range = range_for_binop(op, lhs, rhs, state);
     state.set_with_range(dst, VerifierType::Scalar, range);
+}
+
+fn released_kfunc_ref_value(value: &MirValue, state: &VerifierState) -> bool {
+    matches!(value, MirValue::VReg(vreg) if state.is_released_kfunc_ref(*vreg))
 }
 
 pub(super) fn apply_unary_inst(
@@ -221,7 +238,14 @@ pub(super) fn apply_phi_inst(
         .unwrap_or(VerifierType::Scalar);
     let range = range_for_phi(args, state);
     let ty = ptr_type_for_phi(args, state).unwrap_or(ty);
+    let released_kfunc_ref = args
+        .iter()
+        .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
     state.set_with_range(dst, ty, range);
+    if released_kfunc_ref {
+        state.mark_released_kfunc_ref(dst);
+        return;
+    }
     if let Some(guard) = phi_guard {
         state.set_guard(dst, guard);
     }

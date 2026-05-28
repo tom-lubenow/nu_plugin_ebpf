@@ -7,6 +7,13 @@ pub(in crate::compiler::verifier_types) fn require_ptr_with_space(
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) -> Option<VerifierType> {
+    if state.is_released_kfunc_ref(ptr) {
+        errors.push(VerifierTypeError::new(format!(
+            "{op} uses released reference v{}",
+            ptr.0
+        )));
+        return None;
+    }
     match state.get(ptr) {
         VerifierType::Ptr {
             nullability: Nullability::NonNull,
