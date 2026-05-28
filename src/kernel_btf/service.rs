@@ -94,6 +94,7 @@ pub struct KernelEnumInfo {
 pub enum KfuncArgShape {
     Scalar,
     Pointer,
+    Subprogram,
 }
 
 /// Coarse return shape inferred from kernel BTF.
@@ -119,8 +120,8 @@ pub enum KfuncPointerRefFamily {
 
 /// Best-effort kfunc signature inferred from kernel BTF.
 ///
-/// This is intentionally coarse and only captures arity plus pointer-vs-scalar
-/// argument kinds, with coarse return-kind inference.
+/// This is intentionally coarse and only captures arity plus scalar, pointer,
+/// and function-pointer argument kinds, with coarse return-kind inference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KfuncSignatureHint {
     pub min_args: usize,

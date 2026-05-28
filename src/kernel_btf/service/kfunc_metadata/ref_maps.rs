@@ -339,11 +339,14 @@ impl KernelBtf {
                 if param.type_id == 0 {
                     continue;
                 }
-                if btf
-                    .get_type_by_id(param.type_id)
-                    .is_ok_and(|param_ty| param_ty.num_refs > 0)
+                if let Ok(param_ty) = btf.get_type_by_id(param.type_id)
+                    && param_ty.num_refs > 0
                 {
-                    arg_shapes[arg_idx] = KfuncArgShape::Pointer;
+                    arg_shapes[arg_idx] = if matches!(param_ty.base_type, Type::FunctionProto(_)) {
+                        KfuncArgShape::Subprogram
+                    } else {
+                        KfuncArgShape::Pointer
+                    };
                 }
             }
             let ret_shape = function_ret_type_ids

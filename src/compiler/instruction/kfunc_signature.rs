@@ -1077,6 +1077,7 @@ impl KfuncSignature {
             arg_kinds[idx] = match shape {
                 KfuncArgShape::Scalar => KfuncArgKind::Scalar,
                 KfuncArgShape::Pointer => KfuncArgKind::Pointer,
+                KfuncArgShape::Subprogram => KfuncArgKind::Subprogram,
             };
         }
         let ret_type_info = KernelBtf::get()

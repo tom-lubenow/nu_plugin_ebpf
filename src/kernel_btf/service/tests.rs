@@ -647,6 +647,31 @@ fn find_lsm_hook_named_arg_candidate() -> Option<(&'static str, &'static str, us
     None
 }
 
+fn find_kfunc_callback_signature_hint_candidate() -> Option<(&'static str, usize)> {
+    for candidate in [
+        ("bpf_rbtree_add_impl", 2usize),
+        ("bpf_wq_set_callback_impl", 1usize),
+    ] {
+        if KernelBtf::get().kfunc_signature_hint(candidate.0).is_some() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[test]
+fn test_kfunc_signature_hint_marks_function_pointer_args_as_subprograms() {
+    let Some((kfunc, callback_idx)) = find_kfunc_callback_signature_hint_candidate() else {
+        return;
+    };
+
+    let hint = KernelBtf::get()
+        .kfunc_signature_hint(kfunc)
+        .expect("candidate kfunc signature should be available");
+
+    assert_eq!(hint.arg_shapes[callback_idx], KfuncArgShape::Subprogram);
+}
+
 #[test]
 fn test_tp_btf_arg_type_info_skips_hidden_context_slot() {
     let callable_name = KernelBtf::tp_btf_type_name("sys_enter");
