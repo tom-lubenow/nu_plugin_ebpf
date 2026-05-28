@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-05-12.
+Last updated: 2026-05-28.
 
 This file tracks remaining scope. Detailed historical progress belongs in git
 history and release notes, not here.
@@ -15,7 +15,7 @@ history and release notes, not here.
 
 ## Near-Term Priority Order
 
-1. Build a verifier differential suite and kernel compatibility matrix so correctness is measured against real kernels.
+1. Grow the verifier differential suite and kernel compatibility matrix so correctness is measured against real kernels.
 2. Tighten VCC/verifier parity for helper/kfunc state transitions: provenance, nullability, mutability, ref lifetime, dynptrs, timers, and by-reference stack objects.
 3. Continue shrinking raw `helper-call` usage only where an ordinary Nushell form or typed context projection is honest.
 4. Extend kernel-version and feature metadata beyond program families into helpers, kfuncs, map kinds, context fields, and loader features.
