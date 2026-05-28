@@ -2100,7 +2100,6 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
         BpfHelper::SetHash,
         BpfHelper::CsumUpdate,
         BpfHelper::CsumLevel,
-        BpfHelper::SkbChangeType,
     ] {
         let sig =
             HelperSignature::for_id(helper as u32).expect("expected two-arg skb helper signature");
@@ -2110,6 +2109,21 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
         assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
+
+    let sig = HelperSignature::for_id(BpfHelper::SetHashInvalid as u32)
+        .expect("expected bpf_set_hash_invalid helper signature");
+    assert_eq!(sig.min_args, 1);
+    assert_eq!(sig.max_args, 1);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.ret_kind, HelperRetKind::Void);
+
+    let sig = HelperSignature::for_id(BpfHelper::SkbChangeType as u32)
+        .expect("expected bpf_skb_change_type helper signature");
+    assert_eq!(sig.min_args, 2);
+    assert_eq!(sig.max_args, 2);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
 
     let sig = HelperSignature::for_id(BpfHelper::SkbAdjustRoom as u32)
         .expect("expected bpf_skb_adjust_room helper signature");

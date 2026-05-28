@@ -2385,6 +2385,66 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
 }
 
 #[test]
+fn test_type_error_void_helper_return_value_cannot_be_used() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let void_ret = func.alloc_vreg();
+    let used = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: void_ret,
+        helper: BpfHelper::SetHashInvalid as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.instructions.push(MirInst::BinOp {
+        dst: used,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(void_ret),
+        rhs: MirValue::Const(1),
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected void helper return use to be rejected");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("void helper 'bpf_set_hash_invalid' return value cannot be used")
+    }));
+}
+
+#[test]
+fn test_infer_void_helper_accepts_statement_position_call() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let void_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: void_ret,
+        helper: BpfHelper::SetHashInvalid as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    ti.infer(&func)
+        .expect("expected statement-position void helper call to infer");
+}
+
+#[test]
 fn test_type_error_skb_change_head_helper_requires_zero_flags() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

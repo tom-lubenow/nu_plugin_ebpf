@@ -120,6 +120,7 @@ impl<'a> VccLowerer<'a> {
         };
 
         match sig.ret_kind {
+            HelperRetKind::Void => VccValueType::Unknown,
             HelperRetKind::Scalar => inferred.unwrap_or(VccValueType::Scalar { range: None }),
             HelperRetKind::PointerNonNull => match inferred {
                 _ if matches!(helper, Some(BpfHelper::GetLocalStorage)) => {

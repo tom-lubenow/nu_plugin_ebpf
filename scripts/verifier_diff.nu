@@ -6649,6 +6649,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-set-hash-invalid-rejects-return-use"
+        category: "helper-state"
+        tags: [tc helper hash void-return reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_set_hash_invalid" $ctx | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "void helper 'bpf_set_hash_invalid' return value cannot be used"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]

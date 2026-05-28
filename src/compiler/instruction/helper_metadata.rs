@@ -600,11 +600,17 @@ impl BpfHelper {
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
             },
-            BpfHelper::GetHashRecalc | BpfHelper::SetHashInvalid => HelperSignature {
+            BpfHelper::GetHashRecalc => HelperSignature {
                 min_args: 1,
                 max_args: 1,
                 arg_kinds: [P, S, S, S, S],
                 ret_kind: HelperRetKind::Scalar,
+            },
+            BpfHelper::SetHashInvalid => HelperSignature {
+                min_args: 1,
+                max_args: 1,
+                arg_kinds: [P, S, S, S, S],
+                ret_kind: HelperRetKind::Void,
             },
             BpfHelper::SetHash => HelperSignature {
                 min_args: 2,

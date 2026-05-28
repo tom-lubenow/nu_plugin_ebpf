@@ -107,6 +107,7 @@ pub(super) fn apply_call_helper_inst(
         );
 
         let ty = match sig.ret_kind {
+            HelperRetKind::Void => VerifierType::Uninit,
             HelperRetKind::Scalar => types
                 .get(&dst)
                 .map(verifier_type_from_mir)

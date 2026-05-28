@@ -137,12 +137,77 @@ impl<'a> TypeInference<'a> {
         )));
     }
 
+    fn collect_void_call_returns(func: &MirFunction) -> HashMap<VReg, String> {
+        let mut returns = HashMap::new();
+        for block in &func.blocks {
+            for inst in block
+                .instructions
+                .iter()
+                .chain(std::iter::once(&block.terminator))
+            {
+                match inst {
+                    MirInst::CallHelper { dst, helper, .. } => {
+                        if let Some(sig) = HelperSignature::for_id(*helper)
+                            && matches!(sig.ret_kind, HelperRetKind::Void)
+                        {
+                            let name = BpfHelper::from_u32(*helper)
+                                .map(|helper| helper.name().to_string())
+                                .unwrap_or_else(|| format!("helper {}", helper));
+                            returns.insert(*dst, format!("void helper '{}'", name));
+                        }
+                    }
+                    MirInst::CallKfunc { dst, kfunc, .. } => {
+                        if let Some(sig) = KfuncSignature::for_name_or_kernel_btf(kfunc)
+                            && matches!(sig.ret_kind, KfuncRetKind::Void)
+                        {
+                            returns.insert(*dst, format!("void kfunc '{}'", kfunc));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        returns
+    }
+
+    fn validate_void_call_return_uses(
+        &self,
+        func: &MirFunction,
+        void_returns: &HashMap<VReg, String>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        if void_returns.is_empty() {
+            return;
+        }
+
+        let mut reported = HashSet::new();
+        for block in &func.blocks {
+            for inst in block
+                .instructions
+                .iter()
+                .chain(std::iter::once(&block.terminator))
+            {
+                for used in inst.uses() {
+                    if let Some(source) = void_returns.get(&used)
+                        && reported.insert(used)
+                    {
+                        errors.push(TypeError::new(format!(
+                            "{} return value cannot be used",
+                            source
+                        )));
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn validate_types(
         &self,
         func: &MirFunction,
         types: &HashMap<VReg, MirType>,
         errors: &mut Vec<TypeError>,
     ) {
+        let void_returns = Self::collect_void_call_returns(func);
         let list_caps = self.compute_list_caps(func);
         let value_ranges = self.compute_value_ranges(func, types, &list_caps);
         let direct_ctx_field_sources =
@@ -181,6 +246,7 @@ impl<'a> TypeInference<'a> {
                 errors,
             );
         }
+        self.validate_void_call_return_uses(func, &void_returns, errors);
     }
 
     pub(super) fn validate_inst(

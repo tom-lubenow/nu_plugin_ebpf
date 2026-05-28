@@ -150,7 +150,7 @@ impl<'a> TypeInference<'a> {
                         self.constrain_helper_map_args(helper_kind, args);
                     }
                     match sig.ret_kind {
-                        HelperRetKind::Scalar => {
+                        HelperRetKind::Scalar | HelperRetKind::Void => {
                             if let Some(helper_kind) = BpfHelper::from_u32(*helper)
                                 && let Some(precise_ty) =
                                     TypeInference::precise_helper_return_mir_type(helper_kind)
