@@ -4039,6 +4039,16 @@ fn test_infer_kfunc_graph_object_reference_return_preserves_payload_schema() {
         ),
         Some(object_ptr_ty.clone())
     );
+    for kfunc in ["bpf_list_front", "bpf_list_back"] {
+        assert_eq!(
+            TypeInference::precise_kfunc_return_mir_type_for_args(
+                kfunc,
+                std::slice::from_ref(&root_ptr_ty),
+            ),
+            Some(object_ptr_ty.clone()),
+            "{kfunc} should preserve graph object payload schema"
+        );
+    }
     let rb_object_ty = MirType::Struct {
         name: Some("rb_item".to_string()),
         kernel_btf_type_id: None,
@@ -4067,16 +4077,34 @@ fn test_infer_kfunc_graph_object_reference_return_preserves_payload_schema() {
         )),
         address_space: AddressSpace::Map,
     };
+    let rb_object_ptr_ty = MirType::Ptr {
+        pointee: Box::new(rb_object_ty.clone()),
+        address_space: AddressSpace::Kernel,
+    };
     assert_eq!(
         TypeInference::precise_kfunc_return_mir_type_for_args(
             "bpf_rbtree_remove",
-            &[rb_root_ptr_ty],
+            std::slice::from_ref(&rb_root_ptr_ty),
         ),
-        Some(MirType::Ptr {
-            pointee: Box::new(rb_object_ty),
-            address_space: AddressSpace::Kernel,
-        })
+        Some(rb_object_ptr_ty.clone())
     );
+    assert_eq!(
+        TypeInference::precise_kfunc_return_mir_type_for_args(
+            "bpf_rbtree_first",
+            std::slice::from_ref(&rb_root_ptr_ty),
+        ),
+        Some(rb_object_ptr_ty.clone())
+    );
+    for kfunc in ["bpf_rbtree_left", "bpf_rbtree_right"] {
+        assert_eq!(
+            TypeInference::precise_kfunc_return_mir_type_for_args(
+                kfunc,
+                std::slice::from_ref(&rb_object_ptr_ty),
+            ),
+            Some(rb_object_ptr_ty.clone()),
+            "{kfunc} should preserve graph object payload schema"
+        );
+    }
 
     let mut func = make_test_function();
     let root = func.alloc_vreg();

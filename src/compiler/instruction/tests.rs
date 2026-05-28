@@ -6261,6 +6261,43 @@ fn test_kfunc_rbtree_navigation_node_pointer_contracts() {
 }
 
 #[test]
+fn test_kfunc_rbtree_navigation_accepts_zero_offset_object_node_pointer() {
+    let object_ty = MirType::Struct {
+        name: Some("rb_item".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![
+            crate::compiler::mir::StructField {
+                name: "rb".to_string(),
+                ty: MirType::bpf_rb_node_struct(),
+                offset: 0,
+                synthetic: false,
+                bitfield: None,
+            },
+            crate::compiler::mir::StructField {
+                name: "cookie".to_string(),
+                ty: MirType::U64,
+                offset: MirType::bpf_rb_node_struct().size(),
+                synthetic: false,
+                bitfield: None,
+            },
+        ],
+    };
+
+    for (kfunc, arg_idx) in [
+        ("bpf_rbtree_root", 0),
+        ("bpf_rbtree_left", 0),
+        ("bpf_rbtree_right", 0),
+        ("bpf_rbtree_remove", 1),
+    ] {
+        assert_eq!(
+            kfunc_arg_pointee_mismatch(kfunc, arg_idx, &object_ty),
+            None,
+            "{kfunc} arg{arg_idx} should accept an object whose rb node is at offset zero"
+        );
+    }
+}
+
+#[test]
 fn test_kfunc_allowed_while_lock_held_matches_kernel_allowlist() {
     for kfunc in [
         "bpf_list_push_front_impl",

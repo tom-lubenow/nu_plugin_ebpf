@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::BpfGraphRootKind;
 use crate::kernel_btf::{KernelBtf, KfuncPointerRefFamily, TypeInfo};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -137,6 +138,7 @@ pub fn kfunc_arg_pointee_mismatch(
     }
 
     let offset_zero_field = || pointee.field_type_at_offset(0);
+    let offset_zero_graph_node = |kind| pointee.has_zero_offset_bpf_graph_node_field(kind);
     if let Some((matches_expected, expected)) = match (kfunc, arg_idx) {
         (
             "bpf_list_push_front_impl"
@@ -157,9 +159,10 @@ pub fn kfunc_arg_pointee_mismatch(
             "bpf_rb_root",
         )),
         ("bpf_rbtree_remove", 1)
-        | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => {
-            Some((pointee.is_bpf_rb_node_struct(), "bpf_rb_node"))
-        }
+        | ("bpf_rbtree_root" | "bpf_rbtree_left" | "bpf_rbtree_right", 0) => Some((
+            pointee.is_bpf_rb_node_struct() || offset_zero_graph_node(BpfGraphRootKind::RbRoot),
+            "bpf_rb_node",
+        )),
         ("bpf_wq_init" | "bpf_wq_start" | "bpf_wq_set_callback_impl", 0) => Some((
             pointee.is_bpf_wq_struct()
                 || offset_zero_field().is_some_and(MirType::is_bpf_wq_struct),

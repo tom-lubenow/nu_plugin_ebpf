@@ -894,6 +894,14 @@ impl MirType {
         self.has_struct_name(&["bpf_rb_node"])
     }
 
+    pub fn has_zero_offset_bpf_graph_node_field(&self, kind: BpfGraphRootKind) -> bool {
+        self.field_type_at_offset(0)
+            .is_some_and(|field_ty| match kind {
+                BpfGraphRootKind::ListHead => field_ty.is_bpf_list_node_struct(),
+                BpfGraphRootKind::RbRoot => field_ty.is_bpf_rb_node_struct(),
+            })
+    }
+
     pub fn field_type_at_offset(&self, offset: usize) -> Option<&MirType> {
         let MirType::Struct { fields, .. } = self else {
             return None;

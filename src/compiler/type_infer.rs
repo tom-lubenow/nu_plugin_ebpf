@@ -45,10 +45,10 @@ use super::instruction::{
     kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
 };
 use super::mir::{
-    AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, COUNTER_MAP_NAME, CtxField,
-    HISTOGRAM_MAP_NAME, MapKind, MapOpKind, MirFunction, MirInst, MirType, MirValue,
-    STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType, StructField,
-    SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
+    AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, BpfGraphRootKind,
+    COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, MapKind, MapOpKind, MirFunction, MirInst,
+    MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType,
+    StructField, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
 };
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
@@ -297,15 +297,34 @@ impl<'a> TypeInference<'a> {
         kfunc: &str,
         arg_types: &[MirType],
     ) -> Option<MirType> {
-        let graph_root_object_ptr = |arg_idx: usize| {
+        let graph_root_object_ptr = |arg_idx: usize, kind: BpfGraphRootKind| {
             let MirType::Ptr { pointee, .. } = arg_types.get(arg_idx)? else {
                 return None;
             };
-            let object_ty = pointee.bpf_graph_root_info()?.object_type?.clone();
+            let root = pointee.bpf_graph_root_info()?;
+            if root.kind != kind {
+                return None;
+            }
+            let object_ty = root.object_type?.clone();
             Some(MirType::Ptr {
                 pointee: Box::new(object_ty),
                 address_space: AddressSpace::Kernel,
             })
+        };
+        let graph_object_node_ptr = |arg_idx: usize, kind: BpfGraphRootKind| {
+            let MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            } = arg_types.get(arg_idx)?
+            else {
+                return None;
+            };
+            pointee
+                .has_zero_offset_bpf_graph_node_field(kind)
+                .then(|| MirType::Ptr {
+                    pointee: pointee.clone(),
+                    address_space: AddressSpace::Kernel,
+                })
         };
         let refcounted_object_ptr = |arg_idx: usize| {
             let MirType::Ptr {
@@ -324,8 +343,14 @@ impl<'a> TypeInference<'a> {
         };
 
         match kfunc {
-            "bpf_list_pop_front" | "bpf_list_pop_back" | "bpf_rbtree_remove" => {
-                graph_root_object_ptr(0)
+            "bpf_list_pop_front" | "bpf_list_pop_back" | "bpf_list_front" | "bpf_list_back" => {
+                graph_root_object_ptr(0, BpfGraphRootKind::ListHead)
+            }
+            "bpf_rbtree_remove" | "bpf_rbtree_first" => {
+                graph_root_object_ptr(0, BpfGraphRootKind::RbRoot)
+            }
+            "bpf_rbtree_left" | "bpf_rbtree_right" => {
+                graph_object_node_ptr(0, BpfGraphRootKind::RbRoot)
             }
             "bpf_refcount_acquire_impl" => refcounted_object_ptr(0),
             _ => None,
