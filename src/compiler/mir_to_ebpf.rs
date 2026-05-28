@@ -98,6 +98,8 @@ pub struct MirCompileResult {
     pub generic_map_key_types: HashMap<MapRef, MirType>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Optional map-in-map inner template declarations keyed by outer map identity
+    pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
 }
 
 impl MirCompileResult {
@@ -127,6 +129,7 @@ impl MirCompileResult {
             bytes_counter_key_schema,
             generic_map_key_types,
             generic_map_max_entries,
+            generic_map_inner_templates,
         } = self;
 
         EbpfProgram::with_maps(
@@ -147,6 +150,7 @@ impl MirCompileResult {
         .with_used_context_fields(used_ctx_fields)
         .with_generic_map_key_types(generic_map_key_types)
         .with_generic_map_max_entries(generic_map_max_entries)
+        .with_generic_map_inner_templates(generic_map_inner_templates)
         .with_readonly_globals(readonly_globals)
         .with_data_globals(data_globals)
         .with_bss_globals(bss_globals)
@@ -323,6 +327,8 @@ pub struct MirToEbpfCompiler<'a> {
     generic_map_value_types: HashMap<MapRef, MirType>,
     /// Generic map capacity declarations recovered during HIR/MIR lowering
     generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Map-in-map inner template declarations recovered during HIR/MIR lowering
+    generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// MIR vreg types for the current function being compiled
     current_types: HashMap<VReg, MirType>,
     /// MIR vreg types for all functions in this program
@@ -359,6 +365,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             HashMap::new(),
             HashMap::new(),
             HashMap::new(),
+            HashMap::new(),
         )
     }
 
@@ -368,6 +375,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         program_types: ProgramVregTypes,
         generic_map_key_types: HashMap<MapRef, MirType>,
         generic_map_max_entries: HashMap<MapRef, u32>,
+        generic_map_inner_templates: HashMap<MapRef, MapRef>,
         generic_map_value_types: HashMap<MapRef, MirType>,
     ) -> Self {
         Self {
@@ -397,6 +405,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             generic_map_key_types,
             generic_map_value_types,
             generic_map_max_entries,
+            generic_map_inner_templates,
             current_types: HashMap::new(),
             program_types,
             event_schema: None,
@@ -574,6 +583,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             bytes_counter_key_schema: self.bytes_counter_key_schema,
             generic_map_key_types: self.generic_map_key_types,
             generic_map_max_entries: self.generic_map_max_entries,
+            generic_map_inner_templates: self.generic_map_inner_templates,
         })
     }
 }
@@ -648,6 +658,10 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         .as_ref()
         .map(|hints| hints.generic_map_max_entries.clone())
         .unwrap_or_default();
+    let generic_map_inner_templates = normalized_type_hints
+        .as_ref()
+        .map(|hints| hints.generic_map_inner_templates.clone())
+        .unwrap_or_default();
     let implied_ctx_fields = normalized_type_hints
         .as_ref()
         .map(|hints| hints.used_ctx_fields.clone())
@@ -661,6 +675,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         program_types,
         generic_map_key_types,
         generic_map_max_entries,
+        generic_map_inner_templates,
         generic_map_value_types,
     );
     let mut result = compiler.compile()?;

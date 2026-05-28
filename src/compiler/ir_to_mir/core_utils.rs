@@ -1176,6 +1176,28 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn register_named_map_inner_template(
+        &mut self,
+        outer: &MapRef,
+        inner: &MapRef,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        match self.map_inner_templates.get(outer) {
+            Some(existing) if existing != inner => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} inner map template for '{}' conflicts with earlier declaration",
+                    outer.name
+                )))
+            }
+            Some(_) => Ok(()),
+            None => {
+                self.map_inner_templates
+                    .insert(outer.clone(), inner.clone());
+                Ok(())
+            }
+        }
+    }
+
     pub(super) fn register_named_map_value_semantics(
         &mut self,
         map: &MapRef,

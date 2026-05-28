@@ -158,6 +158,112 @@ fn map_define_with_value_type_hir(
     )
 }
 
+fn map_define_map_in_map_hir(
+    outer_kind: &str,
+    include_inner_map: bool,
+    include_outer_key_type: bool,
+    include_outer_value_type: bool,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let map_define_decl = DeclId::new(41);
+    let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::String("inner".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String("hash".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String("u64".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Int(16),
+        },
+        HirStmt::Call {
+            decl_id: map_define_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(0)],
+                named: vec![
+                    (b"kind".to_vec(), RegId::new(1)),
+                    (b"value-type".to_vec(), RegId::new(2)),
+                    (b"max-entries".to_vec(), RegId::new(3)),
+                ],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::String("outer".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(6),
+            lit: HirLiteral::String(outer_kind.into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(7),
+            lit: HirLiteral::String("inner".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::Int(4),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(9),
+            lit: HirLiteral::String("u32".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(10),
+            lit: HirLiteral::String("u64".into()),
+        },
+    ];
+    let mut named = vec![
+        (b"kind".to_vec(), RegId::new(6)),
+        (b"max-entries".to_vec(), RegId::new(8)),
+    ];
+    if include_inner_map {
+        named.push((b"inner-map".to_vec(), RegId::new(7)));
+    }
+    if include_outer_key_type {
+        named.push((b"key-type".to_vec(), RegId::new(9)));
+    }
+    if include_outer_value_type {
+        named.push((b"value-type".to_vec(), RegId::new(10)));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: map_define_decl,
+        src_dst: RegId::new(11),
+        args: HirCallArgs {
+            positional: vec![RegId::new(5)],
+            named,
+            ..HirCallArgs::default()
+        },
+    });
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: RegId::new(11),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 12,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(func, HashMap::new(), vec![], None),
+        decl_names,
+    )
+}
+
 fn validate_map_value_type_spec_for_kind(spec: &str, kind: MapKind) -> Result<(), CompileError> {
     let (ty, _) = HirToMirLowering::parse_named_map_value_type_spec(spec)?;
     HirToMirLowering::validate_named_map_value_type_for_map(
@@ -2358,8 +2464,8 @@ fn test_lower_map_put_rejects_recognized_unmodeled_map_kinds_with_guidance() {
     let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
 
     for (kind, expected) in [
-        ("array-of-maps", "inner-map metadata is not modeled yet"),
-        ("hash-of-maps", "inner-map metadata is not modeled yet"),
+        ("array-of-maps", "use map-define --inner-map"),
+        ("hash-of-maps", "use map-define --inner-map"),
         ("struct-ops", "reserved for struct_ops objects"),
         ("user-ringbuf", "reserved for user-ringbuf helper surfaces"),
         ("arena", "arena map_extra/mmap support is not modeled yet"),
@@ -2845,6 +2951,114 @@ fn test_map_define_max_entries_registers_capacity() {
         result.type_hints.generic_map_max_entries.get(&map_ref),
         Some(&128)
     );
+}
+
+#[test]
+fn test_map_define_array_of_maps_accepts_declared_inner_template_contract() {
+    let (hir, decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("array-of-maps map-define should accept explicit inner-map metadata contract");
+
+    let inner_ref = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    let outer_ref = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    assert_eq!(
+        result.generic_map_value_types.get(&inner_ref),
+        Some(&MirType::U64)
+    );
+    assert_eq!(result.generic_map_max_entries.get(&inner_ref), Some(&16));
+    assert_eq!(result.generic_map_max_entries.get(&outer_ref), Some(&4));
+    assert_eq!(
+        result.generic_map_inner_templates.get(&outer_ref),
+        Some(&inner_ref)
+    );
+    assert_eq!(
+        result
+            .type_hints
+            .generic_map_inner_templates
+            .get(&outer_ref),
+        Some(&inner_ref)
+    );
+    assert!(
+        !result.generic_map_value_types.contains_key(&outer_ref),
+        "map-in-map outer value layout is defined by --inner-map, not --value-type"
+    );
+}
+
+#[test]
+fn test_map_define_map_in_map_requires_inner_map() {
+    let (hir, decl_names) = map_define_map_in_map_hir("array-of-maps", false, false, false);
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-in-map outer map should require --inner-map");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("requires --inner-map"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_define_hash_of_maps_requires_outer_key_type() {
+    let (hir, decl_names) = map_define_map_in_map_hir("hash-of-maps", true, false, false);
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("hash-of-maps outer map should require --key-type");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("requires --key-type"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_define_map_in_map_rejects_outer_value_type() {
+    let (hir, decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, true);
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-in-map outer map should reject --value-type");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("--value-type is not supported"), "{msg}");
+            assert!(msg.contains("--inner-map"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
 }
 
 #[test]

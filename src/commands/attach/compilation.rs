@@ -1557,6 +1557,7 @@ pub(super) fn compile_closure_with_context(
         generic_map_key_types: _,
         generic_map_value_types,
         generic_map_max_entries: _,
+        generic_map_inner_templates: _,
         generic_map_value_semantics,
         readonly_globals,
         data_globals,

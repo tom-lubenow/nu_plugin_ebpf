@@ -1155,7 +1155,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.require_only_named_args(
                     "map-define",
-                    &["kind", "key-type", "value-type", "max-entries"],
+                    &["kind", "key-type", "value-type", "max-entries", "inner-map"],
                 )?;
                 if self.pipeline_input.is_some() || src_dst_had_value {
                     return Err(CompileError::UnsupportedInstruction(
@@ -1172,25 +1172,28 @@ impl<'a> HirToMirLowering<'a> {
                 let map_name = self.literal_string_arg(map_reg, "map-define")?;
                 self.validate_generic_map_name(&map_name, "map-define")?;
                 let map_kind = self.map_define_kind_arg("map-define")?;
-                let (_, type_reg) =
-                    self.named_args.get("value-type").copied().ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "map-define requires --value-type with a compile-time type string"
-                                .into(),
-                        )
-                    })?;
-                let type_spec = self.literal_string_arg(type_reg, "map-define --value-type")?;
-                let (value_ty, value_semantics) =
-                    Self::parse_named_map_value_type_spec(&type_spec)?;
                 let map_ref = MapRef {
                     name: map_name,
                     kind: map_kind,
                 };
-                Self::validate_named_map_value_type_for_map(
-                    &map_ref,
-                    &value_ty,
-                    "map-define --value-type",
-                )?;
+                if map_ref.kind.is_map_in_map() && self.named_args.contains_key("value-type") {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define --value-type is not supported for map-in-map outer map '{}'; use --inner-map to name a previously declared inner map template",
+                        map_ref.name
+                    )));
+                }
+                if map_ref.kind.is_map_in_map() && !self.named_args.contains_key("inner-map") {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define --kind {} requires --inner-map naming a previously declared inner map template",
+                        map_ref.kind
+                    )));
+                }
+                if !map_ref.kind.is_map_in_map() && self.named_args.contains_key("inner-map") {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define --inner-map is only supported for array-of-maps or hash-of-maps, got {}",
+                        map_ref.kind
+                    )));
+                }
                 if let Some(max_entries) =
                     self.optional_nonnegative_named_u64_arg("map-define", "max-entries")?
                 {
@@ -1225,6 +1228,11 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                     self.register_named_map_max_entries(&map_ref, max_entries);
+                } else if map_ref.kind.is_map_in_map() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "map-define --kind {} requires --max-entries for the outer map",
+                        map_ref.kind
+                    )));
                 }
                 if let Some((_, key_type_reg)) = self.named_args.get("key-type").copied() {
                     let key_type_spec =
@@ -1241,33 +1249,111 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                     self.register_named_map_key_type(&map_ref, &key_ty);
+                } else if matches!(map_ref.kind, MapKind::HashOfMaps) {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "map-define --kind hash-of-maps requires --key-type for the outer map"
+                            .into(),
+                    ));
                 }
 
-                if self.externally_seeded_map_value_types.contains(&map_ref)
-                    && let Some(existing) = self.named_map_value_type(&map_ref)
-                    && existing != &value_ty
-                {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "map-define value type for '{}' conflicts with pinned map schema",
-                        map_ref.name
-                    )));
-                }
-                self.register_named_map_value_type(&map_ref, &value_ty);
-                self.declared_map_value_types.insert(map_ref.clone());
-
-                if let Some(value_semantics) = value_semantics {
-                    if self
-                        .externally_seeded_map_value_semantics
-                        .contains(&map_ref)
-                        && let Some(existing) = self.named_map_value_semantics(&map_ref)
-                        && existing != &value_semantics
-                    {
+                if map_ref.kind.is_map_in_map() {
+                    let (_, inner_map_reg) =
+                        self.named_args.get("inner-map").copied().ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "map-define --kind {} requires --inner-map naming a previously declared inner map template",
+                                map_ref.kind
+                            ))
+                        })?;
+                    let inner_map_name =
+                        self.literal_string_arg(inner_map_reg, "map-define --inner-map")?;
+                    self.validate_generic_map_name(&inner_map_name, "map-define --inner-map")?;
+                    if inner_map_name == map_ref.name {
                         return Err(CompileError::UnsupportedInstruction(format!(
-                            "map-define value semantics for '{}' conflicts with pinned map schema",
+                            "map-in-map '{}' cannot use itself as its inner map template",
                             map_ref.name
                         )));
                     }
-                    self.register_named_map_value_semantics(&map_ref, &value_semantics);
+                    let matching_inner_maps = self
+                        .map_value_types
+                        .keys()
+                        .filter(|candidate| candidate.name == inner_map_name)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let inner_map_ref = match matching_inner_maps.as_slice() {
+                        [inner] => inner,
+                        [] => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "map-define --inner-map '{}' must name a previously declared inner map with --value-type",
+                                inner_map_name
+                            )));
+                        }
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "map-define --inner-map '{}' is ambiguous; use distinct map names for inner map templates",
+                                inner_map_name
+                            )));
+                        }
+                    };
+                    if inner_map_ref.kind.is_map_in_map() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define --inner-map '{}' cannot name another map-in-map template yet",
+                            inner_map_name
+                        )));
+                    }
+                    if !inner_map_ref.kind.supports_map_fd_materialization() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define --inner-map '{}' uses unsupported inner map kind {}",
+                            inner_map_name, inner_map_ref.kind
+                        )));
+                    }
+                    self.register_named_map_inner_template(
+                        &map_ref,
+                        inner_map_ref,
+                        "map-define --inner-map",
+                    )?;
+                } else {
+                    let (_, type_reg) =
+                        self.named_args.get("value-type").copied().ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-define requires --value-type with a compile-time type string"
+                                    .into(),
+                            )
+                        })?;
+                    let type_spec = self.literal_string_arg(type_reg, "map-define --value-type")?;
+                    let (value_ty, value_semantics) =
+                        Self::parse_named_map_value_type_spec(&type_spec)?;
+                    Self::validate_named_map_value_type_for_map(
+                        &map_ref,
+                        &value_ty,
+                        "map-define --value-type",
+                    )?;
+
+                    if self.externally_seeded_map_value_types.contains(&map_ref)
+                        && let Some(existing) = self.named_map_value_type(&map_ref)
+                        && existing != &value_ty
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "map-define value type for '{}' conflicts with pinned map schema",
+                            map_ref.name
+                        )));
+                    }
+                    self.register_named_map_value_type(&map_ref, &value_ty);
+                    self.declared_map_value_types.insert(map_ref.clone());
+
+                    if let Some(value_semantics) = value_semantics {
+                        if self
+                            .externally_seeded_map_value_semantics
+                            .contains(&map_ref)
+                            && let Some(existing) = self.named_map_value_semantics(&map_ref)
+                            && existing != &value_semantics
+                        {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "map-define value semantics for '{}' conflicts with pinned map schema",
+                                map_ref.name
+                            )));
+                        }
+                        self.register_named_map_value_semantics(&map_ref, &value_semantics);
+                    }
                 }
 
                 self.emit(MirInst::Copy {

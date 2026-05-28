@@ -375,6 +375,8 @@ pub struct HirToMirLowering<'a> {
     map_value_types: HashMap<MapRef, MirType>,
     /// Source-order generic map max-entry declarations discovered during lowering
     map_max_entries: HashMap<MapRef, u32>,
+    /// Source-order map-in-map inner template declarations discovered during lowering
+    map_inner_templates: HashMap<MapRef, MapRef>,
     /// Generic map value schemas declared explicitly with `map-define`
     declared_map_value_types: HashSet<MapRef>,
     /// Logical semantics for generic map values with richer runtime layouts.
@@ -517,6 +519,7 @@ impl<'a> HirToMirLowering<'a> {
             implied_ctx_fields: HashSet::new(),
             map_key_types,
             map_max_entries,
+            map_inner_templates: HashMap::new(),
             map_value_types,
             declared_map_value_types: HashSet::new(),
             map_value_semantics,
@@ -557,7 +560,7 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Lower an entire HIR function to MIR
     pub fn finish(self) -> MirProgram {
-        let (program, _, _, _, _, _, _, _, _) = self.finish_with_hints();
+        let (program, _, _, _, _, _, _, _, _, _) = self.finish_with_hints();
         program
     }
 
@@ -569,6 +572,7 @@ impl<'a> HirToMirLowering<'a> {
         HashMap<MapRef, MirType>,
         HashMap<MapRef, MirType>,
         HashMap<MapRef, u32>,
+        HashMap<MapRef, MapRef>,
         HashMap<MapRef, AnnotatedValueSemantics>,
         Vec<ReadonlyGlobal>,
         Vec<DataGlobal>,
@@ -600,6 +604,7 @@ impl<'a> HirToMirLowering<'a> {
                 .filter(|(map, _)| !self.conflicting_map_max_entries.contains(*map))
                 .map(|(map, max_entries)| (map.clone(), *max_entries))
                 .collect(),
+            generic_map_inner_templates: self.map_inner_templates.clone(),
             generic_map_value_semantics: self
                 .map_value_semantics
                 .iter()
@@ -620,6 +625,7 @@ impl<'a> HirToMirLowering<'a> {
         let map_value_types = hints.generic_map_value_types.clone();
         let map_key_types = hints.generic_map_key_types.clone();
         let map_max_entries = hints.generic_map_max_entries.clone();
+        let map_inner_templates = hints.generic_map_inner_templates.clone();
         let map_value_semantics = hints.generic_map_value_semantics.clone();
         (
             program,
@@ -627,6 +633,7 @@ impl<'a> HirToMirLowering<'a> {
             map_key_types,
             map_value_types,
             map_max_entries,
+            map_inner_templates,
             map_value_semantics,
             self.readonly_globals,
             self.data_globals,

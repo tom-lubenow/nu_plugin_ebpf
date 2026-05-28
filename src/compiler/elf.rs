@@ -2876,6 +2876,8 @@ pub struct EbpfProgramSection {
     pub generic_map_key_types: HashMap<MapRef, MirType>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Optional map-in-map inner template declarations keyed by outer map identity
+    pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// Optional typed generic map value schemas keyed by map identity
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     /// Optional logical semantics for generic map values with richer layouts
@@ -3030,6 +3032,8 @@ pub struct EbpfProgram {
     pub generic_map_key_types: HashMap<MapRef, MirType>,
     /// Optional generic map capacity declarations keyed by map identity
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    /// Optional map-in-map inner template declarations keyed by outer map identity
+    pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     /// Optional typed generic map value schemas keyed by map identity
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     /// Optional logical semantics for generic map values with richer layouts

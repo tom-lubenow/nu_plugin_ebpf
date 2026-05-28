@@ -326,12 +326,19 @@ impl MapKind {
         )
     }
 
+    pub fn is_map_in_map(self) -> bool {
+        matches!(self, MapKind::ArrayOfMaps | MapKind::HashOfMaps)
+    }
+
     pub fn supports_builtin_counter_map(self) -> bool {
         matches!(self, MapKind::Hash | MapKind::PerCpuHash)
     }
 
     pub fn is_array_index_map(self) -> bool {
-        matches!(self, MapKind::Array | MapKind::PerCpuArray)
+        matches!(
+            self,
+            MapKind::Array | MapKind::PerCpuArray | MapKind::ArrayOfMaps
+        )
     }
 
     pub fn is_keyless_map(self) -> bool {
@@ -2538,6 +2545,7 @@ pub struct MirTypeHints {
     pub generic_map_key_types: HashMap<MapRef, MirType>,
     pub generic_map_value_types: HashMap<MapRef, MirType>,
     pub generic_map_max_entries: HashMap<MapRef, u32>,
+    pub generic_map_inner_templates: HashMap<MapRef, MapRef>,
     pub generic_map_value_semantics:
         HashMap<MapRef, crate::compiler::ir_to_mir::AnnotatedValueSemantics>,
 }

@@ -692,7 +692,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{context} --kind {kind_arg} is reserved for sk_reuseport socket selection; use redirect-socket with --kind reuseport-sockarray instead of generic map commands"
             ),
             MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
-                "{context} --kind {kind_arg} names a map-in-map family; inner-map metadata is not modeled yet"
+                "{context} --kind {kind_arg} names a map-in-map family; use map-define --inner-map to declare the inner template before map operations are supported"
             ),
             MapKind::StructOps => format!(
                 "{context} --kind {kind_arg} is reserved for struct_ops objects; use struct_ops attach syntax instead of generic map commands"
@@ -850,7 +850,8 @@ impl<'a> HirToMirLowering<'a> {
                     || kind.supports_generic_map_op(MapOpKind::Update)
                     || kind.is_queue_or_stack()
                     || matches!(kind, MapKind::BloomFilter)
-                    || kind.is_local_storage() =>
+                    || kind.is_local_storage()
+                    || kind.is_map_in_map() =>
             {
                 Ok(kind)
             }

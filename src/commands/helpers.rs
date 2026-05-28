@@ -425,6 +425,10 @@ tag. Bare `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, and `bpf_rb_node`
 tokens are intentionally still rejected.
 Use `--max-entries` to set a positive map capacity for value-carrying map
 families that expose a max_entries resource.
+Map-in-map outer maps reserve `array-of-maps` and `hash-of-maps` for future
+object emission. They use `--inner-map` to name a previously declared inner
+map template and intentionally do not accept `--value-type` on the outer map
+itself yet.
 
 Example:
   map-define timers --kind array --key-type u32 --value-type 'record{timer:bpf_timer,cookie:u64}' --max-entries 1024
@@ -440,7 +444,7 @@ Example:
             .named(
                 "kind",
                 SyntaxShape::String,
-                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, queue, stack, bloom-filter, sk-storage, task-storage, inode-storage, or cgrp-storage (default hash)",
+                "Map kind: hash, array, lpm-trie, lru-hash, per-cpu-hash, per-cpu-array, lru-per-cpu-hash, queue, stack, bloom-filter, sk-storage, task-storage, inode-storage, cgrp-storage, array-of-maps, or hash-of-maps (default hash)",
                 None,
             )
             .named(
@@ -452,7 +456,13 @@ Example:
             .named(
                 "value-type",
                 SyntaxShape::String,
-                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; map value records may include bpf_timer, bpf_spin_lock, bpf_wq, bpf_refcount, kptr:TYPE, bpf_list_head:TYPE:FIELD, and bpf_rb_root:TYPE:FIELD",
+                "Map value type spec using fixed-layout scalar/bytes/string/list/array/record forms; required except for map-in-map outer maps",
+                None,
+            )
+            .named(
+                "inner-map",
+                SyntaxShape::String,
+                "Previously declared inner map template name for array-of-maps or hash-of-maps",
                 None,
             )
             .named(

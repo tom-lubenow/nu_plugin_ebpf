@@ -122,6 +122,7 @@ fn test_bpf_loop_callback_load_emits_text_relocation() {
         generic_map_key_types: std::collections::HashMap::new(),
         generic_map_value_types: std::collections::HashMap::new(),
         generic_map_max_entries: std::collections::HashMap::new(),
+        generic_map_inner_templates: std::collections::HashMap::new(),
         generic_map_value_semantics: std::collections::HashMap::new(),
     };
 
