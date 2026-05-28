@@ -7653,6 +7653,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sock-addr-connect4-alias-writable-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context writable alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
+        program: [
+            '{|ctx|'
+            '  mut event = $ctx'
+            '  $event.remote_ip4 = 2130706433'
+            '  $event.remote_port = 8080'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sock-addr-connect6-indexed-context"
         category: "context-surface"
         tags: [cgroup-sock-addr context ipv6]
@@ -7700,6 +7717,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sock-addr-getsockname6-alias-writable-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context writable ipv6 alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:getsockname6"
+        program: [
+            '{|ctx|'
+            '  mut event = $ctx'
+            '  $event.local_ip6.1 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sock-addr-sendmsg6-writable-context"
         category: "context-surface"
         tags: [cgroup-sock-addr context writable ipv6 source metadata]
@@ -7726,6 +7759,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-unix-sun-path-alias-write"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context unix writable kfunc alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  mut event = $ctx'
+            '  $event.sun_path = "/tmp/nu-ebpf.sock"'
             '  "allow"'
             '}'
         ]
@@ -7954,6 +8003,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-retval-alias-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut event = $ctx'
+            '  $event.retval = 0'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sockopt-set-scalar-writes"
         category: "context-surface"
         tags: [cgroup-sockopt context writable]
@@ -7972,6 +8037,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sockopt-set-scalar-alias-writes"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:set"
+        program: [
+            '{|ctx|'
+            '  mut event = $ctx'
+            '  $event.level = 1'
+            '  $event.optname = 2'
+            '  $event.optlen = 4'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sockopt-optval-byte-write"
         category: "context-surface"
         tags: [cgroup-sockopt context writable]
@@ -7981,6 +8064,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-optval-alias-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut event = $ctx'
+            '  $event.optval.2 = 42'
             '  "allow"'
             '}'
         ]
