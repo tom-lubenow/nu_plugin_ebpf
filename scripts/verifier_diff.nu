@@ -7263,6 +7263,38 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-rejects-skb-packet-len-context"
+        category: "context-policy"
+        tags: [flow-dissector reject context]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  $ctx.packet_len | count'
+            '  "fallback"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.packet_len is not available on flow_dissector programs"
+    }
+    {
+        name: "flow-dissector-rejects-socket-context"
+        category: "context-policy"
+        tags: [flow-dissector reject context socket]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk.family | count'
+            '  "fallback"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.sk is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+    }
+    {
         name: "flow-dissector-rejects-flow-keys-helper-buffer"
         category: "context-policy"
         tags: [flow-dissector reject helper-call]
@@ -7340,6 +7372,36 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "netfilter-rejects-flow-keys-context"
+        category: "context-policy"
+        tags: [netfilter reject context]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  $ctx.flow_keys.ip_proto | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.flow_keys is only available on flow_dissector programs"
+    }
+    {
+        name: "netfilter-rejects-packet-context"
+        category: "context-policy"
+        tags: [netfilter reject context packet]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  $ctx.packet_len | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.packet_len is only available on packet-context programs"
     }
     {
         name: "cgroup-sockopt-retval-write"
