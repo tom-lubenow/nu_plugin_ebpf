@@ -2961,6 +2961,150 @@ fn test_map_define_max_entries_registers_capacity() {
 }
 
 #[test]
+fn test_map_get_infers_prior_map_define_kind_when_kind_is_omitted() {
+    let map_get_decl = DeclId::new(42);
+    let (mut hir, mut decl_names) = map_define_with_max_entries_hir(128, "array");
+    decl_names.insert(map_get_decl, "map-get".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(5),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            positional: vec![RegId::new(0)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: RegId::new(5) };
+    hir.main.register_count = 6;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-get should infer the declared array map kind");
+
+    let expected = MapRef {
+        name: "small_map".to_string(),
+        kind: MapKind::Array,
+    };
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(inst, MirInst::MapLookup { map, .. } if *map == expected)),
+        "map-get without --kind should use the prior map-define kind"
+    );
+}
+
+#[test]
+fn test_map_get_rejects_declared_map_in_map_when_kind_is_omitted() {
+    let map_get_decl = DeclId::new(42);
+    let (mut hir, mut decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
+    decl_names.insert(map_get_decl, "map-get".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(12),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(12),
+        args: HirCallArgs {
+            positional: vec![RegId::new(5)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(12),
+    };
+    hir.main.register_count = 13;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-get should reject declared map-in-map operations without --kind");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("declared array-of-maps"), "{msg}");
+            assert!(
+                msg.contains("first-class map-in-map operations are not modeled yet"),
+                "{msg}"
+            );
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_get_rejects_kind_that_conflicts_with_prior_map_define() {
+    let map_get_decl = DeclId::new(42);
+    let (mut hir, mut decl_names) = map_define_with_max_entries_hir(128, "array");
+    decl_names.insert(map_get_decl, "map-get".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(5),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(6),
+        lit: HirLiteral::String("hash".into()),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            positional: vec![RegId::new(0)],
+            named: vec![(b"kind".to_vec(), RegId::new(6))],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: RegId::new(5) };
+    hir.main.register_count = 7;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("explicit --kind should not conflict with prior map-define kind");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("--kind hash conflicts"), "{msg}");
+            assert!(msg.contains("small_map"), "{msg}");
+            assert!(msg.contains("array"), "{msg}");
+        }
+        other => panic!("unexpected lowering error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_define_array_of_maps_accepts_declared_inner_template_contract() {
     let (hir, decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
     let result = lower_hir_to_mir_with_hints(

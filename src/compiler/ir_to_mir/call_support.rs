@@ -717,12 +717,99 @@ impl<'a> HirToMirLowering<'a> {
             || kind.is_socket_map()
     }
 
-    pub(super) fn generic_map_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+    fn push_declared_map_ref_for_name(refs: &mut Vec<MapRef>, map_name: &str, map_ref: &MapRef) {
+        if map_ref.name == map_name && !refs.contains(map_ref) {
+            refs.push(map_ref.clone());
+        }
+    }
+
+    fn declared_map_refs_for_name(&self, map_name: &str) -> Vec<MapRef> {
+        let mut refs = Vec::new();
+        for map_ref in self.map_key_types.keys() {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
+        }
+        for map_ref in self.map_value_types.keys() {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
+        }
+        for map_ref in self.map_max_entries.keys() {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
+        }
+        for (outer, inner) in &self.map_inner_templates {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, outer);
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, inner);
+        }
+        refs.sort_by(|a, b| {
+            a.kind
+                .to_string()
+                .cmp(&b.kind.to_string())
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        refs
+    }
+
+    fn declared_map_kind_for_name(
+        &self,
+        context: &str,
+        map_name: &str,
+    ) -> Result<Option<MapKind>, CompileError> {
+        let refs = self.declared_map_refs_for_name(map_name);
+        match refs.as_slice() {
+            [] => Ok(None),
+            [map_ref] => Ok(Some(map_ref.kind)),
+            _ => {
+                let kinds = refs
+                    .iter()
+                    .map(|map_ref| map_ref.kind.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} map '{map_name}' has multiple declared kinds ({kinds}); use distinct map names"
+                )))
+            }
+        }
+    }
+
+    fn declared_or_default_map_kind(
+        &self,
+        context: &str,
+        map_name: &str,
+        default: MapKind,
+    ) -> Result<MapKind, CompileError> {
+        Ok(self
+            .declared_map_kind_for_name(context, map_name)?
+            .unwrap_or(default))
+    }
+
+    fn validate_explicit_map_kind_matches_declaration(
+        &self,
+        context: &str,
+        map_name: &str,
+        kind: MapKind,
+    ) -> Result<(), CompileError> {
+        if let Some(declared_kind) = self.declared_map_kind_for_name(context, map_name)?
+            && declared_kind != kind
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} --kind {kind} conflicts with prior declaration for map '{map_name}' as {declared_kind}"
+            )));
+        }
+        Ok(())
+    }
+
+    pub(super) fn generic_map_kind_arg(
+        &self,
+        context: &str,
+        map_name: &str,
+    ) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
-            return Ok(MapKind::Hash);
+            return self.declared_or_default_map_kind(context, map_name, MapKind::Hash);
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
+        let map_kind = Self::parse_generic_map_kind(&kind);
+        if let Some(map_kind) = map_kind {
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+        }
+        match map_kind {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} --kind {kind} is reserved for cgroup membership helper-calls; pass a literal map name to bpf_skb_under_cgroup or bpf_current_task_under_cgroup instead"
@@ -779,12 +866,20 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn map_get_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+    pub(super) fn map_get_kind_arg(
+        &self,
+        context: &str,
+        map_name: &str,
+    ) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
-            return Ok(MapKind::Hash);
+            return self.declared_or_default_map_kind(context, map_name, MapKind::Hash);
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
+        let map_kind = Self::parse_generic_map_kind(&kind);
+        if let Some(map_kind) = map_kind {
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+        }
+        match map_kind {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
@@ -809,12 +904,20 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    pub(super) fn map_delete_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+    pub(super) fn map_delete_kind_arg(
+        &self,
+        context: &str,
+        map_name: &str,
+    ) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
-            return Ok(MapKind::Hash);
+            return self.declared_or_default_map_kind(context, map_name, MapKind::Hash);
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
+        let map_kind = Self::parse_generic_map_kind(&kind);
+        if let Some(map_kind) = map_kind {
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+        }
+        match map_kind {
             Some(kind) if Self::is_generic_data_map_kind(kind) => Ok(kind),
             Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::CgroupArray) => Err(CompileError::UnsupportedInstruction(format!(
@@ -886,22 +989,31 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_queue_stack_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind queue or --kind stack"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be one of: queue, stack"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind queue or --kind stack"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::Queue) => Ok(MapKind::Queue),
-            Some(MapKind::Stack) => Ok(MapKind::Stack),
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+        match map_kind {
+            MapKind::Queue => Ok(MapKind::Queue),
+            MapKind::Stack => Ok(MapKind::Stack),
+            other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind queue or --kind stack, got {}",
                 other
-            ))),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: queue, stack"
             ))),
         }
     }
@@ -909,23 +1021,32 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_queue_stack_bloom_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind queue, --kind stack, or --kind bloom-filter"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be one of: queue, stack, bloom-filter"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind queue, --kind stack, or --kind bloom-filter"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::Queue) => Ok(MapKind::Queue),
-            Some(MapKind::Stack) => Ok(MapKind::Stack),
-            Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+        match map_kind {
+            MapKind::Queue => Ok(MapKind::Queue),
+            MapKind::Stack => Ok(MapKind::Stack),
+            MapKind::BloomFilter => Ok(MapKind::BloomFilter),
+            other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind queue, --kind stack, or --kind bloom-filter, got {}",
                 other
-            ))),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: queue, stack, bloom-filter"
             ))),
         }
     }
@@ -933,31 +1054,48 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_bloom_filter_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind bloom-filter"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be bloom-filter"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind bloom-filter"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+        match map_kind {
+            MapKind::BloomFilter => Ok(MapKind::BloomFilter),
+            other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind bloom-filter, got {}",
                 other
-            ))),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be bloom-filter"
             ))),
         }
     }
 
-    pub(super) fn map_contains_kind_arg(&self, context: &str) -> Result<MapKind, CompileError> {
+    pub(super) fn map_contains_kind_arg(
+        &self,
+        context: &str,
+        map_name: &str,
+    ) -> Result<MapKind, CompileError> {
         let Some((_, reg)) = self.named_args.get("kind") else {
-            return Ok(MapKind::Hash);
+            return self.declared_or_default_map_kind(context, map_name, MapKind::Hash);
         };
         let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
+        let map_kind = Self::parse_generic_map_kind(&kind);
+        if let Some(map_kind) = map_kind {
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+        }
+        match map_kind {
             Some(kind) if kind.supports_generic_map_op(MapOpKind::Lookup) => Ok(kind),
             Some(kind) if kind.is_local_storage() => Ok(kind),
             Some(MapKind::BloomFilter) => Ok(MapKind::BloomFilter),
@@ -1374,6 +1512,12 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
+        if map_kind.is_map_in_map() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-delete map '{}' uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                map_name, map_kind
+            )));
+        }
         if map_kind.is_array_index_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map delete is not supported for array map kind {} ('{}')",
@@ -1400,6 +1544,12 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
+        if map_kind.is_map_in_map() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-get map '{}' uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                map_name, map_kind
+            )));
+        }
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-get is not supported for map kind {} ('{}'); use map-push and future queue/stack-specific operations instead",
@@ -1420,6 +1570,18 @@ impl<'a> HirToMirLowering<'a> {
         map_kind: MapKind,
         map_name: &str,
     ) -> Result<(), CompileError> {
+        if map_kind.is_map_in_map() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-put map '{}' uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                map_name, map_kind
+            )));
+        }
+        if map_kind.is_local_storage() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map-put is not supported for local-storage map kind {} ('{}'); use map-get --init or local-storage helper surfaces instead",
+                map_kind, map_name
+            )));
+        }
         if map_kind.is_queue_or_stack() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map-put is not supported for map kind {} ('{}'); use map-push instead",

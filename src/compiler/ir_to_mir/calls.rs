@@ -1384,7 +1384,7 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-get")?;
                 self.validate_generic_map_name(&map_name, "map-get")?;
-                let map_kind = self.map_get_kind_arg("map-get")?;
+                let map_kind = self.map_get_kind_arg("map-get", &map_name)?;
                 let map_ref = MapRef {
                     name: map_name.clone(),
                     kind: map_kind,
@@ -1500,7 +1500,7 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-put")?;
                 self.validate_generic_map_name(&map_name, "map-put")?;
-                let map_kind = self.generic_map_kind_arg("map-put")?;
+                let map_kind = self.generic_map_kind_arg("map-put", &map_name)?;
                 let map_ref = MapRef {
                     name: map_name.clone(),
                     kind: map_kind,
@@ -1585,7 +1585,8 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-push")?;
                 self.validate_generic_map_name(&map_name, "map-push")?;
-                let map_kind = self.required_queue_stack_bloom_map_kind_arg("map-push")?;
+                let map_kind =
+                    self.required_queue_stack_bloom_map_kind_arg("map-push", &map_name)?;
                 let map_ref = MapRef {
                     name: map_name,
                     kind: map_kind,
@@ -1673,7 +1674,7 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "map-delete")?;
                 self.validate_generic_map_name(&map_name, "map-delete")?;
-                let map_kind = self.map_delete_kind_arg("map-delete")?;
+                let map_kind = self.map_delete_kind_arg("map-delete", &map_name)?;
                 let map_ref = MapRef {
                     name: map_name,
                     kind: map_kind,
@@ -2722,7 +2723,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let map_name = self.literal_string_arg(map_reg, context)?;
         self.validate_generic_map_name(&map_name, context)?;
-        let map_kind = self.required_queue_stack_map_kind_arg(context)?;
+        let map_kind = self.required_queue_stack_map_kind_arg(context, &map_name)?;
         let map_ref = MapRef {
             name: map_name,
             kind: map_kind,
@@ -2854,12 +2855,26 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.require_only_named_args(CONTEXT, &["kind"])?;
 
-        match self.map_contains_kind_arg(CONTEXT)? {
+        let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "map-contains requires a literal map name as the first positional argument".into(),
+            )
+        })?;
+        let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
+        self.validate_generic_map_name(&map_name, CONTEXT)?;
+
+        match self.map_contains_kind_arg(CONTEXT, &map_name)? {
             MapKind::BloomFilter => {
                 self.lower_bloom_filter_map_contains(src_dst, dst_vreg, src_dst_had_value)
             }
             MapKind::CgroupArray => {
                 self.lower_cgroup_array_map_contains(src_dst, dst_vreg, src_dst_had_value)
+            }
+            map_kind if map_kind.is_map_in_map() => {
+                Err(CompileError::UnsupportedInstruction(format!(
+                    "{CONTEXT} map uses declared {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations are not modeled yet",
+                    map_kind
+                )))
             }
             map_kind if map_kind.supports_generic_map_op(MapOpKind::Lookup) => {
                 self.lower_generic_map_contains(src_dst, dst_vreg, src_dst_had_value, map_kind)
@@ -2899,7 +2914,7 @@ impl<'a> HirToMirLowering<'a> {
         })?;
         let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
         self.validate_generic_map_name(&map_name, CONTEXT)?;
-        let map_kind = self.required_bloom_filter_map_kind_arg(CONTEXT)?;
+        let map_kind = self.required_bloom_filter_map_kind_arg(CONTEXT, &map_name)?;
         let map_ref = MapRef {
             name: map_name,
             kind: map_kind,
@@ -3087,7 +3102,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
         self.validate_generic_map_name(&map_name, CONTEXT)?;
-        let map_kind = self.map_contains_kind_arg(CONTEXT)?;
+        let map_kind = self.map_contains_kind_arg(CONTEXT, &map_name)?;
         if map_kind != MapKind::CgroupArray {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{CONTEXT} requires --kind cgroup-array for cgroup membership probes"
@@ -3264,10 +3279,10 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             match helper.helper_explicit_map_kind_family(arg_idx) {
                 Some(HelperExplicitMapKindFamily::QueueStack) => {
-                    self.required_queue_stack_map_kind_arg("helper-call")?
+                    self.required_queue_stack_map_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::QueueStackBloom) => {
-                    self.required_queue_stack_bloom_map_kind_arg("helper-call")?
+                    self.required_queue_stack_bloom_map_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::RedirectMap) => {
                     self.required_redirect_map_kind_arg("helper-call")?

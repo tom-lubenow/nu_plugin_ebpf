@@ -5229,6 +5229,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-inferred-array-kind"
+        category: "maps"
+        tags: [maps map-define kind-inference accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define array_slots --kind array --value-type int --max-entries 32'
+            '  42 | map-put array_slots 0'
+            '  let entry = (0 | map-get array_slots)'
+            '  if $entry { $entry | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "map-define-map-in-map-inner-template-object"
         category: "maps"
         tags: [maps map-define map-in-map accept]
@@ -5254,6 +5271,24 @@ const FIXTURES = [
             '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
             '  map-define outer_array --kind array-of-maps --inner-map inner_seen --max-entries 4'
             '  let entry = (0 | map-get outer_array --kind array-of-maps)'
+            '  if $entry { 1 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "first-class map-in-map operations are not modeled yet"
+    }
+    {
+        name: "map-define-map-in-map-inferred-operation-rejects"
+        category: "maps"
+        tags: [maps map-define map-in-map kind-inference reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type u64 --max-entries 16'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_seen --max-entries 4'
+            '  let entry = (0 | map-get outer_array)'
             '  if $entry { 1 }'
             '  0'
             '}'

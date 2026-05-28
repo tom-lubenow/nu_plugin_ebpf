@@ -367,7 +367,7 @@ impl MapKind {
     pub fn map_fd_materialization_error(self, map_name: &str) -> String {
         match self {
             MapKind::ArrayOfMaps | MapKind::HashOfMaps => format!(
-                "map '{}' uses {}, whose first-class map operations are not modeled yet; declare the object template with map-define --inner-map and use --dry-run until live inner_map_fd materialization is supported",
+                "map '{}' uses {}; map-define --inner-map declarations and object BTF emission are supported, but first-class map-in-map operations and live inner_map_fd materialization are not modeled yet",
                 map_name, self
             ),
             MapKind::DeprecatedCgroupStorage | MapKind::DeprecatedPerCpuCgroupStorage => format!(
