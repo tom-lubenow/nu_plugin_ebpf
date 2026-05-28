@@ -1145,6 +1145,26 @@ const KERNEL_FEATURE_BPF_SK_ASSIGN = {
     min_kernel: "5.7"
     source: "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SK_LOOKUP_TCP = {
+    key: "helper:bpf_sk_lookup_tcp"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SK_LOOKUP_UDP = {
+    key: "helper:bpf_sk_lookup_udp"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SK_RELEASE = {
+    key: "helper:bpf_sk_release"
+    min_kernel: "4.20"
+    source: "https://github.com/torvalds/linux/blob/v4.20/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_SKC_LOOKUP_TCP = {
+    key: "helper:bpf_skc_lookup_tcp"
+    min_kernel: "5.2"
+    source: "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE = {
     key: "helper:bpf_sysctl_set_new_value"
     min_kernel: "5.2"
@@ -3025,6 +3045,10 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_msg_redirect_map", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP }
     { name: "bpf_msg_redirect_hash", feature: $KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH }
     { name: "bpf_sk_assign", feature: $KERNEL_FEATURE_BPF_SK_ASSIGN }
+    { name: "bpf_sk_lookup_tcp", feature: $KERNEL_FEATURE_BPF_SK_LOOKUP_TCP }
+    { name: "bpf_sk_lookup_udp", feature: $KERNEL_FEATURE_BPF_SK_LOOKUP_UDP }
+    { name: "bpf_sk_release", feature: $KERNEL_FEATURE_BPF_SK_RELEASE }
+    { name: "bpf_skc_lookup_tcp", feature: $KERNEL_FEATURE_BPF_SKC_LOOKUP_TCP }
     { name: "bpf_sysctl_set_new_value", feature: $KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE }
     { name: "bpf_sysctl_get_name", feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_NAME }
     { name: "bpf_sysctl_get_current_value", feature: $KERNEL_FEATURE_BPF_SYSCTL_GET_CURRENT_VALUE }
@@ -3925,6 +3949,19 @@ const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["helper:bpf_map_lookup_percpu_elem"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  if $sk {'
+            '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_lookup_tcp" "helper:bpf_sk_release"]
     }
 ]
 
@@ -10438,6 +10475,42 @@ const FIXTURES = [
             '{|ctx|'
             '  let task = (kfunc-call "bpf_task_acquire" $ctx.task)'
             '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-helper-sk-lookup-release"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  if $sk {'
+            '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-sk-lookup-rejects-leak"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime source reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  "pass"'
             '}'
         ]
         local: "reject"
