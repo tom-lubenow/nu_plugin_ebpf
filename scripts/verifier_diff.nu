@@ -5102,6 +5102,36 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "annotated-mut-record-empty-zero-init"
+        category: "globals"
+        tags: [globals records zero-init accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut state: record<pid: int stats: record<hits: int ok: bool>> = {}'
+            '  ($state.pid + $state.stats.hits) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "annotated-mut-record-nested-empty-zero-fill"
+        category: "globals"
+        tags: [globals records zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut state: record<pid: int stats: record<hits: int ok: bool>> = { pid: 7 stats: {} }'
+            '  ($state.pid + $state.stats.hits) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "constant-record-nested-list"
         category: "globals"
         tags: [globals records list accept]
