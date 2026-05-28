@@ -4,6 +4,98 @@ use crate::compiler::instruction::{
 };
 
 impl VccVerifier {
+    fn apply_iter_lifecycle_op(
+        state: &mut VccState,
+        family: KfuncIterFamily,
+        op: KfuncIterLifecycleOp,
+        slot: StackSlotId,
+    ) -> bool {
+        match (family, op) {
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_task_vma_slot(slot);
+                true
+            }
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Next) => {
+                state.use_iter_task_vma_slot(slot)
+            }
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_task_vma_slot(slot)
+            }
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_task_slot(slot);
+                true
+            }
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Next) => state.use_iter_task_slot(slot),
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_task_slot(slot)
+            }
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_scx_dsq_slot(slot);
+                true
+            }
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next) => {
+                state.use_iter_scx_dsq_slot(slot)
+            }
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_scx_dsq_slot(slot)
+            }
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_num_slot(slot);
+                true
+            }
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Next) => state.use_iter_num_slot(slot),
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_num_slot(slot)
+            }
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_bits_slot(slot);
+                true
+            }
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next) => state.use_iter_bits_slot(slot),
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_bits_slot(slot)
+            }
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_css_slot(slot);
+                true
+            }
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Next) => state.use_iter_css_slot(slot),
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_css_slot(slot)
+            }
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_css_task_slot(slot);
+                true
+            }
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Next) => {
+                state.use_iter_css_task_slot(slot)
+            }
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_css_task_slot(slot)
+            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_dmabuf_slot(slot);
+                true
+            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Next) => {
+                state.use_iter_dmabuf_slot(slot)
+            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_dmabuf_slot(slot)
+            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New) => {
+                state.acquire_iter_kmem_cache_slot(slot);
+                true
+            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Next) => {
+                state.use_iter_kmem_cache_slot(slot)
+            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Destroy) => {
+                state.release_iter_kmem_cache_slot(slot)
+            }
+        }
+    }
+
     pub(super) fn verify_inst(&mut self, inst: &VccInst, state: &mut VccState) {
         if !state.is_reachable() {
             return;
@@ -1440,371 +1532,24 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::IterTaskVmaNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_vma_new' arg0")
-                else {
+            VccInst::IterLifecycle {
+                iter,
+                kfunc,
+                family,
+                op,
+            } => {
+                let op_label = format!("kfunc '{}' arg0", kfunc);
+                let Some(slot) = self.stack_slot_from_reg(state, *iter, &op_label) else {
                     return;
                 };
-                state.acquire_iter_task_vma_slot(slot);
-            }
-            VccInst::IterTaskVmaNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_vma_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_task_vma_slot(slot) {
+                if !Self::apply_iter_lifecycle_op(state, *family, *op, slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_task_vma_next' requires a matching bpf_iter_task_vma_new",
-                    ));
-                }
-            }
-            VccInst::IterTaskVmaDestroy { iter } => {
-                let Some(slot) = self.stack_slot_from_reg(
-                    state,
-                    *iter,
-                    "kfunc 'bpf_iter_task_vma_destroy' arg0",
-                ) else {
-                    return;
-                };
-                if !state.release_iter_task_vma_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_task_vma_destroy' requires a matching bpf_iter_task_vma_new",
-                    ));
-                }
-            }
-            VccInst::IterTaskNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_task_slot(slot);
-            }
-            VccInst::IterTaskNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_task_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_task_next' requires a matching bpf_iter_task_new",
-                    ));
-                }
-            }
-            VccInst::IterTaskDestroy { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_task_destroy' arg0")
-                else {
-                    return;
-                };
-                if !state.release_iter_task_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_task_destroy' requires a matching bpf_iter_task_new",
-                    ));
-                }
-            }
-            VccInst::IterScxDsqNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_scx_dsq_slot(slot);
-            }
-            VccInst::IterScxDsqNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_scx_dsq_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_scx_dsq_next' requires a matching bpf_iter_scx_dsq_new",
-                    ));
-                }
-            }
-            VccInst::IterScxDsqDestroy { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_scx_dsq_destroy' arg0")
-                else {
-                    return;
-                };
-                if !state.release_iter_scx_dsq_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_scx_dsq_destroy' requires a matching bpf_iter_scx_dsq_new",
-                    ));
-                }
-            }
-            VccInst::IterScxDsqMove { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_scx_dsq_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'scx_bpf_dsq_move' requires a matching bpf_iter_scx_dsq_new",
-                    ));
-                }
-            }
-            VccInst::IterScxDsqMoveSetSlice { iter } => {
-                let Some(slot) = self.stack_slot_from_reg(
-                    state,
-                    *iter,
-                    "kfunc 'scx_bpf_dsq_move_set_slice' arg0",
-                ) else {
-                    return;
-                };
-                if !state.use_iter_scx_dsq_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'scx_bpf_dsq_move_set_slice' requires a matching bpf_iter_scx_dsq_new",
-                    ));
-                }
-            }
-            VccInst::IterScxDsqMoveSetVtime { iter } => {
-                let Some(slot) = self.stack_slot_from_reg(
-                    state,
-                    *iter,
-                    "kfunc 'scx_bpf_dsq_move_set_vtime' arg0",
-                ) else {
-                    return;
-                };
-                if !state.use_iter_scx_dsq_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'scx_bpf_dsq_move_set_vtime' requires a matching bpf_iter_scx_dsq_new",
-                    ));
-                }
-            }
-            VccInst::IterScxDsqMoveVtime { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'scx_bpf_dsq_move_vtime' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_scx_dsq_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'scx_bpf_dsq_move_vtime' requires a matching bpf_iter_scx_dsq_new",
-                    ));
-                }
-            }
-            VccInst::IterNumNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_num_slot(slot);
-            }
-            VccInst::IterNumNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_num_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_num_next' requires a matching bpf_iter_num_new",
-                    ));
-                }
-            }
-            VccInst::IterNumDestroy { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_num_destroy' arg0")
-                else {
-                    return;
-                };
-                if !state.release_iter_num_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_num_destroy' requires a matching bpf_iter_num_new",
-                    ));
-                }
-            }
-            VccInst::IterBitsNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_bits_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_bits_slot(slot);
-            }
-            VccInst::IterBitsNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_bits_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_bits_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_bits_next' requires a matching bpf_iter_bits_new",
-                    ));
-                }
-            }
-            VccInst::IterBitsDestroy { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_bits_destroy' arg0")
-                else {
-                    return;
-                };
-                if !state.release_iter_bits_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_bits_destroy' requires a matching bpf_iter_bits_new",
-                    ));
-                }
-            }
-            VccInst::IterCssNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_css_slot(slot);
-            }
-            VccInst::IterCssNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_css_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_css_next' requires a matching bpf_iter_css_new",
-                    ));
-                }
-            }
-            VccInst::IterCssDestroy { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_destroy' arg0")
-                else {
-                    return;
-                };
-                if !state.release_iter_css_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_css_destroy' requires a matching bpf_iter_css_new",
-                    ));
-                }
-            }
-            VccInst::IterCssTaskNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_task_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_css_task_slot(slot);
-            }
-            VccInst::IterCssTaskNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_css_task_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_css_task_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_css_task_next' requires a matching bpf_iter_css_task_new",
-                    ));
-                }
-            }
-            VccInst::IterCssTaskDestroy { iter } => {
-                let Some(slot) = self.stack_slot_from_reg(
-                    state,
-                    *iter,
-                    "kfunc 'bpf_iter_css_task_destroy' arg0",
-                ) else {
-                    return;
-                };
-                if !state.release_iter_css_task_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_css_task_destroy' requires a matching bpf_iter_css_task_new",
-                    ));
-                }
-            }
-            VccInst::IterDmabufNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_dmabuf_slot(slot);
-            }
-            VccInst::IterDmabufNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_dmabuf_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_dmabuf_next' requires a matching bpf_iter_dmabuf_new",
-                    ));
-                }
-            }
-            VccInst::IterDmabufDestroy { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_dmabuf_destroy' arg0")
-                else {
-                    return;
-                };
-                if !state.release_iter_dmabuf_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_dmabuf_destroy' requires a matching bpf_iter_dmabuf_new",
-                    ));
-                }
-            }
-            VccInst::IterKmemCacheNew { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_new' arg0")
-                else {
-                    return;
-                };
-                state.acquire_iter_kmem_cache_slot(slot);
-            }
-            VccInst::IterKmemCacheNext { iter } => {
-                let Some(slot) =
-                    self.stack_slot_from_reg(state, *iter, "kfunc 'bpf_iter_kmem_cache_next' arg0")
-                else {
-                    return;
-                };
-                if !state.use_iter_kmem_cache_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_kmem_cache_next' requires a matching bpf_iter_kmem_cache_new",
-                    ));
-                }
-            }
-            VccInst::IterKmemCacheDestroy { iter } => {
-                let Some(slot) = self.stack_slot_from_reg(
-                    state,
-                    *iter,
-                    "kfunc 'bpf_iter_kmem_cache_destroy' arg0",
-                ) else {
-                    return;
-                };
-                if !state.release_iter_kmem_cache_slot(slot) {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "kfunc 'bpf_iter_kmem_cache_destroy' requires a matching bpf_iter_kmem_cache_new",
+                        format!(
+                            "kfunc '{}' requires a matching {}",
+                            kfunc,
+                            family.constructor_kfunc()
+                        ),
                     ));
                 }
             }

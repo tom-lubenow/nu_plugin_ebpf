@@ -395,98 +395,11 @@ pub enum VccInst {
         lock: VccReg,
         flags: VccReg,
     },
-    IterTaskVmaNew {
+    IterLifecycle {
         iter: VccReg,
-    },
-    IterTaskVmaNext {
-        iter: VccReg,
-    },
-    IterTaskVmaDestroy {
-        iter: VccReg,
-    },
-    IterTaskNew {
-        iter: VccReg,
-    },
-    IterTaskNext {
-        iter: VccReg,
-    },
-    IterTaskDestroy {
-        iter: VccReg,
-    },
-    IterScxDsqNew {
-        iter: VccReg,
-    },
-    IterScxDsqNext {
-        iter: VccReg,
-    },
-    IterScxDsqDestroy {
-        iter: VccReg,
-    },
-    IterScxDsqMove {
-        iter: VccReg,
-    },
-    IterScxDsqMoveSetSlice {
-        iter: VccReg,
-    },
-    IterScxDsqMoveSetVtime {
-        iter: VccReg,
-    },
-    IterScxDsqMoveVtime {
-        iter: VccReg,
-    },
-    IterNumNew {
-        iter: VccReg,
-    },
-    IterNumNext {
-        iter: VccReg,
-    },
-    IterNumDestroy {
-        iter: VccReg,
-    },
-    IterBitsNew {
-        iter: VccReg,
-    },
-    IterBitsNext {
-        iter: VccReg,
-    },
-    IterBitsDestroy {
-        iter: VccReg,
-    },
-    IterCssNew {
-        iter: VccReg,
-    },
-    IterCssNext {
-        iter: VccReg,
-    },
-    IterCssDestroy {
-        iter: VccReg,
-    },
-    IterCssTaskNew {
-        iter: VccReg,
-    },
-    IterCssTaskNext {
-        iter: VccReg,
-    },
-    IterCssTaskDestroy {
-        iter: VccReg,
-    },
-    IterDmabufNew {
-        iter: VccReg,
-    },
-    IterDmabufNext {
-        iter: VccReg,
-    },
-    IterDmabufDestroy {
-        iter: VccReg,
-    },
-    IterKmemCacheNew {
-        iter: VccReg,
-    },
-    IterKmemCacheNext {
-        iter: VccReg,
-    },
-    IterKmemCacheDestroy {
-        iter: VccReg,
+        kfunc: String,
+        family: KfuncIterFamily,
+        op: KfuncIterLifecycleOp,
     },
     DynptrMarkInitialized {
         ptr: VccReg,
