@@ -11419,7 +11419,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "map-define-kptr-slot-rejects-queue"
@@ -11448,7 +11448,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "map-define-bpf-wq-slot-rejects-queue"
@@ -11588,7 +11588,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "map-define-bpf-refcount-rejects-queue"
@@ -11632,7 +11632,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "map-define-rejects-bare-graph-root"
