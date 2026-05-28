@@ -3550,6 +3550,7 @@ const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "cgroup_skb:/sys/fs/cgroup:egress" raw_access: "sk.listener" helper: "bpf_get_listener_sock" feature: $KERNEL_FEATURE_BPF_GET_LISTENER_SOCK }
     { target: "cgroup_sock:/sys/fs/cgroup:post_bind4" raw_access: "sk.local_ip4" helper: "" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_LOCAL_IP4 }
     { target: "cgroup_sock:/sys/fs/cgroup:sock_create" raw_access: "sk.remote_port" helper: "" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_REMOTE_PORT }
+    { target: "flow_dissector:/proc/self/ns/net" raw_access: "flow_keys.ip_proto" helper: "" feature: $KERNEL_FEATURE_CTX_FLOW_KEYS }
 ]
 
 const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
@@ -3766,6 +3767,28 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  $ctx.flow_keys.ip_proto | count'
             '  "fallback"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.flow_keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut keys = $ctx.flow_keys'
+            '  $keys.ip_proto = 17'
+            '  "parsed"'
             '}'
         ]
         feature_keys: ["ctx:flow_keys"]
@@ -17299,6 +17322,7 @@ def context-projection-root? [root: string] {
         "state"
         "nf_state"
         "skb"
+        "flow_keys"
     ]
 }
 
@@ -17463,6 +17487,9 @@ def context-projection-kernel-feature [raw_access: string target] {
     }
     if $socket_projection_root and $member == "listener" {
         return $KERNEL_FEATURE_BPF_GET_LISTENER_SOCK
+    }
+    if $root == "flow_keys" {
+        return (context-field-kernel-feature "flow_keys" $target)
     }
     if not $socket_projection_root {
         return null
