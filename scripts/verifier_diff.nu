@@ -8222,6 +8222,36 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-xmit-rejects-tc-classid-context"
+        category: "context-policy"
+        tags: [lwt reject context]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  $ctx.tc_classid | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.tc_classid is only available on tc_action, tc, tcx, and netkit programs"
+    }
+    {
+        name: "lwt-xmit-rejects-socket-context"
+        category: "context-policy"
+        tags: [lwt reject context socket]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  $ctx.sk.family | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.sk is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs"
+    }
+    {
         name: "lwt-push-encap-rejects-non-lwt-program"
         category: "helper-policy"
         tags: [lwt helper-call reject]
