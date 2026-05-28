@@ -1,6 +1,9 @@
 use super::*;
 use crate::compiler::ctx_field_schema::SYSCTL_STRING_FIELD_LEN;
-use crate::compiler::elf::{IngressIfindexContextLayout, SocketContextLayout};
+use crate::compiler::elf::{
+    ContextFieldDirectLoad, ContextFieldDirectLoadWidth, IngressIfindexContextLayout,
+    SocketContextLayout,
+};
 use crate::kernel_btf::{TrampolineValueKind, TrampolineValueSpec, TypeInfo};
 
 mod context;
@@ -16,16 +19,19 @@ impl<'a> MirToEbpfCompiler<'a> {
             .cgroup_sock_addr_tuple_alias_field(field)
     }
 
-    fn iter_sock_ctx_offset(&self) -> Result<i16, CompileError> {
+    fn iter_ctx_field_direct_load(
+        &self,
+        field: &CtxField,
+    ) -> Result<ContextFieldDirectLoad, CompileError> {
         self.probe_ctx
             .as_ref()
             .and_then(|ctx| ctx.parsed_program_spec())
-            .and_then(|spec| spec.attach_shape().iter_sock_ctx_offset())
+            .and_then(|spec| spec.iter_ctx_field_direct_load(field))
             .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                "ctx.iter_sock is only available on iter:bpf_sk_storage_map and iter:sockmap programs"
-                    .into(),
-                )
+                CompileError::UnsupportedInstruction(format!(
+                    "ctx.{} is not available as a direct iterator context load for this program",
+                    field.display_name()
+                ))
             })
     }
 
@@ -471,77 +477,39 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.instructions
                     .push(EbpfInsn::mov64_reg(dst, EbpfReg::R0));
             }
-            CtxField::IterTask => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterMeta => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 0));
-            }
-            CtxField::IterFd => {
-                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 16));
-            }
-            CtxField::IterFile => {
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 24));
-            }
-            CtxField::IterVma => {
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 16));
-            }
-            CtxField::IterCgroup => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterMap => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterMapKey => {
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 16));
-            }
-            CtxField::IterMapValue => {
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 24));
-            }
-            CtxField::IterProg => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterLink => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterSkCommon => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterUdpSk => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterUnixSk => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterUid => {
-                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 16));
-            }
-            CtxField::IterBucket => {
-                self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 24));
-            }
-            CtxField::IterDmabuf => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterIpv6Route => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterKmemCache => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterKsym => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterNetlinkSk => {
-                self.instructions.push(EbpfInsn::ldxdw(dst, EbpfReg::R9, 8));
-            }
-            CtxField::IterSock => {
-                let offset = self.iter_sock_ctx_offset()?;
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+            CtxField::IterTask
+            | CtxField::IterMeta
+            | CtxField::IterFd
+            | CtxField::IterFile
+            | CtxField::IterVma
+            | CtxField::IterCgroup
+            | CtxField::IterMap
+            | CtxField::IterMapKey
+            | CtxField::IterMapValue
+            | CtxField::IterProg
+            | CtxField::IterLink
+            | CtxField::IterSkCommon
+            | CtxField::IterUdpSk
+            | CtxField::IterUnixSk
+            | CtxField::IterUid
+            | CtxField::IterBucket
+            | CtxField::IterDmabuf
+            | CtxField::IterIpv6Route
+            | CtxField::IterKmemCache
+            | CtxField::IterKsym
+            | CtxField::IterNetlinkSk
+            | CtxField::IterSock => {
+                let load = self.iter_ctx_field_direct_load(field)?;
+                match load.width {
+                    ContextFieldDirectLoadWidth::U32 => {
+                        self.instructions
+                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, load.offset));
+                    }
+                    ContextFieldDirectLoadWidth::U64 => {
+                        self.instructions
+                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, load.offset));
+                    }
+                }
             }
             CtxField::Cgroup => {
                 return Err(CompileError::UnsupportedInstruction(

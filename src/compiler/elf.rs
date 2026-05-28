@@ -2613,6 +2613,34 @@ pub(crate) enum CtxWriteTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ContextFieldDirectLoadWidth {
+    U32,
+    U64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ContextFieldDirectLoad {
+    pub(crate) width: ContextFieldDirectLoadWidth,
+    pub(crate) offset: i16,
+}
+
+impl ContextFieldDirectLoad {
+    pub(crate) const fn u32(offset: i16) -> Self {
+        Self {
+            width: ContextFieldDirectLoadWidth::U32,
+            offset,
+        }
+    }
+
+    pub(crate) const fn u64(offset: i16) -> Self {
+        Self {
+            width: ContextFieldDirectLoadWidth::U64,
+            offset,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SocketContextLayout {
     SockAddr,
     CgroupSock,
