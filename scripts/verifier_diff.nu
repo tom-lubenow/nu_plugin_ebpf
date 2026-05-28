@@ -6511,6 +6511,42 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-skb-store-bytes-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper packet-bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  let bytes = "x"'
+            '  helper-call "bpf_skb_store_bytes" $ctx 0 $bytes 1 0'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "tc-skb-store-bytes-allows-reloaded-data"
+        category: "helper-state"
+        tags: [tc helper packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let bytes = "x"'
+            '  helper-call "bpf_skb_store_bytes" $ctx 0 $bytes 1 0'
+            '  ($ctx.data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]
