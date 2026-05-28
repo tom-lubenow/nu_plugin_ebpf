@@ -7989,6 +7989,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "cgroup-sysctl-base-name-context"
+        category: "context-surface"
+        tags: [cgroup-sysctl context helper-backed alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  ($ctx.write + $ctx.file_pos) | count'
+            '  $ctx.base_name | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "cgroup-sysctl-new-value-parenthesized-alias-write"
         category: "context-surface"
         tags: [cgroup-sysctl context writable alias parenthesized source metadata]
@@ -8049,6 +8065,55 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "cgroup-sysctl-rejects-write-field-write"
+        category: "context-policy"
+        tags: [cgroup-sysctl reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.write = 1'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.write is read-only"
+    }
+    {
+        name: "cgroup-sysctl-rejects-new-value-index-write"
+        category: "context-policy"
+        tags: [cgroup-sysctl reject context writable]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.new_value.0 = 1'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.new_value does not support indexed assignment"
+    }
+    {
+        name: "cgroup-sysctl-rejects-file-pos-on-packet-context"
+        category: "context-policy"
+        tags: [cgroup-sysctl reject context]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  $ctx.file_pos | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "ctx.file_pos is only available on cgroup_sysctl programs"
     }
     {
         name: "sock-ops-basic-context-write"
