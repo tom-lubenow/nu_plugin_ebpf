@@ -256,6 +256,38 @@ pub(super) fn check_generic_map_layout_constraints(
                         &mut errors,
                     );
                 }
+                MirInst::MapUpdateDynamic {
+                    inner_map,
+                    key,
+                    val,
+                    ..
+                } => {
+                    if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
+                        errors.push(VerifierTypeError::new(
+                            inner_map
+                                .kind
+                                .generic_map_op_error(MapOpKind::Update, &inner_map.name),
+                        ));
+                        continue;
+                    }
+                    let Some(key_size) =
+                        infer_map_operand_size(*key, "map key", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    let Some(value_size) =
+                        infer_map_operand_size(*val, "map value", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    register_generic_map_layout_spec(
+                        inner_map,
+                        key_size,
+                        Some(value_size),
+                        &mut specs,
+                        &mut errors,
+                    );
+                }
                 MirInst::MapDelete { map, key } => {
                     if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
                         errors.push(VerifierTypeError::new(
@@ -270,6 +302,28 @@ pub(super) fn check_generic_map_layout_constraints(
                         continue;
                     };
                     register_generic_map_layout_spec(map, key_size, None, &mut specs, &mut errors);
+                }
+                MirInst::MapDeleteDynamic { inner_map, key, .. } => {
+                    if !inner_map.kind.supports_generic_map_op(MapOpKind::Delete) {
+                        errors.push(VerifierTypeError::new(
+                            inner_map
+                                .kind
+                                .generic_map_op_error(MapOpKind::Delete, &inner_map.name),
+                        ));
+                        continue;
+                    }
+                    let Some(key_size) =
+                        infer_map_operand_size(*key, "map key", types, &mut errors)
+                    else {
+                        continue;
+                    };
+                    register_generic_map_layout_spec(
+                        inner_map,
+                        key_size,
+                        None,
+                        &mut specs,
+                        &mut errors,
+                    );
                 }
                 MirInst::MapPush { map, val, .. } => {
                     if !map.kind.supports_generic_map_op(MapOpKind::Push) {

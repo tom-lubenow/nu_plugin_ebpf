@@ -386,6 +386,18 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(self.stack_offset)
     }
 
+    pub(super) fn spill_dynamic_map_ptr(&mut self, map_reg: EbpfReg) -> Result<i16, CompileError> {
+        let offset = self.allocate_stack_temp(8)?;
+        self.instructions
+            .push(EbpfInsn::stxdw(EbpfReg::R10, offset, map_reg));
+        Ok(offset)
+    }
+
+    fn restore_dynamic_map_ptr_arg(&mut self, offset: i16) {
+        self.instructions
+            .push(EbpfInsn::ldxdw(EbpfReg::R1, EbpfReg::R10, offset));
+    }
+
     fn emit_store_scalar_to_stack(
         &mut self,
         src: EbpfReg,
@@ -823,7 +835,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     pub(super) fn compile_dynamic_map_lookup(
         &mut self,
         dst_reg: EbpfReg,
-        map_reg: EbpfReg,
+        map_ptr_offset: i16,
         inner_map: &crate::compiler::mir::MapRef,
         key: VReg,
         key_reg: EbpfReg,
@@ -842,17 +854,94 @@ impl<'a> MirToEbpfCompiler<'a> {
             .unwrap_or(8);
         let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
 
-        if map_reg != EbpfReg::R1 {
-            self.instructions
-                .push(EbpfInsn::mov64_reg(EbpfReg::R1, map_reg));
-        }
         self.setup_map_key_arg(key_reg, key_layout)?;
+        self.restore_dynamic_map_ptr_arg(map_ptr_offset);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapLookupElem));
         if dst_reg != EbpfReg::R0 {
             self.instructions
                 .push(EbpfInsn::mov64_reg(dst_reg, EbpfReg::R0));
         }
+        Ok(())
+    }
+
+    pub(super) fn compile_dynamic_map_update(
+        &mut self,
+        map_ptr_offset: i16,
+        inner_map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        key_reg: EbpfReg,
+        val: VReg,
+        val_reg: EbpfReg,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
+            return Err(CompileError::UnsupportedInstruction(
+                inner_map
+                    .kind
+                    .generic_map_op_error(MapOpKind::Update, &inner_map.name),
+            ));
+        }
+        if flags > i32::MAX as u64 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "map update flags {} exceed supported 32-bit immediate range",
+                flags
+            )));
+        }
+        let default_key_size = self
+            .generic_map_key_types
+            .get(inner_map)
+            .map(|ty| ty.size().max(1))
+            .unwrap_or(8);
+        let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
+        let val_layout = self.map_operand_layout(val, "map value", 8)?;
+        let key_size = match key_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        let value_size = match val_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        self.register_generic_map_spec(inner_map, key_size, Some(value_size))?;
+
+        self.setup_map_key_arg(key_reg, key_layout)?;
+        self.setup_map_value_arg(val_reg, val_layout)?;
+        self.instructions
+            .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags as i32));
+        self.restore_dynamic_map_ptr_arg(map_ptr_offset);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapUpdateElem));
+        Ok(())
+    }
+
+    pub(super) fn compile_dynamic_map_delete(
+        &mut self,
+        map_ptr_offset: i16,
+        inner_map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        key_reg: EbpfReg,
+    ) -> Result<(), CompileError> {
+        if !inner_map.kind.supports_generic_map_op(MapOpKind::Delete) {
+            return Err(CompileError::UnsupportedInstruction(
+                inner_map
+                    .kind
+                    .generic_map_op_error(MapOpKind::Delete, &inner_map.name),
+            ));
+        }
+        let default_key_size = self
+            .generic_map_key_types
+            .get(inner_map)
+            .map(|ty| ty.size().max(1))
+            .unwrap_or(8);
+        let key_layout = self.map_operand_layout(key, "map key", default_key_size)?;
+        let key_size = match key_layout {
+            MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
+        };
+        self.register_generic_map_spec(inner_map, key_size, None)?;
+
+        self.setup_map_key_arg(key_reg, key_layout)?;
+        self.restore_dynamic_map_ptr_arg(map_ptr_offset);
+        self.instructions
+            .push(EbpfInsn::call(BpfHelper::MapDeleteElem));
         Ok(())
     }
 

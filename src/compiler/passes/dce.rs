@@ -127,7 +127,9 @@ fn has_side_effects(inst: &MirInst) -> bool {
         | MirInst::MapLookup { .. }
         | MirInst::MapLookupDynamic { .. }
         | MirInst::MapUpdate { .. }
+        | MirInst::MapUpdateDynamic { .. }
         | MirInst::MapDelete { .. }
+        | MirInst::MapDeleteDynamic { .. }
         | MirInst::MapPush { .. }
         | MirInst::EmitEvent { .. }
         | MirInst::EmitRecord { .. }

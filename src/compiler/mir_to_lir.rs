@@ -382,9 +382,35 @@ fn lower_inst(
                 flags: *flags,
             });
         }
+        MirInst::MapUpdateDynamic {
+            map_ptr,
+            inner_map,
+            key,
+            val,
+            flags,
+        } => {
+            out.push(LirInst::MapUpdateDynamic {
+                map_ptr: *map_ptr,
+                inner_map: inner_map.clone(),
+                key: *key,
+                val: *val,
+                flags: *flags,
+            });
+        }
         MirInst::MapDelete { map, key } => {
             out.push(LirInst::MapDelete {
                 map: map.clone(),
+                key: *key,
+            });
+        }
+        MirInst::MapDeleteDynamic {
+            map_ptr,
+            inner_map,
+            key,
+        } => {
+            out.push(LirInst::MapDeleteDynamic {
+                map_ptr: *map_ptr,
+                inner_map: inner_map.clone(),
                 key: *key,
             });
         }

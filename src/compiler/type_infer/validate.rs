@@ -104,7 +104,9 @@ impl<'a> TypeInference<'a> {
             MirInst::CallKfunc { .. } => Some(ProgramCapability::KfuncCalls),
             MirInst::TailCall { .. } => Some(ProgramCapability::TailCalls),
             MirInst::LoadMapFd { .. } => Some(ProgramCapability::GenericMaps),
-            MirInst::MapLookupDynamic { .. } => Some(ProgramCapability::GenericMaps),
+            MirInst::MapLookupDynamic { .. }
+            | MirInst::MapUpdateDynamic { .. }
+            | MirInst::MapDeleteDynamic { .. } => Some(ProgramCapability::GenericMaps),
             MirInst::MapLookup { map, .. }
             | MirInst::MapUpdate { map, .. }
             | MirInst::MapDelete { map, .. }
@@ -630,6 +632,56 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
+            MirInst::MapUpdateDynamic {
+                map_ptr,
+                inner_map,
+                key,
+                val,
+                flags,
+            } => {
+                if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
+                    errors.push(TypeError::new(
+                        inner_map
+                            .kind
+                            .generic_map_op_error(MapOpKind::Update, &inner_map.name),
+                    ));
+                }
+                if *flags > i32::MAX as u64 {
+                    errors.push(TypeError::new(format!(
+                        "map update flags {} exceed supported 32-bit immediate range",
+                        flags
+                    )));
+                }
+                let map_ptr_ty = self.mir_type_for_vreg(*map_ptr, types);
+                if Self::mir_ptr_space(&map_ptr_ty).is_none() {
+                    errors.push(TypeError::new(format!(
+                        "dynamic map update expects a map pointer, got {:?}",
+                        map_ptr_ty
+                    )));
+                }
+                let key_ty = self.mir_type_for_vreg(*key, types);
+                match key_ty {
+                    MirType::Ptr { address_space, .. }
+                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    _ if Self::mir_is_numeric(&key_ty) => {}
+                    _ => errors.push(TypeError::new(format!(
+                        "map '{}' key expects numeric or stack/map pointer, got {:?}",
+                        inner_map.name, key_ty
+                    ))),
+                }
+
+                let val_ty = self.mir_type_for_vreg(*val, types);
+                match val_ty {
+                    MirType::Ptr { address_space, .. }
+                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    _ if Self::mir_is_numeric(&val_ty) => {}
+                    _ => errors.push(TypeError::new(format!(
+                        "map '{}' value expects numeric or stack/map pointer, got {:?}",
+                        inner_map.name, val_ty
+                    ))),
+                }
+            }
+
             MirInst::MapDelete { map, key } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
                     errors.push(TypeError::new(
@@ -658,6 +710,37 @@ impl<'a> TypeInference<'a> {
                             map.name, key_ty
                         ))),
                     }
+                }
+            }
+
+            MirInst::MapDeleteDynamic {
+                map_ptr,
+                inner_map,
+                key,
+            } => {
+                if !inner_map.kind.supports_generic_map_op(MapOpKind::Delete) {
+                    errors.push(TypeError::new(
+                        inner_map
+                            .kind
+                            .generic_map_op_error(MapOpKind::Delete, &inner_map.name),
+                    ));
+                }
+                let map_ptr_ty = self.mir_type_for_vreg(*map_ptr, types);
+                if Self::mir_ptr_space(&map_ptr_ty).is_none() {
+                    errors.push(TypeError::new(format!(
+                        "dynamic map delete expects a map pointer, got {:?}",
+                        map_ptr_ty
+                    )));
+                }
+                let key_ty = self.mir_type_for_vreg(*key, types);
+                match key_ty {
+                    MirType::Ptr { address_space, .. }
+                        if matches!(address_space, AddressSpace::Stack | AddressSpace::Map) => {}
+                    _ if Self::mir_is_numeric(&key_ty) => {}
+                    _ => errors.push(TypeError::new(format!(
+                        "map '{}' key expects numeric or stack/map pointer, got {:?}",
+                        inner_map.name, key_ty
+                    ))),
                 }
             }
 

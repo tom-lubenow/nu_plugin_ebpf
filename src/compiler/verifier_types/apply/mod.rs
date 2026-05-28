@@ -158,8 +158,26 @@ pub(super) fn apply_inst(
         } => {
             apply_map_update_inst(map, *key, *val, *flags, types, state, errors);
         }
+        MirInst::MapUpdateDynamic {
+            map_ptr,
+            inner_map,
+            key,
+            val,
+            flags,
+        } => {
+            apply_map_update_dynamic_inst(
+                *map_ptr, inner_map, *key, *val, *flags, types, state, errors,
+            );
+        }
         MirInst::MapDelete { map, key } => {
             apply_map_delete_inst(map, *key, types, state, errors);
+        }
+        MirInst::MapDeleteDynamic {
+            map_ptr,
+            inner_map,
+            key,
+        } => {
+            apply_map_delete_dynamic_inst(*map_ptr, inner_map, *key, types, state, errors);
         }
         MirInst::MapPush { map, val, flags } => {
             apply_map_push_inst(map, *val, *flags, types, state, errors);

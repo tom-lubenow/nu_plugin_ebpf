@@ -210,8 +210,9 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         let dst_reg = self.alloc_dst_reg(dst)?;
         let map_reg = self.ensure_reg(map_ptr)?;
+        let map_ptr_offset = self.spill_dynamic_map_ptr(map_reg)?;
         let key_reg = self.ensure_reg(key)?;
-        self.compile_dynamic_map_lookup(dst_reg, map_reg, inner_map, key, key_reg)
+        self.compile_dynamic_map_lookup(dst_reg, map_ptr_offset, inner_map, key, key_reg)
     }
 
     pub(super) fn compile_load_global_inst(
@@ -281,6 +282,29 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    pub(super) fn compile_dynamic_map_update_inst(
+        &mut self,
+        map_ptr: VReg,
+        inner_map: &crate::compiler::mir::MapRef,
+        key: VReg,
+        val: VReg,
+        flags: u64,
+    ) -> Result<(), CompileError> {
+        let map_reg = self.ensure_reg(map_ptr)?;
+        let map_ptr_offset = self.spill_dynamic_map_ptr(map_reg)?;
+        let key_reg = self.ensure_reg(key)?;
+        let val_reg = self.ensure_reg(val)?;
+        self.compile_dynamic_map_update(
+            map_ptr_offset,
+            inner_map,
+            key,
+            key_reg,
+            val,
+            val_reg,
+            flags,
+        )
+    }
+
     pub(super) fn compile_map_delete_inst(
         &mut self,
         map: &crate::compiler::mir::MapRef,
@@ -288,6 +312,18 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         let key_reg = self.ensure_reg(key)?;
         self.compile_generic_map_delete(map, key, key_reg)
+    }
+
+    pub(super) fn compile_dynamic_map_delete_inst(
+        &mut self,
+        map_ptr: VReg,
+        inner_map: &crate::compiler::mir::MapRef,
+        key: VReg,
+    ) -> Result<(), CompileError> {
+        let map_reg = self.ensure_reg(map_ptr)?;
+        let map_ptr_offset = self.spill_dynamic_map_ptr(map_reg)?;
+        let key_reg = self.ensure_reg(key)?;
+        self.compile_dynamic_map_delete(map_ptr_offset, inner_map, key, key_reg)
     }
 
     pub(super) fn compile_map_push_inst(

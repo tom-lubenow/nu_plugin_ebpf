@@ -1558,19 +1558,12 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.require_only_named_args("map-put", &["kind", "flags"])?;
 
-                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                let (map_arg_vreg, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
-                        "map-put requires a literal map name as the first positional argument"
+                        "map-put requires a literal map name or map-in-map lookup result as the first positional argument"
                             .into(),
                     )
                 })?;
-                let map_name = self.literal_string_arg(map_reg, "map-put")?;
-                self.validate_generic_map_name(&map_name, "map-put")?;
-                let map_kind = self.generic_map_kind_arg("map-put", &map_name)?;
-                let map_ref = MapRef {
-                    name: map_name.clone(),
-                    kind: map_kind,
-                };
                 let (key_vreg, key_reg) = self
                     .positional_args
                     .get(1)
@@ -1584,23 +1577,21 @@ impl<'a> HirToMirLowering<'a> {
                     .optional_nonnegative_named_u64_arg("map-put", "flags")?
                     .unwrap_or(0);
 
-                if map_kind.is_socket_map() {
-                    self.lower_socket_map_put(
-                        src_dst,
-                        dst_vreg,
-                        src_dst_had_value,
-                        map_ref,
-                        key_vreg,
-                        key_reg,
-                        flags,
-                    )?;
-                } else {
-                    self.validate_generic_map_update_kind(map_kind, &map_name)?;
+                if let Some(inner_map) = self
+                    .get_metadata(map_reg)
+                    .and_then(|meta| meta.dynamic_map_ref.clone())
+                {
+                    if self.named_args.contains_key("kind") {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "map-put on a dynamic inner-map pointer does not accept --kind".into(),
+                        ));
+                    }
+                    self.validate_generic_map_update_kind(inner_map.kind, &inner_map.name)?;
                     let key_vreg = self.map_key_vreg_for_named_schema(
-                        &map_ref,
+                        &inner_map,
                         key_vreg,
                         Some(key_reg),
-                        "map-put",
+                        "map-put dynamic map",
                     )?;
                     let value_vreg = self
                         .pipeline_input
@@ -1619,19 +1610,83 @@ impl<'a> HirToMirLowering<'a> {
                         value_vreg
                     };
 
-                    self.emit(MirInst::MapUpdate {
-                        map: map_ref.clone(),
+                    self.emit(MirInst::MapUpdateDynamic {
+                        map_ptr: map_arg_vreg,
+                        inner_map: inner_map.clone(),
                         key: key_vreg,
                         val: stored_value_vreg,
                         flags,
                     });
-                    self.record_named_map_value_schema_from_reg(&map_ref, value_reg, "map-put")?;
+                    self.record_named_map_value_schema_from_reg(
+                        &inner_map,
+                        value_reg,
+                        "map-put dynamic map",
+                    )?;
 
                     self.emit(MirInst::Copy {
                         dst: dst_vreg,
                         src: MirValue::Const(0),
                     });
                     self.reset_call_result_metadata(src_dst);
+                } else {
+                    let map_name = self.literal_string_arg(map_reg, "map-put")?;
+                    self.validate_generic_map_name(&map_name, "map-put")?;
+                    let map_kind = self.generic_map_kind_arg("map-put", &map_name)?;
+                    let map_ref = MapRef {
+                        name: map_name.clone(),
+                        kind: map_kind,
+                    };
+                    if map_kind.is_socket_map() {
+                        self.lower_socket_map_put(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            map_ref,
+                            key_vreg,
+                            key_reg,
+                            flags,
+                        )?;
+                    } else {
+                        self.validate_generic_map_update_kind(map_kind, &map_name)?;
+                        let key_vreg = self.map_key_vreg_for_named_schema(
+                            &map_ref,
+                            key_vreg,
+                            Some(key_reg),
+                            "map-put",
+                        )?;
+                        let value_vreg = self
+                            .pipeline_input
+                            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(
+                                    "map-put requires a value from pipeline input".into(),
+                                )
+                            })?;
+                        let value_reg = self
+                            .pipeline_input_reg
+                            .or_else(|| src_dst_had_value.then_some(src_dst));
+                        let stored_value_vreg = if let Some(value_reg) = value_reg {
+                            self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
+                        } else {
+                            value_vreg
+                        };
+
+                        self.emit(MirInst::MapUpdate {
+                            map: map_ref.clone(),
+                            key: key_vreg,
+                            val: stored_value_vreg,
+                            flags,
+                        });
+                        self.record_named_map_value_schema_from_reg(
+                            &map_ref, value_reg, "map-put",
+                        )?;
+
+                        self.emit(MirInst::Copy {
+                            dst: dst_vreg,
+                            src: MirValue::Const(0),
+                        });
+                        self.reset_call_result_metadata(src_dst);
+                    }
                 }
             }
 
@@ -1732,28 +1787,24 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.require_only_named_args("map-delete", &["kind"])?;
 
-                let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+                let (map_arg_vreg, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
-                        "map-delete requires a literal map name as the first positional argument"
+                        "map-delete requires a literal map name or map-in-map lookup result as the first positional argument"
                             .into(),
                     )
                 })?;
-                let map_name = self.literal_string_arg(map_reg, "map-delete")?;
-                self.validate_generic_map_name(&map_name, "map-delete")?;
-                let map_kind = self.map_delete_kind_arg("map-delete", &map_name)?;
-                let map_ref = MapRef {
-                    name: map_name,
-                    kind: map_kind,
-                };
-                if map_kind.is_local_storage() {
-                    self.lower_local_storage_map_delete(
-                        src_dst,
-                        dst_vreg,
-                        src_dst_had_value,
-                        map_ref,
-                    )?;
-                } else {
-                    self.validate_generic_map_delete_kind(map_kind, &map_ref.name)?;
+
+                if let Some(inner_map) = self
+                    .get_metadata(map_reg)
+                    .and_then(|meta| meta.dynamic_map_ref.clone())
+                {
+                    if !self.named_args.is_empty() {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "map-delete on a dynamic inner-map pointer does not accept named arguments"
+                                .into(),
+                        ));
+                    }
+                    self.validate_generic_map_delete_kind(inner_map.kind, &inner_map.name)?;
                     let key_vreg = self
                         .positional_args
                         .get(1)
@@ -1773,14 +1824,15 @@ impl<'a> HirToMirLowering<'a> {
                         .or(self.pipeline_input_reg)
                         .or_else(|| src_dst_had_value.then_some(src_dst));
                     let key_vreg = self.map_key_vreg_for_named_schema(
-                        &map_ref,
+                        &inner_map,
                         key_vreg,
                         key_reg,
-                        "map-delete",
+                        "map-delete dynamic map",
                     )?;
 
-                    self.emit(MirInst::MapDelete {
-                        map: map_ref,
+                    self.emit(MirInst::MapDeleteDynamic {
+                        map_ptr: map_arg_vreg,
+                        inner_map,
                         key: key_vreg,
                     });
                     self.emit(MirInst::Copy {
@@ -1788,6 +1840,58 @@ impl<'a> HirToMirLowering<'a> {
                         src: MirValue::Const(0),
                     });
                     self.reset_call_result_metadata(src_dst);
+                } else {
+                    let map_name = self.literal_string_arg(map_reg, "map-delete")?;
+                    self.validate_generic_map_name(&map_name, "map-delete")?;
+                    let map_kind = self.map_delete_kind_arg("map-delete", &map_name)?;
+                    let map_ref = MapRef {
+                        name: map_name,
+                        kind: map_kind,
+                    };
+                    if map_kind.is_local_storage() {
+                        self.lower_local_storage_map_delete(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            map_ref,
+                        )?;
+                    } else {
+                        self.validate_generic_map_delete_kind(map_kind, &map_ref.name)?;
+                        let key_vreg = self
+                            .positional_args
+                            .get(1)
+                            .map(|(vreg, _)| *vreg)
+                            .or(self.pipeline_input)
+                            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(
+                                    "map-delete requires a key from pipeline input or a second positional argument"
+                                        .into(),
+                                )
+                            })?;
+                        let key_reg = self
+                            .positional_args
+                            .get(1)
+                            .map(|(_, reg)| *reg)
+                            .or(self.pipeline_input_reg)
+                            .or_else(|| src_dst_had_value.then_some(src_dst));
+                        let key_vreg = self.map_key_vreg_for_named_schema(
+                            &map_ref,
+                            key_vreg,
+                            key_reg,
+                            "map-delete",
+                        )?;
+
+                        self.emit(MirInst::MapDelete {
+                            map: map_ref,
+                            key: key_vreg,
+                        });
+                        self.emit(MirInst::Copy {
+                            dst: dst_vreg,
+                            src: MirValue::Const(0),
+                        });
+                        self.reset_call_result_metadata(src_dst);
+                    }
                 }
             }
 

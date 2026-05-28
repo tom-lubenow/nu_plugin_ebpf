@@ -1514,7 +1514,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_map_in_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-delete is not supported for map-in-map outer map '{}' ({}) yet; use map-get for outer and guarded dynamic inner lookups",
+                "map-delete is not supported for map-in-map outer map '{}' ({}) yet; use map-get for outer and guarded dynamic inner map-delete",
                 map_name, map_kind
             )));
         }
@@ -1566,7 +1566,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if map_kind.is_map_in_map() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map-put is not supported for map-in-map outer map '{}' ({}) yet; use map-get for outer and guarded dynamic inner lookups",
+                "map-put is not supported for map-in-map outer map '{}' ({}) yet; use map-get for outer and guarded dynamic inner map-put",
                 map_name, map_kind
             )));
         }

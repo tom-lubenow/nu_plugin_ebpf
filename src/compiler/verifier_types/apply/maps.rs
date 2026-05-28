@@ -136,6 +136,42 @@ pub(super) fn apply_map_update_inst(
     check_map_value_access(val, types, state, errors);
 }
 
+pub(super) fn apply_map_update_dynamic_inst(
+    map_ptr: VReg,
+    inner_map: &MapRef,
+    key: VReg,
+    val: VReg,
+    flags: u64,
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
+        errors.push(VerifierTypeError::new(
+            inner_map
+                .kind
+                .generic_map_op_error(MapOpKind::Update, &inner_map.name),
+        ));
+    }
+    if flags > i32::MAX as u64 {
+        errors.push(VerifierTypeError::new(format!(
+            "map update flags {} exceed supported 32-bit immediate range",
+            flags
+        )));
+    }
+    let _ = require_ptr_with_space(
+        map_ptr,
+        "dynamic map update",
+        &[AddressSpace::Kernel],
+        state,
+        errors,
+    );
+    check_map_operand_scalar_size(key, "map key", types, errors);
+    check_map_operand_scalar_size(val, "map value", types, errors);
+    check_map_key_access(inner_map, key, types, state, errors);
+    check_map_value_access(val, types, state, errors);
+}
+
 pub(super) fn apply_map_delete_inst(
     map: &MapRef,
     key: VReg,
@@ -150,6 +186,32 @@ pub(super) fn apply_map_delete_inst(
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_key_access(map, key, types, state, errors);
+}
+
+pub(super) fn apply_map_delete_dynamic_inst(
+    map_ptr: VReg,
+    inner_map: &MapRef,
+    key: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !inner_map.kind.supports_generic_map_op(MapOpKind::Delete) {
+        errors.push(VerifierTypeError::new(
+            inner_map
+                .kind
+                .generic_map_op_error(MapOpKind::Delete, &inner_map.name),
+        ));
+    }
+    let _ = require_ptr_with_space(
+        map_ptr,
+        "dynamic map delete",
+        &[AddressSpace::Kernel],
+        state,
+        errors,
+    );
+    check_map_operand_scalar_size(key, "map key", types, errors);
+    check_map_key_access(inner_map, key, types, state, errors);
 }
 
 pub(super) fn apply_map_push_inst(

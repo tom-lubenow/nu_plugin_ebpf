@@ -457,7 +457,9 @@ impl<'a> TypeInference<'a> {
             MirInst::Store { .. }
             | MirInst::StoreSlot { .. }
             | MirInst::MapUpdate { .. }
+            | MirInst::MapUpdateDynamic { .. }
             | MirInst::MapDelete { .. }
+            | MirInst::MapDeleteDynamic { .. }
             | MirInst::MapPush { .. }
             | MirInst::Histogram { .. }
             | MirInst::StartTimer

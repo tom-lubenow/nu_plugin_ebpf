@@ -268,8 +268,20 @@ pub enum LirInst {
         val: VReg,
         flags: u64,
     },
+    MapUpdateDynamic {
+        map_ptr: VReg,
+        inner_map: MapRef,
+        key: VReg,
+        val: VReg,
+        flags: u64,
+    },
     MapDelete {
         map: MapRef,
+        key: VReg,
+    },
+    MapDeleteDynamic {
+        map_ptr: VReg,
+        inner_map: MapRef,
         key: VReg,
     },
     MapPush {
@@ -475,7 +487,18 @@ impl LirInst {
                 uses.push(*key);
                 uses.push(*val);
             }
+            LirInst::MapUpdateDynamic {
+                map_ptr, key, val, ..
+            } => {
+                uses.push(*map_ptr);
+                uses.push(*key);
+                uses.push(*val);
+            }
             LirInst::MapDelete { key, .. } => uses.push(*key),
+            LirInst::MapDeleteDynamic { map_ptr, key, .. } => {
+                uses.push(*map_ptr);
+                uses.push(*key);
+            }
             LirInst::MapPush { val, .. } => uses.push(*val),
             LirInst::Histogram { value, .. } => uses.push(*value),
             LirInst::StartTimer => {}
@@ -550,7 +573,9 @@ impl LirInst {
                 | LirInst::MapLookup { .. }
                 | LirInst::MapLookupDynamic { .. }
                 | LirInst::MapUpdate { .. }
+                | LirInst::MapUpdateDynamic { .. }
                 | LirInst::MapDelete { .. }
+                | LirInst::MapDeleteDynamic { .. }
                 | LirInst::MapPush { .. }
                 | LirInst::EmitEvent { .. }
                 | LirInst::EmitRecord { .. }

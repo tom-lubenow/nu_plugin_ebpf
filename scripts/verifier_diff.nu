@@ -5349,6 +5349,26 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "map-define-map-in-map-dynamic-inner-update-delete-accepts"
+        category: "maps"
+        tags: [maps map-define map-in-map dynamic-update dynamic-delete accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define inner_seen --kind hash --key-type u32 --value-type int --max-entries 16'
+            '  map-define outer_array --kind array-of-maps --inner-map inner_seen --max-entries 4'
+            '  let inner = (0 | map-get outer_array)'
+            '  if $inner {'
+            '    99 | map-put $inner 7'
+            '    7 | map-delete $inner'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "map-define-hash-of-maps-operation-accepts"
         category: "maps"
         tags: [maps map-define map-in-map accept]

@@ -278,7 +278,9 @@ fn apply_alias_inst(
         | MirInst::EmitEvent { .. }
         | MirInst::EmitRecord { .. }
         | MirInst::MapUpdate { .. }
+        | MirInst::MapUpdateDynamic { .. }
         | MirInst::MapDelete { .. }
+        | MirInst::MapDeleteDynamic { .. }
         | MirInst::MapPush { .. }
         | MirInst::Histogram { .. }
         | MirInst::StartTimer

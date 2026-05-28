@@ -64,7 +64,18 @@ impl MirInst {
                 f(key);
                 f(val);
             }
+            MirInst::MapUpdateDynamic {
+                map_ptr, key, val, ..
+            } => {
+                f(map_ptr);
+                f(key);
+                f(val);
+            }
             MirInst::MapDelete { key, .. } => f(key),
+            MirInst::MapDeleteDynamic { map_ptr, key, .. } => {
+                f(map_ptr);
+                f(key);
+            }
             MirInst::MapPush { val, .. } => f(val),
             MirInst::Histogram { value, .. } => f(value),
             MirInst::StartTimer => {}
@@ -204,7 +215,18 @@ impl MirInst {
                 uses.push(*key);
                 uses.push(*val);
             }
+            MirInst::MapUpdateDynamic {
+                map_ptr, key, val, ..
+            } => {
+                uses.push(*map_ptr);
+                uses.push(*key);
+                uses.push(*val);
+            }
             MirInst::MapDelete { key, .. } => uses.push(*key),
+            MirInst::MapDeleteDynamic { map_ptr, key, .. } => {
+                uses.push(*map_ptr);
+                uses.push(*key);
+            }
             MirInst::MapPush { val, .. } => uses.push(*val),
             MirInst::Histogram { value, .. } => uses.push(*value),
             MirInst::StartTimer => {}

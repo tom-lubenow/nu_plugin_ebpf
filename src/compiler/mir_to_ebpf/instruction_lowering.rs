@@ -106,8 +106,26 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_map_update_inst(map, *key, *val, *flags)?;
             }
 
+            LirInst::MapUpdateDynamic {
+                map_ptr,
+                inner_map,
+                key,
+                val,
+                flags,
+            } => {
+                self.compile_dynamic_map_update_inst(*map_ptr, inner_map, *key, *val, *flags)?;
+            }
+
             LirInst::MapDelete { map, key } => {
                 self.compile_map_delete_inst(map, *key)?;
+            }
+
+            LirInst::MapDeleteDynamic {
+                map_ptr,
+                inner_map,
+                key,
+            } => {
+                self.compile_dynamic_map_delete_inst(*map_ptr, inner_map, *key)?;
             }
 
             LirInst::MapPush { map, val, flags } => {

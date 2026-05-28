@@ -797,6 +797,38 @@ impl<'a> VccLowerer<'a> {
                 self.verify_map_key(&map.name, *key, out)?;
                 self.verify_map_value(*val, out)?;
             }
+            MirInst::MapUpdateDynamic {
+                map_ptr,
+                inner_map,
+                key,
+                val,
+                flags,
+            } => {
+                if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        inner_map
+                            .kind
+                            .generic_map_op_error(MapOpKind::Update, &inner_map.name),
+                    ));
+                }
+                if *flags > i32::MAX as u64 {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        format!(
+                            "map update flags {} exceed supported 32-bit immediate range",
+                            flags
+                        ),
+                    ));
+                }
+                out.push(VccInst::AssertPtrAccess {
+                    ptr: VccReg(map_ptr.0),
+                    size: VccValue::Imm(1),
+                    op: "dynamic map update",
+                });
+                self.verify_map_key(&inner_map.name, *key, out)?;
+                self.verify_map_value(*val, out)?;
+            }
             MirInst::MapDelete { map, key } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Delete) {
                     return Err(VccError::new(
@@ -805,6 +837,26 @@ impl<'a> VccLowerer<'a> {
                     ));
                 }
                 self.verify_map_key(&map.name, *key, out)?;
+            }
+            MirInst::MapDeleteDynamic {
+                map_ptr,
+                inner_map,
+                key,
+            } => {
+                if !inner_map.kind.supports_generic_map_op(MapOpKind::Delete) {
+                    return Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        inner_map
+                            .kind
+                            .generic_map_op_error(MapOpKind::Delete, &inner_map.name),
+                    ));
+                }
+                out.push(VccInst::AssertPtrAccess {
+                    ptr: VccReg(map_ptr.0),
+                    size: VccValue::Imm(1),
+                    op: "dynamic map delete",
+                });
+                self.verify_map_key(&inner_map.name, *key, out)?;
             }
             MirInst::MapPush { map, val, flags } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Push) {

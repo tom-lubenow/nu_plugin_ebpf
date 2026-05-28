@@ -2331,9 +2331,21 @@ pub enum MirInst {
         val: VReg,
         flags: u64,
     },
+    MapUpdateDynamic {
+        map_ptr: VReg,
+        inner_map: MapRef,
+        key: VReg,
+        val: VReg,
+        flags: u64,
+    },
 
     /// Map delete
     MapDelete { map: MapRef, key: VReg },
+    MapDeleteDynamic {
+        map_ptr: VReg,
+        inner_map: MapRef,
+        key: VReg,
+    },
 
     /// Queue/stack push
     MapPush { map: MapRef, val: VReg, flags: u64 },
