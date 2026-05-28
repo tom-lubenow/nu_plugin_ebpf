@@ -717,9 +717,25 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
             "helper:bpf_sk_select_reuseport",
             "4.19",
         ),
+        (
+            BpfHelper::SkLookupTcp,
+            "helper:bpf_sk_lookup_tcp",
+            "4.20",
+        ),
+        (
+            BpfHelper::SkLookupUdp,
+            "helper:bpf_sk_lookup_udp",
+            "4.20",
+        ),
+        (BpfHelper::SkRelease, "helper:bpf_sk_release", "4.20"),
         (BpfHelper::MsgPushData, "helper:bpf_msg_push_data", "4.20"),
         (BpfHelper::MsgPopData, "helper:bpf_msg_pop_data", "5.0"),
         (BpfHelper::SpinLock, "helper:bpf_spin_lock", "5.1"),
+        (
+            BpfHelper::SkcLookupTcp,
+            "helper:bpf_skc_lookup_tcp",
+            "5.2",
+        ),
         (BpfHelper::SkAssign, "helper:bpf_sk_assign", "5.7"),
         (
             BpfHelper::RingbufReserve,
