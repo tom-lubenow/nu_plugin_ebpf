@@ -16303,6 +16303,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "callback-for-each-map-elem-record-context"
+        category: "callbacks"
+        tags: [helper-call callback map array record]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    $cb.threshold'
+            '  } { threshold: 7 } 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "callback-for-each-map-elem-map-btf-field"
         category: "callbacks"
         tags: [helper-call callback map btf kernel-btf]
@@ -16340,6 +16357,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "callback-find-vma-record-context"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf record]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb|'
+            '    $cb.cookie'
+            '  } { cookie: 11 } 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "callback-user-ringbuf-drain"
         category: "callbacks"
         tags: [helper-call callback dynptr user-ringbuf]
@@ -16347,6 +16381,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "callback-user-ringbuf-drain-record-context"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf record]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| $cb.limit } { limit: 1 } 0'
             '  0'
             '}'
         ]
