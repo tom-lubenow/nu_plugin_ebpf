@@ -19,20 +19,39 @@ impl<'a> MirToEbpfCompiler<'a> {
             .cgroup_sock_addr_tuple_alias_field(field)
     }
 
-    fn iter_ctx_field_direct_load(
+    fn ctx_field_direct_load(
         &self,
         field: &CtxField,
     ) -> Result<ContextFieldDirectLoad, CompileError> {
         self.probe_ctx
             .as_ref()
-            .and_then(|ctx| ctx.parsed_program_spec())
-            .and_then(|spec| spec.iter_ctx_field_direct_load(field))
+            .and_then(|ctx| {
+                ctx.parsed_program_spec()
+                    .and_then(|spec| {
+                        spec.iter_ctx_field_direct_load(field)
+                            .or_else(|| spec.socket_ctx_field_direct_load(field))
+                    })
+                    .or_else(|| ctx.program_type().socket_ctx_field_direct_load(field))
+            })
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
-                    "ctx.{} is not available as a direct iterator context load for this program",
+                    "ctx.{} is not available as a direct context load for this program",
                     field.display_name()
                 ))
             })
+    }
+
+    fn emit_ctx_direct_load(&mut self, dst: EbpfReg, load: ContextFieldDirectLoad) {
+        match load.width {
+            ContextFieldDirectLoadWidth::U32 => {
+                self.instructions
+                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, load.offset));
+            }
+            ContextFieldDirectLoadWidth::U64 => {
+                self.instructions
+                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, load.offset));
+            }
+        }
     }
 
     /// Emit binary operation with register operand
@@ -499,17 +518,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             | CtxField::IterKsym
             | CtxField::IterNetlinkSk
             | CtxField::IterSock => {
-                let load = self.iter_ctx_field_direct_load(field)?;
-                match load.width {
-                    ContextFieldDirectLoadWidth::U32 => {
-                        self.instructions
-                            .push(EbpfInsn::ldxw(dst, EbpfReg::R9, load.offset));
-                    }
-                    ContextFieldDirectLoadWidth::U64 => {
-                        self.instructions
-                            .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, load.offset));
-                    }
-                }
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Cgroup => {
                 return Err(CompileError::UnsupportedInstruction(
@@ -1072,52 +1082,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::Family => {
-                let offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.socket_family_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().1,
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().1,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().1,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_offsets().2,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().0,
-                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().4,
-                    Some(SocketContextLayout::CgroupSockopt | SocketContextLayout::SkReuseport)
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.family is only available on cgroup_skb, cgroup_sock, cgroup_sock_addr, sk_lookup, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockType => {
-                let offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.sock_type_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().2,
-                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().5,
-                    Some(
-                        SocketContextLayout::CgroupSockopt
-                        | SocketContextLayout::SkLookup
-                        | SocketContextLayout::SkReuseport
-                        | SocketContextLayout::SkMsg
-                        | SocketContextLayout::SkBuff
-                        | SocketContextLayout::SockOps,
-                    )
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.type is only available on cgroup_sock and cgroup_sock_addr programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::Protocol => {
                 match self
@@ -1164,7 +1134,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             CtxField::Socket => {
-                let offset = match self
+                match self
                     .probe_ctx
                     .as_ref()
                     .and_then(|ctx| ctx.socket_ref_context_layout())
@@ -1174,21 +1144,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                             .push(EbpfInsn::mov64_reg(dst, EbpfReg::R9));
                         return Ok(());
                     }
-                    Some(SocketContextLayout::CgroupSockopt) => Self::bpf_sockopt_offsets().0,
-                    Some(SocketContextLayout::SockAddr) => Self::bpf_sock_addr_offsets().9,
-                    Some(SocketContextLayout::SkLookup) => Self::bpf_sk_lookup_offsets().0,
-                    Some(SocketContextLayout::SkMsg) => Self::sk_msg_md_sock_offset(),
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().11,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_socket_offsets().7,
-                    Some(SocketContextLayout::SkReuseport) => Self::sk_reuseport_md_offsets().7,
                     None => {
                         return Err(CompileError::UnsupportedInstruction(
                             "ctx.sk is only available on socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sock_addr, cgroup_sockopt, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, and sock_ops programs".to_string(),
                         ));
                     }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
+                    Some(_) => {
+                        let load = self.ctx_field_direct_load(field)?;
+                        self.emit_ctx_direct_load(dst, load);
+                    }
+                }
             }
             CtxField::FlowKeys => {
                 let offset = Self::sk_buff_flow_keys_offset();
@@ -1228,61 +1193,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxdw(dst, EbpfReg::R9, offset));
             }
             CtxField::BoundDevIf => {
-                let offset = Self::bpf_sock_offsets().0;
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockMark => {
-                let offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.sock_mark_priority_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().4,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_mark_priority_offsets().0,
-                    Some(
-                        SocketContextLayout::SockAddr
-                        | SocketContextLayout::CgroupSockopt
-                        | SocketContextLayout::SkLookup
-                        | SocketContextLayout::SkReuseport
-                        | SocketContextLayout::SkMsg
-                        | SocketContextLayout::SockOps,
-                    )
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.mark is only available on cgroup_sock and skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockPriority => {
-                let offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.sock_mark_priority_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().5,
-                    Some(SocketContextLayout::SkBuff) => Self::sk_buff_mark_priority_offsets().1,
-                    Some(
-                        SocketContextLayout::SockAddr
-                        | SocketContextLayout::CgroupSockopt
-                        | SocketContextLayout::SkLookup
-                        | SocketContextLayout::SkReuseport
-                        | SocketContextLayout::SkMsg
-                        | SocketContextLayout::SockOps,
-                    )
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.priority is only available on cgroup_sock and skb-backed packet programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::MsgSrcIp4 => {
                 let offset = Self::bpf_sock_addr_offsets().7;
@@ -1493,11 +1413,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::LookupCookie => {
-                self.instructions.push(EbpfInsn::ldxdw(
-                    dst,
-                    EbpfReg::R9,
-                    Self::bpf_sk_lookup_offsets().0,
-                ));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::LircSample => {
                 self.instructions.push(EbpfInsn::ldxw(dst, EbpfReg::R9, 0));
@@ -1578,56 +1495,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
             }
             CtxField::SockState => {
-                let offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.sock_state_context_layout())
-                {
-                    Some(SocketContextLayout::SockOps) => Self::bpf_sock_ops_offsets().10,
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().12,
-                    Some(
-                        SocketContextLayout::SockAddr
-                        | SocketContextLayout::CgroupSockopt
-                        | SocketContextLayout::SkLookup
-                        | SocketContextLayout::SkReuseport
-                        | SocketContextLayout::SkMsg
-                        | SocketContextLayout::SkBuff,
-                    )
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.state is only available on cgroup_sock and sock_ops programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockRxQueueMapping => {
-                let offset = match self
-                    .probe_ctx
-                    .as_ref()
-                    .and_then(|ctx| ctx.socket_family_context_layout())
-                {
-                    Some(SocketContextLayout::CgroupSock) => Self::bpf_sock_offsets().13,
-                    Some(
-                        SocketContextLayout::SockAddr
-                        | SocketContextLayout::SkLookup
-                        | SocketContextLayout::SkReuseport
-                        | SocketContextLayout::SkMsg
-                        | SocketContextLayout::SkBuff
-                        | SocketContextLayout::SockOps
-                        | SocketContextLayout::CgroupSockopt,
-                    )
-                    | None => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "ctx.rx_queue_mapping is only available on cgroup_sock programs"
-                                .to_string(),
-                        ));
-                    }
-                };
-                self.instructions
-                    .push(EbpfInsn::ldxw(dst, EbpfReg::R9, offset));
+                let load = self.ctx_field_direct_load(field)?;
+                self.emit_ctx_direct_load(dst, load);
             }
             CtxField::SockOpsRttMin => {
                 let offset = Self::bpf_sock_ops_tcp_field_offsets().2;

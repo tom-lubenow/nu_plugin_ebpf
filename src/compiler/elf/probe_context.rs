@@ -223,28 +223,10 @@ impl ProbeContext {
         )
     }
 
-    pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
-        self.parsed_program_spec()
-            .and_then(|spec| spec.socket_family_context_layout())
-            .or_else(|| self.program_type().socket_family_context_layout())
-    }
-
     pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
         self.parsed_program_spec()
             .and_then(|spec| spec.socket_tuple_context_layout())
             .or_else(|| self.program_type().socket_tuple_context_layout())
-    }
-
-    pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
-        self.parsed_program_spec()
-            .and_then(|spec| spec.sock_type_context_layout())
-            .or_else(|| self.program_type().sock_type_context_layout())
-    }
-
-    pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
-        self.parsed_program_spec()
-            .and_then(|spec| spec.sock_state_context_layout())
-            .or_else(|| self.program_type().sock_state_context_layout())
     }
 
     pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
@@ -263,12 +245,6 @@ impl ProbeContext {
         self.parsed_program_spec()
             .and_then(|spec| spec.ingress_ifindex_context_layout())
             .or_else(|| self.program_type().ingress_ifindex_context_layout())
-    }
-
-    pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
-        self.parsed_program_spec()
-            .and_then(|spec| spec.sock_mark_priority_context_layout())
-            .or_else(|| self.program_type().sock_mark_priority_context_layout())
     }
 
     fn require_struct_ops_value_type_name(&self) -> Result<&str, String> {

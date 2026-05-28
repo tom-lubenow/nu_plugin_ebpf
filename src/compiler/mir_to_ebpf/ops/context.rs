@@ -222,10 +222,6 @@ impl<'a> MirToEbpfCompiler<'a> {
         (0, 8, 16, 20, 24, 28, 44, 60, 64, 68)
     }
 
-    pub(super) fn sk_msg_md_sock_offset() -> i16 {
-        72
-    }
-
     pub(super) fn sk_reuseport_md_offsets() -> (i16, i16, i16, i16, i16, i16, i16, i16, i16) {
         // struct sk_reuseport_md {
         //     __bpf_md_ptr(void *, data);

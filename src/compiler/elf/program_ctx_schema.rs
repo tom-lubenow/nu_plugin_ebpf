@@ -1,5 +1,6 @@
 use super::{
-    CtxField, EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
+    ContextFieldDirectLoad, CtxField, EbpfProgramType, IngressIfindexContextLayout,
+    PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
@@ -337,6 +338,41 @@ fn program_context_layout_spec(
         .find(|spec| spec.program_type == program_type)
 }
 
+impl SocketContextLayout {
+    pub(crate) fn ctx_field_direct_load(self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
+        match (self, field) {
+            (Self::CgroupSock, CtxField::BoundDevIf) => Some(ContextFieldDirectLoad::u32(0)),
+            (Self::CgroupSock, CtxField::Family) => Some(ContextFieldDirectLoad::u32(4)),
+            (Self::CgroupSock, CtxField::SockType) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::CgroupSock, CtxField::SockMark) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::CgroupSock, CtxField::SockPriority) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::CgroupSock, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(72)),
+            (Self::CgroupSock, CtxField::SockRxQueueMapping) => {
+                Some(ContextFieldDirectLoad::u32(76))
+            }
+            (Self::SockAddr, CtxField::Family) => Some(ContextFieldDirectLoad::u32(28)),
+            (Self::SockAddr, CtxField::SockType) => Some(ContextFieldDirectLoad::u32(32)),
+            (Self::SockAddr, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(64)),
+            (Self::CgroupSockopt, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(0)),
+            (Self::SkLookup, CtxField::Socket | CtxField::LookupCookie) => {
+                Some(ContextFieldDirectLoad::u64(0))
+            }
+            (Self::SkLookup, CtxField::Family) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::SkMsg, CtxField::Family) => Some(ContextFieldDirectLoad::u32(16)),
+            (Self::SkMsg, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(72)),
+            (Self::SkBuff, CtxField::Family) => Some(ContextFieldDirectLoad::u32(88)),
+            (Self::SkBuff, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(168)),
+            (Self::SkBuff, CtxField::SockMark) => Some(ContextFieldDirectLoad::u32(8)),
+            (Self::SkBuff, CtxField::SockPriority) => Some(ContextFieldDirectLoad::u32(32)),
+            (Self::SockOps, CtxField::Family) => Some(ContextFieldDirectLoad::u32(20)),
+            (Self::SockOps, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(184)),
+            (Self::SockOps, CtxField::SockState) => Some(ContextFieldDirectLoad::u32(88)),
+            (Self::SkReuseport, CtxField::Socket) => Some(ContextFieldDirectLoad::u64(40)),
+            _ => None,
+        }
+    }
+}
+
 impl EbpfProgramType {
     pub fn packet_context_kind(&self) -> Option<PacketContextKind> {
         program_context_layout_spec(*self).and_then(|spec| spec.packet_context)
@@ -463,6 +499,28 @@ impl EbpfProgramType {
             .and_then(|_| ctx_field_sock_ops_load_guard(field))
             .map(ContextFieldLoadGuard::SockOpsCallback)
     }
+
+    pub(crate) fn socket_ctx_field_direct_load(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldDirectLoad> {
+        let layout = match field {
+            CtxField::Family => self.socket_family_context_layout(),
+            CtxField::SockType => self.sock_type_context_layout(),
+            CtxField::Socket => self.socket_ref_context_layout(),
+            CtxField::SockMark | CtxField::SockPriority => self.sock_mark_priority_context_layout(),
+            CtxField::SockState => self.sock_state_context_layout(),
+            CtxField::BoundDevIf | CtxField::SockRxQueueMapping => {
+                self.socket_family_context_layout()
+            }
+            CtxField::LookupCookie => self
+                .supports_lookup_cookie_ctx_field()
+                .then_some(SocketContextLayout::SkLookup),
+            _ => None,
+        }?;
+
+        layout.ctx_field_direct_load(field)
+    }
 }
 
 impl ProgramSpec {
@@ -494,16 +552,8 @@ impl ProgramSpec {
         self.program_type().supports_direct_packet_writes()
     }
 
-    pub(crate) fn socket_family_context_layout(&self) -> Option<SocketContextLayout> {
-        self.program_type().socket_family_context_layout()
-    }
-
     pub(crate) fn socket_tuple_context_layout(&self) -> Option<SocketContextLayout> {
         self.program_type().socket_tuple_context_layout()
-    }
-
-    pub(crate) fn sock_type_context_layout(&self) -> Option<SocketContextLayout> {
-        self.program_type().sock_type_context_layout()
     }
 
     pub(crate) fn protocol_context_layout(&self) -> Option<SocketContextLayout> {
@@ -516,14 +566,6 @@ impl ProgramSpec {
 
     pub(crate) fn ingress_ifindex_context_layout(&self) -> Option<IngressIfindexContextLayout> {
         self.program_type().ingress_ifindex_context_layout()
-    }
-
-    pub(crate) fn sock_mark_priority_context_layout(&self) -> Option<SocketContextLayout> {
-        self.program_type().sock_mark_priority_context_layout()
-    }
-
-    pub(crate) fn sock_state_context_layout(&self) -> Option<SocketContextLayout> {
-        self.program_type().sock_state_context_layout()
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
@@ -548,6 +590,17 @@ impl ProgramSpec {
             .is_none()
             .then(|| self.program_type().ctx_field_load_guard(field))
             .flatten()
+    }
+
+    pub(crate) fn socket_ctx_field_direct_load(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldDirectLoad> {
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        self.program_type().socket_ctx_field_direct_load(field)
     }
 }
 
@@ -764,6 +817,96 @@ mod tests {
                 &[CtxField::LookupCookie],
                 "lookup cookie",
             );
+        }
+    }
+
+    #[test]
+    fn test_socket_context_direct_load_metadata_tracks_layouts() {
+        for (spec, field, expected) in [
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::BoundDevIf,
+                Some(ContextFieldDirectLoad::u32(0)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::Family,
+                Some(ContextFieldDirectLoad::u32(4)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::Socket,
+                None,
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::SockState,
+                Some(ContextFieldDirectLoad::u32(72)),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:sock_create",
+                CtxField::SockRxQueueMapping,
+                Some(ContextFieldDirectLoad::u32(76)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::SockType,
+                Some(ContextFieldDirectLoad::u32(32)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::Socket,
+                Some(ContextFieldDirectLoad::u64(64)),
+            ),
+            (
+                "cgroup_sockopt:/sys/fs/cgroup:get",
+                CtxField::Socket,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::LookupCookie,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::Family,
+                Some(ContextFieldDirectLoad::u32(16)),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::Socket,
+                Some(ContextFieldDirectLoad::u64(72)),
+            ),
+            ("sk_msg:/sys/fs/bpf/demo", CtxField::SockPriority, None),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::Family,
+                Some(ContextFieldDirectLoad::u32(20)),
+            ),
+            (
+                "sock_ops:/sys/fs/cgroup",
+                CtxField::SockState,
+                Some(ContextFieldDirectLoad::u32(88)),
+            ),
+            (
+                "socket_filter:tcp4:127.0.0.1:80",
+                CtxField::Socket,
+                Some(ContextFieldDirectLoad::u64(168)),
+            ),
+            (
+                "cgroup_skb:/sys/fs/cgroup:ingress",
+                CtxField::SockMark,
+                Some(ContextFieldDirectLoad::u32(8)),
+            ),
+            (
+                "sk_reuseport:select",
+                CtxField::Socket,
+                Some(ContextFieldDirectLoad::u64(40)),
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            assert_eq!(spec.socket_ctx_field_direct_load(&field), expected);
         }
     }
 }
