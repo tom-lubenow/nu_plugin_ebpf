@@ -2085,30 +2085,47 @@ fn test_kernel_map_value_minimum_requirement_detail_reports_too_old_kernel() {
         MapValueCompatibilityRequirement::BpfTimer,
         MapValueCompatibilityRequirement::BpfRefcount,
         MapValueCompatibilityRequirement::BpfKptr,
+        MapValueCompatibilityRequirement::BpfWorkqueue,
     ];
-    let msg = kernel_map_value_minimum_requirement_detail(&requirements, "6.3.12-test")
-        .expect("kernel 6.3 should be too old for refcount map-value fields");
+    let msg = kernel_map_value_minimum_requirement_detail(&requirements, "6.9.12-test")
+        .expect("kernel 6.9 should be too old for workqueue map-value fields");
 
-    assert!(msg.contains("compiled map-value fields require kernel>=6.4"));
-    assert!(msg.contains("current kernel is 6.3.12-test"));
+    assert!(msg.contains("compiled map-value fields require kernel>=6.10"));
+    assert!(msg.contains("current kernel is 6.9.12-test"));
     assert!(msg.contains("BPF map-value spin lock field support"));
     assert!(msg.contains("BPF map-value timer field support"));
     assert!(msg.contains("BPF map-value refcount field support"));
     assert!(msg.contains("BPF map-value kptr field support"));
+    assert!(msg.contains("BPF map-value workqueue field support"));
+    assert!(msg.contains("kernel>=6.10"));
+}
+
+#[test]
+fn test_kernel_map_value_minimum_requirement_detail_reports_graph_fields() {
+    let requirements = [
+        MapValueCompatibilityRequirement::BpfListHead,
+        MapValueCompatibilityRequirement::BpfListNode,
+        MapValueCompatibilityRequirement::BpfRbRoot,
+        MapValueCompatibilityRequirement::BpfRbNode,
+    ];
+    let msg = kernel_map_value_minimum_requirement_detail(&requirements, "6.3.12-test")
+        .expect("kernel 6.3 should be too old for rbtree map-value fields");
+
+    assert!(msg.contains("compiled map-value fields require kernel>=6.4"));
+    assert!(msg.contains("current kernel is 6.3.12-test"));
+    assert!(msg.contains("BPF map-value list head field support"));
+    assert!(msg.contains("BPF map-value list node field support"));
+    assert!(msg.contains("BPF map-value rbtree root field support"));
+    assert!(msg.contains("BPF map-value rbtree node field support"));
+    assert!(msg.contains("kernel>=6.2"));
     assert!(msg.contains("kernel>=6.4"));
 }
 
 #[test]
 fn test_kernel_map_value_minimum_requirement_detail_accepts_newer_kernel() {
-    let requirements = [
-        MapValueCompatibilityRequirement::BpfSpinLock,
-        MapValueCompatibilityRequirement::BpfTimer,
-        MapValueCompatibilityRequirement::BpfKptr,
-        MapValueCompatibilityRequirement::BpfRefcount,
-        MapValueCompatibilityRequirement::BpfWorkqueue,
-    ];
-    assert!(kernel_map_value_minimum_requirement_detail(&requirements, "6.10.0").is_none());
-    assert!(kernel_map_value_minimum_requirement_detail(&requirements, "6.12.1").is_none());
+    let requirements = MapValueCompatibilityRequirement::all();
+    assert!(kernel_map_value_minimum_requirement_detail(requirements, "6.10.0").is_none());
+    assert!(kernel_map_value_minimum_requirement_detail(requirements, "6.12.1").is_none());
     assert!(kernel_map_value_minimum_requirement_detail(&[], "3.19").is_none());
 }
 
