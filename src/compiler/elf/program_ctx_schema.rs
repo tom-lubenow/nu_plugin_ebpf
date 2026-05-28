@@ -2,10 +2,10 @@ use super::{
     CtxField, EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
-    ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
     ctx_field_sock_ops_load_guard, program_type_ctx_field_is_trusted_btf_kernel_pointer,
     program_type_ctx_field_pointer_is_non_null, program_type_ctx_field_projection_spec,
-    program_type_ctx_field_type_spec,
+    program_type_ctx_field_type_spec, ContextFieldLoadGuard, ContextFieldProjectionSpec,
+    ContextFieldTypeSpec,
 };
 use crate::program_spec::ProgramSpec;
 
@@ -650,6 +650,119 @@ mod tests {
             assert!(
                 program_type.packet_context_kind().is_some(),
                 "direct packet write program {program_type:?} must have a packet context"
+            );
+            assert!(
+                program_type
+                    .base_ctx_field_access_error(&CtxField::Data)
+                    .is_none(),
+                "direct packet write program {program_type:?} must expose ctx.data"
+            );
+            assert!(
+                program_type
+                    .base_ctx_field_access_error(&CtxField::DataEnd)
+                    .is_none(),
+                "direct packet write program {program_type:?} must expose ctx.data_end"
+            );
+        }
+    }
+
+    fn assert_layout_support_matches_field_access(
+        program_type: EbpfProgramType,
+        supports: bool,
+        fields: &[CtxField],
+        label: &str,
+    ) {
+        for field in fields {
+            assert_eq!(
+                program_type.base_ctx_field_access_error(field).is_none(),
+                supports,
+                "{program_type:?} {label} layout support should match ctx.{} access",
+                field.display_name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_program_context_layout_support_matches_base_access_policy() {
+        for program_type in EbpfProgramType::supported_program_types() {
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_data_meta_ctx_field(),
+                &[CtxField::DataMeta],
+                "data_meta",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_socket_common_ctx_fields(),
+                &[CtxField::Family],
+                "socket common",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_socket_tuple_ctx_fields(),
+                &[
+                    CtxField::RemoteIp4,
+                    CtxField::RemoteIp6,
+                    CtxField::RemotePort,
+                    CtxField::LocalIp4,
+                    CtxField::LocalIp6,
+                    CtxField::LocalPort,
+                ],
+                "socket tuple",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_sock_type_ctx_field(),
+                &[CtxField::SockType],
+                "sock_type",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_protocol_ctx_field(),
+                &[CtxField::Protocol],
+                "protocol",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_socket_ref_ctx_field(),
+                &[CtxField::Socket],
+                "socket reference",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_sock_mark_priority_ctx_fields(),
+                &[CtxField::SockMark, CtxField::SockPriority],
+                "socket mark/priority",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_sock_state_ctx_field(),
+                &[CtxField::SockState],
+                "socket state",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_socket_cookie_ctx_field(),
+                &[CtxField::SocketCookie],
+                "socket cookie",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_socket_uid_ctx_field(),
+                &[CtxField::SocketUid],
+                "socket uid",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_netns_cookie_ctx_field(),
+                &[CtxField::NetnsCookie],
+                "netns cookie",
+            );
+            assert_layout_support_matches_field_access(
+                *program_type,
+                program_type.supports_lookup_cookie_ctx_field(),
+                &[CtxField::LookupCookie],
+                "lookup cookie",
             );
         }
     }
