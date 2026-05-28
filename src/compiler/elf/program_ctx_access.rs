@@ -2015,6 +2015,12 @@ mod tests {
                 "duplicate context access diagnostic name '{}' in {table_name}",
                 surface.field_name
             );
+            assert!(
+                static_ctx_field_type_spec(&surface.field).is_some()
+                    || field_may_omit_static_schema(&surface.field),
+                "context access field {:?} in {table_name} must have a static schema or an explicit helper-backed exception",
+                surface.field
+            );
         }
     }
 
