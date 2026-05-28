@@ -8,10 +8,10 @@ use crate::compiler::instruction::{
 };
 use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::{
-    BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldLoadGuard,
-    HelperCompatibilityRequirement, MapKind, PacketContextKind, ProbeContext,
-    ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess, SockOpsCallbackGuard,
-    bpf_sock_projection_member_aliases, ctx_field_backing_helper,
+    BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldDirectLoadWidth,
+    ContextFieldLoadGuard, HelperCompatibilityRequirement, MapKind, PacketContextKind,
+    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
+    SockOpsCallbackGuard, bpf_sock_projection_member_aliases, ctx_field_backing_helper,
     ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
@@ -38,6 +38,15 @@ struct SpecContextField {
     load_guard: Option<&'static str>,
     load_guard_witness: Option<String>,
     load_guard_description: Option<String>,
+    load_kind: Option<&'static str>,
+    direct_load_width: Option<&'static str>,
+    direct_load_offset: Option<i16>,
+    array_load_base_offset: Option<i16>,
+    array_load_count: Option<usize>,
+    array_load_normalize_big_endian: Option<bool>,
+    nested_load_pointer_offset: Option<i16>,
+    nested_load_width: Option<&'static str>,
+    nested_load_field_offset: Option<i16>,
 }
 
 #[cfg(target_os = "linux")]
@@ -295,6 +304,16 @@ fn context_field_load_guard_label(guard: ContextFieldLoadGuard) -> &'static str 
 }
 
 #[cfg(target_os = "linux")]
+fn context_field_direct_load_width_label(width: ContextFieldDirectLoadWidth) -> &'static str {
+    match width {
+        ContextFieldDirectLoadWidth::U8 => "u8",
+        ContextFieldDirectLoadWidth::U16 => "u16",
+        ContextFieldDirectLoadWidth::U32 => "u32",
+        ContextFieldDirectLoadWidth::U64 => "u64",
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn optional_packet_context_kind(value: Option<PacketContextKind>, span: Span) -> Value {
     value
         .map(|value| Value::string(packet_context_kind_label(value), span))
@@ -316,10 +335,24 @@ fn optional_static_str(value: Option<&'static str>, span: Span) -> Value {
 }
 
 #[cfg(target_os = "linux")]
+fn optional_bool(value: Option<bool>, span: Span) -> Value {
+    value
+        .map(|value| Value::bool(value, span))
+        .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
 fn optional_usize(value: Option<usize>, span: Span) -> Value {
     value
         .and_then(|value| i64::try_from(value).ok())
         .map(|value| Value::int(value, span))
+        .unwrap_or_else(|| Value::nothing(span))
+}
+
+#[cfg(target_os = "linux")]
+fn optional_i16(value: Option<i16>, span: Span) -> Value {
+    value
+        .map(|value| Value::int(i64::from(value), span))
         .unwrap_or_else(|| Value::nothing(span))
 }
 
@@ -645,6 +678,18 @@ fn spec_context_fields(
             let backing_helper = ctx_field_backing_helper(&entry.field);
             let compatibility_requirement =
                 ContextFieldCompatibilityRequirement::for_field_on_program_spec(&entry.field, spec);
+            let direct_load = spec.ctx_field_direct_load(&entry.field);
+            let array_load = spec.ctx_field_array_load(&entry.field);
+            let nested_load = spec.ctx_field_nested_load(&entry.field);
+            let load_kind = if direct_load.is_some() {
+                Some("direct")
+            } else if array_load.is_some() {
+                Some("array")
+            } else if nested_load.is_some() {
+                Some("nested")
+            } else {
+                None
+            };
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
@@ -685,6 +730,18 @@ fn spec_context_fields(
                         .map(ContextFieldLoadGuard::witness_field)
                         .map(|field| field.display_name()),
                     load_guard_description: load_guard.map(|guard| guard.error(&entry.field)),
+                    load_kind,
+                    direct_load_width: direct_load
+                        .map(|load| context_field_direct_load_width_label(load.width)),
+                    direct_load_offset: direct_load.map(|load| load.offset),
+                    array_load_base_offset: array_load.map(|load| load.base_offset),
+                    array_load_count: array_load.map(|load| load.count),
+                    array_load_normalize_big_endian: array_load
+                        .map(|load| load.normalize_big_endian),
+                    nested_load_pointer_offset: nested_load.map(|load| load.pointer_offset),
+                    nested_load_width: nested_load
+                        .map(|load| context_field_direct_load_width_label(load.field_load.width)),
+                    nested_load_field_offset: nested_load.map(|load| load.field_load.offset),
                 },
             ));
         }
@@ -727,6 +784,15 @@ fn context_field_records(
                     "load_guard" => optional_static_str(field.load_guard, span),
                     "load_guard_witness" => optional_string(field.load_guard_witness, span),
                     "load_guard_description" => optional_string(field.load_guard_description, span),
+                    "load_kind" => optional_static_str(field.load_kind, span),
+                    "direct_load_width" => optional_static_str(field.direct_load_width, span),
+                    "direct_load_offset" => optional_i16(field.direct_load_offset, span),
+                    "array_load_base_offset" => optional_i16(field.array_load_base_offset, span),
+                    "array_load_count" => optional_usize(field.array_load_count, span),
+                    "array_load_normalize_big_endian" => optional_bool(field.array_load_normalize_big_endian, span),
+                    "nested_load_pointer_offset" => optional_i16(field.nested_load_pointer_offset, span),
+                    "nested_load_width" => optional_static_str(field.nested_load_width, span),
+                    "nested_load_field_offset" => optional_i16(field.nested_load_field_offset, span),
                 },
                 span,
             )

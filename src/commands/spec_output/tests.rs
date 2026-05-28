@@ -686,6 +686,59 @@ fn test_spec_context_fields_include_load_guards() {
 }
 
 #[test]
+fn test_spec_context_fields_include_context_load_metadata() {
+    let spec = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let data = field(&fields, "data");
+    assert_eq!(data.load_kind, Some("direct"));
+    assert_eq!(data.direct_load_width, Some("u32"));
+    assert_eq!(data.direct_load_offset, Some(0));
+    assert_eq!(data.array_load_base_offset, None);
+    assert_eq!(data.nested_load_pointer_offset, None);
+
+    let spec = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let eth_protocol = field(&fields, "eth_protocol");
+    assert_eq!(eth_protocol.load_kind, Some("direct"));
+    assert_eq!(eth_protocol.direct_load_width, Some("u16"));
+    assert_eq!(eth_protocol.direct_load_offset, Some(16));
+
+    let cb = field(&fields, "cb");
+    assert_eq!(cb.load_kind, Some("array"));
+    assert_eq!(cb.array_load_base_offset, Some(48));
+    assert_eq!(cb.array_load_count, Some(5));
+    assert_eq!(cb.array_load_normalize_big_endian, Some(false));
+    assert_eq!(cb.direct_load_offset, None);
+    assert_eq!(cb.nested_load_pointer_offset, None);
+
+    let spec = ProgramSpec::parse("cgroup_sock:/sys/fs/cgroup:post_bind6")
+        .expect("cgroup_sock spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let local_ip6 = field(&fields, "local_ip6");
+    assert_eq!(local_ip6.load_kind, Some("array"));
+    assert_eq!(local_ip6.array_load_base_offset, Some(28));
+    assert_eq!(local_ip6.array_load_count, Some(4));
+    assert_eq!(local_ip6.array_load_normalize_big_endian, Some(true));
+
+    let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
+        .expect("netfilter spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let hook = field(&fields, "hook");
+    assert_eq!(hook.load_kind, Some("nested"));
+    assert_eq!(hook.nested_load_pointer_offset, Some(0));
+    assert_eq!(hook.nested_load_width, Some("u8"));
+    assert_eq!(hook.nested_load_field_offset, Some(0));
+    assert_eq!(hook.direct_load_offset, None);
+    assert_eq!(hook.array_load_base_offset, None);
+
+    let pf = field(&fields, "pf");
+    assert_eq!(pf.load_kind, Some("nested"));
+    assert_eq!(pf.nested_load_pointer_offset, Some(0));
+    assert_eq!(pf.nested_load_width, Some("u8"));
+    assert_eq!(pf.nested_load_field_offset, Some(1));
+}
+
+#[test]
 fn test_spec_context_fields_include_sock_ops_minimum_kernel_metadata() {
     let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
     let fields = spec_context_fields(&spec, false);
