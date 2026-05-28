@@ -5246,6 +5246,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-same-name-conflicting-kinds-rejects"
+        category: "maps"
+        tags: [maps kind-conflict reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  42 | map-put shared_resource 0 --kind array'
+            '  let entry = (0 | map-get shared_resource --kind hash)'
+            '  if $entry { $entry | count }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "conflicts with prior map kind"
+    }
+    {
         name: "map-define-map-in-map-inner-template-object"
         category: "maps"
         tags: [maps map-define map-in-map accept]
@@ -16866,18 +16883,17 @@ def assert-plugin-fresh [repo_root: string plugin_bin: string] {
 def resolve-plugin-bin [repo_root: string] {
     let override = ($env | get -o PLUGIN_BIN)
 
-    let plugin_bin = if $override != null {
-        if (path-is-filelike $override) {
-            $override
-        } else {
+    if $override != null {
+        if not (path-is-filelike $override) {
             fail $"plugin binary not found: ($override)"
         }
-    } else {
-        newest-existing "plugin binary" [
-            ($repo_root | path join target debug nu_plugin_ebpf)
-            ($repo_root | path join target release nu_plugin_ebpf)
-        ]
+        return $override
     }
+
+    let plugin_bin = (newest-existing "plugin binary" [
+        ($repo_root | path join target debug nu_plugin_ebpf)
+        ($repo_root | path join target release nu_plugin_ebpf)
+    ])
 
     assert-plugin-fresh $repo_root $plugin_bin
     $plugin_bin

@@ -763,7 +763,7 @@ impl<'a> HirToMirLowering<'a> {
                     .collect::<Vec<_>>()
                     .join(", ");
                 Err(CompileError::UnsupportedInstruction(format!(
-                    "{context} map '{map_name}' has multiple declared kinds ({kinds}); use distinct map names"
+                    "{context} map '{map_name}' is used with multiple kinds ({kinds}); use one kind per map name or use distinct map names"
                 )))
             }
         }
@@ -790,7 +790,7 @@ impl<'a> HirToMirLowering<'a> {
             && declared_kind != kind
         {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind {kind} conflicts with prior declaration for map '{map_name}' as {declared_kind}"
+                "{context} --kind {kind} conflicts with prior map kind for map '{map_name}' as {declared_kind}; use one kind per map name or use distinct map names"
             )));
         }
         Ok(())
