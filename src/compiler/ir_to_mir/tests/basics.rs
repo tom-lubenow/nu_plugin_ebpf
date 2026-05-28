@@ -2517,6 +2517,13 @@ fn test_lower_netfilter_state_pointer_hop_preserves_trusted_btf_provenance() {
         "trusted BTF scalar projection should not report probe_read_kernel compatibility"
     );
     assert_eq!(program.helper_compatibility_minimum_kernel(), None);
+    let context_requirements = program.context_field_compatibility_requirements();
+    assert!(
+        context_requirements
+            .iter()
+            .any(|requirement| requirement.key() == "ctx:state"),
+        "trusted BTF netfilter state projection should preserve ctx:state compatibility metadata"
+    );
 }
 
 #[test]

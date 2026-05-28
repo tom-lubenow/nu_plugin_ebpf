@@ -5423,6 +5423,43 @@ fn test_lower_bound_current_cgroup_btf_projection_preserves_trusted_provenance()
         result.type_hints.main.values().any(|ty| ty == &expected_ty),
         "expected bound current_cgroup projection to type as {expected_ty:?}"
     );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("bound current_cgroup BTF projection should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Kprobe,
+        "ksys_read",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirements = program.helper_compatibility_requirements();
+    assert!(
+        helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::GetCurrentTaskBtf),
+        "bound current_cgroup projection should report bpf_get_current_task_btf compatibility"
+    );
+    assert!(
+        !helper_requirements
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "trusted BTF scalar projection should not report probe_read_kernel compatibility"
+    );
+    assert_eq!(program.helper_compatibility_minimum_kernel(), Some("5.11"));
+    let context_requirements = program.context_field_compatibility_requirements();
+    assert!(
+        context_requirements
+            .iter()
+            .any(|requirement| requirement.key() == "ctx:cgroup"),
+        "bound current_cgroup projection should preserve ctx:cgroup compatibility metadata"
+    );
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("5.11")
+    );
+    assert_eq!(program.compatibility_minimum_kernel(), Some("5.11"));
 }
 
 #[test]
