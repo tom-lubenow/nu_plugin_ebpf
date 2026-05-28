@@ -5083,6 +5083,7 @@ const FIXTURES = [
         category: "globals"
         tags: [globals records list accept]
         target: "raw_tracepoint:sys_enter"
+        kernel_features: [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         program: [
             '{|ctx|'
             '  let config = { pid: 7 samples: [11 22] }'
