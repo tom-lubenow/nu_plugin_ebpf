@@ -16057,21 +16057,26 @@ def select-fixtures-with-requirements [fixtures require_features: bool phase: st
     $selected
 }
 
-def select-fixtures [fixture_name category tag tier exclude_tier local_status kernel_status test_lane] {
+def select-fixtures [fixture_names category tag tier exclude_tier local_status kernel_status test_lane] {
     validate-tier-option "selected" $tier
     validate-tier-option "excluded" $exclude_tier
     validate-test-lane-option "selected" $test_lane
     validate-status-option "local" $local_status
     validate-status-option "kernel" $kernel_status
 
-    let fixtures = if $fixture_name == null {
+    let fixtures = if $fixture_names == null {
         $FIXTURES
     } else {
-        let matches = ($FIXTURES | where {|fixture| $fixture.name == $fixture_name })
-        if (($matches | length) == 0) {
-            fail $"unknown verifier fixture: ($fixture_name)"
+        let missing = (
+            $fixture_names
+            | where {|fixture_name|
+                not ($FIXTURES | any {|fixture| $fixture.name == $fixture_name })
+            }
+        )
+        if (($missing | length) > 0) {
+            fail $"unknown verifier fixtures: ($missing | str join ',')"
         }
-        $matches
+        $FIXTURES | where {|fixture| $fixture.name in $fixture_names }
     }
 
     let selected = (
@@ -16095,6 +16100,7 @@ def main [
     --no-kernel    # Run only local dry-run compiler/VCC checks.
     --fast         # Run only fixtures in the fast tier.
     --fixture: string # Run one fixture by exact name.
+    --fixtures: list<string> # Run one or more fixtures by exact name.
     --category: string # Run fixtures with an exact category.
     --tag: string # Run fixtures containing a tag.
     --tier: string # Run fixtures in a tier: fast, btf, kernel, or vm-only.
@@ -16121,6 +16127,9 @@ def main [
     if $fast and $exclude_tier != null {
         fail "--fast and --exclude-tier are mutually exclusive"
     }
+    if $fixture != null and $fixtures != null {
+        fail "--fixture and --fixtures are mutually exclusive"
+    }
 
     validate-fixture-metadata $FIXTURES
     if $compat_kernel != null {
@@ -16128,7 +16137,8 @@ def main [
     }
 
     let selected_tier = if $fast { "fast" } else { $tier }
-    let fixtures = (select-fixtures $fixture $category $tag $selected_tier $exclude_tier $local_status $kernel_status $test_lane)
+    let fixture_names = if $fixture == null { $fixtures } else { [$fixture] }
+    let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $test_lane)
 
     if $list {
         let summaries = ($fixtures | each {|fixture| fixture-summary $fixture $compat_kernel })
