@@ -4400,36 +4400,76 @@ fn test_program_attach_kind_loader_live_support_metadata() {
             kind.loader_supports_live_attach(),
             "{kind:?} should be marked live-loadable by the loader"
         );
+        assert_eq!(kind.unsupported_live_attach_reason(), None);
         assert_eq!(kind.unsupported_live_attach_detail(), None);
     }
 
-    for (kind, detail_fragment) in [
+    for (kind, detail_fragment, reason_key) in [
         (
             ProgramAttachKind::RawTracepointWritable,
             "writable raw-tracepoint",
+            "raw-tracepoint-writable",
         ),
-        (ProgramAttachKind::FmodRet, "BPF_MODIFY_RETURN"),
-        (ProgramAttachKind::LsmCgroup, "cgroup-scoped LSM"),
-        (ProgramAttachKind::Netkit, "netkit attach"),
-        (ProgramAttachKind::TcAction, "tc_action attach"),
-        (ProgramAttachKind::SkReuseport, "sk_reuseport attach"),
-        (ProgramAttachKind::FlowDissector, "flow-dissector attach"),
-        (ProgramAttachKind::Netfilter, "netfilter attach"),
-        (ProgramAttachKind::Lwt, "route LWT attach"),
+        (
+            ProgramAttachKind::FmodRet,
+            "BPF_MODIFY_RETURN",
+            "fmod-ret-loader",
+        ),
+        (
+            ProgramAttachKind::LsmCgroup,
+            "cgroup-scoped LSM",
+            "lsm-cgroup-link",
+        ),
+        (ProgramAttachKind::Netkit, "netkit attach", "netkit-loader"),
+        (
+            ProgramAttachKind::TcAction,
+            "tc_action attach",
+            "tc-action-loader",
+        ),
+        (
+            ProgramAttachKind::SkReuseport,
+            "sk_reuseport attach",
+            "sk-reuseport-loader",
+        ),
+        (
+            ProgramAttachKind::FlowDissector,
+            "flow-dissector attach",
+            "flow-dissector-loader",
+        ),
+        (
+            ProgramAttachKind::Netfilter,
+            "netfilter attach",
+            "netfilter-link",
+        ),
+        (ProgramAttachKind::Lwt, "route LWT attach", "route-lwt-link"),
         (
             ProgramAttachKind::Extension,
             "extension/freplace live attach",
+            "extension-target-program",
         ),
-        (ProgramAttachKind::Syscall, "BPF_PROG_TYPE_SYSCALL"),
-        (ProgramAttachKind::Iter, "BPF iterator"),
+        (
+            ProgramAttachKind::Syscall,
+            "BPF_PROG_TYPE_SYSCALL",
+            "syscall-no-hook",
+        ),
+        (ProgramAttachKind::Iter, "BPF iterator", "iterator-link"),
     ] {
         assert!(
             !kind.loader_supports_live_attach(),
             "{kind:?} should be marked compile-only for live loader attach"
         );
+        let reason = kind
+            .unsupported_live_attach_reason()
+            .unwrap_or_else(|| panic!("{kind:?} should have a structured unsupported reason"));
+        assert_eq!(
+            reason.key(),
+            reason_key,
+            "{kind:?} unsupported reason should be machine-readable"
+        );
         let detail = kind
             .unsupported_live_attach_detail()
             .unwrap_or_else(|| panic!("{kind:?} should explain why live attach is unsupported"));
+        assert_eq!(detail, reason.note());
         assert!(
             detail.contains(detail_fragment),
             "{kind:?} unsupported detail should contain {detail_fragment:?}, got {detail:?}"

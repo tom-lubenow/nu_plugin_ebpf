@@ -304,10 +304,120 @@ impl ProgramLiveAttachOptInReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramLiveAttachUnsupportedReason {
+    RawTracepointWritable,
+    FmodRet,
+    LsmCgroup,
+    Netkit,
+    TcAction,
+    SkReuseport,
+    FlowDissector,
+    Netfilter,
+    Lwt,
+    Extension,
+    Syscall,
+    Iter,
+    XdpMapProgram,
+    CgroupSockAddrUnix,
+    StructOpsCallback,
+}
+
+impl ProgramLiveAttachUnsupportedReason {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::RawTracepointWritable => "raw-tracepoint-writable",
+            Self::FmodRet => "fmod-ret-loader",
+            Self::LsmCgroup => "lsm-cgroup-link",
+            Self::Netkit => "netkit-loader",
+            Self::TcAction => "tc-action-loader",
+            Self::SkReuseport => "sk-reuseport-loader",
+            Self::FlowDissector => "flow-dissector-loader",
+            Self::Netfilter => "netfilter-link",
+            Self::Lwt => "route-lwt-link",
+            Self::Extension => "extension-target-program",
+            Self::Syscall => "syscall-no-hook",
+            Self::Iter => "iterator-link",
+            Self::XdpMapProgram => "xdp-map-program",
+            Self::CgroupSockAddrUnix => "cgroup-sock-addr-unix-loader",
+            Self::StructOpsCallback => "struct-ops-callback-target",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::RawTracepointWritable => {
+                "Writable raw tracepoint sections need loader support that preserves their verifier semantics."
+            }
+            Self::FmodRet => "fmod_ret requires BPF_MODIFY_RETURN load and attach support.",
+            Self::LsmCgroup => "Cgroup LSM requires cgroup-aware BPF link setup.",
+            Self::Netkit => "Netkit needs an explicit loader attach implementation.",
+            Self::TcAction => "tc_action needs an explicit loader attach implementation.",
+            Self::SkReuseport => "sk_reuseport needs an explicit loader attach implementation.",
+            Self::FlowDissector => "flow_dissector needs an explicit loader attach implementation.",
+            Self::Netfilter => "Netfilter needs BPF-link attach support.",
+            Self::Lwt => "Route LWT programs need route/link attach support.",
+            Self::Extension => {
+                "Extension/freplace needs a loaded target program and BTF/function pairing."
+            }
+            Self::Syscall => {
+                "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach."
+            }
+            Self::Iter => "BPF iterators need iterator link/seq-file attach support.",
+            Self::XdpMapProgram => "XDP map programs are attached through map entries.",
+            Self::CgroupSockAddrUnix => {
+                "Cgroup UNIX socket-address hooks need BPF_CGROUP_UNIX_* attach support."
+            }
+            Self::StructOpsCallback => {
+                "struct_ops callbacks are attached by registering the enclosing struct_ops object."
+            }
+        }
+    }
+
+    pub fn note(self) -> &'static str {
+        match self {
+            Self::RawTracepointWritable => {
+                "the current object loader does not preserve writable raw-tracepoint sections, and rewriting them as raw_tracepoint would change verifier semantics"
+            }
+            Self::FmodRet => {
+                "the current Aya loader surface does not expose BPF_MODIFY_RETURN/fmod_ret loading and attach support"
+            }
+            Self::LsmCgroup => {
+                "cgroup-scoped LSM attach requires cgroup-aware BPF link setup, not plain LSM attach"
+            }
+            Self::Netkit => {
+                "the current Aya loader surface does not expose a netkit attach wrapper"
+            }
+            Self::TcAction => {
+                "the current Aya loader surface does not expose a tc_action attach wrapper"
+            }
+            Self::SkReuseport => {
+                "the current Aya loader surface does not expose a sk_reuseport attach wrapper"
+            }
+            Self::FlowDissector => {
+                "the current Aya loader surface does not expose a flow-dissector attach wrapper"
+            }
+            Self::Netfilter => "the loader still needs BPF-link netfilter attach support",
+            Self::Lwt => "the loader still needs route LWT attach support",
+            Self::Extension => {
+                "extension/freplace live attach requires a loaded target program and BTF/function pairing, not only a target function name"
+            }
+            Self::Syscall => {
+                "BPF_PROG_TYPE_SYSCALL is load/test-run oriented and has no ordinary hook attach in this loader"
+            }
+            Self::Iter => "the loader still needs BPF iterator link/seq-file attach support",
+            Self::XdpMapProgram => XDP_MAP_LIVE_ATTACH_UNSUPPORTED,
+            Self::CgroupSockAddrUnix => CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED,
+            Self::StructOpsCallback => STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProgramLiveAttachPolicy {
     pub loader_supported: bool,
     pub default_allowed: bool,
     pub requires_opt_in: bool,
+    pub unsupported_reason: Option<ProgramLiveAttachUnsupportedReason>,
     pub opt_in_reason: Option<ProgramLiveAttachOptInReason>,
     pub note: Option<&'static str>,
 }
@@ -319,13 +429,14 @@ pub(crate) const STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED: &str =
 pub(crate) const XDP_MAP_LIVE_ATTACH_UNSUPPORTED: &str = "XDP devmap/cpumap programs are loaded through map entries, and this loader does not model that attach path yet";
 
 impl ProgramLiveAttachPolicy {
-    fn unsupported(note: &'static str) -> Self {
+    fn unsupported(reason: ProgramLiveAttachUnsupportedReason) -> Self {
         Self {
             loader_supported: false,
             default_allowed: false,
             requires_opt_in: false,
+            unsupported_reason: Some(reason),
             opt_in_reason: None,
-            note: Some(note),
+            note: Some(reason.note()),
         }
     }
 
@@ -333,15 +444,18 @@ impl ProgramLiveAttachPolicy {
         attach_kind: ProgramAttachKind,
         opt_in_reason: Option<ProgramLiveAttachOptInReason>,
     ) -> Self {
-        let unsupported = attach_kind.unsupported_live_attach_detail();
-        let loader_supported = unsupported.is_none();
+        let unsupported_reason = attach_kind.unsupported_live_attach_reason();
+        let loader_supported = unsupported_reason.is_none();
         let requires_opt_in = loader_supported && opt_in_reason.is_some();
         Self {
             loader_supported,
             default_allowed: loader_supported && !requires_opt_in,
             requires_opt_in,
+            unsupported_reason,
             opt_in_reason: opt_in_reason.filter(|_| loader_supported),
-            note: unsupported.or_else(|| opt_in_reason.map(ProgramLiveAttachOptInReason::note)),
+            note: unsupported_reason
+                .map(ProgramLiveAttachUnsupportedReason::note)
+                .or_else(|| opt_in_reason.map(ProgramLiveAttachOptInReason::note)),
         }
     }
 
@@ -3113,19 +3227,21 @@ impl ProgramSpec {
     pub fn live_attach_policy(&self) -> ProgramLiveAttachPolicy {
         if let ProgramSpec::Xdp { target } = self {
             if !target.is_interface() {
-                return ProgramLiveAttachPolicy::unsupported(XDP_MAP_LIVE_ATTACH_UNSUPPORTED);
+                return ProgramLiveAttachPolicy::unsupported(
+                    ProgramLiveAttachUnsupportedReason::XdpMapProgram,
+                );
             }
         }
         if let ProgramSpec::CgroupSockAddr { target } = self {
             if target.is_unix() {
                 return ProgramLiveAttachPolicy::unsupported(
-                    CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED,
+                    ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix,
                 );
             }
         }
         if matches!(self, ProgramSpec::StructOpsCallback { .. }) {
             return ProgramLiveAttachPolicy::unsupported(
-                STRUCT_OPS_CALLBACK_LIVE_ATTACH_UNSUPPORTED,
+                ProgramLiveAttachUnsupportedReason::StructOpsCallback,
             );
         }
 
@@ -4279,6 +4395,7 @@ mod tests {
                 loader_supported: true,
                 default_allowed: true,
                 requires_opt_in: false,
+                unsupported_reason: None,
                 opt_in_reason: None,
                 note: None,
             }
@@ -4291,6 +4408,10 @@ mod tests {
         assert!(!raw_policy.default_allowed);
         assert!(!raw_policy.requires_opt_in);
         assert_eq!(raw_policy.status(), ProgramLiveAttachStatus::Unsupported);
+        assert_eq!(
+            raw_policy.unsupported_reason,
+            Some(ProgramLiveAttachUnsupportedReason::RawTracepointWritable)
+        );
         assert_eq!(raw_policy.opt_in_reason, None);
         assert!(
             raw_policy
@@ -4309,6 +4430,10 @@ mod tests {
             cgroup_unix_policy.status(),
             ProgramLiveAttachStatus::Unsupported
         );
+        assert_eq!(
+            cgroup_unix_policy.unsupported_reason,
+            Some(ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix)
+        );
         assert_eq!(cgroup_unix_policy.opt_in_reason, None);
         assert!(
             cgroup_unix_policy
@@ -4324,6 +4449,10 @@ mod tests {
         assert_eq!(
             xdp_devmap_policy.status(),
             ProgramLiveAttachStatus::Unsupported
+        );
+        assert_eq!(
+            xdp_devmap_policy.unsupported_reason,
+            Some(ProgramLiveAttachUnsupportedReason::XdpMapProgram)
         );
         assert_eq!(xdp_devmap_policy.opt_in_reason, None);
         assert!(
@@ -4342,6 +4471,7 @@ mod tests {
             sched_ext_policy.status(),
             ProgramLiveAttachStatus::RequiresOptIn
         );
+        assert_eq!(sched_ext_policy.unsupported_reason, None);
         assert_eq!(
             sched_ext_policy.opt_in_reason,
             Some(ProgramLiveAttachOptInReason::SchedExt)
@@ -4362,6 +4492,7 @@ mod tests {
             generic_policy.status(),
             ProgramLiveAttachStatus::RequiresOptIn
         );
+        assert_eq!(generic_policy.unsupported_reason, None);
         assert_eq!(
             generic_policy.opt_in_reason,
             Some(ProgramLiveAttachOptInReason::UnclassifiedStructOps)
@@ -4380,6 +4511,7 @@ mod tests {
                 loader_supported: true,
                 default_allowed: true,
                 requires_opt_in: false,
+                unsupported_reason: None,
                 opt_in_reason: None,
                 note: None,
             }
@@ -4394,6 +4526,10 @@ mod tests {
         assert_eq!(
             callback_policy.status(),
             ProgramLiveAttachStatus::Unsupported
+        );
+        assert_eq!(
+            callback_policy.unsupported_reason,
+            Some(ProgramLiveAttachUnsupportedReason::StructOpsCallback)
         );
         assert_eq!(callback_policy.opt_in_reason, None);
         assert!(
@@ -4755,6 +4891,7 @@ mod tests {
                 loader_supported: true,
                 default_allowed: true,
                 requires_opt_in: false,
+                unsupported_reason: None,
                 opt_in_reason: None,
                 note: None,
             }

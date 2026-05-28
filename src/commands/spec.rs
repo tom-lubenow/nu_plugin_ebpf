@@ -194,6 +194,9 @@ mod tests {
                 .expect("live_attach_status should be present")
                 .as_str()
                 .expect("live_attach_status should be a string");
+            let live_attach_unsupported_reason = record
+                .get("live_attach_unsupported_reason")
+                .expect("live_attach_unsupported_reason should be present");
             let live_attach_opt_in_reason = record
                 .get("live_attach_opt_in_reason")
                 .expect("live_attach_opt_in_reason should be present");
@@ -233,6 +236,20 @@ mod tests {
                 live_attach_policy.status().key(),
                 "{program_type} list row should report structured live-attach status"
             );
+            if let Some(reason) = live_attach_policy.unsupported_reason {
+                assert_eq!(
+                    live_attach_unsupported_reason
+                        .as_str()
+                        .expect("unsupported reason should be a string"),
+                    reason.key(),
+                    "{program_type} list row should report structured unsupported reason"
+                );
+            } else {
+                assert!(
+                    live_attach_unsupported_reason.is_nothing(),
+                    "{program_type} list row should not report an unsupported reason"
+                );
+            }
             if let Some(reason) = live_attach_policy.opt_in_reason {
                 assert_eq!(
                     live_attach_opt_in_reason

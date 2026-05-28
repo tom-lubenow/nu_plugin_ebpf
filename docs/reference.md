@@ -213,10 +213,11 @@ and nullable minimum-kernel/source fields. These lanes are test-planning
 metadata, not live-attach authorization flags; use the separate
 `live_attach_*` fields to inspect loader policy. Those fields include a
 machine-readable `live_attach_status` (`default-allowed`, `requires-opt-in`,
-or `unsupported`) plus nullable `live_attach_opt_in_reason` metadata for
-risky but implemented families such as unclassified struct_ops, sched_ext,
-hid_bpf_ops, and Qdisc_ops. Kernel-BTF-backed target families also expose
-`kernel_target_validation` and
+or `unsupported`), nullable `live_attach_unsupported_reason` metadata for
+compile/dry-run-only targets, and nullable `live_attach_opt_in_reason`
+metadata for risky but implemented families such as unclassified struct_ops,
+sched_ext, hid_bpf_ops, and Qdisc_ops. Kernel-BTF-backed target families also
+expose `kernel_target_validation` and
 `kernel_target_validation_help`, so tooling can present target-signature,
 tracepoint, or LSM-hook guidance before attach. Source-verified requirements
 carry minimum

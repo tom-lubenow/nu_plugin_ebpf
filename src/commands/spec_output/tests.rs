@@ -796,6 +796,22 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_status_description should be a string")
             .contains("not implemented")
     );
+    assert_eq!(
+        record
+            .get("live_attach_unsupported_reason")
+            .expect("live_attach_unsupported_reason should be present")
+            .as_str()
+            .expect("live_attach_unsupported_reason should be a string"),
+        "cgroup-sock-addr-unix-loader"
+    );
+    assert!(
+        record
+            .get("live_attach_unsupported_reason_description")
+            .expect("live_attach_unsupported_reason_description should be present")
+            .as_str()
+            .expect("live_attach_unsupported_reason_description should be a string")
+            .contains("Cgroup UNIX socket-address hooks")
+    );
     assert!(
         record
             .get("live_attach_opt_in_reason")
@@ -855,6 +871,18 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .as_str()
             .expect("live_attach_status should be a string"),
         "requires-opt-in"
+    );
+    assert!(
+        record
+            .get("live_attach_unsupported_reason")
+            .expect("live_attach_unsupported_reason should be present")
+            .is_nothing()
+    );
+    assert!(
+        record
+            .get("live_attach_unsupported_reason_description")
+            .expect("live_attach_unsupported_reason_description should be present")
+            .is_nothing()
     );
     assert_eq!(
         record
@@ -3403,6 +3431,22 @@ fn test_spec_record_includes_attach_shape_metadata() {
             .expect("live_attach_requires_opt_in should be present")
             .as_bool()
             .expect("live_attach_requires_opt_in should be a bool")
+    );
+    assert_eq!(
+        record
+            .get("live_attach_status")
+            .expect("live_attach_status should be present")
+            .as_str()
+            .expect("live_attach_status should be a string"),
+        "unsupported"
+    );
+    assert_eq!(
+        record
+            .get("live_attach_unsupported_reason")
+            .expect("live_attach_unsupported_reason should be present")
+            .as_str()
+            .expect("live_attach_unsupported_reason should be a string"),
+        "struct-ops-callback-target"
     );
     assert!(
         record
