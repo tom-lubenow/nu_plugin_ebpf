@@ -3106,11 +3106,31 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.require_only_named_args(CONTEXT, &["kind"])?;
 
-        let (_, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
+        let (map_arg_vreg, map_reg) = self.positional_args.first().copied().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
-                "map-contains requires a literal map name as the first positional argument".into(),
+                "map-contains requires a literal map name or map-in-map lookup result as the first positional argument"
+                    .into(),
             )
         })?;
+        if let Some(inner_map) = self
+            .get_metadata(map_reg)
+            .and_then(|meta| meta.dynamic_map_ref.clone())
+        {
+            if !self.named_args.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "map-contains on a dynamic inner-map pointer does not accept named arguments"
+                        .into(),
+                ));
+            }
+            return self.lower_dynamic_map_contains(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                map_arg_vreg,
+                inner_map,
+            );
+        }
+
         let map_name = self.literal_string_arg(map_reg, CONTEXT)?;
         self.validate_generic_map_name(&map_name, CONTEXT)?;
 
@@ -3120,12 +3140,6 @@ impl<'a> HirToMirLowering<'a> {
             }
             MapKind::CgroupArray => {
                 self.lower_cgroup_array_map_contains(src_dst, dst_vreg, src_dst_had_value)
-            }
-            map_kind if map_kind.is_map_in_map() => {
-                Err(CompileError::UnsupportedInstruction(format!(
-                    "{CONTEXT} is not supported for map-in-map outer map kind {} yet; use map-get and pointer truthiness instead",
-                    map_kind
-                )))
             }
             map_kind if map_kind.supports_generic_map_op(MapOpKind::Lookup) => {
                 self.lower_generic_map_contains(src_dst, dst_vreg, src_dst_had_value, map_kind)
@@ -3264,6 +3278,13 @@ impl<'a> HirToMirLowering<'a> {
                         .into(),
                 )
             })?;
+        let key_reg = self
+            .positional_args
+            .get(1)
+            .map(|(_, reg)| *reg)
+            .or(self.pipeline_input_reg)
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let key_vreg = self.map_key_vreg_for_named_schema(&map_ref, key_vreg, key_reg, CONTEXT)?;
         let lookup_vreg = self.func.alloc_vreg();
 
         self.emit(MirInst::MapLookup {
@@ -3271,8 +3292,70 @@ impl<'a> HirToMirLowering<'a> {
             map: map_ref.clone(),
             key: key_vreg,
         });
+        let lookup_ty = if map_ref.kind.is_map_in_map() {
+            let _ = self.map_in_map_inner_template(&map_ref, CONTEXT)?;
+            MirType::named_kernel_struct_ptr("bpf_map")
+        } else {
+            let stored_ty =
+                self.validated_named_map_value_type(&map_ref, "map-contains value schema")?;
+            MirType::Ptr {
+                pointee: Box::new(stored_ty.unwrap_or(MirType::U8)),
+                address_space: AddressSpace::Map,
+            }
+        };
+        self.vreg_type_hints.insert(lookup_vreg, lookup_ty);
+        self.emit(MirInst::BinOp {
+            dst: dst_vreg,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(lookup_vreg),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+        self.reset_call_result_metadata(src_dst);
+        Ok(())
+    }
+
+    fn lower_dynamic_map_contains(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        map_ptr: VReg,
+        inner_map: MapRef,
+    ) -> Result<(), CompileError> {
+        const CONTEXT: &str = "map-contains";
+
+        self.validate_generic_map_lookup_kind(inner_map.kind, &inner_map.name)?;
+        let key_vreg = self
+            .positional_args
+            .get(1)
+            .map(|(vreg, _)| *vreg)
+            .or(self.pipeline_input)
+            .or_else(|| src_dst_had_value.then_some(dst_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "map-contains requires a key from pipeline input or a second positional argument"
+                        .into(),
+                )
+            })?;
+        let key_reg = self
+            .positional_args
+            .get(1)
+            .map(|(_, reg)| *reg)
+            .or(self.pipeline_input_reg)
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let key_vreg =
+            self.map_key_vreg_for_named_schema(&inner_map, key_vreg, key_reg, CONTEXT)?;
+        let lookup_vreg = self.func.alloc_vreg();
+
+        self.emit(MirInst::MapLookupDynamic {
+            dst: lookup_vreg,
+            map_ptr,
+            inner_map: inner_map.clone(),
+            key: key_vreg,
+        });
         let stored_ty =
-            self.validated_named_map_value_type(&map_ref, "map-contains value schema")?;
+            self.validated_named_map_value_type(&inner_map, "map-contains value schema")?;
         self.vreg_type_hints.insert(
             lookup_vreg,
             MirType::Ptr {

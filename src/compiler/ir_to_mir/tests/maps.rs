@@ -3326,6 +3326,128 @@ fn test_map_delete_on_map_in_map_result_lowers_dynamic_inner_delete() {
 }
 
 #[test]
+fn test_map_contains_accepts_declared_map_in_map_outer() {
+    let map_contains_decl = DeclId::new(42);
+    let (mut hir, mut decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
+    decl_names.insert(map_contains_decl, "map-contains".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(12),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_contains_decl,
+        src_dst: RegId::new(12),
+        args: HirCallArgs {
+            positional: vec![RegId::new(5)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(12),
+    };
+    hir.main.register_count = 13;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-contains should lower for map-in-map outer maps");
+
+    let expected_outer = MapRef {
+        name: "outer".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapLookup { map, .. } if *map == expected_outer
+            )),
+        "expected map-in-map outer map lookup for membership"
+    );
+}
+
+#[test]
+fn test_map_contains_on_map_in_map_result_lowers_dynamic_inner_lookup() {
+    let map_get_decl = DeclId::new(42);
+    let map_contains_decl = DeclId::new(43);
+    let (mut hir, mut decl_names) = map_define_map_in_map_hir("array-of-maps", true, false, false);
+    decl_names.insert(map_get_decl, "map-get".to_string());
+    decl_names.insert(map_contains_decl, "map-contains".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(12),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(12),
+        args: HirCallArgs {
+            positional: vec![RegId::new(5)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(13),
+        lit: HirLiteral::Int(7),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_contains_decl,
+        src_dst: RegId::new(13),
+        args: HirCallArgs {
+            positional: vec![RegId::new(12)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return {
+        src: RegId::new(13),
+    };
+    hir.main.register_count = 14;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("dynamic map-contains through map-in-map result should lower");
+
+    let expected_inner = MapRef {
+        name: "inner".to_string(),
+        kind: MapKind::Hash,
+    };
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapLookupDynamic { inner_map, .. } if *inner_map == expected_inner
+            )),
+        "expected dynamic lookup through the inner map template for membership"
+    );
+}
+
+#[test]
 fn test_map_get_rejects_kind_that_conflicts_with_prior_map_define() {
     let map_get_decl = DeclId::new(42);
     let (mut hir, mut decl_names) = map_define_with_max_entries_hir(128, "array");
