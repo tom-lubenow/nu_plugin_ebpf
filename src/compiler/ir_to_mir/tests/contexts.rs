@@ -3338,8 +3338,28 @@ fn test_lower_flow_dissector_flow_keys_scalar_assignment() {
         } if *ptr == flow_keys_vreg
     )));
 
-    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
-        .expect("flow_dissector ctx.flow_keys.ip_proto assignment should compile");
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("flow_dissector ctx.flow_keys.ip_proto assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::FlowKeys));
+
+    let program = compiled.into_program(
+        EbpfProgramType::FlowDissector,
+        "/proc/self/ns/net",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let flow_keys_requirement = program
+        .context_field_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.key() == "ctx:flow_keys")
+        .expect("flow_dissector flow-key writes should report ctx.flow_keys compatibility");
+    assert_eq!(flow_keys_requirement.minimum_kernel(), "4.20");
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("4.20")
+    );
 }
 
 #[test]
@@ -3418,8 +3438,10 @@ fn test_lower_bound_flow_dissector_flow_keys_scalar_assignment() {
         }
     )));
 
-    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
-        .expect("bound flow_dissector ctx.flow_keys pointer assignment should compile");
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("bound flow_dissector ctx.flow_keys pointer assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::FlowKeys));
 }
 
 #[test]
