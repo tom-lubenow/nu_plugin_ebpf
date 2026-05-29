@@ -494,6 +494,16 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  let text = "helper-call \"bpf_ringbuf_query\" custom_ringbuf 0"'
+            '  # helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
             '  helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash'
             '  0'
             '}'
@@ -4682,6 +4692,16 @@ const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  let text = "helper-call \"bpf_trace_printk\" \"ignored\" 7"'
+            '  # helper-call "bpf_map_lookup_elem" ignored key'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
             '  let arg0 = "01234567"'
             '  let retval = "01234567"'
             '  (helper-call "bpf_get_func_arg" $ctx 0 $arg0) | count'
@@ -4722,6 +4742,17 @@ const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
 ]
 
 const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let text = "kfunc-call \"bpf_task_from_pid\" 1"'
+            '  # kfunc-call "bpf_task_from_pid" 1'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
     {
         target: "cgroup_sock_addr:/sys/fs/cgroup_unix:connect4"
         program: [
@@ -19332,17 +19363,47 @@ def map-kind-kernel-feature [kind: string] {
     }
 }
 
+def command-invocation-tails [line: string command: string] {
+    let trimmed = ($line | str trim)
+    if $trimmed == "" or ($trimmed | str starts-with "#") {
+        return []
+    }
+
+    mut tails = []
+    let command_len = ($command | str length)
+    if $trimmed == $command {
+        $tails = ($tails | append "")
+    }
+    if ($trimmed | str starts-with $"($command) ") {
+        $tails = ($tails | append ($trimmed | str substring ($command_len + 1)..))
+    }
+
+    for prefix in ["| " "; " "{ " "( " "("] {
+        let marker = $"($prefix)($command) "
+        let parts = ($trimmed | split row $marker)
+        if ($parts | length) <= 1 {
+            continue
+        }
+
+        for raw_tail in ($parts | skip 1) {
+            $tails = ($tails | append $raw_tail)
+        }
+    }
+
+    $tails
+}
+
+def line-invokes-command? [line: string command: string] {
+    not ((command-invocation-tails $line $command) | is-empty)
+}
+
 def source-line-helper-call-name [line: string] {
-    if not ($line | str contains "helper-call ") {
+    let tails = (command-invocation-tails $line "helper-call")
+    if ($tails | is-empty) {
         return null
     }
 
-    let parts = ($line | split row "helper-call ")
-    if ($parts | length) <= 1 {
-        return null
-    }
-
-    let raw_helper = (($parts | get 1) | str trim | split row " " | first)
+    let raw_helper = (($tails | first) | str trim | split row " " | first)
     normalize-helper-name-token $raw_helper
 }
 
@@ -19362,7 +19423,7 @@ def helper-call-fixed-map-kind-kernel-feature [line: string] {
 }
 
 def helper-call-explicit-map-kind-kernel-feature [line: string] {
-    if not (($line | str contains "helper-call ") and ($line | str contains "--kind ")) {
+    if ((command-invocation-tails $line "helper-call") | is-empty) or not ($line | str contains "--kind ") {
         return null
     }
 
@@ -21024,12 +21085,7 @@ def program-kfunc-names [source: string] {
     mut names = []
 
     for line in ($source | lines) {
-        let parts = ($line | split row "kfunc-call ")
-        if ($parts | length) <= 1 {
-            continue
-        }
-
-        for raw_call in ($parts | skip 1) {
+        for raw_call in (command-invocation-tails $line "kfunc-call") {
             let raw_name = ($raw_call | str trim | split row " " | first)
             let kfunc_name = (normalize-kfunc-name-token $raw_name)
             if $kfunc_name not-in $names {
@@ -21045,12 +21101,7 @@ def program-helper-names [source: string] {
     mut names = []
 
     for line in ($source | lines) {
-        let parts = ($line | split row "helper-call ")
-        if ($parts | length) <= 1 {
-            continue
-        }
-
-        for raw_call in ($parts | skip 1) {
+        for raw_call in (command-invocation-tails $line "helper-call") {
             let raw_name = ($raw_call | str trim | split row " " | first)
             let helper_name = (normalize-helper-name-token $raw_name)
             if $helper_name not-in $names {
@@ -21066,19 +21117,24 @@ def program-map-kernel-features [source: string] {
     mut features = []
 
     for line in ($source | lines) {
-        if ($line | str contains "helper-call ") {
-            let fixed_feature = (helper-call-fixed-map-kind-kernel-feature $line)
+        let trimmed = ($line | str trim)
+        if $trimmed == "" or ($trimmed | str starts-with "#") {
+            continue
+        }
+
+        if (line-invokes-command? $trimmed "helper-call") {
+            let fixed_feature = (helper-call-fixed-map-kind-kernel-feature $trimmed)
             if $fixed_feature != null {
                 $features = (append-missing-kernel-features $features [$fixed_feature])
             }
-            let feature = (helper-call-explicit-map-kind-kernel-feature $line)
+            let feature = (helper-call-explicit-map-kind-kernel-feature $trimmed)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
             continue
         }
 
-        let parts = ($line | split row "--kind ")
+        let parts = ($trimmed | split row "--kind ")
         if ($parts | length) > 1 {
             let raw_kind = (($parts | get 1) | str trim | split row " " | first)
             let kind = (normalize-map-kind-token $raw_kind)
@@ -21188,20 +21244,9 @@ def line-declares-readonly-aggregate-constant? [line: string] {
 }
 
 def line-invokes-global-command? [line: string] {
-    let trimmed = ($line | str trim)
-    if ($trimmed | str starts-with "#") {
-        return false
-    }
-
     for command in ["global-define" "global-get" "global-set"] {
-        if $trimmed == $command or ($trimmed | str starts-with $"($command) ") {
+        if (line-invokes-command? $line $command) {
             return true
-        }
-
-        for prefix in ["| " "; " "{ " "( "] {
-            if ($trimmed | str contains $"($prefix)($command) ") {
-                return true
-            }
         }
     }
 
@@ -21287,12 +21332,12 @@ def callback-trusted-btf-param-indexes [helper_name: string] {
 }
 
 def helper-call-name-from-line [line: string] {
-    let parts = ($line | split row "helper-call ")
-    if ($parts | length) <= 1 {
+    let tails = (command-invocation-tails $line "helper-call")
+    if ($tails | is-empty) {
         return null
     }
 
-    normalize-helper-name-token (($parts | skip 1 | first | str trim | split row " " | first))
+    normalize-helper-name-token (($tails | first | str trim | split row " " | first))
 }
 
 def closure-param-names-from-line [line: string] {
