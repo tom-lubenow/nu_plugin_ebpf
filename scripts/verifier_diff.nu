@@ -914,6 +914,12 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
     }
     {
         program: [
+            '{|ctx| let seed = 7; let config = { pid: $seed samples: [11 22] }; (($config.samples | get 1) + $config.pid) | count }'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
             '{|ctx|'
             '  let text = "global-get seen"'
             '  0'
@@ -4037,6 +4043,13 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event| let rec = { event: $event }; $rec.event.pid | count }'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|event| let base = { event: $event }; let rec = { ok: true, ...$base }; $rec.event.pid | count }'
         ]
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
@@ -24816,27 +24829,7 @@ def declaration-binding-name [raw_name: string] {
     | str trim
 }
 
-def declaration-assignment [line: string] {
-    let trimmed = ($line | str trim)
-    let body = if ($trimmed | str starts-with "let ") {
-        $trimmed | str substring 4..
-    } else if ($trimmed | str starts-with "mut ") {
-        $trimmed | str substring 4..
-    } else {
-        mut inline_body = null
-        for command in ["let" "mut"] {
-            let tails = (command-invocation-tails $trimmed $command)
-            if not ($tails | is-empty) {
-                $inline_body = ($tails | first | str trim)
-                break
-            }
-        }
-        if $inline_body == null {
-            return null
-        }
-        $inline_body
-    }
-
+def declaration-assignment-from-body [body: string] {
     let assignment_parts = ($body | split row "=")
     if ($assignment_parts | length) < 2 {
         return null
@@ -24853,20 +24846,37 @@ def declaration-assignment [line: string] {
     }
 }
 
+def declaration-assignments [line: string] {
+    let trimmed = ($line | str trim)
+    mut assignments = []
+
+    for command in ["let" "mut"] {
+        for tail in (command-invocation-tails $trimmed $command) {
+            let assignment = (declaration-assignment-from-body ($tail | str trim))
+            if $assignment != null {
+                $assignments = ($assignments | append $assignment)
+            }
+        }
+    }
+
+    $assignments
+}
+
+def declaration-assignment [line: string] {
+    declaration-assignments $line | first
+}
+
 def declaration-rhs-token [assignment] {
     trim-simple-parentheses (($assignment.rhs | split row ";" | first) | str trim)
 }
 
 def context-variable-binding [line: string context_names] {
-    let assignment = (declaration-assignment $line)
-    if $assignment == null {
-        return null
-    }
-
-    let rhs = (declaration-rhs-token $assignment)
-    for context_name in $context_names {
-        if $rhs == $"$($context_name)" {
-            return $assignment.name
+    for assignment in (declaration-assignments $line) {
+        let rhs = (declaration-rhs-token $assignment)
+        for context_name in $context_names {
+            if $rhs == $"$($context_name)" {
+                return $assignment.name
+            }
         }
     }
 
@@ -24921,22 +24931,19 @@ def program-context-variable-names [source: string] {
 }
 
 def context-root-binding [line: string context_names] {
-    let assignment = (declaration-assignment $line)
-    if $assignment == null {
-        return null
-    }
+    for assignment in (declaration-assignments $line) {
+        let rhs = (declaration-rhs-token $assignment)
+        for context_name in $context_names {
+            let prefix = $"$($context_name)."
+            if not ($rhs | str starts-with $prefix) {
+                continue
+            }
 
-    let rhs = (declaration-rhs-token $assignment)
-    for context_name in $context_names {
-        let prefix = $"$($context_name)."
-        if not ($rhs | str starts-with $prefix) {
-            continue
-        }
-
-        let root_path = (normalize-context-path-token ($rhs | str substring ($prefix | str length)..))
-        let root = ($root_path | split row "." | first)
-        if (context-projection-root? $root) {
-            return { name: $assignment.name root: $root_path }
+            let root_path = (normalize-context-path-token ($rhs | str substring ($prefix | str length)..))
+            let root = ($root_path | split row "." | first)
+            if (context-projection-root? $root) {
+                return { name: $assignment.name root: $root_path }
+            }
         }
     }
 
@@ -24994,18 +25001,15 @@ def record-literal-context-fields [raw: string context_names bound_aliases] {
 }
 
 def record-context-bindings [line: string context_names bound_aliases] {
-    let assignment = (declaration-assignment $line)
-    if $assignment == null {
-        return []
-    }
-
     mut bindings = []
-    for field in (record-literal-context-fields (declaration-rhs-token $assignment) $context_names $bound_aliases) {
-        $bindings = ($bindings | append {
-            name: $assignment.name
-            field: $field.field
-            root: $field.root
-        })
+    for assignment in (declaration-assignments $line) {
+        for field in (record-literal-context-fields (declaration-rhs-token $assignment) $context_names $bound_aliases) {
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $field.field
+                root: $field.root
+            })
+        }
     }
 
     $bindings
@@ -25096,36 +25100,33 @@ def combine-context-roots [base: string wrapper: string] {
 }
 
 def record-wrapper-context-bindings [line: string context_names bound_aliases wrapper_defs] {
-    let assignment = (declaration-assignment $line)
-    if $assignment == null {
-        return []
-    }
-
-    let rhs = (declaration-rhs-token $assignment)
-    let tokens = (
-        $rhs
-        | split row " "
-        | each {|part| $part | str trim }
-        | where {|part| $part != "" }
-    )
-    if ($tokens | length) != 2 {
-        return []
-    }
-
-    let callee = ($tokens | get 0)
-    let arg = ($tokens | get 1)
     mut bindings = []
-    for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $callee }) {
-        let root = (context-root-from-value-token $arg $context_names $bound_aliases)
-        if $root == null {
+    for assignment in (declaration-assignments $line) {
+        let rhs = (declaration-rhs-token $assignment)
+        let tokens = (
+            $rhs
+            | split row " "
+            | each {|part| $part | str trim }
+            | where {|part| $part != "" }
+        )
+        if ($tokens | length) != 2 {
             continue
         }
-        let wrapper_root = ($wrapper | get -o root | default "")
-        $bindings = ($bindings | append {
-            name: $assignment.name
-            field: $wrapper.field
-            root: (combine-context-roots $root $wrapper_root)
-        })
+
+        let callee = ($tokens | get 0)
+        let arg = ($tokens | get 1)
+        for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $callee }) {
+            let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+            if $root == null {
+                continue
+            }
+            let wrapper_root = ($wrapper | get -o root | default "")
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $wrapper.field
+                root: (combine-context-roots $root $wrapper_root)
+            })
+        }
     }
 
     $bindings
@@ -25175,18 +25176,15 @@ def record-literal-spread-context-fields [raw: string aliases] {
 }
 
 def record-spread-context-bindings [line: string aliases] {
-    let assignment = (declaration-assignment $line)
-    if $assignment == null {
-        return []
-    }
-
     mut bindings = []
-    for field in (record-literal-spread-context-fields (declaration-rhs-token $assignment) $aliases) {
-        $bindings = ($bindings | append {
-            name: $assignment.name
-            field: $field.field
-            root: ($field | get -o root | default "")
-        })
+    for assignment in (declaration-assignments $line) {
+        for field in (record-literal-spread-context-fields (declaration-rhs-token $assignment) $aliases) {
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $field.field
+                root: ($field | get -o root | default "")
+            })
+        }
     }
 
     $bindings
@@ -25406,31 +25404,28 @@ def function-context-root-aliases [body param: string identity_wrappers] {
     mut aliases = []
 
     for line in $body {
-        let assignment = (declaration-assignment $line)
-        if $assignment == null {
-            continue
-        }
-
-        let rhs = (declaration-rhs-token $assignment)
-        mut root = (context-root-from-value-token $rhs [$param] $aliases)
-        if $root == null {
-            let tokens = (
-                $rhs
-                | split row " "
-                | each {|part| $part | str trim }
-                | where {|part| $part != "" }
-            )
-            if ($tokens | length) == 2 {
-                let callee = ($tokens | get 0)
-                let arg = ($tokens | get 1)
-                if $callee in $identity_wrappers {
-                    $root = (context-root-from-value-token $arg [$param] $aliases)
+        for assignment in (declaration-assignments $line) {
+            let rhs = (declaration-rhs-token $assignment)
+            mut root = (context-root-from-value-token $rhs [$param] $aliases)
+            if $root == null {
+                let tokens = (
+                    $rhs
+                    | split row " "
+                    | each {|part| $part | str trim }
+                    | where {|part| $part != "" }
+                )
+                if ($tokens | length) == 2 {
+                    let callee = ($tokens | get 0)
+                    let arg = ($tokens | get 1)
+                    if $callee in $identity_wrappers {
+                        $root = (context-root-from-value-token $arg [$param] $aliases)
+                    }
                 }
             }
-        }
 
-        if $root != null {
-            $aliases = (upsert-context-root-alias $aliases $assignment.name $root)
+            if $root != null {
+                $aliases = (upsert-context-root-alias $aliases $assignment.name $root)
+            }
         }
     }
 
@@ -25579,26 +25574,35 @@ def program-record-context-aliases [source: string context_names] {
         | append (record-context-wrapper-definitions $source)
     )
 
-    for line in ($source | lines) {
-        let bindings = (
-            (record-context-bindings $line $context_names $bound_aliases)
-            | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
-            | append (record-upsert-context-bindings $line $context_names $bound_aliases)
-            | append (record-spread-context-bindings $line $aliases)
-        )
-        for binding in $bindings {
-            let existing = (
-                $aliases
-                | where {|alias|
-                    (
-                        $alias.name == $binding.name
-                        and $alias.field == $binding.field
-                        and (($alias | get -o root | default "") == ($binding | get -o root | default ""))
-                    )
-                }
+    mut changed = true
+    loop {
+        if not $changed {
+            break
+        }
+        $changed = false
+
+        for line in ($source | lines) {
+            let bindings = (
+                (record-context-bindings $line $context_names $bound_aliases)
+                | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
+                | append (record-upsert-context-bindings $line $context_names $bound_aliases)
+                | append (record-spread-context-bindings $line $aliases)
             )
-            if ($existing | is-empty) {
-                $aliases = ($aliases | append $binding)
+            for binding in $bindings {
+                let existing = (
+                    $aliases
+                    | where {|alias|
+                        (
+                            $alias.name == $binding.name
+                            and $alias.field == $binding.field
+                            and (($alias | get -o root | default "") == ($binding | get -o root | default ""))
+                        )
+                    }
+                )
+                if ($existing | is-empty) {
+                    $aliases = ($aliases | append $binding)
+                    $changed = true
+                }
             }
         }
     }
@@ -25807,22 +25811,19 @@ def line-declares-readonly-aggregate-constant? [line: string] {
         return false
     }
 
-    let assignment = (declaration-assignment $trimmed)
-    if $assignment == null {
-        return false
-    }
+    for assignment in (declaration-assignments $trimmed) {
+        let rhs = (declaration-rhs-token $assignment)
+        let compact = (trim-simple-parentheses $rhs | str replace --all " " "")
 
-    let rhs = (declaration-rhs-token $assignment)
-    let compact = (trim-simple-parentheses $rhs | str replace --all " " "")
-
-    if (($compact | str starts-with "{") and $compact != "{}") {
-        return true
-    }
-    if (($compact | str starts-with "[") and $compact != "[]") {
-        return true
-    }
-    if (($compact | str starts-with "0x[") and $compact != "0x[]") {
-        return true
+        if (($compact | str starts-with "{") and $compact != "{}") {
+            return true
+        }
+        if (($compact | str starts-with "[") and $compact != "[]") {
+            return true
+        }
+        if (($compact | str starts-with "0x[") and $compact != "0x[]") {
+            return true
+        }
     }
 
     false
