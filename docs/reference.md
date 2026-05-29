@@ -804,10 +804,12 @@ cat /sys/kernel/tracing/events/syscalls/sys_enter_openat/format
 
 Tracepoint field names come from tracefs format files. If those files are not
 readable in the current environment, syscall tracepoints may fall back to the
-generic syscall payload shape: `ctx.id` plus fixed-array `ctx.args`. For
-`syscalls/sys_enter_openat`, readable tracefs exposes named fields such as
-`ctx.filename`; syscall-entry pointer fields are modeled as userspace pointers,
-so `ctx.filename | read-str --max-len 64` is the preferred form. The generic
+generic syscall payload shape: `ctx.id` plus fixed-array `ctx.args`. For modeled
+common syscall-entry tracepoints, the fallback also exposes source-known named
+argument aliases over those ABI slots, such as `ctx.dfd`, `ctx.filename`,
+`ctx.flags`, and `ctx.mode` for `syscalls/sys_enter_openat`; syscall-entry
+pointer fields are modeled as userspace pointers, so
+`ctx.filename | read-str --max-len 64` is the preferred form. The generic
 fallback `($ctx.args | get 1)` is only a raw numeric ABI value and is not enough
 pointer provenance for `read-str`. `ebpf spec` reports tracepoint field
 provenance for both paths; fallback syscall fields also report the Linux 4.7

@@ -954,11 +954,13 @@ Context parameter syntax (recommended):
   Tracepoint fields:
     Access fields specific to each tracepoint. Fields are read from tracefs.
     If tracefs format files are not readable, syscall tracepoints may expose
-    the generic syscall layout instead: `ctx.id` and fixed-array `ctx.args`.
+    the generic syscall layout (`ctx.id`, fixed-array `ctx.args`) plus
+    source-known named argument aliases for modeled common syscalls, such as
+    `ctx.dfd`, `ctx.filename`, `ctx.flags`, and `ctx.mode` for openat.
     Example for syscalls/sys_enter_openat:
       {|ctx| $ctx.id }             - Syscall number from the generic layout
       {|ctx| $ctx.args | get 1 }   - Raw filename ABI value from generic args
-      {|ctx| $ctx.filename | read-str --max-len 64 } - Typed filename field when tracefs exposes it
+      {|ctx| $ctx.filename | read-str --max-len 64 } - Typed filename field from tracefs or fallback metadata
 
 Output commands:
   emit              - Send value to userspace via ring buffer

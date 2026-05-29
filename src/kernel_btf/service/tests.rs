@@ -169,6 +169,45 @@ fn test_wellknown_sys_enter() {
     );
     assert!(ctx.has_field("id"));
     assert!(ctx.has_field("args"));
+    assert!(ctx.has_field("dfd"));
+    assert!(ctx.has_field("filename"));
+    assert!(ctx.has_field("flags"));
+    assert!(ctx.has_field("mode"));
+
+    let filename = ctx.get_field("filename").expect("expected filename field");
+    assert_eq!(filename.offset, 24);
+    assert!(matches!(
+        filename.type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let flags = ctx.get_field("flags").expect("expected flags field");
+    assert_eq!(flags.offset, 32);
+    assert!(matches!(
+        flags.type_info,
+        TypeInfo::Int {
+            size: 8,
+            signed: false
+        }
+    ));
+}
+
+#[test]
+fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
+    let openat2 = TracepointContext::sys_enter("sys_enter_openat2");
+    assert!(openat2.has_field("dfd"));
+    assert!(openat2.has_field("filename"));
+    assert!(openat2.has_field("how"));
+    assert!(openat2.has_field("size"));
+
+    let execve = TracepointContext::sys_enter("sys_enter_execve");
+    assert!(execve.has_field("filename"));
+    assert!(execve.has_field("argv"));
+    assert!(execve.has_field("envp"));
+
+    let unknown = TracepointContext::sys_enter("sys_enter_unknown");
+    assert!(unknown.has_field("id"));
+    assert!(unknown.has_field("args"));
+    assert!(!unknown.has_field("filename"));
 }
 
 #[test]

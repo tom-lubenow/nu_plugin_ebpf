@@ -126,7 +126,7 @@ impl TracepointContext {
     pub fn sys_enter(name: &str) -> Self {
         // trace_entry is 8 bytes (type u16 + flags u8 + preempt_count u8 + pid i32)
         // Then: id (8 bytes), args[6] (48 bytes)
-        let fields = vec![
+        let mut fields = vec![
             FieldInfo {
                 name: "id".into(),
                 type_info: TypeInfo::Int {
@@ -151,6 +151,7 @@ impl TracepointContext {
                 bitfield: None,
             },
         ];
+        fields.extend(Self::well_known_sys_enter_arg_fields(name));
 
         Self::new_with_source(
             "syscalls",
@@ -161,6 +162,62 @@ impl TracepointContext {
             TracepointContextSource::WellKnownSyscallFallback,
             None,
         )
+    }
+
+    fn sys_enter_arg_field(index: usize, name: &str, type_info: TypeInfo) -> Option<FieldInfo> {
+        if index >= 6 {
+            return None;
+        }
+        Some(FieldInfo {
+            name: name.into(),
+            type_info,
+            offset: 16 + index * 8,
+            size: 8,
+            bitfield: None,
+        })
+    }
+
+    fn syscall_arg_int(signed: bool) -> TypeInfo {
+        TypeInfo::Int { size: 8, signed }
+    }
+
+    fn syscall_arg_user_ptr() -> TypeInfo {
+        TypeInfo::Ptr {
+            target: Box::new(TypeInfo::Unknown),
+            is_user: true,
+        }
+    }
+
+    fn well_known_sys_enter_arg_fields(name: &str) -> Vec<FieldInfo> {
+        let Some(syscall) = name.strip_prefix("sys_enter_") else {
+            return Vec::new();
+        };
+        let fields: Vec<(&str, TypeInfo)> = match syscall {
+            "openat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
+            "openat2" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("how", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "execve" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("argv", Self::syscall_arg_user_ptr()),
+                ("envp", Self::syscall_arg_user_ptr()),
+            ],
+            _ => return Vec::new(),
+        };
+
+        fields
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (name, ty))| Self::sys_enter_arg_field(idx, name, ty.clone()))
+            .collect()
     }
 
     /// Create context for sys_exit tracepoints
