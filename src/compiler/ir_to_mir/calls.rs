@@ -870,13 +870,6 @@ impl<'a> HirToMirLowering<'a> {
                         };
                         args.push((arg_vreg, self.pipeline_input_reg));
                     }
-                } else if src_dst_had_value && !is_known_zero_arg {
-                    let arg_vreg = if self.is_context_reg(src_dst) {
-                        self.materialize_context_pointer_arg()
-                    } else {
-                        dst_vreg
-                    };
-                    args.push((arg_vreg, Some(src_dst)));
                 }
 
                 for (arg_vreg, arg_reg) in positional_args {
@@ -1078,28 +1071,6 @@ impl<'a> HirToMirLowering<'a> {
                         }
                         args.push(MirValue::VReg(arg_vreg));
                     }
-                } else if src_dst_had_value && sig.max_args != 0 && self.positional_args.len() == 1
-                {
-                    let arg_vreg = if self.is_context_reg(src_dst) {
-                        self.materialize_context_pointer_arg()
-                    } else {
-                        dst_vreg
-                    };
-                    let helper_arg_idx = args.len();
-                    let arg_vreg = if matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Pointer)
-                    {
-                        self.materialized_metadata_aggregate_vreg(src_dst, arg_vreg)?
-                    } else {
-                        arg_vreg
-                    };
-                    let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
-                        helper,
-                        helper_arg_idx,
-                        arg_vreg,
-                        Some(src_dst),
-                    );
-                    helper_arg_regs.push((helper_arg_idx, src_dst));
-                    args.push(MirValue::VReg(arg_vreg));
                 }
                 for (pos_idx, (arg_vreg, arg_reg)) in positional_args.iter().copied().enumerate() {
                     let helper_arg_idx = args.len();
@@ -1152,13 +1123,13 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if args.len() < sig.min_args || args.len() > sig.max_args {
                     let with_live_value = args.len().saturating_add(1);
-                    if (src_dst_had_value || self.pipeline_input.is_some())
+                    if self.pipeline_input.is_some()
                         && self.positional_args.len() > 1
                         && with_live_value >= sig.min_args
                         && with_live_value <= sig.max_args
                     {
                         return Err(CompileError::UnsupportedInstruction(format!(
-                            "helper-call '{}' does not prepend the piped/live value when explicit helper arguments are present; pass that value explicitly as the first helper argument",
+                            "helper-call '{}' does not prepend the piped value when explicit helper arguments are present; pass that value explicitly as the first helper argument",
                             helper.name()
                         )));
                     }

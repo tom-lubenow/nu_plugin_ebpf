@@ -15366,6 +15366,38 @@ const FIXTURES = [
         error_contains: "pass that value explicitly as the first helper argument"
     }
     {
+        name: "source-helper-call-prior-statement-does-not-inject"
+        category: "helper-state"
+        tags: [helper-call source reject pipeline diagnostic]
+        target: "kprobe:sys_read"
+        program: [
+            '{|ctx|'
+            '  99'
+            '  helper-call "bpf_get_socket_cookie"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects 1..=1 helper arguments after the helper name, got 0"
+    }
+    {
+        name: "source-kfunc-call-prior-statement-does-not-inject"
+        category: "helper-state"
+        tags: [kfunc source reject pipeline diagnostic]
+        target: "kprobe:sys_read"
+        program: [
+            '{|ctx|'
+            '  99'
+            '  kfunc-call "bpf_cgroup_ancestor" 7 --btf-id 4242'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects 2..=2 arguments, got 1"
+    }
+    {
         name: "source-kfunc-path-d-path-accepts-file-path"
         category: "helper-state"
         tags: [kfunc file path source accept]

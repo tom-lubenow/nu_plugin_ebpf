@@ -3,7 +3,9 @@ use crate::compiler::EbpfProgramType;
 use crate::compiler::TypeInference;
 use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::elf::BpfMapType;
-use crate::compiler::hir::{HirBlock, HirClosureParam, HirClosureParamSource, infer_ctx_param};
+use crate::compiler::hir::{
+    HirBlock, HirCallArgs, HirClosureParam, HirClosureParamSource, infer_ctx_param,
+};
 use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
@@ -297,7 +299,7 @@ fn test_kfunc_pointer_return_overrides_reused_hir_register_hint() {
                     decl_id: DeclId::new(42),
                     src_dst: RegId::new(3),
                     args: HirCallArgs {
-                        positional: vec![RegId::new(4)],
+                        positional: vec![RegId::new(4), RegId::new(3)],
                         ..Default::default()
                     },
                 },
@@ -2503,6 +2505,84 @@ fn test_kfunc_call_without_pipeline_does_not_inject_src_dst() {
 }
 
 #[test]
+fn test_kfunc_call_manual_hir_live_src_dst_without_pipeline_does_not_inject() {
+    let hir_program = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(123),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"bpf_cgroup_ancestor".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(7),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(4242),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            named: vec![(b"btf-id".to_vec(), RegId::new(3))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "kfunc-call".to_string());
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("kfunc-call lowering should succeed without injecting src_dst");
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let call = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallKfunc { args, .. } => Some(args),
+            _ => None,
+        })
+        .expect("expected lowered kfunc call");
+
+    assert_eq!(
+        call.len(),
+        1,
+        "unmarked live src_dst should not be injected as a kfunc argument"
+    );
+}
+
+#[test]
 fn test_helper_call_zero_arg_does_not_inject_src_dst() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use nu_protocol::{DeclId, RegId};
@@ -2734,6 +2814,65 @@ fn test_helper_call_with_live_src_dst_does_not_prepend_implicit_arg_when_explici
         call.1.len(),
         1,
         "helper-call should not prepend a live src_dst when explicit positional args are present"
+    );
+}
+
+#[test]
+fn test_helper_call_manual_hir_live_src_dst_without_pipeline_does_not_inject() {
+    let hir_program = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(99),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"bpf_get_socket_cookie".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("helper-call should not inject an unmarked live src_dst value");
+
+    assert!(
+        err.to_string().contains(
+            "helper-call 'bpf_get_socket_cookie' expects 1..=1 helper arguments after the helper name, got 0"
+        ),
+        "{err}"
     );
 }
 

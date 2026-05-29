@@ -10771,6 +10771,7 @@ fn test_compile_xdp_metadata_kfunc_reports_kfunc_compatibility() {
                         src_dst: RegId::new(0),
                         args: HirCallArgs {
                             positional: vec![RegId::new(1), RegId::new(2)],
+                            pipeline_input: Some(RegId::new(0)),
                             ..Default::default()
                         },
                     },
@@ -12018,6 +12019,7 @@ fn test_compile_sock_ops_enable_tx_tstamp_kfunc_program() {
                         src_dst: RegId::new(0),
                         args: HirCallArgs {
                             positional: vec![RegId::new(1), RegId::new(2)],
+                            pipeline_input: Some(RegId::new(0)),
                             ..Default::default()
                         },
                     },
