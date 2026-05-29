@@ -1805,6 +1805,26 @@ const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP = {
     min_kernel: "4.7"
     source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
 }
+const TRACEPOINT_FIELD_KERNEL_FEATURES = [
+    { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
+    { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
+    { target: "tracepoint:syscalls/sys_enter_read" field: "count" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_COUNT }
+    { target: "tracepoint:syscalls/sys_enter_write" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_FD }
+    { target: "tracepoint:syscalls/sys_enter_write" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_BUF }
+    { target: "tracepoint:syscalls/sys_enter_write" field: "count" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_COUNT }
+    { target: "tracepoint:syscalls/sys_enter_close" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CLOSE_FD }
+    { target: "tracepoint:syscalls/sys_enter_openat" field: "dfd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_DFD }
+    { target: "tracepoint:syscalls/sys_enter_openat" field: "filename" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FILENAME }
+    { target: "tracepoint:syscalls/sys_enter_openat" field: "flags" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FLAGS }
+    { target: "tracepoint:syscalls/sys_enter_openat" field: "mode" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_MODE }
+    { target: "tracepoint:syscalls/sys_enter_openat2" field: "dfd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_DFD }
+    { target: "tracepoint:syscalls/sys_enter_openat2" field: "filename" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_FILENAME }
+    { target: "tracepoint:syscalls/sys_enter_openat2" field: "how" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_HOW }
+    { target: "tracepoint:syscalls/sys_enter_openat2" field: "usize" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_USIZE }
+    { target: "tracepoint:syscalls/sys_enter_execve" field: "filename" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_FILENAME }
+    { target: "tracepoint:syscalls/sys_enter_execve" field: "argv" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ARGV }
+    { target: "tracepoint:syscalls/sys_enter_execve" field: "envp" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP }
+]
 const KERNEL_FEATURE_CTX_PACKET_LEN = {
     key: "ctx:packet_len"
     min_kernel: "4.1"
@@ -3928,6 +3948,39 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { 1 | count }'
+            '  ($ctx.dfd + $ctx.flags + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_openat:field:filename"
+            "tracepoint:syscalls/sys_enter_openat:field:dfd"
+            "tracepoint:syscalls/sys_enter_openat:field:flags"
+            "tracepoint:syscalls/sys_enter_openat:field:mode"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_openat2"
+        program: [
+            '{|ctx|'
+            '  let how = $ctx.how'
+            '  if $how { 1 | count }'
+            '  ($ctx.dfd + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_openat2:field:how"
+            "tracepoint:syscalls/sys_enter_openat2:field:dfd"
+            "tracepoint:syscalls/sys_enter_openat2:field:usize"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_openat"
+        program: [
+            '{|ctx|'
             '  $ctx.ifindex | count'
             '  0'
             '}'
@@ -4904,12 +4957,6 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_openat"
-        kernel_features: [
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_DFD
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FILENAME
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FLAGS
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_MODE
-        ]
         program: [
             '{|ctx|'
             '  let filename = $ctx.filename'
@@ -4927,11 +4974,6 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_read"
-        kernel_features: [
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_COUNT
-        ]
         program: [
             '{|ctx|'
             '  let buf = $ctx.buf'
@@ -4949,11 +4991,6 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_write"
-        kernel_features: [
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_FD
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_BUF
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_COUNT
-        ]
         program: [
             '{|ctx|'
             '  let buf = $ctx.buf'
@@ -4971,7 +5008,6 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_close"
-        kernel_features: [$KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CLOSE_FD]
         program: [
             '{|ctx|'
             '  $ctx.fd | count'
@@ -4987,12 +5023,6 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_openat2"
-        kernel_features: [
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_DFD
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_FILENAME
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_HOW
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_USIZE
-        ]
         program: [
             '{|ctx|'
             '  let filename = $ctx.filename'
@@ -5012,11 +5042,6 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_execve"
-        kernel_features: [
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_FILENAME
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ARGV
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP
-        ]
         program: [
             '{|ctx|'
             '  let filename = $ctx.filename'
@@ -19976,6 +20001,26 @@ def context-field-kernel-feature [field: string target] {
     }
 }
 
+def tracepoint-payload-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "tracepoint:") {
+        return null
+    }
+    if (tracepoint-built-in-context-field? $field) {
+        return null
+    }
+
+    let matches = (
+        $TRACEPOINT_FIELD_KERNEL_FEATURES
+        | where {|entry| $entry.target == $target_text and $entry.field == $field }
+    )
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first | get feature
+    }
+}
+
 def context-field-helper-kernel-feature [field: string target] {
     let target_text = ($target | default "")
 
@@ -20842,6 +20887,10 @@ def record-context-projection-kernel-features [source: string target context_nam
                 if $feature != null {
                     $features = (append-missing-kernel-features $features [$feature])
                 }
+                let tracepoint_feature = (tracepoint-payload-field-kernel-feature $field $target)
+                if $tracepoint_feature != null {
+                    $features = (append-missing-kernel-features $features [$tracepoint_feature])
+                }
                 if not (context-field-access-is-assignment-lhs? $raw_tail $field) {
                     let helper_feature = (context-field-helper-kernel-feature $field $target)
                     if $helper_feature != null {
@@ -21231,6 +21280,10 @@ def program-context-field-kernel-features [source: string target] {
                 let feature = (context-field-kernel-feature $field $target)
                 if $feature != null {
                     $features = (append-missing-kernel-features $features [$feature])
+                }
+                let tracepoint_feature = (tracepoint-payload-field-kernel-feature $field $target)
+                if $tracepoint_feature != null {
+                    $features = (append-missing-kernel-features $features [$tracepoint_feature])
                 }
                 if not (context-field-access-is-assignment-lhs? $raw_access $field) {
                     let helper_feature = (context-field-helper-kernel-feature $field $target)
