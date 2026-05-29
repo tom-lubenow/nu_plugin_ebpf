@@ -238,6 +238,28 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if !self.loop_contexts.is_empty()
+            && let Some(&existing_vreg) = self.var_mappings.get(&var_id)
+        {
+            // Preserve zero-iteration loop exits by keeping existing locals as
+            // loop-carried storage instead of rebinding them to body-only vregs.
+            self.emit(MirInst::Copy {
+                dst: existing_vreg,
+                src: MirValue::VReg(src_vreg),
+            });
+            if let Some(meta) = self.get_metadata(src).cloned() {
+                self.var_metadata.insert(var_id, meta);
+            } else {
+                self.var_metadata.remove(&var_id);
+            }
+            if let Some(ty) = self.vreg_type_hints.get(&src_vreg).cloned() {
+                self.vreg_type_hints.insert(existing_vreg, ty);
+            } else {
+                self.vreg_type_hints.remove(&existing_vreg);
+            }
+            return Ok(());
+        }
+
         let preserved = self.func.alloc_vreg();
         self.emit(MirInst::Copy {
             dst: preserved,

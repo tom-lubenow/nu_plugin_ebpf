@@ -1,10 +1,14 @@
 use super::*;
-use crate::compiler::hir::lower_ir_to_hir;
+use crate::compiler::compile_mir_to_ebpf;
+use crate::compiler::hir::{
+    HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    lower_ir_to_hir,
+};
 use crate::compiler::mir::{BinOpKind, MirInst, MirValue};
 use crate::compiler::verifier_types::verify_mir;
-use nu_protocol::ast::{Comparison, Operator};
+use nu_protocol::ast::{Comparison, Math, Operator};
 use nu_protocol::ir::{Instruction, IrBlock, Literal};
-use nu_protocol::{RegId, VarId};
+use nu_protocol::{RegId, Span, VarId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -146,6 +150,106 @@ fn test_hir_to_mir_for_loop_cleanup_return_stays_initialized() {
 
     verify_mir(&mir.main, &HashMap::new())
         .expect("for-loop cleanup return lowered through an exit epilogue should stay initialized");
+}
+
+#[test]
+fn test_hir_to_mir_bounded_list_accumulator_compiles() {
+    let sum_var = VarId::new(80);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::List { capacity: 3 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(10),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(20),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(30),
+                    },
+                    HirStmt::ListPush {
+                        src_dst: RegId::new(0),
+                        item: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: sum_var,
+                        src: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::Iterate {
+                    dst: RegId::new(1),
+                    stream: RegId::new(0),
+                    body: HirBlockId(1),
+                    end: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(4),
+                        var_id: sum_var,
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(4),
+                        op: Operator::Math(Math::Add),
+                        rhs: RegId::new(1),
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: sum_var,
+                        src: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(0),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadVariable {
+                    dst: RegId::new(5),
+                    var_id: sum_var,
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(5) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 14],
+        ast: vec![None; 14],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let mir = lower_hir_to_mir(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+    )
+    .expect("bounded list accumulator should lower");
+
+    compile_mir_to_ebpf(&mir, None).expect("bounded list accumulator should compile");
 }
 
 #[test]

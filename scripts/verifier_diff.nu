@@ -19439,6 +19439,23 @@ const FIXTURES = [
         error_contains: "Range end must be a compile-time known integer for eBPF loops"
     }
     {
+        name: "core-literal-list-iterate"
+        category: "language-core"
+        tags: [control-flow loop aggregate list]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut sum = 0'
+            '  for item in [10 20 30] {'
+            '    $sum = ($sum + $item)'
+            '  }'
+            '  $sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-inline-bounded-loop"
         category: "language-core"
         tags: [control-flow loop]
