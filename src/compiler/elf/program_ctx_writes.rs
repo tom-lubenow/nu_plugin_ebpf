@@ -247,19 +247,6 @@ impl ContextStoreTargetSpec {
         .ok()
     }
 
-    fn direct_store(
-        &self,
-        spec: &ProgramSpec,
-        field_name: &str,
-    ) -> Option<ContextFieldDirectStore> {
-        match self.physical_store(spec, field_name)? {
-            ContextFieldPhysicalStore::Direct(store) => Some(store),
-            ContextFieldPhysicalStore::Indexed(_) | ContextFieldPhysicalStore::Transformed(_) => {
-                None
-            }
-        }
-    }
-
     fn indexed_store_count(&self) -> Option<usize> {
         match self {
             Self::SockOpsReplyLongWord => Some(4),
@@ -268,32 +255,6 @@ impl ContextStoreTargetSpec {
             | Self::CgroupSockAddrMsgSrcIp6Word
             | Self::CgroupSockAddrLocalIp6WordAlias => Some(4),
             Self::Fixed(_) | Self::CgroupSockAddrLocalIp4Alias => None,
-        }
-    }
-
-    fn indexed_store(
-        &self,
-        spec: &ProgramSpec,
-        field_name: &str,
-    ) -> Option<(ContextFieldIndexedStore, usize)> {
-        let count = self.indexed_store_count()?;
-
-        match self.physical_store(spec, field_name)? {
-            ContextFieldPhysicalStore::Indexed(store) => Some((store, count)),
-            ContextFieldPhysicalStore::Direct(_) | ContextFieldPhysicalStore::Transformed(_) => {
-                None
-            }
-        }
-    }
-
-    fn transformed_store(
-        &self,
-        spec: &ProgramSpec,
-        field_name: &str,
-    ) -> Option<ContextFieldTransformedStore> {
-        match self.physical_store(spec, field_name)? {
-            ContextFieldPhysicalStore::Transformed(store) => Some(store),
-            ContextFieldPhysicalStore::Direct(_) | ContextFieldPhysicalStore::Indexed(_) => None,
         }
     }
 
@@ -634,21 +595,42 @@ impl ContextWriteSurfaceSpec {
                 (Some(minimum_kernel), Some(minimum_kernel_source))
             })
             .unwrap_or((None, None));
-        let direct_store_offset = match &self.target {
-            ContextWriteTargetSpec::Store(target) => target
-                .direct_store(spec, self.field_name)
-                .map(|store| store.offset),
+        let physical_store = match &self.target {
+            ContextWriteTargetSpec::Store(target) => target.physical_store(spec, self.field_name),
             _ => None,
         };
-        let indexed_store = match &self.target {
-            ContextWriteTargetSpec::Store(target) => target.indexed_store(spec, self.field_name),
+        let indexed_store_count = match (&self.target, physical_store) {
+            (
+                ContextWriteTargetSpec::Store(target),
+                Some(ContextFieldPhysicalStore::Indexed(_)),
+            ) => target.indexed_store_count(),
             _ => None,
         };
-        let transformed_store = match &self.target {
-            ContextWriteTargetSpec::Store(target) => {
-                target.transformed_store(spec, self.field_name)
+        let (
+            direct_store_offset,
+            indexed_store_base_offset,
+            indexed_store_convert_to_big_endian,
+            transformed_store_offset,
+            transformed_store_transform,
+        ) = match physical_store {
+            Some(ContextFieldPhysicalStore::Direct(store)) => {
+                (Some(store.offset), None, None, None, None)
             }
-            _ => None,
+            Some(ContextFieldPhysicalStore::Indexed(store)) => (
+                None,
+                Some(store.offset),
+                Some(store.convert_to_big_endian),
+                None,
+                None,
+            ),
+            Some(ContextFieldPhysicalStore::Transformed(store)) => (
+                None,
+                None,
+                None,
+                Some(store.offset),
+                Some(context_field_store_transform_label(store.transform)),
+            ),
+            None => (None, None, None, None, None),
         };
 
         ContextWriteSurface {
@@ -656,13 +638,11 @@ impl ContextWriteSurfaceSpec {
             kind: self.target.kind(),
             indexed: self.target.requires_indexed_assignment(),
             direct_store_offset,
-            indexed_store_base_offset: indexed_store.map(|(store, _)| store.offset),
-            indexed_store_count: indexed_store.map(|(_, count)| count),
-            indexed_store_convert_to_big_endian: indexed_store
-                .map(|(store, _)| store.convert_to_big_endian),
-            transformed_store_offset: transformed_store.map(|store| store.offset),
-            transformed_store_transform: transformed_store
-                .map(|store| context_field_store_transform_label(store.transform)),
+            indexed_store_base_offset,
+            indexed_store_count,
+            indexed_store_convert_to_big_endian,
+            transformed_store_offset,
+            transformed_store_transform,
             context_field_requirement,
             minimum_kernel,
             minimum_kernel_source,
