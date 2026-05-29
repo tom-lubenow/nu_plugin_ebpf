@@ -8393,6 +8393,66 @@ fn test_kfunc_task_acquire_release_semantics() {
 }
 
 #[test]
+fn test_kfunc_task_acquire_return_allows_trusted_btf_load() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: acquired,
+        kfunc: "bpf_task_acquire".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(acquired),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release).instructions.push(MirInst::Load {
+        dst: pid,
+        ptr: acquired,
+        offset: 0,
+        ty: MirType::I32,
+    });
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![acquired],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(acquired, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(pid, MirType::I32);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("typed kfunc pointer return should preserve trusted BTF load provenance");
+}
+
+#[test]
 fn test_kfunc_task_acquire_leak_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -14520,7 +14520,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "reference already released"
+        error_contains: "uses released reference"
     }
     {
         name: "source-kfunc-task-release-rejects-double-release"

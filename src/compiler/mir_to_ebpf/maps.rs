@@ -717,6 +717,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 .generic_map_key_types
                 .get(&map)
                 .map(|ty| ty.size().max(1))
+                .or_else(|| {
+                    self.generic_map_specs
+                        .get(&map.name)
+                        .filter(|spec| spec.kind == map.kind)
+                        .map(|spec| spec.key_size as usize)
+                })
                 .unwrap_or(8);
             let value_size = if map.kind.is_map_in_map() {
                 if !self.generic_map_inner_templates.contains_key(&map) {

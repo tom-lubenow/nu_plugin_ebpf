@@ -1582,6 +1582,68 @@ fn test_declared_map_define_maps_emit_without_operations() {
 }
 
 #[test]
+fn test_declared_hash_map_without_key_type_reuses_inferred_lookup_key_size() {
+    use crate::compiler::elf::BpfMapType;
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let first_lookup = func.alloc_vreg();
+    let second_lookup = func.alloc_vreg();
+    let map_ref = MapRef {
+        name: "ctx_keyed_items".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: key,
+            field: CtxField::PacketLen,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: first_lookup,
+        map: map_ref.clone(),
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: second_lookup,
+        map: map_ref.clone(),
+        key,
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let type_hints = MirTypeHints {
+        declared_generic_maps: HashSet::from([map_ref.clone()]),
+        generic_map_value_types: HashMap::from([(map_ref.clone(), MirType::U64)]),
+        ..MirTypeHints::default()
+    };
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = compile_mir_to_ebpf_with_hints(&program, Some(&probe_ctx), Some(&type_hints))
+        .expect("declared map without --key-type should reuse lookup-inferred key size");
+    let map = result
+        .maps
+        .iter()
+        .find(|map| map.name == "ctx_keyed_items")
+        .expect("expected declared hash map");
+
+    assert_eq!(map.def.map_type, BpfMapType::Hash as u32);
+    assert_eq!(map.def.key_size, 4);
+    assert_eq!(map.def.value_size, 8);
+}
+
+#[test]
 fn test_lru_hash_lookup_compiles_and_emits_generic_map() {
     use crate::compiler::mir::*;
 

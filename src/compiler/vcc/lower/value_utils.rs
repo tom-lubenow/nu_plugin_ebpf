@@ -272,6 +272,13 @@ impl<'a> VccLowerer<'a> {
 
     pub(super) fn kfunc_return_type(&self, kfunc: &str, dst: VReg) -> VccValueType {
         let inferred = self.types.get(&dst).map(vcc_type_from_mir);
+        let inferred_trusted_btf = matches!(
+            self.types.get(&dst),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            }) if !matches!(pointee.as_ref(), MirType::Unknown)
+        );
         let Some(sig) = KfuncSignature::for_name_or_kernel_btf(kfunc) else {
             return inferred.unwrap_or(VccValueType::Unknown);
         };
@@ -283,6 +290,9 @@ impl<'a> VccLowerer<'a> {
             KfuncRetKind::PointerMaybeNull => match inferred {
                 Some(VccValueType::Ptr(mut info)) => {
                     info.nullability = VccNullability::MaybeNull;
+                    if inferred_trusted_btf && info.space == VccAddrSpace::Kernel {
+                        info.space = VccAddrSpace::KernelBtf;
+                    }
                     if Self::kfunc_acquire_kind(kfunc).is_some() {
                         info.kfunc_ref = Some(VccReg(dst.0));
                     }

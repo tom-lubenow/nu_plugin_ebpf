@@ -282,10 +282,19 @@ pub(super) fn apply_call_kfunc_inst(
             if let Some(kind) = acquire_kind {
                 state.set_live_kfunc_ref(dst, true, Some(kind));
             }
+            let trusted_btf_return = matches!(
+                types.get(&dst),
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Kernel,
+                }) if !matches!(pointee.as_ref(), MirType::Unknown)
+            );
             VerifierType::Ptr {
                 space: AddressSpace::Kernel,
                 nullability: Nullability::MaybeNull,
-                bounds: None,
+                bounds: trusted_btf_return.then(|| {
+                    PtrBounds::new(PtrOrigin::KernelBtf(dst), 0, 0, UNKNOWN_KERNEL_BTF_LIMIT)
+                }),
                 ringbuf_ref: None,
                 kfunc_ref: if acquire_kind.is_some() {
                     Some(dst)
