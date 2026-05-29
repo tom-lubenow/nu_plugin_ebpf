@@ -70,8 +70,9 @@ pub(super) fn apply_inst(
                 *dst, *helper, args, types, slot_sizes, program, probe_ctx, state, errors,
             );
         }
-        MirInst::LoadMapFd { dst, .. } => {
+        MirInst::LoadMapFd { dst, map } => {
             apply_typed_dst_inst(*dst, types, state);
+            state.set_map_fd_source(*dst, map);
         }
         MirInst::LoadSubprogram { dst, .. } => {
             apply_typed_dst_inst(*dst, types, state);

@@ -566,6 +566,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             helper, args, arg_idx, types, state, predicate, expected, errors,
         );
     }
+    validate_helper_map_fd_matches_map_value(helper, args, state, errors);
 
     for (arg_idx, arg) in args.iter().enumerate().take(5) {
         let Some(expected_kind) = helper_pointer_arg_expected_ref_kind(helper, arg_idx) else {
@@ -1174,4 +1175,37 @@ fn helper_local_map_ref_arg(
     matches!(types.get(vreg), Some(MirType::MapRef { .. }))
         && BpfHelper::from_u32(helper_id)
             .is_some_and(|helper| helper.supports_local_helper_map_fd(arg_idx))
+}
+
+fn validate_helper_map_fd_matches_map_value(
+    helper: BpfHelper,
+    args: &[MirValue],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let (map_value_arg_idx, map_fd_arg_idx) = match helper {
+        BpfHelper::TimerInit => (0, 1),
+        _ => return,
+    };
+    let (Some(MirValue::VReg(map_value)), Some(MirValue::VReg(map_fd))) =
+        (args.get(map_value_arg_idx), args.get(map_fd_arg_idx))
+    else {
+        return;
+    };
+    let (Some(map_value_source), Some(map_fd_source)) = (
+        state.map_value_source(*map_value),
+        state.map_fd_source(*map_fd),
+    ) else {
+        return;
+    };
+    if map_value_source.map != *map_fd_source {
+        errors.push(VerifierTypeError::new(format!(
+            "helper '{}' arg{} map '{}' does not match arg{} map value '{}'",
+            helper.name(),
+            map_fd_arg_idx,
+            map_fd_source.name,
+            map_value_arg_idx,
+            map_value_source.map.name
+        )));
+    }
 }

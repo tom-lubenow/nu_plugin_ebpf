@@ -42,6 +42,7 @@ struct VccState {
     scalar_alias_roots: HashMap<VccReg, VccReg>,
     ctx_field_sources: HashMap<VccReg, CtxField>,
     map_lookup_sources: HashMap<VccReg, VccMapLookupSource>,
+    map_fd_sources: HashMap<VccReg, MapRef>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
@@ -135,6 +136,7 @@ impl VccState {
             scalar_alias_roots: HashMap::new(),
             ctx_field_sources: HashMap::new(),
             map_lookup_sources: HashMap::new(),
+            map_fd_sources: HashMap::new(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             live_kfunc_refs: HashMap::new(),
@@ -205,6 +207,7 @@ impl VccState {
         self.scalar_alias_roots.remove(&reg);
         self.ctx_field_sources.remove(&reg);
         self.map_lookup_sources.remove(&reg);
+        self.map_fd_sources.remove(&reg);
         self.not_equal_consts.remove(&reg);
         self.released_kfunc_ref_regs.remove(&reg);
         self.cond_refinements.remove(&reg);
@@ -238,6 +241,14 @@ impl VccState {
 
     fn map_lookup_source(&self, root: VccReg) -> Option<&VccMapLookupSource> {
         self.map_lookup_sources.get(&root)
+    }
+
+    fn set_map_fd_source(&mut self, fd: VccReg, map: MapRef) {
+        self.map_fd_sources.insert(fd, map);
+    }
+
+    fn map_fd_source(&self, fd: VccReg) -> Option<&MapRef> {
+        self.map_fd_sources.get(&fd)
     }
 
     fn map_roots_may_alias_same_lookup(&self, lhs: VccReg, rhs: VccReg) -> bool {
@@ -837,6 +848,11 @@ impl VccState {
         }
     }
 
+    fn map_value_source(&self, reg: VccReg) -> Option<&VccMapLookupSource> {
+        let (root, _) = self.map_value_root_and_bounds(reg)?;
+        self.map_lookup_source(root)
+    }
+
     fn has_bpf_spin_lock_for_map_root(&self, reg: VccReg) -> bool {
         if !self.has_live_bpf_spin_lock() {
             return false;
@@ -1245,6 +1261,14 @@ impl VccState {
                 map_lookup_sources.insert(*reg, left.clone());
             }
         }
+        let mut map_fd_sources = HashMap::new();
+        for (reg, left) in &self.map_fd_sources {
+            if let Some(right) = other.map_fd_sources.get(reg)
+                && left == right
+            {
+                map_fd_sources.insert(*reg, left.clone());
+            }
+        }
         let mut live_ringbuf_refs = self.live_ringbuf_refs.clone();
         for (id, live) in &other.live_ringbuf_refs {
             let current = live_ringbuf_refs.get(id).copied().unwrap_or(false);
@@ -1320,6 +1344,7 @@ impl VccState {
             scalar_alias_roots,
             ctx_field_sources,
             map_lookup_sources,
+            map_fd_sources,
             not_equal_consts,
             live_ringbuf_refs,
             live_kfunc_refs,
@@ -1479,6 +1504,7 @@ impl VccState {
             scalar_alias_roots: self.scalar_alias_roots.clone(),
             ctx_field_sources: self.ctx_field_sources.clone(),
             map_lookup_sources: self.map_lookup_sources.clone(),
+            map_fd_sources: self.map_fd_sources.clone(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),

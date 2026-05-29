@@ -652,7 +652,7 @@ impl<'a> VccLowerer<'a> {
                 });
                 self.ptr_regs.insert(VccReg(dst.0), ptr);
             }
-            MirInst::LoadMapFd { dst, .. } => {
+            MirInst::LoadMapFd { dst, map } => {
                 let ty = self
                     .types
                     .get(dst)
@@ -662,6 +662,10 @@ impl<'a> VccLowerer<'a> {
                     dst: VccReg(dst.0),
                     ty,
                     ctx_field_source: None,
+                });
+                out.push(VccInst::MapFdSource {
+                    map_fd: VccReg(dst.0),
+                    map: map.clone(),
                 });
             }
             MirInst::LoadSubprogram { dst, .. } => {
@@ -881,6 +885,18 @@ impl<'a> VccLowerer<'a> {
             MirInst::CallHelper { dst, helper, args } => {
                 self.verify_helper_call(*helper, args, out)?;
                 let helper_kind = BpfHelper::from_u32(*helper);
+                if matches!(helper_kind, Some(BpfHelper::TimerInit))
+                    && let (Some(MirValue::VReg(timer)), Some(MirValue::VReg(map_fd))) =
+                        (args.first(), args.get(1))
+                {
+                    out.push(VccInst::AssertMapFdMatchesMapValue {
+                        map_value: VccReg(timer.0),
+                        map_fd: VccReg(map_fd.0),
+                        map_value_arg_idx: 0,
+                        map_fd_arg_idx: 1,
+                        call: "helper 'bpf_timer_init'".to_string(),
+                    });
+                }
                 if !matches!(helper_kind, Some(BpfHelper::SpinUnlock)) {
                     match helper_kind {
                         Some(helper) => out.push(VccInst::KernelLockRejectIfHeld {
@@ -1016,6 +1032,17 @@ impl<'a> VccLowerer<'a> {
                 dst, kfunc, args, ..
             } => {
                 self.verify_kfunc_call(kfunc, args, out)?;
+                if kfunc == "bpf_wq_init"
+                    && let (Some(wq), Some(map_fd)) = (args.first(), args.get(1))
+                {
+                    out.push(VccInst::AssertMapFdMatchesMapValue {
+                        map_value: VccReg(wq.0),
+                        map_fd: VccReg(map_fd.0),
+                        map_value_arg_idx: 0,
+                        map_fd_arg_idx: 1,
+                        call: "kfunc 'bpf_wq_init'".to_string(),
+                    });
+                }
                 if !kfunc_allowed_while_lock_held(kfunc) {
                     out.push(VccInst::KernelLockRejectIfHeld {
                         call: format!("kfunc '{}'", kfunc),

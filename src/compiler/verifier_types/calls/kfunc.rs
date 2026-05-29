@@ -343,6 +343,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
             )));
         }
     }
+    validate_kfunc_map_fd_matches_map_value(kfunc, args, state, errors);
 
     let semantics = kfunc_semantics(kfunc);
     let mut positive_size_bounds: [Option<usize>; 5] = [None; 5];
@@ -606,6 +607,34 @@ fn kfunc_local_map_ref_arg(
 ) -> bool {
     matches!(types.get(&arg), Some(MirType::MapRef { .. }))
         && kfunc_supports_local_map_fd(kfunc, arg_idx)
+}
+
+fn validate_kfunc_map_fd_matches_map_value(
+    kfunc: &str,
+    args: &[VReg],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let (map_value_arg_idx, map_fd_arg_idx) = match kfunc {
+        "bpf_wq_init" => (0, 1),
+        _ => return,
+    };
+    let (Some(map_value), Some(map_fd)) = (args.get(map_value_arg_idx), args.get(map_fd_arg_idx))
+    else {
+        return;
+    };
+    let (Some(map_value_source), Some(map_fd_source)) = (
+        state.map_value_source(*map_value),
+        state.map_fd_source(*map_fd),
+    ) else {
+        return;
+    };
+    if map_value_source.map != *map_fd_source {
+        errors.push(VerifierTypeError::new(format!(
+            "kfunc '{}' arg{} map '{}' does not match arg{} map value '{}'",
+            kfunc, map_fd_arg_idx, map_fd_source.name, map_value_arg_idx, map_value_source.map.name
+        )));
+    }
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_iter_lifecycle(

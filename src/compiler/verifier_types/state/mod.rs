@@ -173,6 +173,7 @@ pub(super) struct VerifierState {
     not_equal: Vec<Vec<i64>>,
     ctx_field_sources: Vec<Option<CtxField>>,
     map_lookup_sources: Vec<Option<MapLookupSource>>,
+    map_fd_sources: Vec<Option<MapRef>>,
     live_ringbuf_refs: Vec<bool>,
     released_ringbuf_record_regs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
@@ -242,6 +243,7 @@ impl VerifierState {
             not_equal: vec![Vec::new(); total_vregs],
             ctx_field_sources: vec![None; total_vregs],
             map_lookup_sources: vec![None; total_vregs],
+            map_fd_sources: vec![None; total_vregs],
             live_ringbuf_refs: vec![false; total_vregs],
             released_ringbuf_record_regs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
@@ -385,6 +387,9 @@ impl VerifierState {
         if let Some(slot) = self.map_lookup_sources.get_mut(vreg.0 as usize) {
             *slot = None;
         }
+        if let Some(slot) = self.map_fd_sources.get_mut(vreg.0 as usize) {
+            *slot = None;
+        }
         if let Some(slot) = self.released_ringbuf_record_regs.get_mut(vreg.0 as usize) {
             *slot = false;
         }
@@ -418,6 +423,18 @@ impl VerifierState {
     pub(super) fn map_lookup_source(&self, root: VReg) -> Option<&MapLookupSource> {
         self.map_lookup_sources
             .get(root.0 as usize)
+            .and_then(|source| source.as_ref())
+    }
+
+    pub(super) fn set_map_fd_source(&mut self, fd: VReg, map: &MapRef) {
+        if let Some(slot) = self.map_fd_sources.get_mut(fd.0 as usize) {
+            *slot = Some(map.clone());
+        }
+    }
+
+    pub(super) fn map_fd_source(&self, fd: VReg) -> Option<&MapRef> {
+        self.map_fd_sources
+            .get(fd.0 as usize)
             .and_then(|source| source.as_ref())
     }
 

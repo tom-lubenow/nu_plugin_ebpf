@@ -247,6 +247,17 @@ pub enum VccInst {
         map: MapRef,
         key: VccReg,
     },
+    MapFdSource {
+        map_fd: VccReg,
+        map: MapRef,
+    },
+    AssertMapFdMatchesMapValue {
+        map_value: VccReg,
+        map_fd: VccReg,
+        map_value_arg_idx: usize,
+        map_fd_arg_idx: usize,
+        call: String,
+    },
     AssertScalar {
         value: VccValue,
     },

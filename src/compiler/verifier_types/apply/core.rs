@@ -18,6 +18,10 @@ pub(super) fn apply_copy_inst(
         MirValue::VReg(vreg) => state.ctx_field_source(*vreg).cloned(),
         _ => None,
     };
+    let src_map_fd = match src {
+        MirValue::VReg(vreg) => state.map_fd_source(*vreg).cloned(),
+        _ => None,
+    };
     let src_guard = match src {
         MirValue::VReg(vreg) => state.guard(*vreg),
         _ => None,
@@ -49,6 +53,9 @@ pub(super) fn apply_copy_inst(
         return;
     }
     state.set_ctx_field_source(dst, src_ctx_field);
+    if let Some(map) = src_map_fd {
+        state.set_map_fd_source(dst, &map);
+    }
     if src_non_zero {
         state.set_non_zero(dst, true);
     }

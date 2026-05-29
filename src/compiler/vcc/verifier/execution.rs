@@ -155,6 +155,10 @@ impl VccVerifier {
                         VccValue::Reg(src_reg) => state.ctx_field_source(*src_reg).cloned(),
                         _ => None,
                     };
+                    let src_map_fd = match src {
+                        VccValue::Reg(src_reg) => state.map_fd_source(*src_reg).cloned(),
+                        _ => None,
+                    };
                     let src_released_kfunc_ref = matches!(src, VccValue::Reg(src_reg) if state.is_released_kfunc_ref(*src_reg));
                     let src_scalar_alias = match src {
                         VccValue::Reg(src_reg)
@@ -173,6 +177,9 @@ impl VccVerifier {
                         return;
                     }
                     state.set_ctx_field_source(*dst, src_ctx_field);
+                    if let Some(map) = src_map_fd {
+                        state.set_map_fd_source(*dst, map);
+                    }
                     if let Some(refinement) = copied_refinement {
                         state.set_cond_refinement(*dst, refinement);
                     }
@@ -192,6 +199,36 @@ impl VccVerifier {
             }
             VccInst::MapLookupSource { root, map, key } => {
                 state.set_map_lookup_source(*root, map.clone(), *key);
+            }
+            VccInst::MapFdSource { map_fd, map } => {
+                state.set_map_fd_source(*map_fd, map.clone());
+            }
+            VccInst::AssertMapFdMatchesMapValue {
+                map_value,
+                map_fd,
+                map_value_arg_idx,
+                map_fd_arg_idx,
+                call,
+            } => {
+                let (Some(map_value_source), Some(map_fd_source)) = (
+                    state.map_value_source(*map_value),
+                    state.map_fd_source(*map_fd),
+                ) else {
+                    return;
+                };
+                if map_value_source.map != *map_fd_source {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "{} arg{} map '{}' does not match arg{} map value '{}'",
+                            call,
+                            map_fd_arg_idx,
+                            map_fd_source.name,
+                            map_value_arg_idx,
+                            map_value_source.map.name
+                        ),
+                    ));
+                }
             }
             VccInst::AssertScalar { value } => match state.value_type(*value) {
                 Ok(ty) => {

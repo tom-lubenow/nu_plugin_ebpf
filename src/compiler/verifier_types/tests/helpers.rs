@@ -377,6 +377,54 @@ fn test_verify_mir_timer_init_requires_null_checked_map_lookup() {
 }
 
 #[test]
+fn test_verify_mir_timer_init_rejects_mismatched_map_fd() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let timer = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let (timer_loaded, timer_non_null) = emit_checked_timer_map_lookup(&mut func, entry, timer);
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map,
+            map: MapRef {
+                name: "other_timer_map".to_string(),
+                kind: MapKind::Array,
+            },
+        });
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerInit as u32,
+            args: vec![
+                MirValue::VReg(timer),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(timer_loaded).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(timer, bpf_timer_map_ptr_ty());
+    types.insert(timer_non_null, MirType::Bool);
+    types.insert(map, timer_map_ref_ty());
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected mismatched timer map fd error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_timer_init' arg1 map 'other_timer_map' does not match arg0 map value 'timer_map'"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_timer_set_callback_requires_null_checked_map_lookup() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
