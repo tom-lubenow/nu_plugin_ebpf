@@ -1394,6 +1394,92 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn record_fixed_record_array_field_from_index_path(
+        &mut self,
+        field_name: String,
+        index: usize,
+        tail: &[PathMember],
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<RecordField, CompileError> {
+        if index != 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only create a missing list field at index 0",
+                path_desc
+            )));
+        }
+        let Some((PathMember::String { val, .. }, element_tail)) = tail.split_first() else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only synthesize list-of-record fields when the index is followed by a record field",
+                path_desc
+            )));
+        };
+
+        let element_field =
+            self.record_field_from_path_members(val.clone(), element_tail, new_value, path_desc)?;
+        let mut element_meta = RegMetadata {
+            record_fields: vec![element_field],
+            ..Default::default()
+        };
+        let element_ty = Self::metadata_record_layout(&element_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' could not infer synthesized list element layout",
+                path_desc
+            ))
+        })?;
+        element_meta.field_type = Some(element_ty.clone());
+        element_meta.annotated_semantics = Self::metadata_record_semantics(&element_meta);
+        let (element_vreg, materialized_element_meta) = self
+            .materialize_metadata_record_value(&element_meta)?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' could not materialize synthesized list element",
+                    path_desc
+                ))
+            })?;
+
+        let array_ty = MirType::Array {
+            elem: Box::new(element_ty.clone()),
+            len: 1,
+        };
+        let slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let array_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: array_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            array_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy_with_offsets(array_vreg, 0, element_vreg, 0, element_ty.size())?;
+
+        let semantics = materialized_element_meta.annotated_semantics.map(|elem| {
+            AnnotatedValueSemantics::FixedArray {
+                elem: Box::new(elem),
+                len: 1,
+            }
+        });
+
+        Ok(RecordField {
+            name: field_name,
+            value_vreg: array_vreg,
+            source_reg: None,
+            stack_offset: None,
+            ty: array_ty,
+            semantics,
+            is_context: false,
+            root_ctx_field: None,
+        })
+    }
+
     fn record_field_from_path_members(
         &mut self,
         field_name: String,
@@ -1415,10 +1501,10 @@ impl<'a> HirToMirLowering<'a> {
                     .record_numeric_list_field_from_terminal_index(
                         field_name, *val, new_value, path_desc,
                     ),
-                PathMember::Int { .. } => Err(CompileError::UnsupportedInstruction(format!(
-                    "cell path update '.{} = ...' cannot synthesize list-of-aggregate fields yet",
-                    path_desc
-                ))),
+                PathMember::Int { val, .. } => self
+                    .record_fixed_record_array_field_from_index_path(
+                        field_name, *val, tail, new_value, path_desc,
+                    ),
                 PathMember::String { .. } => unreachable!(),
             };
         };

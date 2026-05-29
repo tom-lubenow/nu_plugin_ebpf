@@ -19706,6 +19706,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-new-record-list-field-local"
+        category: "language-core"
+        tags: [aggregate record list upsert local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0.b = 7'
+            '  $rec.a.0.b'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-spread-local"
         category: "language-core"
         tags: [aggregate record spread local]
@@ -19804,6 +19819,21 @@ const FIXTURES = [
             '  mut rec = {}'
             '  $rec.stats.values.0 = 7'
             '  $rec.stats.values.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-upsert-new-nested-record-list-field-local"
+        category: "language-core"
+        tags: [aggregate record list upsert nested local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.stats.rows.0.pid = 7'
+            '  $rec.stats.rows.0.pid'
             '}'
         ]
         local: "accept"
@@ -19992,6 +20022,25 @@ const FIXTURES = [
             '  }'
             '  let out = (make)'
             '  $out.a.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-upsert-new-record-list-field-return"
+        category: "language-core"
+        tags: [user-function aggregate record list upsert]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = {}'
+            '    $rec.a.0.b = 7'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.a.0.b'
             '}'
         ]
         local: "accept"
