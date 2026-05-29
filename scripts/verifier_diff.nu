@@ -19971,6 +19971,55 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-nested-numeric-list-existing-index-local"
+        category: "language-core"
+        tags: [aggregate record list upsert nested local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.stats.values.0 = 3'
+            '  $rec.stats.values.0 = 7'
+            '  $rec.stats.values.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-upsert-nested-numeric-list-append-local"
+        category: "language-core"
+        tags: [aggregate record list upsert append nested local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.stats.values.0 = 3'
+            '  $rec.stats.values.1 = 7'
+            '  $rec.stats.values.0 + $rec.stats.values.1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-upsert-nested-numeric-list-sparse-append-reject"
+        category: "language-core"
+        tags: [aggregate record list upsert append nested reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.stats.values.0 = 3'
+            '  $rec.stats.values.2 = 7'
+            '  $rec.stats.values.0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "can only update an existing numeric list item or append at the next index"
+    }
+    {
         name: "core-record-upsert-new-nested-record-list-field-local"
         category: "language-core"
         tags: [aggregate record list upsert nested local]
