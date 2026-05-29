@@ -4036,6 +4036,22 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def wrap [event] {'
+            '    mut rec = { event: null }'
+            '    $rec.event = $event'
+            '    $rec'
+            '  }'
+            '  let rec = (wrap $ctx)'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -19737,6 +19753,26 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-user-function-record-context-upsert-field-access"
+        category: "language-core"
+        tags: [user-function record context upsert accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def wrap [x] {'
+            '    mut rec = { k: null }'
+            '    $rec.k = $x'
+            '    $rec'
+            '  }'
+            '  let rec = (wrap $ctx)'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "core-context-emit-rejects-pointer-escape"
         category: "language-core"
         tags: [context emit reject]
@@ -23394,6 +23430,71 @@ def one-param-user-functions [source: string] {
     $functions
 }
 
+def record-upsert-wrapper-definitions [source: string] {
+    mut wrappers = []
+
+    for function in (one-param-user-functions $source) {
+        mut initialized_fields = []
+        mut upserted_fields = []
+        mut returned_names = []
+
+        for line in $function.body {
+            for parsed in (
+                $line
+                | parse --regex '^\s*mut\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s*=\s*\{\s*(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*null\s*\}\s*$'
+            ) {
+                $initialized_fields = ($initialized_fields | append {
+                    name: $parsed.name
+                    field: $parsed.field
+                })
+            }
+
+            for parsed in (
+                $line
+                | parse --regex '^\s*\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\.(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*=\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*$'
+            ) {
+                if $parsed.value == $function.param {
+                    $upserted_fields = ($upserted_fields | append {
+                        name: $parsed.name
+                        field: $parsed.field
+                    })
+                }
+            }
+
+            for parsed in (
+                $line
+                | parse --regex '^\s*\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s*$'
+            ) {
+                $returned_names = ($returned_names | append $parsed.name)
+            }
+        }
+
+        for field in $upserted_fields {
+            if $field.name not-in $returned_names {
+                continue
+            }
+            if not (
+                $initialized_fields
+                | any {|candidate| $candidate.name == $field.name and $candidate.field == $field.field }
+            ) {
+                continue
+            }
+            if (
+                $wrappers
+                | any {|wrapper| $wrapper.name == $function.name and $wrapper.field == $field.field }
+            ) {
+                continue
+            }
+            $wrappers = ($wrappers | append {
+                name: $function.name
+                field: $field.field
+            })
+        }
+    }
+
+    $wrappers
+}
+
 def upsert-context-root-alias [aliases name: string root: string] {
     if ($aliases | any {|alias| $alias.name == $name }) {
         $aliases | each {|alias|
@@ -23580,7 +23681,10 @@ def user-function-context-field-kernel-features [source: string target context_n
 def program-record-context-aliases [source: string context_names] {
     mut aliases = []
     let bound_aliases = (program-bound-context-root-aliases $source $context_names)
-    let wrapper_defs = (record-wrapper-definitions $source)
+    let wrapper_defs = (
+        record-wrapper-definitions $source
+        | append (record-upsert-wrapper-definitions $source)
+    )
 
     for line in ($source | lines) {
         let bindings = (
