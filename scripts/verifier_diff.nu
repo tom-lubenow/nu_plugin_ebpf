@@ -17045,6 +17045,98 @@ const FIXTURES = [
         error_contains: "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null"
     }
     {
+        name: "core-early-return"
+        category: "language-core"
+        tags: [control-flow return]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  if true { return 1 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-loop-break-continue"
+        category: "language-core"
+        tags: [control-flow loop break continue]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut sum = 0'
+            '  for i in 0..3 {'
+            '    if $i == 1 { continue }'
+            '    if $i == 3 { break }'
+            '    $sum = ($sum + $i)'
+            '  }'
+            '  $sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "core-null-compare-flow"
+        category: "language-core"
+        tags: [control-flow null]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let maybe = null'
+            '  if $maybe == null { 1 } else { 0 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-spread"
+        category: "language-core"
+        tags: [aggregate list spread]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let xs = [1, 2]'
+            '  let ys = [0, ...$xs, 3]'
+            '  $ys | get 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-spread-local"
+        category: "language-core"
+        tags: [aggregate record spread local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = { pid: 7 }'
+            '  let out = { ok: true, ...$rec }'
+            '  $out.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-return"
+        category: "language-core"
+        tags: [user-function aggregate record]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] { { pid: 7, msg: "hi" } }'
+            '  let out = (make)'
+            '  $out.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "adjust-packet-xdp-head"
         category: "language-surface"
         tags: [adjust-packet xdp]
