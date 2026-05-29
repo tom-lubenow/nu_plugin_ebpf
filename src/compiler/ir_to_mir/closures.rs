@@ -678,34 +678,11 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    /// Lower RecordInsert instruction
-    pub(super) fn lower_record_insert(
+    pub(super) fn record_field_from_value(
         &mut self,
-        src_dst: RegId,
-        key: RegId,
+        field_name: String,
         val: RegId,
-    ) -> Result<(), CompileError> {
-        // Get field name from key register's metadata
-        let field_name = self
-            .get_metadata(key)
-            .and_then(|m| m.literal_string.clone())
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction("Record key must be a literal string".into())
-            })?;
-        let constant_value = match (
-            self.get_metadata(src_dst)
-                .and_then(|meta| meta.constant_value.clone()),
-            self.get_metadata(val)
-                .and_then(|meta| meta.constant_value.clone()),
-        ) {
-            (Some(Value::Record { val: record, .. }), Some(field_value)) => {
-                let mut record = record.into_owned();
-                record.insert(field_name.clone(), field_value);
-                Some(Value::record(record, Span::unknown()))
-            }
-            _ => None,
-        };
-
+    ) -> Result<RecordField, CompileError> {
         let val_meta = self.get_metadata(val).cloned();
         let mut val_vreg =
             if val_meta.as_ref().is_some_and(|meta| meta.is_context) && self.ctx_param.is_some() {
@@ -824,6 +801,39 @@ impl<'a> HirToMirLowering<'a> {
             is_context: val_meta.as_ref().is_some_and(|meta| meta.is_context),
             root_ctx_field: val_meta.and_then(|meta| meta.root_ctx_field),
         };
+
+        Ok(field)
+    }
+
+    /// Lower RecordInsert instruction
+    pub(super) fn lower_record_insert(
+        &mut self,
+        src_dst: RegId,
+        key: RegId,
+        val: RegId,
+    ) -> Result<(), CompileError> {
+        // Get field name from key register's metadata
+        let field_name = self
+            .get_metadata(key)
+            .and_then(|m| m.literal_string.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction("Record key must be a literal string".into())
+            })?;
+        let constant_value = match (
+            self.get_metadata(src_dst)
+                .and_then(|meta| meta.constant_value.clone()),
+            self.get_metadata(val)
+                .and_then(|meta| meta.constant_value.clone()),
+        ) {
+            (Some(Value::Record { val: record, .. }), Some(field_value)) => {
+                let mut record = record.into_owned();
+                record.insert(field_name.clone(), field_value);
+                Some(Value::record(record, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        let field = self.record_field_from_value(field_name, val)?;
 
         {
             let meta = self.get_or_create_metadata(src_dst);

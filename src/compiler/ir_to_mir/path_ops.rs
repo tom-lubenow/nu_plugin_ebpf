@@ -1443,53 +1443,7 @@ impl<'a> HirToMirLowering<'a> {
                 })
             );
             if !base_is_materialized_aggregate {
-                let new_value_vreg = self.get_vreg(new_value);
-                let new_value_meta = self.get_metadata(new_value).cloned();
-                let field_type = new_value_meta
-                    .as_ref()
-                    .and_then(|meta| {
-                        meta.field_type
-                            .clone()
-                            .or_else(|| Self::metadata_record_layout(meta))
-                    })
-                    .or_else(|| self.vreg_type_hints.get(&new_value_vreg).cloned())
-                    .map(|ty| self.stored_generic_map_value_type(&ty))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "cell path update '.{} = ...' requires type information for the new record field",
-                            path_desc
-                        ))
-                    })?;
-
-                if matches!(field_type, MirType::Array { .. } | MirType::Struct { .. }) {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "cell path update '.{} = ...' can add scalar fields to compiler-known records; aggregate field insertion currently requires record literal syntax",
-                        path_desc
-                    )));
-                }
-
-                let field_constant = self
-                    .get_metadata(new_value)
-                    .and_then(|m| m.constant_value.clone());
-                let field_semantics =
-                    self.tracked_value_semantics(new_value, field_constant.as_ref())?;
-                let preserved_vreg = self.func.alloc_vreg();
-                self.emit(MirInst::Copy {
-                    dst: preserved_vreg,
-                    src: MirValue::VReg(new_value_vreg),
-                });
-                self.vreg_type_hints
-                    .insert(preserved_vreg, field_type.clone());
-                let field = RecordField {
-                    name: field_name.clone(),
-                    value_vreg: preserved_vreg,
-                    source_reg: Some(new_value),
-                    stack_offset: None,
-                    ty: field_type,
-                    semantics: field_semantics,
-                    is_context: new_value_meta.as_ref().is_some_and(|meta| meta.is_context),
-                    root_ctx_field: new_value_meta.and_then(|meta| meta.root_ctx_field),
-                };
+                let field = self.record_field_from_value(field_name.clone(), new_value)?;
                 let meta = self.get_or_create_metadata(src_dst);
                 if let Some(existing) = meta
                     .record_fields
