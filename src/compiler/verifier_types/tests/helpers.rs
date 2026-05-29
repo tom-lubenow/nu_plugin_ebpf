@@ -11950,6 +11950,48 @@ fn test_helper_per_cpu_ptr_helpers_accept_kernel_pointer() {
 }
 
 #[test]
+fn test_helper_per_cpu_ptr_helpers_reject_unchecked_nullable_kernel_pointer() {
+    for helper in [BpfHelper::PerCpuPtr, BpfHelper::ThisCpuPtr] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        func.param_count = 1;
+
+        let percpu_ptr = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::PerCpuPtr => vec![MirValue::VReg(percpu_ptr), MirValue::Const(0)],
+            BpfHelper::ThisCpuPtr => vec![MirValue::VReg(percpu_ptr)],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let kernel_ptr = MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        };
+        let types = HashMap::from([(percpu_ptr, kernel_ptr.clone()), (dst, kernel_ptr)]);
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected per-cpu pointer helper null-check error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_helper_per_cpu_ptr_helpers_reject_stack_pointer() {
     for helper in [BpfHelper::PerCpuPtr, BpfHelper::ThisCpuPtr] {
         let mut func = MirFunction::new();
