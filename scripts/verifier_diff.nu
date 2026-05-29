@@ -5076,6 +5076,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc_action:demo"
         program: [
             '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:tstamp"]
+    }
+    {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.mark = (if $ctx.pid == 0 { 7 } else { 1 })'
             '  "ok"'
@@ -9726,6 +9737,21 @@ const FIXTURES = [
             '  $ctx.cb.2 = 9'
             '  $ctx.tc_classid = 42'
             '  $ctx.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-action-record-context-write"
+        category: "context-surface"
+        tags: [tc-action context packet writable record source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.tstamp = 123'
             '  "ok"'
             '}'
         ]
