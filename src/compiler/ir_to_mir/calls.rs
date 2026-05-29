@@ -100,6 +100,10 @@ impl<'a> HirToMirLowering<'a> {
                     };
                     // Emit a single value
                     let data_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                    let data_reg = self
+                        .pipeline_input_reg
+                        .or_else(|| src_dst_had_value.then_some(src_dst));
+                    self.reject_context_pointer_payload(data_reg, "emit")?;
                     self.emit(MirInst::EmitEvent {
                         data: data_vreg,
                         size,
@@ -190,6 +194,10 @@ impl<'a> HirToMirLowering<'a> {
             "histogram" => {
                 self.needs_histogram_map = true;
                 let value_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let value_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(value_reg, "histogram value")?;
                 self.emit(MirInst::Histogram { value: value_vreg });
                 // Return 0 (pass-through)
                 self.emit(MirInst::Copy {
@@ -573,6 +581,13 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
+                let key_reg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(_, reg)| *reg)
+                    .or(self.pipeline_input_reg)
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(key_reg, "redirect-map key")?;
                 let flags = self
                     .optional_nonnegative_named_u64_arg("redirect-map", "flags")?
                     .unwrap_or(0);
@@ -1162,6 +1177,13 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
+                let index_reg = self
+                    .positional_args
+                    .get(1)
+                    .map(|(_, reg)| *reg)
+                    .or(self.pipeline_input_reg)
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(index_reg, "tail-call index")?;
 
                 self.terminate(MirInst::TailCall {
                     prog_map: MapRef {

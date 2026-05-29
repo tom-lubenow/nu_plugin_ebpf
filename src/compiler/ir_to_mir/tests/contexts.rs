@@ -5247,6 +5247,85 @@ fn test_lower_record_context_field_projection_preserves_context_metadata() {
         .expect("record-held context field projection should compile");
 }
 
+fn make_bare_context_call_program(ctx_var: VarId, decl_id: DeclId) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 1,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    )
+}
+
+#[test]
+fn test_lower_context_emit_rejects_pointer_escape() {
+    let ctx_var = VarId::new(0);
+    let emit_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(emit_decl, "emit".to_string())]);
+    let hir = make_bare_context_call_program(ctx_var, emit_decl);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bare context pointer must not escape through emit");
+
+    assert!(
+        err.to_string()
+            .contains("emit cannot use context pointers as values")
+    );
+}
+
+#[test]
+fn test_lower_context_histogram_rejects_pointer_escape() {
+    let ctx_var = VarId::new(0);
+    let histogram_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(histogram_decl, "histogram".to_string())]);
+    let hir = make_bare_context_call_program(ctx_var, histogram_decl);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bare context pointer must not escape through histogram");
+
+    assert!(
+        err.to_string()
+            .contains("histogram value cannot use context pointers as values")
+    );
+}
+
 #[test]
 fn test_lower_record_context_map_put_rejects_pointer_escape() {
     let ctx_var = VarId::new(0);
@@ -5323,7 +5402,7 @@ fn test_lower_record_context_map_put_rejects_pointer_escape() {
 
     assert!(
         err.to_string()
-            .contains("map-put value cannot persist records containing context pointers")
+            .contains("map-put value cannot use context pointers as values")
     );
 }
 
@@ -5394,7 +5473,7 @@ fn test_lower_record_context_global_set_rejects_pointer_escape() {
 
     assert!(
         err.to_string()
-            .contains("global-set value cannot persist records containing context pointers")
+            .contains("global-set value cannot use context pointers as values")
     );
 }
 

@@ -17749,6 +17749,64 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-context-emit-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context emit reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | emit'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-histogram-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context histogram reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | histogram'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-redirect-map-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context redirect-map reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  $ctx | redirect-map tx_ports --kind devmap'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-tail-call-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context tail-call reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  $ctx | tail-call jumps'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
         name: "core-record-context-map-put-rejects-pointer-escape"
         category: "language-core"
         tags: [record context map reject]
@@ -17761,7 +17819,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "cannot persist records containing context pointers"
+        error_contains: "cannot use context pointers as values"
     }
     {
         name: "core-record-context-count-rejects-pointer-escape"
@@ -17776,7 +17834,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "cannot persist records containing context pointers"
+        error_contains: "cannot use context pointers as values"
     }
     {
         name: "core-record-context-emit-rejects-pointer-escape"
@@ -17791,7 +17849,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "cannot persist records containing context pointers"
+        error_contains: "cannot use context pointers as values"
     }
     {
         name: "core-record-context-global-set-rejects-pointer-escape"
@@ -17806,7 +17864,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "cannot persist records containing context pointers"
+        error_contains: "cannot use context pointers as values"
     }
     {
         name: "core-record-context-global-define-zero-rejects-pointer-escape"
@@ -17821,7 +17879,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "cannot persist records containing context pointers"
+        error_contains: "cannot use context pointers as values"
     }
     {
         name: "adjust-packet-xdp-head"

@@ -519,7 +519,7 @@ impl<'a> HirToMirLowering<'a> {
             .is_some_and(|meta| self.metadata_contains_context_pointer(meta))
         {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} cannot persist records containing context pointers; project context fields to scalar values first"
+                "{context} cannot use context pointers as values; project context fields to scalar values first"
             )));
         }
 
