@@ -8426,6 +8426,30 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-nested-subfn-skb-pull-data-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper user-function nested packet-bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  def mutate [skb] {'
+            '    let actual = (id $skb)'
+            '    helper-call "bpf_skb_pull_data" $actual 0'
+            '    0'
+            '  }'
+            '  let data = $ctx.data'
+            '  mutate $ctx'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
         name: "tc-l3-csum-replace-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper checksum packet-bounds reject]
@@ -17610,6 +17634,26 @@ const FIXTURES = [
             '{|ctx|'
             '  def read_pid [c] {'
             '    $c.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "core-user-function-nested-context-arg"
+        category: "language-core"
+        tags: [user-function nested context accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  def read_pid [c] {'
+            '    let actual = (id $c)'
+            '    $actual.pid | count'
             '    0'
             '  }'
             '  read_pid $ctx'

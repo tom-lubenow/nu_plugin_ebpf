@@ -69,7 +69,6 @@ fn topo_sort_subfunctions(graph: &[Vec<usize>]) -> Result<Vec<usize>, TypeError>
         }
     }
 
-    order.reverse();
     Ok(order)
 }
 

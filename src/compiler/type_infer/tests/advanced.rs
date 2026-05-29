@@ -49,6 +49,41 @@ fn test_infer_subfunction_schemes_rejects_param_limit() {
 }
 
 #[test]
+fn test_infer_subfunction_schemes_orders_callees_before_callers() {
+    let mut callee = MirFunction::with_name("id");
+    callee.param_count = 1;
+    let callee_entry = callee.alloc_block();
+    callee.entry = callee_entry;
+    let arg = callee.alloc_vreg();
+    callee.block_mut(callee_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(arg)),
+    };
+
+    let mut caller = MirFunction::with_name("caller");
+    caller.param_count = 1;
+    let caller_entry = caller.alloc_block();
+    caller.entry = caller_entry;
+    let caller_arg = caller.alloc_vreg();
+    let nested_ret = caller.alloc_vreg();
+    caller
+        .block_mut(caller_entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: nested_ret,
+            subfn: SubfunctionId(0),
+            args: vec![caller_arg],
+        });
+    caller.block_mut(caller_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(nested_ret)),
+    };
+
+    let schemes = infer_subfunction_schemes(&[callee, caller], None)
+        .expect("caller should infer after callee scheme is available");
+    assert!(schemes.contains_key(&SubfunctionId(0)));
+    assert!(schemes.contains_key(&SubfunctionId(1)));
+}
+
+#[test]
 fn test_type_error_pointer_add() {
     let mut func = make_test_function();
     let v0 = func.alloc_vreg();
