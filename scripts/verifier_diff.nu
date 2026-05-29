@@ -19721,6 +19721,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-record-list-new-element-field-local"
+        category: "language-core"
+        tags: [aggregate record list upsert local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0.b = 3'
+            '  $rec.a.0.c = 7'
+            '  $rec.a.0.b + $rec.a.0.c'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-spread-local"
         category: "language-core"
         tags: [aggregate record spread local]
@@ -20041,6 +20057,26 @@ const FIXTURES = [
             '  }'
             '  let out = (make)'
             '  $out.a.0.b'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-upsert-record-list-new-element-field-return"
+        category: "language-core"
+        tags: [user-function aggregate record list upsert]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = {}'
+            '    $rec.a.0.b = 3'
+            '    $rec.a.0.c = 7'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.a.0.b + $out.a.0.c'
             '}'
         ]
         local: "accept"

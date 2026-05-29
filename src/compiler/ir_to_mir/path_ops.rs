@@ -1480,6 +1480,227 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn fixed_array_element_record_semantics(
+        record_field: &RecordField,
+    ) -> Vec<(String, AnnotatedValueSemantics)> {
+        let Some(AnnotatedValueSemantics::FixedArray { elem, .. }) = record_field.semantics.clone()
+        else {
+            return Vec::new();
+        };
+        let AnnotatedValueSemantics::Record(fields) = *elem else {
+            return Vec::new();
+        };
+        fields
+    }
+
+    fn record_field_from_existing_fixed_array_element_field(
+        &mut self,
+        array_vreg: VReg,
+        element_offset: usize,
+        layout_field: &StructField,
+        element_semantics: &[(String, AnnotatedValueSemantics)],
+        path_desc: &str,
+    ) -> Result<RecordField, CompileError> {
+        if layout_field.synthetic {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' cannot preserve synthetic fixed-array element field '{}'",
+                path_desc, layout_field.name
+            )));
+        }
+        if layout_field.bitfield.is_some() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' cannot preserve bitfield fixed-array element field '{}'",
+                path_desc, layout_field.name
+            )));
+        }
+        if !layout_field.ty.is_scalar_like() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only expand synthesized fixed record arrays with scalar existing fields; field '{}' has type {:?}",
+                path_desc, layout_field.name, layout_field.ty
+            )));
+        }
+
+        let value_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Load {
+            dst: value_vreg,
+            ptr: array_vreg,
+            offset: (element_offset + layout_field.offset) as i32,
+            ty: layout_field.ty.clone(),
+        });
+        self.vreg_type_hints
+            .insert(value_vreg, layout_field.ty.clone());
+
+        Ok(RecordField {
+            name: layout_field.name.clone(),
+            value_vreg,
+            source_reg: None,
+            stack_offset: None,
+            ty: layout_field.ty.clone(),
+            semantics: element_semantics.iter().find_map(|(name, semantics)| {
+                (name == &layout_field.name).then_some(semantics.clone())
+            }),
+            is_context: false,
+            root_ctx_field: None,
+        })
+    }
+
+    fn lower_metadata_existing_fixed_record_array_path_creation(
+        &mut self,
+        src_dst: RegId,
+        field_index: usize,
+        path_members: &[PathMember],
+        new_value: RegId,
+        constant_value: Option<Value>,
+        path_desc: &str,
+        base_is_materialized_aggregate: bool,
+    ) -> Result<bool, CompileError> {
+        let [
+            PathMember::String { .. },
+            PathMember::Int {
+                val: element_index, ..
+            },
+            PathMember::String {
+                val: new_field_name,
+                ..
+            },
+            ..,
+        ] = path_members
+        else {
+            return Ok(false);
+        };
+
+        let Some(existing_field) = self
+            .get_metadata(src_dst)
+            .and_then(|meta| meta.record_fields.get(field_index))
+            .cloned()
+        else {
+            return Ok(false);
+        };
+        let MirType::Array { elem, len } = &existing_field.ty else {
+            return Ok(false);
+        };
+        if *len != 1 || *element_index != 0 {
+            return Ok(false);
+        }
+        let MirType::Struct { fields, .. } = elem.as_ref() else {
+            return Ok(false);
+        };
+        if fields
+            .iter()
+            .any(|field| !field.synthetic && field.name == *new_field_name)
+        {
+            return Ok(false);
+        }
+
+        let element_offset = elem.size() * *element_index;
+        let element_semantics = Self::fixed_array_element_record_semantics(&existing_field);
+        let mut element_fields = Vec::new();
+        for layout_field in fields.iter().filter(|field| !field.synthetic) {
+            element_fields.push(self.record_field_from_existing_fixed_array_element_field(
+                existing_field.value_vreg,
+                element_offset,
+                layout_field,
+                &element_semantics,
+                path_desc,
+            )?);
+        }
+
+        let new_field = self.record_field_from_path_members(
+            new_field_name.clone(),
+            &path_members[3..],
+            new_value,
+            path_desc,
+        )?;
+        element_fields.push(new_field);
+
+        let mut element_meta = RegMetadata {
+            record_fields: element_fields,
+            ..Default::default()
+        };
+        let element_ty = Self::metadata_record_layout(&element_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' could not infer expanded fixed-array element layout",
+                path_desc
+            ))
+        })?;
+        element_meta.field_type = Some(element_ty.clone());
+        element_meta.annotated_semantics = Self::metadata_record_semantics(&element_meta);
+        let (element_vreg, materialized_element_meta) = self
+            .materialize_metadata_record_value(&element_meta)?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' could not materialize expanded fixed-array element",
+                    path_desc
+                ))
+            })?;
+
+        let array_ty = MirType::Array {
+            elem: Box::new(element_ty.clone()),
+            len: *len,
+        };
+        let slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, array_ty.clone());
+        let array_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: array_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            array_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy_with_offsets(array_vreg, 0, element_vreg, 0, element_ty.size())?;
+
+        let semantics = materialized_element_meta.annotated_semantics.map(|elem| {
+            AnnotatedValueSemantics::FixedArray {
+                elem: Box::new(elem),
+                len: *len,
+            }
+        });
+        let updated_field = RecordField {
+            name: existing_field.name,
+            value_vreg: array_vreg,
+            source_reg: None,
+            stack_offset: existing_field.stack_offset,
+            ty: array_ty,
+            semantics,
+            is_context: false,
+            root_ctx_field: None,
+        };
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.record_fields[field_index] = updated_field;
+        meta.field_type = Self::metadata_record_layout(meta);
+        meta.annotated_semantics = Self::metadata_record_semantics(meta);
+        meta.constant_value = constant_value.clone();
+        meta.source_var = None;
+        self.set_reg_constant_value(src_dst, constant_value);
+        if base_is_materialized_aggregate {
+            let updated_meta = self.get_metadata(src_dst).cloned().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' lost expanded record metadata",
+                    path_desc
+                ))
+            })?;
+            let (materialized_vreg, materialized_meta) = self
+                .materialize_metadata_record_value(&updated_meta)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' could not materialize expanded record",
+                        path_desc
+                    ))
+                })?;
+            self.reg_map.insert(src_dst.get(), materialized_vreg);
+            self.reg_metadata.insert(src_dst.get(), materialized_meta);
+        }
+        Ok(true)
+    }
+
     fn record_field_from_path_members(
         &mut self,
         field_name: String,
@@ -1579,15 +1800,13 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let base_vreg = self.get_vreg(src_dst);
-        if matches!(
+        let base_is_materialized_aggregate = matches!(
             self.typed_value_runtime_type(src_dst, base_vreg),
             Some(MirType::Ptr {
                 address_space: AddressSpace::Stack | AddressSpace::Map,
                 ..
             })
-        ) {
-            return Ok(false);
-        }
+        );
 
         let existing_index = base_meta
             .record_fields
@@ -1597,6 +1816,22 @@ impl<'a> HirToMirLowering<'a> {
         let first_field_empty_record = existing_index.is_some()
             && Self::metadata_field_is_empty_record(&base_meta, first_field);
         if !first_field_missing && !first_field_empty_record {
+            let path_desc = Self::typed_value_path_desc(path_members);
+            if self.lower_metadata_existing_fixed_record_array_path_creation(
+                src_dst,
+                existing_index.expect("existing index checked above"),
+                path_members,
+                new_value,
+                constant_value,
+                &path_desc,
+                base_is_materialized_aggregate,
+            )? {
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+
+        if base_is_materialized_aggregate {
             return Ok(false);
         }
 
