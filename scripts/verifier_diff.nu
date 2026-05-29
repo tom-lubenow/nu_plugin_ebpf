@@ -4687,6 +4687,31 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:data"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let base = { data: $ctx.data }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [data] { { data: $data } }'
+            '  let data = $ctx.data'
+            '  mut rec = (wrap $data)'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
         target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
         program: [
             '{|ctx|'
@@ -9243,6 +9268,41 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { data: $ctx.data }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-record-spread-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable record spread source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let base = { data: $ctx.data }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-user-function-record-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable user-function record source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [data] { { data: $data } }'
+            '  let data = $ctx.data'
+            '  mut rec = (wrap $data)'
             '  $rec.data.0 = 42'
             '  0'
             '}'

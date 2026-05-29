@@ -1901,6 +1901,144 @@ fn test_user_function_returned_metadata_only_record_preserves_string_semantics()
 }
 
 #[test]
+fn test_user_function_returned_record_ctx_data_write_uses_packet_guard() {
+    use nu_protocol::{DeclId, RegId, VarId};
+
+    let ctx_var = VarId::new(0);
+    let param_var = VarId::new(81);
+    let user_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("data".into()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: param_var,
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(1),
+                    val: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let main_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("data")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(1),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("data"), int_member(0)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(42),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(2),
+                    new_value: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(main_func, HashMap::new(), vec![], Some(ctx_var));
+    let mut user_functions = HashMap::new();
+    user_functions.insert(DeclId::new(1), user_func);
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("returned record-held ctx.data byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )),
+        "expected returned record-held ctx.data byte write to guard against data_end"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected returned record-held ctx.data byte write to emit a guarded u8 store"
+    );
+}
+
+#[test]
 fn test_multiblock_user_function_returned_metadata_only_record_preserves_string_semantics() {
     use nu_protocol::{DeclId, RegId, VarId};
 
