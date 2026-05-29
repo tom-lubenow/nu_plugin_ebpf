@@ -4529,7 +4529,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  0'
             '}'
         ]
-        feature_keys: ["ctx:iter_meta" "ctx:iter_task"]
+        feature_keys: ["ctx:iter_meta" "ctx:iter_task" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "iter:task_file"
+        program: [
+            '{|ctx|'
+            '  if $ctx.file { $ctx.file.f_mode | count }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:iter_file" "helper:bpf_probe_read_kernel"]
     }
 ]
 
@@ -20495,6 +20505,13 @@ def iter-btf-context-projection-root? [root: string] {
     ]
 }
 
+def iter-trusted-btf-context-projection-root? [root: string] {
+    $root in [
+        "meta"
+        "iter_meta"
+    ]
+}
+
 def context-projection-root? [root: string] {
     if (iter-btf-context-projection-root? $root) {
         return true
@@ -20734,7 +20751,7 @@ def trusted-btf-projection-kernel-read? [parts target] {
     let root = ($parts | first)
     let first_member = ($parts | get 1)
 
-    if ($target_text | str starts-with "iter:") and (iter-btf-context-projection-root? $root) {
+    if ($target_text | str starts-with "iter:") and (iter-trusted-btf-context-projection-root? $root) {
         return true
     }
     if $root in ["current_task" "current_cgroup"] {
@@ -20791,7 +20808,9 @@ def context-projection-kernel-read-feature [raw_access: string target] {
         return null
     }
 
+    let root = ($parts | first)
     let member = ($parts | get 1)
+    let target_text = ($target | default "")
     if (bpf-sock-projection-context-field $member) != null {
         return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
@@ -20800,6 +20819,13 @@ def context-projection-kernel-read-feature [raw_access: string target] {
         and ($member in ["tcp" "tcp_sock" "full" "fullsock" "full_sock" "listener"])
     )
     if $helper_backed_socket_projection {
+        return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
+    }
+    if (
+        ($target_text | str starts-with "iter:")
+        and (iter-btf-context-projection-root? $root)
+        and not (iter-trusted-btf-context-projection-root? $root)
+    ) {
         return $KERNEL_FEATURE_BPF_PROBE_READ_KERNEL
     }
     if (trusted-btf-projection-kernel-read? $parts $target) {
