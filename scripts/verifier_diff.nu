@@ -23363,37 +23363,11 @@ def record-context-projection-kernel-features [source: string target context_nam
                 } else {
                     $"($root).($raw_tail)"
                 }
-                let field = (normalize-context-field-token $raw_access)
-                if $field == "" {
-                    continue
-                }
-
-                let feature = (context-field-kernel-feature $field $target)
-                if $feature != null {
-                    $features = (append-missing-kernel-features $features [$feature])
-                }
-                let tracepoint_feature = (tracepoint-payload-field-kernel-feature $field $target)
-                if $tracepoint_feature != null {
-                    $features = (append-missing-kernel-features $features [$tracepoint_feature])
-                }
-                if not (context-field-access-is-assignment-lhs? $raw_tail $field) {
-                    let helper_feature = (context-field-helper-kernel-feature $field $target)
-                    if $helper_feature != null {
-                        $features = (append-missing-kernel-features $features [$helper_feature])
-                    }
-                }
-                let projection_feature = (context-projection-kernel-feature $raw_access $target)
-                if $projection_feature != null {
-                    $features = (append-missing-kernel-features $features [$projection_feature])
-                }
-                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
-                if $read_feature != null {
-                    $features = (append-missing-kernel-features $features [$read_feature])
-                }
-                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
-                if $task_pt_regs_feature != null {
-                    $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
-                }
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features $raw_access $target)
+                )
             }
         }
     }
@@ -23413,18 +23387,11 @@ def bound-context-projection-kernel-features [source: string target context_name
             let prefix = $"$($alias.name)."
             for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
                 let raw_access = $"($alias.root).($raw_tail)"
-                let projection_feature = (context-projection-kernel-feature $raw_access $target)
-                if $projection_feature != null {
-                    $features = (append-missing-kernel-features $features [$projection_feature])
-                }
-                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
-                if $read_feature != null {
-                    $features = (append-missing-kernel-features $features [$read_feature])
-                }
-                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
-                if $task_pt_regs_feature != null {
-                    $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
-                }
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features $raw_access $target)
+                )
             }
         }
     }
@@ -23795,32 +23762,11 @@ def program-context-field-kernel-features [source: string target] {
                     continue
                 }
 
-                let feature = (context-field-kernel-feature $field $target)
-                if $feature != null {
-                    $features = (append-missing-kernel-features $features [$feature])
-                }
-                let tracepoint_feature = (tracepoint-payload-field-kernel-feature $field $target)
-                if $tracepoint_feature != null {
-                    $features = (append-missing-kernel-features $features [$tracepoint_feature])
-                }
-                if not (context-field-access-is-assignment-lhs? $raw_access $field) {
-                    let helper_feature = (context-field-helper-kernel-feature $field $target)
-                    if $helper_feature != null {
-                        $features = (append-missing-kernel-features $features [$helper_feature])
-                    }
-                }
-                let projection_feature = (context-projection-kernel-feature $raw_access $target)
-                if $projection_feature != null {
-                    $features = (append-missing-kernel-features $features [$projection_feature])
-                }
-                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
-                if $read_feature != null {
-                    $features = (append-missing-kernel-features $features [$read_feature])
-                }
-                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
-                if $task_pt_regs_feature != null {
-                    $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
-                }
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features $raw_access $target)
+                )
             }
         }
     }
