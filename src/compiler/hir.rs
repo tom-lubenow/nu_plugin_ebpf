@@ -129,6 +129,9 @@ pub enum HirTerminator {
 
 #[derive(Debug, Clone, Default)]
 pub struct HirCallArgs {
+    /// The register used as Nushell pipeline input for this call, when the
+    /// source IR had a live `src_dst` value before the call executed.
+    pub pipeline_input: Option<RegId>,
     pub positional: Vec<RegId>,
     pub rest: Vec<RegId>,
     pub named: Vec<(Vec<u8>, RegId)>,

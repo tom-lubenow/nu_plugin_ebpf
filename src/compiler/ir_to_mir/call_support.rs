@@ -1886,10 +1886,16 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     pub(super) fn set_call_args(&mut self, args: &HirCallArgs) -> Result<(), CompileError> {
+        self.pipeline_input = None;
+        self.pipeline_input_reg = None;
         self.positional_args.clear();
         self.named_flags.clear();
         self.named_args.clear();
 
+        if let Some(reg) = args.pipeline_input {
+            self.pipeline_input = Some(self.get_vreg(reg));
+            self.pipeline_input_reg = Some(reg);
+        }
         for reg in &args.positional {
             let vreg = self.get_vreg(*reg);
             self.positional_args.push((vreg, *reg));

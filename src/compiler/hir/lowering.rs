@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
-use nu_protocol::{BlockId as NuBlockId, Value, VarId};
+use nu_protocol::{BlockId as NuBlockId, RegId, Value, VarId};
 
 use super::{
     CompileError, HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt,
@@ -20,7 +20,8 @@ impl CallArgsBuilder {
     }
 
     fn is_empty(&self) -> bool {
-        self.args.positional.is_empty()
+        self.args.pipeline_input.is_none()
+            && self.args.positional.is_empty()
             && self.args.rest.is_empty()
             && self.args.named.is_empty()
             && self.args.flags.is_empty()
@@ -111,6 +112,7 @@ impl HirFunction {
         let mut stmts: Vec<HirStmt> = Vec::new();
         let mut terminator: Option<HirTerminator> = None;
         let mut args_builder = CallArgsBuilder::new();
+        let mut live_regs: HashSet<RegId> = HashSet::new();
 
         for (idx, inst) in instructions.into_iter().enumerate() {
             if idx != current_start && block_starts.contains(&idx) {
@@ -128,6 +130,7 @@ impl HirFunction {
                     stmts: std::mem::take(&mut stmts),
                     terminator: terminator.take().unwrap_or(HirTerminator::Unreachable),
                 });
+                live_regs.clear();
                 current_block_id = block_ids[&idx];
                 current_start = idx;
             }
@@ -146,33 +149,43 @@ impl HirFunction {
                         dst,
                         lit: HirLiteral::from_ir(lit, &data),
                     });
+                    live_regs.insert(dst);
                 }
                 Instruction::LoadValue { dst, val } => {
                     stmts.push(HirStmt::LoadValue { dst, val });
+                    live_regs.insert(dst);
                 }
                 Instruction::Move { dst, src } => {
                     stmts.push(HirStmt::Move { dst, src });
+                    live_regs.insert(dst);
                 }
                 Instruction::Clone { dst, src } => {
                     stmts.push(HirStmt::Clone { dst, src });
+                    live_regs.insert(dst);
                 }
                 Instruction::Collect { src_dst } => {
                     stmts.push(HirStmt::Collect { src_dst });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::Span { src_dst } => {
                     stmts.push(HirStmt::Span { src_dst });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::Drop { src } => {
                     stmts.push(HirStmt::Drop { src });
+                    live_regs.remove(&src);
                 }
                 Instruction::Drain { src } => {
                     stmts.push(HirStmt::Drain { src });
+                    live_regs.remove(&src);
                 }
                 Instruction::DrainIfEnd { src } => {
                     stmts.push(HirStmt::DrainIfEnd { src });
+                    live_regs.remove(&src);
                 }
                 Instruction::LoadVariable { dst, var_id } => {
                     stmts.push(HirStmt::LoadVariable { dst, var_id });
+                    live_regs.insert(dst);
                 }
                 Instruction::StoreVariable { var_id, src } => {
                     stmts.push(HirStmt::StoreVariable { var_id, src });
@@ -185,12 +198,14 @@ impl HirFunction {
                         dst,
                         key: bytes_from_slice(&data, key),
                     });
+                    live_regs.insert(dst);
                 }
                 Instruction::LoadEnvOpt { dst, key } => {
                     stmts.push(HirStmt::LoadEnvOpt {
                         dst,
                         key: bytes_from_slice(&data, key),
                     });
+                    live_regs.insert(dst);
                 }
                 Instruction::StoreEnv { key, src } => {
                     stmts.push(HirStmt::StoreEnv {
@@ -247,42 +262,56 @@ impl HirFunction {
                     stmts.push(HirStmt::CloseFile { file_num });
                 }
                 Instruction::Call { decl_id, src_dst } => {
-                    let args = args_builder.take();
+                    let mut args = args_builder.take();
+                    if live_regs.contains(&src_dst) {
+                        args.pipeline_input = Some(src_dst);
+                    }
                     stmts.push(HirStmt::Call {
                         decl_id,
                         src_dst,
                         args,
                     });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::StringAppend { src_dst, val } => {
                     stmts.push(HirStmt::StringAppend { src_dst, val });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::GlobFrom { src_dst, no_expand } => {
                     stmts.push(HirStmt::GlobFrom { src_dst, no_expand });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::ListPush { src_dst, item } => {
                     stmts.push(HirStmt::ListPush { src_dst, item });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::ListSpread { src_dst, items } => {
                     stmts.push(HirStmt::ListSpread { src_dst, items });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::RecordInsert { src_dst, key, val } => {
                     stmts.push(HirStmt::RecordInsert { src_dst, key, val });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::RecordSpread { src_dst, items } => {
                     stmts.push(HirStmt::RecordSpread { src_dst, items });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::Not { src_dst } => {
                     stmts.push(HirStmt::Not { src_dst });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::BinaryOp { lhs_dst, op, rhs } => {
                     stmts.push(HirStmt::BinaryOp { lhs_dst, op, rhs });
+                    live_regs.insert(lhs_dst);
                 }
                 Instruction::FollowCellPath { src_dst, path } => {
                     stmts.push(HirStmt::FollowCellPath { src_dst, path });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::CloneCellPath { dst, src, path } => {
                     stmts.push(HirStmt::CloneCellPath { dst, src, path });
+                    live_regs.insert(dst);
                 }
                 Instruction::UpsertCellPath {
                     src_dst,
@@ -294,6 +323,7 @@ impl HirFunction {
                         path,
                         new_value,
                     });
+                    live_regs.insert(src_dst);
                 }
                 Instruction::Jump { index } => {
                     if !args_builder.is_empty() {
@@ -396,6 +426,7 @@ impl HirFunction {
                 Instruction::OnErrorInto { index, dst } => {
                     let target = block_ids[&index];
                     stmts.push(HirStmt::OnErrorInto { target, dst });
+                    live_regs.insert(dst);
                 }
                 Instruction::PopErrorHandler => {
                     stmts.push(HirStmt::PopErrorHandler);

@@ -2838,6 +2838,72 @@ fn test_helper_call_with_explicit_ctx_arg_skips_ambient_pipeline_input() {
 }
 
 #[test]
+fn test_helper_call_pipeline_with_explicit_args_reports_explicit_arg_guidance() {
+    use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+    use std::sync::Arc;
+
+    let helper_name = b"bpf_msg_cork_bytes";
+    let data: Arc<[u8]> = helper_name.to_vec().into();
+
+    let main_ir = IrBlock {
+        instructions: vec![
+            Instruction::Collect {
+                src_dst: RegId::new(0),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: Literal::String(DataSlice {
+                    start: 0,
+                    len: helper_name.len() as u32,
+                }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: Literal::Int(8),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushPositional { src: RegId::new(2) },
+            Instruction::Call {
+                decl_id: DeclId::new(42),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction::from_ir_block(main_ir).unwrap(),
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("helper-call should require explicit use of piped value");
+
+    assert!(
+        err.to_string()
+            .contains("pass that value explicitly as the first helper argument"),
+        "{err}"
+    );
+}
+
+#[test]
 fn test_helper_call_exact_attach_ir_with_ctx_arg_typechecks_and_lowers() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
     use std::sync::Arc;

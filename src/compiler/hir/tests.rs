@@ -39,6 +39,81 @@ fn test_hir_call_args_folded() {
 }
 
 #[test]
+fn test_hir_call_marks_live_src_dst_as_pipeline_input() {
+    let ctx_var = VarId::new(80);
+    let ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: ctx_var,
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let hir = HirFunction::from_ir_block(ir).unwrap();
+    let block = &hir.blocks[0];
+    match &block.stmts[1] {
+        HirStmt::Call { args, .. } => {
+            assert_eq!(args.pipeline_input, Some(RegId::new(0)));
+        }
+        _ => panic!("Expected Call with pipeline input"),
+    }
+}
+
+#[test]
+fn test_hir_call_leaves_unset_src_dst_without_pipeline_input() {
+    let data: Arc<[u8]> = Arc::from(b"recentqueuekind".as_slice());
+    let ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadLiteral {
+                dst: RegId::new(1),
+                lit: nu_protocol::ir::Literal::String(DataSlice { start: 0, len: 6 }),
+            },
+            Instruction::LoadLiteral {
+                dst: RegId::new(2),
+                lit: nu_protocol::ir::Literal::String(DataSlice { start: 6, len: 5 }),
+            },
+            Instruction::PushPositional { src: RegId::new(1) },
+            Instruction::PushNamed {
+                name: DataSlice { start: 11, len: 4 },
+                src: RegId::new(2),
+            },
+            Instruction::Call {
+                decl_id: DeclId::new(1),
+                src_dst: RegId::new(0),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data,
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir = HirFunction::from_ir_block(ir).unwrap();
+    let block = &hir.blocks[0];
+    match &block.stmts[2] {
+        HirStmt::Call { args, .. } => {
+            assert_eq!(args.pipeline_input, None);
+        }
+        _ => panic!("Expected Call without pipeline input"),
+    }
+}
+
+#[test]
 fn test_supports_constant_value_for_record_with_nested_numeric_list() {
     let mut record = Record::new();
     record.push(

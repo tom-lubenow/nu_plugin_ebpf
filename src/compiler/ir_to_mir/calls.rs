@@ -208,7 +208,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "start-timer" => {
-                if self.pipeline_input.is_some() || src_dst_had_value {
+                if self.pipeline_input.is_some() {
                     return Err(CompileError::UnsupportedInstruction(
                         "start-timer does not accept pipeline input in eBPF".into(),
                     ));
@@ -224,7 +224,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "stop-timer" => {
-                if self.pipeline_input.is_some() || src_dst_had_value {
+                if self.pipeline_input.is_some() {
                     return Err(CompileError::UnsupportedInstruction(
                         "stop-timer does not accept pipeline input in eBPF".into(),
                     ));
@@ -245,7 +245,7 @@ impl<'a> HirToMirLowering<'a> {
                         "random int accepts at most one range argument in eBPF".into(),
                     ));
                 }
-                if self.pipeline_input.is_some() || src_dst_had_value {
+                if self.pipeline_input.is_some() {
                     return Err(CompileError::UnsupportedInstruction(
                         "random int does not accept pipeline input in eBPF".into(),
                     ));
@@ -853,7 +853,9 @@ impl<'a> HirToMirLowering<'a> {
                 let is_known_zero_arg = kfunc_signature
                     .map(|sig| sig.max_args == 0)
                     .unwrap_or(false);
-                if let Some(input) = self.pipeline_input {
+                if let Some(input) = self.pipeline_input
+                    && !is_known_zero_arg
+                {
                     if has_explicit_context_arg {
                         // Match helper-call behavior: an explicit `$ctx` should
                         // not be duplicated by the ambient pipeline input.
@@ -1039,7 +1041,10 @@ impl<'a> HirToMirLowering<'a> {
                 let mut args = Vec::new();
                 let mut helper_arg_regs: Vec<(usize, RegId)> = Vec::new();
                 let mut helper_map_args: Vec<(usize, MapRef, VReg)> = Vec::new();
-                if let Some(input) = self.pipeline_input {
+                if let Some(input) = self.pipeline_input
+                    && self.positional_args.len() == 1
+                    && sig.max_args != 0
+                {
                     if has_explicit_context_arg {
                         // Real attached closures carry the program context as ambient
                         // pipeline input. If the caller already passed `$ctx`
@@ -1147,8 +1152,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if args.len() < sig.min_args || args.len() > sig.max_args {
                     let with_live_value = args.len().saturating_add(1);
-                    if src_dst_had_value
-                        && self.pipeline_input.is_none()
+                    if (src_dst_had_value || self.pipeline_input.is_some())
                         && self.positional_args.len() > 1
                         && with_live_value >= sig.min_args
                         && with_live_value <= sig.max_args
@@ -1263,7 +1267,7 @@ impl<'a> HirToMirLowering<'a> {
                     "map-define",
                     &["kind", "key-type", "value-type", "max-entries", "inner-map"],
                 )?;
-                if self.pipeline_input.is_some() || src_dst_had_value {
+                if self.pipeline_input.is_some() {
                     return Err(CompileError::UnsupportedInstruction(
                         "map-define does not accept pipeline input".into(),
                     ));
