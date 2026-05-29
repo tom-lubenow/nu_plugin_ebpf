@@ -139,6 +139,7 @@ struct RecordField {
     stack_offset: Option<i16>,
     ty: MirType,
     semantics: Option<AnnotatedValueSemantics>,
+    is_context: bool,
 }
 
 /// Bounded iterator info for ranges

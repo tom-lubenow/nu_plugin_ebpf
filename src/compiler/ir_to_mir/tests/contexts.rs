@@ -5175,6 +5175,79 @@ fn test_lower_kprobe_ctx_cgroup_id_field() {
 }
 
 #[test]
+fn test_lower_record_context_field_projection_preserves_context_metadata() {
+    let ctx_var = VarId::new(0);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"k".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("k"), string_member("pid")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(3),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-held context field projection should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::Pid,
+            ..
+        }
+    )));
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("record-held context field projection should compile");
+}
+
+#[test]
 fn test_lower_kprobe_ctx_cgroup_alias_projects_current_task_default_cgroup() {
     let projection_path = [
         TrampolineFieldSelector::Field("cgroups".to_string()),

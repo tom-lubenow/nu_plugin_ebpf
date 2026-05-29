@@ -8450,6 +8450,39 @@ const FIXTURES = [
         error_contains: "stale packet pointer"
     }
     {
+        name: "tc-record-context-helper-arg"
+        category: "helper-state"
+        tags: [tc helper record context accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { skb: $ctx }'
+            '  helper-call "bpf_skb_pull_data" $rec.skb 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-user-function-record-context-helper-arg"
+        category: "helper-state"
+        tags: [tc helper user-function record context accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [x] { { skb: $x } }'
+            '  let rec = (wrap $ctx)'
+            '  helper-call "bpf_skb_pull_data" $rec.skb 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-l3-csum-replace-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper checksum packet-bounds reject]
@@ -17678,6 +17711,37 @@ const FIXTURES = [
             '    0'
             '  }'
             '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "core-record-context-field-access"
+        category: "language-core"
+        tags: [record context accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = { k: $ctx }'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "core-user-function-record-context-field-access"
+        category: "language-core"
+        tags: [user-function record context accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def wrap [x] { { k: $x } }'
+            '  let rec = (wrap $ctx)'
+            '  $rec.k.pid | count'
             '  0'
             '}'
         ]

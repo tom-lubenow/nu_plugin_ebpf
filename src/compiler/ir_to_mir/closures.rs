@@ -706,8 +706,13 @@ impl<'a> HirToMirLowering<'a> {
             _ => None,
         };
 
-        let val_vreg = self.get_vreg(val);
         let val_meta = self.get_metadata(val).cloned();
+        let val_vreg =
+            if val_meta.as_ref().is_some_and(|meta| meta.is_context) && self.ctx_param.is_some() {
+                self.materialize_context_pointer_arg()
+            } else {
+                self.get_vreg(val)
+            };
 
         // Preserve aggregate-pointer field layout as the underlying aggregate
         // so `{ path: $entry } | emit` serializes nested data instead of a raw pointer.
@@ -806,6 +811,7 @@ impl<'a> HirToMirLowering<'a> {
             stack_offset: None,
             ty: field_type,
             semantics: field_semantics,
+            is_context: val_meta.as_ref().is_some_and(|meta| meta.is_context),
         };
 
         {

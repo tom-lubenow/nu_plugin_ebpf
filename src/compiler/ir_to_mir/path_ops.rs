@@ -568,7 +568,7 @@ impl<'a> HirToMirLowering<'a> {
         src_dst: RegId,
         path_reg: RegId,
     ) -> Result<(), CompileError> {
-        let path = self
+        let mut path = self
             .get_metadata(path_reg)
             .and_then(|m| m.cell_path.clone())
             .ok_or_else(|| {
@@ -582,6 +582,33 @@ impl<'a> HirToMirLowering<'a> {
 
         let had_source_vreg = self.reg_map.contains_key(&src_dst.get());
         let source_dst_vreg = self.get_vreg(src_dst);
+
+        let record_context_remaining_path = if !self.is_context_reg(src_dst) {
+            match path.members.first() {
+                Some(PathMember::String { val, .. }) => {
+                    self.get_metadata(src_dst).and_then(|meta| {
+                        meta.record_fields
+                            .iter()
+                            .any(|field| field.name == *val && field.is_context)
+                            .then(|| CellPath {
+                                members: path.members.iter().skip(1).cloned().collect(),
+                            })
+                    })
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(remaining_path) = record_context_remaining_path {
+            let meta = self.get_or_create_metadata(src_dst);
+            *meta = RegMetadata::default();
+            meta.is_context = true;
+            path = remaining_path;
+            if path.members.is_empty() {
+                return Ok(());
+            }
+        }
 
         if !self.is_context_reg(src_dst) {
             let constant_value = self
