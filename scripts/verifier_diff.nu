@@ -27006,12 +27006,16 @@ def fixture-tier [fixture] {
 
 def fixture-summary [fixture compat_kernel] {
     let kernel_features = (fixture-kernel-features $fixture)
+    fixture-summary-from-derived (fixture-derived-metadata $fixture $kernel_features) $compat_kernel
+}
+
+def fixture-derived-metadata [fixture kernel_features] {
     let effective_min_kernel = (effective-min-kernel-from-features $kernel_features)
     let effective_max_kernel_exclusive = (effective-max-kernel-exclusive-from-features $kernel_features)
-    let compatibility = (kernel-feature-compatibility $effective_min_kernel $effective_max_kernel_exclusive $compat_kernel)
     let default_test_lane = (fixture-default-test-lane-from-features $fixture $kernel_features)
 
     {
+        fixture: $fixture
         name: $fixture.name
         target: (optional $fixture target "")
         category: (optional $fixture category "")
@@ -27023,15 +27027,44 @@ def fixture-summary [fixture compat_kernel] {
         kernel_features: $kernel_features
         default_test_lane: $default_test_lane
         default_test_lane_description: (test-lane-description $default_test_lane)
-        effective_min_kernel: ($effective_min_kernel | default "")
-        effective_max_kernel_exclusive: ($effective_max_kernel_exclusive | default "")
+        effective_min_kernel_raw: $effective_min_kernel
+        effective_max_kernel_exclusive_raw: $effective_max_kernel_exclusive
         effective_min_kernel_sources: (effective-min-kernel-sources-from-features $kernel_features)
-        compat_kernel: ($compat_kernel | default "")
-        compatible_with_compat_kernel: $compatibility.compatible
-        compat_kernel_reason: $compatibility.reason
         min_kernel: (optional $fixture min_kernel "")
         min_kernel_source: (optional $fixture min_kernel_source "")
         tags: (optional $fixture tags [])
+    }
+}
+
+def fixture-summary-from-derived [derived compat_kernel] {
+    let compatibility = (
+        kernel-feature-compatibility
+            $derived.effective_min_kernel_raw
+            $derived.effective_max_kernel_exclusive_raw
+            $compat_kernel
+    )
+
+    {
+        name: $derived.name
+        target: $derived.target
+        category: $derived.category
+        tier: $derived.tier
+        local: $derived.local
+        kernel: $derived.kernel
+        requires: $derived.requires
+        kernel_requires: $derived.kernel_requires
+        kernel_features: $derived.kernel_features
+        default_test_lane: $derived.default_test_lane
+        default_test_lane_description: $derived.default_test_lane_description
+        effective_min_kernel: ($derived.effective_min_kernel_raw | default "")
+        effective_max_kernel_exclusive: ($derived.effective_max_kernel_exclusive_raw | default "")
+        effective_min_kernel_sources: $derived.effective_min_kernel_sources
+        compat_kernel: ($compat_kernel | default "")
+        compatible_with_compat_kernel: $compatibility.compatible
+        compat_kernel_reason: $compatibility.reason
+        min_kernel: $derived.min_kernel
+        min_kernel_source: $derived.min_kernel_source
+        tags: $derived.tags
     }
 }
 
@@ -27075,17 +27108,24 @@ def fixture-test-lane-count [fixtures lane: string] {
 
 def fixture-matrix-summary [fixture compat_kernel] {
     let kernel_features = (fixture-kernel-features $fixture)
-    let effective_min_kernel = (effective-min-kernel-from-features $kernel_features)
-    let effective_max_kernel_exclusive = (effective-max-kernel-exclusive-from-features $kernel_features)
-    let compatibility = (kernel-feature-compatibility $effective_min_kernel $effective_max_kernel_exclusive $compat_kernel)
+    fixture-matrix-summary-from-derived (fixture-derived-metadata $fixture $kernel_features) $compat_kernel
+}
+
+def fixture-matrix-summary-from-derived [derived compat_kernel] {
+    let compatibility = (
+        kernel-feature-compatibility
+            $derived.effective_min_kernel_raw
+            $derived.effective_max_kernel_exclusive_raw
+            $compat_kernel
+    )
 
     {
-        tier: (fixture-tier $fixture)
-        category: (optional $fixture category "")
-        local: $fixture.local
-        kernel: $fixture.kernel
-        default_test_lane: (fixture-default-test-lane-from-features $fixture $kernel_features)
-        has_effective_min_kernel: ($effective_min_kernel != null)
+        tier: $derived.tier
+        category: $derived.category
+        local: $derived.local
+        kernel: $derived.kernel
+        default_test_lane: $derived.default_test_lane
+        has_effective_min_kernel: ($derived.effective_min_kernel_raw != null)
         compatible_with_compat_kernel: $compatibility.compatible
         compat_kernel_reason: $compatibility.reason
     }
@@ -27126,11 +27166,25 @@ def matrix-test-lane-count [fixtures lane: string] {
 }
 
 def fixture-matrix-rows [fixtures compat_kernel] {
-    mut rows = []
     let matrix_fixtures = (
         $fixtures
         | each {|fixture| fixture-matrix-summary $fixture $compat_kernel }
     )
+
+    fixture-matrix-rows-from-matrix-summaries $matrix_fixtures $compat_kernel
+}
+
+def fixture-matrix-rows-from-derived [derived_fixtures compat_kernel] {
+    let matrix_fixtures = (
+        $derived_fixtures
+        | each {|fixture| fixture-matrix-summary-from-derived $fixture $compat_kernel }
+    )
+
+    fixture-matrix-rows-from-matrix-summaries $matrix_fixtures $compat_kernel
+}
+
+def fixture-matrix-rows-from-matrix-summaries [matrix_fixtures compat_kernel] {
+    mut rows = []
 
     for tier in $VALID_TIERS {
         let tier_fixtures = (
@@ -27193,13 +27247,23 @@ def fixture-matrix-rows [fixtures compat_kernel] {
 
 def print-fixture-matrix [fixtures compat_kernel] {
     for row in (fixture-matrix-rows $fixtures $compat_kernel) {
-        let compat_text = if (($row | get -o compat_kernel) == null) {
-            ""
-        } else {
-            $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_incompatible=($row.kernel_accept_incompatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer) kernel_accept_requires_older=($row.kernel_accept_requires_older)"
-        }
-        print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned) lane_host_safe=($row.lane_host_safe) lane_host_gated=($row.lane_host_gated) lane_dry_run=($row.lane_dry_run) lane_vm_only=($row.lane_vm_only)($compat_text)"
+        print-fixture-matrix-row $row
     }
+}
+
+def print-fixture-matrix-from-derived [derived_fixtures compat_kernel] {
+    for row in (fixture-matrix-rows-from-derived $derived_fixtures $compat_kernel) {
+        print-fixture-matrix-row $row
+    }
+}
+
+def print-fixture-matrix-row [row] {
+    let compat_text = if (($row | get -o compat_kernel) == null) {
+        ""
+    } else {
+        $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_incompatible=($row.kernel_accept_incompatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer) kernel_accept_requires_older=($row.kernel_accept_requires_older)"
+    }
+    print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned) lane_host_safe=($row.lane_host_safe) lane_host_gated=($row.lane_host_gated) lane_dry_run=($row.lane_dry_run) lane_vm_only=($row.lane_vm_only)($compat_text)"
 }
 
 def validate-tier-option [label: string value] {
@@ -27312,6 +27376,8 @@ def validate-kernel-feature-metadata [fixture] {
     for feature in $effective_features {
         validate-kernel-feature-record $fixture.name "effective kernel_features" $feature
     }
+
+    $effective_features
 }
 
 def validate-kernel-feature-key-expectation [label: string expected_keys actual_keys] {
@@ -27548,6 +27614,8 @@ def validate-fixture-metadata [fixtures] {
         }
     }
 
+    mut derived = []
+
     for fixture in $fixtures {
         validate-tier-option $"fixture ($fixture.name)" ($fixture | get -o tier)
         validate-test-lane-option $"fixture ($fixture.name)" ($fixture | get -o default_test_lane)
@@ -27555,7 +27623,7 @@ def validate-fixture-metadata [fixtures] {
         validate-status-option $"fixture ($fixture.name) kernel" $fixture.kernel
         validate-host-features $fixture requires
         validate-host-features $fixture kernel_requires
-        validate-kernel-feature-metadata $fixture
+        let kernel_features = (validate-kernel-feature-metadata $fixture)
 
         let min_kernel = ($fixture | get -o min_kernel)
         let min_kernel_source = ($fixture | get -o min_kernel_source)
@@ -27571,7 +27639,11 @@ def validate-fixture-metadata [fixtures] {
         if $min_kernel != null {
             parse-kernel-version $min_kernel | ignore
         }
+
+        $derived = ($derived | append (fixture-derived-metadata $fixture $kernel_features))
     }
+
+    $derived
 }
 
 def fixture-has-tag [fixture tag] {
@@ -27932,7 +28004,7 @@ def main [
     }
 
     if $validate {
-        validate-fixture-metadata $FIXTURES
+        let _validated_fixtures = (validate-fixture-metadata $FIXTURES)
         print $"ok: (($FIXTURES | length)) verifier fixtures metadata-valid"
         return
     }
@@ -27961,10 +28033,10 @@ def main [
     let selected_test_lane = if ($smoke or $default_smoke) { "host-safe" } else { $test_lane }
     let fixture_names = if $fixture == null { $fixtures } else { [$fixture] }
     let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
-    validate-fixture-metadata $fixtures
+    let validated_fixtures = (validate-fixture-metadata $fixtures)
 
     if $list {
-        let summaries = ($fixtures | each {|fixture| fixture-summary $fixture $compat_kernel })
+        let summaries = ($validated_fixtures | each {|fixture| fixture-summary-from-derived $fixture $compat_kernel })
         if $json {
             print ($summaries | to json)
             return
@@ -27982,9 +28054,9 @@ def main [
     }
     if $matrix {
         if $json {
-            print ((fixture-matrix-rows $fixtures $compat_kernel) | to json)
+            print ((fixture-matrix-rows-from-derived $validated_fixtures $compat_kernel) | to json)
         } else {
-            print-fixture-matrix $fixtures $compat_kernel
+            print-fixture-matrix-from-derived $validated_fixtures $compat_kernel
         }
         return
     }
