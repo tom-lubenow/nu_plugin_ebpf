@@ -6197,6 +6197,39 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-u32-initializer"
+        category: "globals"
+        tags: [globals arrays global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [11 22] | global-define --type "array{u32:4}" ports'
+            '  let ports = (global-get ports)'
+            '  ($ports | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-bound-array-u32-initializer"
+        category: "globals"
+        tags: [globals arrays global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let initial = [11 22]'
+            '  $initial | global-define --type "array{u32:4}" ports'
+            '  let ports = (global-get ports)'
+            '  ($ports | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-empty-binary-without-type-rejects"
         category: "globals"
         tags: [globals binary global-define reject]
