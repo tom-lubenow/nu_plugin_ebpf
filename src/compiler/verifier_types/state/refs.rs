@@ -816,6 +816,9 @@ impl VerifierState {
         &self,
         reg: VReg,
     ) -> Option<&MapLookupSource> {
+        if let Some(source) = self.map_lookup_source(reg) {
+            return Some(source);
+        }
         let (root, _) = self.map_value_root_and_bounds(reg)?;
         self.map_lookup_source(root)
     }

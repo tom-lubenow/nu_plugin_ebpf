@@ -1272,6 +1272,18 @@ impl VccVerifier {
                 let released_kfunc_ref = args
                     .iter()
                     .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
+                let mut merged_map_value_source = None;
+                for (_, reg) in args {
+                    let next = state.map_value_source(*reg).cloned();
+                    merged_map_value_source = Some(match merged_map_value_source {
+                        None => next,
+                        Some(existing) if existing == next => existing,
+                        _ => None,
+                    });
+                    if matches!(merged_map_value_source, Some(None)) {
+                        break;
+                    }
+                }
                 let mut merged_map_fd: Option<Option<MapRef>> = None;
                 for (_, reg) in args {
                     let next = state.map_fd_source(*reg).cloned();
@@ -1291,6 +1303,9 @@ impl VccVerifier {
                 }
                 if let Some(Some(map)) = merged_map_fd {
                     state.set_map_fd_source(*dst, map);
+                }
+                if let Some(Some(source)) = merged_map_value_source {
+                    state.set_map_lookup_source(*dst, source.map, source.key);
                 }
                 let mut merged_ctx_field: Option<Option<CtxField>> = None;
                 for (_, reg) in args {

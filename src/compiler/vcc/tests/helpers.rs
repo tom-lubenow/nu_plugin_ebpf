@@ -466,6 +466,100 @@ fn test_verify_mir_timer_init_rejects_phi_mismatched_map_fd() {
 }
 
 #[test]
+fn test_verify_mir_timer_init_rejects_phi_mismatched_map_value_source() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let timer_left = func.alloc_vreg();
+    let timer_right = func.alloc_vreg();
+    let timer_phi = func.alloc_vreg();
+    let timer_non_null = func.alloc_vreg();
+    let map_fd = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let left = func.alloc_block();
+    let right = func.alloc_block();
+    let checked = func.alloc_block();
+    let done = func.alloc_block();
+    let join = func.alloc_block();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: selector,
+        if_true: left,
+        if_false: right,
+    };
+    for (block, timer) in [(left, timer_left), (right, timer_right)] {
+        func.block_mut(block).instructions.push(MirInst::MapLookup {
+            dst: timer,
+            map: timer_map_ref(),
+            key,
+        });
+        func.block_mut(block).terminator = MirInst::Jump { target: join };
+    }
+    func.block_mut(join).instructions.push(MirInst::Phi {
+        dst: timer_phi,
+        args: vec![(left, timer_left), (right, timer_right)],
+    });
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: timer_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(timer_phi),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: timer_non_null,
+        if_true: checked,
+        if_false: done,
+    };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+    func.block_mut(checked)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map_fd,
+            map: MapRef {
+                name: "other_timer_map".to_string(),
+                kind: MapKind::Array,
+            },
+        });
+    func.block_mut(checked)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerInit as u32,
+            args: vec![
+                MirValue::VReg(timer_phi),
+                MirValue::VReg(map_fd),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(checked).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(key, MirType::I64);
+    types.insert(timer_left, bpf_timer_map_ptr_ty());
+    types.insert(timer_right, bpf_timer_map_ptr_ty());
+    types.insert(timer_phi, bpf_timer_map_ptr_ty());
+    types.insert(timer_non_null, MirType::Bool);
+    types.insert(map_fd, timer_map_ref_ty());
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected phi map-value source mismatch");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_timer_init' arg1 map 'other_timer_map' does not match arg0 map value 'timer_map'"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_timer_set_callback_requires_null_checked_map_lookup() {
     let (mut func, entry) = new_mir_function();
     let timer = func.alloc_vreg();

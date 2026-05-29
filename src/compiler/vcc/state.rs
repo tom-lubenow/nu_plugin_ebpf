@@ -849,6 +849,9 @@ impl VccState {
     }
 
     fn map_value_source(&self, reg: VccReg) -> Option<&VccMapLookupSource> {
+        if let Some(source) = self.map_lookup_source(reg) {
+            return Some(source);
+        }
         let (root, _) = self.map_value_root_and_bounds(reg)?;
         self.map_lookup_source(root)
     }
@@ -1253,12 +1256,32 @@ impl VccState {
                 ctx_field_sources.insert(*reg, left.clone());
             }
         }
+        let mut map_lookup_source_regs: HashSet<VccReg> =
+            self.map_lookup_sources.keys().copied().collect();
+        map_lookup_source_regs.extend(other.map_lookup_sources.keys().copied());
         let mut map_lookup_sources = HashMap::new();
-        for (reg, left) in &self.map_lookup_sources {
-            if let Some(right) = other.map_lookup_sources.get(reg)
-                && left == right
-            {
-                map_lookup_sources.insert(*reg, left.clone());
+        for reg in map_lookup_source_regs {
+            let merged = match (
+                self.map_lookup_sources.get(&reg),
+                other.map_lookup_sources.get(&reg),
+            ) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), None)
+                    if !other.reg_types.contains_key(&reg)
+                        || matches!(other.reg_types.get(&reg), Some(VccValueType::Uninit)) =>
+                {
+                    Some(left.clone())
+                }
+                (None, Some(right))
+                    if !self.reg_types.contains_key(&reg)
+                        || matches!(self.reg_types.get(&reg), Some(VccValueType::Uninit)) =>
+                {
+                    Some(right.clone())
+                }
+                _ => None,
+            };
+            if let Some(source) = merged {
+                map_lookup_sources.insert(reg, source);
             }
         }
         let mut map_fd_source_regs: HashSet<VccReg> =
