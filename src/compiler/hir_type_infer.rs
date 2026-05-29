@@ -14,7 +14,8 @@ use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::hir::{
-    AnnotatedMutGlobal, HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    AnnotatedMutGlobal, CompileTimeValueFlow, HirBlock, HirFunction, HirLiteral, HirProgram,
+    HirStmt, HirTerminator, compile_time_value_flows_to_typed_global_define,
     supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
@@ -208,8 +209,20 @@ impl<'a> HirTypeInference<'a> {
     fn infer_block(&mut self, block: &HirBlock) -> Result<(), Vec<TypeError>> {
         let mut errors = Vec::new();
 
-        for stmt in &block.stmts {
-            if let Err(err) = self.infer_stmt(stmt) {
+        for (stmt_index, stmt) in block.stmts.iter().enumerate() {
+            let compile_time_only_typed_global_list = match stmt {
+                HirStmt::ListPush { src_dst, .. } => {
+                    compile_time_value_flows_to_typed_global_define(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                        self.decl_names,
+                        CompileTimeValueFlow::AggregateBuilder,
+                    )
+                }
+                _ => false,
+            };
+            if let Err(err) = self.infer_stmt(stmt, compile_time_only_typed_global_list) {
                 errors.push(err);
             }
         }
@@ -225,7 +238,11 @@ impl<'a> HirTypeInference<'a> {
         }
     }
 
-    fn infer_stmt(&mut self, stmt: &HirStmt) -> Result<(), TypeError> {
+    fn infer_stmt(
+        &mut self,
+        stmt: &HirStmt,
+        compile_time_only_typed_global_list: bool,
+    ) -> Result<(), TypeError> {
         match stmt {
             HirStmt::LoadLiteral { dst, lit } => {
                 let dst_ty = self.write_reg_type(*dst);
@@ -310,8 +327,10 @@ impl<'a> HirTypeInference<'a> {
                 let list_ty = self.reg_type(*src_dst);
                 let item_ty = self.reg_type(*item);
                 self.constrain(list_ty, stack_list_ptr_type(), "list_push_list")?;
-                self.constrain(item_ty.clone(), HMType::I64, "list_push_item")
-                    .map_err(|err| self.list_push_item_error(item_ty, err))?;
+                if !compile_time_only_typed_global_list {
+                    self.constrain(item_ty.clone(), HMType::I64, "list_push_item")
+                        .map_err(|err| self.list_push_item_error(item_ty, err))?;
+                }
             }
             HirStmt::ListSpread { src_dst, items } => {
                 let list_ty = self.reg_type(*src_dst);

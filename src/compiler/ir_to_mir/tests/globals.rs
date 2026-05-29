@@ -3666,6 +3666,157 @@ fn test_lower_global_define_type_fixed_record_array_initializer_uses_named_data_
 }
 
 #[test]
+fn test_lower_global_define_type_fixed_record_array_source_list_builder_skips_runtime_list_push() {
+    let define_decl = DeclId::new(1100);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(2),
+                    val: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(2),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(4),
+                    val: RegId::new(5),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(7),
+                    val: RegId::new(8),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(9),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::Int(3),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(9),
+                    val: RegId::new(10),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(6),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(11),
+                    lit: HirLiteral::String("seen_entries".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(12),
+                    lit: HirLiteral::String("array{record{pid:int,cpu:u32}:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(11)],
+                        named: vec![(b"type".to_vec(), RegId::new(12))],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Drain { src: RegId::new(0) },
+                HirStmt::Drop { src: RegId::new(0) },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 13,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("source list-of-record initializers should lower as typed global data");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&2u32.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
+    expected.extend_from_slice(&9i64.to_le_bytes());
+    expected.extend_from_slice(&3u32.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_entries");
+    assert_eq!(result.data_globals[0].data, expected);
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "compile-time typed global list-of-record builders must not emit runtime ListPush"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_fixed_record_array_initializer_supports_nested_numeric_list_field()
 {
     let define_decl = DeclId::new(1094);

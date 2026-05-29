@@ -6230,6 +6230,70 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-record-list-field-initializer"
+        category: "globals"
+        tags: [globals records list global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 samples: [11 22] } | global-define --type "record{pid:int,samples:list:int:4}" seen_state'
+            '  let state = (global-get seen_state)'
+            '  ($state.samples | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-record-array-field-initializer"
+        category: "globals"
+        tags: [globals records arrays global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 ports: [11 22] } | global-define --type "record{ports:array{u16:4},pid:int}" seen_state'
+            '  let state = (global-get seen_state)'
+            '  ($state.ports | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-record-array-record-field-initializer"
+        category: "globals"
+        tags: [globals records arrays global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { entries: [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] } | global-define --type "record{entries:array{record{pid:int,cpu:u32}:2}}" seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.entries | get 1).cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-record-initializer"
+        category: "globals"
+        tags: [globals records arrays global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] | global-define --type "array{record{pid:int,cpu:u32}:2}" seen_entries'
+            '  let entries = (global-get seen_entries)'
+            '  (($entries | get 1).cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-empty-binary-without-type-rejects"
         category: "globals"
         tags: [globals binary global-define reject]

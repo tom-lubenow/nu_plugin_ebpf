@@ -281,6 +281,295 @@ pub enum HirStmt {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompileTimeValueFlow {
+    Direct,
+    AggregateBuilder,
+}
+
+pub fn compile_time_value_flows_to_typed_global_define(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    dst: RegId,
+    decl_names: &HashMap<DeclId, String>,
+    flow: CompileTimeValueFlow,
+) -> bool {
+    let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
+        return false;
+    };
+    let mut tracked_regs = HashSet::from([dst]);
+    let mut tracked_vars = HashSet::new();
+
+    for (offset, stmt) in rest.iter().enumerate() {
+        match stmt {
+            HirStmt::LoadLiteral {
+                dst: loaded_dst, ..
+            }
+            | HirStmt::LoadValue {
+                dst: loaded_dst, ..
+            } => {
+                if tracked_regs.remove(loaded_dst)
+                    && tracked_regs.is_empty()
+                    && tracked_vars.is_empty()
+                {
+                    return false;
+                }
+            }
+            HirStmt::Move {
+                dst: moved_dst,
+                src,
+            }
+            | HirStmt::Clone {
+                dst: moved_dst,
+                src,
+            } => {
+                if tracked_regs.contains(src) {
+                    tracked_regs.insert(*moved_dst);
+                } else if tracked_regs.remove(moved_dst)
+                    && tracked_regs.is_empty()
+                    && tracked_vars.is_empty()
+                {
+                    return false;
+                }
+            }
+            HirStmt::StoreVariable { var_id, src } => {
+                if tracked_regs.contains(src) {
+                    tracked_vars.insert(*var_id);
+                } else if tracked_vars.remove(var_id)
+                    && tracked_regs.is_empty()
+                    && tracked_vars.is_empty()
+                {
+                    return false;
+                }
+            }
+            HirStmt::LoadVariable { dst, var_id } => {
+                if tracked_vars.contains(var_id) {
+                    tracked_regs.insert(*dst);
+                } else if tracked_regs.remove(dst)
+                    && tracked_regs.is_empty()
+                    && tracked_vars.is_empty()
+                {
+                    return false;
+                }
+            }
+            HirStmt::DropVariable { var_id } => {
+                if tracked_vars.remove(var_id) && tracked_regs.is_empty() && tracked_vars.is_empty()
+                {
+                    return false;
+                }
+            }
+            HirStmt::ListPush { src_dst, item }
+                if flow == CompileTimeValueFlow::AggregateBuilder =>
+            {
+                if tracked_regs.contains(src_dst) {
+                    continue;
+                }
+                if tracked_regs.contains(item) {
+                    tracked_regs.insert(*src_dst);
+                }
+            }
+            HirStmt::ListSpread { src_dst, items }
+                if flow == CompileTimeValueFlow::AggregateBuilder =>
+            {
+                if tracked_regs.contains(src_dst) {
+                    continue;
+                }
+                if tracked_regs.contains(items) {
+                    tracked_regs.insert(*src_dst);
+                }
+            }
+            HirStmt::RecordInsert { src_dst, key, val }
+                if flow == CompileTimeValueFlow::AggregateBuilder =>
+            {
+                if tracked_regs.contains(src_dst) {
+                    continue;
+                }
+                if tracked_regs.contains(val) {
+                    tracked_regs.insert(*src_dst);
+                    continue;
+                }
+                if tracked_regs.contains(key) {
+                    return false;
+                }
+            }
+            HirStmt::RecordSpread { src_dst, items }
+                if flow == CompileTimeValueFlow::AggregateBuilder =>
+            {
+                if tracked_regs.contains(src_dst) {
+                    continue;
+                }
+                if tracked_regs.contains(items) {
+                    tracked_regs.insert(*src_dst);
+                }
+            }
+            HirStmt::Call {
+                decl_id,
+                src_dst,
+                args,
+            } => {
+                if args
+                    .pipeline_input
+                    .is_some_and(|reg| tracked_regs.contains(&reg))
+                    && decl_names.get(decl_id).map(String::as_str) == Some("global-define")
+                    && args
+                        .named
+                        .iter()
+                        .any(|(name, _)| name.as_slice() == b"type")
+                    && !args.flags.iter().any(|flag| flag.as_slice() == b"zero")
+                {
+                    return !compile_time_value_used_after(
+                        &rest[offset.saturating_add(1)..],
+                        &tracked_regs,
+                        &tracked_vars,
+                    );
+                }
+
+                if tracked_regs.contains(src_dst)
+                    || call_args_touch_compile_time_value(args, &tracked_regs)
+                {
+                    return false;
+                }
+            }
+            stmt if stmt_touches_compile_time_value(stmt, &tracked_regs, &tracked_vars) => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+
+    false
+}
+
+fn call_args_touch_compile_time_value(args: &HirCallArgs, regs: &HashSet<RegId>) -> bool {
+    args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
+        || args.positional.iter().any(|reg| regs.contains(reg))
+        || args.rest.iter().any(|reg| regs.contains(reg))
+        || args.named.iter().any(|(_, reg)| regs.contains(reg))
+}
+
+fn stmt_touches_compile_time_value(
+    stmt: &HirStmt,
+    regs: &HashSet<RegId>,
+    vars: &HashSet<VarId>,
+) -> bool {
+    match stmt {
+        HirStmt::Collect { src_dst }
+        | HirStmt::Span { src_dst }
+        | HirStmt::Drain { src: src_dst }
+        | HirStmt::DrainIfEnd { src: src_dst }
+        | HirStmt::CheckErrRedirected { src: src_dst }
+        | HirStmt::GlobFrom { src_dst, .. }
+        | HirStmt::Not { src_dst } => regs.contains(src_dst),
+        HirStmt::StringAppend { src_dst, val } => regs.contains(src_dst) || regs.contains(val),
+        HirStmt::ListPush { src_dst, item } => regs.contains(src_dst) || regs.contains(item),
+        HirStmt::ListSpread { src_dst, items } => regs.contains(src_dst) || regs.contains(items),
+        HirStmt::RecordInsert { src_dst, key, val } => {
+            regs.contains(src_dst) || regs.contains(key) || regs.contains(val)
+        }
+        HirStmt::RecordSpread { src_dst, items } => regs.contains(src_dst) || regs.contains(items),
+        HirStmt::BinaryOp {
+            lhs_dst: src_dst,
+            rhs,
+            ..
+        } => regs.contains(src_dst) || regs.contains(rhs),
+        HirStmt::FollowCellPath { src_dst, path } => regs.contains(src_dst) || regs.contains(path),
+        HirStmt::UpsertCellPath {
+            src_dst,
+            path,
+            new_value,
+        } => regs.contains(src_dst) || regs.contains(path) || regs.contains(new_value),
+        HirStmt::Drop { src }
+        | HirStmt::StoreEnv { src, .. }
+        | HirStmt::WriteFile { src, .. }
+        | HirStmt::CheckMatchGuard { src } => regs.contains(src),
+        HirStmt::OpenFile { path, .. } => regs.contains(path),
+        HirStmt::CloneCellPath { dst, src, path } => {
+            regs.contains(dst) || regs.contains(src) || regs.contains(path)
+        }
+        HirStmt::LoadEnv { dst, .. }
+        | HirStmt::LoadEnvOpt { dst, .. }
+        | HirStmt::OnErrorInto { dst, .. } => regs.contains(dst),
+        HirStmt::LoadVariable { dst, var_id } => regs.contains(dst) || vars.contains(var_id),
+        HirStmt::StoreVariable { var_id, src } => vars.contains(var_id) || regs.contains(src),
+        HirStmt::DropVariable { var_id } => vars.contains(var_id),
+        HirStmt::Call { src_dst, args, .. } => {
+            regs.contains(src_dst) || call_args_touch_compile_time_value(args, regs)
+        }
+        HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
+            regs.contains(dst) || regs.contains(src)
+        }
+        HirStmt::LoadLiteral { dst, .. } | HirStmt::LoadValue { dst, .. } => regs.contains(dst),
+        HirStmt::CloseFile { .. }
+        | HirStmt::RedirectOut { .. }
+        | HirStmt::RedirectErr { .. }
+        | HirStmt::OnError { .. }
+        | HirStmt::PopErrorHandler => false,
+    }
+}
+
+fn compile_time_value_used_after(
+    stmts: &[HirStmt],
+    regs: &HashSet<RegId>,
+    vars: &HashSet<VarId>,
+) -> bool {
+    let mut tracked_regs = regs.clone();
+    let mut tracked_vars = vars.clone();
+
+    for stmt in stmts {
+        match stmt {
+            HirStmt::Drain { src } | HirStmt::DrainIfEnd { src } | HirStmt::Drop { src }
+                if tracked_regs.remove(src) =>
+            {
+                continue;
+            }
+            HirStmt::LoadLiteral { dst, .. } | HirStmt::LoadValue { dst, .. }
+                if tracked_regs.remove(dst) =>
+            {
+                continue;
+            }
+            HirStmt::LoadVariable { dst, var_id } => {
+                if tracked_vars.contains(var_id) {
+                    return true;
+                }
+                if tracked_regs.remove(dst) {
+                    continue;
+                }
+            }
+            HirStmt::StoreVariable { var_id, src } => {
+                if tracked_regs.contains(src) {
+                    return true;
+                }
+                if tracked_vars.remove(var_id) {
+                    continue;
+                }
+            }
+            HirStmt::DropVariable { var_id } if tracked_vars.remove(var_id) => continue,
+            HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
+                if tracked_regs.contains(src) {
+                    return true;
+                }
+                if tracked_regs.remove(dst) {
+                    continue;
+                }
+            }
+            HirStmt::Call { src_dst, args, .. } => {
+                if call_args_touch_compile_time_value(args, &tracked_regs) {
+                    return true;
+                }
+                if tracked_regs.remove(src_dst) {
+                    continue;
+                }
+            }
+            _ if stmt_touches_compile_time_value(stmt, &tracked_regs, &tracked_vars) => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    false
+}
+
 #[derive(Debug, Clone)]
 pub enum HirLiteral {
     Bool(bool),
