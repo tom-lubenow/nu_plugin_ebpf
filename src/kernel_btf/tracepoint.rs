@@ -256,6 +256,12 @@ impl TracepointContext {
             return Vec::new();
         };
         let fields: Vec<(&str, TypeInfo)> = match syscall {
+            "read" | "write" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("count", Self::syscall_arg_int(false)),
+            ],
+            "close" => vec![("fd", Self::syscall_arg_int(false))],
             "openat" => vec![
                 ("dfd", Self::syscall_arg_int(true)),
                 ("filename", Self::syscall_arg_user_ptr()),
@@ -266,7 +272,7 @@ impl TracepointContext {
                 ("dfd", Self::syscall_arg_int(true)),
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("how", Self::syscall_arg_user_ptr()),
-                ("size", Self::syscall_arg_int(false)),
+                ("usize", Self::syscall_arg_int(false)),
             ],
             "execve" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),

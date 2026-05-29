@@ -192,11 +192,37 @@ fn test_wellknown_sys_enter() {
 
 #[test]
 fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
+    let read = TracepointContext::sys_enter("sys_enter_read");
+    assert!(read.has_field("fd"));
+    assert!(read.has_field("buf"));
+    assert!(read.has_field("count"));
+    assert!(matches!(
+        read.get_field("buf").expect("expected read buf").type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let write = TracepointContext::sys_enter("sys_enter_write");
+    assert!(write.has_field("fd"));
+    assert!(write.has_field("buf"));
+    assert!(write.has_field("count"));
+    assert!(matches!(
+        write
+            .get_field("buf")
+            .expect("expected write buf")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let close = TracepointContext::sys_enter("sys_enter_close");
+    assert!(close.has_field("fd"));
+    assert!(!close.has_field("buf"));
+
     let openat2 = TracepointContext::sys_enter("sys_enter_openat2");
     assert!(openat2.has_field("dfd"));
     assert!(openat2.has_field("filename"));
     assert!(openat2.has_field("how"));
-    assert!(openat2.has_field("size"));
+    assert!(openat2.has_field("usize"));
+    assert!(!openat2.has_field("size"));
     assert_eq!(openat2.minimum_kernel(), Some("5.6"));
     assert!(
         openat2

@@ -1670,6 +1670,41 @@ const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     min_kernel: "6.1"
     source: "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD = {
+    key: "tracepoint:syscalls/sys_enter_read:field:fd"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF = {
+    key: "tracepoint:syscalls/sys_enter_read:field:buf"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_COUNT = {
+    key: "tracepoint:syscalls/sys_enter_read:field:count"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_FD = {
+    key: "tracepoint:syscalls/sys_enter_write:field:fd"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_BUF = {
+    key: "tracepoint:syscalls/sys_enter_write:field:buf"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_COUNT = {
+    key: "tracepoint:syscalls/sys_enter_write:field:count"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CLOSE_FD = {
+    key: "tracepoint:syscalls/sys_enter_close:field:fd"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+}
 const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_DFD = {
     key: "tracepoint:syscalls/sys_enter_openat:field:dfd"
     min_kernel: "4.7"
@@ -1705,10 +1740,25 @@ const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_HOW = {
     min_kernel: "5.6"
     source: "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
 }
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_SIZE = {
-    key: "tracepoint:syscalls/sys_enter_openat2:field:size"
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_USIZE = {
+    key: "tracepoint:syscalls/sys_enter_openat2:field:usize"
     min_kernel: "5.6"
     source: "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_FILENAME = {
+    key: "tracepoint:syscalls/sys_enter_execve:field:filename"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ARGV = {
+    key: "tracepoint:syscalls/sys_enter_execve:field:argv"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP = {
+    key: "tracepoint:syscalls/sys_enter_execve:field:envp"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
 }
 const KERNEL_FEATURE_CTX_PACKET_LEN = {
     key: "ctx:packet_len"
@@ -4827,6 +4877,66 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tracepoint-read-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_read"
+        kernel_features: [
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_COUNT
+        ]
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { $buf | read-str --max-len 16 | count }'
+            '  ($ctx.fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-write-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_write"
+        kernel_features: [
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_FD
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_BUF
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_WRITE_COUNT
+        ]
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { $buf | read-str --max-len 16 | count }'
+            '  ($ctx.fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-close-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_close"
+        kernel_features: [$KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CLOSE_FD]
+        program: [
+            '{|ctx|'
+            '  $ctx.fd | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tracepoint-openat2-context"
         category: "tracing"
         tags: [tracepoint context]
@@ -4836,7 +4946,7 @@ const FIXTURES = [
             $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_DFD
             $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_FILENAME
             $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_HOW
-            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_SIZE
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_USIZE
         ]
         program: [
             '{|ctx|'
@@ -4844,7 +4954,32 @@ const FIXTURES = [
             '  if $filename { $filename | read-str --max-len 64 | count }'
             '  let how = $ctx.how'
             '  if $how { 1 | count }'
-            '  ($ctx.dfd + $ctx.size) | count'
+            '  ($ctx.dfd + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-execve-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_execve"
+        kernel_features: [
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_FILENAME
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ARGV
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP
+        ]
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  let argv = $ctx.argv'
+            '  if $argv { 1 | count }'
+            '  let envp = $ctx.envp'
+            '  if $envp { 1 | count }'
             '  0'
             '}'
         ]
