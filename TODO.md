@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-05-28.
+Last updated: 2026-05-29.
 
 This file tracks remaining scope. Detailed historical progress belongs in git
 history and release notes, not here.
@@ -40,7 +40,7 @@ history and release notes, not here.
 
 - [~] Add a verifier differential suite.
   - Grow `scripts/verifier_diff.nu` from the initial tagged fixture set and optional-`bpftool` kernel load path into the compatibility matrix driver.
-  - Use fixture tiers (`fast`, `btf`, `kernel`, `vm-only`) to keep focused local lanes cheap while preserving heavier BTF/kernel coverage.
+  - Use fixture tiers (`fast`, `btf`, `kernel`, `vm-only`) plus default smoke/full selection to keep focused local lanes cheap while preserving heavier BTF/kernel coverage.
   - Track expected accept/reject status, verifier log fragments, required kernel features, and source-verified per-feature minimum kernel versions.
   - Kernel feature records can express minimum and maximum-exclusive kernel windows; keep verifier fixtures aligned with bounded kfunc compatibility when source-checked kfuncs are renamed or removed.
   - Add fixture coverage for maps, helpers, kfuncs, callbacks, context fields, packet bounds, ref lifetimes, dynptrs, timers, and by-reference stack objects.

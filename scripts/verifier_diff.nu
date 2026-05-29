@@ -22619,6 +22619,36 @@ def select-fixtures [fixture_names category tag tier exclude_tier local_status k
     $selected
 }
 
+def has-explicit-fixture-selection [
+    fixture
+    fixtures
+    category
+    tag
+    tier
+    exclude_tier
+    test_lane
+    local_status
+    kernel_status
+    fast: bool
+    smoke: bool
+    full: bool
+] {
+    (
+        $fixture != null
+        or $fixtures != null
+        or $category != null
+        or $tag != null
+        or $tier != null
+        or $exclude_tier != null
+        or $test_lane != null
+        or $local_status != null
+        or $kernel_status != null
+        or $fast
+        or $smoke
+        or $full
+    )
+}
+
 def main [
     --list         # List verifier fixtures and exit.
     --matrix       # Print verifier fixture counts by tier and category, then exit.
@@ -22626,7 +22656,9 @@ def main [
     --compat-kernel: string # With --list or --matrix, compare effective minimums against this kernel release.
     --kernel       # Require kernel verifier checks instead of auto-skipping missing prerequisites.
     --no-kernel    # Run only local dry-run compiler/VCC checks.
+    --smoke        # Run the default smoke lane: fast-tier, host-safe fixtures.
     --fast         # Run only fixtures in the fast tier.
+    --full         # Run all fixtures when no narrower filter is selected.
     --fixture: string # Run one fixture by exact name.
     --fixtures: list<string> # Run one or more fixtures by exact name.
     --category: string # Run fixtures with an exact category.
@@ -22655,6 +22687,24 @@ def main [
     if $fast and $exclude_tier != null {
         fail "--fast and --exclude-tier are mutually exclusive"
     }
+    if $smoke and $fast {
+        fail "--smoke and --fast are mutually exclusive"
+    }
+    if $smoke and $full {
+        fail "--smoke and --full are mutually exclusive"
+    }
+    if $fast and $full {
+        fail "--fast and --full are mutually exclusive"
+    }
+    if $smoke and $tier != null {
+        fail "--smoke and --tier are mutually exclusive"
+    }
+    if $smoke and $exclude_tier != null {
+        fail "--smoke and --exclude-tier are mutually exclusive"
+    }
+    if $smoke and $test_lane != null {
+        fail "--smoke and --test-lane are mutually exclusive"
+    }
     if $fixture != null and $fixtures != null {
         fail "--fixture and --fixtures are mutually exclusive"
     }
@@ -22664,9 +22714,26 @@ def main [
         parse-kernel-version $compat_kernel | ignore
     }
 
-    let selected_tier = if $fast { "fast" } else { $tier }
+    let explicit_selection = (
+        has-explicit-fixture-selection
+            $fixture
+            $fixtures
+            $category
+            $tag
+            $tier
+            $exclude_tier
+            $test_lane
+            $local_status
+            $kernel_status
+            $fast
+            $smoke
+            $full
+    )
+    let default_smoke = (not ($list or $matrix) and not $explicit_selection)
+    let selected_tier = if ($smoke or $default_smoke or $fast) { "fast" } else { $tier }
+    let selected_test_lane = if ($smoke or $default_smoke) { "host-safe" } else { $test_lane }
     let fixture_names = if $fixture == null { $fixtures } else { [$fixture] }
-    let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $test_lane)
+    let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
 
     if $list {
         let summaries = ($fixtures | each {|fixture| fixture-summary $fixture $compat_kernel })
@@ -22696,6 +22763,9 @@ def main [
 
     let plugin_bin = (resolve-plugin-bin $REPO_ROOT)
     print $"Using plugin: ($plugin_bin)"
+    if $default_smoke {
+        print "Using default smoke lane: --tier fast --test-lane host-safe. Pass --full for the complete fixture sweep."
+    }
 
     let local_fixtures = (select-fixtures-with-requirements $fixtures $kernel "local")
     if (($local_fixtures | length) == 0) {
