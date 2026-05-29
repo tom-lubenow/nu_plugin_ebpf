@@ -1035,6 +1035,12 @@ impl<'a> HirToMirLowering<'a> {
                     map.name
                 )));
             }
+            if let Some(lock) = spin_locks.iter().find(|lock| lock.in_array) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} for '{}' has bpf_spin_lock at '{}', but arrays of verifier-managed bpf_spin_lock fields are not supported",
+                    map.name, lock.path
+                )));
+            }
             if spin_lock_count != 1 {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{context} for '{}' must contain exactly one bpf_spin_lock field, got {}",
@@ -1076,6 +1082,12 @@ impl<'a> HirToMirLowering<'a> {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "{context} for '{}' must wrap kptr:{} in a map-value record field",
                         map.name, pointee_name
+                    )));
+                }
+                if kptr.in_array {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} for '{}' has kptr:{} at '{}', but arrays of verifier-managed kptr fields are not supported",
+                        map.name, pointee_name, kptr.path
                     )));
                 }
                 if kptr.depth != 1 || kptr.in_array {

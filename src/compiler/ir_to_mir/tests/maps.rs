@@ -5290,6 +5290,20 @@ fn test_map_value_type_validation_rejects_multiple_spin_locks() {
 }
 
 #[test]
+fn test_map_value_type_validation_rejects_spin_lock_array() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{locks:array{bpf_spin_lock:2},counter:u64}",
+        MapKind::Hash,
+    )
+    .expect_err("arrays of bpf_spin_lock should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("arrays of verifier-managed bpf_spin_lock")
+    );
+}
+
+#[test]
 fn test_map_value_type_validation_rejects_spin_lock_on_lru_hash() {
     let err = validate_map_value_type_spec_for_kind(
         "record{lock:bpf_spin_lock,counter:u64}",
@@ -5336,6 +5350,20 @@ fn test_map_value_type_validation_rejects_misaligned_timer() {
     .expect_err("misaligned external timer schema should be rejected");
 
     assert!(err.to_string().contains("8-byte aligned"));
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_timer_array() {
+    let err = validate_map_value_type_spec_for_kind(
+        "record{timers:array{bpf_timer:2},counter:u64}",
+        MapKind::Hash,
+    )
+    .expect_err("arrays of bpf_timer should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("arrays of verifier-managed bpf_timer")
+    );
 }
 
 #[test]
@@ -5427,6 +5455,25 @@ fn test_map_value_type_validation_rejects_nested_kptr_slot() {
         err.to_string()
             .contains("top-level map-value record fields")
     );
+}
+
+#[test]
+fn test_map_value_type_validation_rejects_kptr_array() {
+    let ty = manual_map_value_struct(vec![
+        manual_map_value_field(
+            "tasks",
+            MirType::Array {
+                elem: Box::new(MirType::bpf_kptr_slot_struct("task_struct")),
+                len: 2,
+            },
+            0,
+        ),
+        manual_map_value_field("cookie", MirType::U64, 16),
+    ]);
+    let err = validate_manual_map_value_type_for_kind(ty, MapKind::Array)
+        .expect_err("arrays of kptr slots should be rejected");
+
+    assert!(err.to_string().contains("arrays of verifier-managed kptr"));
 }
 
 #[test]
