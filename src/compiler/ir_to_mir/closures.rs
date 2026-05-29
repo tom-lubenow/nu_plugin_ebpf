@@ -691,26 +691,24 @@ impl<'a> HirToMirLowering<'a> {
                 self.get_vreg(val)
             };
 
-        // Preserve aggregate-pointer field layout as the underlying aggregate
-        // so `{ path: $entry } | emit` serializes nested data instead of a raw pointer.
+        // Preserve aggregate field layouts as their underlying value, not as the
+        // placeholder scalar vreg used while constructing metadata-only records.
         let fixed_array_field_type = val_meta
             .as_ref()
             .map(Self::metadata_fixed_array_layout)
             .transpose()?
             .flatten();
-        let mut field_type = fixed_array_field_type
+        let metadata_record_field_type = val_meta.as_ref().and_then(Self::metadata_record_layout);
+        let metadata_aggregate_field_type = fixed_array_field_type
             .clone()
-            .or_else(|| {
-                val_meta.as_ref().and_then(|m| {
-                    m.field_type
-                        .clone()
-                        .or_else(|| Self::metadata_record_layout(m))
-                })
-            })
+            .or_else(|| metadata_record_field_type.clone());
+        let mut field_type = metadata_aggregate_field_type
+            .clone()
+            .or_else(|| val_meta.as_ref().and_then(|m| m.field_type.clone()))
             .or_else(|| self.vreg_type_hints.get(&val_vreg).cloned())
             .map(|ty| self.stored_generic_map_value_type(&ty))
             .unwrap_or(MirType::I64);
-        if fixed_array_field_type.is_some() {
+        if metadata_aggregate_field_type.is_some() {
             val_vreg = self.materialized_metadata_aggregate_vreg(val, val_vreg)?;
         }
         let field_constant = self

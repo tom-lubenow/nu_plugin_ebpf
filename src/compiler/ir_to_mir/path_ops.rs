@@ -1320,6 +1320,131 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn string_path_members(members: &[PathMember]) -> Option<Vec<String>> {
+        members
+            .iter()
+            .map(|member| match member {
+                PathMember::String { val, .. } => Some(val.clone()),
+                PathMember::Int { .. } => None,
+            })
+            .collect()
+    }
+
+    fn empty_record_field_from_constant(meta: &RegMetadata, field_name: &str) -> bool {
+        let Some(Value::Record { val: record, .. }) = meta.constant_value.as_ref() else {
+            return false;
+        };
+        matches!(record.get(field_name), Some(Value::Record { val, .. }) if val.is_empty())
+    }
+
+    fn record_field_from_string_path(
+        &mut self,
+        field_names: &[String],
+        new_value: RegId,
+    ) -> Result<RecordField, CompileError> {
+        let Some((field_name, rest)) = field_names.split_first() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "cell path update requires at least one record field".into(),
+            ));
+        };
+        if rest.is_empty() {
+            return self.record_field_from_value(field_name.clone(), new_value);
+        }
+
+        let child_field = self.record_field_from_string_path(rest, new_value)?;
+        let mut child_meta = RegMetadata {
+            record_fields: vec![child_field],
+            ..Default::default()
+        };
+        let child_ty = Self::metadata_record_layout(&child_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' could not infer nested record layout",
+                field_names.join(".")
+            ))
+        })?;
+        child_meta.field_type = Some(child_ty.clone());
+        child_meta.annotated_semantics = Self::metadata_record_semantics(&child_meta);
+        let (child_vreg, materialized_meta) = self
+            .materialize_metadata_record_value(&child_meta)?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' could not materialize nested record",
+                    field_names.join(".")
+                ))
+            })?;
+
+        Ok(RecordField {
+            name: field_name.clone(),
+            value_vreg: child_vreg,
+            source_reg: None,
+            stack_offset: None,
+            ty: child_ty,
+            semantics: materialized_meta.annotated_semantics,
+            is_context: false,
+            root_ctx_field: None,
+        })
+    }
+
+    fn lower_metadata_record_string_path_creation(
+        &mut self,
+        src_dst: RegId,
+        field_names: &[String],
+        new_value: RegId,
+        constant_value: Option<Value>,
+    ) -> Result<bool, CompileError> {
+        if field_names.len() < 2 {
+            return Ok(false);
+        }
+        let Some(base_meta) = self.get_metadata(src_dst).cloned() else {
+            return Ok(false);
+        };
+        if base_meta.record_fields.is_empty()
+            && !matches!(
+                base_meta.constant_value.as_ref(),
+                Some(Value::Record { .. })
+            )
+        {
+            return Ok(false);
+        }
+
+        let base_vreg = self.get_vreg(src_dst);
+        if matches!(
+            self.typed_value_runtime_type(src_dst, base_vreg),
+            Some(MirType::Ptr {
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+                ..
+            })
+        ) {
+            return Ok(false);
+        }
+
+        let first_field = &field_names[0];
+        let existing_index = base_meta
+            .record_fields
+            .iter()
+            .position(|field| field.name == *first_field);
+        let first_field_missing = existing_index.is_none();
+        let first_field_empty_record = existing_index.is_some()
+            && Self::empty_record_field_from_constant(&base_meta, first_field);
+        if !first_field_missing && !first_field_empty_record {
+            return Ok(false);
+        }
+
+        let field = self.record_field_from_string_path(field_names, new_value)?;
+        let meta = self.get_or_create_metadata(src_dst);
+        if let Some(index) = existing_index {
+            meta.record_fields[index] = field;
+        } else {
+            meta.record_fields.push(field);
+        }
+        meta.field_type = Self::metadata_record_layout(meta);
+        meta.annotated_semantics = Self::metadata_record_semantics(meta);
+        meta.constant_value = constant_value.clone();
+        meta.source_var = None;
+        self.set_reg_constant_value(src_dst, constant_value);
+        Ok(true)
+    }
+
     pub(super) fn lower_upsert_cell_path(
         &mut self,
         src_dst: RegId,
@@ -1417,6 +1542,17 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(|(value, new_value)| {
                 Self::constant_upsert_cell_path(value, &path, new_value.clone())
             });
+
+        if let Some(field_names) = Self::string_path_members(&path.members)
+            && self.lower_metadata_record_string_path_creation(
+                src_dst,
+                &field_names,
+                new_value,
+                constant_value.clone(),
+            )?
+        {
+            return Ok(());
+        }
 
         if let [
             PathMember::String {

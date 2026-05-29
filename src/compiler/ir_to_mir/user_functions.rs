@@ -423,8 +423,11 @@ impl<'a> HirToMirLowering<'a> {
                     let updated = if rest.is_empty() {
                         new_value.clone()
                     } else {
-                        let current_child = record.get(val)?;
-                        upsert(current_child, rest, new_value)?
+                        let current_child = record.get(val).cloned().or_else(|| {
+                            matches!(rest.first(), Some(PathMember::String { .. }))
+                                .then(|| Value::record(Record::new(), Span::unknown()))
+                        })?;
+                        upsert(&current_child, rest, new_value)?
                     };
                     record.insert(val.clone(), updated);
                     Some(Value::record(record, Span::unknown()))
