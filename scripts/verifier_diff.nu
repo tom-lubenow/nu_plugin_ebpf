@@ -4047,6 +4047,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { root: $ctx socket: $ctx.sk }'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -11149,7 +11160,7 @@ const FIXTURES = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  let rec = { socket: $ctx.sk }'
+            '  let rec = { root: $ctx socket: $ctx.sk }'
             '  $rec.socket.family | count'
             '  0'
             '}'
@@ -21929,20 +21940,19 @@ def record-context-bindings [line: string context_names] {
     }
 
     let rhs = (declaration-rhs-token $assignment)
-    let compact = ($rhs | str replace --all " " "")
-    if not (($compact | str starts-with "{") and ($compact | str ends-with "}")) {
+    let trimmed_rhs = ($rhs | str trim)
+    if not (($trimmed_rhs | str starts-with "{") and ($trimmed_rhs | str ends-with "}")) {
         return []
     }
 
-    let inner = ($compact | str substring 1..-2)
+    let inner = ($trimmed_rhs | str substring 1..-2)
     mut bindings = []
-    for raw_field in ($inner | split row ",") {
-        let field_parts = ($raw_field | split row ":")
-        if ($field_parts | length) != 2 {
-            continue
-        }
-        let field_name = (($field_parts | first) | str trim)
-        let field_value = (trim-simple-parentheses (($field_parts | get 1) | str trim))
+    for parsed_field in (
+        $inner
+        | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(?P<value>\(?\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\)?)'
+    ) {
+        let field_name = ($parsed_field.field | str trim)
+        let field_value = (trim-simple-parentheses ($parsed_field.value | str trim))
         for context_name in $context_names {
             let context_token = (["$" $context_name] | str join "")
             if $field_value == $context_token {
