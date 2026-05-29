@@ -55,6 +55,8 @@ struct SpecContextWrite {
     field: &'static str,
     kind: &'static str,
     indexed: bool,
+    compatibility_minimum_kernel: Option<&'static str>,
+    compatibility_minimum_kernel_source: Option<&'static str>,
     context_field_requirement_key: Option<String>,
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
@@ -1506,6 +1508,24 @@ fn context_retval_record(retval: Option<SpecContextRetval>, span: Span) -> Value
 }
 
 #[cfg(target_os = "linux")]
+fn later_kernel_floor(
+    left: Option<(&'static str, &'static str)>,
+    right: Option<(&'static str, &'static str)>,
+) -> Option<(&'static str, &'static str)> {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            if ContextFieldCompatibilityRequirement::kernel_version_at_least(left.0, right.0) {
+                Some(left)
+            } else {
+                Some(right)
+            }
+        }
+        (Some(floor), None) | (None, Some(floor)) => Some(floor),
+        (None, None) => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextWrite> {
     spec.ctx_write_surfaces_for_spec()
         .into_iter()
@@ -1513,10 +1533,24 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
             let kfunc_requirement = surface
                 .kfunc
                 .and_then(|kfunc| spec.kfunc_compatibility_requirement_for_name(kfunc));
+            let direct_floor = surface.minimum_kernel.zip(surface.minimum_kernel_source);
+            let helper_floor = surface.helper.and_then(|helper| {
+                Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?))
+            });
+            let kfunc_floor = kfunc_requirement.as_ref().map(|requirement| {
+                (
+                    requirement.minimum_kernel(),
+                    requirement.minimum_kernel_source(),
+                )
+            });
+            let compatibility_floor =
+                later_kernel_floor(later_kernel_floor(direct_floor, helper_floor), kfunc_floor);
             SpecContextWrite {
                 field: surface.field_name,
                 kind: surface.kind,
                 indexed: surface.indexed,
+                compatibility_minimum_kernel: compatibility_floor.map(|floor| floor.0),
+                compatibility_minimum_kernel_source: compatibility_floor.map(|floor| floor.1),
                 context_field_requirement_key: surface
                     .context_field_requirement
                     .as_ref()
@@ -1557,6 +1591,8 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "field" => Value::string(surface.field, span),
                     "kind" => Value::string(surface.kind, span),
                     "indexed" => Value::bool(surface.indexed, span),
+                    "compatibility_minimum_kernel" => optional_static_str(surface.compatibility_minimum_kernel, span),
+                    "compatibility_minimum_kernel_source" => optional_static_str(surface.compatibility_minimum_kernel_source, span),
                     "context_field_requirement_key" => optional_string(surface.context_field_requirement_key, span),
                     "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),

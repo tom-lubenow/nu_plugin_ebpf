@@ -702,13 +702,13 @@ parameterized helper projections such as `ancestor_cgroup_id.N`,
 `source = helper_call` and a null `offset`, because they are not direct
 struct-field byte offsets.
 `context_writes` rows report the assignment kind, whether the write requires a
-fixed index, the direct write-surface minimum kernel when known, and any helper
-or kfunc used by the write surface. Known ABI-backed writes include separate
-helper/kfunc minimum-kernel and source fields, plus nullable kfunc
-maximum-exclusive windows, so surfaces such as `ctx.reply`, `ctx.mark`,
-`ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, `ctx.sun_path`, and context-pointer
-scalar-field roots such as `ctx.flow_keys` can be inspected before writing code
-that depends on them.
+fixed index, the aggregate write-surface compatibility floor when known, the
+direct context/write-only field floor, and any helper or kfunc used by the write
+surface. Known ABI-backed writes include separate helper/kfunc minimum-kernel
+and source fields, plus nullable kfunc maximum-exclusive windows, so surfaces
+such as `ctx.reply`, `ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`,
+`ctx.sun_path`, and context-pointer scalar-field roots such as `ctx.flow_keys`
+can be inspected before writing code that depends on them.
 `intrinsics` rows include aggregate `backing_helpers` plus
 `context_field_requirements` when an intrinsic implies a context-field ABI
 dependency. For example, `assign-socket` reports the target-specific `ctx:sk`

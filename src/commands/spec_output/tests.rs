@@ -40,6 +40,12 @@ fn assert_context_store_write_metadata(
         write.context_field_requirement_key.as_deref(),
         Some(requirement_key)
     );
+    assert_eq!(write.compatibility_minimum_kernel, Some(minimum_kernel));
+    assert!(
+        write
+            .compatibility_minimum_kernel_source
+            .is_some_and(|source| source.contains(source_fragment))
+    );
     assert_eq!(write.minimum_kernel, Some(minimum_kernel));
     assert!(
         write
@@ -4409,6 +4415,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
         Some("helper:bpf_sysctl_set_new_value")
     );
     assert_eq!(new_value.helper_minimum_kernel, Some("5.2"));
+    assert_eq!(new_value.compatibility_minimum_kernel, Some("5.2"));
 
     let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
     let tc_ingress_writes = spec_context_writes(&tc_ingress);
@@ -4418,6 +4425,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(sk.minimum_kernel, Some("5.1"));
     assert_eq!(sk.helper, Some("bpf_sk_assign"));
     assert_eq!(sk.helper_minimum_kernel, Some("5.7"));
+    assert_eq!(sk.compatibility_minimum_kernel, Some("5.7"));
 
     let cgroup_sockopt_set = ProgramSpec::parse("cgroup_sockopt:/sys/fs/cgroup:set")
         .expect("cgroup_sockopt set spec should parse");
@@ -4443,6 +4451,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     );
     assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
     assert_eq!(sun_path.kfunc_maximum_kernel_exclusive, None);
+    assert_eq!(sun_path.compatibility_minimum_kernel, Some("6.7"));
     assert!(sun_path.helper.is_none());
 
     let flow_dissector = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
@@ -4456,6 +4465,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
         Some("ctx:flow_keys")
     );
     assert_eq!(flow_keys.minimum_kernel, Some("4.20"));
+    assert_eq!(flow_keys.compatibility_minimum_kernel, Some("4.20"));
     assert!(flow_keys.helper.is_none());
     assert!(flow_keys.kfunc.is_none());
 }
@@ -4475,6 +4485,35 @@ fn test_context_write_backing_abi_metadata_invariants() {
             .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
 
         for write in spec_context_writes(&spec) {
+            let component_floors = [
+                write.minimum_kernel,
+                write.helper_minimum_kernel,
+                write.kfunc_minimum_kernel,
+            ];
+            if component_floors.iter().any(Option::is_some) {
+                let compatibility_minimum = write.compatibility_minimum_kernel.unwrap_or_else(|| {
+                    panic!(
+                        "{spec_source} ctx.{} should report an aggregate compatibility minimum kernel",
+                        write.field
+                    )
+                });
+                assert!(
+                    write.compatibility_minimum_kernel_source.is_some(),
+                    "{spec_source} ctx.{} should report an aggregate compatibility source",
+                    write.field
+                );
+                for floor in component_floors.into_iter().flatten() {
+                    assert!(
+                        ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                            compatibility_minimum,
+                            floor
+                        ),
+                        "{spec_source} ctx.{} aggregate floor {compatibility_minimum} should cover component floor {floor}",
+                        write.field
+                    );
+                }
+            }
+
             if let Some(helper) = write.helper {
                 assert!(
                     write.helper_requirement_key.is_some(),
@@ -4628,6 +4667,22 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
             .as_str()
             .expect("context field requirement key should be a string"),
         "ctx:cb_flags"
+    );
+    assert_eq!(
+        cb_flags
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "4.16"
+    );
+    assert!(
+        cb_flags
+            .get("compatibility_minimum_kernel_source")
+            .expect("compatibility minimum kernel source should be present")
+            .as_str()
+            .expect("compatibility minimum kernel source should be a string")
+            .contains("/v4.16/")
     );
     assert_eq!(
         cb_flags

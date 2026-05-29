@@ -146,8 +146,9 @@ include the selected helper and its own floor. Helper-call projections such as
 `ancestor_cgroup_id.N` are advertised with `source = helper_call` and a null
 `offset`, because they are not direct struct-field byte offsets.
 The `context_writes` table similarly reports assignment kind, indexed-write
-shape, the direct write-surface kernel floor when known, and any helper/kfunc
-ABI dependency plus its own known kernel floor.
+shape, aggregate write-surface compatibility floor when known, the direct
+context/write-only field floor, and any helper/kfunc ABI dependency plus its
+own known kernel floor.
 Each `intrinsics` row includes aggregate `backing_helpers`; mode- or
 kind-sensitive commands such as `adjust-packet`, `adjust-message`, `redirect`,
 `redirect-map`, and `redirect-socket` also include `variants` records that map
