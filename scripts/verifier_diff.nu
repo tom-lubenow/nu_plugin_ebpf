@@ -19033,6 +19033,71 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-cpumask-release-accepts-both-branch-release"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime branch source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    if $ctx.pid {'
+            '      $mask | kfunc-call "bpf_cpumask_release"'
+            '    } else {'
+            '      $mask | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-cpumask-release-rejects-one-branch-release-leak"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    if $ctx.pid {'
+            '      $mask | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-cpumask-release-rejects-release-after-conditional-release"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    if $ctx.pid {'
+            '      $mask | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_cpumask_release' arg0 reference already released"
+    }
+    {
         name: "source-kfunc-cpumask-release-rejects-task-ref"
         category: "helper-state"
         tags: [kfunc cpumask ref-lifetime source reject]
