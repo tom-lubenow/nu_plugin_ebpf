@@ -4064,6 +4064,22 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def wrap [event] {'
+            '    let base = { event: $event }'
+            '    let rec = { ok: true, ...$base }'
+            '    $rec'
+            '  }'
+            '  let rec = (wrap $ctx)'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -19801,6 +19817,26 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-user-function-record-context-spread-field-access"
+        category: "language-core"
+        tags: [user-function record context spread accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def wrap [x] {'
+            '    let base = { k: $x }'
+            '    let rec = { ok: true, ...$base }'
+            '    $rec'
+            '  }'
+            '  let rec = (wrap $ctx)'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "core-context-emit-rejects-pointer-escape"
         category: "language-core"
         tags: [context emit reject]
@@ -23300,6 +23336,17 @@ def context-root-from-value-token [raw_value: string context_names bound_aliases
     null
 }
 
+def combine-context-roots [base: string wrapper: string] {
+    if $wrapper == "" {
+        return $base
+    }
+    if $base == "" {
+        return $wrapper
+    }
+
+    $"($base).($wrapper)"
+}
+
 def record-wrapper-context-bindings [line: string context_names bound_aliases wrapper_defs] {
     let assignment = (declaration-assignment $line)
     if $assignment == null {
@@ -23325,10 +23372,11 @@ def record-wrapper-context-bindings [line: string context_names bound_aliases wr
         if $root == null {
             continue
         }
+        let wrapper_root = ($wrapper | get -o root | default "")
         $bindings = ($bindings | append {
             name: $assignment.name
             field: $wrapper.field
-            root: $root
+            root: (combine-context-roots $root $wrapper_root)
         })
     }
 
@@ -23488,34 +23536,36 @@ def one-param-user-functions [source: string] {
     $functions
 }
 
-def record-upsert-wrapper-definitions [source: string] {
+def record-context-wrapper-definitions [source: string] {
     mut wrappers = []
+    let identity_wrappers = (identity-wrapper-definitions $source)
 
     for function in (one-param-user-functions $source) {
-        mut initialized_fields = []
-        mut upserted_fields = []
+        mut aliases = []
         mut returned_names = []
+        let root_aliases = (
+            function-context-root-aliases $function.body $function.param $identity_wrappers
+        )
 
         for line in $function.body {
-            for parsed in (
-                $line
-                | parse --regex '^\s*mut\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s*=\s*\{\s*(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*null\s*\}\s*$'
-            ) {
-                $initialized_fields = ($initialized_fields | append {
-                    name: $parsed.name
-                    field: $parsed.field
-                })
-            }
-
-            for parsed in (
-                $line
-                | parse --regex '^\s*\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\.(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*=\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*$'
-            ) {
-                if $parsed.value == $function.param {
-                    $upserted_fields = ($upserted_fields | append {
-                        name: $parsed.name
-                        field: $parsed.field
-                    })
+            let bindings = (
+                (record-context-bindings $line [$function.param] $root_aliases)
+                | append (record-upsert-context-bindings $line [$function.param] $root_aliases)
+                | append (record-spread-context-bindings $line $aliases)
+            )
+            for binding in $bindings {
+                let existing = (
+                    $aliases
+                    | where {|alias|
+                        (
+                            $alias.name == $binding.name
+                            and $alias.field == $binding.field
+                            and (($alias | get -o root | default "") == ($binding | get -o root | default ""))
+                        )
+                    }
+                )
+                if ($existing | is-empty) {
+                    $aliases = ($aliases | append $binding)
                 }
             }
 
@@ -23527,25 +23577,26 @@ def record-upsert-wrapper-definitions [source: string] {
             }
         }
 
-        for field in $upserted_fields {
-            if $field.name not-in $returned_names {
-                continue
-            }
-            if not (
-                $initialized_fields
-                | any {|candidate| $candidate.name == $field.name and $candidate.field == $field.field }
-            ) {
+        for alias in $aliases {
+            if $alias.name not-in $returned_names {
                 continue
             }
             if (
                 $wrappers
-                | any {|wrapper| $wrapper.name == $function.name and $wrapper.field == $field.field }
+                | any {|wrapper|
+                    (
+                        $wrapper.name == $function.name
+                        and $wrapper.field == $alias.field
+                        and (($wrapper | get -o root | default "") == ($alias | get -o root | default ""))
+                    )
+                }
             ) {
                 continue
             }
             $wrappers = ($wrappers | append {
                 name: $function.name
-                field: $field.field
+                field: $alias.field
+                root: ($alias | get -o root | default "")
             })
         }
     }
@@ -23741,7 +23792,7 @@ def program-record-context-aliases [source: string context_names] {
     let bound_aliases = (program-bound-context-root-aliases $source $context_names)
     let wrapper_defs = (
         record-wrapper-definitions $source
-        | append (record-upsert-wrapper-definitions $source)
+        | append (record-context-wrapper-definitions $source)
     )
 
     for line in ($source | lines) {
