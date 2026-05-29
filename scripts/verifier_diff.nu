@@ -639,6 +639,16 @@ const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  let text = "map-define resources --kind hash --value-type record{lock:bpf_spin_lock}"'
+            '  # map-define resources --kind hash --value-type "record{timer:bpf_timer}"'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
             '  map-define resources --kind hash --value-type "record{lock:bpf_spin_lock,timer:bpf_timer,task:kptr:task_struct,work:bpf_wq,refs:bpf_refcount}"'
             '  0'
             '}'
@@ -4524,6 +4534,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
 ]
 
 const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let text = "tail-call random int read-str read-kernel-str | emit | count | histogram start-timer stop-timer map-get map-put map-delete map-contains map-push map-peek map-pop redirect-map assign-socket adjust-message --pull adjust-packet --head redirect-socket redirect --peer"'
+            '  # tail-call random int read-str read-kernel-str | emit | count | histogram start-timer stop-timer map-get map-put map-delete map-contains map-push map-peek map-pop redirect-map assign-socket adjust-message --pull adjust-packet --head redirect-socket redirect --peer'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
     {
         target: "sk_lookup:/proc/self/ns/net"
         program: [
@@ -19363,6 +19384,28 @@ def map-kind-kernel-feature [kind: string] {
     }
 }
 
+def outside-simple-string? [text: string] {
+    let double_parts = ($text | split row "\"")
+    let single_parts = ($text | split row "'")
+    (($double_parts | length) mod 2) == 1 and (($single_parts | length) mod 2) == 1
+}
+
+def command-tail-after-token [raw_after: string] {
+    if $raw_after == "" {
+        return ""
+    }
+    if ($raw_after | str starts-with " ") {
+        return ($raw_after | str substring 1..)
+    }
+    for delimiter in [")" "}" "]" ";"] {
+        if ($raw_after | str starts-with $delimiter) {
+            return ""
+        }
+    }
+
+    null
+}
+
 def command-invocation-tails [line: string command: string] {
     let trimmed = ($line | str trim)
     if $trimmed == "" or ($trimmed | str starts-with "#") {
@@ -19371,22 +19414,34 @@ def command-invocation-tails [line: string command: string] {
 
     mut tails = []
     let command_len = ($command | str length)
-    if $trimmed == $command {
-        $tails = ($tails | append "")
-    }
-    if ($trimmed | str starts-with $"($command) ") {
-        $tails = ($tails | append ($trimmed | str substring ($command_len + 1)..))
+    if ($trimmed | str starts-with $command) {
+        let tail = (command-tail-after-token ($trimmed | str substring $command_len..))
+        if $tail != null {
+            $tails = ($tails | append $tail)
+        }
     }
 
     for prefix in ["| " "; " "{ " "( " "("] {
-        let marker = $"($prefix)($command) "
+        let marker = $"($prefix)($command)"
         let parts = ($trimmed | split row $marker)
         if ($parts | length) <= 1 {
             continue
         }
 
-        for raw_tail in ($parts | skip 1) {
-            $tails = ($tails | append $raw_tail)
+        for part in ($parts | enumerate) {
+            if $part.index == 0 {
+                continue
+            }
+
+            let before = ($parts | first $part.index | str join $marker)
+            if not (outside-simple-string? $before) {
+                continue
+            }
+
+            let tail = (command-tail-after-token $part.item)
+            if $tail != null {
+                $tails = ($tails | append $tail)
+            }
         }
     }
 
@@ -19395,6 +19450,36 @@ def command-invocation-tails [line: string command: string] {
 
 def line-invokes-command? [line: string command: string] {
     not ((command-invocation-tails $line $command) | is-empty)
+}
+
+def line-invokes-command-with-tail-prefix? [line: string command: string tail_prefix: string] {
+    for tail in (command-invocation-tails $line $command) {
+        if ($tail | str trim | str starts-with $tail_prefix) {
+            return true
+        }
+    }
+
+    false
+}
+
+def source-invokes-command? [source: string command: string] {
+    for line in ($source | lines) {
+        if (line-invokes-command? $line $command) {
+            return true
+        }
+    }
+
+    false
+}
+
+def source-invokes-command-with-tail-prefix? [source: string command: string tail_prefix: string] {
+    for line in ($source | lines) {
+        if (line-invokes-command-with-tail-prefix? $line $command $tail_prefix) {
+            return true
+        }
+    }
+
+    false
 }
 
 def source-line-helper-call-name [line: string] {
@@ -21145,7 +21230,7 @@ def program-map-kernel-features [source: string] {
         }
     }
 
-    if ($source | str contains "tail-call") {
+    if (source-invokes-command? $source "tail-call") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PROG_ARRAY])
     }
 
@@ -21156,34 +21241,39 @@ def program-reserved-map-kernel-features [source: string] {
     mut features = []
 
     for line in ($source | lines) {
-        if (($line | str contains "| emit") or ($line | str contains " events")) {
+        let trimmed = ($line | str trim)
+        if $trimmed == "" or ($trimmed | str starts-with "#") {
+            continue
+        }
+
+        if ((line-invokes-command? $trimmed "emit") or ($trimmed | str contains " events")) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_RINGBUF])
         }
         if (
-            ($line | str contains "| count")
-            or ($line | str contains "| histogram")
-            or ($line | str contains "start-timer")
-            or ($line | str contains "stop-timer")
+            (line-invokes-command? $trimmed "count")
+            or (line-invokes-command? $trimmed "histogram")
+            or (line-invokes-command? $trimmed "start-timer")
+            or (line-invokes-command? $trimmed "stop-timer")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
         if (
-            (($line | str contains "map-get ") or ($line | str contains "map-put ") or ($line | str contains "map-delete ") or ($line | str contains "map-contains "))
-            and not ($line | str contains "--kind ")
+            ((line-invokes-command? $trimmed "map-get") or (line-invokes-command? $trimmed "map-put") or (line-invokes-command? $trimmed "map-delete") or (line-invokes-command? $trimmed "map-contains"))
+            and not ($trimmed | str contains "--kind ")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
-        if ($line | str contains " user_events") {
+        if ($trimmed | str contains " user_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_USER_RINGBUF])
         }
-        if ($line | str contains " perf_events") {
+        if ($trimmed | str contains " perf_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY])
         }
         if (
-            ($line | str contains " kstacks")
-            or ($line | str contains " ustacks")
-            or ($line | str contains ".kstack")
-            or ($line | str contains ".ustack")
+            ($trimmed | str contains " kstacks")
+            or ($trimmed | str contains " ustacks")
+            or ($trimmed | str contains ".kstack")
+            or ($trimmed | str contains ".ustack")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_STACK_TRACE])
         }
@@ -21196,19 +21286,20 @@ def program-map-value-kernel-features [source: string] {
     mut features = []
 
     for line in ($source | lines) {
-        if not (($line | str contains "map-define ") and ($line | str contains "--value-type")) {
+        let trimmed = ($line | str trim)
+        if not ((line-invokes-command? $trimmed "map-define") and ($trimmed | str contains "--value-type")) {
             continue
         }
 
         for entry in $MAP_VALUE_KERNEL_FEATURES {
-            if ($line | str contains $entry.token) {
+            if ($trimmed | str contains $entry.token) {
                 $features = (append-missing-kernel-features $features [$entry.feature])
             }
         }
-        if ($line | str contains "bpf_list_head:") {
+        if ($trimmed | str contains "bpf_list_head:") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_VALUE_BPF_LIST_NODE])
         }
-        if ($line | str contains "bpf_rb_root:") {
+        if ($trimmed | str contains "bpf_rb_root:") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_VALUE_BPF_RB_NODE])
         }
     }
@@ -21493,35 +21584,35 @@ def program-surface-kernel-features [source: string target] {
         or ($target_text | str starts-with "lwt_seg6local:")
     )
 
-    if ($source | str contains "tail-call") {
+    if (source-invokes-command? $source "tail-call") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_TAIL_CALL])
     }
-    if ($source | str contains "random int") {
+    if (source-invokes-command-with-tail-prefix? $source "random" "int") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_GET_PRANDOM_U32])
     }
-    if ($source | str contains "read-str") {
+    if (source-invokes-command? $source "read-str") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_USER_STR])
     }
-    if ($source | str contains "read-kernel-str") {
+    if (source-invokes-command? $source "read-kernel-str") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_PROBE_READ_KERNEL_STR])
     }
-    if ($source | str contains "| emit") {
+    if (source-invokes-command? $source "emit") {
         $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_RINGBUF_OUTPUT])
     }
-    if (($source | str contains "| count") or ($source | str contains "| histogram")) {
+    if ((source-invokes-command? $source "count") or (source-invokes-command? $source "histogram")) {
         $features = (append-missing-kernel-features $features [
             $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM
             $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM
         ])
     }
-    if ($source | str contains "start-timer") {
+    if (source-invokes-command? $source "start-timer") {
         $features = (append-missing-kernel-features $features [
             $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
             $KERNEL_FEATURE_BPF_KTIME_GET_NS
             $KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM
         ])
     }
-    if ($source | str contains "stop-timer") {
+    if (source-invokes-command? $source "stop-timer") {
         $features = (append-missing-kernel-features $features [
             $KERNEL_FEATURE_BPF_GET_CURRENT_PID_TGID
             $KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM
@@ -21530,7 +21621,7 @@ def program-surface-kernel-features [source: string target] {
         ])
     }
     for line in ($source | lines) {
-        if ($line | str contains "helper-call ") {
+        if (line-invokes-command? $line "helper-call") {
             continue
         }
 
@@ -21547,62 +21638,62 @@ def program-surface-kernel-features [source: string target] {
         let assigns_ctx_sk = (
             line-assigns-context-field? $trimmed $context_names ["sk"]
         )
-        let map_kind = (source-line-map-kind $line "hash")
-        if ($line | str contains "map-get ") and (generic-map-lookup-kind? $map_kind) {
+        let map_kind = (source-line-map-kind $trimmed "hash")
+        if (line-invokes-command? $trimmed "map-get") and (generic-map-lookup-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
         }
-        if ($line | str contains "map-put ") and (generic-map-update-kind? $map_kind) {
+        if (line-invokes-command? $trimmed "map-put") and (generic-map-update-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_UPDATE_ELEM])
         }
-        if ($target_text | str starts-with "sock_ops:") and ($line | str contains "map-put ") {
+        if ($target_text | str starts-with "sock_ops:") and (line-invokes-command? $trimmed "map-put") {
             if $map_kind == "sockmap" {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_MAP_UPDATE])
             } else if $map_kind == "sockhash" {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_HASH_UPDATE])
             }
         }
-        if ($line | str contains "map-delete ") and (generic-map-delete-kind? $map_kind) {
+        if (line-invokes-command? $trimmed "map-delete") and (generic-map-delete-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_DELETE_ELEM])
         }
-        if (($line | str contains "map-get ") or ($line | str contains "map-contains ")) {
+        if ((line-invokes-command? $trimmed "map-get") or (line-invokes-command? $trimmed "map-contains")) {
             let local_storage_feature = (local-storage-get-helper-kernel-feature $map_kind)
             if $local_storage_feature != null {
                 $features = (append-missing-kernel-features $features [$local_storage_feature])
             }
         }
-        if ($line | str contains "map-delete ") {
+        if (line-invokes-command? $trimmed "map-delete") {
             let local_storage_feature = (local-storage-delete-helper-kernel-feature $map_kind)
             if $local_storage_feature != null {
                 $features = (append-missing-kernel-features $features [$local_storage_feature])
             }
         }
-        if ($line | str contains "map-push ") and ($map_kind in ["queue" "stack" "bloom-filter"]) {
+        if (line-invokes-command? $trimmed "map-push") and ($map_kind in ["queue" "stack" "bloom-filter"]) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PUSH_ELEM])
         }
-        if ($line | str contains "map-peek ") and ($map_kind in ["queue" "stack"]) {
+        if (line-invokes-command? $trimmed "map-peek") and ($map_kind in ["queue" "stack"]) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
         }
-        if ($line | str contains "map-pop ") and ($map_kind in ["queue" "stack"]) {
+        if (line-invokes-command? $trimmed "map-pop") and ($map_kind in ["queue" "stack"]) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_POP_ELEM])
         }
-        if ($line | str contains "map-contains ") {
+        if (line-invokes-command? $trimmed "map-contains") {
             if $map_kind == "bloom-filter" {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_PEEK_ELEM])
             } else if (generic-map-lookup-kind? $map_kind) {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
             }
         }
-        if ($line | str contains "redirect-map ") {
+        if (line-invokes-command? $trimmed "redirect-map") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
         }
-        if ($line | str contains "map-contains ") and ($line | str contains "--kind cgroup-array") {
+        if (line-invokes-command? $trimmed "map-contains") and ($trimmed | str contains "--kind cgroup-array") {
             if $target_uses_skb_cgroup_helper {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP])
             } else {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP])
             }
         }
-        if ($line | str contains "assign-socket ") {
+        if (line-invokes-command? $trimmed "assign-socket") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
             let socket_context_feature = (context-field-kernel-feature "sk" $target)
             if $socket_context_feature != null {
@@ -21615,33 +21706,33 @@ def program-surface-kernel-features [source: string target] {
         if $target_supports_ctx_sk_assign and $assigns_ctx_sk {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
         }
-        if ($line | str contains "adjust-message --apply") {
+        if (line-invokes-command-with-tail-prefix? $trimmed "adjust-message" "--apply") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_APPLY_BYTES])
         }
-        if ($line | str contains "adjust-message --cork") {
+        if (line-invokes-command-with-tail-prefix? $trimmed "adjust-message" "--cork") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_CORK_BYTES])
         }
-        if ($line | str contains "adjust-message --pull") {
+        if (line-invokes-command-with-tail-prefix? $trimmed "adjust-message" "--pull") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_PULL_DATA])
         }
-        if ($line | str contains "adjust-message --push") {
+        if (line-invokes-command-with-tail-prefix? $trimmed "adjust-message" "--push") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_PUSH_DATA])
         }
-        if ($line | str contains "adjust-message --pop") {
+        if (line-invokes-command-with-tail-prefix? $trimmed "adjust-message" "--pop") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_POP_DATA])
         }
-        if ($line | str contains "adjust-packet --pull") {
+        if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--pull") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_PULL_DATA])
         }
-        if ($line | str contains "redirect-socket ") {
+        if (line-invokes-command? $trimmed "redirect-socket") {
             if ($target_text | str starts-with "sk_msg:") {
-                if ($line | str contains "--kind sockhash") {
+                if ($trimmed | str contains "--kind sockhash") {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH])
                 } else {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
                 }
             } else if ($target_text | str starts-with "sk_skb:") or ($target_text | str starts-with "sk_skb_parser:") {
-                if ($line | str contains "--kind sockhash") {
+                if ($trimmed | str contains "--kind sockhash") {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_HASH])
                 } else {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
@@ -21654,30 +21745,30 @@ def program-surface-kernel-features [source: string target] {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET])
         }
         if ($target_text | str starts-with "xdp:") {
-            if ($line | str contains "adjust-packet --head") {
+            if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--head") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_HEAD])
             }
-            if ($line | str contains "adjust-packet --meta") {
+            if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--meta") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_META])
             }
-            if ($line | str contains "adjust-packet --tail") {
+            if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--tail") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL])
             }
         } else {
-            if ($line | str contains "adjust-packet --head") {
+            if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--head") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_CHANGE_HEAD])
             }
-            if ($line | str contains "adjust-packet --tail") {
+            if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--tail") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_CHANGE_TAIL])
             }
-            if ($line | str contains "adjust-packet --room") {
+            if (line-invokes-command-with-tail-prefix? $trimmed "adjust-packet" "--room") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_ADJUST_ROOM])
             }
         }
-        if ($line | str contains "redirect ") and not ($line | str contains "redirect-map") and not ($line | str contains "redirect-socket") {
-            if ($line | str contains "--peer") {
+        if (line-invokes-command? $trimmed "redirect") {
+            if ($trimmed | str contains "--peer") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_PEER])
-            } else if ($line | str contains "--neigh") {
+            } else if ($trimmed | str contains "--neigh") {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_NEIGH])
             } else if (
                 ($target_text | str starts-with "xdp:")
