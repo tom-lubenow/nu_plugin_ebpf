@@ -19346,6 +19346,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-early-return"
+        category: "language-core"
+        tags: [control-flow return user-function]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def choose [x] {'
+            '    if $x == 0 { return 7 }'
+            '    9'
+            '  }'
+            '  choose 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-loop-break-continue"
         category: "language-core"
         tags: [control-flow loop break continue]
