@@ -9286,6 +9286,45 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_slice' arg2 expects null (0) or pointer"
     }
     {
+        name: "dynptr-kfunc-slice-allows-zero-vreg-buffer"
+        category: "helper-state"
+        tags: [kfunc dynptr accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let buf = 0'
+            '  let ptr = (kfunc-call "bpf_dynptr_slice" $d 0 $buf 4)'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-slice-rejects-nonzero-vreg-buffer"
+        category: "helper-state"
+        tags: [kfunc dynptr reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  let buf = 1'
+            '  let ptr = (kfunc-call "bpf_dynptr_slice" $d 0 $buf 4)'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_slice' arg2 expects null (0) or pointer"
+    }
+    {
         name: "dynptr-kfunc-slice-rejects-dynamic-size"
         category: "helper-state"
         tags: [kfunc dynptr reject]
