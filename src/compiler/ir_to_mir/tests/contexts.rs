@@ -6899,6 +6899,71 @@ fn test_lower_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
 }
 
 #[test]
+fn test_lower_bound_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
+    let hir = make_bound_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("data")],
+        },
+        CellPath {
+            members: vec![int_member(0)],
+        },
+        HirLiteral::Int(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound tc ctx.data byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )),
+        "expected bound ctx.data alias to originate from the context field"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )),
+        "expected bound ctx.data byte write to guard against data_end"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected bound ctx.data byte write to emit a guarded u8 store"
+    );
+}
+
+#[test]
 fn test_lower_xdp_ctx_ethertype_assignment_adds_be_guarded_packet_store() {
     let hir = make_ctx_upsert_program(
         CellPath {
@@ -7069,6 +7134,71 @@ fn test_lower_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
                     ..
                 }
             )))
+    );
+}
+
+#[test]
+fn test_lower_bound_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
+    let hir = make_bound_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("data_meta")],
+        },
+        CellPath {
+            members: vec![int_member(0)],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound xdp ctx.data_meta byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataMeta,
+                    ..
+                }
+            )),
+        "expected bound ctx.data_meta alias to originate from the context field"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )),
+        "expected bound ctx.data_meta byte write to guard against data"
+    );
+    assert!(
+        !blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )),
+        "ctx.data_meta writes should use ctx.data as the guard, not ctx.data_end"
     );
 }
 

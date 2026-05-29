@@ -4665,6 +4665,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:data" "ctx:packet_len" "ctx:eth_protocol" "ctx:protocol" "ctx:hash" "ctx:bind_inany" "ctx:socket_cookie" "ctx:sk" "ctx:family" "ctx:mark" "ctx:priority" "ctx:rx_queue_mapping" "helper:bpf_get_socket_cookie" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut data = $ctx.data'
+            '  $data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
         target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
         program: [
             '{|ctx|'
@@ -9197,6 +9208,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-bound-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable alias source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut data = $ctx.data'
+            '  $data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-egress-rejects-context-socket-write"
         category: "context-policy"
         tags: [tc context writable socket reject egress-only]
@@ -10634,6 +10661,23 @@ const FIXTURES = [
             '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.data.0 = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "direct packet writes are not supported on flow_dissector programs"
+    }
+    {
+        name: "flow-dissector-rejects-bound-packet-data-write"
+        category: "context-policy"
+        tags: [flow-dissector reject context packet writable alias]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut data = $ctx.data'
+            '  $data.0 = 1'
             '  "parsed"'
             '}'
         ]

@@ -1255,6 +1255,27 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
         if let MirType::Ptr {
+            address_space: AddressSpace::Packet,
+            ..
+        } = &base_runtime_ty
+        {
+            let Some(root_field @ (CtxField::Data | CtxField::DataMeta)) = root_ctx_field else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires a packet pointer rooted at ctx.data or ctx.data_meta",
+                    path_desc
+                )));
+            };
+            self.lower_packet_ctx_update_from_ptr(
+                base_vreg,
+                root_field,
+                &path.members,
+                new_value,
+                &path_desc,
+            )?;
+            self.set_reg_constant_value(src_dst, constant_value);
+            return Ok(());
+        }
+        if let MirType::Ptr {
             address_space: AddressSpace::Kernel,
             ..
         } = &base_runtime_ty

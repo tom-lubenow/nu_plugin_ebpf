@@ -481,10 +481,61 @@ impl<'a> HirToMirLowering<'a> {
             .insert(packet_root_vreg, packet_ptr_ty.clone());
         self.emit(MirInst::LoadCtxField {
             dst: packet_root_vreg,
-            field: root_field,
+            field: root_field.clone(),
             slot: None,
         });
 
+        self.lower_packet_ctx_update_from_ptr(
+            packet_root_vreg,
+            root_field,
+            path_members,
+            new_value,
+            path_desc,
+        )?;
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
+    }
+
+    pub(super) fn lower_packet_ctx_update_from_ptr(
+        &mut self,
+        packet_root_vreg: VReg,
+        root_field: CtxField,
+        path_members: &[PathMember],
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        if path_members.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires a scalar packet field, not the root packet pointer",
+                path_desc
+            )));
+        }
+
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
+        };
+
+        if !ctx.supports_direct_packet_writes() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' direct packet writes are not supported on {} programs",
+                path_desc,
+                ctx.canonical_prefix()
+            )));
+        }
+
+        ctx.validate_load_ctx_field(&root_field)?;
+        let end_field = Self::packet_guard_end_field(Some(&root_field));
+        ctx.validate_load_ctx_field(&end_field)?;
+
+        let packet_ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        };
         let (packet_base_vreg, packet_offset, store_ty, packet_big_endian) =
             self.resolve_packet_store_target(packet_root_vreg, path_members, path_desc)?;
         let mut stored_vreg =
@@ -526,9 +577,6 @@ impl<'a> HirToMirLowering<'a> {
             end_field,
             path_desc,
         )?;
-
-        let meta = self.get_or_create_metadata(src_dst);
-        meta.is_context = true;
         Ok(())
     }
 

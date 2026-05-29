@@ -336,7 +336,9 @@ cell-path updates
 after shadowing the immutable closure parameter as mutable, for
 example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
 $ctx.data.u16be.6 = 0x86dd`, or `mut ctx = $ctx;
-$ctx.data.eth.ethertype = 0x86dd`. Those lower to guarded packet
+$ctx.data.eth.ethertype = 0x86dd`; bound packet-pointer aliases such as
+`mut data = $ctx.data; $data.0 = 0xff` use the same guarded write
+path. Those lower to guarded packet
 stores and automatically normalize big-endian packet scalars back to
 network byte order. Other packet families remain read-only for direct
 packet writes. Fixed header views `eth`, `ipv4`, `ipv6`, `icmp`,
