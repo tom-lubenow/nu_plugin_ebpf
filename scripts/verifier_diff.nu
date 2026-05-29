@@ -19540,6 +19540,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-upsert-local"
+        category: "language-core"
+        tags: [aggregate list upsert local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut xs = [1 2 3]'
+            '  $xs.1 = 7'
+            '  $xs.1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-spread-local"
         category: "language-core"
         tags: [aggregate record spread local]
@@ -19555,6 +19570,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-local"
+        category: "language-core"
+        tags: [aggregate record upsert local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = { pid: 7, msg: "hi" }'
+            '  $rec.msg = "ok"'
+            '  $rec.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-user-function-record-return"
         category: "language-core"
         tags: [user-function aggregate record]
@@ -19564,6 +19594,25 @@ const FIXTURES = [
             '  def make [] { { pid: 7, msg: "hi" } }'
             '  let out = (make)'
             '  $out.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-upsert-return"
+        category: "language-core"
+        tags: [user-function aggregate record upsert]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = { msg: "hi" }'
+            '    $rec.msg = "ok"'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.msg | count'
             '}'
         ]
         local: "accept"
