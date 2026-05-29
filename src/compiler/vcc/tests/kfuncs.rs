@@ -925,6 +925,7 @@ fn test_verify_mir_kfunc_list_front_requires_bpf_spin_lock_held() {
     func.param_count = 1;
 
     let root = func.alloc_vreg();
+    func.param_non_null.insert(root.0 as usize);
     let dst = func.alloc_vreg();
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst,
@@ -10230,6 +10231,7 @@ fn test_verify_mir_kfunc_list_push_front_consumes_object_reference() {
     func.param_count = 2;
 
     let list = func.alloc_vreg();
+    func.param_non_null.insert(list.0 as usize);
     let lock = func.alloc_vreg();
     func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
@@ -10412,6 +10414,7 @@ fn test_verify_mir_kfunc_list_pop_front_acquires_object_reference() {
     func.param_count = 2;
 
     let list = func.alloc_vreg();
+    func.param_non_null.insert(list.0 as usize);
     let lock = func.alloc_vreg();
     func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
@@ -10487,6 +10490,7 @@ fn test_verify_mir_kfunc_list_push_back_consumes_object_reference() {
     func.param_count = 2;
 
     let list = func.alloc_vreg();
+    func.param_non_null.insert(list.0 as usize);
     let lock = func.alloc_vreg();
     func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
@@ -10669,6 +10673,7 @@ fn test_verify_mir_kfunc_list_pop_back_acquires_object_reference() {
     func.param_count = 2;
 
     let list = func.alloc_vreg();
+    func.param_non_null.insert(list.0 as usize);
     let lock = func.alloc_vreg();
     func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
@@ -10744,6 +10749,7 @@ fn test_verify_mir_kfunc_rbtree_add_consumes_object_reference() {
     func.param_count = 2;
 
     let tree = func.alloc_vreg();
+    func.param_non_null.insert(tree.0 as usize);
     let lock = func.alloc_vreg();
     func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
@@ -10972,7 +10978,9 @@ fn test_verify_mir_kfunc_rbtree_remove_acquires_object_reference() {
     func.param_count = 3;
 
     let tree = func.alloc_vreg();
+    func.param_non_null.insert(tree.0 as usize);
     let node = func.alloc_vreg();
+    func.param_non_null.insert(node.0 as usize);
     let lock = func.alloc_vreg();
     func.param_non_null.insert(lock.0 as usize);
     let meta = func.alloc_vreg();
@@ -11903,6 +11911,7 @@ fn test_verify_mir_kfunc_bpf_wq_init_accepts_map_backed_wq_and_map_fd() {
     func.param_count = 1;
 
     let wq = func.alloc_vreg();
+    func.param_non_null.insert(wq.0 as usize);
     let map_fd = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -11964,6 +11973,7 @@ fn test_verify_mir_kfunc_bpf_wq_set_callback_accepts_callback_and_zero_aux() {
     func.param_count = 1;
 
     let wq = func.alloc_vreg();
+    func.param_non_null.insert(wq.0 as usize);
     let callback = func.alloc_vreg();
     let flags = func.alloc_vreg();
     let aux = func.alloc_vreg();
@@ -12063,6 +12073,71 @@ fn test_verify_mir_kfunc_bpf_wq_start_rejects_stack_wq() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_bpf_wq_start_requires_null_checked_map_lookup() {
+    let (mut func, entry) = new_mir_function();
+
+    let key = func.alloc_vreg();
+    let wq = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: wq,
+        map: MapRef {
+            name: "work_items".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_start".to_string(),
+        btf_id: None,
+        args: vec![wq, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let mut types = HashMap::new();
+    types.insert(key, MirType::I64);
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(value_ty),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected unchecked map-backed bpf_wq pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("may dereference null pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_rbtree_root_requires_kernel_pointer_arg() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
@@ -12148,6 +12223,7 @@ fn test_verify_mir_kfunc_rbtree_root_accepts_kernel_pointer_arg() {
     func.param_count = 1;
 
     let root = func.alloc_vreg();
+    func.param_non_null.insert(root.0 as usize);
     let dst = func.alloc_vreg();
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst,

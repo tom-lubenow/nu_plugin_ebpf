@@ -1823,6 +1823,13 @@ impl<'a> VccLowerer<'a> {
                 ),
             ));
         }
+        if access_size.is_none() && dynamic_size.is_none() {
+            out.push(VccInst::AssertPtrAccess {
+                ptr: VccReg(arg.0),
+                size: VccValue::Imm(1),
+                op,
+            });
+        }
         if Self::kfunc_pointer_arg_requires_stack_slot_base(kfunc, arg_idx)
             && matches!(effective_space, VccAddrSpace::Stack(_))
         {

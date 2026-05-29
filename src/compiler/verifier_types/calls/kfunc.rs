@@ -270,6 +270,15 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_ptr_arg_value(
                     arg.0
                 )));
             }
+            VerifierType::Ptr {
+                nullability: Nullability::MaybeNull,
+                ..
+            } => {
+                errors.push(VerifierTypeError::new(format!(
+                    "{op} may dereference null pointer v{} (add a null check)",
+                    arg.0
+                )));
+            }
             VerifierType::Ptr { space, .. } => {
                 if !allowed.contains(&space) {
                     errors.push(VerifierTypeError::new(format!(
