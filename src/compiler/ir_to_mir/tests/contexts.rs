@@ -5327,6 +5327,54 @@ fn test_lower_context_histogram_rejects_pointer_escape() {
 }
 
 #[test]
+fn test_lower_context_redirect_rejects_pointer_ifindex() {
+    let ctx_var = VarId::new(0);
+    let redirect_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(redirect_decl, "redirect".to_string())]);
+    let hir = make_bare_context_call_program(ctx_var, redirect_decl);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bare context pointer must not escape through redirect");
+
+    assert!(
+        err.to_string()
+            .contains("redirect ifindex cannot use context pointers as values")
+    );
+}
+
+#[test]
+fn test_lower_context_assign_socket_rejects_pointer_socket() {
+    let ctx_var = VarId::new(0);
+    let assign_socket_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(assign_socket_decl, "assign-socket".to_string())]);
+    let hir = make_bare_context_call_program(ctx_var, assign_socket_decl);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bare context pointer must not escape through assign-socket");
+
+    assert!(
+        err.to_string()
+            .contains("assign-socket socket cannot use context pointers as values")
+    );
+}
+
+#[test]
 fn test_lower_record_context_map_put_rejects_pointer_escape() {
     let ctx_var = VarId::new(0);
     let map_put_decl = DeclId::new(42);

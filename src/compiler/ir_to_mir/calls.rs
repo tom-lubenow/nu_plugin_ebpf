@@ -406,6 +406,16 @@ impl<'a> HirToMirLowering<'a> {
                             mode.value_name()
                         ))
                     })?;
+                let value_reg = self
+                    .positional_args
+                    .first()
+                    .map(|(_, reg)| *reg)
+                    .or(self.pipeline_input_reg)
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(
+                    value_reg,
+                    &format!("adjust-packet --{} {}", mode.flag_name(), mode.value_name()),
+                )?;
                 let ctx_vreg = self.materialize_context_pointer_arg();
                 let args = match helper {
                     BpfHelper::XdpAdjustHead
@@ -476,6 +486,20 @@ impl<'a> HirToMirLowering<'a> {
                             mode.first_value_name()
                         ))
                     })?;
+                let first_reg = self
+                    .positional_args
+                    .first()
+                    .map(|(_, reg)| *reg)
+                    .or(self.pipeline_input_reg)
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(
+                    first_reg,
+                    &format!(
+                        "adjust-message --{} {}",
+                        mode.flag_name(),
+                        mode.first_value_name()
+                    ),
+                )?;
                 let ctx_vreg = self.materialize_context_pointer_arg();
                 let args = match mode {
                     MessageAdjustMode::Apply | MessageAdjustMode::Cork => {
@@ -496,6 +520,11 @@ impl<'a> HirToMirLowering<'a> {
                                     second_name
                                 ))
                             })?;
+                        let second_reg = self.positional_args.get(1).map(|(_, reg)| *reg);
+                        self.reject_context_pointer_payload(
+                            second_reg,
+                            &format!("adjust-message --{} {}", mode.flag_name(), second_name),
+                        )?;
                         let flags = self
                             .optional_nonnegative_named_u64_arg("adjust-message", "flags")?
                             .unwrap_or(0);
@@ -536,6 +565,13 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
+                let ifindex_reg = self
+                    .positional_args
+                    .first()
+                    .map(|(_, reg)| *reg)
+                    .or(self.pipeline_input_reg)
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(ifindex_reg, "redirect ifindex")?;
                 let flags = self
                     .optional_nonnegative_named_u64_arg("redirect", "flags")?
                     .unwrap_or(0);
@@ -656,6 +692,7 @@ impl<'a> HirToMirLowering<'a> {
                                 .into(),
                         )
                     })?;
+                self.reject_context_pointer_payload(key_arg.1, "redirect-socket key")?;
                 let flags = self
                     .optional_nonnegative_named_u64_arg("redirect-socket", "flags")?
                     .unwrap_or(0);
@@ -724,18 +761,21 @@ impl<'a> HirToMirLowering<'a> {
                     return Err(CompileError::UnsupportedInstruction(message.to_string()));
                 }
 
-                let sk_vreg = self
+                let sk_arg = self
                     .positional_args
                     .first()
-                    .map(|(vreg, _)| *vreg)
-                    .or(self.pipeline_input)
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
+                    .copied()
+                    .map(|(vreg, reg)| (vreg, Some(reg)))
+                    .or_else(|| self.pipeline_input.map(|vreg| (vreg, self.pipeline_input_reg)))
+                    .or_else(|| src_dst_had_value.then_some((dst_vreg, Some(src_dst))))
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
                             "assign-socket requires a socket pointer or null from pipeline input or the first positional argument"
                                 .into(),
                         )
                     })?;
+                self.reject_context_pointer_payload(sk_arg.1, "assign-socket socket")?;
+                let sk_vreg = sk_arg.0;
 
                 let ctx_vreg = self.materialize_context_pointer_arg();
                 self.emit(MirInst::CallHelper {
