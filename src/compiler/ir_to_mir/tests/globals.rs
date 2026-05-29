@@ -2140,6 +2140,120 @@ fn test_lower_global_define_type_i64_with_constant_binary_initializer_uses_named
 }
 
 #[test]
+fn test_lower_global_define_type_bytes_with_empty_binary_initializer_uses_named_bss_global() {
+    let define_decl = DeclId::new(1073);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(Vec::new()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("bytes:8".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type bytes:N should zero-fill an empty binary input");
+
+    assert_eq!(result.readonly_globals.len(), 0);
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_global_scratch");
+    assert_eq!(result.bss_globals[0].size, 8);
+}
+
+#[test]
+fn test_lower_global_define_empty_binary_without_type_still_rejects_empty_layout() {
+    let define_decl = DeclId::new(1074);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(Vec::new()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("untyped empty binary globals should not infer a zero-length layout");
+
+    assert!(
+        err.to_string()
+            .contains("empty binary constants are not yet supported")
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_bool_with_constant_not_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1081);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);

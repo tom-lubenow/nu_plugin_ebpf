@@ -878,6 +878,20 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             HirLiteral::Binary(bytes) => {
+                if bytes.is_empty() {
+                    // Empty binary literals only carry useful information when
+                    // a typed consumer supplies the real byte-buffer layout.
+                    self.emit(MirInst::Copy {
+                        dst: dst_vreg,
+                        src: MirValue::Const(0),
+                    });
+                    self.set_reg_constant_value(
+                        dst,
+                        Some(Value::binary(Vec::new(), Span::unknown())),
+                    );
+                    return Ok(());
+                }
+
                 let (array_ty, data) = Self::binary_constant_rodata_repr(bytes)?;
                 let symbol = self.alloc_readonly_global_name();
                 self.readonly_globals.push(ReadonlyGlobal {

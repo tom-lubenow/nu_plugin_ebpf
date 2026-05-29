@@ -5722,6 +5722,37 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-bytes-empty-binary-zero-fills"
+        category: "globals"
+        tags: [globals binary bytes global-define zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0x[] | global-define --type bytes:8 scratch'
+            '  let b = (global-get scratch)'
+            '  ($b | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-empty-binary-without-type-rejects"
+        category: "globals"
+        tags: [globals binary global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0x[] | global-define scratch'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "empty binary constants are not yet supported"
+    }
+    {
         name: "map-define-null-only-lookup-keeps-value-layout"
         category: "maps"
         tags: [maps map-define accept]
