@@ -19400,6 +19400,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-nested-loop-break-continue"
+        category: "language-core"
+        tags: [control-flow loop break continue]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut sum = 0'
+            '  for i in 0..2 {'
+            '    for j in 0..2 {'
+            '      if $j == 1 { continue }'
+            '      if $i == 2 { break }'
+            '      $sum = ($sum + $i + $j)'
+            '    }'
+            '  }'
+            '  $sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-inline-bounded-loop"
         category: "language-core"
         tags: [control-flow loop]
