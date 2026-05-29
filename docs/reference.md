@@ -516,7 +516,11 @@ writable on `:egress`. On `sk_skb` and `sk_skb_parser`,
 ordinary assignment after shadowing the closure parameter as mutable,
 for example `mut ctx = $ctx; $ctx.mark = 7`, `mut ctx = $ctx;
 $ctx.cb.0 = 1`, `mut ctx = $ctx; $ctx.priority = 3`, `mut ctx = $ctx;
-$ctx.tc_index = 5`, or `mut ctx = $ctx; $ctx.tstamp = 123`. Other
+$ctx.tc_index = 5`, or `mut ctx = $ctx; $ctx.tstamp = 123`. Bound
+full-context aliases and record-held full-context aliases use the same
+write path, so forms like `mut event = $ctx; $event.tstamp = 123` and
+`mut rec = { event: $ctx }; $rec.event.tstamp = 123` are equivalent
+when the underlying field is writable on that program family. Other
 skb-backed metadata fields remain read-only on the remaining hooks.
 When the timestamp type must also change, `tc_action`, `tc`, `tcx`, and `netkit` model
 `helper-call "bpf_skb_set_tstamp" $ctx TSTAMP TSTAMP_TYPE`; the
@@ -588,7 +592,59 @@ Tail calls are exposed as ordinary control flow with `tail-call MAP INDEX` or `I
 
 `cgroup_sockopt` currently attaches to `get` and `set` cgroup socket-option hooks such as `/sys/fs/cgroup:get` or `/sys/fs/cgroup:set`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.level`, `ctx.optname`, `ctx.optlen`, `ctx.optval`, `ctx.optval_end`, `ctx.netns_cookie`, and `ctx.sockopt_retval` / `ctx.retval` on `get` hooks, plus a typed `ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. `optval` / `optval_end` are surfaced as kernel pointers, so ordinary pointer reads like `($ctx.optval | get 0)` can inspect the buffer; `read-kernel-str` remains limited to probe/tracing-style program families by the current program capability policy. Ordinary assignment now also covers the writable scalar surfaces the kernel exposes here: `ctx.sockopt_retval` / `ctx.retval` on `cgroup_sockopt:get`, `ctx.level` / `ctx.optname` on `cgroup_sockopt:set`, `ctx.optlen` on either hook, and fixed-index sockopt-buffer rewrites such as `mut ctx = $ctx; $ctx.optval.0 = 1`, `mut optval = $ctx.optval; $optval.0 = 1`, or `mut rec = { optval: $ctx.optval }; $rec.optval.0 = 1`. Modeled socket-option helpers are also available through the ordinary helper surface here, including `bpf_getsockopt` and `bpf_setsockopt` on the current sockopt context. Closures can return `"allow"` / `"deny"` instead of raw `1` / `0` result codes.
 
-`cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`, `ctx.socket_cookie`, `ctx.netns_cookie`, `ctx.user_family`, `ctx.family`, `ctx.sock_type`, and `ctx.protocol` / `ctx.ip_protocol` on every modeled hook. IPv4/IPv6 hooks additionally expose `ctx.user_ip4`, `ctx.user_ip6`, and `ctx.user_port`, plus `ctx.msg_src_ip4` on `sendmsg4` and `ctx.msg_src_ip6` on `sendmsg6`. It also normalizes the attach-sensitive IPv4/IPv6 hooks onto the ordinary tuple surface where the kernel semantics are clear: `connect4` / `connect6`, `getpeername4` / `getpeername6`, `sendmsg4` / `sendmsg6`, and `recvmsg4` / `recvmsg6` expose `ctx.remote_ip4`, `ctx.remote_ip6`, and `ctx.remote_port`; `bind4` / `bind6` and `getsockname4` / `getsockname6` expose `ctx.local_ip4`, `ctx.local_ip6`, and `ctx.local_port`; and `sendmsg4` / `sendmsg6` additionally expose `ctx.local_ip4` / `ctx.local_ip6` over the source-address fields. `sendmsg4` / `sendmsg6` still do not expose `ctx.local_port`, because the kernel surface does not provide a corresponding source-port field there. These mutable kernel fields can be assigned through the same aliases after shadowing the closure parameter as mutable, for example `mut ctx = $ctx; $ctx.remote_ip4 = 0x7f000001` on `connect4` / `getpeername4` / `sendmsg4` / `recvmsg4`, `$ctx.local_port = 8080` on `bind4` / `bind6` / `getsockname4` / `getsockname6`, or `$ctx.local_ip6.0 = 0` on `bind6` / `getsockname6` / `sendmsg6`. The UNIX hooks `connect_unix`, `sendmsg_unix`, `recvmsg_unix`, `getpeername_unix`, and `getsockname_unix` emit the matching libbpf `cgroup/*_unix` sections for compile/dry-run, but live attach is rejected until Aya exposes the `BPF_CGROUP_UNIX_*` attach types or the loader grows an equivalent lower-level attach path. Their direct read surface is intentionally limited to common socket metadata, while path mutation is available as ordinary assignment on UNIX hooks: `mut ctx = $ctx; $ctx.sun_path = "/tmp/demo.sock"` lowers to `bpf_sock_addr_set_sun_path`. It also exposes a typed `ctx.sk` pointer for ordinary socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. The IPv4 address and port fields are normalized to host byte order. The IPv6 fields are exposed as fixed arrays of four host-order `u32` words, so ordinary Nushell indexing works, for example `($ctx.user_ip6 | get 3)`. `cgroup_sock_addr` closures can return `"allow"` / `"deny"` instead of raw `1` / `0` codes. Modeled socket helpers are also available through the ordinary helper surface: `bpf_bind` on inet `connect4` / `connect6` hooks, `bpf_getsockopt` / `bpf_setsockopt` across `cgroup_sock_addr` hooks including UNIX hooks, and `bpf_sock_addr_set_sun_path` behind `ctx.sun_path` assignment on UNIX hooks. Numeric result codes still work too.
+`cgroup_sock_addr` currently exposes `ctx.cpu`, `ctx.ktime`,
+`ctx.socket_cookie`, `ctx.netns_cookie`, `ctx.user_family`,
+`ctx.family`, `ctx.sock_type`, and `ctx.protocol` / `ctx.ip_protocol`
+on every modeled hook. IPv4/IPv6 hooks additionally expose
+`ctx.user_ip4`, `ctx.user_ip6`, and `ctx.user_port`, plus
+`ctx.msg_src_ip4` on `sendmsg4` and `ctx.msg_src_ip6` on `sendmsg6`.
+It also normalizes the attach-sensitive IPv4/IPv6 hooks onto the
+ordinary tuple surface where the kernel semantics are clear:
+`connect4` / `connect6`, `getpeername4` / `getpeername6`,
+`sendmsg4` / `sendmsg6`, and `recvmsg4` / `recvmsg6` expose
+`ctx.remote_ip4`, `ctx.remote_ip6`, and `ctx.remote_port`; `bind4` /
+`bind6` and `getsockname4` / `getsockname6` expose `ctx.local_ip4`,
+`ctx.local_ip6`, and `ctx.local_port`; and `sendmsg4` / `sendmsg6`
+additionally expose `ctx.local_ip4` / `ctx.local_ip6` over the
+source-address fields. `sendmsg4` / `sendmsg6` still do not expose
+`ctx.local_port`, because the kernel surface does not provide a
+corresponding source-port field there.
+
+These mutable kernel fields can be assigned through the same aliases
+after shadowing the closure parameter as mutable, for example
+`mut ctx = $ctx; $ctx.remote_ip4 = 0x7f000001` on `connect4` /
+`getpeername4` / `sendmsg4` / `recvmsg4`, `$ctx.local_port = 8080`
+on `bind4` / `bind6` / `getsockname4` / `getsockname6`, or
+`$ctx.local_ip6.0 = 0` on `bind6` / `getsockname6` / `sendmsg6`.
+Bound and record-held full-context aliases follow the same writable
+field policy, for example `mut event = $ctx; $event.remote_port = 8080`
+or `mut rec = { event: $ctx }; $rec.event.remote_port = 8080` on hooks
+where `remote_port` is writable.
+
+The UNIX hooks `connect_unix`, `sendmsg_unix`, `recvmsg_unix`,
+`getpeername_unix`, and `getsockname_unix` emit the matching libbpf
+`cgroup/*_unix` sections for compile/dry-run, but live attach is
+rejected until Aya exposes the `BPF_CGROUP_UNIX_*` attach types or the
+loader grows an equivalent lower-level attach path. Their direct read
+surface is intentionally limited to common socket metadata, while path
+mutation is available as ordinary assignment on UNIX hooks:
+`mut ctx = $ctx; $ctx.sun_path = "/tmp/demo.sock"` lowers to
+`bpf_sock_addr_set_sun_path`; bound or record-held aliases such as
+`mut event = $ctx; $event.sun_path = "/tmp/demo.sock"` and
+`mut rec = { event: $ctx }; $rec.event.sun_path = "/tmp/demo.sock"`
+lower the same way. It also exposes a typed `ctx.sk` pointer for
+ordinary socket projection such as `$ctx.sk.family`, `$ctx.sk.src_port`,
+`$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. The IPv4
+address and port fields are normalized to host byte order. The IPv6
+fields are exposed as fixed arrays of four host-order `u32` words, so
+ordinary Nushell indexing works, for example `($ctx.user_ip6 | get 3)`.
+`cgroup_sock_addr` closures can return `"allow"` / `"deny"` instead of
+raw `1` / `0` codes. Modeled socket helpers are also available through
+the ordinary helper surface: `bpf_bind` on inet `connect4` / `connect6`
+hooks, `bpf_getsockopt` / `bpf_setsockopt` across `cgroup_sock_addr`
+hooks including UNIX hooks, and `bpf_sock_addr_set_sun_path` behind
+`ctx.sun_path` assignment on UNIX hooks. Numeric result codes still work
+too.
 
 `sk_lookup` currently attaches to a network-namespace path such as `/proc/self/ns/net`. It exposes `ctx.cpu`, `ctx.ktime`, `ctx.family`, `ctx.protocol` / `ctx.ip_protocol`, `ctx.cookie`, `ctx.remote_ip4`, `ctx.remote_ip6`, `ctx.remote_port`, `ctx.local_ip4`, `ctx.local_ip6`, `ctx.local_port`, `ctx.ingress_ifindex`, and a typed `ctx.sk` pointer for socket projection such as `$ctx.sk.bound_dev_if`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, `$ctx.sk.state`, or `$ctx.sk.mark`. `ctx.ingress_ifindex` has its own Linux 5.17 context-field floor, while the base `sk_lookup` tuple fields are Linux 5.9. `mut ctx = $ctx; $ctx.sk = $sk` selects a socket through `bpf_sk_assign` with zero flags, and `$ctx.sk = 0` clears an earlier selection. `assign-socket $sk --replace` / `assign-socket 0 --replace` remain available when explicit sk_lookup flags are needed. The IPv4 address and remote port fields are normalized to host byte order, and the IPv6 fields are exposed as fixed arrays of four host-order `u32` words so ordinary Nushell indexing works, for example `($ctx.remote_ip6 | get 3)`. `sk_lookup` closures can return `"pass"` / `"drop"` instead of raw `1` / `0` result codes; `"allow"` / `"deny"` aliases also work.
 
