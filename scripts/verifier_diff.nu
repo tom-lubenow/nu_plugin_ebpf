@@ -4025,6 +4025,28 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: $ctx.sk }'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: ($ctx.sk) }'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -11114,6 +11136,21 @@ const FIXTURES = [
             '  if $full {'
             '    $full.family | count'
             '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-record-context-root-projection"
+        category: "context-surface"
+        tags: [tc context record source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: $ctx.sk }'
+            '  $rec.socket.family | count'
             '  0'
             '}'
         ]
@@ -21905,13 +21942,34 @@ def record-context-bindings [line: string context_names] {
             continue
         }
         let field_name = (($field_parts | first) | str trim)
-        let field_value = (($field_parts | get 1) | str trim)
+        let field_value = (trim-simple-parentheses (($field_parts | get 1) | str trim))
         for context_name in $context_names {
             let context_token = (["$" $context_name] | str join "")
             if $field_value == $context_token {
                 $bindings = ($bindings | append {
                     name: $assignment.name
                     field: $field_name
+                    root: ""
+                })
+                continue
+            }
+
+            let context_prefix = $"($context_token)."
+            if not ($field_value | str starts-with $context_prefix) {
+                continue
+            }
+
+            let root_path = (
+                normalize-context-path-token (
+                    $field_value | str substring ($context_prefix | str length)..
+                )
+            )
+            let root = ($root_path | split row "." | first)
+            if (context-projection-root? $root) {
+                $bindings = ($bindings | append {
+                    name: $assignment.name
+                    field: $field_name
+                    root: $root_path
                 })
             }
         }
@@ -21945,8 +22003,14 @@ def record-context-projection-kernel-features [source: string target context_nam
     for line in ($source | lines) {
         for alias in $aliases {
             let prefix = $"$($alias.name).($alias.field)."
+            let root = ($alias | get -o root | default "")
             for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
-                let field = (normalize-context-field-token $raw_tail)
+                let raw_access = if $root == "" {
+                    $raw_tail
+                } else {
+                    $"($root).($raw_tail)"
+                }
+                let field = (normalize-context-field-token $raw_access)
                 if $field == "" {
                     continue
                 }
@@ -21965,15 +22029,15 @@ def record-context-projection-kernel-features [source: string target context_nam
                         $features = (append-missing-kernel-features $features [$helper_feature])
                     }
                 }
-                let projection_feature = (context-projection-kernel-feature $raw_tail $target)
+                let projection_feature = (context-projection-kernel-feature $raw_access $target)
                 if $projection_feature != null {
                     $features = (append-missing-kernel-features $features [$projection_feature])
                 }
-                let read_feature = (context-projection-kernel-read-feature $raw_tail $target)
+                let read_feature = (context-projection-kernel-read-feature $raw_access $target)
                 if $read_feature != null {
                     $features = (append-missing-kernel-features $features [$read_feature])
                 }
-                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_tail)
+                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
                 if $task_pt_regs_feature != null {
                     $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
                 }
