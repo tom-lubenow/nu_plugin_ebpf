@@ -4273,38 +4273,7 @@ fn test_program_type_registry_covers_current_kernel_uapi_program_types() {
 #[test]
 fn test_program_attach_kind_loader_live_support_metadata() {
     let mut target_kind_keys = HashSet::new();
-    for kind in [
-        ProgramTargetKind::KernelFunction,
-        ProgramTargetKind::KernelFunctionPattern,
-        ProgramTargetKind::KernelSyscall,
-        ProgramTargetKind::BtfTracepoint,
-        ProgramTargetKind::LsmHook,
-        ProgramTargetKind::ExtensionFunction,
-        ProgramTargetKind::SyscallProgram,
-        ProgramTargetKind::BpfIteratorTarget,
-        ProgramTargetKind::Tracepoint,
-        ProgramTargetKind::RawTracepoint,
-        ProgramTargetKind::UserFunction,
-        ProgramTargetKind::UserFunctionPattern,
-        ProgramTargetKind::NetworkInterface,
-        ProgramTargetKind::PerfEventTarget,
-        ProgramTargetKind::SocketFilterTarget,
-        ProgramTargetKind::NetworkNamespacePath,
-        ProgramTargetKind::NetfilterHook,
-        ProgramTargetKind::LightweightTunnelRoute,
-        ProgramTargetKind::SocketReuseportMode,
-        ProgramTargetKind::PinnedSockMapPath,
-        ProgramTargetKind::TrafficControlInterface,
-        ProgramTargetKind::TrafficControlAction,
-        ProgramTargetKind::CgroupPathAttachType,
-        ProgramTargetKind::CgroupPathSockAttachType,
-        ProgramTargetKind::CgroupPath,
-        ProgramTargetKind::CgroupPathSockoptAttachType,
-        ProgramTargetKind::CgroupPathSockAddrAttachType,
-        ProgramTargetKind::LircDevicePath,
-        ProgramTargetKind::StructOpsValueType,
-        ProgramTargetKind::StructOpsCallback,
-    ] {
+    for kind in ProgramTargetKind::all() {
         assert!(
             target_kind_keys.insert(kind.key()),
             "program target kind key repeats for {kind:?}"
@@ -4321,54 +4290,7 @@ fn test_program_attach_kind_loader_live_support_metadata() {
     }
 
     let mut attach_kind_keys = HashSet::new();
-    for kind in [
-        ProgramAttachKind::Kprobe,
-        ProgramAttachKind::Kretprobe,
-        ProgramAttachKind::KprobeMulti,
-        ProgramAttachKind::KretprobeMulti,
-        ProgramAttachKind::Ksyscall,
-        ProgramAttachKind::KretSyscall,
-        ProgramAttachKind::Fentry,
-        ProgramAttachKind::Fexit,
-        ProgramAttachKind::FmodRet,
-        ProgramAttachKind::TpBtf,
-        ProgramAttachKind::Tracepoint,
-        ProgramAttachKind::RawTracepoint,
-        ProgramAttachKind::RawTracepointWritable,
-        ProgramAttachKind::Uprobe,
-        ProgramAttachKind::Uretprobe,
-        ProgramAttachKind::UprobeMulti,
-        ProgramAttachKind::UretprobeMulti,
-        ProgramAttachKind::Lsm,
-        ProgramAttachKind::LsmCgroup,
-        ProgramAttachKind::Extension,
-        ProgramAttachKind::Syscall,
-        ProgramAttachKind::Iter,
-        ProgramAttachKind::Xdp,
-        ProgramAttachKind::PerfEvent,
-        ProgramAttachKind::SocketFilter,
-        ProgramAttachKind::CgroupDevice,
-        ProgramAttachKind::SkLookup,
-        ProgramAttachKind::FlowDissector,
-        ProgramAttachKind::Netfilter,
-        ProgramAttachKind::Lwt,
-        ProgramAttachKind::SkReuseport,
-        ProgramAttachKind::SkMsg,
-        ProgramAttachKind::SkSkb,
-        ProgramAttachKind::SkSkbParser,
-        ProgramAttachKind::SockOps,
-        ProgramAttachKind::Tc,
-        ProgramAttachKind::Tcx,
-        ProgramAttachKind::Netkit,
-        ProgramAttachKind::TcAction,
-        ProgramAttachKind::CgroupSkb,
-        ProgramAttachKind::CgroupSock,
-        ProgramAttachKind::CgroupSysctl,
-        ProgramAttachKind::CgroupSockopt,
-        ProgramAttachKind::CgroupSockAddr,
-        ProgramAttachKind::LircMode2,
-        ProgramAttachKind::StructOps,
-    ] {
+    for kind in ProgramAttachKind::all() {
         assert!(
             attach_kind_keys.insert(kind.key()),
             "program attach kind key repeats for {kind:?}"
@@ -4384,27 +4306,53 @@ fn test_program_attach_kind_loader_live_support_metadata() {
         );
     }
 
-    for kind in [
+    let supported_live_attach_kinds = [
         ProgramAttachKind::Kprobe,
         ProgramAttachKind::Kretprobe,
+        ProgramAttachKind::KprobeMulti,
+        ProgramAttachKind::KretprobeMulti,
+        ProgramAttachKind::Ksyscall,
+        ProgramAttachKind::KretSyscall,
         ProgramAttachKind::Fentry,
         ProgramAttachKind::Fexit,
+        ProgramAttachKind::TpBtf,
+        ProgramAttachKind::Tracepoint,
         ProgramAttachKind::RawTracepoint,
+        ProgramAttachKind::Uprobe,
+        ProgramAttachKind::Uretprobe,
+        ProgramAttachKind::UprobeMulti,
+        ProgramAttachKind::UretprobeMulti,
+        ProgramAttachKind::Lsm,
         ProgramAttachKind::Xdp,
+        ProgramAttachKind::PerfEvent,
         ProgramAttachKind::SocketFilter,
+        ProgramAttachKind::CgroupDevice,
+        ProgramAttachKind::SkLookup,
+        ProgramAttachKind::SkMsg,
+        ProgramAttachKind::SkSkb,
+        ProgramAttachKind::SkSkbParser,
+        ProgramAttachKind::SockOps,
+        ProgramAttachKind::Tc,
+        ProgramAttachKind::Tcx,
+        ProgramAttachKind::CgroupSkb,
+        ProgramAttachKind::CgroupSock,
+        ProgramAttachKind::CgroupSysctl,
+        ProgramAttachKind::CgroupSockopt,
         ProgramAttachKind::CgroupSockAddr,
         ProgramAttachKind::LircMode2,
         ProgramAttachKind::StructOps,
-    ] {
-        assert!(
-            kind.loader_supports_live_attach(),
-            "{kind:?} should be marked live-loadable by the loader"
-        );
-        assert_eq!(kind.unsupported_live_attach_reason(), None);
-        assert_eq!(kind.unsupported_live_attach_detail(), None);
-    }
+    ];
+    let supported_live_attach_set = supported_live_attach_kinds
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        supported_live_attach_set.len(),
+        supported_live_attach_kinds.len(),
+        "supported live-attach classification should not contain duplicates"
+    );
 
-    for (kind, detail_fragment, reason_key) in [
+    let unsupported_live_attach_cases = [
         (
             ProgramAttachKind::RawTracepointWritable,
             "writable raw-tracepoint",
@@ -4453,7 +4401,40 @@ fn test_program_attach_kind_loader_live_support_metadata() {
             "syscall-no-hook",
         ),
         (ProgramAttachKind::Iter, "BPF iterator", "iterator-link"),
-    ] {
+    ];
+    let unsupported_live_attach_set = unsupported_live_attach_cases
+        .iter()
+        .map(|(kind, _, _)| *kind)
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        unsupported_live_attach_set.len(),
+        unsupported_live_attach_cases.len(),
+        "unsupported live-attach classification should not contain duplicates"
+    );
+    assert_eq!(
+        supported_live_attach_set.len() + unsupported_live_attach_set.len(),
+        ProgramAttachKind::all().len(),
+        "every attach kind should be explicitly classified for live loader support"
+    );
+
+    for kind in ProgramAttachKind::all() {
+        assert_ne!(
+            supported_live_attach_set.contains(kind),
+            unsupported_live_attach_set.contains(kind),
+            "{kind:?} should be classified as exactly one of live-supported or live-unsupported"
+        );
+    }
+
+    for kind in supported_live_attach_kinds {
+        assert!(
+            kind.loader_supports_live_attach(),
+            "{kind:?} should be marked live-loadable by the loader"
+        );
+        assert_eq!(kind.unsupported_live_attach_reason(), None);
+        assert_eq!(kind.unsupported_live_attach_detail(), None);
+    }
+
+    for (kind, detail_fragment, reason_key) in unsupported_live_attach_cases {
         assert!(
             !kind.loader_supports_live_attach(),
             "{kind:?} should be marked compile-only for live loader attach"
