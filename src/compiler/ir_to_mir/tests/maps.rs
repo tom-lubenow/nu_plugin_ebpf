@@ -4829,6 +4829,18 @@ fn test_map_value_type_spec_supports_fixed_array_string_semantics() {
 }
 
 #[test]
+fn test_map_value_type_spec_rejects_fixed_array_kptr_element() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec("array{kptr:task_struct:2}")
+        .expect_err("fixed arrays of kptr slots should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("require elements that can be embedded in fixed arrays"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_map_define_rejects_conflicting_external_key_schema() {
     let map_define_decl = DeclId::new(41);
     let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);

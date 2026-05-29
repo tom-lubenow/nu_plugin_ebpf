@@ -564,7 +564,7 @@ impl ParsedNamedGlobalType {
             let parsed_elem = Self::parse_with_context(elem_spec, context)?;
             if !parsed_elem.is_fixed_array_element_type() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "global fixed-array declarations require fixed-layout elements without string semantics, got '{}'",
+                    "global fixed-array declarations require elements that can be embedded in fixed arrays, got '{}'",
                     elem_spec
                 )));
             }
