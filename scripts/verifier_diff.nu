@@ -455,6 +455,41 @@ const PROGRAM_TARGET_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "syscall:demo" feature_keys: ["program:BPF_PROG_TYPE_SYSCALL"] }
     { target: "freplace:replace_me" feature_keys: ["program:BPF_PROG_TYPE_EXT"] }
 ]
+
+const PROGRAM_LANGUAGE_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  def make [] { 7 }'
+            '  make'
+            '}'
+        ]
+        feature_keys: ["compiled:bpf-subprogram-calls"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  mut sum = 0'
+            '  for i in 0..3 {'
+            '    $sum = ($sum + $i)'
+            '  }'
+            '  $sum'
+            '}'
+        ]
+        feature_keys: ["compiled:bounded-loops"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  # def ignored [] { for ignored in 0..1 { } }'
+            '  let text = "def not_a_function [] { for item in [] { } }"'
+            '  1'
+            '}'
+        ]
+        feature_keys: []
+    }
+]
+
 const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
@@ -20367,15 +20402,29 @@ def target-kernel-features [target] {
     $features
 }
 
+def source-statement-lines [source: string] {
+    $source
+    | lines
+    | each {|line| $line | str trim }
+    | where {|line| $line != "" and not ($line | str starts-with "#") }
+}
+
+def source-statement-starts-with? [line: string keyword: string] {
+    let trimmed = ($line | str trim)
+    $trimmed == $keyword or ($trimmed | str starts-with $"($keyword) ")
+}
+
 def program-language-kernel-features [source: string] {
     mut features = []
 
-    if ($source | str contains "def ") {
-        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS])
-    }
+    for line in (source-statement-lines $source) {
+        if (source-statement-starts-with? $line "def") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS])
+        }
 
-    if ($source | str contains "for ") {
-        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BOUNDED_LOOPS])
+        if (source-statement-starts-with? $line "for") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BOUNDED_LOOPS])
+        }
     }
 
     $features
@@ -20886,6 +20935,18 @@ def validate-program-target-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-language-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_LANGUAGE_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let actual_keys = (
+            program-language-kernel-features $program
+            | each {|feature| $feature.key }
+        )
+
+        validate-kernel-feature-key-expectation "program-language-kernel-features" $expectation.feature_keys $actual_keys
+    }
+}
+
 def validate-program-map-kernel-feature-expectations [] {
     for expectation in $PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS {
         let program = ($expectation.program | str join "\n")
@@ -21038,6 +21099,7 @@ def validate-program-callback-btf-kernel-feature-expectations [] {
 
 def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
+    validate-program-language-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
     validate-program-map-value-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
