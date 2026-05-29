@@ -17749,6 +17749,51 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-record-context-map-put-rejects-pointer-escape"
+        category: "language-core"
+        tags: [record context map reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | map-put seen 0 --kind hash'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot persist records containing context pointers"
+    }
+    {
+        name: "core-record-context-count-rejects-pointer-escape"
+        category: "language-core"
+        tags: [record context count reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot persist records containing context pointers"
+    }
+    {
+        name: "core-record-context-emit-rejects-pointer-escape"
+        category: "language-core"
+        tags: [record context emit reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | emit'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot persist records containing context pointers"
+    }
+    {
         name: "adjust-packet-xdp-head"
         category: "language-surface"
         tags: [adjust-packet xdp]

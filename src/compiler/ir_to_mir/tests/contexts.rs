@@ -2,7 +2,7 @@ use super::helpers::*;
 use super::*;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::hir::{
-    HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, CtxStoreTarget};
@@ -5245,6 +5245,86 @@ fn test_lower_record_context_field_projection_preserves_context_metadata() {
     )));
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("record-held context field projection should compile");
+}
+
+#[test]
+fn test_lower_record_context_map_put_rejects_pointer_escape() {
+    let ctx_var = VarId::new(0);
+    let map_put_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(map_put_decl, "map-put".to_string())]);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"k".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"seen".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::Call {
+                        decl_id: map_put_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(3), RegId::new(4)],
+                            named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 6,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("context pointers inside records must not escape into maps");
+
+    assert!(
+        err.to_string()
+            .contains("map-put value cannot persist records containing context pointers")
+    );
 }
 
 #[test]

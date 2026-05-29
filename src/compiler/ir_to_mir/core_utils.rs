@@ -482,6 +482,50 @@ impl<'a> HirToMirLowering<'a> {
         (!field_semantics.is_empty()).then_some(AnnotatedValueSemantics::Record(field_semantics))
     }
 
+    pub(super) fn metadata_contains_context_pointer(&self, meta: &RegMetadata) -> bool {
+        self.metadata_contains_context_pointer_inner(meta, &mut Vec::new())
+    }
+
+    fn metadata_contains_context_pointer_inner(
+        &self,
+        meta: &RegMetadata,
+        seen_regs: &mut Vec<u32>,
+    ) -> bool {
+        if meta.is_context {
+            return true;
+        }
+
+        meta.record_fields.iter().any(|field| {
+            field.is_context
+                || field.source_reg.is_some_and(|source_reg| {
+                    if seen_regs.contains(&source_reg.get()) {
+                        return false;
+                    }
+                    seen_regs.push(source_reg.get());
+                    self.get_metadata(source_reg).is_some_and(|source_meta| {
+                        self.metadata_contains_context_pointer_inner(source_meta, seen_regs)
+                    })
+                })
+        })
+    }
+
+    pub(super) fn reject_context_pointer_payload(
+        &self,
+        value_reg: Option<RegId>,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        if value_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .is_some_and(|meta| self.metadata_contains_context_pointer(meta))
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} cannot persist records containing context pointers; project context fields to scalar values first"
+            )));
+        }
+
+        Ok(())
+    }
+
     pub(super) fn materialize_metadata_record_value(
         &mut self,
         meta: &RegMetadata,

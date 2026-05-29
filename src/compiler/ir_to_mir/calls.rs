@@ -44,19 +44,24 @@ impl<'a> HirToMirLowering<'a> {
                 self.needs_ringbuf = true;
                 // Check if we're emitting a record - check both pipeline_input_reg and src_dst
                 // (src_dst is used when record is piped directly: { ... } | emit)
-                let record_fields = self
+                let record_input_reg = self
                     .pipeline_input_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .map(|m| m.record_fields.clone())
-                    .filter(|f| !f.is_empty())
+                    .filter(|reg| {
+                        self.get_metadata(*reg)
+                            .is_some_and(|m| !m.record_fields.is_empty())
+                    })
                     .or_else(|| {
                         self.get_metadata(src_dst)
-                            .map(|m| m.record_fields.clone())
-                            .filter(|f| !f.is_empty())
-                    })
+                            .is_some_and(|m| !m.record_fields.is_empty())
+                            .then_some(src_dst)
+                    });
+                let record_fields = record_input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .map(|m| m.record_fields.clone())
                     .unwrap_or_default();
 
                 if !record_fields.is_empty() {
+                    self.reject_context_pointer_payload(record_input_reg, "emit")?;
                     // Emit a structured record
                     let fields: Vec<RecordFieldDef> = record_fields
                         .iter()
@@ -112,6 +117,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.needs_counter_map = true;
                 let key_reg = self.pipeline_input_reg.unwrap_or(src_dst);
                 let mut key_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                self.reject_context_pointer_payload(Some(key_reg), "count key")?;
                 let key_type = self
                     .get_metadata(key_reg)
                     .and_then(|m| {
@@ -1587,6 +1593,7 @@ impl<'a> HirToMirLowering<'a> {
                         ));
                     }
                     self.validate_generic_map_update_kind(inner_map.kind, &inner_map.name)?;
+                    self.reject_context_pointer_payload(Some(key_reg), "map-put key")?;
                     let key_vreg = self.map_key_vreg_for_named_schema(
                         &inner_map,
                         key_vreg,
@@ -1605,6 +1612,7 @@ impl<'a> HirToMirLowering<'a> {
                         .pipeline_input_reg
                         .or_else(|| src_dst_had_value.then_some(src_dst));
                     let stored_value_vreg = if let Some(value_reg) = value_reg {
+                        self.reject_context_pointer_payload(Some(value_reg), "map-put value")?;
                         self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
                     } else {
                         value_vreg
@@ -1648,6 +1656,7 @@ impl<'a> HirToMirLowering<'a> {
                         )?;
                     } else {
                         self.validate_generic_map_update_kind(map_kind, &map_name)?;
+                        self.reject_context_pointer_payload(Some(key_reg), "map-put key")?;
                         let key_vreg = self.map_key_vreg_for_named_schema(
                             &map_ref,
                             key_vreg,
@@ -1666,6 +1675,7 @@ impl<'a> HirToMirLowering<'a> {
                             .pipeline_input_reg
                             .or_else(|| src_dst_had_value.then_some(src_dst));
                         let stored_value_vreg = if let Some(value_reg) = value_reg {
+                            self.reject_context_pointer_payload(Some(value_reg), "map-put value")?;
                             self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
                         } else {
                             value_vreg
@@ -1739,6 +1749,7 @@ impl<'a> HirToMirLowering<'a> {
                     .pipeline_input_reg
                     .or_else(|| src_dst_had_value.then_some(src_dst));
                 let stored_value_vreg = if let Some(value_reg) = value_reg {
+                    self.reject_context_pointer_payload(Some(value_reg), "map-push value")?;
                     self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
                 } else {
                     value_vreg
@@ -2653,6 +2664,7 @@ impl<'a> HirToMirLowering<'a> {
         value_reg: Option<RegId>,
         context: &str,
     ) -> Result<(), CompileError> {
+        self.reject_context_pointer_payload(value_reg, context)?;
         let value_ty = value_reg
             .and_then(|reg| self.get_metadata(reg))
             .and_then(|m| {
@@ -2750,7 +2762,7 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let (key_ptr_vreg, _key_ty) =
-            self.materialize_map_value_probe_pointer(Some(key_reg), key_vreg, "map-put")?;
+            self.materialize_map_value_probe_pointer(Some(key_reg), key_vreg, "map-put key")?;
         let map_key_ty = if matches!(map_ref.kind, MapKind::SockMap) {
             MirType::U32
         } else {
@@ -2836,6 +2848,7 @@ impl<'a> HirToMirLowering<'a> {
         let object_vreg = self.local_storage_object_vreg(object_vreg, object_reg);
 
         let init_arg = if let Some((init_vreg, init_reg)) = self.named_args.get("init").copied() {
+            self.reject_context_pointer_payload(Some(init_reg), "map-get init value")?;
             let init_vreg = self.materialized_metadata_aggregate_vreg(init_reg, init_vreg)?;
             let (init_ptr_vreg, _) =
                 self.materialize_map_value_probe_pointer(Some(init_reg), init_vreg, "map-get")?;
@@ -3518,6 +3531,7 @@ impl<'a> HirToMirLowering<'a> {
         value_vreg: VReg,
         context: &str,
     ) -> Result<(VReg, MirType), CompileError> {
+        self.reject_context_pointer_payload(value_reg, context)?;
         let value_ty = value_reg
             .and_then(|reg| self.get_metadata(reg))
             .and_then(|meta| {
