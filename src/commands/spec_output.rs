@@ -1816,8 +1816,7 @@ pub(super) fn spec_record(
     let compatibility_requirements = spec.compatibility_requirements();
     let compatibility_minimum_kernel =
         ProgramCompatibilityRequirement::effective_minimum_kernel(&compatibility_requirements);
-    let compatibility_default_test_lane =
-        ProgramCompatibilityRequirement::effective_test_lane(&compatibility_requirements);
+    let compatibility_default_test_lane = spec.compatibility_default_test_lane();
     let requirements = compatibility_requirements
         .iter()
         .map(|requirement| {
