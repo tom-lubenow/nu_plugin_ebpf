@@ -1011,6 +1011,7 @@ impl<'a> HirToMirLowering<'a> {
                 // Initialize empty record fields in metadata
                 let meta = self.get_or_create_metadata(dst);
                 meta.record_fields = Vec::new();
+                meta.constant_value = Some(Value::record(Record::new(), Span::unknown()));
             }
 
             HirLiteral::Range {
