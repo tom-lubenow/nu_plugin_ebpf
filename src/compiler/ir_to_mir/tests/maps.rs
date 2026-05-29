@@ -4785,6 +4785,50 @@ fn test_external_key_schema_materializes_record_key() {
 }
 
 #[test]
+fn test_map_key_type_spec_supports_fixed_array_bytes() {
+    let ty = HirToMirLowering::parse_named_map_key_type_spec("array{bytes:4:2}")
+        .expect("fixed-array bytes map key type should parse");
+
+    assert_eq!(
+        ty,
+        MirType::Array {
+            elem: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 4,
+            }),
+            len: 2,
+        }
+    );
+}
+
+#[test]
+fn test_map_value_type_spec_supports_fixed_array_string_semantics() {
+    let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec("array{string:8:2}")
+        .expect("fixed-array string map value type should parse");
+
+    assert_eq!(
+        ty,
+        MirType::Array {
+            elem: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 24,
+            }),
+            len: 2,
+        }
+    );
+    assert_eq!(
+        semantics,
+        Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(AnnotatedValueSemantics::String {
+                slot_len: 16,
+                content_cap: 8,
+            }),
+            len: 2,
+        })
+    );
+}
+
+#[test]
 fn test_map_define_rejects_conflicting_external_key_schema() {
     let map_define_decl = DeclId::new(41);
     let decl_names = HashMap::from([(map_define_decl, "map-define".to_string())]);
