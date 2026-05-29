@@ -1067,11 +1067,23 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        // Context aliases are metadata-only; the ambient context register is
-        // materialized by context-specific lowering when it is actually used.
         if let Some(mut meta) = self.var_metadata.get(&var_id).cloned()
             && meta.is_context
         {
+            // Inside BPF subfunctions, context-valued user parameters are real
+            // ABI arguments. The top-level ambient context remains metadata-only
+            // so direct projections can lower through context-specific paths.
+            if self.ctx_param.is_none()
+                && let Some(&param_vreg) = self.var_mappings.get(&var_id)
+            {
+                self.emit(MirInst::Copy {
+                    dst: dst_vreg,
+                    src: MirValue::VReg(param_vreg),
+                });
+                if let Some(ty) = self.vreg_type_hints.get(&param_vreg).cloned() {
+                    self.vreg_type_hints.insert(dst_vreg, ty);
+                }
+            }
             meta.source_var.get_or_insert(var_id);
             self.reg_metadata.insert(dst.get(), meta);
             return Ok(());

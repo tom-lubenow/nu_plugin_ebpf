@@ -1345,6 +1345,20 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let call_args: Vec<UserFunctionCallArg> = call_args
+            .into_iter()
+            .map(|arg| {
+                if arg.source_reg.is_some_and(|reg| self.is_context_reg(reg)) {
+                    UserFunctionCallArg {
+                        vreg: self.materialize_context_pointer_arg(),
+                        source_reg: arg.source_reg,
+                    }
+                } else {
+                    arg
+                }
+            })
+            .collect();
+
         let mut arg_seeds: Vec<SubfunctionArgSeed> = call_args
             .iter()
             .map(|arg| self.subfunction_arg_seed_for_value(arg.vreg, arg.source_reg))

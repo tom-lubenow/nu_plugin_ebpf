@@ -8340,6 +8340,48 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-subfn-skb-pull-data-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper user-function packet-bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def pull [skb] {'
+            '    helper-call "bpf_skb_pull_data" $skb 0'
+            '    0'
+            '  }'
+            '  let data = $ctx.data'
+            '  pull $ctx'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "tc-subfn-skb-pull-data-allows-reloaded-data"
+        category: "helper-state"
+        tags: [tc helper user-function packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def pull [skb] {'
+            '    helper-call "bpf_skb_pull_data" $skb 0'
+            '    0'
+            '  }'
+            '  pull $ctx'
+            '  ($ctx.data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-l3-csum-replace-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper checksum packet-bounds reject]

@@ -86,6 +86,124 @@ fn test_user_function_call_lowers_to_subfn() {
 }
 
 #[test]
+fn test_user_function_call_with_context_arg_materializes_subfn_param() {
+    let ctx_var = VarId::new(0);
+    let arg_var = VarId::new(10);
+    let decl_id = DeclId::new(1);
+
+    let user_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: arg_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data()],
+        ast: vec![None],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(2) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 3],
+            ast: vec![None; 3],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(decl_id, user_func);
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Tc, "lo:ingress");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("context argument user function should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Context,
+                    ..
+                }
+            )),
+        "caller should materialize metadata-only context before passing it to a BPF subfunction"
+    );
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("context argument subfunction should compile without uninitialized vregs");
+}
+
+#[test]
 fn test_inlined_user_function_bounded_list_iterate_lowers() {
     let user_func = HirFunction {
         blocks: vec![
