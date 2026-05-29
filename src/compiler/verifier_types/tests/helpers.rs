@@ -239,6 +239,52 @@ fn test_verify_mir_timer_start_rejects_stack_timer_pointer() {
 }
 
 #[test]
+fn test_verify_mir_timer_start_requires_null_checked_map_lookup() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let timer = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: timer,
+        map: timer_map_ref(),
+        key,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerStart as u32,
+            args: vec![
+                MirValue::VReg(timer),
+                MirValue::Const(1000),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(key, MirType::I64);
+    types.insert(timer, bpf_timer_map_ptr_ty());
+    types.insert(helper_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected unchecked map-backed timer pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("may dereference null pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_timer_start_rejects_acquired_task_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

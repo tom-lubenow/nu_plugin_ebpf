@@ -1105,6 +1105,16 @@ impl BpfHelper {
             size_from_arg: None,
         }];
 
+        const TIMER_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 0,
+            op: "helper bpf_timer timer",
+            // The named-shape validator enforces map-backed bpf_timer; this rule
+            // only forces a real, non-null object access for verifier parity.
+            allowed: STACK_MAP_KERNEL,
+            fixed_size: Some(1),
+            size_from_arg: None,
+        }];
+
         const TCP_CHECK_SYNCOOKIE_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
                 arg_idx: 0,
@@ -2614,6 +2624,14 @@ impl BpfHelper {
             },
             BpfHelper::SpinLock | BpfHelper::SpinUnlock => HelperSemantics {
                 ptr_arg_rules: SPIN_LOCK_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::TimerInit
+            | BpfHelper::TimerSetCallback
+            | BpfHelper::TimerStart
+            | BpfHelper::TimerCancel => HelperSemantics {
+                ptr_arg_rules: TIMER_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

@@ -14866,6 +14866,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "timer-start-requires-null-checked-map-lookup"
+        category: "helper-state"
+        tags: [timer map-define nullability reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  helper-call "bpf_timer_start" $entry 1000 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "may dereference null pointer"
+    }
+    {
         name: "timer-init-rejects-mismatched-owner-map"
         category: "helper-state"
         tags: [timer map-define reject]

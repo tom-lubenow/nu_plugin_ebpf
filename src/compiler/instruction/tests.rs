@@ -3525,6 +3525,31 @@ fn test_helper_signature_bpf_spin_lock_helpers() {
 }
 
 #[test]
+fn test_helper_signature_bpf_timer_helpers() {
+    for (helper, min_args, max_args) in [
+        (BpfHelper::TimerInit, 3, 3),
+        (BpfHelper::TimerSetCallback, 2, 2),
+        (BpfHelper::TimerStart, 3, 3),
+        (BpfHelper::TimerCancel, 1, 1),
+    ] {
+        let sig =
+            HelperSignature::for_id(helper as u32).expect("expected bpf timer helper signature");
+        assert_eq!(sig.min_args, min_args);
+        assert_eq!(sig.max_args, max_args);
+        assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+        assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+        let semantics = helper.semantics();
+        assert_eq!(semantics.ptr_arg_rules.len(), 1);
+        assert_eq!(semantics.ptr_arg_rules[0].op, "helper bpf_timer timer");
+        assert_eq!(semantics.ptr_arg_rules[0].fixed_size, Some(1));
+        assert!(semantics.ptr_arg_rules[0].allowed.allow_stack);
+        assert!(semantics.ptr_arg_rules[0].allowed.allow_map);
+        assert!(semantics.ptr_arg_rules[0].allowed.allow_kernel);
+    }
+}
+
+#[test]
 fn test_helper_signature_dynptr_helpers() {
     let from_mem = HelperSignature::for_id(BpfHelper::DynptrFromMem as u32)
         .expect("expected dynptr_from_mem signature");
