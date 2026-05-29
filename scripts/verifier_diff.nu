@@ -10593,6 +10593,46 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sock-ops-store-hdr-opt-rejects-stale-data"
+        category: "helper-state"
+        tags: [sock-ops helper-call hdr-opt packet-bounds reject]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  if ($ctx.op == 15) {'
+            '    let data = $ctx.data'
+            '    let opt = "0123456789abcdef"'
+            '    helper-call "bpf_store_hdr_opt" $ctx $opt 16 0'
+            '    ($data | get 0) | count'
+            '  }'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "sock-ops-store-hdr-opt-allows-reloaded-data"
+        category: "helper-state"
+        tags: [sock-ops helper-call hdr-opt packet-bounds accept]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  if ($ctx.op == 15) {'
+            '    let opt = "0123456789abcdef"'
+            '    helper-call "bpf_store_hdr_opt" $ctx $opt 16 0'
+            '    ($ctx.data | get 0) | count'
+            '  }'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "sock-ops-packet-metadata-requires-op-guard"
         category: "context-policy"
         tags: [sock-ops context packet reject]
