@@ -6065,7 +6065,7 @@ const FIXTURES = [
             '  let put_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
             '  42 | map-put keyed_batches $put_key --kind hash'
             '  let get_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
-            '  let entry = (map-get keyed_batches $get_key --kind hash)'
+            '  let entry = ($get_key | map-get keyed_batches --kind hash)'
             '  if $entry {'
             '    $entry | count'
             '  }'

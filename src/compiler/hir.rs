@@ -432,9 +432,11 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
                     consumer,
                     &tracked_regs,
                 ) {
+                    let mut post_consumer_regs = tracked_regs.clone();
+                    remove_call_consumed_compile_time_regs(&mut post_consumer_regs, *src_dst, args);
                     return !compile_time_value_used_after(
                         &rest[offset.saturating_add(1)..],
-                        &tracked_regs,
+                        &post_consumer_regs,
                         &tracked_vars,
                     );
                 }
@@ -482,6 +484,25 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
             CompileTimeValueFlow::AggregateBuilder,
         )
     })
+}
+
+fn remove_call_consumed_compile_time_regs(
+    regs: &mut HashSet<RegId>,
+    src_dst: RegId,
+    args: &HirCallArgs,
+) {
+    regs.remove(&src_dst);
+    if let Some(reg) = args.pipeline_input {
+        regs.remove(&reg);
+    }
+    for reg in args
+        .positional
+        .iter()
+        .chain(args.rest.iter())
+        .chain(args.named.iter().map(|(_, reg)| reg))
+    {
+        regs.remove(reg);
+    }
 }
 
 fn compile_time_value_consumer_matches(

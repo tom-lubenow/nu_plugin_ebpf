@@ -517,6 +517,69 @@ fn test_list_push_record_item_allowed_for_map_put_key_initializer() {
 }
 
 #[test]
+fn test_list_push_record_item_allowed_for_piped_map_get_key_initializer() {
+    let map_get_decl = DeclId::new(48);
+    let entry_var = VarId::new(77);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(0) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Record { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::String("entry_batches".into()),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::String("hash".into()),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_get_decl,
+        src_dst: RegId::new(0),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            named: vec![(b"kind".to_vec(), RegId::new(3))],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    block.stmts.push(HirStmt::StoreVariable {
+        var_id: entry_var,
+        src: RegId::new(0),
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(map_get_decl, "map-get".to_string())]);
+    infer_hir(&program, &decl_names)
+        .expect("record list items should be allowed for piped fixed-layout map-get keys");
+}
+
+#[test]
 fn test_list_push_record_item_allowed_for_map_push_value_initializer() {
     let map_push_decl = DeclId::new(46);
     let mut func = HirFunction {
