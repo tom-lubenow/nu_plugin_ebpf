@@ -1394,6 +1394,122 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn materialized_record_array_element_value(
+        &mut self,
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<Option<(VReg, MirType, Option<AnnotatedValueSemantics>)>, CompileError> {
+        let new_value_vreg = self.get_vreg(new_value);
+        let should_materialize_record = self
+            .get_metadata(new_value)
+            .and_then(Self::metadata_record_layout)
+            .is_some()
+            || matches!(
+                self.typed_value_runtime_type(new_value, new_value_vreg),
+                Some(MirType::Ptr {
+                    pointee,
+                    address_space: AddressSpace::Stack | AddressSpace::Map,
+                }) if matches!(pointee.as_ref(), MirType::Struct { .. })
+            );
+        if !should_materialize_record {
+            return Ok(None);
+        }
+
+        let element_vreg = self.materialized_metadata_aggregate_vreg(new_value, new_value_vreg)?;
+        let element_runtime_ty = self
+            .vreg_type_hints
+            .get(&element_vreg)
+            .cloned()
+            .or_else(|| self.typed_value_runtime_type(new_value, element_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires type information for the record list element",
+                    path_desc
+                ))
+            })?;
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        } = element_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' requires a materialized record value for the list element",
+                path_desc
+            )));
+        };
+        if !matches!(pointee.as_ref(), MirType::Struct { .. }) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only synthesize fixed record arrays from record values, got {:?}",
+                path_desc, pointee
+            )));
+        }
+
+        let semantics = self
+            .get_metadata(new_value)
+            .and_then(|meta| meta.annotated_semantics.clone());
+        Ok(Some((element_vreg, pointee.as_ref().clone(), semantics)))
+    }
+
+    fn record_list_field_from_terminal_index(
+        &mut self,
+        field_name: String,
+        index: usize,
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<RecordField, CompileError> {
+        if index != 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only create a missing list field at index 0",
+                path_desc
+            )));
+        }
+
+        let Some((element_vreg, element_ty, element_semantics)) =
+            self.materialized_record_array_element_value(new_value, path_desc)?
+        else {
+            return self.record_numeric_list_field_from_terminal_index(
+                field_name, index, new_value, path_desc,
+            );
+        };
+
+        let array_ty = MirType::Array {
+            elem: Box::new(element_ty.clone()),
+            len: 1,
+        };
+        let slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let array_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: array_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            array_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy_with_offsets(array_vreg, 0, element_vreg, 0, element_ty.size())?;
+
+        Ok(RecordField {
+            name: field_name,
+            value_vreg: array_vreg,
+            source_reg: None,
+            stack_offset: None,
+            ty: array_ty,
+            semantics: element_semantics.map(|elem| AnnotatedValueSemantics::FixedArray {
+                elem: Box::new(elem),
+                len: 1,
+            }),
+            is_context: false,
+            root_ctx_field: None,
+        })
+    }
+
     fn record_fixed_record_array_field_from_index_path(
         &mut self,
         field_name: String,
@@ -1584,6 +1700,132 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn replace_fixed_record_array_with_appended_element(
+        &mut self,
+        src_dst: RegId,
+        field_index: usize,
+        existing_field: RecordField,
+        elem_ty: MirType,
+        len: usize,
+        element_vreg: VReg,
+        element_semantics: Option<AnnotatedValueSemantics>,
+        constant_value: Option<Value>,
+        path_desc: &str,
+        base_is_materialized_aggregate: bool,
+    ) -> Result<bool, CompileError> {
+        let new_len = len.checked_add(1).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' fixed-array length overflowed",
+                path_desc
+            ))
+        })?;
+        let array_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: new_len,
+        };
+        let slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let array_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: array_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            array_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy_with_offsets(
+            array_vreg,
+            0,
+            existing_field.value_vreg,
+            0,
+            existing_field.ty.size(),
+        )?;
+        self.emit_ptr_copy_with_offsets(
+            array_vreg,
+            len * elem_ty.size(),
+            element_vreg,
+            0,
+            elem_ty.size(),
+        )?;
+
+        let semantics = match existing_field.semantics.clone() {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                Some(AnnotatedValueSemantics::FixedArray { elem, len: new_len })
+            }
+            _ => element_semantics.map(|elem| AnnotatedValueSemantics::FixedArray {
+                elem: Box::new(elem),
+                len: new_len,
+            }),
+        };
+        let updated_field = RecordField {
+            name: existing_field.name,
+            value_vreg: array_vreg,
+            source_reg: None,
+            stack_offset: existing_field.stack_offset,
+            ty: array_ty,
+            semantics,
+            is_context: false,
+            root_ctx_field: None,
+        };
+
+        self.replace_metadata_record_field(
+            src_dst,
+            field_index,
+            updated_field,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+            "appended",
+        )?;
+        Ok(true)
+    }
+
+    fn lower_metadata_fixed_record_array_append_value(
+        &mut self,
+        src_dst: RegId,
+        field_index: usize,
+        existing_field: RecordField,
+        elem_ty: MirType,
+        len: usize,
+        new_value: RegId,
+        constant_value: Option<Value>,
+        path_desc: &str,
+        base_is_materialized_aggregate: bool,
+    ) -> Result<bool, CompileError> {
+        let Some((element_vreg, new_element_ty, element_semantics)) =
+            self.materialized_record_array_element_value(new_value, path_desc)?
+        else {
+            return Ok(false);
+        };
+
+        if new_element_ty != elem_ty {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only append homogeneous fixed record array elements; appended element layout {:?} does not match existing layout {:?}",
+                path_desc, new_element_ty, elem_ty
+            )));
+        }
+
+        self.replace_fixed_record_array_with_appended_element(
+            src_dst,
+            field_index,
+            existing_field,
+            elem_ty,
+            len,
+            element_vreg,
+            element_semantics,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+        )
+    }
+
     fn lower_metadata_fixed_record_array_append_path(
         &mut self,
         src_dst: RegId,
@@ -1640,80 +1882,18 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
 
-        let new_len = len.checked_add(1).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "cell path update '.{} = ...' fixed-array length overflowed",
-                path_desc
-            ))
-        })?;
-        let array_ty = MirType::Array {
-            elem: Box::new(elem_ty.clone()),
-            len: new_len,
-        };
-        let slot =
-            self.func
-                .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
-        self.record_stack_slot_type(slot, array_ty.clone());
-
-        let array_vreg = self.func.alloc_vreg();
-        self.emit(MirInst::Copy {
-            dst: array_vreg,
-            src: MirValue::StackSlot(slot),
-        });
-        self.vreg_type_hints.insert(
-            array_vreg,
-            MirType::Ptr {
-                pointee: Box::new(array_ty.clone()),
-                address_space: AddressSpace::Stack,
-            },
-        );
-        self.emit_ptr_copy_with_offsets(
-            array_vreg,
-            0,
-            existing_field.value_vreg,
-            0,
-            existing_field.ty.size(),
-        )?;
-        self.emit_ptr_copy_with_offsets(
-            array_vreg,
-            len * elem_ty.size(),
-            element_vreg,
-            0,
-            elem_ty.size(),
-        )?;
-
-        let semantics = match existing_field.semantics.clone() {
-            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
-                Some(AnnotatedValueSemantics::FixedArray { elem, len: new_len })
-            }
-            _ => materialized_element_meta.annotated_semantics.map(|elem| {
-                AnnotatedValueSemantics::FixedArray {
-                    elem: Box::new(elem),
-                    len: new_len,
-                }
-            }),
-        };
-        let updated_field = RecordField {
-            name: existing_field.name,
-            value_vreg: array_vreg,
-            source_reg: None,
-            stack_offset: existing_field.stack_offset,
-            ty: array_ty,
-            semantics,
-            is_context: false,
-            root_ctx_field: None,
-        };
-
-        self.replace_metadata_record_field(
+        self.replace_fixed_record_array_with_appended_element(
             src_dst,
             field_index,
-            updated_field,
+            existing_field,
+            elem_ty,
+            len,
+            element_vreg,
+            materialized_element_meta.annotated_semantics,
             constant_value,
             path_desc,
             base_is_materialized_aggregate,
-            "appended",
-        )?;
-        Ok(true)
+        )
     }
 
     fn lower_metadata_existing_fixed_record_array_path_creation(
@@ -1731,11 +1911,7 @@ impl<'a> HirToMirLowering<'a> {
             PathMember::Int {
                 val: element_index, ..
             },
-            PathMember::String {
-                val: new_field_name,
-                ..
-            },
-            ..,
+            tail @ ..,
         ] = path_members
         else {
             return Ok(false);
@@ -1755,21 +1931,45 @@ impl<'a> HirToMirLowering<'a> {
         let len = *len;
 
         if *element_index == len {
-            return self.lower_metadata_fixed_record_array_append_path(
-                src_dst,
-                field_index,
-                existing_field,
-                elem_ty,
-                len,
-                path_members,
-                new_value,
-                constant_value,
-                path_desc,
-                base_is_materialized_aggregate,
-            );
+            if tail.is_empty() {
+                return self.lower_metadata_fixed_record_array_append_value(
+                    src_dst,
+                    field_index,
+                    existing_field,
+                    elem_ty,
+                    len,
+                    new_value,
+                    constant_value,
+                    path_desc,
+                    base_is_materialized_aggregate,
+                );
+            }
+            if matches!(tail.first(), Some(PathMember::String { .. })) {
+                return self.lower_metadata_fixed_record_array_append_path(
+                    src_dst,
+                    field_index,
+                    existing_field,
+                    elem_ty,
+                    len,
+                    path_members,
+                    new_value,
+                    constant_value,
+                    path_desc,
+                    base_is_materialized_aggregate,
+                );
+            }
+            return Ok(false);
         }
 
         let MirType::Struct { fields, .. } = &elem_ty else {
+            return Ok(false);
+        };
+
+        let Some(PathMember::String {
+            val: new_field_name,
+            ..
+        }) = tail.first()
+        else {
             return Ok(false);
         };
 
@@ -1798,7 +1998,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let new_field = self.record_field_from_path_members(
             new_field_name.clone(),
-            &path_members[3..],
+            &tail[1..],
             new_value,
             path_desc,
         )?;
@@ -1894,9 +2094,7 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return match next_member {
                 PathMember::Int { val, .. } if tail.is_empty() => self
-                    .record_numeric_list_field_from_terminal_index(
-                        field_name, *val, new_value, path_desc,
-                    ),
+                    .record_list_field_from_terminal_index(field_name, *val, new_value, path_desc),
                 PathMember::Int { val, .. } => self
                     .record_fixed_record_array_field_from_index_path(
                         field_name, *val, tail, new_value, path_desc,

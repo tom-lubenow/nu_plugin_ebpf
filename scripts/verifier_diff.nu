@@ -19721,6 +19721,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-new-record-list-element-local"
+        category: "language-core"
+        tags: [aggregate record list upsert local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0 = { b: 3, c: 4 }'
+            '  $rec.a.0.b + $rec.a.0.c'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-upsert-record-list-new-element-field-local"
         category: "language-core"
         tags: [aggregate record list upsert local]
@@ -19753,6 +19768,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-record-list-element-append-local"
+        category: "language-core"
+        tags: [aggregate record list upsert append local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0 = { b: 3, c: 4 }'
+            '  $rec.a.1 = { b: 7, c: 8 }'
+            '  $rec.a.0.b + $rec.a.1.c'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-upsert-record-list-heterogeneous-append-reject"
         category: "language-core"
         tags: [aggregate record list upsert append reject]
@@ -19763,6 +19794,23 @@ const FIXTURES = [
             '  $rec.a.0.b = 3'
             '  $rec.a.1.c = 7'
             '  $rec.a.1.c'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "can only append homogeneous fixed record array elements"
+    }
+    {
+        name: "core-record-upsert-record-list-element-append-mismatch-reject"
+        category: "language-core"
+        tags: [aggregate record list upsert append reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0 = { b: 3 }'
+            '  $rec.a.1 = { b: 7, c: 8 }'
+            '  $rec.a.1.b'
             '}'
         ]
         local: "reject"
@@ -20096,6 +20144,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-record-upsert-new-record-list-element-return"
+        category: "language-core"
+        tags: [user-function aggregate record list upsert]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = {}'
+            '    $rec.a.0 = { b: 3, c: 4 }'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.a.0.b + $out.a.0.c'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-user-function-record-upsert-record-list-new-element-field-return"
         category: "language-core"
         tags: [user-function aggregate record list upsert]
@@ -20110,6 +20177,26 @@ const FIXTURES = [
             '  }'
             '  let out = (make)'
             '  $out.a.0.b + $out.a.0.c'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-upsert-record-list-element-append-return"
+        category: "language-core"
+        tags: [user-function aggregate record list upsert append]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = {}'
+            '    $rec.a.0 = { b: 3, c: 4 }'
+            '    $rec.a.1 = { b: 7, c: 8 }'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.a.0.c + $out.a.1.b'
             '}'
         ]
         local: "accept"
