@@ -974,7 +974,9 @@ Output commands:
 Globals:
   Prefer leading annotated `mut` bindings for small private program state:
     {|ctx| mut state: int = 0; $state = ($state + 1); $state | count }
-  The initializer must currently be a compile-time constant.
+  The initializer must currently be a compile-time constant; earlier leading
+  immutable `let` constants may be referenced from later annotated `mut`
+  initializers.
 
 Aggregation commands:
   count             - Count occurrences by key

@@ -7004,9 +7004,9 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "annotated-mut-record-array-bound-spread-rejects-nonconstant"
+        name: "annotated-mut-record-array-bound-spread-initializer"
         category: "globals"
-        tags: [globals records arrays list-spread reject]
+        tags: [globals records arrays list-spread accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -7016,9 +7016,8 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
-        kernel: "reject"
-        error_contains: "Unsupported annotated mutable global initializer"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "annotated-mut-top-level-record-omission-rejected-by-nushell-parser"

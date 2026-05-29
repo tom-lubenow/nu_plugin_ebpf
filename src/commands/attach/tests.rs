@@ -327,6 +327,96 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_spread_initiali
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_prior_constant_let_spread_initializer() {
+    let source = "{|| let tail = [{pid: 9, cpu: 3}]; mut entries: list<record<pid: int cpu: int>> = [{pid: 7, cpu: 2}, ...$tail]; $entries }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant let-bound spread initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].var_id, VarId::new(11));
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            assert_eq!(vals.len(), 2);
+            let Value::Record { val, .. } = &vals[1] else {
+                panic!(
+                    "expected second array entry to be a record, got {:?}",
+                    vals[1]
+                );
+            };
+            assert_eq!(
+                val.get("pid").and_then(|value| value.as_int().ok()),
+                Some(9)
+            );
+            assert_eq!(
+                val.get("cpu").and_then(|value| value.as_int().ok()),
+                Some(3)
+            );
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_prior_mutable_spread_initializer_binding() {
+    let source = "{|| mut tail = [2, 3]; mut vals: list<int> = [1, ...$tail]; $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("mutable prior bindings should not be constant capture sources");
+
+    assert_eq!(
+        err.to_string(),
+        "Unsupported annotated mutable global initializer"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_array_initializer() {
     let source = "{|| mut entries: list<record<pid: int cpu: int>> = [{pid: 7, cpu: 2} {pid: 9, cpu: 3}]; $entries }";
     let ir_block = IrBlock {

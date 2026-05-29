@@ -256,13 +256,22 @@ fn eval_supported_constant_value(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
 ) -> Result<Value, LabeledError> {
-    eval_supported_constant_value_with_input(working_set, expr, None)
+    eval_supported_constant_value_with_env(working_set, expr, &HashMap::new())
+}
+
+fn eval_supported_constant_value_with_env(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Value, LabeledError> {
+    eval_supported_constant_value_with_input(working_set, expr, None, env)
 }
 
 fn eval_supported_constant_value_with_input(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
     input: Option<Value>,
+    env: &HashMap<nu_protocol::VarId, Value>,
 ) -> Result<Value, LabeledError> {
     if let Expr::GlobPattern(token, _) = &expr.expr {
         return Ok(eval_supported_constant_bare_token(token, expr.span));
@@ -279,14 +288,27 @@ fn eval_supported_constant_value_with_input(
     }
 
     match &expr.expr {
-        Expr::Keyword(kw) => eval_supported_constant_value_with_input(working_set, &kw.expr, input),
+        Expr::Keyword(kw) => {
+            eval_supported_constant_value_with_input(working_set, &kw.expr, input, env)
+        }
         Expr::Subexpression(block_id) | Expr::Block(block_id) => {
             let block = working_set.get_block(*block_id);
-            eval_supported_constant_block(working_set, block, input, expr.span)
+            eval_supported_constant_block(working_set, block, input, env, expr.span)
         }
+        Expr::Var(var_id) => env.get(var_id).cloned().ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label("Not a compile-time constant binding.", expr.span)
+                .with_help(
+                    "Only earlier leading `let` declarations with supported constant initializers can be referenced by annotated `mut` global initializers",
+                )
+        }),
         Expr::FullCellPath(full_cell_path) => {
-            let value =
-                eval_supported_constant_value_with_input(working_set, &full_cell_path.head, input)?;
+            let value = eval_supported_constant_value_with_input(
+                working_set,
+                &full_cell_path.head,
+                input,
+                env,
+            )?;
             value
                 .follow_cell_path(&full_cell_path.tail)
                 .map(|projected| projected.into_owned())
@@ -301,13 +323,15 @@ fn eval_supported_constant_value_with_input(
                 match item {
                     RecordItem::Pair(key_expr, value_expr) => {
                         let key = constant_record_key(working_set, key_expr)?;
-                        let value =
-                            eval_supported_constant_value_with_input(working_set, value_expr, None)?;
+                        let value = eval_supported_constant_value_with_input(
+                            working_set, value_expr, None, env,
+                        )?;
                         record.push(key, value);
                     }
                     RecordItem::Spread(_, spread_expr) => {
-                        let value =
-                            eval_supported_constant_value_with_input(working_set, spread_expr, None)?;
+                        let value = eval_supported_constant_value_with_input(
+                            working_set, spread_expr, None, env,
+                        )?;
                         let Value::Record {
                             val: spread_record, ..
                         } = value
@@ -339,6 +363,7 @@ fn eval_supported_constant_value_with_input(
                             working_set,
                             item_expr,
                             None,
+                            env,
                         )?);
                     }
                     ListItem::Spread(_, spread_expr) => {
@@ -346,6 +371,7 @@ fn eval_supported_constant_value_with_input(
                             working_set,
                             spread_expr,
                             None,
+                            env,
                         )?;
                         let Value::List {
                             vals: spread_values, ..
@@ -367,9 +393,9 @@ fn eval_supported_constant_value_with_input(
             }
             Ok(Value::list(values, expr.span))
         }
-        Expr::Call(call) => eval_supported_constant_call(working_set, call, input, expr.span),
+        Expr::Call(call) => eval_supported_constant_call(working_set, call, input, env, expr.span),
         Expr::ExternalCall(head, args) => {
-            eval_supported_constant_external_call(working_set, head, args, input, expr.span)
+            eval_supported_constant_external_call(working_set, head, args, input, env, expr.span)
         }
         _ => Err(LabeledError::new("Unsupported annotated mutable global initializer")
             .with_label("Not a constant.", expr.span)
@@ -395,6 +421,7 @@ fn eval_supported_constant_block(
     working_set: &StateWorkingSet,
     block: &nu_protocol::ast::Block,
     input: Option<Value>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let mut current = input;
@@ -415,6 +442,7 @@ fn eval_supported_constant_block(
                 working_set,
                 &element.expr,
                 current,
+                env,
             )?);
         }
     }
@@ -479,6 +507,7 @@ fn eval_supported_constant_call(
     working_set: &StateWorkingSet,
     call: &nu_protocol::ast::Call,
     input: Option<Value>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let cmd_name = working_set.get_decl(call.decl_id).name();
@@ -496,6 +525,7 @@ fn eval_supported_constant_call(
             cmd_name,
             input,
             call.positional_nth(0),
+            env,
             span,
         ),
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
@@ -504,6 +534,7 @@ fn eval_supported_constant_call(
             input,
             call.positional_nth(0),
             call.positional_nth(1),
+            env,
             span,
         ),
         _ => Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -524,6 +555,7 @@ fn eval_supported_constant_external_call(
     head: &nu_protocol::ast::Expression,
     args: &[ExternalArgument],
     input: Option<Value>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let cmd_name = match &head.expr {
@@ -579,6 +611,7 @@ fn eval_supported_constant_external_call(
                 cmd_name,
                 input,
                 Some(item_expr),
+                env,
                 span,
             )
         }
@@ -613,6 +646,7 @@ fn eval_supported_constant_external_call(
                 input,
                 Some(path_expr),
                 Some(new_value_expr),
+                env,
                 span,
             )
         }
@@ -664,6 +698,7 @@ fn eval_supported_constant_list_mutation_call(
     cmd_name: &str,
     input: Option<Value>,
     item_expr: Option<&nu_protocol::ast::Expression>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let value = input.ok_or_else(|| {
@@ -678,7 +713,7 @@ fn eval_supported_constant_list_mutation_call(
         LabeledError::new("Unsupported annotated mutable global initializer")
             .with_label(format!("`{cmd_name}` requires an item argument"), span)
     })?;
-    let item = eval_supported_constant_value(working_set, item_expr)?;
+    let item = eval_supported_constant_value_with_env(working_set, item_expr, env)?;
 
     let value_span = value.span();
     let Value::List { vals, .. } = value else {
@@ -713,6 +748,7 @@ fn eval_supported_constant_path_mutation_call(
     input: Option<Value>,
     path_expr: Option<&nu_protocol::ast::Expression>,
     new_value_expr: Option<&nu_protocol::ast::Expression>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let mut value = input.ok_or_else(|| {
@@ -733,7 +769,7 @@ fn eval_supported_constant_path_mutation_call(
             .with_label(format!("`{cmd_name}` requires a replacement value"), span)
     })?;
     let path = eval_supported_constant_cell_path(working_set, path_expr)?;
-    let new_value = eval_supported_constant_value(working_set, new_value_expr)?;
+    let new_value = eval_supported_constant_value_with_env(working_set, new_value_expr, env)?;
 
     match cmd_name {
         "insert" => value
@@ -820,6 +856,7 @@ fn parse_leading_variable_declarations(
 
     let closure_block = working_set.get_block(closure_block_id);
     let mut declarations = Vec::new();
+    let mut constant_env: HashMap<nu_protocol::VarId, Value> = HashMap::new();
     let mut seen_non_declaration = false;
 
     for pipeline in &closure_block.pipelines {
@@ -843,6 +880,13 @@ fn parse_leading_variable_declarations(
         })?;
         let declared_type = (var_expr.ty != Type::Any).then(|| var_expr.ty.clone());
         let mutable = cmd_name == "mut";
+        let declared_var_id = match &var_expr.expr {
+            Expr::VarDecl(var_id) | Expr::Var(var_id) => Some(*var_id),
+            _ => None,
+        };
+        let init_expr = call
+            .positional_nth(1)
+            .map(|expr| expr.as_keyword().unwrap_or(expr));
 
         if seen_non_declaration && mutable && declared_type.is_some() {
             return Err(
@@ -858,17 +902,26 @@ fn parse_leading_variable_declarations(
         }
 
         let initializer = if mutable && declared_type.is_some() {
-            let init_expr = call
-                .positional_nth(1)
-                .map(|expr| expr.as_keyword().unwrap_or(expr))
-                .ok_or_else(|| {
-                    LabeledError::new("Failed to parse annotated mutable declaration")
-                        .with_label("Missing initializer", first.expr.span)
-                })?;
-            Some(eval_supported_constant_value(&working_set, init_expr)?)
+            let init_expr = init_expr.ok_or_else(|| {
+                LabeledError::new("Failed to parse annotated mutable declaration")
+                    .with_label("Missing initializer", first.expr.span)
+            })?;
+            Some(eval_supported_constant_value_with_env(
+                &working_set,
+                init_expr,
+                &constant_env,
+            )?)
         } else {
             None
         };
+
+        if !mutable
+            && let (Some(var_id), Some(init_expr)) = (declared_var_id, init_expr)
+            && let Ok(value) =
+                eval_supported_constant_value_with_env(&working_set, init_expr, &constant_env)
+        {
+            constant_env.insert(var_id, value);
+        }
 
         declarations.push(LeadingVariableDeclaration {
             mutable,
