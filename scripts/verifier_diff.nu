@@ -17807,6 +17807,81 @@ const FIXTURES = [
         error_contains: "cannot use context pointers as values"
     }
     {
+        name: "core-context-map-get-rejects-pointer-key"
+        category: "language-core"
+        tags: [context map reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | map-get seen --kind hash'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-map-delete-rejects-pointer-key"
+        category: "language-core"
+        tags: [context map reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | map-delete seen --kind hash'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-map-contains-rejects-pointer-key"
+        category: "language-core"
+        tags: [context map reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | map-contains seen --kind hash'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-record-context-map-get-rejects-pointer-key"
+        category: "language-core"
+        tags: [record context map reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | map-get seen --kind hash'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-record-context-cgroup-array-contains-rejects-pointer-index"
+        category: "language-core"
+        tags: [record context map cgroup-array reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | map-contains cgroups --kind cgroup-array'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
         name: "core-record-context-map-put-rejects-pointer-escape"
         category: "language-core"
         tags: [record context map reject]

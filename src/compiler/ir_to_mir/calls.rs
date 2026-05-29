@@ -2532,6 +2532,9 @@ impl<'a> HirToMirLowering<'a> {
         key_reg: Option<RegId>,
         context: &str,
     ) -> Result<VReg, CompileError> {
+        let key_context = format!("{context} key");
+        self.reject_context_pointer_payload(key_reg, &key_context)?;
+
         let Some(key_ty) = self.named_map_key_type(map_ref).cloned() else {
             return Ok(key_vreg);
         };
@@ -3490,6 +3493,13 @@ impl<'a> HirToMirLowering<'a> {
                     .into(),
             ));
         }
+        let index_reg = self
+            .positional_args
+            .get(1)
+            .map(|(_, reg)| *reg)
+            .or(self.pipeline_input_reg)
+            .or_else(|| src_dst_had_value.then_some(src_dst));
+        self.reject_context_pointer_payload(index_reg, "map-contains --kind cgroup-array index")?;
         let pipeline_index = match (self.pipeline_input, self.pipeline_input_reg) {
             (Some(vreg), Some(reg)) if !self.is_context_reg(reg) => Some(vreg),
             (Some(vreg), None) => Some(vreg),
