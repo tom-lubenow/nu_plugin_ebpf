@@ -6055,6 +6055,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-array-record-key-put-get"
+        category: "maps"
+        tags: [maps map-define records arrays map-put map-get accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define keyed_batches --kind hash --key-type "array{record{pid:int,cpu:int}:2}" --value-type int'
+            '  let put_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
+            '  42 | map-put keyed_batches $put_key --kind hash'
+            '  let get_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
+            '  let entry = (map-get keyed_batches $get_key --kind hash)'
+            '  if $entry {'
+            '    $entry | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "annotated-mut-record-alignment"
         category: "globals"
         tags: [globals records alignment accept]

@@ -2530,20 +2530,28 @@ impl<'a> HirToMirLowering<'a> {
         let key_context = format!("{context} key");
         self.reject_context_pointer_payload(key_reg, &key_context)?;
 
+        let mut observed_ty = None;
+        let mut observed_fixed_aggregate = None;
+        if let Some(meta) = key_reg.and_then(|reg| self.get_metadata(reg)) {
+            let fixed_array = Self::metadata_fixed_array_layout(meta)?;
+            let record = Self::metadata_record_layout(meta);
+            observed_fixed_aggregate = fixed_array.clone().or_else(|| record.clone());
+            observed_ty = fixed_array
+                .or_else(|| meta.field_type.clone())
+                .or_else(|| record.clone());
+        }
+        let observed_ty = observed_ty.or_else(|| self.vreg_type_hints.get(&key_vreg).cloned());
+
         let Some(key_ty) = self.named_map_key_type(map_ref).cloned() else {
+            if observed_fixed_aggregate.is_some() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} aggregate key for '{}' requires a prior map-define --key-type declaration",
+                    map_ref.name
+                )));
+            }
             return Ok(key_vreg);
         };
         self.validate_declared_map_key_type(map_ref, &key_ty, context)?;
-
-        let observed_ty = key_reg
-            .and_then(|reg| {
-                self.get_metadata(reg).and_then(|m| {
-                    m.field_type
-                        .clone()
-                        .or_else(|| Self::metadata_record_layout(m))
-                })
-            })
-            .or_else(|| self.vreg_type_hints.get(&key_vreg).cloned());
 
         match key_ty {
             MirType::Array { .. } | MirType::Struct { .. } => match observed_ty.as_ref() {

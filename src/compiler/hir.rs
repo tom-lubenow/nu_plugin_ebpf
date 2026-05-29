@@ -292,7 +292,11 @@ pub enum FixedLayoutValueConsumer {
     TypedGlobalDefine,
     GlobalSet,
     MapPut,
+    MapPutKey,
     MapPush,
+    MapGetKey,
+    MapDeleteKey,
+    MapContainsProbe,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -421,16 +425,13 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
                 src_dst,
                 args,
             } => {
-                if args
-                    .pipeline_input
-                    .is_some_and(|reg| tracked_regs.contains(&reg))
-                    && !call_args_non_pipeline_touch_compile_time_value(args, &tracked_regs)
-                    && compile_time_value_consumer_matches(
-                        decl_names.get(decl_id).map(String::as_str),
-                        args,
-                        consumer,
-                    )
-                {
+                if compile_time_value_consumer_matches(
+                    decl_names.get(decl_id).map(String::as_str),
+                    *src_dst,
+                    args,
+                    consumer,
+                    &tracked_regs,
+                ) {
                     return !compile_time_value_used_after(
                         &rest[offset.saturating_add(1)..],
                         &tracked_regs,
@@ -464,7 +465,11 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::TypedGlobalDefine,
         FixedLayoutValueConsumer::GlobalSet,
         FixedLayoutValueConsumer::MapPut,
+        FixedLayoutValueConsumer::MapPutKey,
         FixedLayoutValueConsumer::MapPush,
+        FixedLayoutValueConsumer::MapGetKey,
+        FixedLayoutValueConsumer::MapDeleteKey,
+        FixedLayoutValueConsumer::MapContainsProbe,
     ]
     .into_iter()
     .any(|consumer| {
@@ -481,12 +486,15 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
 
 fn compile_time_value_consumer_matches(
     decl_name: Option<&str>,
+    src_dst: RegId,
     args: &HirCallArgs,
     consumer: FixedLayoutValueConsumer,
+    tracked_regs: &HashSet<RegId>,
 ) -> bool {
     match consumer {
         FixedLayoutValueConsumer::TypedGlobalDefine => {
             decl_name == Some("global-define")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args
                     .named
                     .iter()
@@ -495,6 +503,7 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::GlobalSet => {
             decl_name == Some("global-set")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args.named.is_empty()
@@ -503,7 +512,19 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::MapPut => {
             decl_name == Some("map-put")
-                && args.pipeline_input.is_some()
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 2
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"kind" | b"flags"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MapPutKey => {
+            decl_name == Some("map-put")
+                && call_args_tracked_only_in_positional(src_dst, args, tracked_regs, 1)
                 && args.positional.len() == 2
                 && args.rest.is_empty()
                 && args
@@ -515,7 +536,7 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::MapPush => {
             decl_name == Some("map-push")
-                && args.pipeline_input.is_some()
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args
@@ -525,7 +546,83 @@ fn compile_time_value_consumer_matches(
                 && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
+        FixedLayoutValueConsumer::MapGetKey => {
+            decl_name == Some("map-get")
+                && call_args_tracked_only_in_pipeline_or_positional(src_dst, args, tracked_regs, 1)
+                && matches!(args.positional.len(), 1 | 2)
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"kind"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MapDeleteKey => {
+            decl_name == Some("map-delete")
+                && call_args_tracked_only_in_pipeline_or_positional(src_dst, args, tracked_regs, 1)
+                && matches!(args.positional.len(), 1 | 2)
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"kind"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MapContainsProbe => {
+            decl_name == Some("map-contains")
+                && call_args_tracked_only_in_pipeline_or_positional(src_dst, args, tracked_regs, 1)
+                && matches!(args.positional.len(), 1 | 2)
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"kind"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
     }
+}
+
+fn call_args_tracked_only_in_pipeline(
+    src_dst: RegId,
+    args: &HirCallArgs,
+    regs: &HashSet<RegId>,
+) -> bool {
+    (args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
+        || (args.pipeline_input.is_none() && regs.contains(&src_dst)))
+        && !call_args_non_pipeline_touch_compile_time_value(args, regs)
+}
+
+fn call_args_tracked_only_in_positional(
+    src_dst: RegId,
+    args: &HirCallArgs,
+    regs: &HashSet<RegId>,
+    index: usize,
+) -> bool {
+    args.positional
+        .get(index)
+        .is_some_and(|reg| regs.contains(reg))
+        && !args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
+        && !regs.contains(&src_dst)
+        && !args
+            .positional
+            .iter()
+            .enumerate()
+            .any(|(arg_index, reg)| arg_index != index && regs.contains(reg))
+        && !args.rest.iter().any(|reg| regs.contains(reg))
+        && !args.named.iter().any(|(_, reg)| regs.contains(reg))
+}
+
+fn call_args_tracked_only_in_pipeline_or_positional(
+    src_dst: RegId,
+    args: &HirCallArgs,
+    regs: &HashSet<RegId>,
+    index: usize,
+) -> bool {
+    call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        || call_args_tracked_only_in_positional(src_dst, args, regs, index)
 }
 
 fn call_args_non_pipeline_touch_compile_time_value(

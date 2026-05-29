@@ -789,7 +789,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(
-                    "fixed-layout global list and array initializers require compile-time constant list items"
+                    "fixed-layout list and array initializers require compile-time constant list items"
                         .into(),
                 ));
             }
@@ -822,7 +822,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(
-                    "fixed-layout global list and array spread initializers require compile-time constant lists"
+                    "fixed-layout list and array spread initializers require compile-time constant lists"
                         .into(),
                 ));
             }

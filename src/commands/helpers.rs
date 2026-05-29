@@ -408,6 +408,9 @@ records.
 Source-level `record{...}` specs use natural field alignment and aligned array
 stride; padding is zero-filled by typed initializers and hidden from emitted
 BTF members.
+Declared aggregate map keys accept metadata-built fixed records and fixed
+arrays, including source-built arrays of records, when the key matches
+`--key-type`.
 Verifier-managed fields are checked against kernel layout rules: `bpf_spin_lock`
 must be a single top-level 4-byte-aligned field in a hash or array map, and
 `bpf_timer` must be a single 8-byte-aligned field in a hash, array, or lru-hash
