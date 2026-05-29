@@ -6164,6 +6164,39 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-list-int-initializer"
+        category: "globals"
+        tags: [globals list global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [11 22] | global-define --type "list:int:4" samples'
+            '  let samples = (global-get samples)'
+            '  ($samples | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-bound-list-int-initializer"
+        category: "globals"
+        tags: [globals list global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let initial = [11 22]'
+            '  $initial | global-define --type "list:int:4" samples'
+            '  let samples = (global-get samples)'
+            '  ($samples | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-empty-binary-without-type-rejects"
         category: "globals"
         tags: [globals binary global-define reject]
