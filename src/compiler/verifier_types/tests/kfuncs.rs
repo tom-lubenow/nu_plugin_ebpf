@@ -14951,6 +14951,157 @@ fn test_kfunc_dynptr_slice_requires_constant_size_arg() {
     );
 }
 
+fn make_xdp_metadata_kfunc_verify_function(
+    kfunc: &str,
+    outputs: &[(usize, MirType)],
+    packet_output_idx: Option<usize>,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let output_vregs = (0..outputs.len())
+        .map(|_| func.alloc_vreg())
+        .collect::<Vec<_>>();
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    for (idx, (output, (size, _))) in output_vregs.iter().zip(outputs.iter()).enumerate() {
+        if packet_output_idx == Some(idx) {
+            func.block_mut(entry)
+                .instructions
+                .push(MirInst::LoadCtxField {
+                    dst: *output,
+                    field: CtxField::Data,
+                    slot: None,
+                });
+        } else {
+            let slot = func.alloc_stack_slot(*size, 8, StackSlotKind::StringBuffer);
+            func.block_mut(entry).instructions.push(MirInst::Copy {
+                dst: *output,
+                src: MirValue::StackSlot(slot),
+            });
+        }
+    }
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: kfunc.to_string(),
+        btf_id: None,
+        args: std::iter::once(ctx)
+            .chain(output_vregs.iter().copied())
+            .collect(),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    for (idx, (output, (_, pointee))) in output_vregs.iter().zip(outputs.iter()).enumerate() {
+        types.insert(
+            *output,
+            MirType::Ptr {
+                pointee: Box::new(if packet_output_idx == Some(idx) {
+                    MirType::U8
+                } else {
+                    pointee.clone()
+                }),
+                address_space: if packet_output_idx == Some(idx) {
+                    AddressSpace::Packet
+                } else {
+                    AddressSpace::Stack
+                },
+            },
+        );
+    }
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
+fn assert_xdp_metadata_kfunc_accepts_stack_outputs(kfunc: &str, outputs: &[(usize, MirType)]) {
+    let (func, types) = make_xdp_metadata_kfunc_verify_function(kfunc, outputs, None);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .unwrap_or_else(|err| panic!("expected {kfunc} to accept stack output buffers: {err:?}"));
+}
+
+fn assert_xdp_metadata_kfunc_rejects_packet_output(kfunc: &str, outputs: &[(usize, MirType)]) {
+    for packet_idx in 0..outputs.len() {
+        let (func, types) =
+            make_xdp_metadata_kfunc_verify_function(kfunc, outputs, Some(packet_idx));
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let err = match verify_mir_for_probe_context(&func, &types, &probe_ctx) {
+            Ok(()) => panic!("expected {kfunc} output {packet_idx} to reject packet buffer"),
+            Err(err) => err,
+        };
+        assert!(
+            err.iter().any(|e| e.message.contains("got Packet")),
+            "unexpected errors for {kfunc} output {packet_idx}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_xdp_metadata_rx_timestamp_accepts_stack_output_buffer() {
+    assert_xdp_metadata_kfunc_accepts_stack_outputs(
+        "bpf_xdp_metadata_rx_timestamp",
+        &[(8, MirType::U64)],
+    );
+}
+
+#[test]
+fn test_xdp_metadata_rx_timestamp_rejects_packet_output_buffer() {
+    assert_xdp_metadata_kfunc_rejects_packet_output(
+        "bpf_xdp_metadata_rx_timestamp",
+        &[(8, MirType::U64)],
+    );
+}
+
+#[test]
+fn test_xdp_metadata_rx_hash_accepts_stack_output_buffers() {
+    assert_xdp_metadata_kfunc_accepts_stack_outputs(
+        "bpf_xdp_metadata_rx_hash",
+        &[(4, MirType::U32), (4, MirType::U32)],
+    );
+}
+
+#[test]
+fn test_xdp_metadata_rx_hash_rejects_packet_output_buffers() {
+    assert_xdp_metadata_kfunc_rejects_packet_output(
+        "bpf_xdp_metadata_rx_hash",
+        &[(4, MirType::U32), (4, MirType::U32)],
+    );
+}
+
+#[test]
+fn test_xdp_metadata_rx_vlan_tag_accepts_stack_output_buffers() {
+    assert_xdp_metadata_kfunc_accepts_stack_outputs(
+        "bpf_xdp_metadata_rx_vlan_tag",
+        &[(2, MirType::U16), (2, MirType::U16)],
+    );
+}
+
+#[test]
+fn test_xdp_metadata_rx_vlan_tag_rejects_packet_output_buffers() {
+    assert_xdp_metadata_kfunc_rejects_packet_output(
+        "bpf_xdp_metadata_rx_vlan_tag",
+        &[(2, MirType::U16), (2, MirType::U16)],
+    );
+}
+
 fn make_xdp_get_xfrm_state_verify_function(
     opts_size: i64,
     buffer_size: usize,
