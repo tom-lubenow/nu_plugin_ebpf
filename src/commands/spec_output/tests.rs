@@ -5040,6 +5040,76 @@ fn test_context_write_records_include_packet_field_metadata() {
 }
 
 #[test]
+fn test_context_write_records_include_store_shape_metadata() {
+    let sock_ops =
+        ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
+    let sock_ops_writes = spec_context_writes(&sock_ops);
+    let reply = context_write(&sock_ops_writes, "reply");
+    assert_eq!(reply.direct_store_offset, Some(4));
+    assert_eq!(reply.indexed_store_base_offset, None);
+    assert_eq!(reply.transformed_store_offset, None);
+
+    let replylong = context_write(&sock_ops_writes, "replylong");
+    assert_eq!(replylong.direct_store_offset, None);
+    assert_eq!(replylong.indexed_store_base_offset, Some(4));
+    assert_eq!(replylong.indexed_store_count, Some(4));
+    assert_eq!(replylong.indexed_store_convert_to_big_endian, Some(false));
+    assert_eq!(replylong.transformed_store_offset, None);
+
+    let tc_action =
+        ProgramSpec::parse("tc_action:diff-action").expect("tc_action spec should parse");
+    let tc_action_writes = spec_context_writes(&tc_action);
+    let mark = context_write(&tc_action_writes, "mark");
+    assert_eq!(mark.direct_store_offset, Some(8));
+    let cb = context_write(&tc_action_writes, "cb");
+    assert_eq!(cb.indexed_store_base_offset, Some(48));
+    assert_eq!(cb.indexed_store_count, Some(5));
+    assert_eq!(cb.indexed_store_convert_to_big_endian, Some(false));
+
+    let connect4 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect4")
+        .expect("cgroup_sock_addr connect4 spec should parse");
+    let connect4_writes = spec_context_writes(&connect4);
+    let remote_ip4 = context_write(&connect4_writes, "remote_ip4");
+    assert_eq!(remote_ip4.transformed_store_offset, Some(4));
+    assert_eq!(
+        remote_ip4.transformed_store_transform,
+        Some("host-u32-to-big-endian")
+    );
+    let remote_port = context_write(&connect4_writes, "remote_port");
+    assert_eq!(remote_port.transformed_store_offset, Some(24));
+    assert_eq!(
+        remote_port.transformed_store_transform,
+        Some("host-port-to-big-endian-u32")
+    );
+
+    let connect6 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect6")
+        .expect("cgroup_sock_addr connect6 spec should parse");
+    let connect6_writes = spec_context_writes(&connect6);
+    let remote_ip6 = context_write(&connect6_writes, "remote_ip6");
+    assert_eq!(remote_ip6.indexed_store_base_offset, Some(8));
+    assert_eq!(remote_ip6.indexed_store_count, Some(4));
+    assert_eq!(remote_ip6.indexed_store_convert_to_big_endian, Some(true));
+
+    let sendmsg4 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg4")
+        .expect("cgroup_sock_addr sendmsg4 spec should parse");
+    let sendmsg4_writes = spec_context_writes(&sendmsg4);
+    let local_ip4 = context_write(&sendmsg4_writes, "local_ip4");
+    assert_eq!(local_ip4.transformed_store_offset, Some(40));
+    assert_eq!(
+        local_ip4.transformed_store_transform,
+        Some("host-u32-to-big-endian")
+    );
+
+    let sendmsg6 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg6")
+        .expect("cgroup_sock_addr sendmsg6 spec should parse");
+    let sendmsg6_writes = spec_context_writes(&sendmsg6);
+    let local_ip6 = context_write(&sendmsg6_writes, "local_ip6");
+    assert_eq!(local_ip6.indexed_store_base_offset, Some(44));
+    assert_eq!(local_ip6.indexed_store_count, Some(4));
+    assert_eq!(local_ip6.indexed_store_convert_to_big_endian, Some(true));
+}
+
+#[test]
 fn test_spec_record_context_writes_include_backing_abi_metadata() {
     let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
     let record = spec_record(

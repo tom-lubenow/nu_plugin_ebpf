@@ -709,12 +709,17 @@ parameterized helper projections such as `ancestor_cgroup_id.N`,
 struct-field byte offsets.
 `context_writes` rows report the assignment kind, whether the write requires a
 fixed index, the aggregate write-surface compatibility floor when known, the
-direct context/write-only field floor, and any helper or kfunc used by the write
-surface. Known ABI-backed writes include separate helper/kfunc minimum-kernel
-and source fields, plus nullable kfunc maximum-exclusive windows, so surfaces
-such as `ctx.reply`, `ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`,
-`ctx.sun_path`, and context-pointer scalar-field roots such as `ctx.flow_keys`
-can be inspected before writing code that depends on them.
+direct context/write-only field floor, concrete direct/indexed/transformed
+store-shape metadata when the write is a fixed context store, and any helper or
+kfunc used by the write surface. Indexed store rows report the base offset,
+element count, and whether each element is converted to big endian; transformed
+store rows report the offset plus conversion such as `host-u32-to-big-endian` or
+`host-port-to-big-endian-u32`. Known ABI-backed writes include separate
+helper/kfunc minimum-kernel and source fields, plus nullable kfunc
+maximum-exclusive windows, so surfaces such as `ctx.reply`, `ctx.mark`,
+`ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, `ctx.sun_path`, and context-pointer
+scalar-field roots such as `ctx.flow_keys` can be inspected before writing code
+that depends on them.
 `intrinsics` rows include aggregate `compatibility_minimum_kernel` /
 `compatibility_minimum_kernel_source` fields, aggregate `backing_helpers`, and
 `context_field_requirements` when an intrinsic implies a context-field ABI

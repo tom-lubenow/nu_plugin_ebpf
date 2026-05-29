@@ -1,6 +1,7 @@
 use super::{
-    ContextFieldDirectStore, ContextFieldIndexedStore, ContextFieldTransformedStore,
-    CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement, ProgramContextFamily,
+    ContextFieldDirectStore, ContextFieldIndexedStore, ContextFieldStoreTransform,
+    ContextFieldTransformedStore, CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement,
+    ProgramContextFamily,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, CtxStoreTarget};
@@ -66,6 +67,12 @@ pub(crate) struct ContextWriteSurface {
     pub(crate) field_name: &'static str,
     pub(crate) kind: &'static str,
     pub(crate) indexed: bool,
+    pub(crate) direct_store_offset: Option<i16>,
+    pub(crate) indexed_store_base_offset: Option<i16>,
+    pub(crate) indexed_store_count: Option<usize>,
+    pub(crate) indexed_store_convert_to_big_endian: Option<bool>,
+    pub(crate) transformed_store_offset: Option<i16>,
+    pub(crate) transformed_store_transform: Option<&'static str>,
     pub(crate) context_field_requirement: Option<ContextFieldCompatibilityRequirement>,
     pub(crate) minimum_kernel: Option<&'static str>,
     pub(crate) minimum_kernel_source: Option<&'static str>,
@@ -225,6 +232,63 @@ impl ContextStoreTargetSpec {
             Self::CgroupSockAddrLocalIp4Alias => Some(CtxField::LocalIp4),
             Self::CgroupSockAddrLocalIp6WordAlias => Some(CtxField::LocalIp6),
         }
+    }
+
+    fn representative_store_target(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+    ) -> Option<CtxStoreTarget> {
+        self.resolve(
+            spec,
+            field_name,
+            self.requires_indexed_assignment().then_some(0),
+        )
+        .ok()
+    }
+
+    fn direct_store(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+    ) -> Option<ContextFieldDirectStore> {
+        self.representative_store_target(spec, field_name)
+            .and_then(|target| target.ctx_field_direct_store())
+    }
+
+    fn indexed_store(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+    ) -> Option<(ContextFieldIndexedStore, usize)> {
+        let count = match self {
+            Self::SockOpsReplyLongWord => 4,
+            Self::SkbCbWord => 5,
+            Self::CgroupSockAddrUserIp6Word
+            | Self::CgroupSockAddrMsgSrcIp6Word
+            | Self::CgroupSockAddrLocalIp6WordAlias => 4,
+            Self::Fixed(_) | Self::CgroupSockAddrLocalIp4Alias => return None,
+        };
+
+        self.representative_store_target(spec, field_name)
+            .and_then(|target| target.ctx_field_indexed_store())
+            .map(|store| (store, count))
+    }
+
+    fn transformed_store(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+    ) -> Option<ContextFieldTransformedStore> {
+        self.representative_store_target(spec, field_name)
+            .and_then(|target| target.ctx_field_transformed_store())
+    }
+}
+
+fn context_field_store_transform_label(transform: ContextFieldStoreTransform) -> &'static str {
+    match transform {
+        ContextFieldStoreTransform::HostU32ToBigEndian => "host-u32-to-big-endian",
+        ContextFieldStoreTransform::HostPortToBigEndianU32 => "host-port-to-big-endian-u32",
     }
 }
 
@@ -548,11 +612,35 @@ impl ContextWriteSurfaceSpec {
                 (Some(minimum_kernel), Some(minimum_kernel_source))
             })
             .unwrap_or((None, None));
+        let direct_store_offset = match &self.target {
+            ContextWriteTargetSpec::Store(target) => target
+                .direct_store(spec, self.field_name)
+                .map(|store| store.offset),
+            _ => None,
+        };
+        let indexed_store = match &self.target {
+            ContextWriteTargetSpec::Store(target) => target.indexed_store(spec, self.field_name),
+            _ => None,
+        };
+        let transformed_store = match &self.target {
+            ContextWriteTargetSpec::Store(target) => {
+                target.transformed_store(spec, self.field_name)
+            }
+            _ => None,
+        };
 
         ContextWriteSurface {
             field_name: self.field_name,
             kind: self.target.kind(),
             indexed: self.target.requires_indexed_assignment(),
+            direct_store_offset,
+            indexed_store_base_offset: indexed_store.map(|(store, _)| store.offset),
+            indexed_store_count: indexed_store.map(|(_, count)| count),
+            indexed_store_convert_to_big_endian: indexed_store
+                .map(|(store, _)| store.convert_to_big_endian),
+            transformed_store_offset: transformed_store.map(|store| store.offset),
+            transformed_store_transform: transformed_store
+                .map(|store| context_field_store_transform_label(store.transform)),
             context_field_requirement,
             minimum_kernel,
             minimum_kernel_source,

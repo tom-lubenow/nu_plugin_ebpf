@@ -66,8 +66,9 @@ Intrinsic rows also carry nullable aggregate `compatibility_minimum_kernel` /
 helper floors plus target-aware `context_field_requirements`; for example
 `assign-socket` advertises the effective `ctx:sk` / `bpf_sk_assign` floor for
 the parsed attach target.
-Writable context surface records report direct write-surface floors when known
-and whether an assignment lowers through a helper or kfunc, including separate
+Writable context surface records report direct write-surface floors when known,
+fixed direct/indexed/transformed store-shape metadata for context stores, and
+whether an assignment lowers through a helper or kfunc, including separate
 source-backed minimum-kernel/source fields for ABI-backed writes such as
 `ctx.reply`, `ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, and
 `ctx.sun_path`.
@@ -150,9 +151,10 @@ floor. Helper-call projections such as
 `ancestor_cgroup_id.N` are advertised with `source = helper_call` and a null
 `offset`, because they are not direct struct-field byte offsets.
 The `context_writes` table similarly reports assignment kind, indexed-write
-shape, aggregate write-surface compatibility floor when known, the direct
-context/write-only field floor, and any helper/kfunc ABI dependency plus its
-own known kernel floor.
+shape, direct/indexed/transformed store offsets where applicable, aggregate
+write-surface compatibility floor when known, the direct context/write-only
+field floor, and any helper/kfunc ABI dependency plus its own known kernel
+floor.
 Each `intrinsics` row includes aggregate compatibility metadata and aggregate
 `backing_helpers`; mode- or
 kind-sensitive commands such as `adjust-packet`, `adjust-message`, `redirect`,
