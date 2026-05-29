@@ -242,6 +242,35 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
 }
 
 #[test]
+fn test_wellknown_sys_exit() {
+    let read = TracepointContext::sys_exit("sys_exit_read");
+    assert_eq!(read.category, "syscalls");
+    assert_eq!(
+        read.source,
+        TracepointContextSource::WellKnownSyscallFallback
+    );
+    assert_eq!(read.minimum_kernel(), Some("4.7"));
+    assert!(
+        read.minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.7/include/trace/events/syscalls.h"))
+    );
+    assert!(read.has_field("id"));
+    assert!(read.has_field("ret"));
+    assert_eq!(read.get_field("id").expect("expected id").offset, 8);
+    assert_eq!(read.get_field("ret").expect("expected ret").offset, 16);
+
+    let openat2 = TracepointContext::sys_exit("sys_exit_openat2");
+    assert_eq!(openat2.minimum_kernel(), Some("5.6"));
+    assert!(
+        openat2
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.6/fs/open.c"))
+    );
+    assert!(openat2.has_field("id"));
+    assert!(openat2.has_field("ret"));
+}
+
+#[test]
 fn test_edit_distance() {
     // Identical strings
     assert_eq!(KernelBtf::edit_distance("hello", "hello"), 0);
