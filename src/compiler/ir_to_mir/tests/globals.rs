@@ -2249,8 +2249,75 @@ fn test_lower_global_define_empty_binary_without_type_still_rejects_empty_layout
 
     assert!(
         err.to_string()
-            .contains("empty binary constants are not yet supported")
+            .contains("empty binary constants do not establish a fixed byte-buffer layout")
     );
+}
+
+#[test]
+fn test_lower_global_define_type_record_omitted_bytes_field_zero_fills_declared_bytes() {
+    let define_decl = DeclId::new(1075);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let mut state = Record::with_capacity(1);
+    state.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(state, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("record{pid:i64,comm:bytes:4}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed record bytes:N fields should zero-fill omitted initializers");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&[0u8; 4]);
+    expected.extend_from_slice(&[0u8; 4]);
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_state");
+    assert_eq!(result.data_globals[0].data, expected);
 }
 
 #[test]

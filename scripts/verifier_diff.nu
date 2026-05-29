@@ -6143,7 +6143,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "empty binary constants are not yet supported"
+        error_contains: "empty binary constants do not establish a fixed byte-buffer layout"
     }
     {
         name: "map-define-null-only-lookup-keeps-value-layout"

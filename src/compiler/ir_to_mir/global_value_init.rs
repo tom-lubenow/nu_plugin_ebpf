@@ -57,7 +57,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(MirType, Vec<u8>), CompileError> {
         if bytes.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "empty binary constants are not yet supported in eBPF lowering".into(),
+                EMPTY_BINARY_LAYOUT_ERROR.into(),
             ));
         }
 
