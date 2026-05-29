@@ -170,7 +170,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         format!(
-            "leading annotated mutable variable {} declared as {} is not yet supported; annotated mutable globals currently support scalar, string, binary, numeric list<int>, and record layouts composed of those supported field types",
+            "leading annotated mutable variable {} declared as {} is not yet supported; annotated mutable globals currently support scalar, string, binary, numeric list<int>, fixed-array list initializers, and record layouts composed of those supported field types",
             var_id.get(),
             declared_type
         )

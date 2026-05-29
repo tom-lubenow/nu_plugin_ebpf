@@ -196,6 +196,50 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn typed_mutable_fixed_array_repr(
+        declared_elem_type: &nu_protocol::Type,
+        values: &[Value],
+    ) -> Result<Option<(MirType, Vec<u8>)>, CompileError> {
+        let Some((first, rest)) = values.split_first() else {
+            return Ok(None);
+        };
+
+        let Some((elem_ty, mut data, elem_list_max_len, elem_string_slot_len)) =
+            Self::typed_mutable_global_repr(declared_elem_type, first)?
+        else {
+            return Ok(None);
+        };
+        let _ = (elem_list_max_len, elem_string_slot_len);
+
+        for (idx, value) in rest.iter().enumerate() {
+            let actual_idx = idx + 1;
+            let Some((item_ty, item_data, item_list_max_len, item_string_slot_len)) =
+                Self::typed_mutable_global_repr(declared_elem_type, value)?
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "annotated mutable fixed-array global element {} of declared type {} is not yet supported",
+                    actual_idx, declared_elem_type
+                )));
+            };
+            let _ = (item_list_max_len, item_string_slot_len);
+            if item_ty != elem_ty {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "annotated mutable fixed-array globals require homogeneous element layouts; element 0 has {:?}, element {} has {:?}",
+                    elem_ty, actual_idx, item_ty
+                )));
+            }
+            data.extend_from_slice(&item_data);
+        }
+
+        Ok(Some((
+            MirType::Array {
+                elem: Box::new(elem_ty),
+                len: values.len(),
+            },
+            data,
+        )))
+    }
+
     pub(super) fn typed_mutable_global_repr(
         declared_type: &nu_protocol::Type,
         value: &Value,
@@ -208,8 +252,19 @@ impl<'a> HirToMirLowering<'a> {
             (declared_type, value),
             (nu_protocol::Type::Record(_), Value::Record { .. })
         );
+        let allow_declared_fixed_array_initializer = matches!(
+            (declared_type, value),
+            (nu_protocol::Type::List(inner), Value::List { .. })
+                if !matches!(
+                    inner.as_ref(),
+                    nu_protocol::Type::Int | nu_protocol::Type::Nothing
+                )
+        );
 
-        if !allow_partial_record_initializer && !value.is_subtype_of(declared_type) {
+        if !allow_partial_record_initializer
+            && !allow_declared_fixed_array_initializer
+            && !value.is_subtype_of(declared_type)
+        {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "annotated mutable global initializer of type {} does not match declared type {}",
                 value.get_type(),
@@ -295,13 +350,19 @@ impl<'a> HirToMirLowering<'a> {
                 Ok(Self::mutable_numeric_list_global_repr(vals)?
                     .map(|(ty, data, max_len)| (ty, data, Some(max_len), None)))
             }
-            nu_protocol::Type::List(_)
-                if crate::compiler::hir::supports_fixed_array_constant_list(value) =>
+            nu_protocol::Type::List(inner)
+                if !matches!(
+                    inner.as_ref(),
+                    nu_protocol::Type::Int | nu_protocol::Type::Nothing
+                ) =>
             {
                 let Value::List { vals, .. } = value else {
                     return Ok(None);
                 };
-                let (ty, data) = Self::constant_fixed_array_rodata_repr(vals)?;
+                let Some((ty, data)) = Self::typed_mutable_fixed_array_repr(inner.as_ref(), vals)?
+                else {
+                    return Ok(None);
+                };
                 Ok(Some((ty, data, None, None)))
             }
             nu_protocol::Type::Record(fields) => {
@@ -353,6 +414,33 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn annotated_mutable_fixed_array_semantics(
+        declared_elem_type: &nu_protocol::Type,
+        values: &[Value],
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        let Some((first, rest)) = values.split_first() else {
+            return Ok(None);
+        };
+        let Some(first_semantics) =
+            Self::annotated_mutable_global_semantics(declared_elem_type, first)?
+        else {
+            return Ok(None);
+        };
+
+        for value in rest {
+            if Self::annotated_mutable_global_semantics(declared_elem_type, value)?
+                != Some(first_semantics.clone())
+            {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(first_semantics),
+            len: values.len(),
+        }))
+    }
+
     pub(super) fn annotated_mutable_global_semantics(
         declared_type: &nu_protocol::Type,
         value: &Value,
@@ -365,8 +453,19 @@ impl<'a> HirToMirLowering<'a> {
             (declared_type, value),
             (nu_protocol::Type::Record(_), Value::Record { .. })
         );
+        let allow_declared_fixed_array_initializer = matches!(
+            (declared_type, value),
+            (nu_protocol::Type::List(inner), Value::List { .. })
+                if !matches!(
+                    inner.as_ref(),
+                    nu_protocol::Type::Int | nu_protocol::Type::Nothing
+                )
+        );
 
-        if !allow_partial_record_initializer && !value.is_subtype_of(declared_type) {
+        if !allow_partial_record_initializer
+            && !allow_declared_fixed_array_initializer
+            && !value.is_subtype_of(declared_type)
+        {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "annotated mutable global initializer of type {} does not match declared type {}",
                 value.get_type(),
@@ -397,13 +496,16 @@ impl<'a> HirToMirLowering<'a> {
                     max_len: vals.len(),
                 }));
             }
-            nu_protocol::Type::List(_)
-                if crate::compiler::hir::supports_fixed_array_constant_list(value) =>
+            nu_protocol::Type::List(inner)
+                if !matches!(
+                    inner.as_ref(),
+                    nu_protocol::Type::Int | nu_protocol::Type::Nothing
+                ) =>
             {
                 let Value::List { vals, .. } = value else {
                     return Ok(None);
                 };
-                return Self::fixed_array_value_semantics(vals);
+                return Self::annotated_mutable_fixed_array_semantics(inner.as_ref(), vals);
             }
             nu_protocol::Type::Record(fields) => {
                 let Value::Record { val, .. } = value else {

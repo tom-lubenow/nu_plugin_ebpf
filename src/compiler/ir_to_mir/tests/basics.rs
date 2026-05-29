@@ -5903,6 +5903,154 @@ fn test_lower_leading_annotated_mut_record_array_with_nested_string_field() {
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_array_uses_declared_element_layout() {
+    let global_var = VarId::new(258);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut first = Record::new();
+    first.push("ok", Value::bool(true, Span::test_data()));
+    first.push("pid", Value::int(7, Span::test_data()));
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Record(Box::new([
+            ("pid".to_string(), Type::Int),
+            ("ok".to_string(), Type::Bool),
+        ])))),
+        initial_value: Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated fixed record arrays should use declared element layout");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.push(1);
+    expected.extend_from_slice(&[0u8; 7]);
+    expected.extend_from_slice(&9i64.to_le_bytes());
+    expected.push(0);
+    expected.extend_from_slice(&[0u8; 7]);
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.data_globals[0].data, expected);
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_array_partial_element_preserves_string_semantics() {
+    let global_var = VarId::new(259);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(0), string_member("name")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("!".into()),
+                },
+                HirStmt::StringAppend {
+                    src_dst: RegId::new(0),
+                    val: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut first = Record::new();
+    first.push("name", Value::string("aa", Span::test_data()));
+    let mut second = Record::new();
+    second.push("pid", Value::int(9, Span::test_data()));
+    second.push("name", Value::string("bb", Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Record(Box::new([
+            ("name".to_string(), Type::String),
+            ("pid".to_string(), Type::Int),
+        ])))),
+        initial_value: Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated fixed record arrays should preserve string semantics for partial elements");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StringAppend { .. })),
+        "expected projected string field to lower through StringAppend"
+    );
+}
+
+#[test]
 fn test_lower_get_with_single_int_cell_path_uses_constant_list_index() {
     let global_var = VarId::new(254);
     let get_decl = DeclId::new(600);

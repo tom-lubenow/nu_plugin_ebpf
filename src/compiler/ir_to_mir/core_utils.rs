@@ -440,13 +440,20 @@ impl<'a> HirToMirLowering<'a> {
             metadata_type_hint,
             Some(MirType::Array { .. } | MirType::Struct { .. })
         );
+        let vreg_type_hint = self.vreg_type_hints.get(&vreg).cloned();
         let type_hint = if metadata_is_aggregate {
-            metadata_type_hint
+            match (vreg_type_hint.as_ref(), metadata_type_hint.as_ref()) {
+                (
+                    Some(MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                    }),
+                    Some(metadata_ty),
+                ) if pointee.as_ref() == metadata_ty => vreg_type_hint,
+                _ => metadata_type_hint,
+            }
         } else {
-            self.vreg_type_hints
-                .get(&vreg)
-                .cloned()
-                .or(metadata_type_hint)
+            vreg_type_hint.or(metadata_type_hint)
         };
         SubfunctionArgSeed {
             type_hint,
