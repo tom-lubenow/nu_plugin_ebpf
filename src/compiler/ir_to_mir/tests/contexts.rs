@@ -5749,6 +5749,163 @@ fn test_lower_tracepoint_current_cgroup_alias_projects_builtin_default_cgroup() 
     );
 }
 
+fn kernel_int_field_projection_available(root_type: &str, field: &str) -> bool {
+    let path = [TrampolineFieldSelector::Field(field.to_string())];
+    matches!(
+        KernelBtf::get().kernel_named_type_field_projection(root_type, &path),
+        Ok(projection) if matches!(projection.type_info, TypeInfo::Int { .. })
+    )
+}
+
+#[test]
+fn test_lower_iter_task_btf_projection_uses_probe_read_kernel() {
+    if !kernel_int_field_projection_available("task_struct", "pid") {
+        return;
+    }
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("iter_task"), string_member("pid")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("iter ctx.iter_task.pid should lower");
+
+    let instructions: Vec<&MirInst> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::IterTask,
+            ..
+        }
+    )));
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper { helper, .. }
+                if *helper == BpfHelper::ProbeReadKernel as u32
+        )),
+        "iter_task is a nullable untrusted iterator pointer, so BTF field reads must use probe_read_kernel"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("iter ctx.iter_task.pid should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Iter,
+        "task",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let helper_requirement = program
+        .helper_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel)
+        .expect("iter_task BTF projection should report probe_read_kernel compatibility");
+    assert_eq!(helper_requirement.minimum_kernel(), "5.5");
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .iter()
+            .any(|requirement| requirement.key() == "ctx:iter_task"),
+        "iter_task BTF projection should preserve source context compatibility metadata"
+    );
+}
+
+#[test]
+fn test_lower_iter_meta_btf_projection_preserves_trusted_direct_load() {
+    if !kernel_int_field_projection_available("bpf_iter_meta", "seq_num") {
+        return;
+    }
+
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("iter_meta"), string_member("seq_num")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("iter ctx.iter_meta.seq_num should lower");
+
+    let instructions: Vec<&MirInst> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::IterMeta,
+            ..
+        }
+    )));
+    assert!(
+        !instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper { helper, .. }
+                if *helper == BpfHelper::ProbeReadKernel as u32
+        )),
+        "iter_meta is the trusted iterator context pointer and should direct-load scalar BTF fields"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Load {
+                ty: MirType::I32 | MirType::U32 | MirType::I64 | MirType::U64,
+                ..
+            }
+        )),
+        "trusted iterator metadata projection should emit a direct scalar load"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("iter ctx.iter_meta.seq_num should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Iter,
+        "task",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        !program
+            .helper_compatibility_requirements()
+            .iter()
+            .any(|requirement| requirement.helper() == BpfHelper::ProbeReadKernel),
+        "trusted iter_meta projection should not report probe_read_kernel compatibility"
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .iter()
+            .any(|requirement| requirement.key() == "ctx:iter_meta"),
+        "iter_meta projection should preserve source context compatibility metadata"
+    );
+}
+
 #[test]
 fn test_lower_bound_current_cgroup_btf_projection_preserves_trusted_provenance() {
     let task_projection_path = [
