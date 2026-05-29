@@ -2064,6 +2064,40 @@ fn test_packet_dynptr_kfuncs_require_zero_flags() {
 }
 
 #[test]
+fn test_dynptr_from_xdp_rejects_non_xdp_program() {
+    let (func, types) =
+        make_packet_dynptr_kfunc_verify_function("bpf_dynptr_from_xdp", 0, false, false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_dynptr_from_xdp to reject non-xdp program");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_xdp' is only valid in xdp programs")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_dynptr_from_skb_rejects_non_skb_program() {
+    let (func, types) =
+        make_packet_dynptr_kfunc_verify_function("bpf_dynptr_from_skb", 0, false, false);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::RawTracepoint, "sys_enter");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_dynptr_from_skb to reject non-skb program");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_skb' is only valid in")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_packet_dynptr_kfuncs_reject_reinitialize() {
     for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
         let (func, types) = make_packet_dynptr_kfunc_verify_function(kfunc, 0, true, false);

@@ -1881,6 +1881,41 @@ fn test_type_error_packet_dynptr_kfuncs_require_zero_flags() {
 }
 
 #[test]
+fn test_type_error_dynptr_from_xdp_rejects_non_xdp_program() {
+    let func = make_packet_dynptr_kfunc_type_call("bpf_dynptr_from_xdp", 0);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_dynptr_from_xdp to reject non-xdp program");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_xdp' is only valid in xdp programs")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_dynptr_from_skb_rejects_non_skb_program() {
+    let func = make_packet_dynptr_kfunc_type_call("bpf_dynptr_from_skb", 0);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::RawTracepoint,
+        "sys_enter",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_dynptr_from_skb to reject non-skb program");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_skb' is only valid in")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
     let mut func = make_test_function();
     let src = func.alloc_vreg();
