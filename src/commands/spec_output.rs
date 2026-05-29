@@ -131,6 +131,10 @@ struct SpecContextProjection {
     helper_requirement_key: Option<String>,
     helper_minimum_kernel: Option<&'static str>,
     helper_minimum_kernel_source: Option<&'static str>,
+    read_helper: Option<&'static str>,
+    read_helper_requirement_key: Option<String>,
+    read_helper_minimum_kernel: Option<&'static str>,
+    read_helper_minimum_kernel_source: Option<&'static str>,
     ty: String,
     offset: Option<usize>,
     bit_offset: Option<u32>,
@@ -831,6 +835,8 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
         let Some(type_spec) = spec.ctx_field_type_spec(&entry.field) else {
             continue;
         };
+        let read_helper =
+            context_projection_read_helper(spec, &entry.field, &type_spec.semantic_ty);
         let MirType::Ptr { pointee, .. } = type_spec.semantic_ty else {
             continue;
         };
@@ -856,6 +862,7 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 "context_field",
                 &field,
                 compatibility_requirement,
+                read_helper,
             );
 
             if matches!(entry.field, CtxField::Socket | CtxField::MigratingSocket) {
@@ -876,6 +883,7 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                         "context_field_alias",
                         &field,
                         compatibility_requirement,
+                        read_helper,
                     );
                 }
             }
@@ -926,6 +934,23 @@ fn context_projection_compatibility_requirement(
 }
 
 #[cfg(target_os = "linux")]
+fn context_projection_read_helper(
+    spec: &crate::program_spec::ProgramSpec,
+    root_field: &CtxField,
+    semantic_ty: &MirType,
+) -> Option<BpfHelper> {
+    match semantic_ty {
+        MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        } if !spec.ctx_field_is_trusted_btf_kernel_pointer(root_field) => {
+            Some(BpfHelper::ProbeReadKernel)
+        }
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn push_context_field_projection(
     projections: &mut Vec<SpecContextProjection>,
     root: &str,
@@ -933,9 +958,13 @@ fn push_context_field_projection(
     source: &'static str,
     field: &StructField,
     compatibility_requirement: Option<ContextFieldCompatibilityRequirement>,
+    read_helper: Option<BpfHelper>,
 ) {
-    let compatibility_floor =
-        context_surface_compatibility_floor(compatibility_requirement.as_ref(), None);
+    let compatibility_floor = context_projection_compatibility_floor(
+        compatibility_requirement.as_ref(),
+        None,
+        read_helper,
+    );
     projections.push(SpecContextProjection {
         root: root.to_string(),
         path: format!("{root}.{name}"),
@@ -956,6 +985,10 @@ fn push_context_field_projection(
         helper_requirement_key: None,
         helper_minimum_kernel: None,
         helper_minimum_kernel_source: None,
+        read_helper: read_helper.map(BpfHelper::name),
+        read_helper_requirement_key: read_helper.and_then(helper_requirement_key),
+        read_helper_minimum_kernel: read_helper.and_then(BpfHelper::minimum_kernel),
+        read_helper_minimum_kernel_source: read_helper.and_then(BpfHelper::minimum_kernel_source),
         ty: mir_type_label(&field.ty),
         offset: Some(field.offset),
         bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
@@ -971,6 +1004,7 @@ fn push_struct_field_projections(
     root: &str,
     source: &'static str,
     helper: Option<BpfHelper>,
+    read_helper: Option<BpfHelper>,
     ty: MirType,
     unsupported_reason: Option<String>,
 ) {
@@ -984,7 +1018,11 @@ fn push_struct_field_projections(
     let helper_requirement_feature_key = helper.and_then(helper_requirement_key);
     let helper_minimum_kernel = helper.and_then(BpfHelper::minimum_kernel);
     let helper_minimum_kernel_source = helper.and_then(BpfHelper::minimum_kernel_source);
-    let compatibility_floor = context_surface_compatibility_floor(None, helper);
+    let read_helper_name = read_helper.map(BpfHelper::name);
+    let read_helper_requirement_feature_key = read_helper.and_then(helper_requirement_key);
+    let read_helper_minimum_kernel = read_helper.and_then(BpfHelper::minimum_kernel);
+    let read_helper_minimum_kernel_source = read_helper.and_then(BpfHelper::minimum_kernel_source);
+    let compatibility_floor = context_projection_compatibility_floor(None, helper, read_helper);
     let include_bpf_sock_aliases = name.as_deref() == Some("bpf_sock");
 
     for field in fields.into_iter().filter(|field| !field.synthetic) {
@@ -1002,6 +1040,10 @@ fn push_struct_field_projections(
             helper_requirement_key: helper_requirement_feature_key.clone(),
             helper_minimum_kernel,
             helper_minimum_kernel_source,
+            read_helper: read_helper_name,
+            read_helper_requirement_key: read_helper_requirement_feature_key.clone(),
+            read_helper_minimum_kernel,
+            read_helper_minimum_kernel_source,
             ty: mir_type_label(&field.ty),
             offset: Some(field.offset),
             bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
@@ -1025,6 +1067,10 @@ fn push_struct_field_projections(
                     helper_requirement_key: helper_requirement_feature_key.clone(),
                     helper_minimum_kernel,
                     helper_minimum_kernel_source,
+                    read_helper: read_helper_name,
+                    read_helper_requirement_key: read_helper_requirement_feature_key.clone(),
+                    read_helper_minimum_kernel,
+                    read_helper_minimum_kernel_source,
                     ty: mir_type_label(&field.ty),
                     offset: Some(field.offset),
                     bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
@@ -1066,6 +1112,10 @@ fn push_helper_call_projection(
         helper_requirement_key: helper_requirement_key(helper),
         helper_minimum_kernel: helper.minimum_kernel(),
         helper_minimum_kernel_source: helper.minimum_kernel_source(),
+        read_helper: None,
+        read_helper_requirement_key: None,
+        read_helper_minimum_kernel: None,
+        read_helper_minimum_kernel_source: None,
         ty: mir_type_label(&ty),
         offset: None,
         bit_offset: None,
@@ -1158,6 +1208,7 @@ fn push_helper_backed_socket_projections(
             root,
             "helper_return",
             Some(helper),
+            Some(BpfHelper::ProbeReadKernel),
             ty,
             spec.helper_call_error(helper),
         );
@@ -1182,6 +1233,19 @@ fn context_surface_compatibility_floor(
 }
 
 #[cfg(target_os = "linux")]
+fn context_projection_compatibility_floor(
+    context_requirement: Option<&ContextFieldCompatibilityRequirement>,
+    helper: Option<BpfHelper>,
+    read_helper: Option<BpfHelper>,
+) -> Option<(&'static str, &'static str)> {
+    let base_floor = context_surface_compatibility_floor(context_requirement, helper);
+    let read_helper_floor = read_helper
+        .and_then(|helper| Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?)));
+
+    later_kernel_floor(base_floor, read_helper_floor)
+}
+
+#[cfg(target_os = "linux")]
 fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
     spec_context_projections(spec)
         .into_iter()
@@ -1201,6 +1265,10 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "helper_requirement_key" => optional_string(projection.helper_requirement_key, span),
                     "helper_minimum_kernel" => optional_static_str(projection.helper_minimum_kernel, span),
                     "helper_minimum_kernel_source" => optional_static_str(projection.helper_minimum_kernel_source, span),
+                    "read_helper" => optional_static_str(projection.read_helper, span),
+                    "read_helper_requirement_key" => optional_string(projection.read_helper_requirement_key, span),
+                    "read_helper_minimum_kernel" => optional_static_str(projection.read_helper_minimum_kernel, span),
+                    "read_helper_minimum_kernel_source" => optional_static_str(projection.read_helper_minimum_kernel_source, span),
                     "type" => Value::string(projection.ty, span),
                     "offset" => optional_usize(projection.offset, span),
                     "bit_offset" => optional_u32(projection.bit_offset, span),

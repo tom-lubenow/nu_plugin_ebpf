@@ -397,10 +397,18 @@ fn assert_helper_backed_context_projections_report_metadata(spec_text: &str) {
             "{spec_text} projection {} should report helper minimum kernel",
             projection.path
         );
-        assert_eq!(
-            projection.compatibility_minimum_kernel,
-            Some(minimum_kernel),
-            "{spec_text} projection {} should report aggregate compatibility minimum kernel",
+        let compatibility_minimum = projection.compatibility_minimum_kernel.unwrap_or_else(|| {
+            panic!(
+                "{spec_text} projection {} should report aggregate compatibility minimum kernel",
+                projection.path
+            )
+        });
+        assert!(
+            ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                compatibility_minimum,
+                minimum_kernel,
+            ),
+            "{spec_text} projection {} aggregate floor {compatibility_minimum} should cover helper floor {minimum_kernel}",
             projection.path
         );
         assert!(
@@ -410,6 +418,38 @@ fn assert_helper_backed_context_projections_report_metadata(spec_text: &str) {
             "{spec_text} projection {} should report a source link for helper {minimum_kernel}",
             projection.path
         );
+        if let Some(read_helper_name) = projection.read_helper {
+            let read_helper = BpfHelper::from_name(read_helper_name).unwrap_or_else(|| {
+                panic!(
+                    "{spec_text} projection {} should use a modeled read helper",
+                    projection.path
+                )
+            });
+            let read_minimum_kernel = read_helper
+                .minimum_kernel()
+                .expect("read helper should have a minimum kernel");
+            let expected_read_key = format!("helper:{}", read_helper.name());
+            assert_eq!(
+                projection.read_helper_requirement_key.as_deref(),
+                Some(expected_read_key.as_str()),
+                "{spec_text} projection {} should report read helper requirement key",
+                projection.path
+            );
+            assert_eq!(
+                projection.read_helper_minimum_kernel,
+                Some(read_minimum_kernel),
+                "{spec_text} projection {} should report read helper minimum kernel",
+                projection.path
+            );
+            assert!(
+                ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                    compatibility_minimum,
+                    read_minimum_kernel,
+                ),
+                "{spec_text} projection {} aggregate floor {compatibility_minimum} should cover read helper floor {read_minimum_kernel}",
+                projection.path
+            );
+        }
         checked += 1;
     }
 
@@ -1287,7 +1327,7 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .expect("compatibility minimum kernel should be present")
             .as_str()
             .expect("compatibility minimum kernel should be a string"),
-        "5.1"
+        "5.5"
     );
     assert!(
         tcp_snd_cwnd
@@ -1295,7 +1335,7 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .expect("compatibility minimum kernel source should be present")
             .as_str()
             .expect("compatibility minimum kernel source should be a string")
-            .contains("/v5.1/")
+            .contains("/v5.5/")
     );
     assert_eq!(
         tcp_snd_cwnd
@@ -1312,6 +1352,22 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .as_str()
             .expect("helper minimum kernel source should be a string")
             .contains("/v5.1/")
+    );
+    assert_eq!(
+        tcp_snd_cwnd
+            .get("read_helper_requirement_key")
+            .expect("read helper requirement key should be present")
+            .as_str()
+            .expect("read helper requirement key should be a string"),
+        "helper:bpf_probe_read_kernel"
+    );
+    assert_eq!(
+        tcp_snd_cwnd
+            .get("read_helper_minimum_kernel")
+            .expect("read helper minimum kernel should be present")
+            .as_str()
+            .expect("read helper minimum kernel should be a string"),
+        "5.5"
     );
 
     let sk_family = context_projections
@@ -1340,7 +1396,7 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .expect("compatibility minimum kernel should be present")
             .as_str()
             .expect("compatibility minimum kernel should be a string"),
-        "5.1"
+        "5.5"
     );
     assert_eq!(
         sk_family
@@ -1349,6 +1405,14 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
             .as_str()
             .expect("minimum kernel should be a string"),
         "5.1"
+    );
+    assert_eq!(
+        sk_family
+            .get("read_helper_requirement_key")
+            .expect("read helper requirement key should be present")
+            .as_str()
+            .expect("read helper requirement key should be a string"),
+        "helper:bpf_probe_read_kernel"
     );
 }
 
@@ -1384,7 +1448,42 @@ fn test_context_projection_compatibility_metadata_invariants() {
             .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
 
         for projection in spec_context_projections(&spec) {
-            let component_floors = [projection.minimum_kernel, projection.helper_minimum_kernel];
+            if let Some(read_helper_name) = projection.read_helper {
+                let read_helper = BpfHelper::from_name(read_helper_name).unwrap_or_else(|| {
+                    panic!(
+                        "{spec_source} projection {} should use a modeled read helper",
+                        projection.path
+                    )
+                });
+                let expected_key = format!("helper:{}", read_helper.name());
+                let minimum_kernel = read_helper
+                    .minimum_kernel()
+                    .expect("read helper should have a minimum kernel");
+                assert_eq!(
+                    projection.read_helper_requirement_key.as_deref(),
+                    Some(expected_key.as_str()),
+                    "{spec_source} projection {} should report read helper requirement key",
+                    projection.path
+                );
+                assert_eq!(
+                    projection.read_helper_minimum_kernel,
+                    Some(minimum_kernel),
+                    "{spec_source} projection {} should report read helper minimum kernel",
+                    projection.path
+                );
+                assert!(
+                    projection
+                        .read_helper_minimum_kernel_source
+                        .is_some_and(|source| source.contains(&format!("/v{minimum_kernel}/"))),
+                    "{spec_source} projection {} should report read helper source",
+                    projection.path
+                );
+            }
+            let component_floors = [
+                projection.minimum_kernel,
+                projection.helper_minimum_kernel,
+                projection.read_helper_minimum_kernel,
+            ];
             if component_floors.iter().any(Option::is_some) {
                 let compatibility_minimum = projection
                     .compatibility_minimum_kernel
@@ -4059,13 +4158,19 @@ fn test_spec_context_projections_include_socket_members() {
         Some("ctx:family")
     );
     assert_eq!(family.minimum_kernel, Some("4.10"));
-    assert_eq!(family.compatibility_minimum_kernel, Some("4.10"));
+    assert_eq!(family.compatibility_minimum_kernel, Some("5.5"));
     assert!(
         family
             .minimum_kernel_source
             .is_some_and(|source| source.contains("/v4.10/include/uapi/linux/bpf.h"))
     );
     assert_eq!(family.helper, None);
+    assert_eq!(family.read_helper, Some("bpf_probe_read_kernel"));
+    assert_eq!(
+        family.read_helper_requirement_key.as_deref(),
+        Some("helper:bpf_probe_read_kernel")
+    );
+    assert_eq!(family.read_helper_minimum_kernel, Some("5.5"));
     assert_eq!(family.ty, "u32");
     assert_eq!(family.offset, Some(4));
     assert!(family.supported);
@@ -4080,8 +4185,9 @@ fn test_spec_context_projections_include_socket_members() {
         Some("ctx:remote_port")
     );
     assert_eq!(remote_port.minimum_kernel, Some("5.1"));
-    assert_eq!(remote_port.compatibility_minimum_kernel, Some("5.1"));
+    assert_eq!(remote_port.compatibility_minimum_kernel, Some("5.5"));
     assert_eq!(remote_port.helper, None);
+    assert_eq!(remote_port.read_helper, Some("bpf_probe_read_kernel"));
     assert_eq!(remote_port.ty, "u16");
     assert_eq!(remote_port.offset, Some(48));
     assert!(remote_port.supported);
@@ -4103,7 +4209,13 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
     assert_eq!(tcp_snd_cwnd.context_field_requirement_key, None);
     assert_eq!(tcp_snd_cwnd.helper_minimum_kernel, Some("5.1"));
-    assert_eq!(tcp_snd_cwnd.compatibility_minimum_kernel, Some("5.1"));
+    assert_eq!(tcp_snd_cwnd.read_helper, Some("bpf_probe_read_kernel"));
+    assert_eq!(
+        tcp_snd_cwnd.read_helper_requirement_key.as_deref(),
+        Some("helper:bpf_probe_read_kernel")
+    );
+    assert_eq!(tcp_snd_cwnd.read_helper_minimum_kernel, Some("5.5"));
+    assert_eq!(tcp_snd_cwnd.compatibility_minimum_kernel, Some("5.5"));
     assert!(
         tcp_snd_cwnd
             .helper_minimum_kernel_source
@@ -4116,7 +4228,8 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     let full_family = projection(&projections, "sk.full.family");
     assert_eq!(full_family.helper, Some("bpf_sk_fullsock"));
     assert_eq!(full_family.helper_minimum_kernel, Some("5.1"));
-    assert_eq!(full_family.compatibility_minimum_kernel, Some("5.1"));
+    assert_eq!(full_family.read_helper, Some("bpf_probe_read_kernel"));
+    assert_eq!(full_family.compatibility_minimum_kernel, Some("5.5"));
     assert_eq!(full_family.ty, "u32");
     assert!(full_family.supported);
     assert!(full_family.unsupported_reason.is_none());
@@ -4127,7 +4240,8 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(full_remote_port.source, "helper_return_alias");
     assert_eq!(full_remote_port.helper, Some("bpf_sk_fullsock"));
     assert_eq!(full_remote_port.helper_minimum_kernel, Some("5.1"));
-    assert_eq!(full_remote_port.compatibility_minimum_kernel, Some("5.1"));
+    assert_eq!(full_remote_port.read_helper, Some("bpf_probe_read_kernel"));
+    assert_eq!(full_remote_port.compatibility_minimum_kernel, Some("5.5"));
     assert_eq!(full_remote_port.ty, "u16");
     assert_eq!(full_remote_port.offset, Some(48));
     assert!(full_remote_port.supported);
@@ -4139,6 +4253,8 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
         Some("ctx:sk")
     );
     assert_eq!(sk_family.minimum_kernel, Some("5.1"));
+    assert_eq!(sk_family.read_helper, Some("bpf_probe_read_kernel"));
+    assert_eq!(sk_family.compatibility_minimum_kernel, Some("5.5"));
 }
 
 #[test]

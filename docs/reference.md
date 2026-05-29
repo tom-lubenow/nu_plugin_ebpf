@@ -697,7 +697,8 @@ helper-backed socket projections that are invalid on a particular hook are
 omitted from the projection table; attempting to use them in a program still
 produces the normal compiler diagnostic. Projection rows include source-backed
 minimum kernels when known; helper-backed rows also include an aggregate
-compatibility floor, the selected helper, and its own floor. Helper-call
+compatibility floor, the selected helper, any generated field-read helper such
+as `bpf_probe_read_kernel`, and each helper's own floor. Helper-call
 projections such as `task.pt_regs.arg0` and
 parameterized helper projections such as `ancestor_cgroup_id.N`,
 `skb_ancestor_cgroup_id.N`, or `sk.ancestor_cgroup_id.N` use
