@@ -6370,6 +6370,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bytes-initializer"
+        category: "globals"
+        tags: [globals arrays binary global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [0x[01 02] 0x[03 04 05]] | global-define --type "array{bytes:4:2}" buffers'
+            '  let buffers = (global-get buffers)'
+            '  ($buffers | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-string-initializer"
+        category: "globals"
+        tags: [globals arrays string global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  ["aa" "bb"] | global-define --type "array{string:8:2}" names'
+            '  let names = (global-get names)'
+            '  ($names | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-record-list-field-initializer"
         category: "globals"
         tags: [globals records list global-define accept]

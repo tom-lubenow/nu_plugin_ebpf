@@ -171,6 +171,7 @@ fn split_top_level_type_len<'a>(
     spec: &str,
 ) -> Result<(&'a str, &'a str), CompileError> {
     let mut depth = 0usize;
+    let mut separator = None;
 
     for (idx, ch) in body.char_indices() {
         match ch {
@@ -185,11 +186,15 @@ fn split_top_level_type_len<'a>(
                 depth -= 1;
             }
             ':' if depth == 0 => {
-                let (elem, rest) = body.split_at(idx);
-                return Ok((elem.trim(), rest[1..].trim()));
+                separator = Some(idx);
             }
             _ => {}
         }
+    }
+
+    if let Some(idx) = separator {
+        let (elem, rest) = body.split_at(idx);
+        return Ok((elem.trim(), rest[1..].trim()));
     }
 
     Err(CompileError::UnsupportedInstruction(format!(
