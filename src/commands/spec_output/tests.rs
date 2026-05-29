@@ -25,6 +25,29 @@ fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a Sp
         .unwrap_or_else(|| panic!("expected writable ctx.{field_name} in spec context writes"))
 }
 
+fn context_write_record(spec_text: &str, field_name: &str) -> Value {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    record
+        .get("context_writes")
+        .expect("context writes should be present")
+        .as_list()
+        .expect("context writes should be a list")
+        .iter()
+        .find(|write| {
+            write
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("field"))
+                .and_then(|field| field.as_str().ok())
+                .is_some_and(|candidate| candidate == field_name)
+        })
+        .unwrap_or_else(|| panic!("expected writable ctx.{field_name} in spec context writes"))
+        .clone()
+}
+
 fn assert_context_store_write_metadata(
     writes: &[SpecContextWrite],
     field_name: &str,
@@ -5200,5 +5223,88 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
             .get("kfunc_maximum_kernel_exclusive")
             .expect("kfunc maximum kernel should be present")
             .is_nothing()
+    );
+}
+
+#[test]
+fn test_spec_record_context_writes_include_store_shape_metadata() {
+    let reply = context_write_record("sock_ops:/sys/fs/cgroup", "reply");
+    let reply = reply
+        .as_record()
+        .expect("ctx.reply write should be a record");
+    assert_eq!(
+        reply
+            .get("direct_store_offset")
+            .expect("direct store offset should be present")
+            .as_int()
+            .expect("direct store offset should be an int"),
+        4
+    );
+    assert!(
+        reply
+            .get("indexed_store_base_offset")
+            .expect("indexed store base offset should be present")
+            .is_nothing()
+    );
+    assert!(
+        reply
+            .get("transformed_store_offset")
+            .expect("transformed store offset should be present")
+            .is_nothing()
+    );
+
+    let replylong = context_write_record("sock_ops:/sys/fs/cgroup", "replylong");
+    let replylong = replylong
+        .as_record()
+        .expect("ctx.replylong write should be a record");
+    assert!(
+        replylong
+            .get("direct_store_offset")
+            .expect("direct store offset should be present")
+            .is_nothing()
+    );
+    assert_eq!(
+        replylong
+            .get("indexed_store_base_offset")
+            .expect("indexed store base offset should be present")
+            .as_int()
+            .expect("indexed store base offset should be an int"),
+        4
+    );
+    assert_eq!(
+        replylong
+            .get("indexed_store_count")
+            .expect("indexed store count should be present")
+            .as_int()
+            .expect("indexed store count should be an int"),
+        4
+    );
+    assert!(
+        !replylong
+            .get("indexed_store_convert_to_big_endian")
+            .expect("indexed store endian flag should be present")
+            .as_bool()
+            .expect("indexed store endian flag should be a bool")
+    );
+
+    let remote_ip4 = context_write_record("cgroup_sock_addr:/sys/fs/cgroup:connect4", "remote_ip4");
+    let remote_ip4 = remote_ip4
+        .as_record()
+        .expect("ctx.remote_ip4 write should be a record");
+    assert_eq!(
+        remote_ip4
+            .get("transformed_store_offset")
+            .expect("transformed store offset should be present")
+            .as_int()
+            .expect("transformed store offset should be an int"),
+        4
+    );
+    assert_eq!(
+        remote_ip4
+            .get("transformed_store_transform")
+            .expect("transformed store transform should be present")
+            .as_str()
+            .expect("transformed store transform should be a string"),
+        "host-u32-to-big-endian"
     );
 }

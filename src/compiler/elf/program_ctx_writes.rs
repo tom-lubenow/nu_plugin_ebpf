@@ -1277,6 +1277,38 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
+    const REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES: &[&str] = &[
+        "socket_filter:udp4:127.0.0.1:31337",
+        "tc:lo:ingress",
+        "tc:lo:egress",
+        "tcx:lo:ingress",
+        "tcx:lo:egress",
+        "netkit:lo:primary",
+        "netkit:lo:peer",
+        "tc_action:diff-action",
+        "sk_skb:/sys/fs/bpf/demo_sockmap",
+        "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+        "lwt_in:demo-route",
+        "lwt_out:demo-route",
+        "lwt_xmit:demo-route",
+        "lwt_seg6local:demo-route",
+        "cgroup_skb:/sys/fs/cgroup:ingress",
+        "cgroup_skb:/sys/fs/cgroup:egress",
+        "cgroup_sock:/sys/fs/cgroup:sock_create",
+        "cgroup_sock:/sys/fs/cgroup:post_bind4",
+        "cgroup_sysctl:/sys/fs/cgroup",
+        "sock_ops:/sys/fs/cgroup",
+        "cgroup_sockopt:/sys/fs/cgroup:get",
+        "cgroup_sockopt:/sys/fs/cgroup:set",
+        "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+        "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+        "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+        "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+        "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+        "sk_lookup:/proc/self/ns/net",
+        "flow_dissector:/proc/self/ns/net",
+    ];
+
     fn assert_unique_write_surface_names(table_name: &str, surfaces: &[ContextWriteSurfaceSpec]) {
         let mut names = HashSet::new();
 
@@ -1370,6 +1402,55 @@ mod tests {
                     requirement.field(),
                     &expected_field,
                     "{spec_source} ctx.{} should report compatibility for the backing context field",
+                    surface.field_name
+                );
+            }
+        }
+    }
+
+    fn assert_reported_write_surfaces_have_exclusive_store_shapes(spec_source: &str) {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+
+        for surface in spec.ctx_write_surfaces_for_spec() {
+            let shape_count = [
+                surface.direct_store_offset.is_some(),
+                surface.indexed_store_base_offset.is_some(),
+                surface.transformed_store_offset.is_some(),
+            ]
+            .into_iter()
+            .filter(|has_shape| *has_shape)
+            .count();
+
+            assert_eq!(
+                surface.indexed_store_base_offset.is_some(),
+                surface.indexed_store_count.is_some(),
+                "{spec_source} ctx.{} indexed store count should be present iff an indexed store base offset is present",
+                surface.field_name
+            );
+            assert_eq!(
+                surface.indexed_store_base_offset.is_some(),
+                surface.indexed_store_convert_to_big_endian.is_some(),
+                "{spec_source} ctx.{} indexed store endian flag should be present iff an indexed store base offset is present",
+                surface.field_name
+            );
+            assert_eq!(
+                surface.transformed_store_offset.is_some(),
+                surface.transformed_store_transform.is_some(),
+                "{spec_source} ctx.{} transformed store label should be present iff a transformed store offset is present",
+                surface.field_name
+            );
+
+            if surface.kind == "store" && surface.helper.is_none() && surface.kfunc.is_none() {
+                assert_eq!(
+                    shape_count, 1,
+                    "{spec_source} ctx.{} store write should expose exactly one physical store shape",
+                    surface.field_name
+                );
+            } else {
+                assert_eq!(
+                    shape_count, 0,
+                    "{spec_source} ctx.{} helper/kfunc/special write should not expose physical context-store metadata",
                     surface.field_name
                 );
             }
@@ -1619,6 +1700,32 @@ mod tests {
     }
 
     #[test]
+    fn test_ctx_store_targets_have_exclusive_physical_store_shapes() {
+        for target in representative_ctx_store_targets() {
+            let shape_count = [
+                target.ctx_field_direct_store().is_some(),
+                target.ctx_field_indexed_store().is_some(),
+                target.ctx_field_transformed_store().is_some(),
+            ]
+            .into_iter()
+            .filter(|has_shape| *has_shape)
+            .count();
+
+            if matches!(target, CtxStoreTarget::SockOpsCbFlags) {
+                assert_eq!(
+                    shape_count, 0,
+                    "{target:?} is helper-backed and should not expose physical store metadata"
+                );
+            } else {
+                assert_eq!(
+                    shape_count, 1,
+                    "{target:?} should expose exactly one physical store shape"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_context_write_surface_field_names_resolve() {
         for surface in PROGRAM_CTX_WRITE_SURFACES {
             assert_write_surface_field_names_resolve(
@@ -1651,71 +1758,22 @@ mod tests {
 
     #[test]
     fn test_context_write_surfaces_for_spec_match_registry_metadata() {
-        for spec_source in [
-            "socket_filter:udp4:127.0.0.1:31337",
-            "tc:lo:ingress",
-            "tc:lo:egress",
-            "tcx:lo:ingress",
-            "tcx:lo:egress",
-            "netkit:lo:primary",
-            "netkit:lo:peer",
-            "tc_action:diff-action",
-            "sk_skb:/sys/fs/bpf/demo_sockmap",
-            "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
-            "lwt_in:demo-route",
-            "lwt_out:demo-route",
-            "lwt_xmit:demo-route",
-            "lwt_seg6local:demo-route",
-            "cgroup_skb:/sys/fs/cgroup:ingress",
-            "cgroup_skb:/sys/fs/cgroup:egress",
-            "cgroup_sock:/sys/fs/cgroup:sock_create",
-            "cgroup_sock:/sys/fs/cgroup:post_bind4",
-            "cgroup_sysctl:/sys/fs/cgroup",
-            "sock_ops:/sys/fs/cgroup",
-            "cgroup_sockopt:/sys/fs/cgroup:get",
-            "cgroup_sockopt:/sys/fs/cgroup:set",
-            "cgroup_sock_addr:/sys/fs/cgroup:connect4",
-            "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
-            "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
-            "sk_lookup:/proc/self/ns/net",
-            "flow_dissector:/proc/self/ns/net",
-        ] {
+        for spec_source in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
             assert_reported_write_surfaces_match_table(spec_source);
         }
     }
 
     #[test]
     fn test_available_context_write_surfaces_have_context_requirements() {
-        for spec_source in [
-            "socket_filter:udp4:127.0.0.1:31337",
-            "tc:lo:ingress",
-            "tc:lo:egress",
-            "tcx:lo:ingress",
-            "tcx:lo:egress",
-            "netkit:lo:primary",
-            "netkit:lo:peer",
-            "tc_action:diff-action",
-            "sk_skb:/sys/fs/bpf/demo_sockmap",
-            "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
-            "lwt_in:demo-route",
-            "lwt_out:demo-route",
-            "lwt_xmit:demo-route",
-            "lwt_seg6local:demo-route",
-            "cgroup_skb:/sys/fs/cgroup:ingress",
-            "cgroup_skb:/sys/fs/cgroup:egress",
-            "cgroup_sock:/sys/fs/cgroup:sock_create",
-            "cgroup_sock:/sys/fs/cgroup:post_bind4",
-            "cgroup_sysctl:/sys/fs/cgroup",
-            "sock_ops:/sys/fs/cgroup",
-            "cgroup_sockopt:/sys/fs/cgroup:get",
-            "cgroup_sockopt:/sys/fs/cgroup:set",
-            "cgroup_sock_addr:/sys/fs/cgroup:connect4",
-            "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
-            "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
-            "sk_lookup:/proc/self/ns/net",
-            "flow_dissector:/proc/self/ns/net",
-        ] {
+        for spec_source in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
             assert_available_write_surfaces_have_context_requirements(spec_source);
+        }
+    }
+
+    #[test]
+    fn test_available_context_write_surfaces_have_exclusive_store_shapes() {
+        for spec_source in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
+            assert_reported_write_surfaces_have_exclusive_store_shapes(spec_source);
         }
     }
 
