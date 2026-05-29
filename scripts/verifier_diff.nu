@@ -669,6 +669,38 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
+const PROGRAM_RESERVED_MAP_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  let docs = "emit events user_events perf_events kstacks ustacks .kstack .ustack"'
+            '  # emit events user_events perf_events kstacks ustacks .kstack .ustack'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  1 | emit'
+            '  2 | count'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 0'
+            '  helper-call "bpf_perf_event_read" perf_events 0'
+            '  helper-call "bpf_get_stackid" $ctx kstacks 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_RINGBUF"
+            "map:BPF_MAP_TYPE_HASH"
+            "map:BPF_MAP_TYPE_USER_RINGBUF"
+            "map:BPF_MAP_TYPE_PERF_EVENT_ARRAY"
+            "map:BPF_MAP_TYPE_STACK_TRACE"
+        ]
+    }
+]
+
 const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
@@ -19526,6 +19558,26 @@ def outside-simple-string? [text: string] {
     (($double_parts | length) mod 2) == 1 and (($single_parts | length) mod 2) == 1
 }
 
+def line-contains-outside-simple-string? [line: string marker: string] {
+    let parts = ($line | split row $marker)
+    if ($parts | length) <= 1 {
+        return false
+    }
+
+    for part in ($parts | enumerate) {
+        if $part.index == 0 {
+            continue
+        }
+
+        let before = ($parts | first $part.index | str join $marker)
+        if (outside-simple-string? $before) {
+            return true
+        }
+    }
+
+    false
+}
+
 def command-tail-after-token [raw_after: string] {
     if $raw_after == "" {
         return ""
@@ -21423,7 +21475,10 @@ def program-reserved-map-kernel-features [source: string] {
             continue
         }
 
-        if ((line-invokes-command? $trimmed "emit") or ($trimmed | str contains " events")) {
+        if (
+            (line-invokes-command? $trimmed "emit")
+            or (line-contains-outside-simple-string? $trimmed " events")
+        ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_RINGBUF])
         }
         if (
@@ -21440,17 +21495,17 @@ def program-reserved-map-kernel-features [source: string] {
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
-        if ($trimmed | str contains " user_events") {
+        if (line-contains-outside-simple-string? $trimmed " user_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_USER_RINGBUF])
         }
-        if ($trimmed | str contains " perf_events") {
+        if (line-contains-outside-simple-string? $trimmed " perf_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY])
         }
         if (
-            ($trimmed | str contains " kstacks")
-            or ($trimmed | str contains " ustacks")
-            or ($trimmed | str contains ".kstack")
-            or ($trimmed | str contains ".ustack")
+            (line-contains-outside-simple-string? $trimmed " kstacks")
+            or (line-contains-outside-simple-string? $trimmed " ustacks")
+            or (line-contains-outside-simple-string? $trimmed ".kstack")
+            or (line-contains-outside-simple-string? $trimmed ".ustack")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_STACK_TRACE])
         }
@@ -22725,6 +22780,18 @@ def validate-program-map-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-reserved-map-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_RESERVED_MAP_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let actual_keys = (
+            program-reserved-map-kernel-features $program
+            | each {|feature| $feature.key }
+        )
+
+        validate-kernel-feature-key-expectation "program-reserved-map-kernel-features" $expectation.feature_keys $actual_keys
+    }
+}
+
 def validate-program-map-value-kernel-feature-expectations [] {
     for expectation in $PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS {
         let program = ($expectation.program | str join "\n")
@@ -22879,6 +22946,7 @@ def validate-fixture-metadata [fixtures] {
     validate-program-target-kernel-feature-expectations
     validate-program-language-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
+    validate-program-reserved-map-kernel-feature-expectations
     validate-program-map-value-kernel-feature-expectations
     validate-program-global-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
