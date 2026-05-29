@@ -4750,6 +4750,18 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "tc:lo:ingress"
         program: [
+            '{|ctx|'
+            '  let text = "$ctx.sk = 0; $ctx.sk == 0"'
+            '  # $ctx.sk = 0'
+            '  if $ctx.sk == 0 { 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
             '{|event|'
             '  assign-socket 0'
             '  "ok"'
@@ -4790,6 +4802,18 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["helper:bpf_sysctl_set_new_value"]
     }
     {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let text = "$ctx.new_value = 1"'
+            '  # $ctx.new_value = 1'
+            '  if $ctx.new_value == 1 { 0 }'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
         target: "tc_action:demo"
         program: [
             '{|event|'
@@ -4808,6 +4832,18 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["helper:bpf_sock_ops_cb_flags_set"]
+    }
+    {
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|event|'
+            '  let text = "$event.cb_flags = 1"'
+            '  # $event.cb_flags = 1'
+            '  if $event.cb_flags == 1 { 0 }'
+            '  1'
+            '}'
+        ]
+        feature_keys: []
     }
     {
         target: "fentry:security_file_open"
@@ -4985,6 +5021,18 @@ const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
+    }
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|event|'
+            '  let text = "$event.sun_path = /tmp/nu-ebpf.sock"'
+            '  # $event.sun_path = /tmp/nu-ebpf.sock'
+            '  if $event.sun_path == "/tmp/nu-ebpf.sock" { 0 }'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: []
     }
 ]
 
@@ -20698,11 +20746,20 @@ def line-assigns-context-field? [line: string context_names fields] {
     let trimmed = ($line | str trim)
     for context_name in $context_names {
         for field in $fields {
-            if (
-                ($trimmed | str contains $"$($context_name).($field) =")
-                or ($trimmed | str contains $"$($context_name).($field)=")
-            ) {
-                return true
+            let marker = $"$($context_name).($field)"
+            for raw_tail in (marker-tails-outside-simple-string $trimmed $marker) {
+                let tail = ($raw_tail | str trim)
+                if not ($tail | str starts-with "=") {
+                    continue
+                }
+                if ($tail | str starts-with "==") {
+                    continue
+                }
+
+                let rhs = ($tail | str substring 1.. | str trim)
+                if $rhs != "" {
+                    return true
+                }
             }
         }
     }
