@@ -682,6 +682,38 @@ const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
+const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
+    {
+        program: [
+            '{|ctx|'
+            '  let config = { pid: 7 samples: [11 22] }'
+            '  (($config.samples | get 1) + $config.pid) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let payload = 0x[01 02]'
+            '  ($payload | get 0) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  7 | global-define --type i64 seen'
+            '  global-get seen'
+            '}'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+]
+
 const KERNEL_FEATURE_MAP_HASH = {
     key: "map:BPF_MAP_TYPE_HASH"
     min_kernel: "3.19"
@@ -5735,7 +5767,6 @@ const FIXTURES = [
         category: "globals"
         tags: [globals records list accept]
         target: "raw_tracepoint:sys_enter"
-        kernel_features: [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         program: [
             '{|ctx|'
             '  let config = { pid: 7 samples: [11 22] }'
@@ -21092,6 +21123,33 @@ def program-map-value-kernel-features [source: string] {
     $features
 }
 
+def line-declares-readonly-aggregate-constant? [line: string] {
+    let trimmed = ($line | str trim)
+    if not ($trimmed | str starts-with "let ") {
+        return false
+    }
+
+    let assignment = (declaration-assignment $trimmed)
+    if $assignment == null {
+        return false
+    }
+
+    let rhs = (declaration-rhs-token $assignment)
+    let compact = ($rhs | str replace --all " " "")
+
+    if ($compact | str starts-with "{") {
+        return true
+    }
+    if ($compact | str starts-with "[") {
+        return true
+    }
+    if (($compact | str starts-with "0x[") and $compact != "0x[]") {
+        return true
+    }
+
+    false
+}
+
 def program-global-kernel-features [source: string] {
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -21104,6 +21162,10 @@ def program-global-kernel-features [source: string] {
         }
 
         if (($trimmed | str starts-with "mut ") and ($trimmed | str contains ":")) {
+            return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
+        }
+
+        if (line-declares-readonly-aggregate-constant? $trimmed) {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
     }
@@ -22304,6 +22366,18 @@ def validate-program-map-value-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-global-kernel-feature-expectations [] {
+    for expectation in $PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS {
+        let program = ($expectation.program | str join "\n")
+        let actual_keys = (
+            program-global-kernel-features $program
+            | each {|feature| $feature.key }
+        )
+
+        validate-kernel-feature-key-expectation "program-global-kernel-features" $expectation.feature_keys $actual_keys
+    }
+}
+
 def validate-target-context-field-kernel-feature-expectations [] {
     for expectation in $TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS {
         let target = $expectation.target
@@ -22435,6 +22509,7 @@ def validate-fixture-metadata [fixtures] {
     validate-program-language-kernel-feature-expectations
     validate-program-map-kernel-feature-expectations
     validate-program-map-value-kernel-feature-expectations
+    validate-program-global-kernel-feature-expectations
     validate-target-context-field-kernel-feature-expectations
     validate-context-field-helper-kernel-feature-expectations
     validate-context-projection-kernel-feature-expectations
