@@ -562,6 +562,114 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_record_field_projection_from_metadata(
+        &mut self,
+        src_dst: RegId,
+        source_dst_vreg: VReg,
+        had_source_vreg: bool,
+        record_field: RecordField,
+        remaining_members: &[PathMember],
+        path_members: &[PathMember],
+        constant_value: Option<Value>,
+    ) -> Result<(), CompileError> {
+        let path_desc = Self::typed_value_path_desc(path_members);
+        let dst_vreg = if had_source_vreg {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            source_dst_vreg
+        };
+        let mut source_vreg = record_field.value_vreg;
+        let mut base_runtime_ty = self
+            .vreg_type_hints
+            .get(&source_vreg)
+            .cloned()
+            .unwrap_or_else(|| record_field.ty.clone());
+        let source_meta = record_field
+            .source_reg
+            .and_then(|reg| self.get_metadata(reg).cloned());
+        let base_trusted_btf = source_meta.as_ref().is_some_and(|meta| meta.trusted_btf);
+
+        if remaining_members.is_empty() {
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::VReg(source_vreg),
+            });
+            self.vreg_type_hints
+                .insert(dst_vreg, base_runtime_ty.clone());
+            let meta = self.get_or_create_metadata(src_dst);
+            *meta = RegMetadata::default();
+            meta.is_context = record_field.is_context;
+            meta.field_type = Some(base_runtime_ty);
+            meta.root_ctx_field = record_field.root_ctx_field;
+            meta.trusted_btf = base_trusted_btf;
+            meta.kernel_btf_field_addr = source_meta.and_then(|meta| meta.kernel_btf_field_addr);
+            meta.annotated_semantics = record_field.semantics;
+            meta.source_var = None;
+            self.set_reg_constant_value(src_dst, constant_value);
+            return Ok(());
+        }
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            let Some(source_reg) = record_field.source_reg else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' requires materializable metadata for record field '{}'",
+                    path_desc, record_field.name
+                )));
+            };
+            source_vreg = self.materialized_metadata_aggregate_vreg(source_reg, source_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(source_reg, source_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' requires type information for record field '{}'",
+                        path_desc, record_field.name
+                    ))
+                })?;
+        }
+
+        let base_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: base_vreg,
+            src: MirValue::VReg(source_vreg),
+        });
+        self.vreg_type_hints
+            .insert(base_vreg, base_runtime_ty.clone());
+        let projected_semantics = record_field.semantics.as_ref().and_then(|semantics| {
+            Self::project_annotated_value_semantics(semantics, remaining_members)
+        });
+        let projected_ty = self.lower_typed_value_projection(
+            src_dst,
+            dst_vreg,
+            base_vreg,
+            &base_runtime_ty,
+            remaining_members,
+            &path_desc,
+            record_field.root_ctx_field.as_ref(),
+            base_trusted_btf,
+            projected_semantics.as_ref(),
+        )?;
+        let meta = self.get_or_create_metadata(src_dst);
+        *meta = RegMetadata::default();
+        meta.is_context = false;
+        meta.field_type = Some(projected_ty);
+        meta.root_ctx_field = record_field.root_ctx_field;
+        meta.trusted_btf = base_trusted_btf
+            && matches!(
+                meta.field_type.as_ref(),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Kernel,
+                    ..
+                })
+            );
+        meta.annotated_semantics = projected_semantics;
+        meta.kernel_btf_field_addr = None;
+        meta.source_var = None;
+        self.set_reg_constant_value(src_dst, constant_value);
+        Ok(())
+    }
+
     /// Lower FollowCellPath instruction (context field access like $ctx.pid)
     pub(super) fn lower_follow_cell_path(
         &mut self,
@@ -607,6 +715,39 @@ impl<'a> HirToMirLowering<'a> {
             path = remaining_path;
             if path.members.is_empty() {
                 return Ok(());
+            }
+        }
+
+        if !self.is_context_reg(src_dst) {
+            // Context-derived record fields keep their own pointer provenance; projecting
+            // through the materialized record would make helper aliases target the stack.
+            let record_field_projection = match path.members.first() {
+                Some(PathMember::String { val, .. }) => {
+                    self.get_metadata(src_dst).and_then(|meta| {
+                        meta.record_fields
+                            .iter()
+                            .find(|field| field.name == *val && field.root_ctx_field.is_some())
+                            .cloned()
+                    })
+                }
+                _ => None,
+            };
+            if let Some(record_field) = record_field_projection {
+                let constant_value = self
+                    .get_metadata(src_dst)
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .and_then(|value| Self::constant_follow_cell_path(value, &path));
+                let remaining_members: Vec<PathMember> =
+                    path.members.iter().skip(1).cloned().collect();
+                return self.lower_record_field_projection_from_metadata(
+                    src_dst,
+                    source_dst_vreg,
+                    had_source_vreg,
+                    record_field,
+                    &remaining_members,
+                    &path.members,
+                    constant_value,
+                );
             }
         }
 
@@ -1202,6 +1343,70 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let path_desc = Self::typed_value_path_desc(&path.members);
+        if let [
+            PathMember::String {
+                val: field_name, ..
+            },
+        ] = path.members.as_slice()
+            && let Some(new_value_meta) = self.get_metadata(new_value).cloned()
+            && (new_value_meta.is_context || new_value_meta.root_ctx_field.is_some())
+        {
+            let new_value_vreg = if new_value_meta.is_context && self.ctx_param.is_some() {
+                self.materialize_context_pointer_arg()
+            } else {
+                self.get_vreg(new_value)
+            };
+            let Some(base_meta) = self.get_metadata(src_dst).cloned() else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires compiler-known record metadata for context-backed values",
+                    path_desc
+                )));
+            };
+            let Some(existing_field) = base_meta
+                .record_fields
+                .iter()
+                .find(|field| field.name == *field_name)
+                .cloned()
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' can assign context-backed values only to existing record fields with fixed layout",
+                    path_desc
+                )));
+            };
+            let field_type = new_value_meta
+                .field_type
+                .clone()
+                .or_else(|| Self::metadata_record_layout(&new_value_meta))
+                .or_else(|| self.vreg_type_hints.get(&new_value_vreg).cloned())
+                .unwrap_or(existing_field.ty);
+
+            let field = RecordField {
+                name: field_name.clone(),
+                value_vreg: new_value_vreg,
+                source_reg: Some(new_value),
+                stack_offset: existing_field.stack_offset,
+                ty: field_type,
+                semantics: new_value_meta.annotated_semantics.clone(),
+                is_context: new_value_meta.is_context,
+                root_ctx_field: new_value_meta.root_ctx_field.clone(),
+            };
+            let meta = self.get_or_create_metadata(src_dst);
+            if let Some(existing) = meta
+                .record_fields
+                .iter_mut()
+                .find(|existing| existing.name == *field_name)
+            {
+                *existing = field;
+            } else {
+                meta.record_fields.push(field);
+            }
+            meta.field_type = Self::metadata_record_layout(meta);
+            meta.annotated_semantics = Self::metadata_record_semantics(meta);
+            meta.constant_value = None;
+            meta.source_var = None;
+            return Ok(());
+        }
+
         let constant_value = self
             .get_metadata(src_dst)
             .and_then(|meta| meta.constant_value.as_ref())

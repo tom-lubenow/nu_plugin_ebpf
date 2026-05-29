@@ -4015,6 +4015,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
+            '  mut rec = { event: null }'
+            '  $rec.event = $ctx'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
             '  def wrap [event] { { event: $event } }'
             '  let rec = (wrap $ctx)'
             '  $rec.event.pid | count'
@@ -19693,6 +19705,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-record-context-upsert-field-access"
+        category: "language-core"
+        tags: [record context upsert accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = { k: null }'
+            '  $rec.k = $ctx'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "core-user-function-record-context-field-access"
         category: "language-core"
         tags: [user-function record context accept]
@@ -23243,6 +23271,26 @@ def record-wrapper-context-bindings [line: string context_names bound_aliases wr
     $bindings
 }
 
+def record-upsert-context-bindings [line: string context_names bound_aliases] {
+    mut bindings = []
+
+    for parsed in (
+        $line
+        | parse --regex '^\s*\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\.(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(?P<value>\(?\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\)?)'
+    ) {
+        let root = (context-root-from-value-token $parsed.value $context_names $bound_aliases)
+        if $root != null {
+            $bindings = ($bindings | append {
+                name: $parsed.name
+                field: $parsed.field
+                root: $root
+            })
+        }
+    }
+
+    $bindings
+}
+
 def identity-wrapper-definitions [source: string] {
     mut identities = []
     mut changed = true
@@ -23538,6 +23586,7 @@ def program-record-context-aliases [source: string context_names] {
         let bindings = (
             (record-context-bindings $line $context_names $bound_aliases)
             | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
+            | append (record-upsert-context-bindings $line $context_names $bound_aliases)
         )
         for binding in $bindings {
             let existing = (
