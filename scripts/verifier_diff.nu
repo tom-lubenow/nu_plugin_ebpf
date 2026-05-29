@@ -6825,6 +6825,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-zero-list-root-appends"
+        category: "globals"
+        tags: [globals list upsert global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "list:int:2" samples'
+            '  mut samples = (global-get samples)'
+            '  $samples.0 = 11'
+            '  $samples.1 = 22'
+            '  $samples.1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-u32-initializer"
         category: "globals"
         tags: [globals arrays global-define accept]

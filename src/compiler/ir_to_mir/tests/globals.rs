@@ -5316,6 +5316,168 @@ fn test_lower_global_define_type_list_int_uses_named_bss_global() {
 }
 
 #[test]
+fn test_lower_global_define_type_zero_list_supports_root_appends() {
+    let define_decl = DeclId::new(417);
+    let get_decl = DeclId::new(418);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("samples".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("list:int:2".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(0)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(11),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                    new_value: RegId::new(5),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(22),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(6),
+                    new_value: RegId::new(7),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(6),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("zero-initialized typed list global should allow root appends");
+
+    assert_eq!(result.data_globals.len(), 0);
+    assert_eq!(result.bss_globals.len(), 1);
+    assert_eq!(result.bss_globals[0].name, "__nu_global_samples");
+    assert_eq!(result.bss_globals[0].size, 3 * std::mem::size_of::<i64>());
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    offset: 8,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected first append to store list item 0"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    offset: 16,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected second append to store list item 1"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    offset: 0,
+                    val: MirValue::Const(2),
+                    ty: MirType::U64,
+                    ..
+                }
+            )),
+        "expected second append to advance the root list length to 2"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected root list follow-cell-path to lower through ListGet"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_zero_record_list_field_supports_append() {
     let define_decl = DeclId::new(415);
     let get_decl = DeclId::new(416);

@@ -16,9 +16,6 @@ impl<'a> HirToMirLowering<'a> {
         let (PathMember::Int { val: index, .. }, list_path) = path_members.split_last()? else {
             return None;
         };
-        if list_path.is_empty() {
-            return None;
-        }
         Some((list_path, *index))
     }
 
@@ -175,20 +172,35 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let list_vreg = self.func.alloc_vreg();
-        let list_path_desc = Self::typed_value_path_desc(list_path);
-        let list_semantics = AnnotatedValueSemantics::NumericList { max_len, known_len };
-        self.lower_typed_value_projection(
-            dst_reg,
-            list_vreg,
-            base_vreg,
-            base_runtime_ty,
-            list_path,
-            &list_path_desc,
-            root_ctx_field,
-            trusted_btf,
-            Some(&list_semantics),
-        )?;
+        let list_vreg = if list_path.is_empty() {
+            let MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack,
+            } = base_runtime_ty
+            else {
+                return Ok(false);
+            };
+            if !matches!(pointee.as_ref(), MirType::Array { .. }) {
+                return Ok(false);
+            }
+            base_vreg
+        } else {
+            let list_vreg = self.func.alloc_vreg();
+            let list_path_desc = Self::typed_value_path_desc(list_path);
+            let list_semantics = AnnotatedValueSemantics::NumericList { max_len, known_len };
+            self.lower_typed_value_projection(
+                dst_reg,
+                list_vreg,
+                base_vreg,
+                base_runtime_ty,
+                list_path,
+                &list_path_desc,
+                root_ctx_field,
+                trusted_btf,
+                Some(&list_semantics),
+            )?;
+            list_vreg
+        };
         self.emit(MirInst::ListGet {
             dst: dst_vreg,
             list: list_vreg,
@@ -270,21 +282,26 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(true);
         }
 
-        let projection = Self::resolve_typed_value_projection_path(
-            pointee_ty,
-            list_path,
-            &Self::typed_value_path_desc(list_path),
-        )?;
-        if projection.bitfield.is_some() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "cell path update '.{} = ...' does not support bitfield numeric list fields",
-                path_desc
-            )));
-        }
-        if !matches!(projection.ty, MirType::Array { .. }) {
+        let (list_offset, list_ty) = if list_path.is_empty() {
+            (0usize, pointee_ty.clone())
+        } else {
+            let projection = Self::resolve_typed_value_projection_path(
+                pointee_ty,
+                list_path,
+                &Self::typed_value_path_desc(list_path),
+            )?;
+            if projection.bitfield.is_some() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' does not support bitfield numeric list fields",
+                    path_desc
+                )));
+            }
+            (projection.offset, projection.ty)
+        };
+        if !matches!(list_ty, MirType::Array { .. }) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "cell path update '.{} = ...' expected numeric list field at {:?}, got {:?}",
-                path_desc, list_path, projection.ty
+                path_desc, list_path, list_ty
             )));
         }
 
@@ -311,7 +328,7 @@ impl<'a> HirToMirLowering<'a> {
         let item_offset = index
             .checked_mul(8)
             .and_then(|offset| offset.checked_add(8))
-            .and_then(|offset| projection.offset.checked_add(offset))
+            .and_then(|offset| list_offset.checked_add(offset))
             .and_then(|offset| i32::try_from(offset).ok())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
@@ -327,7 +344,7 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         if index == current_len {
-            let len_offset = i32::try_from(projection.offset).map_err(|_| {
+            let len_offset = i32::try_from(list_offset).map_err(|_| {
                 CompileError::UnsupportedInstruction(format!(
                     "cell path update '.{} = ...' numeric list length offset overflowed",
                     path_desc
@@ -348,6 +365,16 @@ impl<'a> HirToMirLowering<'a> {
 
         let meta = self.get_or_create_metadata(src_dst);
         meta.field_type = Some(pointee_ty.clone());
+        if list_path.is_empty() {
+            meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
+                max_len,
+                known_len: Some(if index == current_len {
+                    current_len + 1
+                } else {
+                    current_len
+                }),
+            });
+        }
         meta.constant_value = constant_value.clone();
         meta.kernel_btf_field_addr = None;
         meta.source_var = None;
@@ -476,14 +503,19 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if current_len < max_len {
+            let mut updated_field = existing_field;
+            updated_field.semantics = Some(AnnotatedValueSemantics::NumericList {
+                max_len,
+                known_len: Some(current_len + 1),
+            });
             self.emit(MirInst::ListPush {
-                list: existing_field.value_vreg,
+                list: updated_field.value_vreg,
                 item: item_vreg,
             });
             self.replace_metadata_record_field(
                 src_dst,
                 field_index,
-                existing_field,
+                updated_field,
                 constant_value,
                 path_desc,
                 base_is_materialized_aggregate,
