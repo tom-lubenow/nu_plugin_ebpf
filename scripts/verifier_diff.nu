@@ -19421,6 +19421,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-dynamic-range-loop-reject"
+        category: "language-core"
+        tags: [control-flow loop reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let end = $ctx.pid'
+            '  for i in 0..$end {'
+            '    $i | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "Range end must be a compile-time known integer for eBPF loops"
+    }
+    {
         name: "core-inline-bounded-loop"
         category: "language-core"
         tags: [control-flow loop]
